@@ -65,7 +65,11 @@ echo "George (Reviewer B, deep-tree) reviewing $BRANCH against $BASE..."
 echo "Prompt: $PROMPT_FILE ($(wc -c < "$PROMPT_FILE") bytes)"
 TREE_BEFORE="$(snapshot_tree)"
 
-grok -p "$(cat "$PROMPT_FILE")" \
+# --prompt-file, not `-p "$(cat ...)"`. The diff is embedded in the prompt, so
+# passing it as an argv string blows past ARG_MAX on any real change (a 35-file
+# range produced a 135KB prompt and "Argument list too long"). A file has no
+# such limit.
+grok --prompt-file "$PROMPT_FILE" \
   --allow read_file --allow grep --allow list_dir \
   --cwd "$(pwd)" </dev/null 2>&1 | tee "$REPORT"
 

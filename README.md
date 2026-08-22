@@ -42,30 +42,24 @@ Individually: `npm run lint`, `npm run typecheck`, `npm test`,
 ## Branches and deployment
 
 ```
-feature branch  ->  develop  ->  main
-                    (default)     (release)
+feature  ->  develop  ->  staging  ->  main
+             (default)    (staging)    (production)
 ```
 
-`develop` is the default branch. `main` is the release branch, and the
-`develop` -> `main` PR is the production gate.
+| Branch                 | Purpose               | Deploys to                         |
+| ---------------------- | --------------------- | ---------------------------------- |
+| `feature/*`, `develop` | dev and local testing | a preview version with its own URL |
+| `staging`              | what testers use      | `tc-mobile-staging`                |
+| `main`                 | production            | `tc-mobile`                        |
 
-**Cloudflare Workers Builds deploys** straight from the repo — there are no
-deploy workflows in `.github/`.
-
-| Branch    | Result                                                            |
-| --------- | ----------------------------------------------------------------- |
-| `main`    | Production worker `tc-mobile`                                     |
-| any other | A preview version with its own URL                                |
-| staging   | `tc-mobile-staging`, deployed manually during the prototype phase |
+Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
-```bash
-npm run deploy:staging   # manual, during prototyping
-```
-
-Account: **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The API token
-lives in Cloudflare's build settings, not a GitHub secret.
+**Cloudflare Workers Builds deploys** straight from the repo — there are no
+deploy workflows in `.github/`. It is configured per Worker, so the repo is
+connected twice: `tc-mobile` builds from `main`, `tc-mobile-staging` builds
+from `staging` with `--env staging`.
 
 ### Testing on a phone
 
