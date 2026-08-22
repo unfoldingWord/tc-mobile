@@ -114,9 +114,16 @@ this exact stack works inside uW:
 - **Full Scripture Burrito zip round-trip in the browser**, regenerating
   `metadata.json` with md5/size/scope — and **preserving byte-for-byte every
   file the PWA doesn't model.** That rule is worth copying verbatim.
-- **An event journal** with HLC timestamps, per-install actor ids, content-hash
-  ids and `base` chaining, exported as JSONL. A ready-made CRDT-ish pattern for
-  phase-2 versioning and for merging takes recorded on two phones.
+- **An event journal _draft_** — HLC timestamps, a random per-install actor id
+  in IndexedDB, md5-of-payload event ids, and `base` chaining that makes forks
+  **detectable, not resolvable**. Corrected 2026-08-22 after reading
+  `src/lib/journal.js` in full: it implements exactly one operation
+  (`check.decision.set`), there is no JSONL export, and **there is no fold and
+  no merge** — the file's own header calls it a "DESIGN DRAFT" of
+  `unfoldingWord/translationCore4`'s `BURRITO-SPEC.md` §8, which is the real
+  upstream. Useful as a shape to copy; it is not a merge engine and not a
+  versioning solution. It also carries **no license**, so its code is not
+  legally reusable in this MIT repo — read it for design, do not copy it.
 
 **Talk to Benjamin before writing any burrito emit code.**
 

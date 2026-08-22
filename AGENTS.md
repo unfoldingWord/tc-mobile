@@ -221,6 +221,13 @@ Full process, and the traps that make a failed run look like a clean pass, in
 ## DRI
 
 **Seth Stoll** is building this. **Tim Jore** owns the requirements.
+**Birch Champeon** is the project manager — and demoed translationCore4, so the
+tC Mobile / tC4 convergence question runs through the same person.
+
+Route questions accordingly: requirements to Tim, scheduling and tC4 to Birch,
+Scripture Burrito and the event journal to **Benjamin Wright**, OBS content and
+audio to **Rich Mahn**, Shema Studio to **Han Chung** (via Birch, who is already
+helping him add OBS support).
 
 **The repository is deliberately personal and private** —
 `sethstoll3/tc-mobile`, not `unfoldingWord/tc-mobile`. Per

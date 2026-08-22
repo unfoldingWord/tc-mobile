@@ -12,13 +12,34 @@ narration, then record frame 7. That needs frame-level timing.
 
 Searched before designing. **No frame-level OBS timing data exists anywhere.**
 
-| Source                                                                                 | Result                                                                          |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| DCS catalogue                                                                          | No audio subject at all for OBS — only text resources                           |
-| Door43 repo search (`obs-audio`, `obs_audio`, `audio-timing`, `obs+vtt`, `obs+timing`) | One hit: `GRA/apd_obs_audio` — 703 files, **all story-level MP3s, zero timing** |
-| `unfoldingWord/en_obs` tree                                                            | 64 files, no VTT, cue, SRT or timing JSON                                       |
-| `cdn.door43.org` per-frame MP3 probe                                                   | **404** — narration is published per story only                                 |
-| Bolls                                                                                  | 31 languages, 149 translations, **no OBS at all**                               |
+| Source                                                                                 | Result                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DCS catalogue                                                                          | **98 entries / 92 languages carry OBS audio** (`?hasAudio=true`), indexed by `media.yaml`, not by an audio subject — which is why a search for one came back empty. All story-level. **Zero timing.** |
+| Door43 repo search (`obs-audio`, `obs_audio`, `audio-timing`, `obs+vtt`, `obs+timing`) | One hit: `GRA/apd_obs_audio` — 703 files, **all story-level MP3s, zero timing**                                                                                                                       |
+| `unfoldingWord/en_obs` tree                                                            | 64 files, no VTT, cue, SRT or timing JSON                                                                                                                                                             |
+| `cdn.door43.org` per-frame MP3 probe                                                   | **404** — narration is published per story only                                                                                                                                                       |
+| Bolls                                                                                  | 31 languages, 149 translations, **no OBS at all**                                                                                                                                                     |
+
+**Corrected 2026-08-22.** The first row originally read "No audio subject at
+all for OBS — only text resources." That was wrong, and wrong in the direction
+that misroutes the next reader: OBS audio _is_ on DCS, for 92 languages,
+published by Rich Mahn in late July 2026. It is discoverable through
+`media.yaml` and the catalogue's `hasAudio` filter rather than through a
+subject, which is how the original search missed it.
+
+**The decision below does not change.** Every other row still holds and no VTT,
+cue, SRT or burrito timing ingredient was found anywhere (`sb_count: 0`).
+
+Two things worth knowing before anyone spends time on this:
+
+- **Do not chase gateway-language reference audio for October.** The 92
+  languages are overwhelmingly South Asian — `OBS-TLF` alone is 59 of the 98
+  entries. There is no `sw`, `am`, `om`, `ti`, `so`, `lg`, `luo`, `rw`, `ny` or
+  `sn`. Multi-language narration is a real Phase-2 capability and a dead end
+  for the East Africa training.
+- **`src/hooks/obs-media.ts` hardcodes the English v6 chapter URL**, which is
+  byte-identical to `en_obs`'s `media.yaml` `chapter_url` template. The
+  coupling is real; `media.yaml` is the discoverable source of the same string.
 
 The _format_ however is settled: Scripture Burrito's alignment spec defines
 `type: "audio-reference"`, mapping VTT timecodes to scripture references
