@@ -175,6 +175,18 @@ reviewer that raised it and stamped with the head SHA. A finding that was
 P1 and P2 block merge. P3 is deferred to an issue unless the fix is trivial.
 Hitting the round cap with findings open is an **escalation, not an approval**.
 
+**Merging.** This repo is solo, so Frank and George _are_ the review: once both
+are clean at the current head SHA and CI is green, merge is an admin merge.
+Documentation and content merge on green alone. Process/meta artifacts —
+`ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config — normally need both
+reviewers because they are _executed as instructions_; exempting them is
+allowed, but **the decision is recorded on the PR**, never skipped silently.
+
+**With several lanes in flight, merge one at a time and pre-flight each.** A
+clean statement names a head SHA, so merging one lane moves the next lane's
+base and staleness its sign-offs. After every merge, rebase and re-check the
+remaining lanes.
+
 Full process, and the traps that make a failed run look like a clean pass, in
 [`docs/review/dual-review.md`](docs/review/dual-review.md).
 
