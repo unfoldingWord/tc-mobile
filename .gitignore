@@ -24,3 +24,8 @@ secrets.*
 # Logs
 *.log
 npm-debug.log*
+
+# Local agent skills. Vendored from elsewhere and not this repo's to publish —
+# ui-craft is distilled third-party course material and the licensing/IP call
+# is the author's, not something a commit should make by accident.
+.claude/skills/
