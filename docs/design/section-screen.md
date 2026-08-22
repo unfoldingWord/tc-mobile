@@ -91,6 +91,51 @@ Therefore:
 A picture slot exists in the row from day one so Phase 2 content drops in
 without a redesign.
 
+## ▸ REVISION after Gate 1 feedback — OBS content is in
+
+**Decision:** bundle Open Bible Stories as beta content (ADR 0006). The premise
+correction above is therefore **partly reversed**, and this is what changes.
+
+**Artwork is available after all — for OBS chapters.** 50 stories, 598 frames,
+each with its own illustration. OBS maps onto the model with no translation:
+story → Chapter, frame → Section. So the picture slot in the row is filled, not
+empty, whenever the chapter came from OBS.
+
+**But it is not available for user-created chapters**, which Phase 1 still
+supports and which is what a translator working on a Bible pericope will have.
+
+So the design does not change; its emphasis does:
+
+| Chapter kind             | Row identity                                                             |
+| ------------------------ | ------------------------------------------------------------------------ |
+| **OBS chapter**          | Artwork carries it. Sound and position reinforce.                        |
+| **User-created chapter** | Sound, waveform shape and position carry it — exactly as reasoned above. |
+
+**The conclusion that survives, and matters more now:** artwork is an
+**enhancement, not a dependency**. A design that only worked once artwork
+existed would fail every user-created chapter and every Bible pericope forever.
+Tapping a row to hear it stays the primary means of navigation in both cases; it
+is simply needed less often when there is a picture.
+
+That is a better outcome than either premise alone, and it is why the picture
+slot was specified before we knew we would have pictures.
+
+**Two things this adds to the screen:**
+
+1. **Per-story download state.** Artwork is fetched per story (44 MB for all 598
+   frames — ADR 0006), so a row can now exist whose picture is not on the device
+   yet. Added to A2 below.
+2. **Reference audio.** OBS ships narration MP3s, so a section can now have
+   something to _listen to_ before recording — Shema Studio's "pinned reference"
+   pattern (`docs/research/prior-art.md` §1). **Deliberately not added to this
+   screen's job list**: it changes the recording surface, not the list, and
+   folding it in here would widen the gate mid-review.
+
+**Also flagged by ADR 0006 and not resolved:** a recorded translation of an OBS
+story is arguably a derivative work, making it CC BY-SA. The data model cannot
+distinguish an OBS-derived recording from a user-authored one. That is a
+licensing decision for Tim, not an engineering one.
+
 ## A1 — The job list
 
 Ordered top to bottom. Each job stated without pointing at where it came from.
@@ -158,6 +203,7 @@ The happy state is the one that gets designed by default. These are the rest.
 | **Row: never recorded**              | Distinguishable from "recorded silence" — not just an absent waveform.                                                             |
 | **Row: recorded**                    | Waveform, duration, playable.                                                                                                      |
 | **Row: mid-record**                  | The row currently being captured, live.                                                                                            |
+| **Row: picture not downloaded**      | OBS chapter whose artwork is not yet on the device. Falls back to sound-and-position identity; must not render as broken.          |
 | **Long chapter** — 50 sections       | The list scrolls; region 2 becomes load-bearing; position must survive scrolling.                                                  |
 | **Short chapter** — 1 section        | Must not look broken or empty.                                                                                                     |
 | **No microphone permission**         | The recording control cannot silently do nothing. Recovery without reading a paragraph.                                            |

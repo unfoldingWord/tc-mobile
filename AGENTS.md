@@ -65,8 +65,10 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   (MediaRecorder, `decodeAudioData`, the share sheet) are **not** covered by
   automated tests — they are verified on-device. Say so honestly rather than
   claiming coverage that does not exist.
-- `fake-indexeddb` backs the storage tests. Call `closeDb()` before
-  `deleteDatabase` — an open connection blocks deletion indefinitely.
+- `fake-indexeddb` backs the storage tests. Reset between cases by **clearing
+  every object store**, not by `deleteDatabase`: deletion blocks indefinitely
+  while any connection is open, and a harness that resolves on `onblocked`
+  silently carries the previous test's data forward.
 
 ## Deployment
 
@@ -128,6 +130,10 @@ easy to regress.
    the right format; talk to Benjamin Wright first — `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
    public repo. Someone needs to ask Han Chung.
+7. **OBS-derived recordings may be CC BY-SA.** A recorded translation of an OBS
+   story is arguably a derivative work. The data model cannot tell an
+   OBS-derived recording from a user-authored one, and the export path
+   implements none of it — ADR 0006. **Needs Tim and uW licensing.**
 
 ## DRI
 

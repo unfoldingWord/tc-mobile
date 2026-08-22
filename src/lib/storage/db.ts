@@ -28,7 +28,7 @@ import type {
 import type { ClipMeta } from "@/types/audio";
 
 export const DB_NAME = "tc-mobile";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export interface TcMobileDb extends DBSchema {
   projects: { key: ProjectId; value: Project };
@@ -51,29 +51,53 @@ export interface TcMobileDb extends DBSchema {
   clipMeta: { key: ClipId; value: ClipMeta };
   /** Raw mono 16-bit PCM, stored as an ArrayBuffer keyed by ClipId. */
   clipData: { key: ClipId; value: ArrayBuffer };
+  /**
+   * Reference media fetched from the Door43 CDN — OBS frame artwork and
+   * narration — keyed by its source URL. Cached here rather than in the
+   * Cache API so a downloaded story is durable, inspectable, and countable
+   * against the same storage budget as the recordings.
+   */
+  media: { key: string; value: CachedMedia };
+}
+
+export interface CachedMedia {
+  readonly url: string;
+  readonly blob: Blob;
+  readonly contentType: string;
+  readonly bytes: number;
+  readonly fetchedAt: number;
 }
 
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
   dbPromise ??= openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      db.createObjectStore("projects", { keyPath: "id" });
+    upgrade(db, oldVersion) {
+      // Migrations are cumulative and must stay append-only: this database is
+      // the system of record for a translator's work, and a field device may
+      // be several versions behind.
+      if (oldVersion < 1) {
+        db.createObjectStore("projects", { keyPath: "id" });
 
-      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
-      chapters.createIndex("projectId", "projectId");
+        const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+        chapters.createIndex("projectId", "projectId");
 
-      const sections = db.createObjectStore("sections", { keyPath: "id" });
-      sections.createIndex("chapterId", "chapterId");
+        const sections = db.createObjectStore("sections", { keyPath: "id" });
+        sections.createIndex("chapterId", "chapterId");
 
-      const segments = db.createObjectStore("segments", { keyPath: "id" });
-      segments.createIndex("sectionId", "sectionId");
+        const segments = db.createObjectStore("segments", { keyPath: "id" });
+        segments.createIndex("sectionId", "sectionId");
 
-      const takes = db.createObjectStore("takes", { keyPath: "id" });
-      takes.createIndex("segmentId", "segmentId");
+        const takes = db.createObjectStore("takes", { keyPath: "id" });
+        takes.createIndex("segmentId", "segmentId");
 
-      db.createObjectStore("clipMeta", { keyPath: "id" });
-      db.createObjectStore("clipData");
+        db.createObjectStore("clipMeta", { keyPath: "id" });
+        db.createObjectStore("clipData");
+      }
+
+      if (oldVersion < 2) {
+        db.createObjectStore("media", { keyPath: "url" });
+      }
     },
   });
   return dbPromise;

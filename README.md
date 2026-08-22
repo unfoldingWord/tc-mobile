@@ -117,6 +117,39 @@ MediaRecorder (webm/opus on Android, mp4/aac on iOS)
 See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
 [ADR 0003](docs/decisions/0003-mp3-encoder.md).
 
+## Content — Open Bible Stories
+
+Fifty OBS stories (598 illustrated frames) ship as beta content so testers get
+real, ordered, illustrated chapters with zero setup. OBS maps onto the domain
+model directly: **story → Chapter, frame → Section**, and the frame artwork
+gives each section a non-textual identity — which is the core problem this app
+has to solve for people who cannot read.
+
+```bash
+node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
+```
+
+Story text and frame metadata are bundled (230 KB). **Artwork is not** — 44 MB
+for all 598 frames at 360px — so it is fetched per story on demand into
+IndexedDB and is offline-forever once downloaded. Narration MP3s (~1 MB/story)
+are an optional per-story download. See
+[ADR 0006](docs/decisions/0006-obs-content.md).
+
+### Attribution
+
+unfoldingWord® Open Bible Stories is made available under a
+[Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/).
+Artwork is © [Sweet Publishing](https://www.sweetpublishing.com) under
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0). This repository's
+own source is MIT; the OBS content and this code are separate works in mere
+aggregation.
+
+> ⚠️ **Open licensing question.** The OBS licence treats a _translation_ as a
+> derivative work, which would make recordings produced against OBS content
+> CC BY-SA and require removing the unfoldingWord® trademark from them. That is
+> a decision for Tim and uW licensing, and **nothing in the export path
+> implements it yet** — ADR 0006.
+
 ## Prior art
 
 Read [`docs/research/prior-art.md`](docs/research/prior-art.md) before designing

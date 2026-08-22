@@ -22,6 +22,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   export MP3 on a real device.
 - 53 unit tests covering the audio core, scope grammar, and storage layer.
 - Docs: spec transcription, prior-art research, and five ADRs.
+- Open Bible Stories bundled as beta content: 50 stories / 598 frames of
+  metadata (230 KB), with artwork and narration fetched per story into
+  IndexedDB. `scripts/build-obs-catalog.mjs` rebuilds the catalogue from
+  Door43. IndexedDB schema bumped to v2 for the media store.
 - Cloudflare deployment: staging, production, and per-PR ephemeral Workers,
   with GitHub Actions for CI, PR deploy/cleanup, staging, and production.
   Staging is live at <https://tc-mobile-staging.unfoldingword.workers.dev>.

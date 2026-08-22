@@ -10,7 +10,14 @@ import {
   putClip,
   totalClipBytes,
 } from "@/lib/storage/clips";
-import { closeDb, DB_NAME } from "@/lib/storage/db";
+import { closeDb, getDb } from "@/lib/storage/db";
+import {
+  deleteMedia,
+  getMedia,
+  hasMedia,
+  putMedia,
+  totalMediaBytes,
+} from "@/lib/storage/media";
 import {
   addChapter,
   addSection,
@@ -30,13 +37,17 @@ const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
 
 beforeEach(async () => {
+  // Clear every store rather than deleting the database.
+  //
+  // `deleteDatabase` blocks indefinitely while any connection is open, and a
+  // harness that resolves on `onblocked` silently leaves the previous test's
+  // data in place — which is exactly the flake this replaced. Clearing is
+  // deterministic and needs no connection juggling.
   await closeDb();
-  await new Promise<void>((resolve, reject) => {
-    const req = indexedDB.deleteDatabase(DB_NAME);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => resolve();
-  });
+  const db = await getDb();
+  const stores = Array.from(db.objectStoreNames);
+  const tx = db.transaction(stores, "readwrite");
+  await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
 });
 
 describe("clip storage", () => {
@@ -168,5 +179,54 @@ describe("project tree", () => {
     await expect(addTake("nope" as never, newClipId(), 100)).rejects.toThrow(
       /No such segment/
     );
+  });
+});
+
+describe("reference media cache", () => {
+  const url = "https://cdn.door43.org/obs/jpg/360px/obs-en-01-01.jpg";
+
+  it("round-trips a blob", async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], {
+      type: "image/jpeg",
+    });
+    await putMedia(url, blob);
+
+    const got = await getMedia(url);
+    expect(got?.bytes).toBe(4);
+    expect(got?.contentType).toBe("image/jpeg");
+    expect(new Uint8Array(await got!.blob.arrayBuffer())).toEqual(
+      new Uint8Array([1, 2, 3, 4])
+    );
+  });
+
+  it("reports presence without loading the blob", async () => {
+    expect(await hasMedia(url)).toBe(false);
+    await putMedia(url, new Blob(["x"], { type: "image/jpeg" }));
+    expect(await hasMedia(url)).toBe(true);
+  });
+
+  it("sums bytes across entries for the storage budget", async () => {
+    await putMedia("a", new Blob([new Uint8Array(100)]));
+    await putMedia("b", new Blob([new Uint8Array(50)]));
+    expect(await totalMediaBytes()).toBe(150);
+  });
+
+  it("deletes one entry without disturbing the others", async () => {
+    await putMedia("a", new Blob(["aa"]));
+    await putMedia("b", new Blob(["bb"]));
+    await deleteMedia("a");
+    expect(await hasMedia("a")).toBe(false);
+    expect(await hasMedia("b")).toBe(true);
+  });
+
+  it("keeps media separate from recorded clips", async () => {
+    // Guards against the two ever sharing a store: deleting a downloaded
+    // story must never be able to remove a translator's recordings.
+    await putMedia("a", new Blob(["aa"]));
+    const clip = newClipId();
+    await putClip(clip, samples(10), CANONICAL_SAMPLE_RATE);
+    await deleteMedia("a");
+    expect(await getClip(clip)).toBeDefined();
+    expect(await totalClipBytes()).toBe(20);
   });
 });
