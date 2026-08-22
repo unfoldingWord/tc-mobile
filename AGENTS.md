@@ -87,37 +87,46 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 ## Branches and deployment
 
 ```
-feature branch  ->  develop  ->  main
-                    (default)     (release)
+feature  ->  develop  ->  staging  ->  main
+             (default)    (staging)    (production)
 ```
 
-`develop` is the default branch and where work lands. `main` is the release
-branch; promoting is a PR from `develop` to `main`, and that PR **is** the
-production gate.
+| Branch      | Purpose                                              | Cloudflare deploys       |
+| ----------- | ---------------------------------------------------- | ------------------------ |
+| `feature/*` | one change                                           | preview version, own URL |
+| `develop`   | **default.** Local and dev testing; where work lands | preview version, own URL |
+| `staging`   | what testers and facilitators use                    | `tc-mobile-staging`      |
+| `main`      | production                                           | `tc-mobile`              |
 
-**Cloudflare Workers Builds owns deployment**, connected directly to the GitHub
-repo. There are no deploy workflows in `.github/` — deleting them removed a
-real collision, since CF and Actions would otherwise both deploy on the same
-triggers, to different targets.
+Work is cut from `develop` and merged back by PR. Promotion is `develop` ->
+`staging` -> `main`, each by PR. **The `staging` -> `main` PR is the production
+gate.**
 
-| Branch    | Cloudflare does                            | Result                             |
-| --------- | ------------------------------------------ | ---------------------------------- |
-| `main`    | `npm run build` then `npx wrangler deploy` | Production worker `tc-mobile`      |
-| any other | `npx wrangler versions upload`             | A preview version with its own URL |
+### Cloudflare Workers Builds owns deployment
 
-Preview versions per branch replace the per-PR ephemeral workers this repo used
-to create: native to Cloudflare, no cleanup job, no worker sprawl.
+There are no deploy workflows in `.github/`. Deleting them removed a real
+collision: Cloudflare and Actions would otherwise both deploy on the same
+triggers, to different targets — two preview deploys per PR and two
+deployments per merge.
+
+Workers Builds is configured **per Worker**, so the same repository is
+connected twice:
+
+| Worker              | Production branch | Deploy command                      | Non-production builds |
+| ------------------- | ----------------- | ----------------------------------- | --------------------- |
+| `tc-mobile`         | `main`            | `npx wrangler deploy`               | **off**               |
+| `tc-mobile-staging` | `staging`         | `npx wrangler deploy --env staging` | **on**                |
+
+Non-production builds are enabled on **one** Worker only. With both on, every
+push to `develop` triggers two preview builds of the same commit.
+
+Add `docs/**` and `*.md` to Cloudflare's **Exclude paths** on both, or every
+documentation commit burns a build.
 
 Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The
 API token lives in Cloudflare's build settings, **not** in a GitHub secret —
-GitHub Actions no longer deploys anything, so it needs no Cloudflare
-credentials. Only `ci.yml` remains there.
-
-Add `docs/**` and `*.md` to Cloudflare's **Exclude paths**, or every
-documentation commit burns a build and redeploys.
-
-No deploys from a local machine except deliberate ones during this prototype
-phase.
+Actions no longer deploys anything, so it needs no Cloudflare credentials. Only
+`ci.yml` remains there.
 
 ## Device testing — the HTTPS caveat
 
@@ -136,8 +145,9 @@ easy to regress.
 
 ## Conventions
 
-- **Branches:** `<type>/<short-description>` — `feat/waveform-selection`,
-  cut from `develop` and merged back by PR.
+- **Branches:** `<type>/<short-description>` — `feat/waveform-selection`, cut
+  from `develop` and merged back by PR. Never commit directly to `staging` or
+  `main`; they are promoted to, not worked on.
 - **Commits:** Conventional Commits. Subject _and_ body, neither blank.
 - **Pre-commit** (fast): lint-staged, typecheck. **Pre-push** (slow): tests, build.
 - **Never** `--no-verify`. Never suppress a lint rule or add a type suppression
