@@ -47,6 +47,20 @@ npm run deploy         # wrangler deploy (production)
 types → lib → hooks → components → app
 ```
 
+Styling is layered separately, in `src/app/styles/`:
+
+```
+1-primitives.css   raw values, no meaning        (nothing outside layer 2 may use these)
+2-semantic.css     roles + themes                (the only layer that knows about themes)
+3-components.css   component tokens and parts    (may use layer 2, never layer 1)
+```
+
+`@layer primitives, semantic, components, utilities` fixes the cascade order
+once, so Tailwind utilities always win and a one-off utility stays a safe
+escape hatch rather than a specificity fight. Using a primitive directly in a
+component is the leak this exists to prevent — it is what makes a theme
+unswitchable later.
+
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
 
@@ -130,7 +144,10 @@ easy to regress.
    the right format; talk to Benjamin Wright first — `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
    public repo. Someone needs to ask Han Chung.
-7. **OBS-derived recordings may be CC BY-SA.** A recorded translation of an OBS
+7. **No OBS frame timing exists**, so reference audio is story-level and
+   record-along is not possible — ADR 0007. The seam is built; someone needs to
+   ask uW to publish timing files.
+8. **OBS-derived recordings may be CC BY-SA.** A recorded translation of an OBS
    story is arguably a derivative work. The data model cannot tell an
    OBS-derived recording from a user-authored one, and the export path
    implements none of it — ADR 0006. **Needs Tim and uW licensing.**

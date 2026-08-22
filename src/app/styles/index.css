@@ -1,0 +1,11 @@
+/**
+ * Cascade order is declared once, here, so a later import can never
+ * accidentally outrank an earlier one. Tailwind's utilities sit last and win,
+ * which is what makes a one-off utility a safe escape hatch rather than a
+ * specificity fight.
+ */
+@layer primitives, semantic, components, utilities;
+
+@import "./1-primitives.css";
+@import "./2-semantic.css";
+@import "./3-components.css";

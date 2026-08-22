@@ -1,9 +1,24 @@
 @import "tailwindcss";
+@import "./styles/index.css";
 
-@theme {
-  --color-ink: #0b0f14;
-  --color-panel: #121a24;
-  --color-accent: #38bdf8;
+/**
+ * Expose the semantic roles to Tailwind so utilities (`bg-surface`,
+ * `text-ink-muted`) resolve to the same tokens the component layer uses.
+ * Theme switching still happens entirely in layer 2 — these are aliases, not a
+ * second source of truth.
+ */
+@theme inline {
+  --color-floor: var(--s-floor);
+  --color-surface: var(--s-surface);
+  --color-raised: var(--s-raised);
+  --color-overlay: var(--s-overlay);
+  --color-edge: var(--s-edge);
+  --color-ink: var(--s-ink);
+  --color-ink-muted: var(--s-ink-muted);
+  --color-ink-faint: var(--s-ink-faint);
+  --color-voice: var(--s-voice);
+  --color-live: var(--s-live);
+  --color-warn: var(--s-warn);
 }
 
 html,
@@ -13,12 +28,21 @@ body,
 }
 
 body {
-  background-color: var(--color-ink);
-  color: #e2e8f0;
-  /* Installed to the home screen there is no browser chrome, so the app must
-     keep clear of the notch and the home indicator itself. */
+  margin: 0;
+  background: var(--s-floor);
+  color: var(--s-ink);
+  font-family: var(--p-font-ui);
+  /* Installed to the home screen there is no browser chrome, so the app keeps
+     clear of the notch and the home indicator itself. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
+}
+
+/* A visible focus state is not optional: it is the only affordance a
+   keyboard or switch-control user has. */
+:focus-visible {
+  outline: var(--c-focus-ring);
+  outline-offset: var(--c-focus-offset);
 }

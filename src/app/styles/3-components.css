@@ -1,0 +1,198 @@
+/**
+ * LAYER 3 — COMPONENTS
+ *
+ * Component-scoped tokens and the primitives-into-roles wiring for each part.
+ * A component may reference layer 2 and this layer, never layer 1 directly.
+ *
+ * Numbers here come from `ui-craft`: control padding is about half the control
+ * height, radius is related to height, spacing sits on named relationship
+ * levels rather than arbitrary pixels, and every interactive part styles all
+ * of its states.
+ */
+
+@layer components {
+  :root {
+    /* Relationship levels — parts, items, blocks, sections. If a gap cannot be
+       named at one of these levels, the structure is not decided yet. */
+    --c-gap-parts: var(--p-space-2);
+    --c-gap-items: var(--p-space-4);
+    --c-gap-blocks: var(--p-space-6);
+    --c-gap-sections: var(--p-space-8);
+
+    /* Touch targets never go below 44px. */
+    --c-control-sm: 40px;
+    --c-control-md: 44px;
+    --c-control-lg: 52px;
+    --c-control-xl: 68px;
+
+    --c-row-radius: var(--p-radius-lg);
+    --c-tile-sm: 48px;
+    --c-tile-lg: 56px;
+
+    --c-focus-ring: 2px solid var(--s-focus);
+    --c-focus-offset: 3px;
+  }
+
+  /* --- the shell ------------------------------------------------------- */
+  .app-shell {
+    background: var(--s-floor);
+    color: var(--s-ink);
+    font-family: var(--p-font-ui);
+    font-variant-numeric: tabular-nums;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c-gap-items);
+    padding: var(--p-space-4) var(--p-space-3);
+  }
+
+  /* --- controls --------------------------------------------------------- */
+  .control {
+    display: grid;
+    place-items: center;
+    border: none;
+    cursor: pointer;
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border-radius: var(--p-radius-full);
+    width: var(--c-control-md);
+    height: var(--c-control-md);
+    transition:
+      filter var(--p-dur-base) var(--p-ease),
+      transform var(--p-dur-fast) var(--p-ease);
+  }
+  .control:hover {
+    filter: brightness(1.12);
+  }
+  .control:active {
+    transform: translateY(1px);
+  }
+  .control:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+  }
+  .control:disabled {
+    /* Desaturate rather than fade, so the glyph stays legible. */
+    filter: saturate(0.15);
+    cursor: default;
+    transform: none;
+  }
+
+  .control--record {
+    background: var(--s-live);
+    color: var(--s-live-ink);
+    width: var(--c-control-lg);
+    height: var(--c-control-lg);
+  }
+  .control--play {
+    background: var(--s-voice);
+    color: var(--s-voice-ink);
+  }
+  .control--quiet {
+    background: transparent;
+    color: var(--s-ink-muted);
+    border-radius: var(--p-radius-md);
+    width: var(--c-control-sm);
+    height: var(--c-control-sm);
+  }
+  .control--quiet:hover {
+    background: var(--s-surface);
+    color: var(--s-ink);
+  }
+  .control--primary {
+    width: var(--c-control-xl);
+    height: var(--c-control-xl);
+  }
+
+  /* --- rows and cells ---------------------------------------------------- */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-4);
+    background: var(--s-surface);
+    border-radius: var(--c-row-radius);
+    padding: var(--p-space-3);
+    border: 1px solid transparent;
+    transition: background var(--p-dur-base) var(--p-ease);
+  }
+  .row--active {
+    background: var(--s-raised);
+  }
+  .row--next {
+    background: var(--s-raised);
+    border-color: var(--s-edge);
+  }
+
+  .cell {
+    position: relative;
+    display: block;
+    aspect-ratio: 1;
+    border-radius: var(--c-row-radius);
+    overflow: hidden;
+    background: var(--s-surface);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .cell:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+  }
+  .cell--next {
+    outline: 2px solid var(--s-live);
+    outline-offset: -2px;
+  }
+
+  /* --- type roles -------------------------------------------------------- */
+  .t-count {
+    font-size: var(--p-text-sm);
+    font-weight: var(--p-weight-medium);
+    color: var(--s-ink-muted);
+  }
+  .t-ordinal {
+    font-size: var(--p-text-xs);
+    font-weight: var(--p-weight-strong);
+    line-height: 1;
+  }
+  .t-title {
+    font-size: var(--p-text-lg);
+    font-weight: var(--p-weight-strong);
+    letter-spacing: -0.02em;
+  }
+  .t-timer {
+    font-size: var(--p-text-xl);
+    font-weight: var(--p-weight-strong);
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  @media (prefers-reduced-motion: reduce) {
+    .control,
+    .row {
+      transition: none;
+    }
+  }
+}
+
+@layer components {
+  /* A recording that looks identical to a stopped one is how a take gets
+     lost, so this is one of only two animations in the app. */
+  .rec-dot {
+    animation: rec-pulse 1.6s var(--p-ease) infinite;
+  }
+  @keyframes rec-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rec-dot {
+      animation: none;
+    }
+  }
+}

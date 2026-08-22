@@ -1,0 +1,82 @@
+/**
+ * LAYER 1 — PRIMITIVES
+ *
+ * Raw values with no meaning attached. A primitive never says what something
+ * is *for*, only what it is. Nothing outside layer 2 may reference these.
+ *
+ * Adding a primitive is cheap; using one directly in a component is the leak
+ * this layering exists to prevent, because it is what makes a theme
+ * unswitchable later.
+ */
+
+@layer primitives {
+  :root {
+    /* --- Cool neutral ramp -------------------------------------------------
+       Every step carries the same slight blue bias. That evenness is what
+       reads as chosen rather than as a default grey theme. */
+    --p-cool-950: #0b1016;
+    --p-cool-900: #101821;
+    --p-cool-850: #141b24;
+    --p-cool-800: #1d2632;
+    --p-cool-700: #263141;
+    --p-cool-600: #384454;
+    --p-cool-500: #5f6b7a;
+    --p-cool-400: #93a0b1;
+    --p-cool-300: #b9c2ce;
+    --p-cool-200: #d7dde5;
+    --p-cool-100: #eef1f5;
+    --p-cool-050: #f6f8fa;
+    --p-cool-000: #ffffff;
+
+    /* --- Amber: the human voice ------------------------------------------- */
+    --p-amber-600: #b87c22;
+    --p-amber-500: #e6a444;
+    --p-amber-400: #f0bb6e;
+    --p-amber-100: #f7e3c2;
+    --p-amber-950: #3a2a0c;
+
+    /* --- Red: the live recording moment, and nothing else ------------------ */
+    --p-red-600: #c8433a;
+    --p-red-500: #e2564a;
+    --p-red-100: #f8d6d2;
+    --p-red-950: #3a1512;
+
+    /* --- Warning: storage pressure ----------------------------------------- */
+    --p-warn-500: #d98b3a;
+    --p-warn-950: #3a2810;
+
+    /* --- Space. Doubling, so levels stay unconfusable. --------------------- */
+    --p-space-1: 4px;
+    --p-space-2: 6px;
+    --p-space-3: 8px;
+    --p-space-4: 14px;
+    --p-space-5: 20px;
+    --p-space-6: 28px;
+    --p-space-7: 40px;
+    --p-space-8: 56px;
+
+    /* --- Radius, related to control height --------------------------------- */
+    --p-radius-sm: 8px;
+    --p-radius-md: 10px;
+    --p-radius-lg: 14px;
+    --p-radius-xl: 18px;
+    --p-radius-full: 999px;
+
+    /* --- Type. Three sizes carry a whole screen. ---------------------------- */
+    --p-font-ui:
+      "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --p-text-xs: 11px;
+    --p-text-sm: 12px;
+    --p-text-md: 13px;
+    --p-text-lg: 21px;
+    --p-text-xl: 34px;
+    --p-weight-normal: 400;
+    --p-weight-medium: 500;
+    --p-weight-strong: 600;
+
+    /* --- Motion. Two durations; anything else is noise. --------------------- */
+    --p-dur-fast: 60ms;
+    --p-dur-base: 140ms;
+    --p-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  }
+}

@@ -1,0 +1,73 @@
+/**
+ * LAYER 2 — SEMANTIC
+ *
+ * Roles, not values. This is the only layer that knows about themes, and the
+ * only layer permitted to reference layer 1.
+ *
+ * The app ships dark by default: it is used in low light, on battery, and a
+ * theme switch is a decision nobody in a workshop should have to make. A light
+ * theme exists because direct equatorial sun is a real condition and a dark
+ * screen is unreadable in it — `data-theme="light"` on the root element, set
+ * once by whoever hands out the devices.
+ */
+
+@layer semantic {
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Surfaces form a ladder: the floor is darkest and every layer that comes
+       forward steps lighter. A forward surface darker than its parent reads as
+       a hole. */
+    --s-floor: var(--p-cool-950);
+    --s-surface: var(--p-cool-850);
+    --s-raised: var(--p-cool-800);
+    --s-overlay: var(--p-cool-700);
+    --s-edge: #222c39;
+
+    /* Three ink roles. None is pure white. */
+    --s-ink: #e7ecf3;
+    --s-ink-muted: var(--p-cool-400);
+    --s-ink-faint: var(--p-cool-500);
+
+    /* The single accent: audio that exists. */
+    --s-voice: var(--p-amber-500);
+    --s-voice-ink: #1a1206;
+    --s-voice-quiet: var(--p-amber-950);
+
+    /* Semantic, never decorative. */
+    --s-live: var(--p-red-500);
+    --s-live-ink: #ffffff;
+    --s-warn: var(--p-warn-500);
+
+    --s-focus: var(--p-amber-500);
+    --s-scrim: rgba(6, 9, 13, 0.92);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+
+    --s-floor: var(--p-cool-050);
+    --s-surface: var(--p-cool-000);
+    --s-raised: var(--p-cool-000);
+    --s-overlay: var(--p-cool-000);
+    --s-edge: var(--p-cool-200);
+
+    --s-ink: #101821;
+    --s-ink-muted: #4e5866;
+    --s-ink-faint: #7d8896;
+
+    /* Amber on white fails contrast as a text colour, so the light theme
+       spends the accent as a darker fill and keeps the same role. */
+    --s-voice: var(--p-amber-600);
+    --s-voice-ink: #ffffff;
+    --s-voice-quiet: var(--p-amber-100);
+
+    --s-live: var(--p-red-600);
+    --s-live-ink: #ffffff;
+    --s-warn: #a35f14;
+
+    --s-focus: var(--p-amber-600);
+    --s-scrim: rgba(255, 255, 255, 0.94);
+  }
+}
