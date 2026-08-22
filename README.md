@@ -78,8 +78,13 @@ there than in a browser tab).
 | `deploy-staging.yml` | PR merged to `main` → staging                                         |
 | `deploy-prod.yml`    | manual dispatch only                                                  |
 
-**Required repo secrets** (set these once the GitHub repo exists):
-`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`. Optional: `GITLEAKS_LICENSE`.
+**Repo secrets:** `CLOUDFLARE_ACCOUNT_ID` is set. **`CLOUDFLARE_API_TOKEN` is
+not** — mint it in the Cloudflare dashboard (Workers Scripts edit + Account
+read). The deploy workflows fail without it. The local `wrangler` login is an
+OAuth session, not an API token, and cannot stand in for one.
+
+The repo is `sethstoll3/tc-mobile` — **private and personal for now**, pending
+the tech-lead approval and recorded DRI an org repo requires.
 
 ## Architecture
 

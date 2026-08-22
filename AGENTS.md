@@ -96,8 +96,12 @@ Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`).
 There is no Worker script — these are static-asset deployments with SPA
 fallback. Repo secrets needed: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 
-Once the GitHub repo exists, CI owns deployment — no deploys from a local
-machine.
+CI owns deployment once the secrets are set — no deploys from a local machine.
+
+**`CLOUDFLARE_API_TOKEN` is not set yet**, so the deploy workflows will fail
+until it is. It must be minted in the Cloudflare dashboard (Workers Scripts
+edit + Account read); the local `wrangler` login is an OAuth session, not an
+API token, and cannot substitute for one. `CLOUDFLARE_ACCOUNT_ID` is set.
 
 ## Device testing — the HTTPS caveat
 
@@ -154,7 +158,15 @@ easy to regress.
 
 ## DRI
 
-**Seth Stoll** is building this. **Tim Jore** owns the requirements. A formal
-DRI and tech-lead approval for a uW org repo have **not** been recorded — per
-`dev-practices/new-project-checklist.md` those are prerequisites for creating
-the GitHub repo. This scaffold is local-only until that happens.
+**Seth Stoll** is building this. **Tim Jore** owns the requirements.
+
+**The repository is deliberately personal and private** —
+`sethstoll3/tc-mobile`, not `unfoldingWord/tc-mobile`. Per
+`dev-practices/new-project-checklist.md`, creating an org repo requires
+tech-lead approval and a recorded DRI, and neither exists yet. A private
+personal repo sidesteps that gate honestly rather than pre-empting it.
+
+**Moving it into the org later is the plan, and it is a real transfer** — the
+Cloudflare account is already unfoldingWord, so deployment does not change, but
+the repo secrets, the Actions history and any issue references do. Get the
+approval and the DRI recorded first.
