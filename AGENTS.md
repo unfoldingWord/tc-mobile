@@ -84,24 +84,40 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   while any connection is open, and a harness that resolves on `onblocked`
   silently carries the previous test's data forward.
 
-## Deployment
+## Branches and deployment
 
-| Environment | Worker              | Trigger                                  |
-| ----------- | ------------------- | ---------------------------------------- |
-| Per-PR      | `tc-mobile-pr-<N>`  | PR opened/synchronised; deleted on close |
-| Staging     | `tc-mobile-staging` | PR merged to `main`                      |
-| Production  | `tc-mobile`         | manual `workflow_dispatch` only          |
+```
+feature branch  ->  develop  ->  main
+                    (default)     (release)
+```
 
-Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`).
-There is no Worker script — these are static-asset deployments with SPA
-fallback. Repo secrets needed: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+`develop` is the default branch and where work lands. `main` is the release
+branch; promoting is a PR from `develop` to `main`, and that PR **is** the
+production gate.
 
-CI owns deployment once the secrets are set — no deploys from a local machine.
+**Cloudflare Workers Builds owns deployment**, connected directly to the GitHub
+repo. There are no deploy workflows in `.github/` — deleting them removed a
+real collision, since CF and Actions would otherwise both deploy on the same
+triggers, to different targets.
 
-**`CLOUDFLARE_API_TOKEN` is not set yet**, so the deploy workflows will fail
-until it is. It must be minted in the Cloudflare dashboard (Workers Scripts
-edit + Account read); the local `wrangler` login is an OAuth session, not an
-API token, and cannot substitute for one. `CLOUDFLARE_ACCOUNT_ID` is set.
+| Branch    | Cloudflare does                            | Result                             |
+| --------- | ------------------------------------------ | ---------------------------------- |
+| `main`    | `npm run build` then `npx wrangler deploy` | Production worker `tc-mobile`      |
+| any other | `npx wrangler versions upload`             | A preview version with its own URL |
+
+Preview versions per branch replace the per-PR ephemeral workers this repo used
+to create: native to Cloudflare, no cleanup job, no worker sprawl.
+
+Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The
+API token lives in Cloudflare's build settings, **not** in a GitHub secret —
+GitHub Actions no longer deploys anything, so it needs no Cloudflare
+credentials. Only `ci.yml` remains there.
+
+Add `docs/**` and `*.md` to Cloudflare's **Exclude paths**, or every
+documentation commit burns a build and redeploys.
+
+No deploys from a local machine except deliberate ones during this prototype
+phase.
 
 ## Device testing — the HTTPS caveat
 
@@ -120,7 +136,8 @@ easy to regress.
 
 ## Conventions
 
-- **Branches:** `<type>/<short-description>` — `feat/waveform-selection`.
+- **Branches:** `<type>/<short-description>` — `feat/waveform-selection`,
+  cut from `develop` and merged back by PR.
 - **Commits:** Conventional Commits. Subject _and_ body, neither blank.
 - **Pre-commit** (fast): lint-staged, typecheck. **Pre-push** (slow): tests, build.
 - **Never** `--no-verify`. Never suppress a lint rule or add a type suppression

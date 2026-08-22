@@ -39,28 +39,37 @@ npm run verify   # format:check + lint + typecheck + test + build
 Individually: `npm run lint`, `npm run typecheck`, `npm test`,
 `npm run format`, `npm run build`.
 
-## Deploy
+## Branches and deployment
 
-Static assets on Cloudflare Workers with SPA fallback — no backend
-([ADR 0005](docs/decisions/0005-no-backend-in-phase-1.md)). Cloudflare still
-deploys this as a Worker; it just has no script of its own.
-
-| Environment    | Worker              | URL                                                              |
-| -------------- | ------------------- | ---------------------------------------------------------------- |
-| **Staging**    | `tc-mobile-staging` | <https://tc-mobile-staging.unfoldingword.workers.dev> ✅ live    |
-| **Production** | `tc-mobile`         | `https://tc-mobile.unfoldingword.workers.dev` (not yet deployed) |
-| **Per-PR**     | `tc-mobile-pr-<N>`  | `https://tc-mobile-pr-<N>.unfoldingword.workers.dev`             |
-
-```bash
-npm run deploy:staging   # wrangler deploy --env staging
-npm run deploy           # production
+```
+feature branch  ->  develop  ->  main
+                    (default)     (release)
 ```
 
-Account: **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`).
+`develop` is the default branch. `main` is the release branch, and the
+`develop` -> `main` PR is the production gate.
+
+**Cloudflare Workers Builds deploys** straight from the repo — there are no
+deploy workflows in `.github/`.
+
+| Branch    | Result                                                            |
+| --------- | ----------------------------------------------------------------- |
+| `main`    | Production worker `tc-mobile`                                     |
+| any other | A preview version with its own URL                                |
+| staging   | `tc-mobile-staging`, deployed manually during the prototype phase |
+
+Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
+
+```bash
+npm run deploy:staging   # manual, during prototyping
+```
+
+Account: **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The API token
+lives in Cloudflare's build settings, not a GitHub secret.
 
 ### Testing on a phone
 
-Open the staging URL on the device. It is HTTPS, which matters —
+Open a deployed URL on the device. It is HTTPS, which matters —
 `getUserMedia` refuses to run outside a secure context, so a LAN address like
 `http://192.168.x.x` **cannot record audio** no matter what else is correct.
 
@@ -68,20 +77,11 @@ Add it to the home screen to exercise the installed PWA (standalone display,
 safe-area insets, and the iOS share-sheet export path all behave differently
 there than in a browser tab).
 
-### CI/CD
+### CI
 
-| Workflow             | Trigger                                                               |
-| -------------------- | --------------------------------------------------------------------- |
-| `ci.yml`             | every push and PR — format, lint, typecheck, test, build, secret scan |
-| `deploy-pr.yml`      | PR opened/updated → ephemeral Worker, URL commented on the PR         |
-| `cleanup-pr.yml`     | PR closed → ephemeral Worker deleted                                  |
-| `deploy-staging.yml` | PR merged to `main` → staging                                         |
-| `deploy-prod.yml`    | manual dispatch only                                                  |
-
-**Repo secrets:** `CLOUDFLARE_ACCOUNT_ID` is set. **`CLOUDFLARE_API_TOKEN` is
-not** — mint it in the Cloudflare dashboard (Workers Scripts edit + Account
-read). The deploy workflows fail without it. The local `wrangler` login is an
-OAuth session, not an API token, and cannot stand in for one.
+`ci.yml` only: full-history secret scan, format, lint, typecheck, test, build,
+and a check that the PWA service worker and manifest were emitted. It deploys
+nothing.
 
 The repo is `sethstoll3/tc-mobile` — **private and personal for now**, pending
 the tech-lead approval and recorded DRI an org repo requires.
