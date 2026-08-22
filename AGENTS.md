@@ -17,7 +17,7 @@ October 2026**, with production readiness targeted for **end of September 2026**
 | ------- | -------------------------------------------------------- |
 | Runtime | Node 22+                                                 |
 | Build   | Vite 7, `@vitejs/plugin-react`                           |
-| UI      | React 19, Tailwind CSS 4, `lucide-react`                 |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons          |
 | PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)             |
 | Storage | IndexedDB via `idb` 8                                    |
 | Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 |
@@ -83,6 +83,50 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   every object store**, not by `deleteDatabase`: deletion blocks indefinitely
   while any connection is open, and a harness that resolves on `onblocked`
   silently carries the previous test's data forward.
+
+## Engineering bar
+
+Small rules, each of which has already caught something real here.
+
+**Red first.** A test that has never been observed failing is not a test — it
+is a comment that costs CI time. Write it against the broken code and watch it
+fail before you fix. Where the code already exists, get the same signal by
+mutation.
+
+**Mutation is how coverage is proved.** For any T1 change: break the guard, run
+the suite, confirm a test dies. This is not theory — a review found one line
+added to `settle()` that left the winning clip permanently unstoppable (issue
+#2's exact symptom) while all eleven tests still passed. Line coverage would
+have read 100%.
+
+**Never claim verification you did not perform.** No docblock, comment or PR
+body may state that something is tested, verified, or checked on-device unless
+it was. This has been the single most recurrent defect class in this repo's
+review history — three separate passes wrote a false "verified" claim. A test
+file's name is a claim too: `save-failure.test.ts` covering only a string
+classifier invites a triage reader to mark a P1 fixed.
+
+**Idempotency is a property, not a policy.** Every write is safely re-runnable
+or documented as to why not. In practice that means: get-or-create in **one**
+transaction, never two; content-addressed clips so a repeated import dedupes
+instead of duplicating; append-only migrations. `ensureObsChapter` is the
+counter-example currently in the tree.
+
+**Errors have a channel before they have copy.** An unhandled rejection must
+reach an error boundary and a single sink — `console.error` is not a channel on
+a phone in a village. The _presentation_ is a separate question and is
+deliberately deferred: this UI is for people who may not read, so a text toast
+is close to useless. Prefer state-in-place — the control itself shows the
+condition — over a message bubble.
+
+**No sprawl, no duplicates, no stubs.** Nothing exported that nothing calls;
+nothing stubbed "for later." Enforced by `knip` in `npm run verify`, not by
+vigilance. It found an unused `zustand`, an unused `lucide-react` that this
+document itself claimed was the icon library, and three dead barrel files on
+its first run.
+
+**Do not ramp up before it is needed.** Every rule above pays for itself now.
+A rule that will pay off after October can wait until after October.
 
 ## Branches and deployment
 
