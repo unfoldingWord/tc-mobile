@@ -263,9 +263,21 @@ hardening into a decision nobody took.
 
 ### Not covered by tests, honestly
 
-MediaRecorder, `decodeAudioData`, and the share sheet are verified on-device
-only. **Nothing has been tested on real hardware yet** — and iOS is the
-platform most likely to break here.
+MediaRecorder, `decodeAudioData`, and the share sheet can only be verified
+on-device.
+
+**Updated 2026-08-22:** Seth and Tim have both run the staging deploy and
+report it functional, so the earlier claim here that nothing had been tested on
+real hardware is withdrawn. What a working happy path does _not_ exercise is
+the failure and interruption behaviour — a write that actually rejects, and
+`pagehide` landing inside a pending `decodeToCanonical`. Both P1s of review
+round 2 were exactly that second case. The remaining on-device check is
+therefore specific rather than general: **background the app immediately after
+tapping Stop on a long take, and confirm the recording still lands.** iOS is
+still the platform most likely to break here.
+
+There is also no export path at all yet (#18), so the share sheet is not merely
+untested — it does not exist.
 
 ### Next steps
 
