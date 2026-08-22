@@ -79,12 +79,32 @@ describe("clip storage", () => {
     expect(loaded?.samples.length).toBe(100);
   });
 
-  it("deletes both metadata and samples", async () => {
+  it("makes a deleted clip unreadable", async () => {
+    // The name is deliberately narrow: these two calls both go through
+    // `clipMeta`, so they say nothing about the samples. That is the test
+    // below.
     const id = newClipId();
     await putClip(id, samples(10), CANONICAL_SAMPLE_RATE);
     await deleteClip(id);
     expect(await getClipMeta(id)).toBeUndefined();
     expect(await getClip(id)).toBeUndefined();
+  });
+
+  it("deletes the samples too, not just the metadata", async () => {
+    // The test above cannot see this: `getClip` returns undefined as soon as
+    // the metadata is gone (clips.ts:58), so a `deleteClip` that dropped only
+    // `clipMeta` and left the PCM in `clipData` passes it, and
+    // `totalClipBytes` sums `clipMeta` so it cannot see the orphan either.
+    // Discarding a failed take deletes its clip precisely to give the bytes
+    // back on a phone that has just run out of room, so the data store is
+    // checked directly.
+    const id = newClipId();
+    await putClip(id, samples(1000), CANONICAL_SAMPLE_RATE);
+    const db = await getDb();
+    expect(await db.get("clipData", id)).toBeDefined();
+
+    await deleteClip(id);
+    expect(await db.get("clipData", id)).toBeUndefined();
   });
 
   it("reports total bytes held on device", async () => {
@@ -172,6 +192,27 @@ describe("project tree", () => {
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId, t3.clipId]);
+    expect(missing).toBe(1);
+  });
+
+  it("counts a segment whose active take has vanished as missing", async () => {
+    // The gap test above only exercises the `activeTakeId === null` branch.
+    // This is the other one: the segment still points at a take row that is no
+    // longer there. Dropping it from the export without counting it would make
+    // the UI report a chapter as complete while a section is silently absent
+    // from the MP3.
+    const project = await createProject("p");
+    const chapter = await addChapter(project.id, 1);
+    const s1 = await addSection(chapter.id, ref(1));
+    const s2 = await addSection(chapter.id, ref(2));
+    const t1 = await addTake(s1.segment.id, newClipId(), 100);
+    const dangling = await addTake(s2.segment.id, newClipId(), 100);
+
+    const db = await getDb();
+    await db.delete("takes", dangling.id);
+
+    const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
+    expect(clipIds).toEqual([t1.clipId]);
     expect(missing).toBe(1);
   });
 

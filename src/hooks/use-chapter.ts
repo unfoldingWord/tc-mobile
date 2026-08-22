@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { computePeaks } from "@/lib/audio/peaks";
 import { getStory, obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs";
-import { getClip, newClipId, putClip } from "@/lib/storage/clips";
+import { deleteClip, getClip, newClipId, putClip } from "@/lib/storage/clips";
 import {
   addChapter,
   addSection,
@@ -13,7 +13,16 @@ import {
 } from "@/lib/storage/projects";
 import { getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import {
+  discardSave,
+  failSave,
+  retrySave,
+  startSave,
+  succeedSave,
+  type PendingTake,
+} from "@/lib/takes/pending-take";
 import { narrationUrl } from "./obs-media";
+import { saveFailureKind } from "./save-failure";
 import type {
   ChapterId,
   ProjectId,
@@ -23,6 +32,15 @@ import type {
 import type { ChapterCard, SectionCard } from "@/types/view";
 
 const PEAK_BUCKETS = 120;
+
+/**
+ * The held recording and its transitions live in `lib/takes/pending-take.ts`.
+ *
+ * Re-exported here because this hook is where the type is consumed from, and
+ * because the move is the point: the state machine that decides whether a
+ * translator keeps or loses a take is now testable in plain Node.
+ */
+export type { PendingTake };
 
 /**
  * Load an OBS story as a working chapter, creating it on first open.
@@ -88,6 +106,26 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
 }
 
 /**
+ * A load, and the story it belongs to.
+ *
+ * The story number is part of the state rather than something compared against
+ * it afterwards, so there is no representable value that pairs one story's
+ * card with another story's number.
+ */
+type ChapterLoad =
+  | { readonly story: number; readonly status: "loading" }
+  | {
+      readonly story: number;
+      readonly status: "ready";
+      readonly card: ChapterCard;
+    }
+  | {
+      readonly story: number;
+      readonly status: "error";
+      readonly message: string;
+    };
+
+/**
  * Load an OBS story as a working chapter, creating it on first open.
  *
  * The catalogue supplies the shape (frames, artwork, order); IndexedDB supplies
@@ -95,9 +133,25 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
  * rather than in the row, so scrolling never walks raw samples.
  */
 export function useObsChapter(storyNumber: number) {
-  const [chapter, setChapter] = useState<ChapterCard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * One state, stamped with the story it describes.
+   *
+   * As three independent states this could report a chapter and a story that
+   * were not the same story: `loading` never went back to `true` and `chapter`
+   * was never cleared when `storyNumber` changed, so after a story change the
+   * screen kept rendering — and accepting taps on — the previous story's rows
+   * until the new chapter arrived. A tap there could open a section and start
+   * the microphone, and the arriving chapter then tore that section view down
+   * by a lookup that missed.
+   *
+   * Keying the state on the story answers staleness during render, where it
+   * cannot be raced, rather than in a second effect that has a window of its
+   * own.
+   */
+  const [load, setLoad] = useState<ChapterLoad>({
+    story: storyNumber,
+    status: "loading",
+  });
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -108,13 +162,14 @@ export function useObsChapter(storyNumber: number) {
         const card = await loadObsChapterCard(storyNumber);
         // Guards a story change or unmount landing after a slow read.
         if (cancelled) return;
-        setChapter(card);
-        setError(null);
+        setLoad({ story: storyNumber, status: "ready", card });
       } catch (cause) {
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        if (!cancelled) setLoading(false);
+        setLoad({
+          story: storyNumber,
+          status: "error",
+          message: cause instanceof Error ? cause.message : String(cause),
+        });
       }
     }
 
@@ -124,20 +179,129 @@ export function useObsChapter(storyNumber: number) {
     };
   }, [storyNumber, reloadToken]);
 
+  // A load belonging to a story we have left shows nothing at all — not its
+  // rows, not its error. Until the current story arrives the screen is honestly
+  // loading. A `reload` after a save keeps the same story, so a saved take
+  // never flashes the section view away.
+  const current = load.story === storyNumber ? load : null;
+  const chapter = current?.status === "ready" ? current.card : null;
+  const error = current?.status === "error" ? current.message : null;
+  const loading = current === null || current.status === "loading";
+
   const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
-  /** Persist a recording against a section and refresh the chapter. */
-  const saveTake = useCallback(
-    async (segmentId: SegmentId, samples: Int16Array) => {
-      const clipId = newClipId();
-      const meta = await putClip(clipId, samples, CANONICAL_SAMPLE_RATE);
-      await addTake(segmentId, clipId, meta.durationMs);
-      reload();
+  /**
+   * The one unsaved recording the app is holding.
+   *
+   * State rather than a ref, because it has to both survive a re-render *and*
+   * cause one — the recovery screen only exists if the store holding the audio
+   * is render-visible.
+   *
+   * The hook is mounted by `App`, which never unmounts, so the slot survives
+   * opening a section, leaving it, and changing story. Every transition of it
+   * is a pure function in `lib/takes/pending-take.ts`; what is left here is the
+   * writes, the slot, and the orphan delete.
+   */
+  const [pending, setPending] = useState<PendingTake | null>(null);
+
+  const commit = useCallback(
+    async (take: PendingTake): Promise<boolean> => {
+      try {
+        const meta = await putClip(
+          take.clipId,
+          take.samples,
+          CANONICAL_SAMPLE_RATE
+        );
+        await addTake(take.segmentId, take.clipId, meta.durationMs);
+        // Cleared only here, and only for this attempt. A `finally` would drop
+        // the samples on the failure path, which is the one path they exist
+        // for — and nothing would catch it: `tests/pending-take.test.ts`
+        // covers `failSave` carrying the samples through, not this hook, which
+        // has no renderer to drive it (checked by adding
+        // `finally { setPending(null) }` here: the suite stays green). This
+        // line and the `catch` above are the whole guard.
+        setPending((held) => succeedSave(held, take.clipId));
+        reload();
+        return true;
+      } catch (cause) {
+        console.error("Saving a take failed", cause);
+        setPending((held) =>
+          failSave(held, take.clipId, saveFailureKind(cause))
+        );
+        return false;
+      }
     },
     [reload]
   );
 
-  return { chapter, loading, error, reload, saveTake };
+  /**
+   * Persist a recording against a section and refresh the chapter.
+   *
+   * Never rejects: a failure becomes visible state instead, because the caller
+   * for this is a tap handler and a rejection there is an unhandled promise
+   * that renders nothing.
+   */
+  const saveTake = useCallback(
+    async (segmentId: SegmentId, samples: Int16Array): Promise<boolean> => {
+      const take = startSave(pending, {
+        segmentId,
+        // Minted here rather than per attempt: IndexedDB `put` is an upsert,
+        // so a retry with the same id overwrites the bytes a failed attempt
+        // may already have written instead of spending the space twice.
+        clipId: newClipId(),
+        samples,
+      });
+      // Identity means refused: a recording is already held, and displacing it
+      // is the silent loss all of this exists to prevent. Reaching this is an
+      // invariant break — the screens disable recording while a take is held —
+      // so it is logged rather than passed over quietly.
+      if (take === pending) {
+        console.error(
+          "A finished take was refused: one is already held",
+          pending.clipId
+        );
+        return false;
+      }
+      // Before the first await, so there is never a moment when the only
+      // reference to a finished take is a local inside a function that can
+      // throw.
+      setPending(take);
+      return commit(take);
+    },
+    [commit, pending]
+  );
+
+  const retryPendingTake = useCallback(() => {
+    const next = retrySave(pending);
+    // Identity means refused: nothing held, or a save already in flight.
+    if (!next || next === pending) return;
+    setPending(next);
+    void commit(next);
+  }, [commit, pending]);
+
+  /** Deliberate, confirmed loss of the held recording. */
+  const discardPendingTake = useCallback(() => {
+    const { next, orphan } = discardSave(pending);
+    setPending(next);
+    // Nothing references the bytes a failed attempt may already have written,
+    // so leaving them would hold exactly the space the save ran out of.
+    if (orphan) {
+      void deleteClip(orphan).catch((cause: unknown) => {
+        console.error("An unsaved clip could not be removed", cause);
+      });
+    }
+  }, [pending]);
+
+  return {
+    chapter,
+    loading,
+    error,
+    reload,
+    saveTake,
+    pendingTake: pending,
+    retryPendingTake,
+    discardPendingTake,
+  };
 }
 
 /**

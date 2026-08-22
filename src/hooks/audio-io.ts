@@ -1,6 +1,6 @@
 /**
  * Browser audio I/O — the only module that talks to MediaRecorder, Web Audio,
- * and getUserMedia.
+ * getUserMedia, and the media element the reference narration plays through.
  *
  * Everything below `hooks/` is deliberately free of these APIs so the audio
  * core stays unit-testable in Node. The device-specific mess is concentrated
@@ -194,4 +194,76 @@ export async function playSamples(
       Math.min(buffer.duration, offset + (ctx.currentTime - startedAt)),
     duration: buffer.duration,
   };
+}
+
+let narrationElement: HTMLAudioElement | null = null;
+
+/**
+ * The reference narration plays through a media element rather than through
+ * the AudioContext: it is a remote MP3 that should stream, not a decoded
+ * buffer this app holds in memory.
+ *
+ * One element, reused, for the same reason `getAudioContext` keeps one
+ * context — a tap is cheap and repeated, and every `new Audio()` would be one
+ * more object the page keeps alive. It also keeps the element that a real user
+ * gesture first started as the only one this app ever plays, which is the
+ * shape iOS is strict about.
+ */
+function getNarrationElement(): HTMLAudioElement {
+  narrationElement ??= new Audio();
+  return narrationElement;
+}
+
+export interface NarrationPlayback {
+  /** Pause the narration and detach its end callback. */
+  stop: () => void;
+  /**
+   * Resolves once playback has begun; rejects if it could not begin.
+   *
+   * Kept separate from `stop` on purpose: the caller needs something it can
+   * hand to the audio session *before* this settles. Note that pausing a
+   * pending `play()` rejects it, so a rejection here is not proof of a
+   * failure — it is also what stopping in time looks like.
+   */
+  started: Promise<void>;
+}
+
+/**
+ * Start the reference narration from `url`.
+ *
+ * Returns synchronously rather than awaiting `play()`, so the caller can hand
+ * the stop handle to the arbiter in the same task as the tap: a narration
+ * whose handle only exists after `play()` resolves is a narration nothing can
+ * stop while it is still loading.
+ */
+export function startNarration(
+  url: string,
+  options: { onEnded?: () => void } = {}
+): NarrationPlayback {
+  const el = getNarrationElement();
+  if (el.src !== url) el.src = url;
+  el.onended = () => options.onEnded?.();
+  const started = el.play();
+
+  return {
+    started,
+    stop: () => {
+      el.pause();
+      el.onended = null;
+    },
+  };
+}
+
+/**
+ * Pause the narration and return it to the start.
+ *
+ * A no-op until something has actually played: leaving a screen must not be a
+ * reason to create a media element.
+ */
+export function resetNarration(): void {
+  const el = narrationElement;
+  if (!el) return;
+  el.pause();
+  el.onended = null;
+  el.currentTime = 0;
 }

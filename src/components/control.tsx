@@ -15,6 +15,11 @@ interface ControlProps {
   disabled?: boolean;
   size?: number;
   className?: string;
+  /**
+   * Take focus on mount. Only for a control that *is* the screen — the
+   * recovery overlay — where landing anywhere else is landing nowhere.
+   */
+  autoFocus?: boolean;
 }
 
 const VARIANT_CLASS: Record<ControlVariant, string> = {
@@ -33,12 +38,14 @@ export function Control({
   disabled,
   size,
   className,
+  autoFocus,
 }: ControlProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      autoFocus={autoFocus}
       aria-label={label}
       title={label}
       className={cn("control", VARIANT_CLASS[variant], className)}

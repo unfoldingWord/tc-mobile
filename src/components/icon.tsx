@@ -18,7 +18,9 @@ export type IconName =
   | "prev"
   | "next"
   | "speaker"
-  | "trash";
+  | "trash"
+  | "alert"
+  | "retry";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -109,6 +111,44 @@ const PATHS: Record<IconName, React.ReactNode> = {
         fill="none"
         stroke="currentColor"
         strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  alert: (
+    <>
+      <path
+        d="M11 3.6 19.4 18.4H2.6z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11 8.8v3.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+      <circle cx="11" cy="15.4" r="1.05" fill="currentColor" />
+    </>
+  ),
+  retry: (
+    <>
+      <path
+        d="M17 11a6 6 0 1 1-1.9-4.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M16.6 3.2v3.9h-3.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
