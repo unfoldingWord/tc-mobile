@@ -18,7 +18,11 @@
 export interface ObsFrame {
   /** 1-based position within the story. */
   readonly frame: number;
-  /** Absolute URL of the frame artwork on the Door43 CDN (360px JPEG). */
+  /**
+   * Absolute URL of the full-size frame artwork on the Door43 CDN (360px).
+   * Used only where the picture is actually looked at — the recording view.
+   * The list uses the bundled thumbnail; see `thumbUrl` in `@/lib/obs/catalog`.
+   */
   readonly image: string;
   /** The frame's narrative text. Not shown on the primary path — see ADR 0006. */
   readonly text: string;

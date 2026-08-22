@@ -31,10 +31,12 @@ export interface DownloadProgress {
 }
 
 /**
- * Download one story's artwork (and optionally its narration) for offline use.
+ * Download one story's FULL-SIZE artwork (and optionally its narration).
  *
- * Downloads are per story, not all-or-nothing: all fifty stories' artwork is
- * ~44 MB, which is not something to impose on a shared phone without asking.
+ * Thumbnails are bundled with the app, so the section list never needs this —
+ * it works offline on first run. This covers only the 360px frames shown in
+ * the recording view, where the translator is actually looking at the picture,
+ * and the narration MP3 used as reference audio.
  *
  * Individual frame failures do not abort the download — a story that is
  * fifteen-sixteenths available is far more useful in a workshop than none of

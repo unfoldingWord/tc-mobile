@@ -122,9 +122,11 @@ slot was specified before we knew we would have pictures.
 
 **Two things this adds to the screen:**
 
-1. **Per-story download state.** Artwork is fetched per story (44 MB for all 598
-   frames — ADR 0006), so a row can now exist whose picture is not on the device
-   yet. Added to A2 below.
+1. **~~Per-story download state.~~ Superseded.** Artwork was going to be fetched
+   per story, adding a "picture not downloaded" row state. It has since been
+   bundled instead — all 598 thumbnails are 2.5 MB (ADR 0006) — so that state
+   **cannot occur and has been removed** from A2. A state deleted beats a state
+   handled well.
 2. **Reference audio.** OBS ships narration MP3s, so a section can now have
    something to _listen to_ before recording — Shema Studio's "pinned reference"
    pattern (`docs/research/prior-art.md` §1). **Deliberately not added to this
@@ -203,7 +205,6 @@ The happy state is the one that gets designed by default. These are the rest.
 | **Row: never recorded**              | Distinguishable from "recorded silence" — not just an absent waveform.                                                             |
 | **Row: recorded**                    | Waveform, duration, playable.                                                                                                      |
 | **Row: mid-record**                  | The row currently being captured, live.                                                                                            |
-| **Row: picture not downloaded**      | OBS chapter whose artwork is not yet on the device. Falls back to sound-and-position identity; must not render as broken.          |
 | **Long chapter** — 50 sections       | The list scrolls; region 2 becomes load-bearing; position must survive scrolling.                                                  |
 | **Short chapter** — 1 section        | Must not look broken or empty.                                                                                                     |
 | **No microphone permission**         | The recording control cannot silently do nothing. Recovery without reading a paragraph.                                            |

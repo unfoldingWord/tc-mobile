@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import catalog from "@/data/obs-catalog.json";
-import { obsFrameScope, OBS_BOOK_CODE } from "@/lib/obs/catalog";
+import { obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs/catalog";
 import { isValidScope, parseScope } from "@/lib/scripture/scope";
 import type { ObsCatalog } from "@/types/obs";
 
@@ -99,5 +99,34 @@ describe("obsFrameScope", () => {
 
   it("uses OBS as the book code", () => {
     expect(OBS_BOOK_CODE).toBe("OBS");
+  });
+});
+
+describe("bundled thumbnails", () => {
+  it("maps a frame to its zero-padded local path", () => {
+    expect(thumbUrl(1, 7)).toBe("/obs/thumbs/obs-01-07.jpg");
+    expect(thumbUrl(50, 17)).toBe("/obs/thumbs/obs-50-17.jpg");
+  });
+
+  it("is a same-origin path, never the CDN", () => {
+    // The list must work offline on first run; a CDN URL here would silently
+    // reintroduce a network dependency on the primary path.
+    for (const story of obs.stories.slice(0, 3)) {
+      for (const frame of story.frames) {
+        const url = thumbUrl(story.story, frame.frame);
+        expect(url.startsWith("/obs/thumbs/")).toBe(true);
+        expect(url).not.toMatch(/^https?:/);
+      }
+    }
+  });
+
+  it("generates a unique path for every frame in the catalogue", () => {
+    const seen = new Set<string>();
+    for (const story of obs.stories) {
+      for (const frame of story.frames) {
+        seen.add(thumbUrl(story.story, frame.frame));
+      }
+    }
+    expect(seen.size).toBe(598);
   });
 });

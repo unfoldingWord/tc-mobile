@@ -25,32 +25,57 @@ OBS maps onto the domain model with no translation at all:
 
 ### What is bundled, and what is not
 
-| Asset                       | Size                               | Decision                                                                                                                                              |
-| --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Story text + frame metadata | 230 KB                             | **Bundled** — `src/data/obs-catalog.json`, built by `scripts/build-obs-catalog.mjs`. Loaded by dynamic `import()` so it stays out of the entry chunk. |
-| Frame artwork, 360px        | ~77 KB each, **44 MB for all 598** | **Not bundled.** Fetched per story on demand into IndexedDB.                                                                                          |
-| Frame artwork, 2160px       | ~600 MB total                      | Not used. Only 360px and 2160px exist; 2160px is not viable.                                                                                          |
-| Story narration MP3, 32kbps | ~1 MB per story                    | Not bundled. Optional per-story download.                                                                                                             |
+**Revised 22 Aug 2026.** The first version of this ADR kept all artwork out of
+the bundle on the grounds that it was 44 MB. That measured the wrong thing.
 
-Verified: the Door43 CDN serves `Access-Control-Allow-Origin: *` on both
-artwork and narration, so the PWA fetches them directly — no proxy, no Worker,
-consistent with ADR 0005.
+The CDN publishes frames at 360px and 2160px only, but the section list renders
+tiles at 48–56px. Centre-cropped and downscaled to 128px (2x the largest tile),
+**the entire 598-frame set is 2.5 MB** — sixteen times smaller than the source,
+and small enough to simply ship.
 
-Downloads are **per story, not all-or-nothing.** 44 MB is not something to
-impose on a shared phone without asking, and a partially-downloaded story is
-still useful in a workshop — so individual frame failures are counted and
-reported rather than aborting the download.
+| Asset                                 | Size       | Decision                                                                                  |
+| ------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                 |
+| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled and precached** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs` |
+| Full-size artwork, 360px              | 46.8 MB    | Fetched per story into IndexedDB, for the recording view only                             |
+| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                        |
+| Story narration MP3, 32kbps           | ~1 MB each | Optional per-story download                                                               |
 
-Media lives in IndexedDB rather than the Cache API because a story downloaded
-for field use is not a cache: it is content the translator is relying on, and
-it must be durable, countable against the storage budget (ADR 0002), and
-removable one story at a time.
+**What bundling bought, beyond offline-on-first-run:**
+
+1. **It deletes a state from the design.** Pass A's inventory carried a "picture
+   not downloaded" row state. With thumbnails bundled, the list can never be in
+   it — the artwork is always there. A state removed is worth more than a state
+   handled well.
+2. **It removes the download dance from the primary path.** No per-story
+   download prompt stands between a translator and their section list.
+3. **It removes a network dependency from the thing the app is for.** A
+   facilitator installs over wifi and then goes to the field; waiting for a
+   story to be browsed once before its pictures cache would strand them. The
+   thumbnails are in the service-worker precache for exactly this reason.
+
+Full-size artwork is still fetched on demand, because the recording view is the
+only place the picture is actually looked at, and 46.8 MB is still not
+something to impose on a shared phone.
+
+Verified: the Door43 CDN serves `Access-Control-Allow-Origin: *` on artwork and
+narration, so on-demand fetches need no proxy and no Worker (ADR 0005).
+
+Media fetched at runtime lives in IndexedDB rather than the Cache API because a
+story downloaded for field use is content the translator is relying on: it must
+be durable, countable against the storage budget (ADR 0002), and removable one
+story at a time.
 
 ## Licensing
 
 - **OBS text:** CC BY-SA 4.0, © unfoldingWord.
 - **Artwork:** © Sweet Publishing, CC BY-SA 3.0.
 - **This repository:** MIT.
+
+**Modification disclosure.** CC BY-SA requires indicating what changes were
+made. The bundled thumbnails are **centre-cropped to a square and downscaled to
+128px** from the published 360px frames. Nothing else is altered. Recorded here
+and in `scripts/build-obs-thumbs.mjs`.
 
 Bundling the catalogue is redistribution, so attribution is required and
 travels **inside the catalogue JSON itself** (`attribution` field, asserted by

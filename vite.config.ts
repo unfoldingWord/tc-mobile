@@ -16,9 +16,13 @@ export default defineConfig({
       // discovering service-worker problems only after a deploy.
       devOptions: { enabled: true, type: "module" },
       workbox: {
-        // Audio lives in IndexedDB, not the Cache API — the SW only needs to
-        // make the app shell itself available offline.
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // Audio lives in IndexedDB, not the Cache API. The OBS thumbnails do
+        // get precached (598 files, 2.5 MB): a facilitator installs this over
+        // wifi and then goes to the field, so waiting for a story to be
+        // browsed once before its pictures cache would strand them.
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,jpg}"],
+        // 598 thumbnails push the precache past the 2 MiB default.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: "index.html",
         cleanupOutdatedCaches: true,
       },
