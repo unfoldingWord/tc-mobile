@@ -32,9 +32,10 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * themselves are covered by `tests/storage.test.ts`. The wiring between them
  * has no automated coverage and needs a specific on-device check that has not
  * been run: fill the device, record, and confirm the recovery screen appears
- * and that Retry reuses the same clip. The staging build has been exercised on
- * real devices and is functional, but a *successful* save exercises none of
- * this — the failure path only opens when the write actually rejects.
+ * and that Retry reuses the same clip. Record and playback were verified on a
+ * device on 2026-08-22 and work — but a *successful* save exercises none of
+ * this. The failure path only opens when the write actually rejects, which on
+ * a phone with room to spare it never does.
  */
 
 const SEGMENT = "seg-1" as SegmentId;
