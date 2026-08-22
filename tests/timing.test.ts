@@ -28,6 +28,15 @@ describe("parseTimecode", () => {
     expect(parseTimecode("00:01:00.000")).toBe(60000);
   });
 
+  it("carries the hours field into the result", () => {
+    // Every other case here has `hh` = 00, so dropping the hours term from the
+    // arithmetic entirely leaves them all passing. An hour is not hypothetical
+    // in a chapter-length narration, and the failure is silent: the playhead
+    // lands an hour early on a real timestamp.
+    expect(parseTimecode("01:00:00.000")).toBe(3_600_000);
+    expect(parseTimecode("02:03:04.500")).toBe(7_384_500);
+  });
+
   it("accepts the comma decimal separator SRT uses", () => {
     expect(parseTimecode("00:00:11,500")).toBe(11500);
   });
@@ -77,6 +86,21 @@ banana
 non-numeric identifier
 `);
     expect(out).toEqual([]);
+  });
+
+  it("ignores the cue settings WebVTT allows after the end timestamp", () => {
+    // `align:start` and friends are legal WebVTT and are what ordinary
+    // subtitle tooling emits — the shape parse.ts:57 says it strips. Without
+    // the strip the whole cue is not merely skipped: `parseTimecode` sees
+    // "00:00:11.566 align:start", splits it into four parts and throws, so one
+    // stray setting takes down the entire file.
+    const out = parseWebVtt(`WEBVTT
+
+1
+00:00:00.000 --> 00:00:11.566 align:start position:0%
+The creation
+`);
+    expect(out).toEqual([{ frame: 1, startMs: 0, endMs: 11566 }]);
   });
 
   it("handles CRLF line endings", () => {
@@ -138,6 +162,18 @@ describe("validateFrameTimings", () => {
     ).toThrow(/ends before it starts/);
   });
 
+  it("rejects a zero-length span", () => {
+    // `frameAt` matches on `positionMs >= startMs && positionMs < endMs`
+    // (registry.ts:76), so a frame whose span is empty can never be the frame
+    // sounding at any position — the same "frame that can never be matched"
+    // failure the non-finite guard exists to prevent, reached by a different
+    // route. This is what the `<=` in the span check is carrying: with `<` the
+    // whole rest of this file still passes.
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: 100, endMs: 100 }])
+    ).toThrow(/ends before it starts/);
+  });
+
   it("rejects overlapping spans", () => {
     expect(() =>
       validateFrameTimings([
@@ -145,6 +181,146 @@ describe("validateFrameTimings", () => {
         { frame: 2, startMs: 100, endMs: 300 },
       ])
     ).toThrow(/overlaps/);
+  });
+
+  // What follows guards issue #7. The claim, scoped to what was actually
+  // checked: `git show develop:src/lib/timing/parse.ts` was executed against
+  // every input below, and it ACCEPTED all of them except two, which it
+  // rejected with the wrong reason — those two are marked inline. NaN is why
+  // most of them got through: it makes every relational operator false, so an
+  // unchecked non-finite timestamp satisfies both the span and the overlap
+  // guard and reaches `frameAt`, which can then never match it.
+  //
+  // The last two cases in this block assert acceptance, not rejection. They
+  // are over-strictness guards on the new rule and hold identically under the
+  // old one; they are not evidence of anything the old rule let through.
+  it("rejects a NaN startMs", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: NaN, endMs: 5000 }])
+    ).toThrow(/non-finite timestamp/);
+  });
+
+  it("rejects a NaN endMs", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: 0, endMs: NaN }])
+    ).toThrow(/non-finite timestamp/);
+  });
+
+  it("stops a NaN endMs from disabling the overlap check for later frames", () => {
+    // The old loop carried NaN forward as `previousEnd`, so every subsequent
+    // `startMs < previousEnd` was false and this whole list was accepted.
+    expect(() =>
+      validateFrameTimings([
+        { frame: 1, startMs: 0, endMs: NaN },
+        { frame: 2, startMs: 50, endMs: 100 },
+      ])
+    ).toThrow(/Frame 1 has a non-finite/);
+  });
+
+  it("rejects an infinite endMs", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: 0, endMs: Infinity }])
+    ).toThrow(/non-finite timestamp/);
+  });
+
+  it("names -Infinity as non-finite rather than as an overlap", () => {
+    // One of the two the old rule did reject, and it rejected it for the wrong
+    // reason: the `previousEnd = -1` sentinel made the *first* frame report an
+    // overlap with a previous frame that does not exist. Verified by running
+    // develop's `validateFrameTimings` on this input — it threw
+    // "Frame 1 overlaps the previous frame".
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: -Infinity, endMs: 100 }])
+    ).toThrow(
+      "Frame 1 has a non-finite timestamp (startMs=-Infinity, endMs=100)"
+    );
+  });
+
+  it("rejects a negative startMs", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: -1, endMs: 100 }])
+    ).toThrow(/negative timestamp/);
+  });
+
+  it("rejects a negative endMs as a sign fault, not a reversed span", () => {
+    // The other one the old rule rejected with the wrong reason: verified by
+    // running develop's `validateFrameTimings` on this input — it threw
+    // "Frame 1 ends before it starts", blaming the ordering rather than the
+    // sign, so the message pointed a reader at the wrong field.
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: 0, endMs: -5 }])
+    ).toThrow(/negative timestamp/);
+  });
+
+  it("rejects frame 0 — frames are 1-based", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: 0, startMs: 0, endMs: 100 }])
+    ).toThrow(/Invalid frame number 0 at index 0/);
+  });
+
+  it("rejects a negative frame number", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: -3, startMs: 0, endMs: 100 }])
+    ).toThrow(/Invalid frame number -3/);
+  });
+
+  it("rejects a fractional frame number", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: 1.5, startMs: 0, endMs: 100 }])
+    ).toThrow(/1-based integers/);
+  });
+
+  it("rejects a NaN frame number", () => {
+    expect(() =>
+      validateFrameTimings([{ frame: NaN, startMs: 0, endMs: 100 }])
+    ).toThrow(/Invalid frame number NaN/);
+  });
+
+  it("rejects a repeated frame number", () => {
+    // Duplicates make `frameStart`'s `.find` silently pick the first match.
+    expect(() =>
+      validateFrameTimings([
+        { frame: 1, startMs: 0, endMs: 100 },
+        { frame: 1, startMs: 100, endMs: 200 },
+      ])
+    ).toThrow(/appears more than once/);
+  });
+
+  it("rejects frames that are not in ascending order", () => {
+    // Both shipped parsers sort, so unsorted frames can only come from a
+    // provider — which is exactly the untrusted boundary this guards.
+    expect(() =>
+      validateFrameTimings([
+        { frame: 2, startMs: 0, endMs: 100 },
+        { frame: 1, startMs: 100, endMs: 200 },
+      ])
+    ).toThrow(/is out of order after frame 2/);
+  });
+
+  it("reports a non-adjacent repeat as out of order", () => {
+    // Uniqueness falls out of strict monotonicity rather than a Set, so a
+    // repeat that is not adjacent is named by the ordering rule. Pinned here
+    // so the wording reads as a decision rather than a bug.
+    expect(() =>
+      validateFrameTimings([
+        { frame: 1, startMs: 0, endMs: 100 },
+        { frame: 2, startMs: 100, endMs: 200 },
+        { frame: 1, startMs: 200, endMs: 300 },
+      ])
+    ).toThrow(/out of order/);
+  });
+
+  it("accepts fractional milliseconds", () => {
+    // Only frame numbers must be integers: sub-millisecond precision cannot
+    // produce a wrong playhead, so refusing it would refuse good data.
+    expect(() =>
+      validateFrameTimings([{ frame: 1, startMs: 0.5, endMs: 100.25 }])
+    ).not.toThrow();
+  });
+
+  it("accepts an empty list", () => {
+    // Zero frames is "nothing here", decided by the provider before this runs.
+    expect(() => validateFrameTimings([])).not.toThrow();
   });
 });
 
@@ -205,6 +381,19 @@ describe("registry", () => {
     const result = await loadChapterTiming(OBS1);
     expect(result.timing).toBeNull();
     expect(result.errors[0]?.message).toMatch(/overlaps/);
+  });
+
+  it("rejects timing whose frames can never be matched", async () => {
+    // A non-finite startMs used to pass validation and then fail every
+    // `frameAt` comparison, which is the silent version of no timing at all.
+    registerTimingProvider(
+      staticTimingProvider("non-finite", [
+        { ...timing, frames: [{ frame: 1, startMs: NaN, endMs: 5000 }] },
+      ])
+    );
+    const result = await loadChapterTiming(OBS1);
+    expect(result.timing).toBeNull();
+    expect(result.errors[0]?.message).toMatch(/non-finite timestamp/);
   });
 
   it("refuses to register the same id twice", () => {

@@ -115,18 +115,71 @@ export function parseBurritoAlignment(doc: unknown): FrameTiming[] {
 /**
  * Reject timing that would point at the wrong audio.
  *
+ * The contract a `ChapterTiming` must satisfy before anything downstream may
+ * trust it: frame numbers are 1-based integers, strictly increasing (so also
+ * unique), timestamps are finite and non-negative, every span runs forward, and
+ * no span overlaps its predecessor.
+ *
  * Overlapping or reversed spans are the failure mode that produces a
- * confidently-wrong playhead, which is worse than having no timing at all.
+ * confidently-wrong playhead, which is worse than having no timing at all. ADR
+ * 0007 makes that the rule at this boundary: reject, never coerce. Sorting,
+ * filtering or clamping here would hide the fault in the provider that emitted
+ * it — if a provider needs its frames sorted, it sorts them before returning.
+ *
+ * The checks run identity → frame ordering → finiteness → sign → span → overlap
+ * because each stage may only use values an earlier stage has already proven
+ * usable. Finiteness in particular must precede every relational test: NaN makes
+ * `<` and `<=` false, so an unchecked NaN satisfies the ordering guards and
+ * survives all the way to `frameAt`, which can then never match it.
+ *
+ * Fractional milliseconds are accepted deliberately. Sub-millisecond precision
+ * cannot produce a wrong playhead, so rejecting it would only refuse legitimate
+ * provider data. Only frame *numbers* must be integers.
  */
 export function validateFrameTimings(frames: readonly FrameTiming[]): void {
-  let previousEnd = -1;
-  for (const f of frames) {
+  let previousFrame: number | null = null;
+  let previousEnd = 0;
+
+  for (const [index, f] of frames.entries()) {
+    // Identity first: without a usable frame number, no later message can name
+    // the frame it is complaining about.
+    if (!Number.isInteger(f.frame) || f.frame < 1) {
+      throw new Error(
+        `Invalid frame number ${String(f.frame)} at index ${index}: frames are 1-based integers`
+      );
+    }
+    // Strict monotonicity is what enforces uniqueness; the equality branch
+    // exists only so an adjacent duplicate is named as a duplicate.
+    if (previousFrame !== null && f.frame === previousFrame) {
+      throw new Error(`Frame ${f.frame} appears more than once`);
+    }
+    if (previousFrame !== null && f.frame < previousFrame) {
+      throw new Error(
+        `Frame ${f.frame} is out of order after frame ${previousFrame}`
+      );
+    }
+    // Before any timestamp comparison — see the note on NaN above.
+    if (!Number.isFinite(f.startMs) || !Number.isFinite(f.endMs)) {
+      throw new Error(
+        `Frame ${f.frame} has a non-finite timestamp (startMs=${String(f.startMs)}, endMs=${String(f.endMs)})`
+      );
+    }
+    if (f.startMs < 0 || f.endMs < 0) {
+      throw new Error(
+        `Frame ${f.frame} has a negative timestamp (startMs=${String(f.startMs)}, endMs=${String(f.endMs)})`
+      );
+    }
     if (f.endMs <= f.startMs) {
       throw new Error(`Frame ${f.frame} ends before it starts`);
     }
+    // `previousEnd` starts at 0 rather than a negative sentinel: a negative
+    // start can no longer reach this line, and a sentinel below zero made the
+    // first frame report an overlap with a previous frame that does not exist.
     if (f.startMs < previousEnd) {
       throw new Error(`Frame ${f.frame} overlaps the previous frame`);
     }
+
+    previousFrame = f.frame;
     previousEnd = f.endMs;
   }
 }
