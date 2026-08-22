@@ -258,4 +258,6 @@ Deliberately left open rather than quietly resolved:
 Approve, redirect, or reject the job list and state inventory above.
 No visual work starts until this is answered.
 
-**Recorded decision:** _(pending)_
+**Recorded decision: APPROVED, 22 Aug 2026.** Approved with the OBS content
+decision folded in (see the revision above). Pass B is recorded in
+[`section-screen-pass-b.md`](section-screen-pass-b.md).
