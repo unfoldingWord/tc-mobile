@@ -106,6 +106,61 @@ honour `prefers-reduced-motion`.
 at all — it sits behind the row, one step away. An undo beats a confirmation,
 and a wordless undo beats both. It needs its own gate.
 
-## ▸ GATE 2 — awaiting human decision
+## ▸ GATE 2 — approved, 22 Aug 2026
 
-**Recorded decision:** _(pending)_
+**Recorded decision: APPROVED.** Composition, tokens and the four states
+accepted as shown.
+
+## ▸ GATE 3 — the A0 re-read
+
+Gate 3 exists to ask one question: **is the A0 sentence still true of the
+result?** If it is, nothing was fixed. The honest answer is _mostly not, but
+not entirely_ — recorded clause by clause rather than claimed as a clean pass.
+
+> "This will be for a translator who cannot read, and the way it fails is by
+> being built as though it has never met one — (a) a list whose rows are told
+> apart by text, (b) whose progress is announced in words, and (c) whose
+> destructive moments are confirmed with a sentence."
+
+| Clause                                                | Verdict                       | Evidence                                                                                                  |
+| ----------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **(a)** rows told apart by text                       | **False of the result**       | Rows are told apart by artwork (OBS) or waveform shape and position (user-created). No labels, no titles. |
+| **(b)** progress announced in words                   | **False of the result**       | Progress is a filled track; the count is digits. No sentence anywhere.                                    |
+| **(c)** destructive moments confirmed with a sentence | **STILL TRUE of the product** | Delete was moved off this screen rather than solved. The failure is avoided here, not fixed.              |
+
+### Residual 1 — deferred, not solved
+
+Clause (c) is not fixed. Nothing on this screen destroys anything, so the
+screen passes — but the product still has no wordless way to confirm a
+destructive action. **It needs its own pass through this process**, and it
+should happen before delete ships anywhere.
+
+### Residual 2 — "no text" is not "no reading"
+
+The composed screen still asks the translator to read **digits**: ordinals,
+`0:34` durations, `4 / 16`. Digits travel across scripts far better than words,
+which is why they were chosen — but numeracy and literacy are not the same
+skill, and a fully non-numerate user gets less from this screen than the A0
+sentence implies we intended.
+
+Not a blocker, and not a reason to remove the digits — they help most users.
+But **the claim is "no words", not "no reading"**, and the difference should be
+stated plainly rather than quietly enjoyed. Worth a question to Tim about what
+the Nukak workshop actually observed.
+
+### Residual 3 — the invisible text layer
+
+A zero-text UI still needs a **complete text layer for screen readers**. Every
+control in the composition carries an accessible label, and those labels are
+shipped strings that the visible design review never sees. They need a voice
+owner and a localisation path exactly as visible copy would.
+
+This is easy to miss precisely because the screen has no visible words.
+
+## Handoff
+
+| What                                                 | To whom                                  |
+| ---------------------------------------------------- | ---------------------------------------- |
+| Numbers — spacing levels, control sizes, radii, type | Settled in B0 above, per `ui-craft`      |
+| Strings — accessible labels only                     | **Unowned.** Needs a voice owner.        |
+| The build                                            | Code. See the risk tiers in `AGENTS.md`. |
