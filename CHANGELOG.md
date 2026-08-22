@@ -22,3 +22,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   export MP3 on a real device.
 - 53 unit tests covering the audio core, scope grammar, and storage layer.
 - Docs: spec transcription, prior-art research, and five ADRs.
+- Cloudflare deployment: staging, production, and per-PR ephemeral Workers,
+  with GitHub Actions for CI, PR deploy/cleanup, staging, and production.
+  Staging is live at <https://tc-mobile-staging.unfoldingword.workers.dev>.

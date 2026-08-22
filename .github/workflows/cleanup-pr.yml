@@ -1,0 +1,56 @@
+name: Cleanup PR Worker
+
+# Deletes the per-PR ephemeral Worker when a PR closes. Without this, the
+# ephemeral Workers from deploy-pr.yml accumulate in the account forever.
+
+on:
+  pull_request:
+    types: [closed]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".gitignore"
+
+jobs:
+  cleanup:
+    name: Delete ephemeral Worker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      WORKER_NAME: tc-mobile-pr-${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Delete the Worker
+        id: delete
+        # --force is required non-interactively: wrangler 4.x prompts for
+        # confirmation even without a TTY, so the step would otherwise hang.
+        run: npx --yes wrangler@^4 delete "$WORKER_NAME" --force
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        continue-on-error: true
+
+      - name: Comment on the closed PR
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          WORKER_NAME: ${{ env.WORKER_NAME }}
+          DELETE_OUTCOME: ${{ steps.delete.outcome }}
+        with:
+          script: |
+            const name = process.env.WORKER_NAME;
+            const ok = process.env.DELETE_OUTCOME === "success";
+            const body = ok
+              ? `### PR cleanup complete\n\nDeleted ephemeral Worker \`${name}\`.`
+              : `### PR cleanup attempted\n\nCould not delete \`${name}\` — it may never have been deployed, or was already removed. Check the Cloudflare dashboard if one still exists.`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

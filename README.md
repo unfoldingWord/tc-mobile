@@ -42,12 +42,44 @@ Individually: `npm run lint`, `npm run typecheck`, `npm test`,
 ## Deploy
 
 Static assets on Cloudflare Workers with SPA fallback — no backend
-([ADR 0005](docs/decisions/0005-no-backend-in-phase-1.md)).
+([ADR 0005](docs/decisions/0005-no-backend-in-phase-1.md)). Cloudflare still
+deploys this as a Worker; it just has no script of its own.
+
+| Environment    | Worker              | URL                                                              |
+| -------------- | ------------------- | ---------------------------------------------------------------- |
+| **Staging**    | `tc-mobile-staging` | <https://tc-mobile-staging.unfoldingword.workers.dev> ✅ live    |
+| **Production** | `tc-mobile`         | `https://tc-mobile.unfoldingword.workers.dev` (not yet deployed) |
+| **Per-PR**     | `tc-mobile-pr-<N>`  | `https://tc-mobile-pr-<N>.unfoldingword.workers.dev`             |
 
 ```bash
-npm run deploy:staging
-npm run deploy
+npm run deploy:staging   # wrangler deploy --env staging
+npm run deploy           # production
 ```
+
+Account: **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`).
+
+### Testing on a phone
+
+Open the staging URL on the device. It is HTTPS, which matters —
+`getUserMedia` refuses to run outside a secure context, so a LAN address like
+`http://192.168.x.x` **cannot record audio** no matter what else is correct.
+
+Add it to the home screen to exercise the installed PWA (standalone display,
+safe-area insets, and the iOS share-sheet export path all behave differently
+there than in a browser tab).
+
+### CI/CD
+
+| Workflow             | Trigger                                                               |
+| -------------------- | --------------------------------------------------------------------- |
+| `ci.yml`             | every push and PR — format, lint, typecheck, test, build, secret scan |
+| `deploy-pr.yml`      | PR opened/updated → ephemeral Worker, URL commented on the PR         |
+| `cleanup-pr.yml`     | PR closed → ephemeral Worker deleted                                  |
+| `deploy-staging.yml` | PR merged to `main` → staging                                         |
+| `deploy-prod.yml`    | manual dispatch only                                                  |
+
+**Required repo secrets** (set these once the GitHub repo exists):
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`. Optional: `GITLEAKS_LICENSE`.
 
 ## Architecture
 

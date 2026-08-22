@@ -1,0 +1,66 @@
+name: Deploy Production
+
+# Production is manual-dispatch only, from main. There are no automatic
+# production deploys.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (format, lint, typecheck, test, build)
+        run: npm run verify
+
+      - name: Security audit
+        run: npm audit --omit=dev --audit-level=moderate
+
+  deploy:
+    name: Deploy to Production
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Confirm the PWA artefacts were emitted
+        run: |
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+
+      - name: Deploy
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
