@@ -155,6 +155,29 @@ easy to regress.
 - **Never** swallow an error silently. If a `catch` is genuinely empty, the
   comment must say why.
 
+## Review — every PR, both reviewers
+
+Two independent reviewers run on every code PR: **Frank** (codex, diff-local)
+and **George** (grok, deep-tree). They are two lenses, never a primary and a
+fallback — a PR is review-clean only when **both** are clean.
+
+```bash
+scripts/review/both.sh <base>          # run both
+scripts/review/triage.sh <round> <pr>  # build the round's triage comment
+```
+
+**A triage comment is mandatory every round**, including clean rounds. Every
+finding gets an explicit disposition — FIXED with a commit, REFUTED with
+file:line evidence, or DEFERRED with a tracking issue — attributed to the
+reviewer that raised it and stamped with the head SHA. A finding that was
+"addressed" with nothing posted is not verifiable later.
+
+P1 and P2 block merge. P3 is deferred to an issue unless the fix is trivial.
+Hitting the round cap with findings open is an **escalation, not an approval**.
+
+Full process, and the traps that make a failed run look like a clean pass, in
+[`docs/review/dual-review.md`](docs/review/dual-review.md).
+
 ## Risk tiers
 
 | Tier   | Examples here                                        | Bar                                                                                                               |

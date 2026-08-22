@@ -42,6 +42,50 @@ scripts/review/both.sh [base]      # both, sequentially
 
 `base` defaults to `main`. Reports are written to `.review/` (git-ignored).
 
+## The triage comment — mandatory, every round
+
+**One triage comment per round, on the PR.** No exceptions, including a round
+where both reviewers found nothing.
+
+```bash
+scripts/review/both.sh <base>        # run both reviewers
+scripts/review/triage.sh <round> <pr>  # build the comment, then post it
+```
+
+`triage.sh` extracts every finding from both reports, attributes each to the
+lens that raised it, pulls both verdicts, and stamps the head SHA. You fill in
+the disposition for each — **FIXED** with a commit, **REFUTED** with file:line
+evidence, or **DEFERRED** with a tracking issue — and post it.
+
+Why it is not optional: _"the agent addressed it"_ with nothing posted on the
+PR is not verifiable later. The comment is the audit trail. **Never silently
+ignored, never silently fixed.**
+
+### Rules the comment has to satisfy
+
+- **Every finding gets a disposition.** Not a summary — a line per finding.
+- **Attribute each to its source**, so the trail shows which lens caught what.
+- **Name the head SHA.** Dual sign-off is defined against the current head:
+  any push after a clean statement invalidates **both** reviewers until each
+  re-posts.
+- **A clean round still gets a comment** — `round N clean (Frank + George) @
+<sha>`. Silence is not sign-off.
+- **Never write "Frank + George" when only one has posted.** Say so per
+  reviewer.
+- **Low-severity findings are deferred to an issue, not dropped** — unless the
+  fix is trivial enough to just do, in which case it is FIXED like any other.
+
+### Convergences are worth calling out
+
+Findings both lenses raise independently are historically the highest-confidence
+class in a round. The triage template has a section for them; use it.
+
+### Capped is not clean
+
+Hitting the round cap with findings still open is an **escalation, not an
+approval**. It blocks merge until the residual findings are named and explicitly
+accepted. "We ran out of rounds" is never sign-off.
+
 ## Traps, each of which cost a dead run on bt-servant-admin-portal
 
 These are not theoretical. They were paid for across 13 review rounds there and
