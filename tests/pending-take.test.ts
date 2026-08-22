@@ -29,10 +29,12 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * slot surviving a re-render, and the recovery screen taking over are all
  * outside this module. `discardSave` reports which clip is orphaned; it does not
  * delete it, and nothing here asserts that a delete happened. The storage calls
- * themselves are covered by `tests/storage.test.ts`. The wiring between them is
- * **not verified at all yet** — it needs an on-device check (fill the device,
- * record, confirm the recovery screen and that Retry reuses the clip), and as
- * of 2026-08-22 nothing in this project has run on real hardware.
+ * themselves are covered by `tests/storage.test.ts`. The wiring between them
+ * has no automated coverage and needs a specific on-device check that has not
+ * been run: fill the device, record, and confirm the recovery screen appears
+ * and that Retry reuses the same clip. The staging build has been exercised on
+ * real devices and is functional, but a *successful* save exercises none of
+ * this — the failure path only opens when the write actually rejects.
  */
 
 const SEGMENT = "seg-1" as SegmentId;

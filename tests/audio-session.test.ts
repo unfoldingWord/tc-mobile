@@ -10,9 +10,10 @@ import { createAudioSession, type Stoppable } from "@/lib/audio/session";
  * What is NOT covered here, and is not coverable: everything the hook does
  * with the result. There is no jsdom and no renderer in this project, and
  * jsdom implements neither MediaRecorder nor AudioContext, so `useAudioSession`
- * and the screens can only be verified on-device — and as of 2026-08-22 that
- * check has not been run: nothing in this project has touched real hardware.
- * See AGENTS.md.
+ * and the screens can only be verified on-device. The staging build has been
+ * exercised on real devices and is functional; what remains unverified is the
+ * *interruption* behaviour these tests model — backgrounding the app mid-decode,
+ * and a second tap landing inside a pending one. See AGENTS.md.
  *
  * In particular, "the session never stops the microphone" is not asserted
  * below and cannot be: it is a property of `hooks/use-audio-session.ts`, which
