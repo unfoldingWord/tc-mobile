@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tc-mobile",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+
+  // Phase 1 is entirely offline and client-side: there is no Worker script and
+  // no backend. This is a static-asset deployment with SPA fallback, which is
+  // all that is needed to hand a tester an HTTPS URL on a phone.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+  },
+
+  "env": {
+    "staging": {
+      "name": "tc-mobile-staging",
+      "assets": {
+        "directory": "./dist",
+        "not_found_handling": "single-page-application",
+      },
+    },
+  },
+}
