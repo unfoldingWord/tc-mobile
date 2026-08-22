@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
 # Reviewer A — Frank (Codex). Diff-local lens, principal-engineer register.
 #
-# NOTE: `codex exec review --base` refuses a custom PROMPT argument, which would
-# mean losing both the persona and the diff-local lens and getting Codex's
-# generic review instead. So Frank runs through plain `codex exec` with the diff
-# written to disk — the same shape George uses.
+# Invocation proven on bt-servant-admin-portal across 13 review rounds
+# (PRs #267/#268/#271, #302). Two hard-won details:
+#
+#   1. `-c sandbox_mode="danger-full-access"` is REQUIRED. Codex's bubblewrap
+#      sandbox cannot create a namespace in this container (no unprivileged
+#      userns), and a sandboxed run cannot read the diff at all — it returns a
+#      "could not inspect" non-review that reads like a clean pass if you only
+#      skim the verdict. Treat any such phrasing as a FAILED run, never as
+#      approval. The container is the isolation boundary; the tree is verified
+#      unchanged after the run.
+#   2. `codex exec review --base` and a custom PROMPT are mutually exclusive.
+#      Using `--base` would silently discard the persona and the lens and run
+#      Codex's generic review, so Frank goes through plain `codex exec` with
+#      the diff written to disk.
+#
+# Codex reviews the COMMITTED diff, so uncommitted edits do not affect it.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/review/_preamble.sh "${1:-main}"
@@ -59,7 +71,9 @@ is a defect here even where it would be style elsewhere:
 - No silently swallowed errors; an empty catch must say why it is empty.
 
 Rules of engagement:
-- Read-only. Do NOT modify any file, do not commit, do not run the test suite.
+- READ-ONLY. Do not modify, create or delete any file. Do not commit. Do not
+  run the test suite or the build. The working tree is checked after this run
+  and any mutation voids the review.
 - The full diff under review is at $DIFF_FILE — read it first.
 - Your FINAL message must be the complete report, not narration about it.
 
@@ -71,6 +85,31 @@ $SEVERITY_RULES
 PROMPT_EOF
 
 echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
-codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
+TREE_BEFORE="$(snapshot_tree)"
+
+codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
+  "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
+
+assert_tree_unchanged "$TREE_BEFORE"
+
+# A sandbox failure produces a plausible-looking REQUEST_CHANGES with nothing
+# assessed. That is a failed run, not a review — fail loudly rather than let it
+# be mistaken for signal.
+#
+# Detect it by the REPORT's own shape, never by scanning for error strings: the
+# transcript echoes the diff, and when this script is itself under review a
+# substring match finds its own source. ("P1: Not assessed" is the dud
+# signature; a real review says "No P1 findings".)
+if ! grep -qE "APPROVE|REQUEST_CHANGES" "$REPORT"; then
+  echo >&2
+  echo "FAILED RUN: Frank produced no verdict — stalled or cancelled." >&2
+  exit 3
+fi
+if grep -qiE "^\**P1\**:?[[:space:]]*\**Not assessed" "$REPORT"; then
+  echo >&2
+  echo "FAILED RUN: Frank assessed nothing. This is not a review." >&2
+  exit 3
+fi
+
 echo
 echo "Report: $REPORT"

@@ -42,6 +42,72 @@ scripts/review/both.sh [base]      # both, sequentially
 
 `base` defaults to `main`. Reports are written to `.review/` (git-ignored).
 
+## Traps, each of which cost a dead run on bt-servant-admin-portal
+
+These are not theoretical. They were paid for across 13 review rounds there and
+are handled in the scripts.
+
+### Codex (Frank)
+
+- **`-c sandbox_mode="danger-full-access"` is required.** Codex's bubblewrap
+  sandbox cannot create a namespace in this container (no unprivileged userns).
+  A sandboxed run cannot read the diff at all and returns a _"could not
+  inspect"_ non-review — which **reads like a clean pass if you only skim the
+  verdict**. Treat any such output as a FAILED run, never as approval. The
+  container is the isolation boundary, and the tree is verified unchanged after.
+- **`codex exec review --base` and a custom prompt are mutually exclusive.**
+  Passing `--base` silently discards the persona and the lens and runs Codex's
+  generic review. Frank therefore goes through plain `codex exec`.
+- Codex reviews the **committed** diff, so uncommitted edits do not affect it.
+
+### Grok (George)
+
+- **The default permission mode silently cancels** the session the moment the
+  model reaches for a terminal command. Grant `--allow read_file --allow grep
+--allow list_dir` explicitly _and_ state in the prompt that terminal is
+  forbidden.
+- **Prompts over ~14KB are offloaded to a file** the model must read back — so
+  never tell it "you have no tools", or it cannot recover its own prompt.
+- **Output ending on narration is a stalled run, not a pass.** Require that the
+  final message be the complete report, and treat narration-only output as a
+  retry.
+- George reads **files from disk** via `--cwd`, not the committed diff.
+
+### The loop rule
+
+> **Wait for BOTH reviewers to finish before applying any fix, and commit
+> before launching the next round.**
+
+Frank reads the committed diff; George reads the worktree. Editing files while
+George is running corrupts its review — it sees the diff and the disk disagree.
+Frank usually finishes first and tempts an immediate edit. Don't.
+
+### Knowing when to stop looping
+
+Frank tends to return roughly one finding per round, each a refinement of the
+previous round's fix — a chain. George returns more, and deeper. When rounds
+keep surfacing **new siblings of the same defect class**, that is the signal to
+stop fixing case by case and open a follow-up issue for a systematic pass.
+
+### Why both, always
+
+On bt-servant-admin-portal, Codex posted clean four times where Grok found a
+real authorization gap in untouched code. **The asymmetry is the point — never
+run one as a fallback for the other.**
+
+## Guard design notes
+
+Two guards exist, and both were wrong on the first attempt:
+
+1. **Read-only verification** compares content hashes, not `--stat`. Frank's
+   own review of this pipeline caught that a stat comparison misses an edit
+   preserving insertion/deletion counts, and misses content changes to
+   untracked files entirely.
+2. **Failed-run detection** keys on the report's _shape_ (no verdict, or
+   "P1: Not assessed"), never on scanning for error strings. The transcript
+   echoes the diff, so when the review scripts are themselves under review a
+   substring match finds its own source and reports a false failure.
+
 ## Provenance
 
 The George preamble is reproduced from the prompts bt-servant-admin-portal

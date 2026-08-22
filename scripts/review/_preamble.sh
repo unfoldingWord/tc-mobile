@@ -14,6 +14,39 @@ fi
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 DIFF_STAT="$(git diff --stat "$BASE"...HEAD | tail -1)"
 
+# Read-only is asserted in the reviewer prompt; these two functions VERIFY it.
+#
+# Codex's own bubblewrap sandbox cannot create a namespace inside this
+# container, so a sandboxed run cannot read the diff at all — it reports "no
+# evidence" and assesses nothing. The reviewers therefore run unsandboxed, with
+# the container as the isolation boundary. That makes the read-only promise
+# something to check rather than something to trust.
+snapshot_tree() {
+  git rev-parse HEAD
+  git status --porcelain
+  # Content hashes, not --stat. Frank's own review of this file caught that a
+  # stat comparison misses an edit preserving insertion/deletion counts (swap a
+  # word on an already-modified line) and misses content changes to untracked
+  # files entirely, since porcelain records only their paths.
+  git diff HEAD --binary | sha256sum
+  git ls-files --others --exclude-standard -z \
+    | xargs -0r sha256sum 2>/dev/null \
+    | sha256sum
+}
+
+assert_tree_unchanged() {
+  local before="$1"
+  local after
+  after="$(snapshot_tree)"
+  if [ "$before" != "$after" ]; then
+    echo >&2
+    echo "REVIEWER MUTATED THE WORKING TREE — this review is void." >&2
+    diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") >&2 || true
+    return 1
+  fi
+  echo "Read-only verified: working tree unchanged."
+}
+
 REPO_CONTEXT="tc-mobile — an offline-first PWA for oral Bible translation \
 (React 19 + Vite + TypeScript strict + Tailwind 4, no backend). \
 Onion architecture types -> lib -> hooks -> components -> app, enforced by \
