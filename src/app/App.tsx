@@ -241,6 +241,11 @@ export function App() {
           onOpen={(s) => navigate({ sectionId: s.sectionId })}
           onQuickAction={(s) => {
             if (s.durationMs === null) {
+              // A take is already waiting to be written, so recording is
+              // refused. Opening the section anyway would strand the translator
+              // on a screen whose record control does nothing; the Notice on
+              // this screen is already saying why.
+              if (pendingTake) return;
               navigate({ sectionId: s.sectionId });
               // Still nothing awaited before the microphone is asked for: iOS
               // spends the user activation on the first await.

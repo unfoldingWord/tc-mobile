@@ -38,8 +38,14 @@ export function SaveFailed({
   onRetry,
   onDiscard,
 }: SaveFailedProps) {
-  const [armed, setArmed] = useState(false);
+  // The arming remembers WHICH attempt it belongs to, rather than just that it
+  // happened. The buttons unmount during a retry but this component does not,
+  // so a plain boolean would carry the confirmation across Retry — and the next
+  // single tap would delete the only copy of the take. Deriving it means a new
+  // attempt, or a retry in flight, disarms on its own. Two taps mean two taps.
+  const [armedAt, setArmedAt] = useState<number | null>(null);
   const saving = state === "saving";
+  const armed = armedAt === attempts && !saving;
 
   return (
     <div
@@ -91,7 +97,7 @@ export function SaveFailed({
               }
               variant="quiet"
               className={armed ? "text-[var(--s-live)]" : undefined}
-              onClick={() => (armed ? onDiscard() : setArmed(true))}
+              onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
               <p className="text-[12px]" style={{ color: "var(--s-live)" }}>

@@ -165,38 +165,56 @@ export function useRecorder(): UseRecorder {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === "inactive") return null;
 
+    // Everything this stop needs is captured HERE, before the first await.
+    // The rule the two awaits below force: **the audio belongs to this
+    // invocation, the UI state belongs to the current generation.**
+    //
+    // Stop is the translator confirming a take. A `pagehide` landing while we
+    // decode must release the microphone without destroying what they already
+    // confirmed — so the chunks and the stream are held as locals. `cancel()`
+    // reassigns `chunksRef.current` to a fresh array and clears `streamRef`;
+    // neither reaches the array and stream this call is holding.
     const generation = generationRef.current;
+    const chunks = chunksRef.current;
+    const stream = streamRef.current;
     clearTick();
     setState("processing");
 
     const blob = await new Promise<Blob>((resolve) => {
       recorder.onstop = () => {
-        resolve(new Blob(chunksRef.current, { type: recorder.mimeType }));
+        resolve(new Blob(chunks, { type: recorder.mimeType }));
       };
       recorder.stop();
     });
 
-    releaseStream();
+    // Only our own stream. `releaseStream()` reads the shared ref, which by now
+    // may hold a NEWER recording's stream — releasing that would cut off a
+    // recording in progress.
+    if (stream) abandonStream(stream);
 
-    if (generation !== generationRef.current || blob.size === 0) {
-      setState("idle");
+    if (blob.size === 0) {
+      if (generation === generationRef.current) setState("idle");
       return null;
     }
 
     try {
       const samples = await decodeToCanonical(blob);
-      // Decoding awaits, so a cancel() — or a newer recording — can land here.
-      // Returning samples from a superseded stop hands a take to a caller that
-      // has already moved on, and sets state on a recorder it no longer owns.
-      if (generation !== generationRef.current) return null;
-      setState("idle");
+      // Returned even when superseded: these are confirmed samples, and the
+      // caller decides what to do with them. Only the shared UI state is
+      // withheld, because a newer recording owns it now.
+      if (generation === generationRef.current) setState("idle");
       return samples;
     } catch {
-      setState("idle");
-      setError("Recording could not be decoded on this device.");
+      // Guarded: a decode failure from a superseded attempt must not paint an
+      // error over a recorder that `cancel()` has already reset, or over a
+      // recording that has since started.
+      if (generation === generationRef.current) {
+        setState("idle");
+        setError("Recording could not be decoded on this device.");
+      }
       return null;
     }
-  }, [clearTick, releaseStream]);
+  }, [abandonStream, clearTick]);
 
   const cancel = useCallback(() => {
     generationRef.current++;

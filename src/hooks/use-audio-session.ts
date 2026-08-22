@@ -239,6 +239,11 @@ export function useAudioSession(): UseAudioSession {
   }, [beginRecording, claimFloor, supported]);
 
   const stopRecording = useCallback(async (): Promise<Int16Array | null> => {
+    // Snapshot BEFORE the await. `startRecording` writes every new claim into
+    // the same ref, so reading it afterwards would hand us a *newer*
+    // recording's token — and releasing that is precisely the bug this token
+    // exists to prevent, one level up.
+    const token = micTokenRef.current;
     try {
       return await endRecording();
     } catch (cause) {
@@ -251,9 +256,10 @@ export function useAudioSession(): UseAudioSession {
       // floor may have moved on to a *newer* recording, which is also "mic":
       // matching on the kind would release that one's claim and leave it
       // capturing with `session.live` null. The token identifies the claim.
-      const token = micTokenRef.current;
       if (token !== null && session.isCurrent(token)) {
-        micTokenRef.current = null;
+        // Clear only if the ref still names OUR claim: a newer recording that
+        // has already written its own token must keep it.
+        if (micTokenRef.current === token) micTokenRef.current = null;
         session.stopAll();
       }
     }
