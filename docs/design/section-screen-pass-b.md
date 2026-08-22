@@ -106,6 +106,66 @@ honour `prefers-reduced-motion`.
 at all — it sits behind the row, one step away. An undo beats a confirmation,
 and a wordless undo beats both. It needs its own gate.
 
+## ▸ GATE 2 REDIRECT — resolved 22 Aug 2026
+
+48px tiles were rejected as too small. Three options were composed at real
+phone width; the resolution went further than a size change.
+
+### One rule, governing two questions
+
+> **A chapter with artwork is browsed by picture; a chapter without one is
+> browsed by sound.**
+
+|                     | Artwork (OBS)                 | No artwork (user-made)               |
+| ------------------- | ----------------------------- | ------------------------------------ |
+| Layout              | 2-column picture grid, ~150px | List, 48px tile, full-width waveform |
+| Tap a section       | Enters the section view       | Plays in place                       |
+| Identity carried by | The picture                   | The waveform and its position        |
+
+Layout and tap behaviour are the same conditional, so this costs one branch,
+not two designs. Both render the same row data.
+
+### The section view — tap to enter
+
+Reframed during review: tapping a frame is **navigation into the work surface**,
+not an enlarge gesture competing with play. That removes the choice-load
+objection entirely — one tap, one meaning.
+
+Three states: not-yet-recorded (the only bright thing is record), recorded (play
+takes the amber, re-record demotes beside it), and recording (everything but the
+frame, the timer and stop is gone, **including the stepper** — nothing to press
+by accident mid-take). Prev/next stepping means a translator never returns to
+the list between frames, matching Shema Studio's pattern.
+
+This also relaxes the tile-size problem: if a tap opens the frame full-width,
+the list tile only has to narrow it down, not confirm it.
+
+### Reference audio — in v1, and story-level only
+
+**Verified before designing it:** unfoldingWord publishes no frame-level OBS
+audio and no timing data. Per-frame MP3s 404; narration exists only as one file
+per story, several minutes long; `en_obs` contains no VTT, cue or timing files.
+
+So the reference control plays **the whole story**. Useful — a translator can
+hear the story before working — but **not record-along**, because reaching frame
+7's narration means scrubbing past six. Estimating frame boundaries from text
+length would put a plausible-looking wrong marker on scripture audio, so it is
+not done.
+
+**Worth raising with Tim and Benjamin Wright:** Scripture Burrito already
+defines exactly the format this needs — a timing file mapping VTT timecodes to
+references (`docs/research/prior-art.md` §4). uW simply does not publish one for
+OBS audio. If one existed, frame-aligned reference playback becomes a small
+change rather than a new feature.
+
+### What this costs
+
+- The grid drops **duration** from the cell — no room beside a waveform and a
+  control at that width. It survives in the section view. Real information loss,
+  flagged rather than absorbed.
+- The grid's waveform narrows from ~190px to ~150px.
+- Reference audio widens v1 scope: a second audio path and a per-story download.
+
 ## ▸ GATE 2 — approved, 22 Aug 2026
 
 **Recorded decision: APPROVED.** Composition, tokens and the four states
