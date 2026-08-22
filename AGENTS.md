@@ -68,12 +68,29 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 - `fake-indexeddb` backs the storage tests. Call `closeDb()` before
   `deleteDatabase` — an open connection blocks deletion indefinitely.
 
+## Deployment
+
+| Environment | Worker              | Trigger                                  |
+| ----------- | ------------------- | ---------------------------------------- |
+| Per-PR      | `tc-mobile-pr-<N>`  | PR opened/synchronised; deleted on close |
+| Staging     | `tc-mobile-staging` | PR merged to `main`                      |
+| Production  | `tc-mobile`         | manual `workflow_dispatch` only          |
+
+Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`).
+There is no Worker script — these are static-asset deployments with SPA
+fallback. Repo secrets needed: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+
+Once the GitHub repo exists, CI owns deployment — no deploys from a local
+machine.
+
 ## Device testing — the HTTPS caveat
 
 `getUserMedia` requires a secure context. `localhost` qualifies;
 `http://192.168.x.x` does **not**. So `npm run dev:lan` alone will _not_ let a
-phone record. Use a tunnel (`cloudflared tunnel --url http://localhost:5173`)
-or deploy to staging.
+phone record. Use a tunnel (`cloudflared tunnel --url http://localhost:5173`),
+a per-PR Worker, or staging:
+
+**<https://tc-mobile-staging.unfoldingword.workers.dev>**
 
 **Test on real iOS at least once per meaningful audio change.** iOS Safari is
 the platform most likely to break here: it produces mp4/aac rather than
