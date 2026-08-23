@@ -125,6 +125,41 @@ as the thing that should drive every other decision; it is now an aspiration to
 be tested rather than a requirement to design against. Breadcrumbs, menus and
 labels in the mockups are intended, not shorthand.
 
+
+## Decisions, 2026-08-23
+
+Taken after the answers above. Each names what it closes.
+
+| # | Decision | Consequence |
+| - | -------- | ----------- |
+| **D1** | `Take` stays in the schema, hidden, 1:1 with its segment | Phase 2's Segment Takes Management is additive. One unused indirection now beats migrating twice against field audio. |
+| **D2** | Undo is an **operation log**, not buffer copies | `cut(range)` / `insert(at, clipRef)` replayed from the original. "Undo is just keeping the previous buffer" costs ~16 MB per step on a 3-minute segment; a log costs bytes and survives a restart. |
+| **D3** | **MP3 on Finished** | PCM while a segment is being edited; transcode to 64 kbps and drop the PCM when the translator marks it Finished. ~660 MB becomes ~66 MB. Closes the storage strategy in #12. |
+| **D4** | **MicroSD via the share sheet only** | No web API writes to removable media. The OS picker can target the card, so SD is an export destination rather than storage. No wrapper, ADR 0005 unchanged. |
+| **D5** | **Reference audio is out of Phase 1** | No mockup shows it. The timing seam (ADR 0007) stays built and inert; the narration control comes out of the section view. |
+| **D6** | **Artwork becomes optional per-segment illustration** | Supplied by the OBS template rather than defining the browse layout. Picture-navigation survives for non-readers without making the app OBS-shaped. Revisits ADR 0006's image-first grid. |
+
+### What D3 pulls in
+
+Transcoding on Finished puts the encoder on a user-visible path, which makes
+ADR 0003's open item — MP3 encoding runs on the main thread — a blocker rather
+than a known nuisance. A Web Worker is now required, not deferred.
+
+### What D2 pulls in
+
+An operation log means edits must be expressible as data: a range and a source.
+`lib/audio/edit.ts` already works this way — `cut` takes a range, `insertAt`
+takes a position and a buffer — so the log is a record of calls it already
+accepts. Recorded inserts reference a clip id rather than inlining samples.
+
+### What D5 and D6 free up
+
+Between them these retire most of what made the app OBS-shaped: the image-first
+grid, the narration control, and the CDN artwork path. Three deferred round-1
+findings live in exactly that code — #1 (artwork from the CDN, never the cache)
+and #9 (uncached narration with errors swallowed) may be resolved by deletion
+rather than repair.
+
 ## Taxonomy delta
 
 Page 3 writes the model out directly:
