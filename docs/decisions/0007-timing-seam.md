@@ -37,9 +37,14 @@ Two things worth knowing before anyone spends time on this:
   entries. There is no `sw`, `am`, `om`, `ti`, `so`, `lg`, `luo`, `rw`, `ny` or
   `sn`. Multi-language narration is a real Phase-2 capability and a dead end
   for the East Africa training.
-- **`src/hooks/obs-media.ts` hardcodes the English v6 chapter URL**, which is
-  byte-identical to `en_obs`'s `media.yaml` `chapter_url` template. The
-  coupling is real; `media.yaml` is the discoverable source of the same string.
+- **`src/hooks/obs-media.ts:16` hardcodes the English v6 chapter URL.** Verified
+  2026-08-23 by fetching
+  `https://git.door43.org/unfoldingWord/en_obs/raw/branch/master/media.yaml`:
+  its `mp3` entry carries
+  `chapter_url: 'https://cdn.door43.org/en/obs/v6/{quality}/en_obs_{chapter}_{quality}.mp3'`,
+  which is our string with `{quality}` → `${quality}` and `{chapter}` → `${id}`.
+  The coupling is real and `media.yaml` is the discoverable source of it — so a
+  future change should read the template rather than re-hardcode it.
 
 The _format_ however is settled: Scripture Burrito's alignment spec defines
 `type: "audio-reference"`, mapping VTT timecodes to scripture references
@@ -88,5 +93,8 @@ timing file per story, frame-aligned reference playback becomes a registration
 here rather than a feature — and record-along is the thing that makes this app
 usable in an actual workshop.
 
-Raise with **Tim Jore** and **Benjamin Wright** (who has already solved burrito
-round-tripping in the browser).
+Raise with **Rich Mahn** first — he published the 92-language OBS audio in July
+2026 by running Whisper over YouTube audio to split it into stories, so the one
+answerable question is whether that segmentation kept its timecodes. Then **Tim
+Jore** for the product call and **Benjamin Wright** for the burrito timing
+shape (he has already solved burrito round-tripping in the browser).

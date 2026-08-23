@@ -123,9 +123,17 @@ class in a round. The triage template has a section for them; use it.
 
 ### Capped is not clean
 
-Hitting the round cap with findings still open is an **escalation, not an
-approval**. It blocks merge until the residual findings are named and explicitly
-accepted. "We ran out of rounds" is never sign-off.
+**The cap is 4 rounds.** Hitting it with findings still open is an
+**escalation, not an approval**. It blocks merge until the residual findings are
+named and explicitly accepted. "We ran out of rounds" is never sign-off.
+
+**At the cap, ask rather than stop.** Report which shape the round has, using
+the distinction the section above already draws: a **chain** (Frank's pattern —
+roughly one finding per round, each a refinement of the previous fix) is
+converging and often deserves one more round; **siblings** (George's pattern —
+new instances of the same defect class) mean the fix approach is wrong and
+another round will not help. The round number cannot tell those apart. A person
+reading the last round's findings can, so the decision is theirs.
 
 ## Traps, each of which cost a dead run on bt-servant-admin-portal
 

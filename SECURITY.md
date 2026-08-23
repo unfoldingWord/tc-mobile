@@ -22,7 +22,8 @@ The consequences worth thinking about are therefore mostly local:
 - Audio recorded by translators is stored unencrypted in browser storage. Any
   other code running on that origin, or anyone with the unlocked device, can
   read it.
-- Exported MP3s leave via the OS share sheet and are then outside our control.
+- No export path exists yet (#18). When one lands, exported MP3s will leave via
+  the OS share sheet and be outside our control from that point.
 - Recordings may contain personally identifying speech from vulnerable
   communities. Treat sample data accordingly and never commit real recordings
   to this repo.

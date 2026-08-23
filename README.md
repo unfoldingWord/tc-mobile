@@ -67,13 +67,13 @@ Open a deployed URL on the device. It is HTTPS, which matters —
 `getUserMedia` refuses to run outside a secure context, so a LAN address like
 `http://192.168.x.x` **cannot record audio** no matter what else is correct.
 
-Add it to the home screen to exercise the installed PWA (standalone display,
-safe-area insets, and the iOS share-sheet export path all behave differently
-there than in a browser tab).
+Add it to the home screen to exercise the installed PWA (standalone display and
+safe-area insets behave differently there than in a browser tab). There is no
+share-sheet export path yet — see #18.
 
 ### CI
 
-`ci.yml` only: full-history secret scan, format, lint, typecheck, test, build,
+`ci.yml` only: full-history secret scan, format, lint, knip, typecheck, test, build,
 and a check that the PWA service worker and manifest were emitted. It deploys
 nothing.
 

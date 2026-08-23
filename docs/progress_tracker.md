@@ -263,8 +263,7 @@ hardening into a decision nobody took.
 
 ### Not covered by tests, honestly
 
-MediaRecorder, `decodeAudioData`, and the share sheet can only be verified
-on-device.
+MediaRecorder and `decodeAudioData` can only be verified on-device.
 
 **Updated 2026-08-22:** Seth and Tim have both run the staging deploy and
 report it functional, so the earlier claim here that nothing had been tested on
@@ -283,4 +282,9 @@ untested — it does not exist.
 
 1. Fix branch off `develop` addressing **#1–#10** in one pass; **#11** stays filed.
 2. PR to `develop`, run both reviewers, loop to clean or capped-and-escalated.
-3. First real device test — Android and iOS — on the staging URL.
+3. **The remaining device check**, which is specific rather than general: the
+   happy path (record, play back, short takes) has been smoked on staging by
+   Seth and Tim. What is still unverified is the interruption path — background
+   the app immediately after tapping Stop on a _long_ take and confirm the
+   recording still lands — and the save-failure path, which needs a device
+   with no room left.
