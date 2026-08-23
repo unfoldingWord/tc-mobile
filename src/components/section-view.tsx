@@ -31,6 +31,8 @@ interface SectionViewProps {
    * refusal is rendered instead of hidden.
    */
   saving: boolean;
+  /** Which section the in-flight save belongs to, when it is known. */
+  savingOrdinal: number | null;
   error: string | null;
   onBack: () => void;
   onPrev: (() => void) | null;
@@ -59,6 +61,7 @@ export function SectionView({
   referencePlaying,
   supported,
   saving,
+  savingOrdinal,
   error,
   onBack,
   onPrev,
@@ -161,7 +164,13 @@ export function SectionView({
       {error ? (
         <Notice>{error}</Notice>
       ) : (
-        saving && <Notice tone="busy">Saving your recording.</Notice>
+        saving && (
+          <Notice tone="busy">
+            {savingOrdinal === null
+              ? "Saving your recording."
+              : `Saving section ${savingOrdinal}.`}
+          </Notice>
+        )
       )}
 
       <div className="mt-auto flex items-center justify-between px-[2px] pt-[4px] pb-[2px]">

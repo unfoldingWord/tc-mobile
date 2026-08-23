@@ -30,6 +30,7 @@ export function App() {
     chapter,
     loading,
     error,
+    refreshing,
     saveTake,
     pendingTake,
     retryPendingTake,
@@ -46,7 +47,11 @@ export function App() {
 
   const navigate = useCallback(
     (to: { story?: number; sectionId?: string | null }) => {
-      leave();
+      // Only a story change rewinds the reference audio. Stepping between
+      // sections of this chapter silences it and keeps the playhead — the
+      // narration is the chapter's, and restarting a two-minute story on every
+      // step is the opposite of that.
+      leave({ rewindNarration: to.story !== undefined });
       if (to.story !== undefined) {
         setStoryNumber(to.story);
         // A section id belongs to a chapter, so a story change closes the open
@@ -64,9 +69,9 @@ export function App() {
     // The screens disable the record control and say why while a take is held
     // (`saving` below), so this is the backstop, not the message: a refusal
     // nobody is told about is the defect `Notice` exists for.
-    if (pendingTake) return;
+    if (pendingTake || refreshing) return;
     beginRecording();
-  }, [beginRecording, pendingTake]);
+  }, [beginRecording, pendingTake, refreshing]);
 
   const stopRecording = useCallback(
     (section: SectionCard) => {
@@ -153,6 +158,17 @@ export function App() {
   const next = firstUnrecorded(chapter);
   const done = recordedCount(chapter);
 
+  // A save is not over when the slot clears — the card still reads as
+  // unrecorded until the reload lands. Holding the controls until then is what
+  // stops a second take being recorded over a good one.
+  const saving = pendingTake !== null || refreshing;
+  // The notice is global, so it says which section it means: stepping to
+  // another section while the first is still writing otherwise reads as though
+  // the section on screen were the one being saved.
+  const savingOrdinal =
+    chapter.sections.find((s) => s.segmentId === pendingTake?.segmentId)
+      ?.ordinal ?? null;
+
   if (openSection) {
     const i = chapter.sections.indexOf(openSection);
     const step = (delta: number) => () =>
@@ -167,7 +183,8 @@ export function App() {
           playing={audio.playingId === openSection.sectionId}
           referencePlaying={audio.referencePlaying}
           supported={audio.supported}
-          saving={pendingTake !== null}
+          saving={saving}
+          savingOrdinal={savingOrdinal}
           error={audio.error}
           onBack={() => navigate({ sectionId: null })}
           onPrev={i > 0 ? step(-1) : null}
@@ -228,8 +245,12 @@ export function App() {
       {audio.error ? (
         <Notice>{audio.error}</Notice>
       ) : (
-        pendingTake !== null && (
-          <Notice tone="busy">Saving your recording.</Notice>
+        saving && (
+          <Notice tone="busy">
+            {savingOrdinal === null
+              ? "Saving your recording."
+              : `Saving section ${savingOrdinal}.`}
+          </Notice>
         )
       )}
 
@@ -238,14 +259,24 @@ export function App() {
           chapter={chapter}
           nextSectionId={next?.sectionId ?? null}
           playingSectionId={audio.playingId}
-          onOpen={(s) => navigate({ sectionId: s.sectionId })}
+          onOpen={(s) => {
+            // Same refusal as the quick action below. Entering lands the
+            // translator on a section whose record control does nothing, with
+            // no explanation there; the Notice on this screen is already
+            // giving one.
+            if (saving) return;
+            navigate({ sectionId: s.sectionId });
+          }}
           onQuickAction={(s) => {
             if (s.durationMs === null) {
-              // A take is already waiting to be written, so recording is
-              // refused. Opening the section anyway would strand the translator
-              // on a screen whose record control does nothing; the Notice on
-              // this screen is already saying why.
-              if (pendingTake) return;
+              // A take is still being written, or the card has not caught up
+              // with one that just was, so recording is refused. Opening the
+              // section anyway would strand the translator on a screen whose
+              // record control does nothing; the Notice on this screen is
+              // already saying why. `saving`, not `pendingTake`: during the
+              // reload the slot is empty and this section still reads as
+              // unrecorded, which is the window a second take is lost in.
+              if (saving) return;
               navigate({ sectionId: s.sectionId });
               // Still nothing awaited before the microphone is asked for: iOS
               // spends the user activation on the first await.

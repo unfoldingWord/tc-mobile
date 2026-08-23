@@ -14,7 +14,6 @@ export type IconName =
   | "record"
   | "stop"
   | "plus"
-  | "share"
   | "prev"
   | "next"
   | "speaker"
@@ -52,25 +51,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeWidth="1.8"
       strokeLinecap="round"
     />
-  ),
-  share: (
-    <>
-      <path
-        d="M11 15V5m0 0L7.5 8.5M11 5l3.5 3.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5.5 13v3h11v-3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </>
   ),
   prev: (
     <path

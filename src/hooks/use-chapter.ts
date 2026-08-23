@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { computePeaks } from "@/lib/audio/peaks";
 import { getStory, obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs";
@@ -153,6 +153,18 @@ export function useObsChapter(storyNumber: number) {
     status: "loading",
   });
   const [reloadToken, setReloadToken] = useState(0);
+  /**
+   * A reload triggered by a successful save, still in flight.
+   *
+   * Clearing the pending slot is not the end of a save: the card on screen
+   * still carries `durationMs: null` for the section just recorded, and
+   * `loadObsChapterCard` re-reads every active clip in the chapter to
+   * recompute peaks — seconds of PCM on a full chapter. In that window the
+   * Record control would re-enable over a section that reads as unrecorded,
+   * and a translator who records again gets a second take made active,
+   * demoting the good one. The save is finished when the card says so.
+   */
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,6 +175,7 @@ export function useObsChapter(storyNumber: number) {
         // Guards a story change or unmount landing after a slow read.
         if (cancelled) return;
         setLoad({ story: storyNumber, status: "ready", card });
+        setRefreshing(false);
       } catch (cause) {
         if (cancelled) return;
         setLoad({
@@ -170,6 +183,9 @@ export function useObsChapter(storyNumber: number) {
           status: "error",
           message: cause instanceof Error ? cause.message : String(cause),
         });
+        // Cleared on the failure path too: a reload that never lands must not
+        // leave the record control disabled for the rest of the session.
+        setRefreshing(false);
       }
     }
 
@@ -188,7 +204,10 @@ export function useObsChapter(storyNumber: number) {
   const error = current?.status === "error" ? current.message : null;
   const loading = current === null || current.status === "loading";
 
-  const reload = useCallback(() => setReloadToken((t) => t + 1), []);
+  const reload = useCallback(() => {
+    setRefreshing(true);
+    setReloadToken((t) => t + 1);
+  }, []);
 
   /**
    * The one unsaved recording the app is holding.
@@ -203,9 +222,23 @@ export function useObsChapter(storyNumber: number) {
    * writes, the slot, and the orphan delete.
    */
   const [pending, setPending] = useState<PendingTake | null>(null);
+  /**
+   * Whether a write is in flight, readable synchronously.
+   *
+   * `retrySave` already refuses a second concurrent attempt, but it can only
+   * judge the slot it is handed, and the hook reads that from the render
+   * closure. Two taps on Retry in one frame both saw `state: "failed"`, both
+   * produced a fresh `{ state: "saving" }`, and both committed — and `addTake`
+   * appends unconditionally, so one clip became two take rows with the second
+   * active. A ref answers for the current moment rather than the last render.
+   */
+  const savingRef = useRef(false);
 
   const commit = useCallback(
     async (take: PendingTake): Promise<boolean> => {
+      // Synchronous, before the first await: this is what a second tap in the
+      // same frame reads.
+      savingRef.current = true;
       try {
         const meta = await putClip(
           take.clipId,
@@ -229,6 +262,11 @@ export function useObsChapter(storyNumber: number) {
           failSave(held, take.clipId, saveFailureKind(cause))
         );
         return false;
+      } finally {
+        // Safe in a `finally` where `setPending(null)` is not: this releases a
+        // guard rather than dropping the samples, and a guard left set would
+        // lock out the retry that the failure path exists to offer.
+        savingRef.current = false;
       }
     },
     [reload]
@@ -272,6 +310,9 @@ export function useObsChapter(storyNumber: number) {
   );
 
   const retryPendingTake = useCallback(() => {
+    // The live guard, ahead of the pure one: `pending` here is last render's
+    // slot, and `SaveFailed` only hides Retry once the saving re-render lands.
+    if (savingRef.current) return;
     const next = retrySave(pending);
     // Identity means refused: nothing held, or a save already in flight.
     if (!next || next === pending) return;
@@ -297,6 +338,7 @@ export function useObsChapter(storyNumber: number) {
     loading,
     error,
     reload,
+    refreshing,
     saveTake,
     pendingTake: pending,
     retryPendingTake,
@@ -307,9 +349,16 @@ export function useObsChapter(storyNumber: number) {
 /**
  * Find or create the local project/chapter/sections mirroring an OBS story.
  *
- * Idempotent: opening story 1 twice must not create two chapters, or a
- * translator's recordings would silently detach from the sections they belong
- * to.
+ * Idempotent for *sequential* calls, which is what opening a story twice does:
+ * the second call finds the chapter and returns it, so a translator's
+ * recordings cannot silently detach from the sections they belong to.
+ *
+ * **Not atomic, and not safe against overlapping calls** — issue #8. This is a
+ * sequence of separate writes with no transaction around it, so two loads of a
+ * never-opened story that interleave can both miss the chapter and both create
+ * one, and a run that fails part-way leaves a chapter with fewer sections than
+ * the story has frames, which nothing here repairs. Do not read "idempotent"
+ * as a concurrency guarantee.
  */
 async function ensureObsChapter(
   storyNumber: number,

@@ -5,6 +5,7 @@ import {
   resetNarration,
   resumeAudioContext,
   startNarration,
+  stopNarration,
 } from "./audio-io";
 import { useRecorder, type RecorderState } from "./use-recorder";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
@@ -27,8 +28,14 @@ export interface UseAudioSession {
   startRecording: () => void;
   /** Stop the microphone and return what it captured. Never rejects. */
   stopRecording: () => Promise<Int16Array | null>;
-  /** End every sound this screen owns, synchronously. Call on every navigation. */
-  leave: () => void;
+  /**
+   * End every sound this screen owns, synchronously. Call on every navigation.
+   *
+   * `rewindNarration` returns the reference audio to the start. Pass it when
+   * leaving the *story*; stepping between sections of the same chapter must
+   * not, or a two-minute narration restarts from the top on every step.
+   */
+  leave: (options?: { rewindNarration?: boolean }) => void;
 }
 
 /** The active take of a segment, or `undefined` if there is nothing to play. */
@@ -230,13 +237,27 @@ export function useAudioSession(): UseAudioSession {
     // A device that cannot record never takes the floor. `start()` only sets a
     // message there and leaves the recorder idle, so a claim would be one that
     // nothing ever hands back — and playback would be refused from then on.
-    if (supported) micTokenRef.current = claimFloor("mic");
+    const token = supported ? claimFloor("mic") : null;
+    if (supported) micTokenRef.current = token;
     // Nothing is awaited before `start()`: getUserMedia has to run in the same
     // task as the tap, or iOS treats the prompt as unprompted.
-    void beginRecording().catch((cause: unknown) => {
-      console.error("Starting the recorder failed", cause);
-    });
-  }, [beginRecording, claimFloor, supported]);
+    void beginRecording()
+      .then((started) => {
+        if (started || token === null) return;
+        // The floor is handed back HERE, on the completion path, rather than
+        // left to the effect below. A denied permission takes the recorder
+        // idle -> requesting -> idle, and nothing guarantees a consumer ever
+        // observes the middle state; an effect keyed on a value that never
+        // appears to change does not re-run, and the floor stays claimed with
+        // no microphone open — refusing every later playback for the session.
+        // An imperative claim is released on a completion, not on a render.
+        if (micTokenRef.current === token) micTokenRef.current = null;
+        if (session.isCurrent(token)) session.stopAll();
+      })
+      .catch((cause: unknown) => {
+        console.error("Starting the recorder failed", cause);
+      });
+  }, [beginRecording, claimFloor, session, supported]);
 
   const stopRecording = useCallback(async (): Promise<Int16Array | null> => {
     // Snapshot BEFORE the await. `startRecording` writes every new claim into
@@ -265,30 +286,38 @@ export function useAudioSession(): UseAudioSession {
     }
   }, [endRecording, session]);
 
-  const leave = useCallback(() => {
-    // Synchronous and total. Navigation is not a moment to be waiting on a
-    // promise: the microphone has to be released in the same task as the tap.
-    //
-    // A take in progress is abandoned, not saved. `addTake` makes every new
-    // take the active one, so committing a fragment here would quietly replace
-    // a good recording with a truncated one — and a fragment renders a
-    // duration and a play button, so it *looks* finished. Losing an
-    // unconfirmed take is recoverable by recording again; that is not.
-    micTokenRef.current = null;
-    session.stopAll();
-    cancelRecording();
-    // The narration is a chapter's, not a section's: leaving means the next
-    // story's reference starts at the beginning rather than mid-sentence.
-    resetNarration();
-    setPlaying(null);
-    setReference(false);
-    setPlaybackError(null);
-  }, [cancelRecording, session, setPlaying, setReference]);
+  const leave = useCallback(
+    (options: { rewindNarration?: boolean } = {}) => {
+      // Synchronous and total. Navigation is not a moment to be waiting on a
+      // promise: the microphone has to be released in the same task as the tap.
+      //
+      // A take in progress is abandoned, not saved. `addTake` makes every new
+      // take the active one, so committing a fragment here would quietly
+      // replace a good recording with a truncated one — and a fragment renders
+      // a duration and a play button, so it *looks* finished. Losing an
+      // unconfirmed take is recoverable by recording again; that is not.
+      micTokenRef.current = null;
+      session.stopAll();
+      cancelRecording();
+      // The narration is a chapter's, not a section's. Leaving the story
+      // rewinds, so the next story's reference starts at the beginning rather
+      // than mid-sentence; stepping between sections of this chapter only
+      // silences it, because zeroing the playhead there restarts a two-minute
+      // story on every step — the opposite of treating it as the chapter's.
+      if (options.rewindNarration) resetNarration();
+      else stopNarration();
+      setPlaying(null);
+      setReference(false);
+      setPlaybackError(null);
+    },
+    [cancelRecording, session, setPlaying, setReference]
+  );
 
   useEffect(() => {
-    // A start that was refused — no permission, no microphone — leaves the
-    // recorder idle with the floor still claimed. Hand it back, or playback
-    // stays locked out for the rest of the session.
+    // Backstop only. `startRecording` releases a refused claim on the
+    // completion path, which does not depend on this effect observing an
+    // intermediate state; this still covers a recorder that reaches idle by
+    // some route that never resolved a `start()` at all.
     if (recorderState === "idle" && session.live === "mic") session.stopAll();
   }, [recorderState, session]);
 

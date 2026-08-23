@@ -263,7 +263,24 @@ export function startNarration(
 export function resetNarration(): void {
   const el = narrationElement;
   if (!el) return;
+  stopNarration();
+  el.currentTime = 0;
+}
+
+/**
+ * Silence the narration where it stands, keeping the playhead.
+ *
+ * Separate from `resetNarration` because leaving a *section* is not leaving
+ * the story. The narration is the chapter's, so stepping between sections has
+ * to stop the sound without losing the translator's place in a two-minute
+ * story; only leaving the story itself rewinds.
+ *
+ * A no-op until something has actually played: leaving a screen must not be a
+ * reason to create a media element.
+ */
+export function stopNarration(): void {
+  const el = narrationElement;
+  if (!el) return;
   el.pause();
   el.onended = null;
-  el.currentTime = 0;
 }
