@@ -1,7 +1,7 @@
 # Pivot to Tim's mockups — the plan
 
-**Date:** 2026-08-22, rewritten 2026-08-23 · **Status:** Gate 1 published,
-awaiting a human decision on G1–G5
+**Date:** 2026-08-22, rewritten 2026-08-23 · **Status:** **Gate 1 passed**
+2026-08-23. G1–G5 decided; build may proceed.
 **Tracking:** [#25](https://github.com/sethstoll3/tc-mobile/issues/25) ·
 **Gate 1 artifact:** <https://claude.ai/code/artifact/2b4625a5-1a8c-4ad0-badd-5f045e2c0630>
 
@@ -49,9 +49,9 @@ Nothing below is open. It is here so no batch re-litigates it.
 | **D6**       | Artwork becomes an optional per-segment illustration, not the thing that decides the browse layout.       | 23 Aug                        |
 | **ADR 0004** | The broad half is **rejected**. One generic `Book → Chapter → Segment (→ Take)` taxonomy.                 | Tim, 22 Aug; merged `0d9ee9d` |
 
-**D5 is not in that table on purpose.** It said reference audio is out of Phase 1
-— which stands — and also that the timing seam stays built and inert, which
-contradicts this plan's B0. That half is unresolved and is now **G1**.
+**D5 was split.** Its first half — reference audio is out of Phase 1 — stands.
+Its second half said the timing seam stays built and inert, contradicting B0.
+**G1 resolved that against D5: the seam is deleted.**
 
 ## Reconciliation — the mockups against what exists
 
@@ -84,8 +84,8 @@ which is the cheapest version of this change we will ever get.
 | C4  | Take-based capture: record a section, judge it, keep or redo                    | One editable waveform per segment: insert at centerline, select, cut, paste, undo/redo                   |
 
 C1 and C4 are settled — C1 by the page-3 counter, C4 by A2. C3 is settled by
-ADR 0004. **C2 is only half settled:** the transport and the position dot are
-drawn and annotated; the `⋮` menu's contents are drawn nowhere. That is **G5**.
+ADR 0004. C2 is settled by **G5**: the `⋮` ships, with a first-guess set of
+contents, and Pass A's one-control-per-row position is overturned outright.
 
 ### Removed: what the pivot orphans
 
@@ -158,21 +158,33 @@ The exceptions:
 
 None of these argue against Tim's design.
 
-## Open — G1 to G5
+## Gate 1 decisions — taken 2026-08-23
 
-The only open-question list. G1 and G2 block work; the rest can be answered as
-their batch comes up. Recommendations are ours; the decision is Seth's, with
-Tim's where marked.
+All five answered by Seth. Four followed the recommendation; **G5 did not**, and
+the disagreement is recorded rather than smoothed over.
 
-| #      | Question                                                                                              | Blocks | Recommendation                                                                                              | For  |
-| ------ | ----------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------- | ---- |
-| **G1** | Delete `lib/timing/**`, or keep it inert? This plan says delete; D5 says keep. Both are written down. | B0     | **Delete**, and supersede ADR 0007 rather than the code. A reviewer already filed the inertness.            | Seth |
-| **G2** | What does a translator see on first run — an empty Books screen, or the template library?             | B2     | **Empty Books**, template library one tap away. Landing in a picker implies a catalogue.                    | Seth |
-| **G3** | How far does the clipboard reach — segment, chapter, book — and does it survive a restart?            | B5     | **Within a chapter, lost on close.** Persisting it needs a home in IndexedDB and a way to see it.           | Tim  |
-| **G4** | Erase Segment — erase the audio and keep the row, or remove the segment and renumber below it?        | B6     | **Erase the audio, keep the row.** Renumbering from a recorder menu is a large consequence for a small tap. | Tim  |
-| **G5** | Does the per-row `⋮` menu ship, or wait until there is something to put in it?                        | B3     | **Hold it.** Its one obvious occupant already lives in the recorder menu.                                   | Tim  |
+| #      | Decision                                                                                                    | Unblocks | Note                                                                               |
+| ------ | ----------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| **G1** | **Delete the timing seam.** `lib/timing/**`, `types/timing.ts`, `tests/timing.test.ts`. Supersede ADR 0007. | B0       | Overrides D5's second half. Must land after #21.                                   |
+| **G2** | **First run is the empty Books screen**, template library one tap away in the menu.                         | B2       | The app reads as a notebook, not a catalogue of other people's content.            |
+| **G3** | **The clipboard reaches across a chapter and is lost on close.**                                            | B5       | In memory only. No IndexedDB home, and no way to accumulate audio nothing can see. |
+| **G4** | **Erase Segment erases the audio and keeps the row.**                                                       | B6       | The segment returns to its never-recorded state. Chapter numbering is untouched.   |
+| **G5** | **The `⋮` row menu ships**, with Erase Segment and Share Segment as a first guess.                          | B3       | Against the recommendation to hold it. See the two consequences below.             |
 
-Two smaller ones, carried in their batches rather than blocking:
+### What G5 commits us to
+
+Recorded here because the option was taken with these named, and neither is a
+reason to revisit it — they are work items.
+
+1. **Erase Segment now exists in two places** — the row menu and the recorder
+   menu. Both must do the same thing, which G4 defines, and both need the same
+   wordless confirmation. B3 and B6 have to agree rather than each solving it.
+2. **Share Segment is a scope Tim did not ask for.** A4 specifies sharing at the
+   chapter and book level only. A single-segment MP3 to the share sheet is a
+   small addition to a path B7 is building anyway, but it is ours, not his —
+   **confirm with Tim before B7 settles the share semantics.**
+
+### Carried in their batches, not blocking
 
 - **Where does artwork go?** D6 keeps it; no mockup draws it anywhere, including
   the editor. Answered inside B3/B4, and it is why #1 is a rework rather than a fix.
@@ -186,17 +198,17 @@ Sequenced so nothing is built on a shape a later batch changes, and so the
 deletion happens **first** rather than being promised. One lane at a time,
 `develop`-cut branches, both reviewers per `AGENTS.md`.
 
-| Batch  | Issue                                                    | Contents                                                                                      | Depends on          | Tier    |
-| ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------- | ------- |
-| **B0** | [#26](https://github.com/sethstoll3/tc-mobile/issues/26) | Delete the timing seam and the narration path. Supersede ADR 0007.                            | G1, and #21 merging | T2      |
-| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, migration | —                   | **T1**  |
-| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell             | B1, G2              | T3      |
-| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`              | B1                  | T3      |
-| **B4** | [#30](https://github.com/sethstoll3/tc-mobile/issues/30) | Recorder sheet — breadcrumb, Finished toggle, fixed centerline, swipe, insert-record, pause   | B3                  | T1 / T2 |
-| **B5** | [#31](https://github.com/sethstoll3/tc-mobile/issues/31) | Selection frame, cut to clipboard, paste at centerline, undo + redo, zoom                     | B4, G3              | **T1**  |
-| **B6** | [#32](https://github.com/sethstoll3/tc-mobile/issues/32) | VU meter with show/hide, recorder `≡` menu, Erase Segment with confirmation                   | B4, G4              | T2      |
-| **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                      | B1, B2              | T2      |
-| **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                          | B1                  | **T1**  |
+| Batch  | Issue                                                    | Contents                                                                                      | Depends on  | Tier    |
+| ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------- | ------- |
+| **B0** | [#26](https://github.com/sethstoll3/tc-mobile/issues/26) | Delete the timing seam and the narration path. Supersede ADR 0007.                            | #21 merging | T2      |
+| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, migration | —           | **T1**  |
+| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell             | B1          | T3      |
+| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`, `⋮` menu    | B1          | T3      |
+| **B4** | [#30](https://github.com/sethstoll3/tc-mobile/issues/30) | Recorder sheet — breadcrumb, Finished toggle, fixed centerline, swipe, insert-record, pause   | B3          | T1 / T2 |
+| **B5** | [#31](https://github.com/sethstoll3/tc-mobile/issues/31) | Selection frame, cut to clipboard, paste at centerline, undo + redo, zoom                     | B4          | **T1**  |
+| **B6** | [#32](https://github.com/sethstoll3/tc-mobile/issues/32) | VU meter with show/hide, recorder `≡` menu, Erase Segment with confirmation                   | B4          | T2      |
+| **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                      | B1, B2      | T2      |
+| **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                          | B1          | **T1**  |
 
 ## What this plan does not decide
 
