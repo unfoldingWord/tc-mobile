@@ -184,13 +184,41 @@ reason to revisit it — they are work items.
    small addition to a path B7 is building anyway, but it is ours, not his —
    **confirm with Tim before B7 settles the share semantics.**
 
-### Carried in their batches, not blocking
+### Open questions — the standing register
 
-- **Where does artwork go?** D6 keeps it; no mockup draws it anywhere, including
-  the editor. Answered inside B3/B4, and it is why #1 is a rework rather than a fix.
-- **Can a finished segment be edited?** D3 drops the PCM on Finish, so editing
-  afterwards either re-decodes from MP3 — lossy, twice — or is disallowed.
-  Answered inside B8.
+**Working principle: it is easier to steer a moving car than a parked one.** Each
+open question below has a **best-effort default** we build against so work does
+not stall. The defaults are chosen to be cheap to reverse, and the question stays
+open until someone answers it — a default is not an answer, and none of these are
+closed by having been guessed at.
+
+| #      | Question                                                             | Status             | Owner | Best-effort default while it is open                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------- | ------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | Does **Share Segment** exist? A4 specifies chapter and book only.    | **Pending Tim**    | Tim   | Build share as one code path with a scope parameter. Ship chapter and book; segment stays behind a flag. Adding or dropping it is one line.                                                                                                        |
+| **Q2** | Is a template a **content pack** or a **structure generator**?       | **Waiting**        | Tim   | Model it as a structure generator that _may_ carry content. OBS is structure + content; a Bible book is structure only. One interface, optional payload — the union, not a guess between them.                                                     |
+| **Q3** | lamejs is LGPL-3.0 in an MIT repo.                                   | **Decided 23 Aug** | —     | **Keep lamejs.** ADR 0003 carries the five obligations; #36 tracks the two outstanding. Closed #14.                                                                                                                                                |
+| **Q4** | Where does per-segment artwork go? No mockup places it anywhere.     | **Deferred, kept** | —     | Artwork stays in the model and the media cache, and appears in no Phase 1 screen. Nothing is deleted; nothing is drawn. #1 stays a rework.                                                                                                         |
+| **Q5** | Can a **finished** segment be edited once D3 has dropped its PCM?    | **Pending**        | Seth  | Allow it, re-decoding from the MP3, and record a generation count on the clip. A translator who cannot fix a mistake after marking it done will stop marking things done — which breaks the progress model _and_ the storage saving D3 exists for. |
+| **Q6** | Does Phase 1 need a **project archive**, distinct from share? (#24)  | **Pending**        | Tim   | Build no archive, but give the Share Book zip predictable folder names and a small manifest, so a future import is possible without changing the export format. Roughly twenty lines now against a format migration later.                         |
+| **Q7** | Do **spoken prompts** carry the instructional load instead of icons? | **Pending**        | Tim   | Do not build a prompt recorder. Route every chrome string through one table — which the ten-odd strings need anyway — so a prompt layer can attach later. See the note below on why this is not another timing seam.                               |
+
+**Q7 is a string table, not a seam.** G1 has just deleted one speculative
+provider registry, and the reasoning there applies here: a seam built for a
+feature nobody has asked for is dead code. The difference is that a single place
+for the app's handful of strings is needed whether or not spoken prompts ever
+happen, and it is where they would attach if they did. If that ever grows a
+provider registry before someone commits to prompts, it has become the same
+mistake and should be deleted the same way.
+
+### Also carried in their batches
+
+- **The `⋮` menu's real contents.** G5 shipped a first guess. Whatever replaces
+  it is a B3 change, not a re-run of the gate.
+- **Icon recognition.** More than half the controls Tim drew are software
+  convention rather than hardware-derived, and `ui-patterns.md` records that no
+  reviewed product achieves a text-free path. Proposed as its own ADR, with a
+  ten-minute recognition check at the October training as the evidence that
+  turns it from opinion into a finding.
 
 ## Batches
 
@@ -218,6 +246,11 @@ deletion happens **first** rather than being promised. One lane at a time,
   record, which is the existing `--s-live` split. Composition is Gate 2.
 - **Whether the five-value `RecordingStatus` enum stays** beneath a binary UI
   toggle. Probably yes; Phase 2 needs it and ADR 0004's migration reasoning applies.
-- **Anything already open and unrelated:** #14 (lamejs LGPL), #19 (provenance),
-  #24 (project archive). The pivot does not resolve them. It does make #14
-  harder to defer, because D3 moves the encoder onto a required path.
+- **The register's pending items.** Q1, Q2, Q5, Q6 and Q7 each have a default,
+  not an answer. Building against a default does not close the question.
+- **Issue #19 (provenance)** is now required rather than insurance: Tim confirmed
+  on 22 Aug that OBS-derived recordings **are** CC BY-SA derivative works (#15),
+  so the model must be able to tell an OBS-derived recording from a user-authored
+  one. The pivot does not resolve it and A1 makes it more load-bearing, because a
+  hand-made book and a template-derived one now look identical apart from what the
+  template left behind.
