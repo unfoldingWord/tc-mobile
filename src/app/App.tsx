@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Control } from "@/components/control";
+import { Notice } from "@/components/notice";
+import { SaveFailed } from "@/components/save-failed";
 import { SectionBrowser } from "@/components/section-browser";
 import { SectionView } from "@/components/section-view";
-import { playSamples, type PlaybackHandle } from "@/hooks/audio-io";
+import { useAudioSession } from "@/hooks/use-audio-session";
 import { useObsChapter } from "@/hooks/use-chapter";
-import { useRecorder } from "@/hooks/use-recorder";
-import { getClip } from "@/lib/storage/clips";
-import { getDb } from "@/lib/storage/db";
 import { firstUnrecorded, recordedCount } from "@/types/view";
 import type { SectionCard } from "@/types/view";
 
@@ -17,132 +16,183 @@ import type { SectionCard } from "@/types/view";
  * Story picker → section browser → section view. The browser's layout and tap
  * behaviour both follow one rule: a chapter with artwork is browsed by
  * picture, a chapter without one is browsed by sound.
+ *
+ * This screen holds no audio of its own any more. Every sound belongs to
+ * `useAudioSession`, and every screen change goes through `navigate`, so
+ * "leaving ends what was sounding" is one call in one place instead of a pair
+ * of stop calls that each new handler had to remember.
  */
 export function App() {
   const [storyNumber, setStoryNumber] = useState(1);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [referencePlaying, setReferencePlaying] = useState(false);
 
-  const { chapter, loading, error, saveTake } = useObsChapter(storyNumber);
-  const recorder = useRecorder();
+  const {
+    chapter,
+    loading,
+    error,
+    refreshing,
+    saveTake,
+    pendingTake,
+    retryPendingTake,
+    discardPendingTake,
+  } = useObsChapter(storyNumber);
+  const audio = useAudioSession();
+  const {
+    leave,
+    playTake,
+    toggleReference,
+    startRecording: beginRecording,
+    stopRecording: endRecording,
+  } = audio;
 
-  const playbackRef = useRef<PlaybackHandle | null>(null);
-  const referenceRef = useRef<HTMLAudioElement | null>(null);
-
-  const stopPlayback = useCallback(() => {
-    playbackRef.current?.stop();
-    playbackRef.current = null;
-    setPlayingId(null);
-  }, []);
-
-  const stopReference = useCallback(() => {
-    referenceRef.current?.pause();
-    setReferencePlaying(false);
-  }, []);
-
-  useEffect(
-    () => () => {
-      playbackRef.current?.stop();
-      referenceRef.current?.pause();
-    },
-    []
-  );
-
-  const playSection = useCallback(
-    async (section: SectionCard) => {
-      stopReference();
-      if (playingId === section.sectionId) {
-        stopPlayback();
-        return;
+  const navigate = useCallback(
+    (to: { story?: number; sectionId?: string | null }) => {
+      // Only a story change rewinds the reference audio. Stepping between
+      // sections of this chapter silences it and keeps the playhead — the
+      // narration is the chapter's, and restarting a two-minute story on every
+      // step is the opposite of that.
+      leave({ rewindNarration: to.story !== undefined });
+      if (to.story !== undefined) {
+        setStoryNumber(to.story);
+        // A section id belongs to a chapter, so a story change closes the open
+        // section by construction rather than by a lookup that happens to miss.
+        setOpenSectionId(null);
       }
-      stopPlayback();
-
-      const db = await getDb();
-      const segment = await db.get("segments", section.segmentId);
-      if (!segment?.activeTakeId) return;
-      const take = await db.get("takes", segment.activeTakeId);
-      const clip = take ? await getClip(take.clipId) : undefined;
-      if (!clip) return;
-
-      setPlayingId(section.sectionId);
-      playbackRef.current = await playSamples(clip.samples, {
-        onEnded: stopPlayback,
-      });
+      if (to.sectionId !== undefined) setOpenSectionId(to.sectionId);
     },
-    [playingId, stopPlayback, stopReference]
+    [leave]
   );
 
-  const startRecording = useCallback(async () => {
-    stopPlayback();
-    stopReference();
-    await recorder.start();
-  }, [recorder, stopPlayback, stopReference]);
+  const startRecording = useCallback(() => {
+    // One unsaved take at a time. A second would displace the first in the
+    // pending slot, which is the silent loss all of this exists to prevent.
+    // The screens disable the record control and say why while a take is held
+    // (`saving` below), so this is the backstop, not the message: a refusal
+    // nobody is told about is the defect `Notice` exists for.
+    if (pendingTake || refreshing) return;
+    beginRecording();
+  }, [beginRecording, pendingTake, refreshing]);
 
   const stopRecording = useCallback(
-    async (section: SectionCard) => {
-      const samples = await recorder.stop();
-      if (samples && samples.length > 0)
-        await saveTake(section.segmentId, samples);
+    (section: SectionCard) => {
+      void (async () => {
+        const samples = await endRecording();
+        // `saveTake` takes hold of the samples before its first await and never
+        // rejects, so there is no window in which the only reference to a
+        // finished take is a local that an exception can discard.
+        if (samples && samples.length > 0)
+          await saveTake(section.segmentId, samples);
+      })().catch((cause: unknown) => {
+        // Neither call rejects by contract. This is the last net under the one
+        // path where a failure costs a recording that cannot be made again.
+        console.error("Finishing a recording failed", cause);
+      });
     },
-    [recorder, saveTake]
+    [endRecording, saveTake]
   );
 
-  const toggleReference = useCallback(() => {
-    if (!chapter?.referenceAudioUrl) return;
-    stopPlayback();
-    referenceRef.current ??= new Audio();
-    const el = referenceRef.current;
-    if (referencePlaying) {
-      el.pause();
-      setReferencePlaying(false);
-      return;
-    }
-    if (el.src !== chapter.referenceAudioUrl)
-      el.src = chapter.referenceAudioUrl;
-    el.onended = () => setReferencePlaying(false);
-    void el
-      .play()
-      .then(() => setReferencePlaying(true))
-      .catch(() => setReferencePlaying(false));
-  }, [chapter, referencePlaying, stopPlayback]);
+  const openSection =
+    chapter?.sections.find((s) => s.sectionId === openSectionId) ?? null;
+
+  // The takeover waits for the first failure — the ordinary save is fast, and
+  // flashing a full-screen "Saving" after every take would be its own defect.
+  // Until then the section view says so and disables the record control.
+  const recovery = pendingTake && pendingTake.attempts > 0 ? pendingTake : null;
+  const recovering = recovery !== null;
+
+  useEffect(() => {
+    // The recovery screen offers two buttons, and neither of them can stop a
+    // sound. Anything still playing when it takes over — a take, the narration
+    // — would go on under an `aria-modal` screen with no control able to reach
+    // it, so the takeover leaves the same way every tap does.
+    if (recovering) leave();
+  }, [recovering, leave]);
+
+  // An open section id that no longer names a section of the chapter on screen:
+  // the section view is about to be torn down by something that was not a tap.
+  // The microphone may be open behind it, and `leave()` is only wired to
+  // `navigate`, so this render would otherwise fall through to the browser with
+  // a recording still running and no Stop control anywhere on screen.
+  //
+  // The id itself is left alone: `openSection` is derived from the chapter, so
+  // a stale id shows nothing, and clearing it here would be a second render
+  // chasing the first.
+  // Every way the section view can disappear without a tap. `openSection ===
+  // null` is the stale-id case; `error` and a missing chapter are the reload
+  // failures below, which replace the whole tree with a splash that has no
+  // Stop control. Requiring `chapter !== null` here would exclude exactly the
+  // dead-end case: a rejected reload leaves the microphone recording behind an
+  // error screen the translator cannot get out of.
+  const leavingSection =
+    openSectionId !== null &&
+    (openSection === null || error !== null || chapter === null);
+
+  useEffect(() => {
+    if (leavingSection) leave();
+  }, [leavingSection, leave]);
+
+  // Ahead of the loading / error returns below: a chapter that fails to reload
+  // must never replace the screen that is holding an unsaved recording.
+  if (recovery) {
+    return (
+      <main className="app-shell grid h-full place-items-center">
+        <SaveFailed
+          state={recovery.state}
+          kind={recovery.kind}
+          ordinal={
+            chapter?.sections.find((s) => s.segmentId === recovery.segmentId)
+              ?.ordinal ?? null
+          }
+          attempts={recovery.attempts}
+          onRetry={retryPendingTake}
+          onDiscard={discardPendingTake}
+        />
+      </main>
+    );
+  }
 
   if (loading && !chapter) return <Splash message="Loading" />;
   if (error) return <Splash message={error} tone="error" />;
   if (!chapter) return <Splash message="No chapter" />;
 
-  const openSection =
-    chapter.sections.find((s) => s.sectionId === openSectionId) ?? null;
   const next = firstUnrecorded(chapter);
   const done = recordedCount(chapter);
 
+  // A save is not over when the slot clears — the card still reads as
+  // unrecorded until the reload lands. Holding the controls until then is what
+  // stops a second take being recorded over a good one.
+  const saving = pendingTake !== null || refreshing;
+  // The notice is global, so it says which section it means: stepping to
+  // another section while the first is still writing otherwise reads as though
+  // the section on screen were the one being saved.
+  const savingOrdinal =
+    chapter.sections.find((s) => s.segmentId === pendingTake?.segmentId)
+      ?.ordinal ?? null;
+
   if (openSection) {
     const i = chapter.sections.indexOf(openSection);
-    const step = (delta: number) => () => {
-      stopPlayback();
-      stopReference();
-      setOpenSectionId(chapter.sections[i + delta]?.sectionId ?? null);
-    };
+    const step = (delta: number) => () =>
+      navigate({ sectionId: chapter.sections[i + delta]?.sectionId ?? null });
     return (
       <main className="app-shell mx-auto h-full max-w-md">
         <SectionView
           chapter={chapter}
           section={openSection}
-          recording={recorder.state === "recording"}
-          elapsedMs={recorder.elapsedMs}
-          playing={playingId === openSection.sectionId}
-          referencePlaying={referencePlaying}
-          onBack={() => {
-            stopPlayback();
-            stopReference();
-            setOpenSectionId(null);
-          }}
+          recorderState={audio.recorderState}
+          elapsedMs={audio.elapsedMs}
+          playing={audio.playingId === openSection.sectionId}
+          referencePlaying={audio.referencePlaying}
+          supported={audio.supported}
+          saving={saving}
+          savingOrdinal={savingOrdinal}
+          error={audio.error}
+          onBack={() => navigate({ sectionId: null })}
           onPrev={i > 0 ? step(-1) : null}
           onNext={i < chapter.sections.length - 1 ? step(1) : null}
-          onRecord={() => void startRecording()}
-          onStop={() => void stopRecording(openSection)}
-          onPlay={() => void playSection(openSection)}
-          onToggleReference={toggleReference}
+          onRecord={startRecording}
+          onStop={() => stopRecording(openSection)}
+          onPlay={() => playTake(openSection)}
+          onToggleReference={() => toggleReference(chapter.referenceAudioUrl)}
         />
       </main>
     );
@@ -156,7 +206,7 @@ export function App() {
           label="Previous story"
           variant="quiet"
           disabled={storyNumber <= 1}
-          onClick={() => setStoryNumber((n) => Math.max(1, n - 1))}
+          onClick={() => navigate({ story: Math.max(1, storyNumber - 1) })}
         />
         <span className="t-title flex-1 text-center">{chapter.ordinal}</span>
         <Control
@@ -164,7 +214,7 @@ export function App() {
           label="Next story"
           variant="quiet"
           disabled={storyNumber >= 50}
-          onClick={() => setStoryNumber((n) => Math.min(50, n + 1))}
+          onClick={() => navigate({ story: Math.min(50, storyNumber + 1) })}
         />
       </div>
 
@@ -191,30 +241,48 @@ export function App() {
         </span>
       </div>
 
-      {recorder.error && (
-        <p
-          className="rounded-[10px] p-[12px] text-[13px]"
-          style={{ background: "var(--p-red-950)", color: "var(--p-red-100)" }}
-        >
-          {recorder.error}
-        </p>
+      {/* One line, one place — the same rule the section view follows. */}
+      {audio.error ? (
+        <Notice>{audio.error}</Notice>
+      ) : (
+        saving && (
+          <Notice tone="busy">
+            {savingOrdinal === null
+              ? "Saving your recording."
+              : `Saving section ${savingOrdinal}.`}
+          </Notice>
+        )
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <SectionBrowser
           chapter={chapter}
           nextSectionId={next?.sectionId ?? null}
-          playingSectionId={playingId}
+          playingSectionId={audio.playingId}
           onOpen={(s) => {
-            stopPlayback();
-            setOpenSectionId(s.sectionId);
+            // Same refusal as the quick action below. Entering lands the
+            // translator on a section whose record control does nothing, with
+            // no explanation there; the Notice on this screen is already
+            // giving one.
+            if (saving) return;
+            navigate({ sectionId: s.sectionId });
           }}
           onQuickAction={(s) => {
             if (s.durationMs === null) {
-              setOpenSectionId(s.sectionId);
-              void startRecording();
+              // A take is still being written, or the card has not caught up
+              // with one that just was, so recording is refused. Opening the
+              // section anyway would strand the translator on a screen whose
+              // record control does nothing; the Notice on this screen is
+              // already saying why. `saving`, not `pendingTake`: during the
+              // reload the slot is empty and this section still reads as
+              // unrecorded, which is the window a second take is lost in.
+              if (saving) return;
+              navigate({ sectionId: s.sectionId });
+              // Still nothing awaited before the microphone is asked for: iOS
+              // spends the user activation on the first await.
+              startRecording();
             } else {
-              void playSection(s);
+              playTake(s);
             }
           }}
         />

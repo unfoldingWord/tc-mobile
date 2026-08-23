@@ -35,7 +35,11 @@ export interface ChapterTiming {
   readonly ref: TimingRef;
   /** The audio these timings address. */
   readonly audioUrl: string;
-  /** Ordered by `frame`, non-overlapping. */
+  /**
+   * Ordered by `frame`, non-overlapping. Enforced — not assumed — by
+   * `validateFrameTimings` at the registry boundary, because a provider is
+   * an outside source.
+   */
   readonly frames: readonly FrameTiming[];
   /** Which provider produced this, for debugging and for honest UI. */
   readonly providerId: string;
