@@ -22,7 +22,8 @@ Book
 ```
 
 Note: page 3 shows **no "Section" level**. Page 1 has `Chapter = collection of
-Sections (stories, pericopes)` with `Segment` beneath it. See Q1.
+Sections (stories, pericopes)` with `Segment` beneath it. Settled: ADR 0004
+rejects the Section layer, and removing it is batch B1 (#27).
 
 Screen — a single phone frame:
 
@@ -43,7 +44,8 @@ Screen — a single phone frame:
 - Books are collapsible rows (`▽` expanded, `▷` collapsed); chapters are numbered
   children.
 - The per-chapter counter is annotated **"Segments Complete / Total Segments in
-  Ch."** — it counts completion, not recordings. See C1.
+  Ch."** — it counts completion, not recordings. See C1 in
+  [`design/pivot-plan.md`](./design/pivot-plan.md).
 
 Tim's own "need:" list at the bottom of the page:
 
@@ -142,4 +144,8 @@ Stated so the absence is not read as a decision:
   taxonomy, in parentheses.
 - No **export** screen (page 1 lists MP3 export as a Phase-1 function).
 - No **empty / first-run / permission-denied / storage-full** states.
-- No colours other than the VU meter, and no type or spacing system.
+- No type or spacing system. **Colour is present and is semantic** — corrected
+  2026-08-23 after reading the images directly, against an earlier claim here that
+  only the VU meter was coloured. In mockups 3–5 the play control is green, the
+  record control is red, the selection is blue and the paste arrow is blue. That
+  agrees with the existing token split of amber for voice and red for live.

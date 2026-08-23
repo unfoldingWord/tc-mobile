@@ -295,6 +295,11 @@ None of these exist anywhere in `src/`, verified by grep:
 
 ## Open questions
 
+> **Superseded.** This section is kept as the record of what Tim's answers opened
+> up on 22–23 Aug. The live list is **G1–G5** in
+> [`pivot-plan.md`](pivot-plan.md), which is the plan of record; its Q6/Q7/Q8 below
+> are not the same questions as anything numbered there. Work from the plan.
+
 All five originals are answered above. What Tim's answers open in their place:
 
 **Q6 — does the `Take` record stay in the schema?** A2 removes takes from the

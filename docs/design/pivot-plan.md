@@ -1,9 +1,19 @@
-# Pivot to the page 3–4 mockups — plan
+# Pivot to Tim's mockups — the plan
 
-**Date:** 2026-08-22 · **Status:** proposed, awaiting Seth's go
-**Sources:** [`spec-transcription-p3-p4.md`](../spec-transcription-p3-p4.md) ·
-images in [`docs/design/`](./) (`mockup-1..5-*.png`) · page 1 in
-[`spec-transcription.md`](../spec-transcription.md)
+**Date:** 2026-08-22, rewritten 2026-08-23 · **Status:** Gate 1 published,
+awaiting a human decision on G1–G5
+**Tracking:** [#25](https://github.com/sethstoll3/tc-mobile/issues/25) ·
+**Gate 1 artifact:** <https://claude.ai/code/artifact/2b4625a5-1a8c-4ad0-badd-5f045e2c0630>
+
+**Sources.** Transcription: [`spec-transcription-p3-p4.md`](../spec-transcription-p3-p4.md)
+(pages 3–4) and [`spec-transcription.md`](../spec-transcription.md) (page 1).
+Images: `mockup-1..5-*.png` in this directory. Tim's answers and the decisions
+taken from them: [`mockups-gap-analysis.md`](mockups-gap-analysis.md).
+
+> **This document is the plan of record.** The gap analysis records how we got
+> here and stays as that record — its "Open questions" section is superseded by
+> the G-list below, which is the only open-question list anyone should work
+> from. Where the two disagree, this file wins.
 
 ## The decision this plan assumes
 
@@ -21,167 +31,181 @@ Two consequences, stated plainly so they are not rediscovered later as surprises
 2. Improving on a mockup is still allowed. The bar is evidence, and the change is
    recorded in this repo before it is built, not after.
 
+## What is already decided
+
+Nothing below is open. It is here so no batch re-litigates it.
+
+| Ref          | Decision                                                                                                  | Source                        |
+| ------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **A1**       | A segment is generic. A Scripture or OBS reference is optional metadata a template may attach.            | Tim, 22 Aug                   |
+| **A2**       | Takes are out of Phase 1. One recording per segment, edited in place.                                     | Tim, 22 Aug                   |
+| **A3**       | Segments are added one at a time, from a `+` in the Segments menu bar. Templates supply them in bulk.     | Tim, 22 Aug                   |
+| **A4**       | Share Chapter = one concatenated MP3 to the share sheet. Share Book = a zip of chapter MP3s. No Burrito.  | Tim, 22 Aug                   |
+| **A5**       | Minimal text is fine for Phase 1. Zero-text is an aspiration to test, not a constraint to design against. | Tim, 22 Aug                   |
+| **D1**       | `Take` stays in the schema, hidden, 1:1 with its segment.                                                 | 23 Aug                        |
+| **D2**       | Undo is an operation log, not buffer copies.                                                              | 23 Aug                        |
+| **D3**       | MP3 on Finished. PCM while editing, 64 kbps after. ~660 MB becomes ~66 MB.                                | 23 Aug                        |
+| **D4**       | MicroSD via the share sheet only. No wrapper, ADR 0005 unchanged.                                         | 23 Aug                        |
+| **D6**       | Artwork becomes an optional per-segment illustration, not the thing that decides the browse layout.       | 23 Aug                        |
+| **ADR 0004** | The broad half is **rejected**. One generic `Book → Chapter → Segment (→ Take)` taxonomy.                 | Tim, 22 Aug; merged `0d9ee9d` |
+
+**D5 is not in that table on purpose.** It said reference audio is out of Phase 1
+— which stands — and also that the timing seam stays built and inert, which
+contradicts this plan's B0. That half is unresolved and is now **G1**.
+
 ## Reconciliation — the mockups against what exists
 
 ### Confirmed: build stays as designed
 
-| Element                                                | Where it already is                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------- |
-| Vertical segment list, ordinal + waveform per row      | `components/section-view.tsx`, `section-row.tsx`              |
-| Waveform as the row's face; no waveform = not recorded | `components/waveform.tsx`, `lib/audio/peaks.ts`               |
-| Recording as a distinct mode with the list receding    | Pass A "A2 — The states"; mockup dims the list behind a sheet |
-| Cut / insert / paste / concat over raw PCM             | `lib/audio/edit.ts` — already pure, already sample-accurate   |
-| PCM in IndexedDB, encode once on export                | ADR 0002, ADR 0003, `lib/storage/clips.ts`                    |
-| Scripture Burrito scope strings                        | ADR 0004 (accepted part), `lib/scripture/scope.ts`            |
+| Element                                                  | Where it already is                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| Vertical segment list, ordinal + waveform per row        | `components/section-view.tsx`, `section-row.tsx`              |
+| Waveform as the row's face; no waveform = not recorded   | `components/waveform.tsx`, `lib/audio/peaks.ts`               |
+| Recording as a distinct mode with the list receding      | Pass A "A2 — The states"; mockup dims the list behind a sheet |
+| Cut / insert / paste / concat over raw PCM               | `lib/audio/edit.ts` — already pure, already sample-accurate   |
+| PCM in IndexedDB, encode once on export                  | ADR 0002, ADR 0003, `lib/storage/clips.ts`                    |
+| Scripture scope-string grammar, where a reference exists | ADR 0004 (accepted half), `lib/scripture/scope.ts`            |
 
 `lib/audio/edit.ts` deserves a specific note: its header already says _"an edit
 window that can cut, an edit marker that can paste, and insert… undo is just
 keeping the previous buffer."_ The engine Tim's recording UI needs is built and
 tested. The pivot is overwhelmingly a UI and data-model job, not an audio one.
 
+The whole app is **3,261 lines**. This is a large change to a small codebase,
+which is the cheapest version of this change we will ever get.
+
 ### Overturned: decisions that must be reversed
 
 | #   | Pass A/B decided                                                                | The mockup requires                                                                                      |
 | --- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | C1  | Status is **derived**, never set by the user (Pass A, "The thing cut: #6")      | An explicit per-segment **Complete** toggle, in the row _and_ in the recording sheet, counted as `19/21` |
-| C2  | **One control per row** — "two controls would double the decision on every row" | Two: a transport button **and** a `⋮` overflow menu, plus a draggable position dot on the waveform       |
-| C3  | Hierarchy `Book → Chapter → Section → Segment → Take` (ADR 0004, from page 1)   | Page 3 draws `Book → Chapter → Segment → (Takes)` — no Section level                                     |
+| C2  | **One control per row** — "two controls would double the decision on every row" | A transport button and a `⋮` overflow menu, plus a draggable position dot on the waveform                |
+| C3  | Hierarchy `Book → Chapter → Section → Segment → Take`                           | `Book → Chapter → Segment → (Takes)` — no Section level                                                  |
 | C4  | Take-based capture: record a section, judge it, keep or redo                    | One editable waveform per segment: insert at centerline, select, cut, paste, undo/redo                   |
 
-C1 and C2 are UI reversals and cost little. C3 is a data-model question and is
-**blocked on Q1**. C4 is the largest single change in this plan.
+C1 and C4 are settled — C1 by the page-3 counter, C4 by A2. C3 is settled by
+ADR 0004. **C2 is only half settled:** the transport and the position dot are
+drawn and annotated; the `⋮` menu's contents are drawn nowhere. That is **G5**.
 
-### Removed: what dies, and why it must die now
+### Removed: what the pivot orphans
 
-The instruction driving this section is _no stale stubby code left behind_. Each
-item is either deleted in B0 or has a named owner and a date.
+The instruction driving this section is _no stale stubby code left behind_.
 
-| What                                                                                                          | Lines | Why it goes                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/timing/**` (`parse.ts`, `providers.ts`, `registry.ts`, `index.ts`) + `types/timing.ts`                   | ~372  | Nothing outside the folder imports it — grep confirms. `providers.ts` says "None is registered by default." It was built for record-along, which no mockup shows, against timing files uW has not published (ADR 0007, issue #13). Dead on arrival and now unmotivated. |
-| Reference-audio / narration UI in `components/section-view.tsx` (`referencePlaying`, story narration control) | ~40   | GATE 2 put story-level reference audio in v1. No mockup shows it. Keeping the control while the model behind it changes is exactly the stub this pivot is meant to avoid.                                                                                               |
-| `hooks/obs-media.ts` + `lib/storage/media.ts` reference-media cache, **if** artwork leaves the rows           | ~148  | Conditional on Q4. Mockup rows carry ordinal + waveform, no art. Do not delete until Q4 is answered — deleting the OBS artwork path is not reversible cheaply.                                                                                                          |
-
-Deleting the timing seam closes or obsoletes issues **#5** (the seam is inert),
-**#7** (`validateFrameTimings` accepts NaN), **#6** (burrito parser drops the
-chapter side), **#13** (ask uW for timing files) and **#9** (reference audio is
-an uncached CDN `<audio>`). That is five open issues retired by one deletion,
-which is the clearest signal available that the code was not load-bearing.
+| What                                                                                       | Lines | Why it goes                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/timing/**` + `types/timing.ts` — **blocked on G1**                                    | ~372  | Nothing outside the folder imports it; grep confirms, and the only callers of `loadChapterTiming` are its own tests. Built for record-along, which no mockup shows. |
+| Reference-audio / narration path (`obs-media.ts`, `audio-io.ts`, `section-view.tsx`)       | ~40   | D5's surviving half. No mockup shows reference audio. Closes #9 by deletion.                                                                                        |
+| Image-first browse — `section-browser.tsx`'s grid/list conditional, `ChapterCard.thumbUrl` | ~60   | D6. The artwork survives as an optional per-segment illustration; artwork deciding the layout does not.                                                             |
 
 ADR 0007 is not deleted — it is superseded, with a note saying the seam was
 removed and why, so the reasoning survives even though the code does not.
 
+**Sequencing constraint:** B0 must land **after PR #21**, which touches
+`lib/timing/parse.ts` and `types/timing.ts`. Deleting first throws away that
+PR's fix for #7.
+
 ### New: what does not exist yet
 
-| Area                                                                          | Nearest existing thing                                          |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| **Content Mgmt screen** — books list, expand/collapse, chapter rows, counters | `components/section-browser.tsx` (59 lines)                     |
-| **New Book / New Chapter** creation                                           | `lib/storage/projects.ts` repository                            |
-| **Share Book**                                                                | nothing — and no format decided (Q5)                            |
-| **Template Library** (OBS, Book of the Bible + chapter format)                | `lib/obs/catalog.ts` is a hard-wired OBS-only path (issue #20)  |
-| **Per-segment Complete flag** and the `n/total` roll-up                       | `RecordingStatus` enum exists, unused in UI                     |
-| **Recording sheet**: fixed centerline, swipe-to-move, insert vs append        | `hooks/use-recorder.ts` records whole clips                     |
-| **Selection frame → cut → clipboard → paste at centerline**                   | `lib/audio/edit.ts` has the primitives, no UI                   |
-| **Undo / redo stack**                                                         | nothing (see N4)                                                |
-| **VU meter**                                                                  | nothing                                                         |
-| **Zoom toggle** 100% / 25% in view                                            | `components/waveform.tsx` draws fixed peaks                     |
-| **Erase Segment, with confirmation**                                          | nothing — and "confirm without words" is an open Pass A problem |
+| Area                                                        | Nearest existing thing                                            |
+| ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Books screen** — books list, expand/collapse, counters    | `components/section-browser.tsx` (59 lines)                       |
+| **New Book / New Chapter / New Segment**                    | `lib/storage/projects.ts` repository                              |
+| **Share Chapter / Share Book**                              | nothing; specified by A4, needs a zip writer                      |
+| **Template Library**                                        | `lib/obs/catalog.ts` is a hard-wired OBS-only path (#20)          |
+| **Per-segment finished flag** and the `n/total` roll-up     | `Segment.status` + `setSegmentStatus` exist, unused, knip-flagged |
+| **Recording sheet**: fixed centerline, swipe, insert-record | `hooks/use-recorder.ts` records whole clips                       |
+| **Selection → cut → clipboard → paste at centerline**       | `lib/audio/edit.ts` has the primitives, no UI                     |
+| **Undo / redo**                                             | nothing                                                           |
+| **VU meter**                                                | nothing — no `AnalyserNode` anywhere in `src/`                    |
+| **Recorder pause/resume**                                   | `MediaRecorder.pause()` is never called                           |
+| **Zoom** 100% / 25%                                         | `components/waveform.tsx` draws fixed peaks, no pointer handling  |
+| **Erase Segment**                                           | no delete path for a segment or its clips                         |
 
 ## Is any of this unusual for the domain?
 
-Judged against `docs/research/prior-art.md` and `docs/research/ui-patterns.md`,
-which are already in the repo. The short answer is **no — Tim is drawing the
-domain norm**, with four exceptions worth naming.
+Judged against `docs/research/prior-art.md` and `docs/research/ui-patterns.md`.
+The short answer is **no — Tim is drawing the domain norm**, with three
+exceptions worth naming.
 
 Norm-confirming, with evidence:
 
 - **The fixed centerline** is not unusual: `ui-patterns.md` records ElevenLabs
   shipping "a bar waveform with a fixed centre playhead and the audio scrolling
-  past it… worth considering: it keeps the point of interest in one predictable
-  place." Our own research flagged it before Tim's page arrived.
+  past it… it keeps the point of interest in one predictable place." Our own
+  research flagged it before Tim's page arrived.
 - **Insert-at-marker, select, cut, trim** are all shipped by Shema Studio today
-  (`prior-art.md` §1, confidence HIGH, published guide). Tim is asking for a
-  subset of what the closest comparable product already does.
-- **An explicit status flag** matches Shema's separate purpose/status enums,
-  which `prior-art.md` recommends cloning. Tim's binary Complete toggle is far
-  lighter than the five-value enum already in `types/domain.ts`.
+  (`prior-art.md` §1, confidence HIGH, published guide).
+- **An explicit status flag** matches Shema's separate purpose/status enums.
+  Tim's binary Complete toggle is lighter than the five-value enum already in
+  `types/domain.ts`.
 - **Per-chapter progress counters** and **per-row overflow menus** are ordinary
-  list patterns (Nibble's inline per-row progress, Pillow's per-row state chips).
+  list patterns.
 
-The four exceptions:
+The exceptions:
 
 - **N1 — A clipboard, not just a cut.** Tim draws _"cuts selection to clipboard"_
-  and _"toggles Paste icon on @ centerline"_. Shema cuts within a passage and
-  copies a whole section; a general clipboard implies pasting **across** segments
-  and possibly across chapters. Its scope, lifetime and behaviour on app restart
-  are undefined. This is the one genuinely underspecified mechanism on the page.
-- **N2 — Undo and redo over audio.** Normal in a desktop editor, non-trivial
-  here: at ~5.3 MB per minute of PCM (ADR 0002), a naive undo stack that keeps
-  previous buffers — which is exactly what `edit.ts` says undo is — multiplies
-  the memory that issue #12 already flags as unresolved before October.
-- **N3 — Text in a no-text design.** Page 1 asks for "low/no text (icon driven)".
-  The mockups label breadcrumbs "Book 001 > Chapter 1 > 3" and use digits
-  throughout. Probably placeholder, but `ui-patterns.md`'s headline finding is
-  that **no** reviewed product achieves a text-free path, so this needs to be
-  deliberate rather than assumed. See Q3.
-- **N4 — A hidden menu as a primary surface.** Template Library lives in the
+  and _"toggles Paste icon on @ centerline"_. Shema cuts within a passage; a
+  general clipboard implies pasting **across** segments. Scope, lifetime and
+  restart behaviour are undefined. This is **G3**.
+- **N2 — Undo and redo over audio.** Settled by D2 as an operation log rather
+  than buffer copies, which is what makes it affordable at 5.3 MB per minute.
+  No longer an open problem, but it is why D2 exists.
+- **N3 — A hidden menu as a primary surface.** Template Library lives in the
   hamburger; Redo, VU visibility and Erase live in the recording `≡`. For a
   non-reading user a hidden icon-only menu is a discovery problem, and the
-  destructive action lives inside it — while "how a destructive action is
-  confirmed without words" is listed in Pass A as real and unsolved.
+  destructive action lives inside it. A5 relaxes the text constraint, which makes
+  this tractable; it does not make it solved.
 
-None of these argue against Tim's design. N1 and N3 are questions for him; N2 and
-N4 are engineering and UX problems we own.
+None of these argue against Tim's design.
 
-## Open questions
+## Open — G1 to G5
 
-Numbered for reference. Q1, Q3 and Q5 block work; the rest can be answered as
-their batch comes up.
+The only open-question list. G1 and G2 block work; the rest can be answered as
+their batch comes up. Recommendations are ours; the decision is Seth's, with
+Tim's where marked.
 
-| #   | Question                                                                                                                                                                                                                                                  | Blocks | For  |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
-| Q1  | Page 1 has `Chapter → Section → Segment`; page 3 has `Chapter → Segment`. Is **Segment** now the single unit of work, with Section retired? This is also the answer ADR 0004 has been waiting on.                                                         | B1     | Tim  |
-| Q2  | Where do **Takes** live? Page 3 keeps them in the taxonomy, but the recording UI edits one waveform in place. Is a take a saved snapshot of the segment buffer, or is take history dropped for v1?                                                        | B1, B4 | Tim  |
-| Q3  | Is the on-screen **text in the mockups placeholder**, or has "low/no text" relaxed to "words for structure, icons for actions"? Numerals specifically: are digits acceptable for a non-reading user?                                                      | B2     | Tim  |
-| Q4  | Rows show ordinal + waveform and **no OBS artwork**. Is dropping artwork intended, or is it simply not drawn? `ui-patterns.md` argues art is the strongest non-textual row identity we have.                                                              | B3     | Tim  |
-| Q5  | **Share Book** — share _what_, to _whom_, in what format? A file the user hands off (Web Share / download), or device-to-device? Note ADR 0005 says no backend in Phase 1, and Shema's answer is a signed zip bundle with typed purposes.                 | B7     | Tim  |
-| Q6  | **Template Library** — is a template a _content_ pack (OBS's 50 stories with their frames) or a _structure_ generator (a Bible book's chapters and pericopes, no content)? It looks like both, which is the division-scheme model from `prior-art.md` §1. | B7     | Tim  |
-| Q7  | Does the **clipboard** cross segments and chapters, and does it survive app restart? (N1)                                                                                                                                                                 | B5     | Tim  |
-| Q8  | **Erase Segment** — erase the audio and keep the empty segment, or remove the segment from the chapter? Different data operations, same words.                                                                                                            | B6     | Tim  |
-| Q9  | Does the repo stay at `sethstoll3/tc-mobile`? That account is being retired in the GitHub consolidation; `uw-ops` already moved off it.                                                                                                                   | —      | Seth |
+| #      | Question                                                                                              | Blocks | Recommendation                                                                                              | For  |
+| ------ | ----------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------- | ---- |
+| **G1** | Delete `lib/timing/**`, or keep it inert? This plan says delete; D5 says keep. Both are written down. | B0     | **Delete**, and supersede ADR 0007 rather than the code. A reviewer already filed the inertness.            | Seth |
+| **G2** | What does a translator see on first run — an empty Books screen, or the template library?             | B2     | **Empty Books**, template library one tap away. Landing in a picker implies a catalogue.                    | Seth |
+| **G3** | How far does the clipboard reach — segment, chapter, book — and does it survive a restart?            | B5     | **Within a chapter, lost on close.** Persisting it needs a home in IndexedDB and a way to see it.           | Tim  |
+| **G4** | Erase Segment — erase the audio and keep the row, or remove the segment and renumber below it?        | B6     | **Erase the audio, keep the row.** Renumbering from a recorder menu is a large consequence for a small tap. | Tim  |
+| **G5** | Does the per-row `⋮` menu ship, or wait until there is something to put in it?                        | B3     | **Hold it.** Its one obvious occupant already lives in the recorder menu.                                   | Tim  |
+
+Two smaller ones, carried in their batches rather than blocking:
+
+- **Where does artwork go?** D6 keeps it; no mockup draws it anywhere, including
+  the editor. Answered inside B3/B4, and it is why #1 is a rework rather than a fix.
+- **Can a finished segment be edited?** D3 drops the PCM on Finish, so editing
+  afterwards either re-decodes from MP3 — lossy, twice — or is disallowed.
+  Answered inside B8.
 
 ## Batches
 
-Sequenced so that nothing is built on a shape that a later batch changes, and so
-the deletion happens **first** rather than being promised. One lane at a time,
+Sequenced so nothing is built on a shape a later batch changes, and so the
+deletion happens **first** rather than being promised. One lane at a time,
 `develop`-cut branches, both reviewers per `AGENTS.md`.
 
-| Batch  | Name                          | Contents                                                                                                                                          | Depends on |
-| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| **B0** | Remove what the pivot orphans | Delete `lib/timing/**`, `types/timing.ts`, reference-audio UI in `section-view.tsx`. Supersede ADR 0007. Close #5, #6, #7, #9, #13. Re-scope #11. | —          |
-| **B1** | Data model to match page 3    | Segment as the unit (Q1), per-segment `complete` flag, chapter roll-up counts, take decision (Q2), IndexedDB migration (T1 — tests required)      | Q1, Q2     |
-| **B2** | Content Mgmt screen           | Books list, expand/collapse, chapter rows with `n/total`, New Book, New Chapter, menu shell                                                       | B1, Q3     |
-| **B3** | Segments screen               | Three row states, checkbox toggle, mini-waveform with draggable position dot, transport play/pause, `⋮` menu                                      | B1, Q4     |
-| **B4** | Recording sheet               | Sheet over dimmed list, breadcrumb, Finished toggle, fixed centerline, swipe-to-move, record inserts mid / appends at end, pause toggle           | B3         |
-| **B5** | Waveform editing              | Selection frame, on-screen selector, cut to clipboard, paste at centerline, undo + redo, zoom 100% / 25%                                          | B4, Q7     |
-| **B6** | Meter, menu, erase            | VU meter with show/hide, recording `≡` menu, Erase Segment with wordless confirmation                                                             | B4, Q8     |
-| **B7** | Templates and sharing         | Template Library (OBS + Bible book/chapter), Share Book. Retires #20's hard-wiring.                                                               | Q5, Q6     |
-| **B8** | Export                        | MP3 export path — issue #18. Unchanged by this pivot; sequenced last only because nothing else depends on it.                                     | B1         |
-
-Risk tiers per `AGENTS.md`: B1 is **T1** (IndexedDB schema, migration path
-required). B4 and B5 are **T1** for anything touching `lib/audio/**` and **T2**
-for the hooks. B2, B3 and B6 are **T3**. B7 is **T2** (export/share path).
+| Batch  | Issue                                                    | Contents                                                                                      | Depends on          | Tier    |
+| ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------- | ------- |
+| **B0** | [#26](https://github.com/sethstoll3/tc-mobile/issues/26) | Delete the timing seam and the narration path. Supersede ADR 0007.                            | G1, and #21 merging | T2      |
+| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, migration | —                   | **T1**  |
+| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell             | B1, G2              | T3      |
+| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`              | B1                  | T3      |
+| **B4** | [#30](https://github.com/sethstoll3/tc-mobile/issues/30) | Recorder sheet — breadcrumb, Finished toggle, fixed centerline, swipe, insert-record, pause   | B3                  | T1 / T2 |
+| **B5** | [#31](https://github.com/sethstoll3/tc-mobile/issues/31) | Selection frame, cut to clipboard, paste at centerline, undo + redo, zoom                     | B4, G3              | **T1**  |
+| **B6** | [#32](https://github.com/sethstoll3/tc-mobile/issues/32) | VU meter with show/hide, recorder `≡` menu, Erase Segment with confirmation                   | B4, G4              | T2      |
+| **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                      | B1, B2              | T2      |
+| **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                          | B1                  | **T1**  |
 
 ## What this plan does not decide
 
-- The visual system. Pass B's token work (`section-screen-pass-b.md`) is not
-  overturned by these mockups — they are wireframes, and carry no type, spacing
-  or colour beyond the VU meter. Pass B's numeral system survives contact with
-  N3 only if Q3 says digits are acceptable.
-- Whether the five-value `RecordingStatus` enum stays in the model beneath a
-  binary UI toggle. Probably yes — Phase 2 needs it, and ADR 0004's reasoning
-  about migrations applies.
-- Anything already open and unrelated: #12 (PCM storage), #14 (lamejs LGPL),
-  #15 (OBS licensing), #18 (export), #19 (provenance). The pivot does not
-  resolve them and does not make them worse, except that **N2 makes #12 more
-  urgent**, not less.
+- **The visual system.** Pass B's token work (`section-screen-pass-b.md`) is not
+  overturned — the mockups are wireframes and carry no type or spacing. They do
+  carry semantic colour, and it agrees with the tokens: green for play, red for
+  record, which is the existing `--s-live` split. Composition is Gate 2.
+- **Whether the five-value `RecordingStatus` enum stays** beneath a binary UI
+  toggle. Probably yes; Phase 2 needs it and ADR 0004's migration reasoning applies.
+- **Anything already open and unrelated:** #14 (lamejs LGPL), #19 (provenance),
+  #24 (project archive). The pivot does not resolve them. It does make #14
+  harder to defer, because D3 moves the encoder onto a required path.
