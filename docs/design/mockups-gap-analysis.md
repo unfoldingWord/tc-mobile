@@ -152,13 +152,32 @@ An operation log means edits must be expressible as data: a range and a source.
 takes a position and a buffer — so the log is a record of calls it already
 accepts. Recorded inserts reference a clip id rather than inlining samples.
 
-### What D5 and D6 free up
+### What D5 and D6 free up — checked, and it is only half
 
-Between them these retire most of what made the app OBS-shaped: the image-first
-grid, the narration control, and the CDN artwork path. Three deferred round-1
-findings live in exactly that code — #1 (artwork from the CDN, never the cache)
-and #9 (uncached narration with errors swallowed) may be resolved by deletion
-rather than repair.
+Claimed initially that both #1 and #9 might be resolved by deletion. Checked
+against the code; only one is.
+
+**#9 — resolved by deletion.** The finding is that reference audio is an
+uncached CDN `<audio>` with its errors swallowed. D5 removes reference audio
+from Phase 1 outright, so the narration path goes with it: `narrationUrl` in
+`hooks/obs-media.ts`, `startNarration` / `resetNarration` in `hooks/audio-io.ts`,
+`toggleReference` in `hooks/use-audio-session.ts`, and the control in
+`components/section-view.tsx`. Nothing left to fix.
+
+**#1 — not resolved.** The finding is that the recording view loads artwork from
+the CDN rather than the IndexedDB media cache. D6 keeps artwork, as an optional
+per-segment illustration supplied by the OBS template — so "load it from the
+cache, not the network" survives intact as a requirement. What D6 removes is the
+image-first *browse* (`section-browser.tsx`'s grid-versus-list conditional and
+`ChapterCard.thumbUrl`), not the artwork itself.
+
+There is a genuine gap here worth naming: **none of the five mockups shows
+artwork anywhere**, including the segment editor. D6 says artwork stays; the
+wireframes do not say where it goes. Until that is settled, #1 should be
+reworked rather than fixed against a screen that is being replaced.
+
+The image-first grid, the narration control, and the OBS-story browse do all
+retire. That part stands.
 
 ## Taxonomy delta
 
