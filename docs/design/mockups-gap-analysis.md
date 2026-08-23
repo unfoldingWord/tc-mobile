@@ -7,8 +7,8 @@
 Five hand-drawn wireframes, walked through on 2026-08-22. Three distinct
 screens; the editor is drawn three times to show three states.
 
-| Archived as                                                  | Page | Screen                                        |
-| ------------------------------------------------------------ | ---- | --------------------------------------------- |
+| Archived as                                                    | Page | Screen                                        |
+| -------------------------------------------------------------- | ---- | --------------------------------------------- |
 | [`mockup-1-content-mgmt.png`](mockup-1-content-mgmt.png)       | 3    | Content Mgmt — Book / Chapter tree            |
 | [`mockup-2-segments-list.png`](mockup-2-segments-list.png)     | 4    | Segments Mgmt — segment list, fully annotated |
 | [`mockup-3-recording-base.png`](mockup-3-recording-base.png)   | 4    | On-Screen Recording UI — base state           |
@@ -52,7 +52,6 @@ This is issue #20 exactly as filed, and it matches his 2026-08-22 note about
 The same "need" list asks for a **"Share Book" function** — which is issue #18,
 the export path that does not exist.
 
-
 ## Tim's answers, 2026-08-22
 
 All five, verbatim, with what each one changes.
@@ -73,7 +72,7 @@ And, clarifying:
 **Changes:** `SectionRef { book, scope }` stops being the spine and becomes
 optional metadata a template may attach. ADR 0004's accepted half — "address
 sections with Scripture Burrito scope strings" — needs revisiting: the grammar
-is still the right thing to use *when there is a reference*, but a segment with
+is still the right thing to use _when there is a reference_, but a segment with
 no reference is now the normal case rather than a degenerate one. The interop
 consequence is explicit rather than accidental: a book the user made up exports
 as ordered audio, and only a template-derived book carries addressing.
@@ -125,19 +124,18 @@ as the thing that should drive every other decision; it is now an aspiration to
 be tested rather than a requirement to design against. Breadcrumbs, menus and
 labels in the mockups are intended, not shorthand.
 
-
 ## Decisions, 2026-08-23
 
 Taken after the answers above. Each names what it closes.
 
-| # | Decision | Consequence |
-| - | -------- | ----------- |
-| **D1** | `Take` stays in the schema, hidden, 1:1 with its segment | Phase 2's Segment Takes Management is additive. One unused indirection now beats migrating twice against field audio. |
-| **D2** | Undo is an **operation log**, not buffer copies | `cut(range)` / `insert(at, clipRef)` replayed from the original. "Undo is just keeping the previous buffer" costs ~16 MB per step on a 3-minute segment; a log costs bytes and survives a restart. |
-| **D3** | **MP3 on Finished** | PCM while a segment is being edited; transcode to 64 kbps and drop the PCM when the translator marks it Finished. ~660 MB becomes ~66 MB. Closes the storage strategy in #12. |
-| **D4** | **MicroSD via the share sheet only** | No web API writes to removable media. The OS picker can target the card, so SD is an export destination rather than storage. No wrapper, ADR 0005 unchanged. |
-| **D5** | **Reference audio is out of Phase 1** | No mockup shows it. The timing seam (ADR 0007) stays built and inert; the narration control comes out of the section view. |
-| **D6** | **Artwork becomes optional per-segment illustration** | Supplied by the OBS template rather than defining the browse layout. Picture-navigation survives for non-readers without making the app OBS-shaped. Revisits ADR 0006's image-first grid. |
+| #      | Decision                                                 | Consequence                                                                                                                                                                                        |
+| ------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1** | `Take` stays in the schema, hidden, 1:1 with its segment | Phase 2's Segment Takes Management is additive. One unused indirection now beats migrating twice against field audio.                                                                              |
+| **D2** | Undo is an **operation log**, not buffer copies          | `cut(range)` / `insert(at, clipRef)` replayed from the original. "Undo is just keeping the previous buffer" costs ~16 MB per step on a 3-minute segment; a log costs bytes and survives a restart. |
+| **D3** | **MP3 on Finished**                                      | PCM while a segment is being edited; transcode to 64 kbps and drop the PCM when the translator marks it Finished. ~660 MB becomes ~66 MB. Closes the storage strategy in #12.                      |
+| **D4** | **MicroSD via the share sheet only**                     | No web API writes to removable media. The OS picker can target the card, so SD is an export destination rather than storage. No wrapper, ADR 0005 unchanged.                                       |
+| **D5** | **Reference audio is out of Phase 1**                    | No mockup shows it. The timing seam (ADR 0007) stays built and inert; the narration control comes out of the section view.                                                                         |
+| **D6** | **Artwork becomes optional per-segment illustration**    | Supplied by the OBS template rather than defining the browse layout. Picture-navigation survives for non-readers without making the app OBS-shaped. Revisits ADR 0006's image-first grid.          |
 
 ### What D3 pulls in
 
@@ -168,7 +166,7 @@ from Phase 1 outright, so the narration path goes with it: `narrationUrl` in
 the CDN rather than the IndexedDB media cache. D6 keeps artwork, as an optional
 per-segment illustration supplied by the OBS template — so "load it from the
 cache, not the network" survives intact as a requirement. What D6 removes is the
-image-first *browse* (`section-browser.tsx`'s grid-versus-list conditional and
+image-first _browse_ (`section-browser.tsx`'s grid-versus-list conditional and
 `ChapterCard.thumbUrl`), not the artwork itself.
 
 There is a genuine gap here worth naming: **none of the five mockups shows
@@ -249,16 +247,17 @@ waiting to be wired.
 
 Header is `Book 001 > Chapter 1 > 3` with the Finished toggle. Below it a
 waveform with a fixed centerline, described as _"where the recording + playback
-+ insertion (paste, new recording) occur."_ A VU meter strip sits under it.
-Five controls:
 
-| Control        | Behaviour                                                                 |
-| -------------- | ------------------------------------------------------------------------- |
-| Zoom toggle    | 100% in view ↔ 25% in view                                                |
+- insertion (paste, new recording) occur."_ A VU meter strip sits under it.
+  Five controls:
+
+| Control         | Behaviour                                                                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zoom toggle     | 100% in view ↔ 25% in view                                                                                                                      |
 | Selection frame | Shows on-screen selector and a Cut icon; cut sends the selection to the clipboard, drops the frame, and turns on a Paste icon at the centerline |
-| Record         | Records at the centerline; toggles to Pause                               |
-| Undo           | —                                                                          |
-| Menu           | Redo · VU Meter show/hide · Erase Segment (confirm first)                 |
+| Record          | Records at the centerline; toggles to Pause                                                                                                     |
+| Undo            | —                                                                                                                                               |
+| Menu            | Redo · VU Meter show/hide · Erase Segment (confirm first)                                                                                       |
 
 Paste: _"Paste icon appears @ centerline if clipboard is full. Pressing it
 inserts clipboard @ centerline. Waveform right of centerline shifts right to
@@ -313,8 +312,7 @@ PCM. At roughly 5.3 MB per minute that bounds how deep the stack can go, which
 is a storage question (#12) as much as an editor one.
 
 **Q8 — is reference audio still in Phase 1?** None of the five mockups shows
-it, and A1 removes the OBS framing that motivated it. The timing seam (ADR
-0007) is built and inert either way, so nothing breaks — but the section view
+it, and A1 removes the OBS framing that motivated it. The timing seam (ADR 0007) is built and inert either way, so nothing breaks — but the section view
 currently has a narration control that the new screens do not.
 
 ## What we are not doing yet, and why
