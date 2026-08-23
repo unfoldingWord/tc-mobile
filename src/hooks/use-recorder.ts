@@ -9,6 +9,22 @@ import {
 
 export type RecorderState = "idle" | "requesting" | "recording" | "processing";
 
+/**
+ * How long `stop()` waits for MediaRecorder to flush before taking what it has.
+ *
+ * `onstop` is not guaranteed to fire. This module already special-cases WebKit
+ * emitting a single blob on stop rather than honouring the timeslice, and a
+ * recorder that also never fires `stop` would leave the await hanging forever
+ * — on a screen whose Back is hidden and whose Stop is disabled while
+ * `processing`, so the translator has no exit and the confirmed take never
+ * reaches `saveTake`.
+ *
+ * Generous, because the flush is only delivery of already-captured blobs, not
+ * encoding: five seconds is far past a healthy stop and far short of a
+ * translator concluding the app is dead.
+ */
+const STOP_FLUSH_TIMEOUT_MS = 5_000;
+
 export interface UseRecorder {
   readonly state: RecorderState;
   readonly supported: boolean;
@@ -205,8 +221,23 @@ export function useRecorder(): UseRecorder {
     setState("processing");
 
     const blob = await new Promise<Blob>((resolve) => {
-      recorder.onstop = () => {
+      // Bounded. On the timeout we take whatever the local array already holds
+      // — everything MediaRecorder delivered before it stopped answering —
+      // rather than waiting for an event that is not coming.
+      //
+      // Deliberately NOT paired with releasing the tracks the moment `stop()`
+      // is invoked: the final `dataavailable` arrives between `stop()` and
+      // `onstop`, and killing the capture tracks inside that window is a way
+      // to truncate it. That slice is the whole recording for a take under one
+      // timeslice, which is the loss this module's chunk ownership exists to
+      // prevent. The microphone is released immediately after this await and
+      // before the decode, so bounding the wait bounds the hot mic too.
+      const finish = () =>
         resolve(new Blob(chunks, { type: recorder.mimeType }));
+      const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+      recorder.onstop = () => {
+        clearTimeout(timer);
+        finish();
       };
       recorder.stop();
     });
