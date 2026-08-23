@@ -209,6 +209,86 @@ hardening into a decision nobody took.
 
 ---
 
+## 2026-08-22 — Day 2: review rounds, the family survey, and Tim's mockups
+
+**Branches:** four lanes in worktrees · **PRs:** #21 #22 #23 · **Issues:** +7, −1
+
+### Completed
+
+- **Round-1 review findings closed** — #2, #3, #4, #7, #10 fixed on
+  `fix/review-round-1-scheme-independent` (#21). The four lifecycle findings
+  turned out to be one defect: nothing owned the audio lifecycle. Extracted
+  `lib/audio/session.ts`, a pure DOM-free arbiter whose single invariant is that
+  the microphone outranks playback, and `lib/takes/pending-take.ts`, a pure
+  reducer so the save-failure transitions are testable at all. `6a629d6`,
+  `5533863`, `769e413`
+- **Three internal review passes plus two Frank/George rounds.** Round 2 of the
+  internal pass closed all 13 of round 1's findings and introduced 3 more, which
+  were also closed. Frank and George then found 2 P1s that both fix passes had
+  missed — one of them a defect in the previous commit's own fix.
+- **tC family survey** — read the source of seven tC-adjacent systems. Headline:
+  none of them is an audio app, not one handles two people editing the same
+  thing, and the ecosystem's auth is worse than none. Published as an artifact.
+- **Four false claims corrected in canonical docs** (#22) — ADR 0007's "no OBS
+  audio on DCS" (98 entries / 92 languages exist), prior-art's over-claim about
+  tcorePSA's journal (no fold, no merge, no licence), AGENTS.md naming
+  `lucide-react` as the icon library when nothing imports it, and the tracker's
+  own claim that nothing had run on hardware.
+- **`knip` on the merge gate** and an **Engineering bar** section in AGENTS.md.
+  knip found `zustand` and `lucide-react` unused and three dead barrel files on
+  its first run. `e930161`, `c395cc9`
+- **Review round cap set at 4**, with an ask-the-DRI rule rather than an
+  automatic stop. The docs had invoked "the round cap" in four places without
+  ever defining a number.
+- **Tim's mockups received, archived and analysed** (#23), and **all five
+  blocking questions answered** by Tim the same evening.
+- **ADR 0004's broad half rejected** — one generic taxonomy, no pluggable
+  division scheme. Open since 19 Aug. `8fd883d`
+
+### Decisions taken
+
+D1 Takes stay in the schema, hidden · D2 undo is an operation log, not buffer
+copies · D3 transcode to MP3 on "Finished" (660 MB → ~66 MB) · D4 MicroSD via
+the share sheet only · D5 reference audio leaves Phase 1 · D6 artwork becomes an
+optional per-segment illustration. Full reasoning in
+`docs/design/mockups-gap-analysis.md`.
+
+Also: convergence target is **tC4**, Phase 1 is **standalone**, OBS-derived
+recordings **are** CC BY-SA (#15 closed), and there is no cleaner MP3 encoder —
+every one in the ecosystem descends from LAME or Shine, both LGPL.
+
+### In progress
+
+- **#21** — round 3 done. George has 1 P1 (the final `dataavailable` chunk can
+  land in an array `cancel()` has already swapped) plus 3 P2 and 2 P3; Frank has
+  1 P2. Two findings deferred here from #22. Round 4 is the last before the cap.
+- **#22** — round 1 triaged, 7 of 9 fixed at `c395cc9`, needs re-review.
+- **#23** — no review run yet; docs, so it merges on green.
+
+### Blockers / needs a human
+
+- **#24 (new)** — a Book can be exported but not saved or restored. Needs Tim to
+  say whether a device is expected to survive the training holding the only copy
+  of a translation.
+- **#14** — lamejs LGPL-3.0. Open-sourcing the repo resolves the hard part;
+  notice obligations remain and want a licensing sign-off before October.
+- **Uncommitted parallel work** — `docs/design/pivot-plan.md`,
+  `docs/spec-transcription-p3-p4.md` and `docs/mockups/` exist untracked in the
+  `fix/…` worktree, written before Tim's answers arrived. They are complementary
+  to `mockups-gap-analysis.md` rather than redundant — the plan and the
+  transcription have no equivalent — but the mockup images are duplicated.
+  **Reconcile before either is committed.**
+
+### Next steps
+
+1. **#21 round 4** — George's P1, the 4 P2s, and the two findings inherited from
+   #22 (`ensureObsChapter`'s idempotency docblock, the dead `share` icon).
+2. **#22 re-review** at `c395cc9`.
+3. **Reconcile the two mockup write-ups**, then start the model change: drop
+   `Section`, `Project` → `Book`, `SectionRef` nullable.
+
+---
+
 ## 2026-08-22 — Day 1: scaffold to reviewed prototype
 
 **Branch:** `develop` · **Commits:** 18 · **Repo created:** `sethstoll3/tc-mobile` (private)
