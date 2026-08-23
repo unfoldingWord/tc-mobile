@@ -1,6 +1,6 @@
 # Tim's mockups — what they specify, and what we are missing
 
-**Status:** Analysis, pending Tim's answers · **Date:** 2026-08-22
+**Status:** Answered by Tim 2026-08-22 · **Date:** 2026-08-22, updated 2026-08-23
 
 ## What we have
 
@@ -18,10 +18,11 @@ screens; the editor is drawn three times to show three states.
 Originals were macOS screenshots; archived here because a wireframe that lives
 only in someone's `temp/` folder is not a source anyone else can check.
 
-**We are missing notebook pages 1 and 2.** Page 3 opens with the taxonomy
-written out cold and no preamble, which reads like a continuation. If the
-design criteria Tim said he was assembling exist anywhere, that is where they
-are — and they may answer Q1 and Q5 below.
+Page 3 opens with the taxonomy and no preamble, which looked like a
+continuation from missing pages. It is not: page 1 of the same notebook is
+`docs/A06-tC-Mobile.pdf`, already in this repo and transcribed in
+`docs/spec-transcription.md`. Tim exported it separately as a PDF. **Nothing is
+missing, and nothing further is sketched.**
 
 ## What the mockups settle
 
@@ -51,6 +52,79 @@ This is issue #20 exactly as filed, and it matches his 2026-08-22 note about
 The same "need" list asks for a **"Share Book" function** — which is issue #18,
 the export path that does not exist.
 
+
+## Tim's answers, 2026-08-22
+
+All five, verbatim, with what each one changes.
+
+### A1 — segments are generic; a reference is optional
+
+> "No, a segment is not wired to a Scripture reference or an OBS 'frame' or
+> anything else... but it can accommodate them. The structure is generic,
+> intended to shape the UI for any resource that can use the Book → Chapter →
+> Segment (→ Take) taxonomy."
+
+And, clarifying:
+
+> "This is not an 'OBS recorder' or 'Scripture recorder' app. It is an 'audio
+> notebook and pencil' app that needs just enough structure to be able to
+> accommodate both OBS and Scripture."
+
+**Changes:** `SectionRef { book, scope }` stops being the spine and becomes
+optional metadata a template may attach. ADR 0004's accepted half — "address
+sections with Scripture Burrito scope strings" — needs revisiting: the grammar
+is still the right thing to use *when there is a reference*, but a segment with
+no reference is now the normal case rather than a degenerate one. The interop
+consequence is explicit rather than accidental: a book the user made up exports
+as ordered audio, and only a template-derived book carries addressing.
+
+### A2 — Takes are out of Phase 1
+
+> "In Phase 1, Takes are not supported. We'll figure that out in Phase 2,
+> probably with a separate screen (Segment Takes Management, or the like)."
+
+**Changes:** the largest simplification in this document. One recording per
+segment, edited in place, which is exactly what a centerline editor with
+undo/redo implies. Whether the `Take` record stays in the schema as an
+invisible 1:1 or comes out entirely is a real decision — Phase 2 brings takes
+back, so removing the layer now means migrating twice, while keeping it means
+carrying a layer nothing reads. `DB_VERSION` is 2 and not yet in the field,
+which is the cheapest moment either way.
+
+### A3 — segments are added one at a time
+
+> "Ah, I forgot to add the UI for that, but it should be included as (+) button
+> in the menu bar of the 'Segments Management 1' sketch above."
+
+**Changes:** no segment count at chapter creation. A `+` in the Segments
+Management menu bar appends a segment. Templates supply them in bulk instead.
+
+### A4 — Share is MP3 and zip, not Burrito
+
+> "Sharing needs to happen at the book and the chapter level in Phase 1. 'Share
+> Chapter' should concatenate all the segments into a single MP3 which is
+> presented to the mobile OS's 'share' sheet. 'Share Book' concatenates all the
+> segments for each chapter into MP3s, zips them together and sends the zip to
+> the share sheet."
+
+**Changes:** #18 is now fully specified, and Scripture Burrito is not in Phase 1
+at all. Two share paths, both ending at `navigator.share`. Adds one dependency —
+a zip writer; `fflate` is MIT and is what `tcorePSA` used, chosen there
+explicitly for low-end Android. `concat` and `encodeMp3` already exist, and
+`resolveChapterClipIds` already walks a chapter in export order.
+
+### A5 — minimal text is fine for Phase 1
+
+> "Zero text is a 'someday, when it's all growed up' dream, but we don't
+> actually know if it is realistic. For Phase 1, minimal text is fine,
+> especially as we are testing and validating the assumptions on which all of
+> this is built."
+
+**Changes:** removes the hardest constraint from Phase 1. O1 treated zero-text
+as the thing that should drive every other decision; it is now an aspiration to
+be tested rather than a requirement to design against. Breadcrumbs, menus and
+labels in the mockups are intended, not shorthand.
+
 ## Taxonomy delta
 
 Page 3 writes the model out directly:
@@ -71,6 +145,13 @@ Project
        └ Segment
           └ Take
 ```
+
+The 19 Aug spec (`docs/spec-transcription.md`) had **both** layers —
+`Chapter = collection of Sections (stories, pericopes)` containing
+`Segment = contiguous speech unit (frames, spans / verses)`. The 22 Aug mockup
+drops Section. That is a deliberate change over three days, and it follows from
+Tim's framing: Section was the OBS-story / pericope layer, and this is not an
+OBS app.
 
 Two differences, one cosmetic and one structural.
 
@@ -161,35 +242,26 @@ None of these exist anywhere in `src/`, verified by grep:
 
 ## Open questions
 
-These block the pivot to different degrees. Q1 and Q5 change the data model and
-the UI respectively; the rest can be assumed and corrected.
+All five originals are answered above. What Tim's answers open in their place:
 
-**Q1 — Does a segment carry a scripture reference, or is it only an ordinal?**
-`SectionRef` is `{ book, scope }` in Scripture Burrito scope grammar, which is
-what makes exported audio addressable by other tools. The mockups show bare
-numbered segments inside a user-named `Book 001`. If books are arbitrary, the
-grammar has nothing to bind to, and the interop question (O6, ADR 0004)
-resolves by default to "numbered audio, not addressable Scripture." That is a
-consequential default to arrive at silently.
+**Q6 — does the `Take` record stay in the schema?** A2 removes takes from the
+Phase 1 UI, not necessarily from storage. Keeping an invisible 1:1 take makes
+Phase 2's Segment Takes Management additive; removing it now means migrating
+twice. `DB_VERSION` is 2 and no field data exists, so this is the cheapest
+moment to choose either way. **Recommendation: keep the record, hide the
+concept** — the cost is one unused indirection, and the alternative is a
+migration against irreplaceable audio later.
 
-**Q2 — Where do Takes appear?** The taxonomy lists them under Segment in
-parentheses, but no screen shows take management. Does re-recording create a
-take, or edit the buffer in place? The editor's undo/redo implies in-place; the
-data model implies takes. Possibly the per-row overflow menu.
+**Q7 — what does undo operate on?** The editor has undo, redo and destructive
+edits over a single buffer. `lib/audio/edit.ts` says "undo is just keeping the
+previous buffer," which is true and also means a per-edit copy of the segment's
+PCM. At roughly 5.3 MB per minute that bounds how deep the stack can go, which
+is a storage question (#12) as much as an editor one.
 
-**Q3 — What creates the segments?** `19/21` implies a known total. A template
-supplies it for OBS. For a blank book, does New Chapter ask for a count, or are
-segments added one at a time?
-
-**Q4 — What does Share Book produce?** MP3s, a zip, a Scripture Burrito? This
-is Q1 wearing different clothes: the answer decides whether the output is
-interoperable.
-
-**Q5 — Is the zero-text requirement still live?** These wireframes contain a
-lot of reading: `Book 001 > Chapter 1`, "New Book", a hamburger menu, an
-overflow menu per row. O1 proposed no reading anywhere in the primary path, and
-the Nukak observation is the reason. Wireframe shorthand, or a real change of
-position?
+**Q8 — is reference audio still in Phase 1?** None of the five mockups shows
+it, and A1 removes the OBS framing that motivated it. The timing seam (ADR
+0007) is built and inert either way, so nothing breaks — but the section view
+currently has a narration control that the new screens do not.
 
 ## What we are not doing yet, and why
 
