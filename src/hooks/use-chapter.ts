@@ -322,6 +322,17 @@ export function useObsChapter(storyNumber: number) {
 
   /** Deliberate, confirmed loss of the held recording. */
   const discardPendingTake = useCallback(() => {
+    // The same live guard Retry takes, and for the same window. `SaveFailed`
+    // derives `saving` from the slot it was last rendered with, so between a
+    // Retry tap and that re-render the armed Delete is still on screen and
+    // still live. Discarding there races the write Retry just started: the
+    // clip is deleted out from under a take `addTake` has already made active
+    // — a section that reads unrecorded and a play control that does nothing —
+    // or the write lands after the discard and a recording the translator
+    // confirmed deleting comes back on the next reload. Both are the silent
+    // loss this slot exists to prevent, on the one screen whose entire job is
+    // to make keep-or-throw a decision.
+    if (savingRef.current) return;
     const { next, orphan } = discardSave(pending);
     setPending(next);
     // Nothing references the bytes a failed attempt may already have written,
