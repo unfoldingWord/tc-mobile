@@ -57,9 +57,12 @@ const deny = (groups) => ({
  * This list is FAST FEEDBACK, not the boundary. Enumerating the DOM surface by
  * hand is a losing game — the first version of it omitted `AudioBuffer` and
  * `HTMLAudioElement`, both already used at the browser boundary. The boundary
- * is `tsconfig.lib.json`, which compiles src/lib and src/types with no DOM lib
- * at all, so the whole surface is absent by construction and type positions are
- * covered too. Keep this rule anyway: it fires in the editor and says why.
+ * is `tsconfig.lib.json`, which compiles src/lib and src/types with no DOM lib,
+ * so type positions are covered too. That gate has a named residual — Node's
+ * own web globals, `Navigator` and `Storage` among them — documented in that
+ * file and asserted by tests/lib-boundary.test.ts. Keep this rule anyway: it
+ * fires in the editor, it says why, and it covers `navigator` and
+ * `localStorage` as values, which the compile gate does not.
  */
 const BROWSER_ONLY_GLOBALS = [
   "window",

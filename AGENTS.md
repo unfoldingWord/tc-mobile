@@ -34,7 +34,8 @@ npm run build          # production build
 npm run preview        # preview the build
 npm run lint           # ESLint, zero warnings allowed
 npm run typecheck      # tsc -b (project references)
-npm run knip           # unused files and dependencies
+npm run typecheck:lib  # lib/ + types/ compiled with NO DOM lib — see below
+npm run knip           # unused files, deps, exports and exported types
 npm test               # vitest run
 npm run format         # prettier --write
 npm run verify         # everything above, in one command
@@ -138,9 +139,19 @@ were added 2026-08-24; before that the gate had never checked them and nineteen
 dead ones were passing.
 
 An export that is genuinely dead now but that a named pivot batch wires up
-carries a `@pivot-pending` JSDoc tag, which knip honours. **The tag must name
-the batch and the issue.** It is not a way to silence knip — an untagged unused
-export fails CI, and a tag without a reason is worse than the export.
+carries a `@pivotpending` JSDoc tag, which knip honours.
+
+**The tag must name a tracking issue, and the batch when a batch owns it.** Not
+every pending export belongs to a B-batch — the OBS media cache is tagged
+against #1 and open question Q4, and there is no batch that will touch it. An
+export with **no** issue behind it does not get a tag; it gets deleted. An
+untagged unused export fails CI, and a tag without a reason is worse than the
+export it hides.
+
+**The tag is one alphabetic token on purpose.** knip parses tags with
+`/[a-zA-Z]+/` and keeps only the first run, so a hyphenated `@pivot-pending`
+is stored as `@pivot` — which would silently ignore _any_ future export tagged
+`@pivot`-anything. Do not reintroduce a hyphen here.
 
 **Two blind spots remain. Do not read a green knip as "no dead code."**
 
@@ -165,7 +176,14 @@ well as `@/`-aliased ones, and `no-restricted-globals` bans the browser globals
 from `src/lib/**` — a probe file in `src/lib/audio/` using `AudioContext`,
 `document`, `window` and `navigator` previously produced zero ESLint and zero
 `tsc` diagnostics. The ban catches value references; a type-position reference
-would need a DOM-free `lib` tsconfig, which is not built. `scripts/**/*.mjs`
+is caught by `npm run typecheck:lib`, which compiles `src/lib` and `src/types`
+against `tsconfig.lib.json` with no DOM lib — in `verify` and in CI. **That gate
+has a named residual:** `"types": ["node"]` brings Node's own web globals, so
+`Navigator` and `Storage` type-check inside `lib/`. Deliberate — both run in
+plain Node and in a Worker, which is the property this rule protects — and
+`tests/lib-boundary.test.ts` asserts what fires and what does not, so the line
+cannot drift silently. Note `.husky/pre-commit` runs only `npm run typecheck`;
+the DOM-free pass is `verify` and CI. `scripts/**/*.mjs`
 are linted too — they matched no config block and ran with zero rules while
 fetching over the network and writing 598 files into `public/`.
 

@@ -26,7 +26,7 @@ async function fetchInto(url: string): Promise<void> {
 }
 
 /**
- * @pivot-pending #1 — the recording view loads artwork straight from the
+ * @pivotpending #1 — the recording view loads artwork straight from the
  * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
  * IndexedDB cache. #1 is the rework that wires them together; open question Q4
  * keeps the cache in the model until it does. Do not delete on knip's word.
@@ -48,7 +48,7 @@ export interface DownloadProgress {
  * fifteen-sixteenths available is far more useful in a workshop than none of
  * it. The count of failures is returned so the UI can be honest about it.
  *
- * @pivot-pending No caller. See the note on `DownloadProgress` — this is the
+ * @pivotpending No caller. See the note on `DownloadProgress` — this is the
  * cache side of #1.
  */
 export async function downloadStoryMedia(
@@ -81,7 +81,7 @@ export async function downloadStoryMedia(
 
 /** How much of a story is already on the device, for a per-story indicator. */
 /**
- * @pivot-pending #1 — the recording view loads artwork straight from the
+ * @pivotpending #1 — the recording view loads artwork straight from the
  * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
  * IndexedDB cache. #1 is the rework that wires them together; open question Q4
  * keeps the cache in the model until it does. Do not delete on knip's word.
@@ -103,7 +103,7 @@ export async function storyMediaStatus(
  * a real memory problem on a low-end device.
  */
 /**
- * @pivot-pending #1 — the recording view loads artwork straight from the
+ * @pivotpending #1 — the recording view loads artwork straight from the
  * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
  * IndexedDB cache. #1 is the rework that wires them together; open question Q4
  * keeps the cache in the model until it does. Do not delete on knip's word.

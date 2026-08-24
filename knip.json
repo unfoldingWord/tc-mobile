@@ -4,5 +4,5 @@
   "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts", "scripts/*.mjs"],
   "ignoreDependencies": ["tailwindcss"],
   "vitest": { "entry": ["tests/**/*.test.ts"] },
-  "tags": ["-@pivot-pending"]
+  "tags": ["-@pivotpending"]
 }

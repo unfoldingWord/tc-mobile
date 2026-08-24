@@ -22,7 +22,7 @@ export async function getStory(n: number): Promise<ObsStory | undefined> {
 }
 
 /**
- * @pivot-pending No caller yet. Listing the available stories is the core read
+ * @pivotpending No caller yet. Listing the available stories is the core read
  * of B7's Template Library (#33), where this module becomes a template
  * provider rather than the hard-wired OBS path it is today.
  */

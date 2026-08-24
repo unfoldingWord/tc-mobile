@@ -176,7 +176,7 @@ export async function setActiveTake(
 }
 
 /**
- * @pivot-pending No caller yet, and deliberately so. B1 (#27) wires this to the
+ * @pivotpending No caller yet, and deliberately so. B1 (#27) wires this to the
  * per-segment finished checkbox on page 3 of the mockups. The five-value
  * `RecordingStatus` stays in the model beneath a binary UI toggle; Phase 2
  * needs the wider enum.
