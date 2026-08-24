@@ -12,9 +12,13 @@ rejected the Section layer and the pivot
 so a frame is a **Segment**. The corrections are marked inline below.
 
 **Amended 2026-08-24 (B0, #26)** — **Q4 is answered: no.** The full-size-artwork
-**media cache is removed** from the tree (`hooks/obs-media.ts`,
-`lib/storage/media.ts`, and the `media` object store in `lib/storage/db.ts`),
-along with the narration path. It was kept on the bet that a later phase would
+**media cache is removed** from the tree — its accessor code
+(`hooks/obs-media.ts`, `lib/storage/media.ts`) and the exported `CachedMedia`
+type — along with the narration path. The `media` **object store** in
+`lib/storage/db.ts` is deliberately **left in place** (empty and unread) so B0
+makes no IndexedDB schema change; it is removed by B1's drop-and-recreate (#27),
+where the schema-change discipline and its migration test belong. It was kept on
+the bet that a later phase would
 wire per-segment artwork to it (#1), but no mockup places artwork anywhere, no
 batch was scheduled to wire it, and code nothing uses is the sprawl the bar
 rejects. **What still ships is unchanged:** the 2.5 MB bundle of 128px
@@ -96,8 +100,9 @@ than the source, and small enough to simply ship.
 
 ~~Full-size artwork is still fetched on demand~~ **Void, 2026-08-24 (B0, #26).**
 Full-size artwork is **no longer fetched or cached**: the on-demand fetch layer
-and the IndexedDB `media` store are removed. No Phase 1 screen shows the picture
-(Q4, answered no), so there was nothing for the cache to serve. The recording
+is removed. (The empty `media` object store stays until B1's drop-and-recreate,
+so B0 changes no schema — see the amendment note above.) No Phase 1 screen shows
+the picture (Q4, answered no), so there was nothing for the cache to serve. The recording
 view's `<img>` still points at the door43 CDN URL directly, which works online
 and is temporary — the pre-pivot section view is replaced by B2/B3.
 
@@ -106,9 +111,10 @@ Verified (kept as a record): the Door43 CDN serves `Access-Control-Allow-Origin:
 (ADR 0005). That mattered while the cache existed; it no longer does.
 
 ~~Media fetched at runtime lives in IndexedDB rather than the Cache API…~~
-**Void, 2026-08-24 (B0, #26).** There is no runtime media fetch and no `media`
-store after B0. The rationale (durable, countable, removable per story) is kept
-only as the reason the store was chosen while it existed.
+**Void, 2026-08-24 (B0, #26).** There is no runtime media fetch after B0. The
+`media` store itself still exists — empty and unread — until B1 removes it. The
+rationale (durable, countable, removable per story) is kept only as the reason
+the store was chosen while it had a writer.
 
 ## Licensing
 

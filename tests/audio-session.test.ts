@@ -123,10 +123,10 @@ describe("createAudioSession", () => {
     // Nothing outranks the microphone, including the microphone: session.ts:14
     // states `claim("mic")` always succeeds, and narrowing that guard to
     // `liveKind === "mic"` is a one-word change no other test here sees. The
-    // hook ignores this token (`startRecording`, use-audio-session.ts:226) and
+    // hook ignores this token (`startRecording`, use-audio-session.ts:168) and
     // starts the recorder regardless, but `claimFloor` returns early on a null
-    // token and so skips clearing `playing`, `reference` and `playbackError`
-    // (use-audio-session.ts:100-108) — capture would begin under a stale
+    // token and so skips clearing `playing` and `playbackError`
+    // (use-audio-session.ts:81-90) — capture would begin under a stale
     // playback UI.
     expect(session.claim("mic")).not.toBeNull();
     expect(session.live).toBe("mic");
