@@ -1,6 +1,17 @@
 # 0007 — Model frame timing before the data exists
 
-**Status:** Accepted · **Date:** 2026-08-22
+**Status:** Superseded by B0 (#26) · **Date:** 2026-08-22
+
+**Superseded 2026-08-24 (B0, #26).** The seam this ADR built — `lib/timing/**`,
+`types/timing.ts`, and `tests/timing.test.ts` — has been **removed from the
+tree**. Record-along is out of Phase 1 (D5), no mockup shows reference audio,
+and a seam kept inert against data that does not exist is the speculative,
+nothing-uses-it code the engineering bar rejects. The design reasoning below is
+kept as the record of _why_ it was built and why it was cheap to remove; it no
+longer describes code in `src/`. **The ask in "The ask this creates" still
+stands** — #13 tracks asking unfoldingWord to publish OBS audio timing, and if
+that data ever lands the parsers are recoverable from git history rather than
+gone.
 
 ## Context
 

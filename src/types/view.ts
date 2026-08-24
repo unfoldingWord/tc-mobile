@@ -37,8 +37,6 @@ export interface ChapterCard {
    * whole screen turns on.
    */
   readonly hasArtwork: boolean;
-  /** Story-level reference narration, when the content ships any. */
-  readonly referenceAudioUrl: string | null;
   /**
    * Sections whose take names audio the database cannot produce.
    *

@@ -51,21 +51,6 @@ export interface TcMobileDb extends DBSchema {
   clipMeta: { key: ClipId; value: ClipMeta };
   /** Raw mono 16-bit PCM, stored as an ArrayBuffer keyed by ClipId. */
   clipData: { key: ClipId; value: ArrayBuffer };
-  /**
-   * Reference media fetched from the Door43 CDN — OBS frame artwork and
-   * narration — keyed by its source URL. Cached here rather than in the
-   * Cache API so a downloaded story is durable, inspectable, and countable
-   * against the same storage budget as the recordings.
-   */
-  media: { key: string; value: CachedMedia };
-}
-
-export interface CachedMedia {
-  readonly url: string;
-  readonly blob: Blob;
-  readonly contentType: string;
-  readonly bytes: number;
-  readonly fetchedAt: number;
 }
 
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
@@ -95,9 +80,11 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
         db.createObjectStore("clipData");
       }
 
-      if (oldVersion < 2) {
-        db.createObjectStore("media", { keyPath: "url" });
-      }
+      // v2 added a `media` object store for the OBS reference-media cache. B0
+      // (#26) removed that cache, so v2 no longer creates a store — but the
+      // version number stays 2 so a device already at v2 does not see a
+      // downgrade. Any stale empty `media` store on such a device is swept by
+      // B1's drop-and-recreate (#27); nothing reads it in the meantime.
     },
   });
   return dbPromise;

@@ -1,5 +1,4 @@
 import { Control } from "./control";
-import { Icon } from "./icon";
 import { Notice } from "./notice";
 import { Waveform } from "./waveform";
 import type { RecorderState } from "@/hooks/use-recorder";
@@ -19,7 +18,6 @@ interface SectionViewProps {
   recorderState: RecorderState;
   elapsedMs: number;
   playing: boolean;
-  referencePlaying: boolean;
   /** Whether this device can record at all. Silent everywhere before. */
   supported: boolean;
   /**
@@ -40,7 +38,6 @@ interface SectionViewProps {
   onRecord: () => void;
   onStop: () => void;
   onPlay: () => void;
-  onToggleReference: () => void;
 }
 
 /**
@@ -58,7 +55,6 @@ export function SectionView({
   recorderState,
   elapsedMs,
   playing,
-  referencePlaying,
   supported,
   saving,
   savingOrdinal,
@@ -69,7 +65,6 @@ export function SectionView({
   onRecord,
   onStop,
   onPlay,
-  onToggleReference,
 }: SectionViewProps) {
   const recorded = section.durationMs !== null;
   const art = section.imageUrl ?? section.thumbUrl;
@@ -132,30 +127,6 @@ export function SectionView({
               ? "—"
               : formatDuration(section.durationMs)}
           </div>
-
-          {chapter.referenceAudioUrl && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={onToggleReference}
-                disabled={busy}
-                aria-label={
-                  referencePlaying
-                    ? "Stop the story narration"
-                    : "Play the story narration for reference"
-                }
-                className="flex items-center gap-[7px] rounded-full px-[14px] py-[7px] text-[12px] font-medium"
-                style={{
-                  border: "1px solid var(--s-edge)",
-                  background: "var(--s-surface)",
-                  color: "var(--s-ink-muted)",
-                }}
-              >
-                <Icon name={referencePlaying ? "pause" : "speaker"} size={18} />
-                {chapter.title}
-              </button>
-            </div>
-          )}
         </>
       )}
 

@@ -22,7 +22,6 @@ import {
   succeedSave,
   type PendingTake,
 } from "@/lib/takes/pending-take";
-import { narrationUrl } from "./obs-media";
 import { saveFailureKind } from "./save-failure";
 import type { ChapterId, ProjectId, SegmentId } from "@/types/domain";
 import type { ChapterCard, SectionCard } from "@/types/view";
@@ -106,7 +105,6 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
     ordinal: storyNumber,
     // The single conditional the whole browser turns on.
     hasArtwork: cards.some((c) => c.thumbUrl !== null),
-    referenceAudioUrl: narrationUrl(storyNumber),
     audioFaults,
     sections: cards,
   };

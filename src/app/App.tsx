@@ -40,18 +40,15 @@ export function App() {
   const {
     leave,
     playTake,
-    toggleReference,
     startRecording: beginRecording,
     stopRecording: endRecording,
   } = audio;
 
   const navigate = useCallback(
     (to: { story?: number; sectionId?: string | null }) => {
-      // Only a story change rewinds the reference audio. Stepping between
-      // sections of this chapter silences it and keeps the playhead — the
-      // narration is the chapter's, and restarting a two-minute story on every
-      // step is the opposite of that.
-      leave({ rewindNarration: to.story !== undefined });
+      // Every navigation ends whatever this screen was sounding, in the same
+      // task as the tap.
+      leave();
       if (to.story !== undefined) {
         setStoryNumber(to.story);
         // A section id belongs to a chapter, so a story change closes the open
@@ -102,9 +99,9 @@ export function App() {
 
   useEffect(() => {
     // The recovery screen offers two buttons, and neither of them can stop a
-    // sound. Anything still playing when it takes over — a take, the narration
-    // — would go on under an `aria-modal` screen with no control able to reach
-    // it, so the takeover leaves the same way every tap does.
+    // sound. A take still playing when it takes over would go on under an
+    // `aria-modal` screen with no control able to reach it, so the takeover
+    // leaves the same way every tap does.
     if (recovering) leave();
   }, [recovering, leave]);
 
@@ -181,7 +178,6 @@ export function App() {
           recorderState={audio.recorderState}
           elapsedMs={audio.elapsedMs}
           playing={audio.playingId === openSection.sectionId}
-          referencePlaying={audio.referencePlaying}
           supported={audio.supported}
           saving={saving}
           savingOrdinal={savingOrdinal}
@@ -192,7 +188,6 @@ export function App() {
           onRecord={startRecording}
           onStop={() => stopRecording(openSection)}
           onPlay={() => playTake(openSection)}
-          onToggleReference={() => toggleReference(chapter.referenceAudioUrl)}
         />
       </main>
     );

@@ -1,12 +1,19 @@
 /**
  * The audio lifecycle arbiter.
  *
- * Three things can make sound on this screen — a recorded take, the reference
- * narration, and the microphone — and only one of them may be live at a time.
- * Before this existed, that rule was spelled out as `stopX()` calls scattered
- * across every handler in `App`, so each new handler was one more chance to
- * forget one, and every `await` between "start playing" and "here is the
- * handle" was a race nobody was watching.
+ * Two things make sound on this screen today — a recorded take and the
+ * microphone — and only one of them may be live at a time. Before this existed,
+ * that rule was spelled out as `stopX()` calls scattered across every handler
+ * in `App`, so each new handler was one more chance to forget one, and every
+ * `await` between "start playing" and "here is the handle" was a race nobody
+ * was watching.
+ *
+ * The arbiter is generic over a third `"reference"` kind — a story narration.
+ * B0 (#26) removed the only caller that claimed it, but the kind is kept: the
+ * arbitration is a generic mechanism, `tests/audio-session.test.ts` exercises
+ * it through `"reference"`, and Phase 2 reference audio (ADR 0007's ask) would
+ * claim it again. It costs nothing to leave and rewriting the tests to drop it
+ * is the "ramp up before it is needed" the bar warns against.
  *
  * The rules, stated once:
  *
