@@ -110,7 +110,7 @@ MediaRecorder (webm/opus on Android, mp4/aac on iOS)
    → decodeAudioData + OfflineAudioContext resample
    → canonical mono 16-bit PCM @ 44.1 kHz     ← everything internal is this
    → edit: cut / insert / paste / concat      (pure Int16Array functions)
-   → export: MP3 (lamejs) or WAV
+   → export: MP3 (lamejs) or WAV                (encoder only — not wired, #18)
 ```
 
 See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
@@ -171,5 +171,6 @@ Vite + PWA + IndexedDB — on low-end Android inside uW.
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE). Note the LGPL dependency flagged in
-[ADR 0003](docs/decisions/0003-mp3-encoder.md).
+MIT — see [`LICENSE`](LICENSE). One LGPL-3.0 dependency, lamejs: **settled
+2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md). The
+notice and attribution obligations that come with keeping it are #36.

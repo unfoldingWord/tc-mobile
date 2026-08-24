@@ -43,10 +43,13 @@ obligations are actually met, so they are listed here rather than assumed.
 
 ### What we owe, concretely
 
-1. **Keep the encoder behind a replaceable boundary.** Already true: the encoder
-   chunk is loaded via dynamic `import()`. Decision D3 moves it into a Web
-   Worker, which is a _stronger_ boundary than a dynamic import — the licensing
-   position improves as a side effect of the performance work in #34.
+1. **Keep the encoder behind a replaceable boundary.** **Not yet true.**
+   `src/lib/audio/mp3.ts:21` imports `Mp3Encoder` statically; there is no
+   dynamic `import()` of lamejs anywhere in `src/`. Decision D3 moves the
+   encoder into a Web Worker, which is a _stronger_ boundary than a dynamic
+   import would be — so the licensing position improves as a side effect of the
+   performance work in #34. Until #34 lands, this obligation is outstanding,
+   not met.
 2. **Keep one module interface in front of it.** `encodeMp3` is the only entry
    point, so a user exercising their LGPL right to relink has exactly one thing
    to replace. Do not scatter lamejs calls.

@@ -1,10 +1,15 @@
 /**
  * Frame-level audio timing.
  *
- * As of 2026-08-22 **no such data exists** for Open Bible Stories. Verified:
- * the DCS catalogue has no audio subject; the one OBS audio repository on
- * Door43 holds 703 files, all story-level MP3s with no timing; `en_obs`
- * contains no VTT, cue or timing files; Bolls carries no OBS at all.
+ * As of 2026-08-22 **no frame-level timing exists** for Open Bible Stories.
+ * OBS *audio* does exist — 98 DCS entries across 92 languages, discoverable
+ * through `media.yaml` and the catalogue's `hasAudio` filter rather than
+ * through an audio subject — but all of it is story-level. Verified: that
+ * catalogue carries zero timing; the one OBS audio repository on Door43 holds
+ * 703 files, all story-level MP3s with no timing; `en_obs` contains no VTT,
+ * cue or timing files; a per-frame MP3 probe of cdn.door43.org 404s. See
+ * docs/decisions/0007-timing-seam.md, whose first row was corrected in exactly
+ * this direction.
  *
  * It is modelled anyway, because the *format* is settled even though the data
  * is missing — Scripture Burrito's alignment spec defines exactly this, and if

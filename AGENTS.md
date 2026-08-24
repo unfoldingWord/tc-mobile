@@ -128,8 +128,11 @@ nothing stubbed "for later."
 
 `knip` enforces the mechanical half — in `npm run verify` and in CI — and it is
 scoped to **unused files and unused dependencies**, not unused exports. That
-scope is deliberate and it is a gap: dead exports inside a live file
-(`downloadStoryMedia`, `cachedImageObjectUrl`, `formatBytes`) pass it today.
+scope is deliberate and it is a gap: dead exports inside a live file pass it
+today — `downloadStoryMedia`, `cachedImageObjectUrl`, `formatBytes`,
+`storyMediaStatus`, `listMediaUrls` and `Mp3EncodeOptions` among them. Treat
+that list as illustrative, not exhaustive; only `knip --include exports` can
+enumerate it.
 Widening to `exports` means deleting or wiring those, which belongs to the
 change that reworks that code, not to a docs pass. **Do not read a green knip
 as "no dead code."** It found an unused `zustand`, an unused `lucide-react`

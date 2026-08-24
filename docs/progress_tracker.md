@@ -272,6 +272,8 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
   of a translation.
 - **#14** — lamejs LGPL-3.0. Open-sourcing the repo resolves the hard part;
   notice obligations remain and want a licensing sign-off before October.
+  _Superseded 2026-08-23: keep lamejs, settled (ADR 0003). #14 is closed and
+  the notice work is #36 — do not re-ask Tim._
 - **Uncommitted parallel work** — `docs/design/pivot-plan.md`,
   `docs/spec-transcription-p3-p4.md` and `docs/mockups/` exist untracked in the
   `fix/…` worktree, written before Tim's answers arrived. They are complementary
@@ -345,10 +347,14 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
 
 MediaRecorder and `decodeAudioData` can only be verified on-device.
 
-**Updated 2026-08-22:** Seth and Tim have both run the staging deploy and
-report it functional, so the earlier claim here that nothing had been tested on
-real hardware is withdrawn. What a working happy path does _not_ exercise is
-the failure and interruption behaviour — a write that actually rejects, and
+**Updated 2026-08-22, and narrowed 2026-08-24:** Seth and Tim have both run
+the staging deploy and report it functional. That is the whole of the evidence
+— **no device, OS or browser was recorded**, and a staging URL runs in a
+desktop browser as readily as on a phone. So it does not establish that
+MediaRecorder has been exercised on Android or iOS, and the general
+on-device check stays open until a run is recorded with the device named.
+What a working happy path would not exercise even then is the failure and
+interruption behaviour — a write that actually rejects, and
 `pagehide` landing inside a pending `decodeToCanonical`. Both P1s of review
 round 2 were exactly that second case. The remaining on-device check is
 therefore specific rather than general: **background the app immediately after

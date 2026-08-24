@@ -18,14 +18,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Project → Chapter → Section → Segment → Take repository.
 - Browser audio boundary (`src/hooks/audio-io.ts`) handling iOS mp4/aac
   capture, shared AudioContext, and resample-to-canonical on ingest.
-- A disposable vertical-slice UI proving record → waveform → play → cut →
-  export MP3 on a real device.
+- A disposable vertical-slice UI exercising record → waveform → play → cut →
+  encode MP3. Browser-verified only; no device, OS or browser was recorded at
+  the time, and there is no export path out of the app (#18).
 - 53 unit tests covering the audio core, scope grammar, and storage layer.
 - Docs: spec transcription, prior-art research, and five ADRs.
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
   metadata (230 KB), with artwork and narration fetched per story into
   IndexedDB. `scripts/build-obs-catalog.mjs` rebuilds the catalogue from
   Door43. IndexedDB schema bumped to v2 for the media store.
-- Cloudflare deployment: staging, production, and per-PR ephemeral Workers,
-  with GitHub Actions for CI, PR deploy/cleanup, staging, and production.
+- Cloudflare deployment: staging, production, and per-PR preview Workers.
+  **Cloudflare Workers Builds owns deployment**, not Actions — the four Actions
+  deploy workflows were deleted to remove a double-deploy collision, and
+  `ci.yml` is the only workflow left. See AGENTS.md.
   Staging is live at <https://tc-mobile-staging.unfoldingword.workers.dev>.

@@ -137,9 +137,10 @@ Required: `performance` (singleVoice|multipleVoice × reading|drama) and
 `formats`.
 
 > ⚠️ **`compression` is an enum of only `mp3` and `wav`.** No AAC/M4A, no Opus.
-> **tC Mobile's MP3 export is exactly right for burrito compatibility — and
-> Shema's M4A would not be declarable.** This repo's canonical WAV + MP3 export
-> is on the standard's happy path.
+> **MP3 is exactly the right format for burrito compatibility — and Shema's
+> M4A would not be declarable.** The canonical WAV and the lamejs encoder put
+> tC Mobile on the standard's happy path _when an export path is built_. There
+> is none today (#18): `encodeMp3` has no caller outside its own test.
 
 ### Addressing audio to book/chapter/verse
 
