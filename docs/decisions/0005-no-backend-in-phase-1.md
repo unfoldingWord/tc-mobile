@@ -27,8 +27,10 @@ can open on a phone.
   translator's work. That is why `tests/storage.test.ts` exercises the
   repository against `fake-indexeddb` rather than trusting on-device spot
   checks, and why `putClip` writes metadata and samples in one transaction.
-- Sharing audio off the device is via the Web Share API / file download, not an
-  upload. Phone-to-phone matters more than cloud here.
+- Sharing audio off the device **will be** via the Web Share API / file
+  download, not an upload — phone-to-phone matters more than cloud here. That
+  decision stands; the path does not exist yet (#18), and no code calls
+  `navigator.share` or writes a file today.
 - Phase 2 sync (versioning, republishing, comments) will need this decision
   revisited. Worth reading first: Shema's typed `.shema` bundles, tC4's
   `BURRITO-SPEC.md` §8, and tcorePSA's HLC event journal _draft_ — read-only,

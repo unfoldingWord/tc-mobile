@@ -130,7 +130,7 @@ node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Do
 
 Story text and frame metadata are bundled (230 KB), and so are the 128px
 thumbnails — 598 of them for 2.5 MB, which is what makes the section list work
-offline on first run (ADR 0006). **The 360px frames are not** — 44 MB for all
+offline on first run (ADR 0006). **The 360px frames are not** — 46.8 MB for all
 598 — so those are fetched per story on demand into IndexedDB and are
 offline-forever once downloaded. Narration MP3s (~1 MB/story)
 are an optional per-story download. See
@@ -145,11 +145,12 @@ Artwork is © [Sweet Publishing](https://www.sweetpublishing.com) under
 own source is MIT; the OBS content and this code are separate works in mere
 aggregation.
 
-> ⚠️ **Open licensing question.** The OBS licence treats a _translation_ as a
-> derivative work, which would make recordings produced against OBS content
-> CC BY-SA and require removing the unfoldingWord® trademark from them. That is
-> a decision for Tim and uW licensing, and **nothing in the export path
-> implements it yet** — ADR 0006.
+> **Settled, not yet implemented.** The OBS licence treats a _translation_ as a
+> derivative work, so recordings produced against OBS content **are** CC BY-SA
+> and must not carry the unfoldingWord® trademark. Tim confirmed that reading on
+> 2026-08-23 (#15 closed). **Nothing in the export path implements it yet** —
+> there is no export path at all (#18) — and the data model still cannot tell an
+> OBS-derived recording from a user-authored one. ADR 0006.
 
 ## Prior art
 

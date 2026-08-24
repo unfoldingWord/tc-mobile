@@ -5,7 +5,7 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage sections, export MP3. It targets Android and iOS
+edit the waveform, manage sections, export MP3 (export is not wired yet, #18). It targets Android and iOS
 phones, frequently offline, used by people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
@@ -15,7 +15,7 @@ October 2026**, with production readiness targeted for **end of September 2026**
 
 |         |                                                          |
 | ------- | -------------------------------------------------------- |
-| Runtime | Node 22+                                                 |
+| Runtime | Node 22.12+ (knip's floor)                               |
 | Build   | Vite 7, `@vitejs/plugin-react`                           |
 | UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons          |
 | PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)             |

@@ -4,7 +4,7 @@
  *
  * Fetches unfoldingWord/en_obs from Door43 and flattens it into one JSON file
  * the app can load without a network. Story text is small enough to bundle
- * outright (~190 KB for all fifty); the artwork is not (~44 MB at 360px), so
+ * outright (~190 KB for all fifty); the artwork is not (46.8 MB at 360px), so
  * only image URLs are recorded here and the images themselves are fetched and
  * cached per story on demand.
  *
