@@ -185,6 +185,12 @@ cache, not the network" survives intact as a requirement. What D6 removes is the
 image-first _browse_ (`section-browser.tsx`'s grid-versus-list conditional and
 `ChapterCard.thumbUrl`), not the artwork itself.
 
+> **Corrected 2026-08-24.** There is no `ChapterCard.thumbUrl`. `thumbUrl` is a
+> `SectionCard` field (`types/view.ts:22`); the field that actually forks the
+> layout is `ChapterCard.hasArtwork` (`types/view.ts:39`). Same correction as
+> [`pivot-plan.md`](pivot-plan.md); the sentence above is left as written
+> because this document is the record of what was concluded on 22 Aug.
+
 There is a genuine gap here worth naming: **none of the five mockups shows
 artwork anywhere**, including the segment editor. D6 says artwork stays; the
 wireframes do not say where it goes. Until that is settled, #1 should be

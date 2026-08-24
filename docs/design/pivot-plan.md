@@ -264,8 +264,12 @@ before the screens are drawn on top of it. That was the wrong order here, and th
 dependency is now inverted: **B2 and B3 land first, then B1 changes the model
 underneath them.**
 
-Removing `Section` breaks every screen the app currently renders — `app/App.tsx`,
-all four `components/section-*` files, `types/view.ts` and `hooks/use-chapter.ts`.
+Removing `Section` breaks every screen the app currently renders, including
+`app/App.tsx`, all four `components/section-*` files, `types/view.ts`,
+`hooks/use-chapter.ts` and `hooks/use-audio-session.ts` — the last of these is
+typed on `SectionCard`. The storage and type layers carry it too
+(`types/domain.ts`, `lib/storage/db.ts`, `lib/storage/projects.ts`), which is
+B1's own work rather than collateral.
 #27's Done-when named only the store, the index, the roll-up and the migration, so
 B1 could have been signed off with the UI left broken. B2 and B3 were written as
 additive, which meant the prior-UI files could have survived both batches — every
@@ -290,9 +294,10 @@ the app unrenderable and an issue that lets it be signed off anyway.
   colour, and it agrees with the tokens: green for play, red for record, which is
   the existing `--s-live` split. Composition is Gate 2.
 
-  **Nothing else in that document survives.** Its B2 composition specifies one
-  control per row, an image-first grid and a reference-audio control, all three
-  now overturned — by G5, D6 and D5/G1 respectively. Both Pass documents carry a
+  **The composition does not survive.** Pass B's B2 specifies one control per
+  row, an image-first grid and a reference-audio control, all three now
+  overturned — by G5, D6 and D5/G1 respectively. Its B4 motion rules and its
+  unresolved Gate 3 residuals do carry forward; the Pass B banner is the list. Both Pass documents carry a
   `**Status:**` banner as of 2026-08-24 saying what is superseded and by what;
   they are kept as dated records of how the decisions were reached, not as
   specifications to build from.

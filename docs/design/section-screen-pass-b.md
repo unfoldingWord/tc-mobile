@@ -1,6 +1,7 @@
 # Section-by-section screen — Pass B (UI)
 
-**Status:** **B0 stands. The composition is superseded, 2026-08-24** ·
+**Status:** **Pass B's B0 (the token system) stands. The composition is
+superseded, 2026-08-24** ·
 **Date:** 2026-08-22, approved at Gate 2 the same day
 
 > **Read the split before you build from this.** Tim's mockups replaced this
@@ -11,7 +12,7 @@
 > The document is kept, unrewritten, as the dated record of how the visual
 > system was derived and what Gate 2 approved.
 
-**What still stands — B0, the token system.** `pivot-plan.md` keeps it
+**What still stands — Pass B's B0, the token system.** `pivot-plan.md` keeps it
 explicitly: the mockups are wireframes and carry no type or spacing. The semantic
 colour they do carry agrees with these tokens — green for play, red for record,
 which is the existing `--s-live` split. The surface ramp, the three ink roles,
@@ -32,7 +33,8 @@ the spacing levels, the control sizes and the B4 motion rules are unchanged.
   screen, so the tile this composition builds a row around has nowhere to go yet.
 - **The reference-audio control** — "Reference audio — in v1, and story-level
   only" — overturned by D5 and **G1**. Reference audio is out of Phase 1 and the
-  narration path is deleted in B0 (#26). The section's finding about uW
+  narration path is deleted in batch B0 (#26) — the pivot's B0, not this
+  document's. The section's finding about uW
   publishing no frame-level timing is still accurate and is why ADR 0007 was
   superseded rather than kept.
 
