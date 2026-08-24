@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/app/main.tsx", "scripts/*.mjs"],
+  "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts", "scripts/*.mjs"],
+  "ignoreDependencies": ["tailwindcss"],
+  "vitest": { "entry": ["tests/**/*.test.ts"] }
+}

@@ -39,7 +39,10 @@ decided:**
 
 - Drop to 22 050 Hz for speech (halves it; still well above what the voice
   needs).
-- Persist takes as MP3 and keep PCM only for the clip being edited.
+- ~~Persist takes as MP3 and keep PCM only for the clip being edited.~~
+  **Taken 2026-08-23 as D3:** PCM while a segment is being edited, transcode to
+  64 kbps MP3 and drop the PCM when the translator marks it Finished. The
+  encoder move that D3 forces is #34.
 - Call `navigator.storage.persist()` so the browser does not evict the data,
   and surface `navigator.storage.estimate()` in the UI.
 

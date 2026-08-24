@@ -1,7 +1,8 @@
 # 0006 — Bundle Open Bible Stories as beta content
 
-**Status:** Accepted, with a product-level licensing consequence that needs a
-human decision · **Date:** 2026-08-22
+**Status:** Accepted · The licensing consequence below is **settled** —
+2026-08-23, #15 closed. What remains is implementation, not a decision.
+**Date:** 2026-08-22
 
 ## Context
 
@@ -83,7 +84,7 @@ a test) so it cannot be separated from the content by an accident of refactoring
 The content and the code are separate works in mere aggregation; CC BY-SA's
 share-alike applies to the OBS content, not to this repository's source.
 
-### ⚠️ The consequence that needs a human decision
+### The licensing consequence — settled, and not yet implemented
 
 The OBS licence states, verbatim:
 
@@ -95,11 +96,12 @@ The OBS licence states, verbatim:
 plainly, that means every recording a translator makes against bundled OBS
 content is CC BY-SA, and must not carry the unfoldingWord trademark.
 
-That is a licensing position being taken on behalf of the church networks who
-use this app, and it is **not a call for engineering to make quietly.** It
-needs Tim, and probably whoever owns uW's licensing.
+That reading was put to Tim and **confirmed on 2026-08-23** (#15 closed). It
+is a licensing position taken on behalf of the church networks who use this
+app, so it was never engineering's call to make quietly — but it has now been
+made, and it does not need re-asking.
 
-Practical implications if the reading holds:
+What the settlement obliges:
 
 1. Export metadata should carry the CC BY-SA attribution for OBS-derived work.
 2. Recordings made against a **user-created** chapter, with no OBS content
@@ -107,14 +109,15 @@ Practical implications if the reading holds:
    model must be able to tell the two apart. It currently cannot.
 3. The trademark must not appear on exported derivative work.
 
-**Nothing in the export path implements any of this yet.** Flagged, not solved.
+**Nothing in the export path implements any of this yet** — and there is no
+export path at all (#18). The decision is closed; the engineering is open.
 
 ## Consequences
 
 - Beta testers get 50 real, ordered, illustrated chapters with zero setup.
 - The section screen gets artwork for row identity — see the revision note in
   `docs/design/section-screen.md`.
-- Storage pressure grows: 44 MB of artwork sits alongside ~5.3 MB/min of PCM
+- Storage pressure grows: 46.8 MB of artwork sits alongside ~5.3 MB/min of PCM
   (ADR 0002). The per-story download model is the mitigation, and it makes the
   cost visible instead of silent.
 - Refreshing the catalogue is `node scripts/build-obs-catalog.mjs`, which

@@ -8,9 +8,9 @@
  * run — which matters when the device may never have had a good connection.
  *
  * NOTE ON LICENSING: lamejs is LGPL-3.0 while this repo is MIT. Bundling it
- * is the usual LGPL-in-a-JS-bundle grey area. See
- * docs/decisions/0003-mp3-encoder.md — this is flagged for a human decision,
- * not settled here.
+ * is the usual LGPL-in-a-JS-bundle grey area. **Settled 2026-08-23: keep
+ * lamejs** — ADR 0003, docs/decisions/0003-mp3-encoder.md. What remains is the
+ * notice and attribution work (#36), not a product call. Do not re-open it.
  *
  * NOTE ON THREADING: encoding a long chapter is CPU-bound and will jank the
  * UI if called on the main thread. `onProgress` exists so a caller can drive
