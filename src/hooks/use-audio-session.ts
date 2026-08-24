@@ -146,12 +146,15 @@ export function useAudioSession(): UseAudioSession {
             // A segment nobody has recorded gives the floor back quietly —
             // that is the ordinary case, and no control offers play on it.
             // A segment that points at audio the database does not have is a
-            // different thing and says so. There is no error channel on this
-            // screen yet (AGENTS.md defers the presentation deliberately), so
-            // the console is where it goes; silence is what let three copies
-            // of this walk disagree about it in the first place.
+            // different thing: the translator tapped play and heard nothing,
+            // so it goes through the same channel as any other playback
+            // failure rather than only to the console. Silence is what let
+            // three copies of this walk disagree about it in the first place.
             const fault = danglingReason(audio);
-            if (fault) console.error("Nothing to play for this take:", fault);
+            if (fault) {
+              console.error("Nothing to play for this take:", fault);
+              setPlaybackError("Could not play this recording.");
+            }
             session.release(token);
             setPlaying(null);
             return;

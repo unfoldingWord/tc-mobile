@@ -219,10 +219,16 @@ export async function getSectionsOfChapter(
  * The returned `missing` count lets the UI say so honestly.
  *
  * "Honestly" is why every id here is one `resolveSegmentAudio` has confirmed
- * has audio behind it. This used to push `take.clipId` on the strength of the
- * take row alone, so a take whose clip had gone counted as exported and the
- * chapter read as complete — and the section was simply absent from the file.
- * A gap the count admits to is recoverable; one it does not is not.
+ * has clip *metadata* behind it. `putClip` and `deleteClip` write both halves
+ * in one transaction, so metadata standing without samples is not reachable
+ * through this repository — but this function has not read the samples and
+ * does not claim to.
+ *
+ * It used to push `take.clipId` on the strength of the take row alone. Once an
+ * export path exists (#18), a take whose clip had gone would count as
+ * exported: the chapter would read as complete and the segment would be
+ * absent from the file. A gap the count admits to is recoverable; one it does
+ * not is not.
  */
 export async function resolveChapterClipIds(
   chapterId: ChapterId

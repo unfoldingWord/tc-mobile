@@ -136,7 +136,11 @@ export function danglingReason(audio: SegmentAudio<unknown>): string | null {
       return `segment ${audio.segment.id} names active take ${audio.takeId}, which is not in the database`;
     case "clip-missing":
       return `take ${audio.take.id} names clip ${audio.take.clipId}, whose audio is not in the database`;
-    default:
+    // Enumerated rather than defaulted: a sixth variant added later must fail
+    // to typecheck here instead of silently reporting "no fault", which is the
+    // collapse this union exists to prevent.
+    case "resolved":
+    case "no-active-take":
       return null;
   }
 }
