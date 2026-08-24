@@ -352,19 +352,37 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
 
 MediaRecorder and `decodeAudioData` can only be verified on-device.
 
-**Updated 2026-08-22, and narrowed 2026-08-24:** Seth and Tim have both run
-the staging deploy and report it functional. That is the whole of the evidence
-— **no device, OS or browser was recorded**, and a staging URL runs in a
-desktop browser as readily as on a phone. So it does not establish that
-MediaRecorder has been exercised on Android or iOS, and the general
-on-device check stays open until a run is recorded with the device named.
-What a working happy path would not exercise even then is the failure and
-interruption behaviour — a write that actually rejects, and
-`pagehide` landing inside a pending `decodeToCanonical`. Both P1s of review
-round 2 were exactly that second case. The remaining on-device check is
-therefore specific rather than general: **background the app immediately after
-tapping Stop on a long take, and confirm the recording still lands.** iOS is
-still the platform most likely to break here.
+**Updated 2026-08-22, narrowed and then answered 2026-08-24:** Seth and Tim
+had both run the staging deploy and reported it functional, but **no device, OS
+or browser was recorded**, and a staging URL runs in a desktop browser as
+readily as on a phone — so that did not establish MediaRecorder had been
+exercised on a phone at all.
+
+**It has now. Seth, 2026-08-24, iPhone / iOS 27 beta 6 / Safari:** a recording
+was started, Safari was backgrounded and the phone locked, and **capture
+continued through both** — the audio from that period was present in the take.
+That is worth flagging as surprising: WebKit has historically suspended media
+capture when Safari backgrounds, and the code does not depend on it not doing
+so. It is also **one device on one pre-release build.** iOS 27 is expected to
+be the shipping release by the October training, which makes it the right
+target rather than an academic one, but beta behaviour can change before
+release and **Android has still never been run.**
+
+That run covered backgrounding _during_ capture. What it did not touch is the
+failure and interruption behaviour on the other side of Stop — a write that
+actually rejects, and `pagehide` landing inside a pending `decodeToCanonical`.
+Both P1s of review round 2 were exactly that second case. So the remaining
+on-device checks are specific rather than general:
+
+1. **Background the app immediately after tapping Stop on a long take**, and
+   confirm the recording still lands. This is the `3a5d205` flush timeout.
+2. **Record a take shorter than one 250 ms timeslice.** This is the round-3 P1:
+   the final `dataavailable` slice is the whole recording, and on WebKit builds
+   that ignore the timeslice it is the only one.
+3. **Anything at all on Android.**
+
+iOS is still the platform most likely to break here, and a beta is the build
+most likely to change under us.
 
 There is also no export path at all yet (#18), so the share sheet is not merely
 untested — it does not exist.
