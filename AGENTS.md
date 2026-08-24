@@ -266,8 +266,10 @@ Full process, and the traps that make a failed run look like a clean pass, in
    Move it to a Web Worker — ADR 0003.
 2. **PCM storage is ~5.3 MB/minute.** All 50 OBS stories is roughly 660 MB.
    Mitigations are listed but undecided — ADR 0002. **Resolve before October.**
-3. **lamejs is LGPL-3.0** in an MIT repo — ADR 0003. Needs a human decision.
-4. **The division-scheme question** — ADR 0004. Needs Tim's decision.
+3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
+   What remains is the notice and attribution work, #36, not a product call.
+4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
+   broad half — one generic taxonomy, ADR 0004.
 5. **No Scripture Burrito export yet.** The audio flavor supports it and MP3 is
    the right format; talk to Benjamin Wright first — `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
@@ -275,10 +277,11 @@ Full process, and the traps that make a failed run look like a clean pass, in
 7. **No OBS frame timing exists**, so reference audio is story-level and
    record-along is not possible — ADR 0007. The seam is built; someone needs to
    ask uW to publish timing files.
-8. **OBS-derived recordings may be CC BY-SA.** A recorded translation of an OBS
-   story is arguably a derivative work. The data model cannot tell an
-   OBS-derived recording from a user-authored one, and the export path
-   implements none of it — ADR 0006. **Needs Tim and uW licensing.**
+8. **OBS-derived recordings are CC BY-SA** — settled, #15 closed. What is
+   still open is the _implementation_: the data model cannot tell an
+   OBS-derived recording from a user-authored one, and the export path carries
+   none of it — ADR 0006. That is engineering work, not another question for
+   Tim.
 
 ## DRI
 

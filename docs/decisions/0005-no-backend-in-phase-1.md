@@ -30,6 +30,7 @@ can open on a phone.
 - Sharing audio off the device is via the Web Share API / file download, not an
   upload. Phone-to-phone matters more than cloud here.
 - Phase 2 sync (versioning, republishing, comments) will need this decision
-  revisited. Two prior-art patterns are worth reading first: Shema's typed
-  `.shema` bundles and tcorePSA's HLC event journal
+  revisited. Worth reading first: Shema's typed `.shema` bundles, tC4's
+  `BURRITO-SPEC.md` §8, and tcorePSA's HLC event journal _draft_ — read-only,
+  and not reusable: one operation, no export, no fold, no merge, no licence
   (docs/research/prior-art.md §1, §3).

@@ -33,10 +33,10 @@ http://localhost:5173`).
 ## Verify
 
 ```bash
-npm run verify   # format:check + lint + typecheck + test + build
+npm run verify   # format:check + lint + knip + typecheck + test + build
 ```
 
-Individually: `npm run lint`, `npm run typecheck`, `npm test`,
+Individually: `npm run lint`, `npm run knip`, `npm run typecheck`, `npm test`,
 `npm run format`, `npm run build`.
 
 ## Branches and deployment
@@ -128,9 +128,11 @@ has to solve for people who cannot read.
 node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
 ```
 
-Story text and frame metadata are bundled (230 KB). **Artwork is not** — 44 MB
-for all 598 frames at 360px — so it is fetched per story on demand into
-IndexedDB and is offline-forever once downloaded. Narration MP3s (~1 MB/story)
+Story text and frame metadata are bundled (230 KB), and so are the 128px
+thumbnails — 598 of them for 2.5 MB, which is what makes the section list work
+offline on first run (ADR 0006). **The 360px frames are not** — 44 MB for all
+598 — so those are fetched per story on demand into IndexedDB and are
+offline-forever once downloaded. Narration MP3s (~1 MB/story)
 are an optional per-story download. See
 [ADR 0006](docs/decisions/0006-obs-content.md).
 

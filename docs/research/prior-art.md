@@ -183,7 +183,10 @@ evidence of a waveform editor, cut/insert/paste, take management or section
 re-recording. It competes only on "offline oral capture on a phone," not on
 "audio notebook and **editor**." Its local-SQLite-plus-sync idea assumes
 eventual connectivity and a server, which contradicts tC Mobile's standalone
-constraint — Shema's bundles and tcorePSA's event journal are better fits.
+constraint — Shema's bundles are the better fit, along with tC4's
+`BURRITO-SPEC.md` §8. **Not tcorePSA's journal:** §3 above establishes that it
+is a design draft with one operation, no export, no fold, no merge and no
+licence, so it is something to read rather than something to adopt.
 
 ## Open follow-ups
 
