@@ -4,6 +4,157 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-24 — Day 5: the gate, the audit, and the debt lanes
+
+**Branch:** `develop` · **PRs:** #22, #44–#52 merged · **Issues:** +1 (#43)
+
+### Completed
+
+- **#22 merged** (`58c6593`) after **six review rounds** and nineteen findings.
+  The class was one defect repeated: a claim settled in one file with the old
+  version still standing where a reader lands. Round 4 stopped fixing cited
+  instances and enumerated the class by grep, which caught three sites no
+  reviewer named — and rounds 5 and 6 still found classes the enumeration had
+  not conceived of. Merged on a recorded acceptance, with the residual filed as
+  **#43** rather than claimed closed.
+- **First on-device evidence** (#45). iPhone / iOS 27 beta 6 / Safari: capture
+  continued through a background and a screen lock, and the audio from that
+  period was in the take. Worth flagging as surprising — WebKit has historically
+  suspended capture when Safari backgrounds, and nothing in `hooks/audio-io.ts`
+  depends on it not doing so.
+- **Two promotions to `staging`** (#44, #50). The first carried 31 commits: every
+  recorder fix from #21's five rounds had been unreachable from a phone until
+  then, because the staging Worker only builds from `staging`.
+- **#46 — the merge gate can now see what it was missing.** Five checks
+  `AGENTS.md` claimed or implied were running, and were not.
+- **The pre-pivot audit** — six read-only lenses, adversarially verified, 89
+  findings surviving. It is what the rest of the day was spent on.
+- **Three debt lanes merged** (#47, #48, #49), each adversarially reviewed inside
+  its own worktree before a human looked at it.
+- **#51 and #52** — untracked a `node_modules` symlink that had reached both
+  `develop` and `staging`.
+
+### The gate was blind in five places
+
+Every one verified by running it, not by reading:
+
+|                 | Claimed                               | Actual                                                                                        |
+| --------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `knip` exports  | "no sprawl, no stubs"                 | **never checked** — 19 dead exports passing                                                   |
+| `lib/` DOM ban  | "the rule that matters most"          | probe using `AudioContext`, `document`, `window`, `navigator` → **ESLint exit 0, tsc exit 0** |
+| onion imports   | "enforced by ESLint, not convention"  | `@/`-aliased only; `../../hooks/x` passed silently                                            |
+| `scripts/*.mjs` | globbed by lint-staged and `eslint .` | **0 rules** against 63 for `App.tsx`                                                          |
+| CSS             | —                                     | nothing in the repo reads it at all                                                           |
+
+`lib/` is now bounded by construction rather than enumeration:
+`tsconfig.lib.json` compiles it with no DOM lib, and
+`tests/lib-boundary.test.ts` asserts both halves. It was mutation-tested —
+break either guard and exactly the covering case fails. **A guard nobody has
+seen fail is not a guard.**
+
+The named residual is recorded rather than glossed: `"types": ["node"]` brings
+Node's own web globals, so `Navigator` and `Storage` type-check inside `lib/`.
+Deliberate — both run in plain Node and in a Worker, which is the property the
+rule protects.
+
+### The tag that was silencing knip
+
+`"tags": ["-@pivot-pending"]` did not mean what it looked like. knip's splitter
+is `tag.match(/[a-zA-Z]+/)` and keeps only the first alphabetic run, so the
+exclusion registered was **`@pivot`**. Proved by tagging an unrelated export
+`@pivot` and watching it vanish from the report. The mechanism built to prevent
+silencers was itself a silencer for anything tagged `@pivot`-anything, and it
+had been passing CI as a working exemption. Now the single token
+`@pivotpending`, with the reason in `AGENTS.md`.
+
+### Three answers to one question
+
+`lib/storage/segment-audio.ts` (#49) replaces three independent walks of
+segment → active take → clip that had drifted to three different answers on a
+broken pointer: one rendered "never recorded", one released the audio floor
+silently, one pushed `take.clipId` onward unverified. The first is the dangerous
+one — it re-enables Record over a segment that has a take, which is the class of
+the P1 closed in round 3 of #21.
+
+A tagged union now forces callers to distinguish "nobody recorded this" from
+"this claims audio the database cannot produce", inside one readonly
+transaction. **Five review rounds, no P1 in any of them.**
+
+### What the reviewers caught that I would have shipped
+
+Recorded because the pattern is the useful part, not the individual bugs.
+
+- **George, #49 round 2.** The round-1 fix routed the dangling-take warning
+  through `setPlaybackError` — reachable only by tapping Play. A card with a
+  missing clip gets `durationMs: null`, and every surface keys off that to render
+  **Record**. The one path that could speak was the one the translator never
+  takes. That needs the diff chased into three components the diff never
+  touches; a diff-local lens cannot find it.
+- **George, #49 round 4**, correcting his own round-3 advice: a chapter-scoped
+  count cannot speak on a per-section screen. Standing on an intact section it
+  put a red alert beside the red "record again" control on a good take, and
+  recording would demote it.
+- **Frank, #46.** The banned-globals list was hand-picked and missing
+  `AudioBuffer` and `HTMLAudioElement`. He was right that a list is not a
+  boundary, and the tsconfig fix I had deferred as "needs its own project
+  reference" turned out to be free.
+
+Three of #49's nine findings were mine rather than the agent's: the committed
+symlink, a `resolved` that rested on an argument instead of a check, and editing
+the worktree while George was reading it — which voided a round, and is the loop
+rule this repo already had written down.
+
+### A mistake worth not repeating
+
+The three debt lanes ran in isolated worktrees, which have no `node_modules`, so
+each was symlinked at the real install to run `npm run verify`. Two lanes then
+committed with `git add -A`. `.gitignore` read `node_modules/` — trailing slash
+matches a **directory**, and a symlink is a file. Two of them shipped.
+
+`npm ci` removes the tree before installing, so every CI job passed. The
+exposure is a fresh clone on a machine where that absolute path exists and holds
+another project's dependencies. Fixed in #51/#52; the ignore rule lost its
+slash in #49.
+
+### Decisions taken
+
+- **B1 is re-sequenced behind B2 and B3.** Removing `Section` breaks every screen
+  the app renders, #27's Done-when named only the store, index, roll-up and
+  migration, and B2/B3 were written as additive — so the prior-UI files could
+  have survived both batches with every issue closed. Recorded on #27, #28, #29
+  and in the plan of record.
+- **No v2 field data exists, so B1's migration is drop-and-recreate.** That
+  collapses the upgrade-path test gap to a much smaller ask and takes the
+  half-migrated-crash path off the table. True exactly once, because the app has
+  never shipped.
+- **Tim: the recorder sheet has no Play control** — his own drawing, and his own
+  correction. The centerline annotation already says playback happens there, so
+  the behaviour was specified and only the control was never drawn. Placement is
+  on #30 with the two questions that settle it.
+
+### Blockers / needs a human
+
+- **The two Gate artifacts are off-repo and unread.** #28 sends B2 implementers
+  to one for "jobs and states". A deletion recorded only in an artifact and not
+  in the batch issue is the same "addressed with nothing posted" failure the
+  triage rule exists to prevent.
+- **#26 contradicts itself and must be settled before B0 is cut.** Scope deletes
+  `narrationUrl`, "Not in scope" keeps `obs-media.ts`, Done-when requires knip
+  clean. After B0 those cannot all hold, and the cheap way past it is a keep-alive
+  import — the thing B0 exists to prevent.
+- **Still one device, one pre-release build, and no Android at all.**
+
+### Next steps
+
+1. **Settle the `obs-media.ts` / Q4 question on #26**, then cut B0.
+2. **B2 (#28) and B3 (#29)** — the re-sequencing puts the screens before the
+   model.
+3. **B1 (#27)** once they land, with a drop-and-recreate migration.
+4. The three device checks still open: background immediately after Stop, a take
+   under one 250 ms timeslice, and anything at all on Android.
+
+---
+
 ## 2026-08-23 (evening) — Day 4: clearing the review queue
 
 **Branches:** `docs/pivot-plan-p3-p4`, `fix/review-round-1-scheme-independent`,
