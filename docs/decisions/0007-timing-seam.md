@@ -61,9 +61,11 @@ lib/timing/registry.ts register / loadChapterTiming / frameAt / frameStart
 lib/timing/providers.ts webVtt, burritoTiming, staticTiming
 ```
 
-Everything downstream asks `loadChapterTiming()` and copes with `null`, which
-is what it returns today. When timing appears, turning it on is one
-`registerTimingProvider()` call — not a refactor.
+`loadChapterTiming()` returns `null` today, and **nothing downstream asks it
+yet** — its only callers are `lib/timing/` itself and `tests/timing.test.ts`.
+Registering a provider is therefore the last step of turning this on, not the
+only one; the playback wiring is #5. The shape is built so that step is a
+registration rather than a refactor, which is the claim this ADR can make.
 
 The parsers are pure functions over text and are **already unit-tested against
 the real document shapes**, so when data finally arrives the parsing is

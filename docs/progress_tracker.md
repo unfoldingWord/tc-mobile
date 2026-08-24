@@ -253,6 +253,11 @@ the share sheet only · D5 reference audio leaves Phase 1 · D6 artwork becomes 
 optional per-segment illustration. Full reasoning in
 `docs/design/mockups-gap-analysis.md`.
 
+_Narrowed 2026-08-24:_ that table's D3 cell says "closes the storage strategy
+in #12." It closes one of ADR 0002's three mitigations — PCM while editing,
+MP3 on Finished. **#12 stays open** for 22 050 Hz and
+`navigator.storage.persist()`.
+
 Also: convergence target is **tC4**, Phase 1 is **standalone**, OBS-derived
 recordings **are** CC BY-SA (#15 closed), and there is no cleaner MP3 encoder —
 every one in the ecosystem descends from LAME or Shine, both LGPL.

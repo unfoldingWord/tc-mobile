@@ -133,10 +133,11 @@ slot was specified before we knew we would have pictures.
    screen's job list**: it changes the recording surface, not the list, and
    folding it in here would widen the gate mid-review.
 
-**Also flagged by ADR 0006 and not resolved:** a recorded translation of an OBS
-story is arguably a derivative work, making it CC BY-SA. The data model cannot
-distinguish an OBS-derived recording from a user-authored one. That is a
-licensing decision for Tim, not an engineering one.
+**Also flagged by ADR 0006 — decided since this note was written.** A recorded
+translation of an OBS story is a derivative work, making it CC BY-SA: settled
+2026-08-23, #15 closed. The data model still cannot distinguish an OBS-derived
+recording from a user-authored one, and the export path carries none of it.
+That remainder is **engineering work, not a question for Tim** — see ADR 0006.
 
 ## A1 — The job list
 

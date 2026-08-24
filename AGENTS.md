@@ -77,9 +77,12 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 
 - `tests/` at the repo root, `*.test.ts`, run in the Node environment.
 - The audio core and the storage layer are covered. Browser-only paths
-  (MediaRecorder, `decodeAudioData`) are **not** covered by automated tests —
-  they are verified on-device. Say so honestly rather than claiming coverage
-  that does not exist.
+  (MediaRecorder, `decodeAudioData`) are **not** covered by automated tests and
+  **can only be verified on-device — which has not happened.** No device, OS or
+  browser has been recorded for this repo; the staging deploy has been run, and
+  that is the whole of the evidence (`docs/progress_tracker.md`). Treat the
+  on-device check as open. Say so honestly rather than claiming coverage that
+  does not exist.
 - **There is no export path at all** — `encodeMp3` exists in `lib/audio/mp3.ts`
   with no call site outside tests, and nothing calls `navigator.share`. Do not
   list the share sheet as an untested surface; it is an absent one (#18).

@@ -16,8 +16,11 @@
  * unfoldingWord publishes one, frame-aligned reference playback becomes a
  * registration rather than a feature.
  *
- * Everything downstream asks `loadChapterTiming()` and copes with `null`. When
- * timing arrives, one `registerTimingProvider()` call turns it on.
+ * **The seam is library-only today.** `loadChapterTiming()` has no caller
+ * outside `lib/timing/` and `tests/timing.test.ts` — nothing in `app/`,
+ * `hooks/` or `components/` consults the registry, so registering a provider
+ * would light nothing up. Wiring it into playback is still work, tracked in
+ * #5. Registration is the *last* step, not the only one.
  */
 
 /** A single frame's span within a chapter-length audio file. */
