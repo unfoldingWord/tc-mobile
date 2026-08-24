@@ -28,6 +28,11 @@ import {
   resolveChapterClipIds,
   setActiveTake,
 } from "@/lib/storage/projects";
+import {
+  danglingReason,
+  loadSegmentClip,
+  resolveSegmentAudio,
+} from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { SectionRef } from "@/types/domain";
 
@@ -35,6 +40,21 @@ const ref = (n: number): SectionRef => ({ book: "RUT", scope: `1:${n}` });
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
+
+/**
+ * A clip id with audio actually behind it.
+ *
+ * `addTake` takes a `ClipId` on trust, so `addTake(seg, newClipId(), …)`
+ * builds a take pointing at nothing. That is a real state — it is what a
+ * failed or half-rolled-back save leaves — but it is not what "recorded"
+ * means, and tests that used it as a stand-in were the reason the export path
+ * could return clip ids for audio that did not exist.
+ */
+const storedClip = async (frames = 100) => {
+  const id = newClipId();
+  await putClip(id, samples(frames), CANONICAL_SAMPLE_RATE);
+  return id;
+};
 
 beforeEach(async () => {
   // Clear every store rather than deleting the database.
@@ -155,8 +175,8 @@ describe("project tree", () => {
     const chapter = await addChapter(project.id, 1);
     const { segment } = await addSection(chapter.id, ref(1));
 
-    const first = await addTake(segment.id, newClipId(), 1000);
-    const second = await addTake(segment.id, newClipId(), 1200);
+    const first = await addTake(segment.id, await storedClip(), 1000);
+    const second = await addTake(segment.id, await storedClip(), 1200);
 
     const { clipIds } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([second.clipId]);
@@ -186,8 +206,8 @@ describe("project tree", () => {
     const s2 = await addSection(chapter.id, ref(2)); // left unrecorded
     const s3 = await addSection(chapter.id, ref(3));
 
-    const t1 = await addTake(s1.segment.id, newClipId(), 100);
-    const t3 = await addTake(s3.segment.id, newClipId(), 100);
+    const t1 = await addTake(s1.segment.id, await storedClip(), 100);
+    const t3 = await addTake(s3.segment.id, await storedClip(), 100);
     void s2;
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
@@ -205,11 +225,27 @@ describe("project tree", () => {
     const chapter = await addChapter(project.id, 1);
     const s1 = await addSection(chapter.id, ref(1));
     const s2 = await addSection(chapter.id, ref(2));
-    const t1 = await addTake(s1.segment.id, newClipId(), 100);
-    const dangling = await addTake(s2.segment.id, newClipId(), 100);
+    const t1 = await addTake(s1.segment.id, await storedClip(), 100);
+    const dangling = await addTake(s2.segment.id, await storedClip(), 100);
 
     const db = await getDb();
     await db.delete("takes", dangling.id);
+
+    const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
+    expect(clipIds).toEqual([t1.clipId]);
+    expect(missing).toBe(1);
+  });
+
+  it("counts a segment whose active take points at no stored clip", async () => {
+    const project = await createProject("p");
+    const chapter = await addChapter(project.id, 1);
+    const s1 = await addSection(chapter.id, ref(1));
+    const s2 = await addSection(chapter.id, ref(2));
+
+    const t1 = await addTake(s1.segment.id, await storedClip(), 100);
+    // The take row is fine. The audio it names was never written — a save
+    // that failed after `addTake`, or a clip deleted from under it.
+    await addTake(s2.segment.id, newClipId(), 100);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
@@ -220,6 +256,118 @@ describe("project tree", () => {
     await expect(addTake("nope" as never, newClipId(), 100)).rejects.toThrow(
       /No such segment/
     );
+  });
+});
+
+/**
+ * The segment -> take -> clip walk.
+ *
+ * These are the cases the three former copies of this walk disagreed about.
+ * Every one of them is reachable in the model today: nothing enforces that a
+ * take's `clipId` names a stored clip, and nothing deletes a segment's
+ * `activeTakeId` when the take row goes.
+ */
+describe("segment audio resolution", () => {
+  /** A section with one segment, and the ids to address it by. */
+  const oneSegment = async () => {
+    const project = await createProject("p");
+    const chapter = await addChapter(project.id, 1);
+    const { segment } = await addSection(chapter.id, ref(1));
+    return { chapterId: chapter.id, segmentId: segment.id };
+  };
+
+  it("resolves a segment whose take has stored audio", async () => {
+    const { segmentId } = await oneSegment();
+    const clipId = await storedClip(150);
+    const take = await addTake(segmentId, clipId, 1000);
+
+    const meta = await resolveSegmentAudio(segmentId);
+    expect(meta.kind).toBe("resolved");
+    if (meta.kind !== "resolved") return;
+    expect(meta.take.id).toBe(take.id);
+    expect(meta.clip.id).toBe(clipId);
+    expect(meta.clip.frameCount).toBe(150);
+
+    const full = await loadSegmentClip(segmentId);
+    expect(full.kind).toBe("resolved");
+    if (full.kind !== "resolved") return;
+    expect(full.clip.samples.length).toBe(150);
+    expect(danglingReason(full)).toBeNull();
+  });
+
+  it("reports a segment nobody has recorded, and calls it no fault", async () => {
+    const { segmentId } = await oneSegment();
+
+    const meta = await resolveSegmentAudio(segmentId);
+    expect(meta.kind).toBe("no-active-take");
+    // The distinction the whole union exists for: this is the empty case, not
+    // a broken one, and it must not be reported as damage.
+    expect(danglingReason(meta)).toBeNull();
+    expect((await loadSegmentClip(segmentId)).kind).toBe("no-active-take");
+  });
+
+  it("reports a segment whose active take row is gone", async () => {
+    const { segmentId } = await oneSegment();
+    const take = await addTake(segmentId, await storedClip(), 100);
+    const db = await getDb();
+    await db.delete("takes", take.id);
+
+    for (const audio of [
+      await resolveSegmentAudio(segmentId),
+      await loadSegmentClip(segmentId),
+    ]) {
+      expect(audio.kind).toBe("take-missing");
+      // Not "no-active-take": the segment still claims a recording.
+      expect(danglingReason(audio)).toMatch(/not in the database/);
+    }
+  });
+
+  it("reports a take whose clip was never stored", async () => {
+    const { segmentId } = await oneSegment();
+    // `addTake` takes the clip id on trust — nothing checks the clip exists,
+    // which is how a chapter can hold takes pointing at no audio at all.
+    const take = await addTake(segmentId, newClipId(), 100);
+
+    for (const audio of [
+      await resolveSegmentAudio(segmentId),
+      await loadSegmentClip(segmentId),
+    ]) {
+      expect(audio.kind).toBe("clip-missing");
+      expect(danglingReason(audio)).toMatch(new RegExp(take.clipId));
+    }
+  });
+
+  it("reports a clip whose samples went without its metadata", async () => {
+    const { segmentId } = await oneSegment();
+    const clipId = await storedClip();
+    await addTake(segmentId, clipId, 100);
+    const db = await getDb();
+    await db.delete("clipData", clipId);
+
+    // Metadata alone still reads as resolved — it is all this variant looks
+    // at, and `putClip` writes both halves in one transaction.
+    expect((await resolveSegmentAudio(segmentId)).kind).toBe("resolved");
+    // Samples are what playback needs, so the half-clip is a miss there
+    // rather than a `Clip` with no audio in it.
+    expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
+  });
+
+  it("reports a segment id with no row behind it", async () => {
+    const audio = await resolveSegmentAudio("gone" as never);
+    expect(audio.kind).toBe("no-segment");
+    expect(danglingReason(audio)).toMatch(/not in the database/);
+  });
+
+  it("resolves again once the missing clip is stored", async () => {
+    const { segmentId } = await oneSegment();
+    const clipId = newClipId();
+    await addTake(segmentId, clipId, 100);
+    expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
+
+    // The resolver reads; it does not repair and it does not latch. Storing
+    // the audio under the id the take already names is enough.
+    await putClip(clipId, samples(40), CANONICAL_SAMPLE_RATE);
+    expect((await loadSegmentClip(segmentId)).kind).toBe("resolved");
   });
 });
 

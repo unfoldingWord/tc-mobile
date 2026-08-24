@@ -2,16 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { computePeaks } from "@/lib/audio/peaks";
 import { getStory, obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs";
-import { deleteClip, getClip, newClipId, putClip } from "@/lib/storage/clips";
+import { deleteClip, newClipId, putClip } from "@/lib/storage/clips";
 import {
   addChapter,
   addSection,
   addTake,
   createProject,
+  getChapter,
   getSectionsOfChapter,
   listProjects,
 } from "@/lib/storage/projects";
-import { getDb } from "@/lib/storage/db";
+import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   discardSave,
@@ -57,24 +58,24 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
 
   const chapterId = await ensureObsChapter(storyNumber, story.frames.length);
   const sections = await getSectionsOfChapter(chapterId);
-  const db = await getDb();
 
   const cards: SectionCard[] = [];
   for (const [i, section] of sections.entries()) {
     const frame = story.frames[i];
     const segmentId = section.segmentIds[0] as SegmentId | undefined;
-    const segment = segmentId ? await db.get("segments", segmentId) : undefined;
+    const audio = segmentId ? await loadSegmentClip(segmentId) : null;
 
-    let peaks = null;
-    let durationMs: number | null = null;
-    if (segment?.activeTakeId) {
-      const take = await db.get("takes", segment.activeTakeId);
-      const clip = take ? await getClip(take.clipId) : undefined;
-      if (clip) {
-        peaks = computePeaks(clip.samples, PEAK_BUCKETS);
-        durationMs = clip.meta.durationMs;
-      }
-    }
+    // A dangling take still draws as unrecorded below, because `SectionCard`
+    // has no way to say "recorded, audio gone" and inventing one is B2/B3's
+    // call, not this adapter's. What changes is that it is no longer silent:
+    // reading a broken pointer as "never recorded" was one of three different
+    // answers this walk gave, and the only one that offered Record over a
+    // segment the model believes is already recorded.
+    const fault = audio ? danglingReason(audio) : null;
+    if (fault) console.error("A section has no playable audio:", fault);
+
+    const clip = audio?.kind === "resolved" ? audio.clip : null;
+    const segment = audio && audio.kind !== "no-segment" ? audio.segment : null;
 
     cards.push({
       sectionId: section.id,
@@ -83,8 +84,8 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
       scope: section.ref.scope,
       thumbUrl: frame ? thumbUrl(storyNumber, frame.frame) : null,
       imageUrl: frame?.image ?? null,
-      peaks,
-      durationMs,
+      peaks: clip ? computePeaks(clip.samples, PEAK_BUCKETS) : null,
+      durationMs: clip?.meta.durationMs ?? null,
       status: segment?.status ?? "not-started",
     });
   }
@@ -370,13 +371,12 @@ async function ensureObsChapter(
   storyNumber: number,
   frameCount: number
 ): Promise<ChapterId> {
-  const db = await getDb();
   const projects = await listProjects();
   let project = projects.find((p) => p.name === OBS_PROJECT_NAME);
   if (!project) project = await createProject(OBS_PROJECT_NAME, "en");
 
   const existing = await Promise.all(
-    project.chapterIds.map((id) => db.get("chapters", id))
+    project.chapterIds.map((id) => getChapter(id))
   );
   const found = existing.find((c) => c?.number === storyNumber);
   if (found) return found.id;
