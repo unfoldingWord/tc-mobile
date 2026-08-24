@@ -1,25 +1,18 @@
 /**
  * The audio lifecycle arbiter.
  *
- * Two things make sound on this screen today — a recorded take and the
- * microphone — and only one of them may be live at a time. Before this existed,
- * that rule was spelled out as `stopX()` calls scattered across every handler
- * in `App`, so each new handler was one more chance to forget one, and every
- * `await` between "start playing" and "here is the handle" was a race nobody
- * was watching.
- *
- * The arbiter is generic over a third `"reference"` kind — a story narration.
- * B0 (#26) removed the only caller that claimed it, but the kind is kept: the
- * arbitration is a generic mechanism, `tests/audio-session.test.ts` exercises
- * it through `"reference"`, and Phase 2 reference audio (ADR 0007's ask) would
- * claim it again. It costs nothing to leave and rewriting the tests to drop it
- * is the "ramp up before it is needed" the bar warns against.
+ * Two things make sound on this screen — a recorded take and the microphone —
+ * and only one of them may be live at a time. Before this existed, that rule
+ * was spelled out as `stopX()` calls scattered across every handler in `App`,
+ * so each new handler was one more chance to forget one, and every `await`
+ * between "start playing" and "here is the handle" was a race nobody was
+ * watching.
  *
  * The rules, stated once:
  *
  *   - Claiming the floor stops whatever held it.
  *   - The microphone outranks playback. `claim("mic")` always succeeds;
- *     `claim("take" | "reference")` is refused while the microphone is live.
+ *     `claim("take")` is refused while the microphone is live.
  *   - The session never stops the microphone itself. Abandoning a take is
  *     always a named call in the hook, never a side effect of a play tap.
  *   - A handle that arrives after its claim was superseded is stopped here,
@@ -38,7 +31,7 @@
  * anything that needs an element or a context belongs.
  */
 
-export type SourceKind = "take" | "reference" | "mic";
+export type SourceKind = "take" | "mic";
 
 /** Anything the arbiter can silence. Deliberately not a DOM type. */
 export interface Stoppable {
