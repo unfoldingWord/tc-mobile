@@ -79,7 +79,7 @@ let sharedContext: AudioContext | null = null;
  * suspended until a user gesture, so creating one per playback both leaks and
  * silently fails. One context, resumed on demand, avoids both.
  */
-export function getAudioContext(): AudioContext {
+function getAudioContext(): AudioContext {
   sharedContext ??= new (getAudioContextCtor())();
   return sharedContext;
 }
@@ -135,7 +135,7 @@ async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
 }
 
 /** Wrap canonical PCM in an AudioBuffer for playback. */
-export function toAudioBuffer(
+function toAudioBuffer(
   samples: Int16Array,
   sampleRate: number = CANONICAL_SAMPLE_RATE
 ): AudioBuffer {

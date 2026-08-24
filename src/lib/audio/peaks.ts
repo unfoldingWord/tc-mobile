@@ -8,7 +8,7 @@
 
 import type { Peaks } from "@/types/audio";
 
-const INT16_MAX = 32_767;
+import { INT16_MAX } from "./format";
 
 /**
  * Reduce `samples` to `bucketCount` min/max pairs normalised to [-1, 1].
@@ -48,7 +48,10 @@ export function computePeaks(samples: Int16Array, bucketCount: number): Peaks {
       min[b] = 0;
       max[b] = 0;
     } else {
-      min[b] = lo / INT16_MAX;
+      // Int16 is asymmetric: -32768 over INT16_MAX is -1.0000305, outside the
+      // [-1, 1] this function and `Peaks` both promise. Clamp the floor rather
+      // than scaling by 32768, which would shift every existing peak value.
+      min[b] = Math.max(-1, lo / INT16_MAX);
       max[b] = hi / INT16_MAX;
     }
   }

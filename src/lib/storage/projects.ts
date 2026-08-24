@@ -51,10 +51,6 @@ export async function listProjects(): Promise<Project[]> {
   );
 }
 
-export async function getProject(id: ProjectId): Promise<Project | undefined> {
-  return (await getDb()).get("projects", id);
-}
-
 export async function addChapter(
   projectId: ProjectId,
   number: number
@@ -179,6 +175,12 @@ export async function setActiveTake(
   await tx.done;
 }
 
+/**
+ * @pivot-pending No caller yet, and deliberately so. B1 (#27) wires this to the
+ * per-segment finished checkbox on page 3 of the mockups. The five-value
+ * `RecordingStatus` stays in the model beneath a binary UI toggle; Phase 2
+ * needs the wider enum.
+ */
 export async function setSegmentStatus(
   segmentId: SegmentId,
   status: RecordingStatus

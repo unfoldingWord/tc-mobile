@@ -15,7 +15,7 @@
 export const CANONICAL_SAMPLE_RATE = 44_100;
 export const CANONICAL_CHANNELS = 1;
 
-const INT16_MAX = 32_767;
+export const INT16_MAX = 32_767;
 const INT16_MIN = -32_768;
 
 /** Convert normalised float samples in [-1, 1] to 16-bit PCM, with clipping. */

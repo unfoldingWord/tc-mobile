@@ -15,6 +15,11 @@
  * See docs/decisions/0006-obs-content.md.
  */
 
+/**
+ * @pivot-pending Not imported by name anywhere, but `ObsStory.frames` exposes
+ * it structurally, so un-exporting it buys nothing and costs the name at every
+ * call site that destructures a frame.
+ */
 export interface ObsFrame {
   /** 1-based position within the story. */
   readonly frame: number;

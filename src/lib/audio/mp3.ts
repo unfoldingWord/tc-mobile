@@ -30,7 +30,7 @@ const SAMPLES_PER_FRAME = 1152;
  * near 28 MB, which matters when the delivery mechanism may be a phone-to-
  * phone transfer rather than a network.
  */
-export const DEFAULT_BITRATE_KBPS = 64;
+const DEFAULT_BITRATE_KBPS = 64;
 
 export interface EncodeMp3Options {
   readonly sampleRate?: number;

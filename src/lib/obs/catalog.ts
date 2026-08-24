@@ -11,7 +11,7 @@ import type { ObsCatalog, ObsStory } from "@/types/obs";
 
 let cached: ObsCatalog | null = null;
 
-export async function loadCatalog(): Promise<ObsCatalog> {
+async function loadCatalog(): Promise<ObsCatalog> {
   cached ??= (await import("@/data/obs-catalog.json")).default as ObsCatalog;
   return cached;
 }
@@ -21,6 +21,11 @@ export async function getStory(n: number): Promise<ObsStory | undefined> {
   return catalog.stories.find((s) => s.story === n);
 }
 
+/**
+ * @pivot-pending No caller yet. Listing the available stories is the core read
+ * of B7's Template Library (#33), where this module becomes a template
+ * provider rather than the hard-wired OBS path it is today.
+ */
 export async function listStories(): Promise<
   readonly { story: number; title: string; frameCount: number }[]
 > {

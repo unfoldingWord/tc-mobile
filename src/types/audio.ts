@@ -53,8 +53,3 @@ export interface SampleRange {
   readonly start: number;
   readonly end: number;
 }
-
-export interface Mp3EncodeOptions {
-  /** Constant bitrate in kbps. */
-  readonly bitrateKbps: number;
-}

@@ -25,6 +25,12 @@ async function fetchInto(url: string): Promise<void> {
   await putMedia(url, await res.blob());
 }
 
+/**
+ * @pivot-pending The OBS media cache has no production caller and B0 (#26)
+ * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
+ * model and the cache; whether "kept" means kept with zero callers is the
+ * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ */
 export interface DownloadProgress {
   readonly done: number;
   readonly total: number;
@@ -41,6 +47,9 @@ export interface DownloadProgress {
  * Individual frame failures do not abort the download — a story that is
  * fifteen-sixteenths available is far more useful in a workshop than none of
  * it. The count of failures is returned so the UI can be honest about it.
+ *
+ * @pivot-pending No caller. See the note on `DownloadProgress` — this is the
+ * media cache whose fate #26 settles.
  */
 export async function downloadStoryMedia(
   story: ObsStory,
@@ -71,6 +80,12 @@ export async function downloadStoryMedia(
 }
 
 /** How much of a story is already on the device, for a per-story indicator. */
+/**
+ * @pivot-pending The OBS media cache has no production caller and B0 (#26)
+ * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
+ * model and the cache; whether "kept" means kept with zero callers is the
+ * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ */
 export async function storyMediaStatus(
   story: ObsStory
 ): Promise<{ cached: number; total: number }> {
@@ -86,6 +101,12 @@ export async function storyMediaStatus(
  *
  * Callers must revoke the URL when done; leaking these on a fifty-row list is
  * a real memory problem on a low-end device.
+ */
+/**
+ * @pivot-pending The OBS media cache has no production caller and B0 (#26)
+ * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
+ * model and the cache; whether "kept" means kept with zero callers is the
+ * decision recorded in #26 before B0 starts. Do not delete on knip's word.
  */
 export async function cachedImageObjectUrl(
   url: string

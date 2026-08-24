@@ -48,6 +48,12 @@ export async function totalMediaBytes(): Promise<number> {
   return all.reduce((sum, m) => sum + m.bytes, 0);
 }
 
+/**
+ * @pivot-pending The OBS media cache has no production caller and B0 (#26)
+ * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
+ * model and the cache; whether "kept" means kept with zero callers is the
+ * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ */
 export async function listMediaUrls(): Promise<string[]> {
   return (await getDb()).getAllKeys("media");
 }

@@ -132,18 +132,42 @@ condition — over a message bubble.
 **No sprawl, no duplicates, no stubs.** Nothing shipped that nothing uses;
 nothing stubbed "for later."
 
-`knip` enforces the mechanical half — in `npm run verify` and in CI — and it is
-scoped to **unused files and unused dependencies**, not unused exports. That
-scope is deliberate and it is a gap: dead exports inside a live file pass it
-today — `downloadStoryMedia`, `cachedImageObjectUrl`, `formatBytes`,
-`storyMediaStatus`, `listMediaUrls` and `Mp3EncodeOptions` among them. Treat
-that list as illustrative, not exhaustive; only `knip --include exports` can
-enumerate it.
-Widening to `exports` means deleting or wiring those, which belongs to the
-change that reworks that code, not to a docs pass. **Do not read a green knip
-as "no dead code."** It found an unused `zustand`, an unused `lucide-react`
-that this document itself claimed was the icon library, and three dead barrel
-files on its first run — that is the class it catches.
+`knip` enforces the mechanical half, in `npm run verify` and in CI, scoped to
+**files, dependencies, unlisted imports, exports and exported types**. Exports
+were added 2026-08-24; before that the gate had never checked them and nineteen
+dead ones were passing.
+
+An export that is genuinely dead now but that a named pivot batch wires up
+carries a `@pivot-pending` JSDoc tag, which knip honours. **The tag must name
+the batch and the issue.** It is not a way to silence knip — an untagged unused
+export fails CI, and a tag without a reason is worse than the export.
+
+**Two blind spots remain. Do not read a green knip as "no dead code."**
+
+1. **A `src/` module imported only by a test looks used.** `tests/**` is a knip
+   entry point, so a test import satisfies the `files` check. This is how 372
+   lines of timing seam plus 494 lines of its tests survived to be deleted by
+   hand. knip cannot tell that from `lib/audio/edit.ts`, which is the engine
+   B5 will consume — so the judgement stays human.
+2. **Nothing in this repo reads CSS at all.** knip says so itself
+   (`.css — Compiled extension excluded by project`). There is no stylelint and
+   no CSS plugin. An orphaned custom property or component token is invisible
+   to every check, which matters most in B2 and B3 — the largest UI deletion
+   this repo will do.
+
+What it does catch, on its first run: an unused `zustand`, an unused
+`lucide-react` that this document itself claimed was the icon library, and three
+dead barrel files.
+
+**The onion rule and the DOM ban are enforced, as of 2026-08-24.** Both were
+prose until then. `no-restricted-imports` now matches relative specifiers as
+well as `@/`-aliased ones, and `no-restricted-globals` bans the browser globals
+from `src/lib/**` — a probe file in `src/lib/audio/` using `AudioContext`,
+`document`, `window` and `navigator` previously produced zero ESLint and zero
+`tsc` diagnostics. The ban catches value references; a type-position reference
+would need a DOM-free `lib` tsconfig, which is not built. `scripts/**/*.mjs`
+are linted too — they matched no config block and ran with zero rules while
+fetching over the network and writing 598 files into `public/`.
 
 **Do not ramp up before it is needed.** Every rule above pays for itself now.
 A rule that will pay off after October can wait until after October.
