@@ -5,11 +5,35 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage sections, export MP3 (export is not wired yet, #18). It targets Android and iOS
-phones, frequently offline, used by people who may not read.
+edit the waveform, manage the segments of a chapter, export MP3 (export is not
+wired yet, #18). It targets Android and iOS phones, frequently offline, used by
+people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
+
+## The pivot — read this before the rest of the file
+
+Tim's hand-drawn screen mockups (22 Aug 2026) are the first principles for the
+UI, and the domain model moves with them:
+
+```
+was:  Project -> Chapter -> Section -> Segment -> Take
+now:  Book    -> Chapter ->            Segment  (-> Take, hidden, 1:1)
+```
+
+A segment is the unit of work: one recording per segment, edited in place. The
+pre-pivot UI is **replaced, not evolved**.
+
+[`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record.
+[#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
+and the work is nine batches, B0–B8 (#26–#34).
+
+**None of the batches has started.** Everything below this section describes
+the tree as it stands today, and that tree is still pre-pivot: `Section` is in
+the model, the timing seam and the narration path are still in `src/`, and no
+mockup screen exists. Do not read a description here as a description of the
+target.
 
 ## Tech stack
 
@@ -325,13 +349,19 @@ Full process, and the traps that make a failed run look like a clean pass, in
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
-5. **No Scripture Burrito export yet.** The audio flavor supports it and MP3 is
-   the right format; talk to Benjamin Wright first — `docs/research/prior-art.md` §4.
+5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.
+   A4 settled the share shape instead: Share Chapter is one concatenated MP3 to
+   the OS share sheet, Share Book is a zip of chapter MP3s. B7 (#33) builds
+   both. Burrito comes back only if a later phase asks for it, so the "talk to
+   Benjamin Wright first" next action is retired; the background is still
+   `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
    public repo. Someone needs to ask Han Chung.
-7. **No OBS frame timing exists**, so reference audio is story-level and
-   record-along is not possible — ADR 0007. The seam is built; someone needs to
-   ask uW to publish timing files.
+7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
+   Reference audio is out of Phase 1 (D5), and B0 (#26) deletes the timing seam
+   and the narration path and supersedes ADR 0007. Until B0 lands both are
+   still in `src/`. The ask itself is still open: someone needs to ask uW to
+   publish timing files — #13.
 8. **OBS-derived recordings are CC BY-SA** — settled, #15 closed. What is
    still open is the _implementation_: the data model cannot tell an
    OBS-derived recording from a user-authored one, and the export path carries

@@ -15,8 +15,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   writer, and a lamejs MP3 encoder — the encoder only; nothing wires it to an
   export (#18).
 - Scripture Burrito scope-string grammar (`src/lib/scripture/scope.ts`).
-- IndexedDB storage (`src/lib/storage`): clip persistence and the
-  Project → Chapter → Section → Segment → Take repository.
+- IndexedDB storage (`src/lib/storage`): clip persistence and a chapter and
+  segment repository. Its current Project → Chapter → Section → Segment → Take
+  hierarchy is pre-pivot and will not reach a release — B1 (#27) replaces it
+  with Book → Chapter → Segment, with Take hidden and 1:1.
 - Browser audio boundary (`src/hooks/audio-io.ts`) handling iOS mp4/aac
   capture, shared AudioContext, and resample-to-canonical on ingest.
 - A disposable vertical-slice UI exercising record → waveform → play → cut →
@@ -25,7 +27,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Unit tests covering the audio core, scope grammar, and storage layer — 53 on
   scaffold day, 149 as of 2026-08-24. Browser-only paths (MediaRecorder,
   `decodeAudioData`) are not among them.
-- Docs: spec transcription, prior-art research, and seven ADRs.
+- Docs: two spec transcriptions, prior-art research, seven ADRs, and the pivot
+  plan of record (`docs/design/pivot-plan.md`, #25).
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
   metadata (230 KB), with artwork and narration fetched per story into
   IndexedDB. `scripts/build-obs-catalog.mjs` rebuilds the catalogue from

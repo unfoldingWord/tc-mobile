@@ -4,18 +4,38 @@
 "world's simplest mobile audio notebook and editor" for oral communities doing
 Bible translation.
 
-> **Status: scaffold.** The audio core, storage layer, and build/deploy pipeline
-> are working and tested. The UI is a deliberately disposable vertical slice
-> that proves the pipeline end to end on a real phone. See
-> [`docs/spec-transcription.md`](docs/spec-transcription.md) for the source
-> requirements and [`docs/decisions/`](docs/decisions/) for what was decided
-> and why.
+> **Status: pre-pivot scaffold.** The audio core and the storage layer are
+> working and unit-tested. The UI is a disposable vertical slice, and it is
+> being replaced rather than evolved — see [The pivot](#the-pivot) below. The
+> source requirements are [`docs/spec-transcription.md`](docs/spec-transcription.md)
+> (page 1) and [`docs/spec-transcription-p3-p4.md`](docs/spec-transcription-p3-p4.md)
+> (the mockups); [`docs/decisions/`](docs/decisions/) has what was decided and
+> why.
 
 ## Why this exists
 
 There is no pathway for translation production in communities that cannot use
 text-based modalities. Oral communicators have no "pencil and paper." This is
 an attempt at one.
+
+## The pivot
+
+Tim Jore drew a set of screen mockups on 22 Aug 2026, and they are now the
+first principles for the UI. The domain model moves with them:
+
+```
+was:  Project -> Chapter -> Section -> Segment -> Take
+now:  Book    -> Chapter ->            Segment  (-> Take, hidden, 1:1)
+```
+
+A segment is the unit of work — one recording, edited in place. The pre-pivot
+UI in `src/components` and `src/app` is being replaced, not evolved.
+
+[`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record.
+[#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
+and the work is nine batches, B0–B8. **None of them has started**, so
+everything below describes the tree as it stands today: `Section` is still in
+the model, and no mockup screen exists yet.
 
 ## Run it
 
@@ -98,10 +118,10 @@ src/
 └── app/         Screens                   (imports: everything)
 ```
 
-The split is load-bearing. Tim has said the UI "needs lots of changes, but I
-don't know what they are yet," so the durable investment is the audio core and
-the data model — and keeping them DOM-free is what lets the disposable layer be
-rewritten without risking them.
+The split is deliberate. Tim said from the start that the UI "needs lots of
+changes, but I don't know what they are yet" — the pivot is that rewrite
+arriving. Keeping `lib/` DOM-free is what lets the UI layer be replaced without
+touching the audio core.
 
 ## Audio pipeline
 
@@ -118,22 +138,27 @@ See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
 
 ## Content — Open Bible Stories
 
-Fifty OBS stories (598 illustrated frames) ship as beta content so testers get
-real, ordered, illustrated chapters with zero setup. OBS maps onto the domain
-model directly: **story → Chapter, frame → Section**, and the frame artwork
-gives each section a non-textual identity — which is the core problem this app
-has to solve for people who cannot read.
+Fifty OBS stories (598 illustrated frames) ship as beta content so a tester
+does not have to invent their own structure before trying anything. OBS maps
+onto the domain model directly: **story → Chapter, frame → Segment**.
 
 ```bash
 node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
+node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px frames
 ```
 
 Story text and frame metadata are bundled (230 KB), and so are the 128px
-thumbnails — 598 of them for 2.5 MB, which is what makes the section list work
-offline on first run (ADR 0006). **The 360px frames are not** — 46.8 MB for all
-598 — so those are fetched per story on demand into IndexedDB and are
-offline-forever once downloaded. Narration MP3s (~1 MB/story)
-are an optional per-story download. See
+thumbnails — 598 of them for 2.5 MB, precached by the service worker so the
+content is there on first run with no network (ADR 0006). **The 360px frames
+are not** — 46.8 MB for all 598 — so those are fetched per story on demand into
+IndexedDB and are offline-forever once downloaded.
+
+Two things about this content changed with the pivot. Artwork is an optional
+per-segment illustration rather than the thing that decides the browse layout
+(D6), and no Phase 1 screen draws it — it stays in the model and the media
+cache while that question is open (Q4, #1). Reference audio is out of Phase 1
+(D5), so the narration MP3s the code still fetches are not a Phase 1 capability
+and batch B0 (#26) deletes that path. See
 [ADR 0006](docs/decisions/0006-obs-content.md).
 
 ### Attribution
@@ -162,12 +187,15 @@ Vite + PWA + IndexedDB — on low-end Android inside uW.
 
 ## Docs
 
-|                                                            |                                                                 |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| [`docs/spec-transcription.md`](docs/spec-transcription.md) | Tim's handwritten inception notes, transcribed                  |
-| [`docs/research/prior-art.md`](docs/research/prior-art.md) | Shema Studio, passage-recorder-app, tcorePSA, Scripture Burrito |
-| [`docs/decisions/`](docs/decisions/)                       | ADRs                                                            |
-| [`AGENTS.md`](AGENTS.md)                                   | Contributor and agent guide                                     |
+|                                                                        |                                                                 |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [`docs/design/pivot-plan.md`](docs/design/pivot-plan.md)               | **The plan of record** for the pivot — #25                      |
+| [`docs/spec-transcription.md`](docs/spec-transcription.md)             | Tim's handwritten inception notes, page 1, transcribed          |
+| [`docs/spec-transcription-p3-p4.md`](docs/spec-transcription-p3-p4.md) | The screen mockups, pages 3–4, transcribed                      |
+| [`docs/design/`](docs/design/)                                         | Mockup images, the gap analysis, and the pre-pivot design work  |
+| [`docs/research/prior-art.md`](docs/research/prior-art.md)             | Shema Studio, passage-recorder-app, tcorePSA, Scripture Burrito |
+| [`docs/decisions/`](docs/decisions/)                                   | ADRs                                                            |
+| [`AGENTS.md`](AGENTS.md)                                               | Contributor and agent guide                                     |
 
 ## Licence
 
