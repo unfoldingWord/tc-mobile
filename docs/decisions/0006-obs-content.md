@@ -1,15 +1,27 @@
 # 0006 — Bundle Open Bible Stories as beta content
 
-**Status:** Accepted · The licensing consequence below is **settled** —
-2026-08-23, #15 closed. What remains is implementation, not a decision.
-**Date:** 2026-08-22
+**Status:** Accepted · **Date:** 2026-08-22
+
+**Amended 2026-08-23** — the licensing consequence below is **settled**, #15
+closed. What remains is implementation, not a decision.
+
+**Amended 2026-08-24** — the **bundling decision stands unchanged**: what ships,
+what is fetched on demand, and why. The **domain mapping does not**. ADR 0004
+rejected the Section layer and the pivot
+([`../design/pivot-plan.md`](../design/pivot-plan.md), #25) replaces the browse,
+so a frame is a **Segment**. The corrections are marked inline below.
 
 ## Context
 
-Phase 1 was scoped as a blank audio notebook. That makes it hard to beta test —
-a tester must invent their own sections before they can try anything — and it
-removes the only non-textual way to tell one section from another, which is the
-central problem of the section screen (`docs/design/section-screen.md`).
+Phase 1 was scoped as a blank audio notebook. That makes it hard to beta test:
+a tester must invent their own structure before they can try anything.
+
+As argued on 22 Aug there was a second reason — a blank notebook removes the
+only non-textual way to tell one row from another, the central problem of the
+pre-pivot section screen (`docs/design/section-screen.md`). **That half no
+longer holds.** The mockups give a row its identity from its ordinal and its
+waveform, and D6 demotes artwork to an optional illustration. The decision
+below rests on the beta-testing ground alone, which is enough on its own.
 
 ## Decision
 
@@ -17,30 +29,42 @@ Bundle the unfoldingWord **Open Bible Stories** catalogue as beta content.
 
 OBS maps onto the domain model with no translation at all:
 
-| OBS                 | tC Mobile                          |
-| ------------------- | ---------------------------------- |
-| Story (1–50)        | Chapter                            |
-| Frame               | Section                            |
-| Frame artwork       | The section's non-textual identity |
-| Story narration MP3 | Reference audio to translate from  |
+| OBS          | tC Mobile |
+| ------------ | --------- |
+| Story (1–50) | Chapter   |
+| Frame        | Segment   |
+
+**Corrected 2026-08-24.** As written on 22 Aug this table mapped a frame to a
+**Section** and carried two further rows, neither of which survives:
+
+- _Frame artwork → "the section's non-textual identity."_ D6 makes artwork an
+  optional per-segment illustration rather than the thing that decides the
+  browse layout, and open question Q4 keeps it in the model and the media cache
+  while drawing it in no Phase 1 screen.
+- _Story narration MP3 → "reference audio to translate from."_ Reference audio
+  is out of Phase 1 (D5). Narration is still fetched by code in the tree, and
+  B0 (#26) deletes that path.
+
+The Section layer itself is rejected by ADR 0004; B1 (#27) removes it from the
+model.
 
 ### What is bundled, and what is not
 
 **Revised 22 Aug 2026.** The first version of this ADR kept all artwork out of
 the bundle on the grounds that it was 44 MB. That measured the wrong thing.
 
-The CDN publishes frames at 360px and 2160px only, but the section list renders
-tiles at 48–56px. Centre-cropped and downscaled to 128px (2x the largest tile),
-**the entire 598-frame set is 2.5 MB** — sixteen times smaller than the source,
-and small enough to simply ship.
+The CDN publishes frames at 360px and 2160px only, but the pre-pivot section
+list rendered tiles at 48–56px. Centre-cropped and downscaled to 128px (2x the
+largest tile), **the entire 598-frame set is 2.5 MB** — sixteen times smaller
+than the source, and small enough to simply ship.
 
 | Asset                                 | Size       | Decision                                                                                  |
 | ------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
 | Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                 |
 | **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled and precached** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs` |
-| Full-size artwork, 360px              | 46.8 MB    | Fetched per story into IndexedDB, for the recording view only                             |
+| Full-size artwork, 360px              | 46.8 MB    | Fetched per story into IndexedDB. No Phase 1 screen shows it — Q4                         |
 | Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                        |
-| Story narration MP3, 32kbps           | ~1 MB each | Optional per-story download                                                               |
+| Story narration MP3, 32kbps           | ~1 MB each | Optional per-story download. Out of Phase 1 (D5); B0 (#26) deletes the path               |
 
 **What bundling bought, beyond offline-on-first-run:**
 
@@ -49,15 +73,16 @@ and small enough to simply ship.
    it — the artwork is always there. A state removed is worth more than a state
    handled well.
 2. **It removes the download dance from the primary path.** No per-story
-   download prompt stands between a translator and their section list.
+   download prompt stands between a translator and their content.
 3. **It removes a network dependency from the thing the app is for.** A
    facilitator installs over wifi and then goes to the field; waiting for a
    story to be browsed once before its pictures cache would strand them. The
    thumbnails are in the service-worker precache for exactly this reason.
 
-Full-size artwork is still fetched on demand, because the recording view is the
-only place the picture is actually looked at, and 46.8 MB is still not
-something to impose on a shared phone.
+Full-size artwork is still fetched on demand, because 46.8 MB is not something
+to impose on a shared phone. The reason given on 22 Aug — that the recording
+view is the only place the picture is looked at — is now open rather than
+settled: no Phase 1 screen shows it at all (Q4).
 
 Verified: the Door43 CDN serves `Access-Control-Allow-Origin: *` on artwork and
 narration, so on-demand fetches need no proxy and no Worker (ADR 0005).
@@ -114,11 +139,13 @@ export path at all (#18). The decision is closed; the engineering is open.
 
 ## Consequences
 
-- Beta testers get 50 real, ordered, illustrated chapters with zero setup.
-- The section screen gets artwork for row identity — see the revision note in
-  `docs/design/section-screen.md`.
+- Beta testers get 50 real, ordered chapters with zero setup.
+- ~~The section screen gets artwork for row identity.~~ **Void, 2026-08-24.**
+  There is no section screen after the pivot, and a row's identity is its
+  ordinal and its waveform (D6). `docs/design/section-screen.md` is pre-pivot
+  design work, kept as a record and not as guidance.
 - Storage pressure grows: 46.8 MB of artwork sits alongside ~5.3 MB/min of PCM
-  (ADR 0002). The per-story download model is the mitigation, and it makes the
-  cost visible instead of silent.
+  (ADR 0002, and D3's MP3-on-Finished transcode). The per-story download model
+  is the mitigation, and it makes the cost visible instead of silent.
 - Refreshing the catalogue is `node scripts/build-obs-catalog.mjs`, which
   re-fetches from Door43 and fails loudly if a story parses to zero frames.

@@ -1,5 +1,44 @@
 # Section-by-section screen — Pass A (UX)
 
+**Status:** **Superseded as a specification, 2026-08-24** · **Date:** 2026-08-22,
+approved at Gate 1 the same day
+
+> **Do not build from this document.** The plan of record is
+> [`pivot-plan.md`](pivot-plan.md). Tim's mockups replaced this screen, and the
+> UI it specifies is being deleted rather than evolved (#25).
+>
+> It is kept, unrewritten, as the dated record of how the screen was reasoned
+> about and what Gate 1 approved. Its reasoning is why several later decisions
+> went the way they did, and that only reads if the argument survives intact.
+
+**What is overturned.** Named in `pivot-plan.md` as C1 through C4:
+
+- **C3 — the `Book → Chapter → Section → Segment` hierarchy** this document
+  designs against. ADR 0004 removed the Section level; a segment is the unit of
+  work.
+- **C1 — derived-only status.** "The thing cut: #6" argues against asking the
+  translator to mark anything. The mockups specify an explicit per-segment
+  Complete toggle, counted as a chapter roll-up.
+- **C4 — take-based capture**, record and judge and keep or redo. A2 puts takes
+  out of Phase 1; there is one editable waveform per segment.
+- **C2 — "the row has exactly one control"** (A1, Plain boxes). Overturned by
+  G5: the Segments screen ships a transport button and a `⋮` overflow menu. The
+  fifty-row argument for it below is on the record and was decided against, not
+  overlooked.
+
+**What still stands.** The A0 sentence and the case that a non-reading translator
+navigates by sound, waveform shape and position rather than by text. The finding
+that **artwork is an enhancement, not a dependency** — D6 reaches the same
+conclusion from the other direction. And three of the four items under "Not
+decided here" are still open: wordless confirmation of a destructive action, which
+G4 and G5 have now given two call sites; spoken prompts, now Q7 in the plan's
+standing register; and the fact that Bible pericopes have no non-textual identity.
+The fourth, telling two takes apart, is moot under A2.
+
+**One paragraph here is newer than the rest.** The licensing note in the Gate 1
+revision was corrected in place by PR #22 — OBS-derived recordings **are** CC
+BY-SA, settled 2026-08-23, #15 closed. That correction is deliberate. Leave it.
+
 > Process: `ux-then-ui`. This document is the **Gate 1 artifact**: the job list
 > and state inventory, as words and plain boxes, with **zero styling**.
 > Nothing here decides how anything looks.

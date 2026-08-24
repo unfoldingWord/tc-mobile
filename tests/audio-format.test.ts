@@ -54,3 +54,21 @@ describe("frame/ms conversion", () => {
     expect(msToFrames(1000)).toBe(CANONICAL_SAMPLE_RATE);
   });
 });
+
+describe("int16ToFloat — the asymmetry of Int16", () => {
+  it("keeps the most negative representable sample inside [-1, 1]", () => {
+    // floatToInt16 stores -32768 for any input at or below -1, so a clipped
+    // take round-trips through int16ToFloat on every play. -32768 / 32767 is
+    // -1.0000305, and this feeds copyToChannel.
+    const out = int16ToFloat(Int16Array.of(-32768, 32767, 0));
+    expect(out[0]).toBe(-1);
+    expect(out[1]).toBeCloseTo(1, 5);
+    expect(out[2]).toBe(0);
+  });
+
+  it("clamps a clipped round trip end to end", () => {
+    const back = int16ToFloat(floatToInt16(Float32Array.of(-2, 2)));
+    expect(back[0]).toBeGreaterThanOrEqual(-1);
+    expect(back[1]!).toBeLessThanOrEqual(1);
+  });
+});

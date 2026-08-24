@@ -134,8 +134,24 @@ Taken after the answers above. Each names what it closes.
 | **D2** | Undo is an **operation log**, not buffer copies          | `cut(range)` / `insert(at, clipRef)` replayed from the original. "Undo is just keeping the previous buffer" costs ~16 MB per step on a 3-minute segment; a log costs bytes and survives a restart. |
 | **D3** | **MP3 on Finished**                                      | PCM while a segment is being edited; transcode to 64 kbps and drop the PCM when the translator marks it Finished. ~660 MB becomes ~66 MB. Closes the storage strategy in #12.                      |
 | **D4** | **MicroSD via the share sheet only**                     | No web API writes to removable media. The OS picker can target the card, so SD is an export destination rather than storage. No wrapper, ADR 0005 unchanged.                                       |
-| **D5** | **Reference audio is out of Phase 1**                    | No mockup shows it. The timing seam (ADR 0007) stays built and inert; the narration control comes out of the section view.                                                                         |
+| **D5** | **Reference audio is out of Phase 1**                    | No mockup shows it. ~~The timing seam (ADR 0007) stays built and inert;~~ **reversed 2026-08-24, see below.** The narration control comes out of the section view.                                 |
 | **D6** | **Artwork becomes optional per-segment illustration**    | Supplied by the OBS template rather than defining the browse layout. Picture-navigation survives for non-readers without making the app OBS-shaped. Revisits ADR 0006's image-first grid.          |
+
+### D5's second half was reversed — 2026-08-24
+
+Gate 1 decision **G1**, taken 2026-08-23, deletes the timing seam rather than
+leaving it built and inert: `lib/timing/**`, `types/timing.ts` and
+`tests/timing.test.ts` go, and ADR 0007 is superseded with a note saying why. The
+row above is struck through rather than rewritten because this table records what
+was decided on 2026-08-23, not what is true now.
+
+**D5's first half stands** — reference audio is out of Phase 1, and the narration
+path goes with it.
+
+The deletion is batch **B0**
+([#26](https://github.com/sethstoll3/tc-mobile/issues/26)). The plan of record is
+[`pivot-plan.md`](pivot-plan.md), which carries the split; where this document and
+that one disagree, that one wins.
 
 ### What D3 pulls in
 
@@ -168,6 +184,12 @@ per-segment illustration supplied by the OBS template — so "load it from the
 cache, not the network" survives intact as a requirement. What D6 removes is the
 image-first _browse_ (`section-browser.tsx`'s grid-versus-list conditional and
 `ChapterCard.thumbUrl`), not the artwork itself.
+
+> **Corrected 2026-08-24.** There is no `ChapterCard.thumbUrl`. `thumbUrl` is a
+> `SectionCard` field (`types/view.ts:22`); the field that actually forks the
+> layout is `ChapterCard.hasArtwork` (`types/view.ts:39`). Same correction as
+> [`pivot-plan.md`](pivot-plan.md); the sentence above is left as written
+> because this document is the record of what was concluded on 22 Aug.
 
 There is a genuine gap here worth naming: **none of the five mockups shows
 artwork anywhere**, including the segment editor. D6 says artwork stays; the

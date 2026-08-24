@@ -9,10 +9,7 @@ import {
 } from "./audio-io";
 import { useRecorder, type RecorderState } from "./use-recorder";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
-import { getClip } from "@/lib/storage/clips";
-import { getDb } from "@/lib/storage/db";
-import type { Clip } from "@/types/audio";
-import type { SegmentId } from "@/types/domain";
+import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SectionCard } from "@/types/view";
 
 export interface UseAudioSession {
@@ -36,15 +33,6 @@ export interface UseAudioSession {
    * not, or a two-minute narration restarts from the top on every step.
    */
   leave: (options?: { rewindNarration?: boolean }) => void;
-}
-
-/** The active take of a segment, or `undefined` if there is nothing to play. */
-async function loadActiveClip(segmentId: SegmentId): Promise<Clip | undefined> {
-  const db = await getDb();
-  const segment = await db.get("segments", segmentId);
-  if (!segment?.activeTakeId) return undefined;
-  const take = await db.get("takes", segment.activeTakeId);
-  return take ? getClip(take.clipId) : undefined;
 }
 
 /**
@@ -150,17 +138,29 @@ export function useAudioSession(): UseAudioSession {
 
       void (async () => {
         try {
-          const clip = await loadActiveClip(section.segmentId);
+          const audio = await loadSegmentClip(section.segmentId);
           // Superseded while we read: whoever took the floor owns the UI state
           // now, so touching it here would undo their work.
           if (!session.isCurrent(token)) return;
-          if (!clip) {
+          if (audio.kind !== "resolved") {
+            // A segment nobody has recorded gives the floor back quietly —
+            // that is the ordinary case, and no control offers play on it.
+            // A segment that points at audio the database does not have is a
+            // different thing: the translator tapped play and heard nothing,
+            // so it goes through the same channel as any other playback
+            // failure rather than only to the console. Silence is what let
+            // three copies of this walk disagree about it in the first place.
+            const fault = danglingReason(audio);
+            if (fault) {
+              console.error("Nothing to play for this take:", fault);
+              setPlaybackError("Could not play this recording.");
+            }
             session.release(token);
             setPlaying(null);
             return;
           }
 
-          const handle = await playSamples(clip.samples, {
+          const handle = await playSamples(audio.clip.samples, {
             onEnded: () => {
               if (!session.isCurrent(token)) return;
               session.release(token);

@@ -15,7 +15,13 @@
  * See docs/decisions/0006-obs-content.md.
  */
 
-export interface ObsFrame {
+/**
+ * Not exported: nothing imports the name, and `ObsStory.frames` types fine
+ * against a file-private interface. An `@pivot-pending` tag here would have
+ * been a silencer — no batch wires this up — which is the thing that tag must
+ * never be.
+ */
+interface ObsFrame {
   /** 1-based position within the story. */
   readonly frame: number;
   /**

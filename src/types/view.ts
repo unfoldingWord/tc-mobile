@@ -39,6 +39,17 @@ export interface ChapterCard {
   readonly hasArtwork: boolean;
   /** Story-level reference narration, when the content ships any. */
   readonly referenceAudioUrl: string | null;
+  /**
+   * Sections whose take names audio the database cannot produce.
+   *
+   * They draw as unrecorded, because `SectionCard` has no way to say
+   * "recorded, audio gone" and inventing one belongs to B2/B3. Without this
+   * count nothing on the screen would say so at all: the play control is not
+   * rendered for a card with no duration, so the fault would reach the
+   * translator only as an offer to record over a segment the model already
+   * believes is recorded.
+   */
+  readonly audioFaults: number;
   readonly sections: readonly SectionCard[];
 }
 

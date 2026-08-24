@@ -5,11 +5,35 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage sections, export MP3 (export is not wired yet, #18). It targets Android and iOS
-phones, frequently offline, used by people who may not read.
+edit the waveform, manage the segments of a chapter, export MP3 (export is not
+wired yet, #18). It targets Android and iOS phones, frequently offline, used by
+people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
+
+## The pivot — read this before the rest of the file
+
+Tim's hand-drawn screen mockups (22 Aug 2026) are the first principles for the
+UI, and the domain model moves with them:
+
+```
+was:  Project -> Chapter -> Section -> Segment -> Take
+now:  Book    -> Chapter ->            Segment  (-> Take, hidden, 1:1)
+```
+
+A segment is the unit of work: one recording per segment, edited in place. The
+pre-pivot UI is **replaced, not evolved**.
+
+[`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record.
+[#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
+and the work is nine batches, B0–B8 (#26–#34).
+
+**None of the batches has started.** Everything below this section describes
+the tree as it stands today, and that tree is still pre-pivot: `Section` is in
+the model, the timing seam and the narration path are still in `src/`, and no
+mockup screen exists. Do not read a description here as a description of the
+target.
 
 ## Tech stack
 
@@ -34,7 +58,8 @@ npm run build          # production build
 npm run preview        # preview the build
 npm run lint           # ESLint, zero warnings allowed
 npm run typecheck      # tsc -b (project references)
-npm run knip           # unused files and dependencies
+npm run typecheck:lib  # lib/ + types/ compiled with NO DOM lib — see below
+npm run knip           # unused files, deps, exports and exported types
 npm test               # vitest run
 npm run format         # prettier --write
 npm run verify         # everything above, in one command
@@ -132,18 +157,59 @@ condition — over a message bubble.
 **No sprawl, no duplicates, no stubs.** Nothing shipped that nothing uses;
 nothing stubbed "for later."
 
-`knip` enforces the mechanical half — in `npm run verify` and in CI — and it is
-scoped to **unused files and unused dependencies**, not unused exports. That
-scope is deliberate and it is a gap: dead exports inside a live file pass it
-today — `downloadStoryMedia`, `cachedImageObjectUrl`, `formatBytes`,
-`storyMediaStatus`, `listMediaUrls` and `Mp3EncodeOptions` among them. Treat
-that list as illustrative, not exhaustive; only `knip --include exports` can
-enumerate it.
-Widening to `exports` means deleting or wiring those, which belongs to the
-change that reworks that code, not to a docs pass. **Do not read a green knip
-as "no dead code."** It found an unused `zustand`, an unused `lucide-react`
-that this document itself claimed was the icon library, and three dead barrel
-files on its first run — that is the class it catches.
+`knip` enforces the mechanical half, in `npm run verify` and in CI, scoped to
+**files, dependencies, unlisted imports, exports and exported types**. Exports
+were added 2026-08-24; before that the gate had never checked them and nineteen
+dead ones were passing.
+
+An export that is genuinely dead now but that a named pivot batch wires up
+carries a `@pivotpending` JSDoc tag, which knip honours.
+
+**The tag must name a tracking issue, and the batch when a batch owns it.** Not
+every pending export belongs to a B-batch — the OBS media cache is tagged
+against #1 and open question Q4, and there is no batch that will touch it. An
+export with **no** issue behind it does not get a tag; it gets deleted. An
+untagged unused export fails CI, and a tag without a reason is worse than the
+export it hides.
+
+**The tag is one alphabetic token on purpose.** knip parses tags with
+`/[a-zA-Z]+/` and keeps only the first run, so a hyphenated `@pivot-pending`
+is stored as `@pivot` — which would silently ignore _any_ future export tagged
+`@pivot`-anything. Do not reintroduce a hyphen here.
+
+**Two blind spots remain. Do not read a green knip as "no dead code."**
+
+1. **A `src/` module imported only by a test looks used.** `tests/**` is a knip
+   entry point, so a test import satisfies the `files` check. This is how 372
+   lines of timing seam plus 494 lines of its tests survived to be deleted by
+   hand. knip cannot tell that from `lib/audio/edit.ts`, which is the engine
+   B5 will consume — so the judgement stays human.
+2. **Nothing in this repo reads CSS at all.** knip says so itself
+   (`.css — Compiled extension excluded by project`). There is no stylelint and
+   no CSS plugin. An orphaned custom property or component token is invisible
+   to every check, which matters most in B2 and B3 — the largest UI deletion
+   this repo will do.
+
+What it does catch, on its first run: an unused `zustand`, an unused
+`lucide-react` that this document itself claimed was the icon library, and three
+dead barrel files.
+
+**The onion rule and the DOM ban are enforced, as of 2026-08-24.** Both were
+prose until then. `no-restricted-imports` now matches relative specifiers as
+well as `@/`-aliased ones, and `no-restricted-globals` bans the browser globals
+from `src/lib/**` — a probe file in `src/lib/audio/` using `AudioContext`,
+`document`, `window` and `navigator` previously produced zero ESLint and zero
+`tsc` diagnostics. The ban catches value references; a type-position reference
+is caught by `npm run typecheck:lib`, which compiles `src/lib` and `src/types`
+against `tsconfig.lib.json` with no DOM lib — in `verify` and in CI. **That gate
+has a named residual:** `"types": ["node"]` brings Node's own web globals, so
+`Navigator` and `Storage` type-check inside `lib/`. Deliberate — both run in
+plain Node and in a Worker, which is the property this rule protects — and
+`tests/lib-boundary.test.ts` asserts what fires and what does not, so the line
+cannot drift silently. Note `.husky/pre-commit` runs only `npm run typecheck`;
+the DOM-free pass is `verify` and CI. `scripts/**/*.mjs`
+are linted too — they matched no config block and ran with zero rules while
+fetching over the network and writing 598 files into `public/`.
 
 **Do not ramp up before it is needed.** Every rule above pays for itself now.
 A rule that will pay off after October can wait until after October.
@@ -283,13 +349,19 @@ Full process, and the traps that make a failed run look like a clean pass, in
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
-5. **No Scripture Burrito export yet.** The audio flavor supports it and MP3 is
-   the right format; talk to Benjamin Wright first — `docs/research/prior-art.md` §4.
+5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.
+   A4 settled the share shape instead: Share Chapter is one concatenated MP3 to
+   the OS share sheet, Share Book is a zip of chapter MP3s. B7 (#33) builds
+   both. Burrito comes back only if a later phase asks for it, so the "talk to
+   Benjamin Wright first" next action is retired; the background is still
+   `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
    public repo. Someone needs to ask Han Chung.
-7. **No OBS frame timing exists**, so reference audio is story-level and
-   record-along is not possible — ADR 0007. The seam is built; someone needs to
-   ask uW to publish timing files.
+7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
+   Reference audio is out of Phase 1 (D5), and B0 (#26) deletes the timing seam
+   and the narration path and supersedes ADR 0007. Until B0 lands both are
+   still in `src/`. The ask itself is still open: someone needs to ask uW to
+   publish timing files — #13.
 8. **OBS-derived recordings are CC BY-SA** — settled, #15 closed. What is
    still open is the _implementation_: the data model cannot tell an
    OBS-derived recording from a user-authored one, and the export path carries

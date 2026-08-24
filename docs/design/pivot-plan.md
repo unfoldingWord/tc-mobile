@@ -71,8 +71,13 @@ window that can cut, an edit marker that can paste, and insert… undo is just
 keeping the previous buffer."_ The engine Tim's recording UI needs is built and
 tested. The pivot is overwhelmingly a UI and data-model job, not an audio one.
 
-The whole app is **3,261 lines**. This is a large change to a small codebase,
-which is the cheapest version of this change we will ever get.
+The whole app was **3,261 lines** when this was written — `e0ed78d`, 2026-08-23.
+At `07b927d` the same count is **4,752**. Measured both times with
+`git ls-files src | grep -E '\.tsx?$' | xargs wc -l`; the figure excludes `tests/`
+and `src/**/*.css`. This is still a large change to a small codebase, which is the
+cheapest version of this change we will ever get — but the codebase has grown
+about 46% since the sizing argument was made, and the number will keep drifting,
+so re-measure rather than quoting either figure.
 
 ### Overturned: decisions that must be reversed
 
@@ -91,11 +96,21 @@ contents, and Pass A's one-control-per-row position is overturned outright.
 
 The instruction driving this section is _no stale stubby code left behind_.
 
-| What                                                                                       | Lines | Why it goes                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/timing/**` + `types/timing.ts` — **blocked on G1**                                    | ~372  | Nothing outside the folder imports it; grep confirms, and the only callers of `loadChapterTiming` are its own tests. Built for record-along, which no mockup shows. |
-| Reference-audio / narration path (`obs-media.ts`, `audio-io.ts`, `section-view.tsx`)       | ~40   | D5's surviving half. No mockup shows reference audio. Closes #9 by deletion.                                                                                        |
-| Image-first browse — `section-browser.tsx`'s grid/list conditional, `ChapterCard.thumbUrl` | ~60   | D6. The artwork survives as an optional per-segment illustration; artwork deciding the layout does not.                                                             |
+| What                                                                                         | Lines | Why it goes                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/timing/**` + `types/timing.ts` — **blocked on G1**                                      | ~372  | Nothing outside the folder imports it; grep confirms, and the only callers of `loadChapterTiming` are its own tests. Built for record-along, which no mockup shows. |
+| Reference-audio / narration path (`obs-media.ts`, `audio-io.ts`, `section-view.tsx`)         | ~40   | D5's surviving half. No mockup shows reference audio. Closes #9 by deletion.                                                                                        |
+| Image-first browse — `section-browser.tsx`'s grid/list conditional, `ChapterCard.hasArtwork` | ~60   | D6. The artwork survives as an optional per-segment illustration; artwork deciding the layout does not.                                                             |
+
+**Corrected 2026-08-24 — the field named here was wrong.** This row said
+`ChapterCard.thumbUrl`. There is no such field. The field that actually forks the
+browse layout is `ChapterCard.hasArtwork` (`src/types/view.ts:39`, whose own
+docblock calls it "the single conditional the whole screen turns on"), read at
+`components/section-browser.tsx:29` and computed at `hooks/use-chapter.ts:97` as
+`cards.some((c) => c.thumbUrl !== null)`. `thumbUrl` is a **`SectionCard`** field
+(`src/types/view.ts:22`) — the per-section thumbnail, which D6 keeps as the
+optional illustration. Deleting it is not what this row describes, and no issue
+named `hasArtwork` before now.
 
 ADR 0007 is not deleted — it is superseded, with a note saying the seam was
 removed and why, so the reasoning survives even though the code does not.
@@ -222,28 +237,71 @@ mistake and should be deleted the same way.
 
 ## Batches
 
-Sequenced so nothing is built on a shape a later batch changes, and so the
-deletion happens **first** rather than being promised. One lane at a time,
+Sequenced so the deletion happens **first** rather than being promised, and so no
+batch leaves the app in a state it cannot render. One lane at a time,
 `develop`-cut branches, both reviewers per `AGENTS.md`.
+
+The original ordering rule was "nothing is built on a shape a later batch
+changes." B1's re-sequencing on 2026-08-24 traded it away deliberately; the note
+under the table says what that costs and why the trade is worth taking.
 
 | Batch  | Issue                                                    | Contents                                                                                      | Depends on  | Tier    |
 | ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------- | ------- |
 | **B0** | [#26](https://github.com/sethstoll3/tc-mobile/issues/26) | Delete the timing seam and the narration path. Supersede ADR 0007.                            | #21 merging | T2      |
-| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, migration | —           | **T1**  |
-| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell             | B1          | T3      |
-| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`, `⋮` menu    | B1          | T3      |
+| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, migration | B2, B3      | **T1**  |
+| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell             | —           | T3      |
+| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`, `⋮` menu    | —           | T3      |
 | **B4** | [#30](https://github.com/sethstoll3/tc-mobile/issues/30) | Recorder sheet — breadcrumb, Finished toggle, fixed centerline, swipe, insert-record, pause   | B3          | T1 / T2 |
 | **B5** | [#31](https://github.com/sethstoll3/tc-mobile/issues/31) | Selection frame, cut to clipboard, paste at centerline, undo + redo, zoom                     | B4          | **T1**  |
 | **B6** | [#32](https://github.com/sethstoll3/tc-mobile/issues/32) | VU meter with show/hide, recorder `≡` menu, Erase Segment with confirmation                   | B4          | T2      |
 | **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                      | B1, B2      | T2      |
 | **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                          | B1          | **T1**  |
 
+### B1 was re-sequenced behind B2 and B3 — 2026-08-24
+
+The table above originally ran B1 first, on the principle that the model settles
+before the screens are drawn on top of it. That was the wrong order here, and the
+dependency is now inverted: **B2 and B3 land first, then B1 changes the model
+underneath them.**
+
+Removing `Section` breaks every screen the app currently renders, including
+`app/App.tsx`, all four `components/section-*` files, `types/view.ts`,
+`hooks/use-chapter.ts` and `hooks/use-audio-session.ts` — the last of these is
+typed on `SectionCard`. The storage and type layers carry it too
+(`types/domain.ts`, `lib/storage/db.ts`, `lib/storage/projects.ts`), which is
+B1's own work rather than collateral.
+#27's Done-when named only the store, the index, the roll-up and the migration, so
+B1 could have been signed off with the UI left broken. B2 and B3 were written as
+additive, which meant the prior-UI files could have survived both batches — every
+issue closed, and the replaced UI still in the tree. Building the replacement
+screens first means B1 deletes files that nothing renders any more.
+
+Recorded on [#27](https://github.com/sethstoll3/tc-mobile/issues/27),
+[#28](https://github.com/sethstoll3/tc-mobile/issues/28) and
+[#29](https://github.com/sethstoll3/tc-mobile/issues/29); the full reasoning is on
+#27.
+
+The cost of this order is named rather than absorbed: B2 and B3 are composed
+before the model they will finally sit on exists, so B1 has to reach back into
+them. That is a smaller job than the alternative, which was a batch that leaves
+the app unrenderable and an issue that lets it be signed off anyway.
+
 ## What this plan does not decide
 
-- **The visual system.** Pass B's token work (`section-screen-pass-b.md`) is not
-  overturned — the mockups are wireframes and carry no type or spacing. They do
-  carry semantic colour, and it agrees with the tokens: green for play, red for
-  record, which is the existing `--s-live` split. Composition is Gate 2.
+- **The visual system.** Pass B's **token work** — section B0 of
+  [`section-screen-pass-b.md`](section-screen-pass-b.md) — is not overturned. The
+  mockups are wireframes and carry no type or spacing. They do carry semantic
+  colour, and it agrees with the tokens: green for play, red for record, which is
+  the existing `--s-live` split. Composition is Gate 2.
+
+  **The composition does not survive.** Pass B's B2 specifies one control per
+  row, an image-first grid and a reference-audio control, all three now
+  overturned — by G5, D6 and D5/G1 respectively. Its B4 motion rules and its
+  unresolved Gate 3 residuals do carry forward; the Pass B banner is the list. Both Pass documents carry a
+  `**Status:**` banner as of 2026-08-24 saying what is superseded and by what;
+  they are kept as dated records of how the decisions were reached, not as
+  specifications to build from.
+
 - **Whether the five-value `RecordingStatus` enum stays** beneath a binary UI
   toggle. Probably yes; Phase 2 needs it and ADR 0004's migration reasoning applies.
 - **The register's pending items.** Q1, Q2, Q5, Q6 and Q7 each have a default,

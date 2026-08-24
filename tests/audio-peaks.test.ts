@@ -56,3 +56,14 @@ describe("computePeaks", () => {
     expect(Number.isFinite(peaks.samplesPerBucket)).toBe(true);
   });
 });
+
+describe("computePeaks — the asymmetry of Int16", () => {
+  it("keeps the most negative representable sample inside [-1, 1]", () => {
+    // INT16_MIN is -32768 while INT16_MAX is 32767, so normalising the floor
+    // by INT16_MAX alone yields -1.0000305. `Peaks` documents [-1, 1].
+    const peaks = computePeaks(Int16Array.from([-32768, 32767]), 1);
+    expect(peaks.min[0]).toBe(-1);
+    expect(peaks.max[0]).toBeCloseTo(1, 5);
+    expect(peaks.min[0]!).toBeGreaterThanOrEqual(-1);
+  });
+});
