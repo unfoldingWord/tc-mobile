@@ -1,0 +1,37 @@
+{
+  /*
+   * The DOM-free half of "lib/ must stay free of DOM, Web Audio and
+   * MediaRecorder" — AGENTS.md's rule that matters most.
+   *
+   * `no-restricted-globals` in eslint.config.mjs catches VALUE references and
+   * gives a good message. It cannot catch a TYPE position, and enumerating the
+   * DOM surface by hand is a losing game: the first version of that list
+   * omitted `AudioBuffer` and `HTMLAudioElement`, both already used at the
+   * browser boundary.
+   *
+   * This compiles src/lib and src/types with no DOM lib at all, so the
+   * complete DOM and Web Audio surface is absent by construction rather than
+   * by enumeration. `Blob` and `fetch` survive because @types/node declares
+   * them — which is the correct outcome: both exist in Node and in workers,
+   * and lib/storage types its records on Blob.
+   *
+   * Deliberately not a project reference: tsconfig.app.json already includes
+   * these files, and overlapping composite inputs buy complexity for nothing
+   * here. It is a separate `npm run typecheck:lib` in verify and in CI.
+   */
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/lib/**/*.ts", "src/types/**/*.ts"]
+}

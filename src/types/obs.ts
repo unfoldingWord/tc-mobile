@@ -16,11 +16,12 @@
  */
 
 /**
- * @pivot-pending Not imported by name anywhere, but `ObsStory.frames` exposes
- * it structurally, so un-exporting it buys nothing and costs the name at every
- * call site that destructures a frame.
+ * Not exported: nothing imports the name, and `ObsStory.frames` types fine
+ * against a file-private interface. An `@pivot-pending` tag here would have
+ * been a silencer — no batch wires this up — which is the thing that tag must
+ * never be.
  */
-export interface ObsFrame {
+interface ObsFrame {
   /** 1-based position within the story. */
   readonly frame: number;
   /**

@@ -54,9 +54,12 @@ const deny = (groups) => ({
  * Node and in workers, `lib/storage` types its records on `Blob`, and banning
  * them would be a different rule than the one AGENTS.md states.
  *
- * This catches value references, not type positions — `tsc` with a DOM-free
- * `lib` would catch both, but that needs its own tsconfig and project
- * reference. Recorded as the remaining half rather than implied to be done.
+ * This list is FAST FEEDBACK, not the boundary. Enumerating the DOM surface by
+ * hand is a losing game — the first version of it omitted `AudioBuffer` and
+ * `HTMLAudioElement`, both already used at the browser boundary. The boundary
+ * is `tsconfig.lib.json`, which compiles src/lib and src/types with no DOM lib
+ * at all, so the whole surface is absent by construction and type positions are
+ * covered too. Keep this rule anyway: it fires in the editor and says why.
  */
 const BROWSER_ONLY_GLOBALS = [
   "window",
@@ -72,6 +75,11 @@ const BROWSER_ONLY_GLOBALS = [
   "MediaRecorder",
   "MediaStream",
   "MediaStreamTrack",
+  "AudioBuffer",
+  "AudioBufferSourceNode",
+  "AnalyserNode",
+  "HTMLAudioElement",
+  "HTMLCanvasElement",
   "FileReader",
   "Image",
   "HTMLElement",

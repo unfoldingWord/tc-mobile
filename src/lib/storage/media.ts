@@ -49,10 +49,10 @@ export async function totalMediaBytes(): Promise<number> {
 }
 
 /**
- * @pivot-pending The OBS media cache has no production caller and B0 (#26)
- * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
- * model and the cache; whether "kept" means kept with zero callers is the
- * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ * @pivot-pending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
  */
 export async function listMediaUrls(): Promise<string[]> {
   return (await getDb()).getAllKeys("media");

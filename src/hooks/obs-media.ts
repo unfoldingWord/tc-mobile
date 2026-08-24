@@ -26,10 +26,10 @@ async function fetchInto(url: string): Promise<void> {
 }
 
 /**
- * @pivot-pending The OBS media cache has no production caller and B0 (#26)
- * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
- * model and the cache; whether "kept" means kept with zero callers is the
- * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ * @pivot-pending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
  */
 export interface DownloadProgress {
   readonly done: number;
@@ -49,7 +49,7 @@ export interface DownloadProgress {
  * it. The count of failures is returned so the UI can be honest about it.
  *
  * @pivot-pending No caller. See the note on `DownloadProgress` — this is the
- * media cache whose fate #26 settles.
+ * cache side of #1.
  */
 export async function downloadStoryMedia(
   story: ObsStory,
@@ -81,10 +81,10 @@ export async function downloadStoryMedia(
 
 /** How much of a story is already on the device, for a per-story indicator. */
 /**
- * @pivot-pending The OBS media cache has no production caller and B0 (#26)
- * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
- * model and the cache; whether "kept" means kept with zero callers is the
- * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ * @pivot-pending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
  */
 export async function storyMediaStatus(
   story: ObsStory
@@ -103,10 +103,10 @@ export async function storyMediaStatus(
  * a real memory problem on a low-end device.
  */
 /**
- * @pivot-pending The OBS media cache has no production caller and B0 (#26)
- * removes its last one, `narrationUrl`. Open question Q4 keeps artwork in the
- * model and the cache; whether "kept" means kept with zero callers is the
- * decision recorded in #26 before B0 starts. Do not delete on knip's word.
+ * @pivot-pending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
  */
 export async function cachedImageObjectUrl(
   url: string

@@ -70,6 +70,10 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # The DOM-free half of the lib/ boundary. See tsconfig.lib.json.
+      - name: Type check lib/ without the DOM
+        run: npm run typecheck:lib
+
       - name: Unused files and dependencies
         run: npm run knip
 

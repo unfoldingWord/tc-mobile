@@ -16,11 +16,12 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run test && npm run build",
+    "verify": "npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run typecheck:lib && npm run test && npm run build",
     "deploy": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "prepare": "husky",
-    "knip": "knip --include dependencies,unlisted,files,exports,types"
+    "knip": "knip --include dependencies,unlisted,files,exports,types",
+    "typecheck:lib": "tsc -p tsconfig.lib.json"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
