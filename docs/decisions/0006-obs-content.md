@@ -23,8 +23,9 @@ wire per-segment artwork to it (#1), but no mockup places artwork anywhere, no
 batch was scheduled to wire it, and code nothing uses is the sprawl the bar
 rejects. **What still ships is unchanged:** the 2.5 MB bundle of 128px
 thumbnails and the catalogue JSON — those are precached, not cached-on-demand,
-and B0 does not touch them. #1 is closed as moot: with no cache and no artwork
-screen there is no rework to do. Per-segment artwork is greenfield if a later
+and B0 does not touch them. #1 is closed as moot: with no cache to wire and no
+mockup screen that needs one, there is no rework to do (the pre-pivot recording
+view keeps its CDN `<img>` until B2/B3). Per-segment artwork is greenfield if a later
 phase asks for it; the removed cache is recoverable from git. The inline
 sentences below that still describe the cache as "kept" are struck.
 
@@ -58,7 +59,8 @@ OBS maps onto the domain model with no translation at all:
   optional per-segment illustration rather than the thing that decides the
   browse layout. ~~open question Q4 keeps it in the model and the media cache~~
   **Void, 2026-08-24 (B0, #26):** Q4 is answered no — the media cache is removed
-  and artwork is drawn in no Phase 1 screen.
+  and artwork is drawn in no _mockup_ screen. (The pre-pivot recording view still
+  renders the CDN image until B2/B3 replace it.)
 - _Story narration MP3 → "reference audio to translate from."_ Reference audio
   is out of Phase 1 (D5). ~~Narration is still fetched by code in the tree, and
   B0 (#26) deletes that path.~~ **Done, 2026-08-24:** B0 deleted the narration
@@ -101,10 +103,11 @@ than the source, and small enough to simply ship.
 ~~Full-size artwork is still fetched on demand~~ **Void, 2026-08-24 (B0, #26).**
 Full-size artwork is **no longer fetched or cached**: the on-demand fetch layer
 is removed. (The empty `media` object store stays until B1's drop-and-recreate,
-so B0 changes no schema — see the amendment note above.) No Phase 1 screen shows
-the picture (Q4, answered no), so there was nothing for the cache to serve. The recording
-view's `<img>` still points at the door43 CDN URL directly, which works online
-and is temporary — the pre-pivot section view is replaced by B2/B3.
+so B0 changes no schema — see the amendment note above.) No _mockup_ screen shows
+the picture (Q4, answered no), and the cache had no live reader, so there was
+nothing for it to serve. The pre-pivot recording view's `<img>` still points at
+the door43 CDN URL directly, which works online and is temporary — that view is
+replaced by B2/B3.
 
 Verified (kept as a record): the Door43 CDN serves `Access-Control-Allow-Origin:
 *` on artwork and narration, so on-demand fetches needed no proxy and no Worker

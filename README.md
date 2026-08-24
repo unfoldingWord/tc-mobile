@@ -160,8 +160,10 @@ temporary until B2/B3 replace that view.
 
 Two things about this content changed with the pivot, and B0 finished the job.
 Artwork is an optional per-segment illustration rather than the thing that
-decides the browse layout (D6), and no Phase 1 screen draws it — so B0 removed
-the media cache outright (Q4 answered no; #1 closed as moot). Reference audio is
+decides the browse layout (D6), and no _mockup_ screen draws it — so B0 removed
+the media cache outright (Q4 answered no; #1 closed as moot). (The pre-pivot
+recording view still shows the CDN image, as noted above, until B2/B3 replace
+it.) Reference audio is
 out of Phase 1 (D5), so the narration path — the `narrationUrl` helper and the
 reference control — is gone too. See
 [ADR 0006](docs/decisions/0006-obs-content.md).

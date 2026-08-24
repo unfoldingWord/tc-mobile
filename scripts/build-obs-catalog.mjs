@@ -5,8 +5,9 @@
  * Fetches unfoldingWord/en_obs from Door43 and flattens it into one JSON file
  * the app can load without a network. Story text is small enough to bundle
  * outright (~190 KB for all fifty); the artwork is not (46.8 MB at 360px), so
- * only image URLs are recorded here and the images themselves are fetched and
- * cached per story on demand.
+ * only image URLs are recorded here. B0 (#26) removed the on-demand IndexedDB
+ * image cache; the pre-pivot recording view now loads those URLs straight from
+ * the Door43 CDN with an `<img>` until B2/B3 replace it.
  *
  * OBS is CC BY-SA 4.0 and the artwork is © Sweet Publishing — see
  * docs/decisions/0006-obs-content.md. Attribution travels in the catalogue
