@@ -31,4 +31,28 @@ describe("computePeaks", () => {
     expect(Array.from(peaks.min).every((v) => Number.isFinite(v))).toBe(true);
     expect(Array.from(peaks.max).every((v) => Number.isFinite(v))).toBe(true);
   });
+
+  it("gives every bucket a real sample when the buffer is shorter than the bucket count", () => {
+    // Finiteness alone does not catch this: an empty span falls through to the
+    // `lo === Infinity` branch and reports 0/0, which is finite and draws as a
+    // flat line through the middle of the waveform. The `Math.max(start + 1,
+    // ...)` in peaks.ts:36 is what prevents it, and nothing above distinguishes
+    // it from a buffer that really is silent there.
+    const loud = Int16Array.from([32767, -32767, 20000]);
+    const peaks = computePeaks(loud, 16);
+    const flat = Array.from(peaks.min).filter(
+      (lo, b) => lo === 0 && peaks.max[b] === 0
+    );
+    expect(flat).toHaveLength(0);
+  });
+
+  it("keeps at least one bucket when asked for none", () => {
+    // `samples.length / 0` is Infinity, and a `samplesPerBucket` of Infinity
+    // would travel out to whatever draws the waveform. The floor of one bucket
+    // in peaks.ts:21 is the only thing stopping it.
+    const peaks = computePeaks(Int16Array.from([100, -100]), 0);
+    expect(peaks.min.length).toBe(1);
+    expect(peaks.max.length).toBe(1);
+    expect(Number.isFinite(peaks.samplesPerBucket)).toBe(true);
+  });
 });

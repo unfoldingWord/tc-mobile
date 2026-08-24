@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "translationCore Mobile — offline-first audio notebook/editor PWA for oral Bible translation",
+  "description": "translationCore Mobile \u2014 offline-first audio notebook/editor PWA for oral Bible translation",
   "scripts": {
     "dev": "vite dev",
     "dev:lan": "vite dev --host",
@@ -16,10 +16,11 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "verify": "npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run test && npm run build",
     "deploy": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
-    "prepare": "husky"
+    "prepare": "husky",
+    "knip": "knip --include dependencies,unlisted,files"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
@@ -34,11 +35,9 @@
     "@breezystack/lamejs": "^1.2.7",
     "clsx": "^2.1.1",
     "idb": "^8.0.3",
-    "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "tailwind-merge": "^3.4.0",
-    "zustand": "^5.0.9"
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
@@ -51,6 +50,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
+    "knip": "^6.32.2",
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.1",
@@ -64,6 +64,6 @@
     "wrangler": "^4.48.2"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   }
 }

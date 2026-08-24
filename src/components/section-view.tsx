@@ -1,40 +1,68 @@
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { Notice } from "./notice";
 import { Waveform } from "./waveform";
+import type { RecorderState } from "@/hooks/use-recorder";
 import { formatDuration } from "@/lib/utils";
 import type { ChapterCard, SectionCard } from "@/types/view";
 
 interface SectionViewProps {
   chapter: ChapterCard;
   section: SectionCard;
-  recording: boolean;
+  /**
+   * The whole recorder state, not just "is it recording".
+   *
+   * A boolean hid `"requesting"` — the seconds the permission prompt is up —
+   * and back and the stepper were fully live in it. Tapping next there let the
+   * microphone open for a section the translator had already left.
+   */
+  recorderState: RecorderState;
   elapsedMs: number;
   playing: boolean;
   referencePlaying: boolean;
+  /** Whether this device can record at all. Silent everywhere before. */
+  supported: boolean;
+  /**
+   * A finished take is still being written.
+   *
+   * The app holds one unsaved take at a time, so recording again is refused
+   * while a save is in flight — and a refusal the screen does not show is the
+   * same defect the `Notice` exists for: the button simply does nothing. So the
+   * refusal is rendered instead of hidden.
+   */
+  saving: boolean;
+  /** Which section the in-flight save belongs to, when it is known. */
+  savingOrdinal: number | null;
+  error: string | null;
   onBack: () => void;
   onPrev: (() => void) | null;
   onNext: (() => void) | null;
   onRecord: () => void;
   onStop: () => void;
   onPlay: () => void;
-  onToggleReference: (() => void) | null;
+  onToggleReference: () => void;
 }
 
 /**
  * One section, filling the screen.
  *
- * This is where the work happens, so it holds only what the work needs. While
- * recording, everything but the frame, the elapsed time and stop is removed —
- * **including the stepper** — so there is nothing to press by accident
- * mid-take, and a take is the one thing here that cannot be undone.
+ * This is where the work happens, so it holds only what the work needs. From
+ * the moment the microphone is asked for until it is released, everything that
+ * leaves this section is removed — back and **the stepper** — so there is
+ * nothing to press by accident mid-take, and a take is the one thing here that
+ * cannot be undone.
  */
 export function SectionView({
   chapter,
   section,
-  recording,
+  recorderState,
   elapsedMs,
   playing,
   referencePlaying,
+  supported,
+  saving,
+  savingOrdinal,
+  error,
   onBack,
   onPrev,
   onNext,
@@ -45,11 +73,15 @@ export function SectionView({
 }: SectionViewProps) {
   const recorded = section.durationMs !== null;
   const art = section.imageUrl ?? section.thumbUrl;
+  /** Capturing: the red dot and the timer mean sound is going in right now. */
+  const capturing = recorderState === "recording";
+  /** Anything but idle: the microphone is spoken for, so leaving is locked. */
+  const busy = recorderState !== "idle";
 
   return (
     <div className="flex h-full flex-col gap-[14px]">
       <div className="flex items-center justify-between px-[4px] py-[2px]">
-        {recording ? (
+        {busy ? (
           <span className="w-[40px]" />
         ) : (
           <Control
@@ -60,7 +92,7 @@ export function SectionView({
           />
         )}
 
-        {recording ? (
+        {capturing ? (
           <span
             className="flex items-center gap-[8px] text-[12px] font-semibold tracking-[0.12em]"
             style={{ color: "var(--s-live)" }}
@@ -86,7 +118,7 @@ export function SectionView({
         {art && <img src={art} alt="" className="h-full w-full object-cover" />}
       </div>
 
-      {recording ? (
+      {capturing ? (
         <div className="t-timer flex justify-center">
           {formatDuration(elapsedMs)}
         </div>
@@ -101,11 +133,12 @@ export function SectionView({
               : formatDuration(section.durationMs)}
           </div>
 
-          {onToggleReference && chapter.referenceAudioUrl && (
+          {chapter.referenceAudioUrl && (
             <div className="flex justify-center">
               <button
                 type="button"
                 onClick={onToggleReference}
+                disabled={busy}
                 aria-label={
                   referencePlaying
                     ? "Stop the story narration"
@@ -126,8 +159,22 @@ export function SectionView({
         </>
       )}
 
+      {/* One line, one place. A recorder failure is what the translator just
+          did, so it outranks the quieter save-in-progress status. */}
+      {error ? (
+        <Notice>{error}</Notice>
+      ) : (
+        saving && (
+          <Notice tone="busy">
+            {savingOrdinal === null
+              ? "Saving your recording."
+              : `Saving section ${savingOrdinal}.`}
+          </Notice>
+        )
+      )}
+
       <div className="mt-auto flex items-center justify-between px-[2px] pt-[4px] pb-[2px]">
-        {recording ? (
+        {busy ? (
           <div className="flex w-full justify-center">
             <Control
               icon="stop"
@@ -135,6 +182,10 @@ export function SectionView({
               variant="record"
               size={28}
               className="control--primary"
+              // Nothing to stop until the microphone is actually open. The
+              // control stays in place rather than appearing late, so the one
+              // button that ends a take is never somewhere new.
+              disabled={!capturing}
               onClick={onStop}
             />
           </div>
@@ -163,6 +214,7 @@ export function SectionView({
                 variant="record"
                 size={26}
                 className="control--primary"
+                disabled={!supported || saving}
                 onClick={onRecord}
               />
             )}
@@ -172,6 +224,7 @@ export function SectionView({
                 label="Record this section again"
                 variant="quiet"
                 onClick={onRecord}
+                disabled={!supported || saving}
                 className="text-[var(--s-live)]"
               />
             ) : (

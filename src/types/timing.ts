@@ -1,18 +1,26 @@
 /**
  * Frame-level audio timing.
  *
- * As of 2026-08-22 **no such data exists** for Open Bible Stories. Verified:
- * the DCS catalogue has no audio subject; the one OBS audio repository on
- * Door43 holds 703 files, all story-level MP3s with no timing; `en_obs`
- * contains no VTT, cue or timing files; Bolls carries no OBS at all.
+ * As of 2026-08-22 **no frame-level timing exists** for Open Bible Stories.
+ * OBS *audio* does exist — 98 DCS entries across 92 languages, discoverable
+ * through `media.yaml` and the catalogue's `hasAudio` filter rather than
+ * through an audio subject — but all of it is story-level. Verified: that
+ * catalogue carries zero timing; the one OBS audio repository on Door43 holds
+ * 703 files, all story-level MP3s with no timing; `en_obs` contains no VTT,
+ * cue or timing files; a per-frame MP3 probe of cdn.door43.org 404s. See
+ * docs/decisions/0007-timing-seam.md, whose first row was corrected in exactly
+ * this direction.
  *
  * It is modelled anyway, because the *format* is settled even though the data
  * is missing — Scripture Burrito's alignment spec defines exactly this, and if
  * unfoldingWord publishes one, frame-aligned reference playback becomes a
  * registration rather than a feature.
  *
- * Everything downstream asks `loadChapterTiming()` and copes with `null`. When
- * timing arrives, one `registerTimingProvider()` call turns it on.
+ * **The seam is library-only today.** `loadChapterTiming()` has no caller
+ * outside `lib/timing/` and `tests/timing.test.ts` — nothing in `app/`,
+ * `hooks/` or `components/` consults the registry, so registering a provider
+ * would light nothing up. Wiring it into playback is still work, tracked in
+ * #5. Registration is the *last* step, not the only one.
  */
 
 /** A single frame's span within a chapter-length audio file. */
@@ -35,7 +43,11 @@ export interface ChapterTiming {
   readonly ref: TimingRef;
   /** The audio these timings address. */
   readonly audioUrl: string;
-  /** Ordered by `frame`, non-overlapping. */
+  /**
+   * Ordered by `frame`, non-overlapping. Enforced — not assumed — by
+   * `validateFrameTimings` at the registry boundary, because a provider is
+   * an outside source.
+   */
   readonly frames: readonly FrameTiming[];
   /** Which provider produced this, for debugging and for honest UI. */
   readonly providerId: string;

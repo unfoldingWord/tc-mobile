@@ -42,6 +42,47 @@ scripts/review/both.sh [base]      # both, sequentially
 
 `base` defaults to `main`. Reports are written to `.review/` (git-ignored).
 
+## Merge policy
+
+This repo is **solo** — there is no second human reviewer to wait on, so Frank
+and George _are_ the review. Once they are clean, merge is an admin merge.
+
+| Change                                                                             | Bar to merge                                                                                                                                                          |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application code                                                                   | **Both reviewers clean @ the current head SHA**, CI green, then admin merge                                                                                           |
+| Documentation and content                                                          | CI green, then admin merge                                                                                                                                            |
+| Process/meta artifacts — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
+
+**P1 and P2 block. P3 goes to an issue** unless the fix is trivial enough to
+just do.
+
+**Capped is not clean.** Hitting the round cap with findings open is an
+escalation: it blocks merge until the residual findings are named and
+explicitly accepted, recorded on the PR.
+
+## Merging multiple lanes
+
+When several lanes are in flight, **merge them one at a time, in a deliberate
+order, pre-flighting each.**
+
+The reason is mechanical: a reviewer's clean statement names a head SHA, and
+merging lane A moves lane B's base. B's green checks and both its sign-offs now
+describe a commit that is no longer what would land.
+
+The loop, per lane:
+
+1. Pick the next lane — prefer the one others depend on, and lanes touching
+   shared files before lanes that do not.
+2. **Pre-flight:** mergeable, CI green, both reviewers clean @ the _current_
+   head.
+3. Merge.
+4. **Re-base and re-check every remaining lane.** If a lane's diff changed
+   materially, its reviews are stale — re-run both.
+
+Lanes that touch the same files should not be in flight simultaneously in the
+first place; the lane brief is where that is prevented (see the
+`batch-pipeline` skill's file-ownership check).
+
 ## The triage comment — mandatory, every round
 
 **One triage comment per round, on the PR.** No exceptions, including a round
@@ -82,9 +123,17 @@ class in a round. The triage template has a section for them; use it.
 
 ### Capped is not clean
 
-Hitting the round cap with findings still open is an **escalation, not an
-approval**. It blocks merge until the residual findings are named and explicitly
-accepted. "We ran out of rounds" is never sign-off.
+**The cap is 4 rounds.** Hitting it with findings still open is an
+**escalation, not an approval**. It blocks merge until the residual findings are
+named and explicitly accepted. "We ran out of rounds" is never sign-off.
+
+**At the cap, ask rather than stop.** Report which shape the round has, using
+the distinction the section above already draws: a **chain** (Frank's pattern —
+roughly one finding per round, each a refinement of the previous fix) is
+converging and often deserves one more round; **siblings** (George's pattern —
+new instances of the same defect class) mean the fix approach is wrong and
+another round will not help. The round number cannot tell those apart. A person
+reading the last round's findings can, so the decision is theirs.
 
 ## Traps, each of which cost a dead run on bt-servant-admin-portal
 
