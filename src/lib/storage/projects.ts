@@ -8,6 +8,7 @@
  */
 
 import { getDb } from "./db";
+import { resolveSegmentAudio } from "./segment-audio";
 import type {
   Chapter,
   ChapterId,
@@ -193,6 +194,10 @@ export async function setSegmentStatus(
   await tx.done;
 }
 
+export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
+  return (await getDb()).get("chapters", id);
+}
+
 export async function getSectionsOfChapter(
   chapterId: ChapterId
 ): Promise<Section[]> {
@@ -212,28 +217,30 @@ export async function getSectionsOfChapter(
  * Segments with no active take are skipped rather than treated as an error:
  * a partially-recorded chapter should still export the parts that are done.
  * The returned `missing` count lets the UI say so honestly.
+ *
+ * "Honestly" is why every id here is one `resolveSegmentAudio` has confirmed
+ * has both halves of its clip behind it — the metadata row and the samples
+ * key. It probes the second rather than reading it, so the check costs a key
+ * lookup per segment and not a chapter of PCM.
+ *
+ * It used to push `take.clipId` on the strength of the take row alone. Once an
+ * export path exists (#18), a take whose clip had gone would count as
+ * exported: the chapter would read as complete and the segment would be
+ * absent from the file. A gap the count admits to is recoverable; one it does
+ * not is not.
  */
 export async function resolveChapterClipIds(
   chapterId: ChapterId
 ): Promise<{ clipIds: ClipId[]; missing: number }> {
-  const db = await getDb();
   const sections = await getSectionsOfChapter(chapterId);
   const clipIds: ClipId[] = [];
   let missing = 0;
 
   for (const section of sections) {
     for (const segmentId of section.segmentIds) {
-      const segment = await db.get("segments", segmentId);
-      if (!segment?.activeTakeId) {
-        missing++;
-        continue;
-      }
-      const take = await db.get("takes", segment.activeTakeId);
-      if (!take) {
-        missing++;
-        continue;
-      }
-      clipIds.push(take.clipId);
+      const audio = await resolveSegmentAudio(segmentId);
+      if (audio.kind === "resolved") clipIds.push(audio.clip.id);
+      else missing++;
     }
   }
   return { clipIds, missing };

@@ -1,5 +1,7 @@
 # Dependencies
-node_modules/
+# No trailing slash: `node_modules/` matches a directory only, and a symlink
+# is a file. One got committed that way.
+node_modules
 
 # Build output
 dist/

@@ -160,7 +160,15 @@ export function SectionView({
       )}
 
       {/* One line, one place. A recorder failure is what the translator just
-          did, so it outranks the quieter save-in-progress status. */}
+          did, so it outranks the quieter save-in-progress status.
+
+          `chapter.audioFaults` is deliberately NOT shown here. It is a chapter
+          total, and this screen is one section: standing on an intact section
+          it would put a red alert beside a red "record again" control on a
+          good take, and recording would demote it. Saying which section is
+          broken needs a per-section flag on `SectionCard`, which does not
+          exist — B2/B3 own that. The browser, which is chapter-scoped, is
+          where the chapter-scoped count belongs. */}
       {error ? (
         <Notice>{error}</Notice>
       ) : (
