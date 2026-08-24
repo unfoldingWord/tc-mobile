@@ -244,23 +244,23 @@ export function App() {
       {/* One line, one place — the same rule the section view follows. */}
       {audio.error ? (
         <Notice>{audio.error}</Notice>
-      ) : chapter.audioFaults > 0 ? (
-        // A section whose take points at audio the database cannot produce
-        // draws as unrecorded, and the play control is not rendered for it —
-        // so without this line the only thing the translator would be offered
-        // is Record, over a segment the model already believes is recorded.
-        // Record is still the way out; this says why it is being offered.
-        <Notice>
-          {chapter.audioFaults === 1
-            ? "One section is missing its recording. Record it again."
-            : `${chapter.audioFaults} sections are missing their recordings. Record them again.`}
+      ) : saving ? (
+        <Notice tone="busy">
+          {savingOrdinal === null
+            ? "Saving your recording."
+            : `Saving section ${savingOrdinal}.`}
         </Notice>
       ) : (
-        saving && (
-          <Notice tone="busy">
-            {savingOrdinal === null
-              ? "Saving your recording."
-              : `Saving section ${savingOrdinal}.`}
+        // Last, deliberately. A save in flight disables Record, and a refusal
+        // the screen does not explain is the defect `Notice` exists for — so
+        // the busy line owns the slot while it is running, including during
+        // the re-record this count exists to prompt. The count is a standing
+        // condition; it can wait for the control to come back.
+        chapter.audioFaults > 0 && (
+          <Notice>
+            {chapter.audioFaults === 1
+              ? "One section is missing its recording. Record it again."
+              : `${chapter.audioFaults} sections are missing their recordings. Record them again.`}
           </Notice>
         )
       )}

@@ -160,19 +160,17 @@ export function SectionView({
       )}
 
       {/* One line, one place. A recorder failure is what the translator just
-          did, so it outranks the quieter save-in-progress status. The audio
-          fault sits between the two: not something they just did, but the
-          reason this screen is offering Record over a segment the model
-          already holds as recorded. Same precedence and same words as the
-          browser, because it is the same fact on the screen they came from. */}
+          did, so it outranks the quieter save-in-progress status.
+
+          `chapter.audioFaults` is deliberately NOT shown here. It is a chapter
+          total, and this screen is one section: standing on an intact section
+          it would put a red alert beside a red "record again" control on a
+          good take, and recording would demote it. Saying which section is
+          broken needs a per-section flag on `SectionCard`, which does not
+          exist — B2/B3 own that. The browser, which is chapter-scoped, is
+          where the chapter-scoped count belongs. */}
       {error ? (
         <Notice>{error}</Notice>
-      ) : chapter.audioFaults > 0 ? (
-        <Notice>
-          {chapter.audioFaults === 1
-            ? "One section is missing its recording. Record it again."
-            : `${chapter.audioFaults} sections are missing their recordings. Record them again.`}
-        </Notice>
       ) : (
         saving && (
           <Notice tone="busy">
