@@ -47,17 +47,6 @@ export async function getClipMeta(id: ClipId): Promise<ClipMeta | undefined> {
   return (await getDb()).get("clipMeta", id);
 }
 
-/**
- * Does the samples half exist?
- *
- * A key probe, so asking costs nothing: `getClip` would pull the whole buffer
- * off disk, and a chapter-length export check would read every clip's PCM to
- * learn that a key is present.
- */
-export async function clipDataExists(id: ClipId): Promise<boolean> {
-  return (await (await getDb()).getKey("clipData", id)) !== undefined;
-}
-
 export async function getClip(id: ClipId): Promise<Clip | undefined> {
   const db = await getDb();
   const tx = db.transaction(["clipMeta", "clipData"], "readonly");

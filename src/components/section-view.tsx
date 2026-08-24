@@ -160,9 +160,19 @@ export function SectionView({
       )}
 
       {/* One line, one place. A recorder failure is what the translator just
-          did, so it outranks the quieter save-in-progress status. */}
+          did, so it outranks the quieter save-in-progress status. The audio
+          fault sits between the two: not something they just did, but the
+          reason this screen is offering Record over a segment the model
+          already holds as recorded. Same precedence and same words as the
+          browser, because it is the same fact on the screen they came from. */}
       {error ? (
         <Notice>{error}</Notice>
+      ) : chapter.audioFaults > 0 ? (
+        <Notice>
+          {chapter.audioFaults === 1
+            ? "One section is missing its recording. Record it again."
+            : `${chapter.audioFaults} sections are missing their recordings. Record them again.`}
+        </Notice>
       ) : (
         saving && (
           <Notice tone="busy">

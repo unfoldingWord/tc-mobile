@@ -17,10 +17,20 @@
  * about a dangling take is a product question that has not been answered yet.
  */
 
-import { clipDataExists, getClip, getClipMeta } from "./clips";
 import { getDb } from "./db";
 import type { Clip, ClipMeta } from "@/types/audio";
 import type { Segment, SegmentId, Take, TakeId } from "@/types/domain";
+
+/**
+ * Every store the walk touches, read in one transaction.
+ *
+ * Reading them one at a time was four separate snapshots: a take could be
+ * switched, or a clip written or deleted, between the segment read and the
+ * clip read — and the result would describe a database state that never
+ * existed. A function whose whole purpose is to give one authoritative answer
+ * cannot be assembled from four unsynchronised reads.
+ */
+const WALK_STORES = ["segments", "takes", "clipMeta", "clipData"] as const;
 
 /**
  * What the walk found.
@@ -56,34 +66,61 @@ export type SegmentAudio<C> =
     };
 
 /**
- * The walk up to the take, with no audio read.
+ * The whole walk, inside one readonly transaction.
  *
- * Private because a caller stopping here is a caller that has not checked
- * whether the audio exists, which is the bug this module was written for.
+ * `withSamples` decides how much of the clip is read: a caller asking whether
+ * a chapter exports completely wants a key probe, not megabytes of PCM.
+ *
+ * The `await`s here are sequential because the walk is: the take id comes out
+ * of the segment row. That is safe and is idb's own documented pattern — an
+ * IDB transaction stays alive across awaits on IDB requests and closes only
+ * when a turn passes with nothing queued, which is why awaiting a *non*-IDB
+ * promise (a fetch, a timer) inside a transaction is the thing that breaks it.
+ * Do not "fix" this into `Promise.all`: the reads are dependent, and the
+ * sibling reads in `clips.ts` are parallel because they are independent, not
+ * because sequential is forbidden.
  */
-type TakeWalk =
-  | {
-      readonly kind: "resolved";
-      readonly segment: Segment;
-      readonly take: Take;
-    }
-  | { readonly kind: "no-segment"; readonly segmentId: SegmentId }
-  | { readonly kind: "no-active-take"; readonly segment: Segment }
-  | {
-      readonly kind: "take-missing";
-      readonly segment: Segment;
-      readonly takeId: TakeId;
-    };
-
-async function walkToTake(segmentId: SegmentId): Promise<TakeWalk> {
+async function walk<C>(
+  segmentId: SegmentId,
+  withSamples: boolean
+): Promise<SegmentAudio<C>> {
   const db = await getDb();
-  const segment = await db.get("segments", segmentId);
-  if (!segment) return { kind: "no-segment", segmentId };
+  const tx = db.transaction(WALK_STORES, "readonly");
+
+  const segment = await tx.objectStore("segments").get(segmentId);
+  if (!segment) {
+    await tx.done;
+    return { kind: "no-segment", segmentId };
+  }
   const takeId = segment.activeTakeId;
-  if (!takeId) return { kind: "no-active-take", segment };
-  const take = await db.get("takes", takeId);
-  if (!take) return { kind: "take-missing", segment, takeId };
-  return { kind: "resolved", segment, take };
+  if (!takeId) {
+    await tx.done;
+    return { kind: "no-active-take", segment };
+  }
+  const take = await tx.objectStore("takes").get(takeId);
+  if (!take) {
+    await tx.done;
+    return { kind: "take-missing", segment, takeId };
+  }
+
+  const meta = await tx.objectStore("clipMeta").get(take.clipId);
+  const data = withSamples
+    ? await tx.objectStore("clipData").get(take.clipId)
+    : await tx.objectStore("clipData").getKey(take.clipId);
+  await tx.done;
+
+  // Both halves, always. `putClip` and `deleteClip` each span the two stores
+  // in one transaction, so metadata standing without samples is not reachable
+  // through this repository — but `resolved` is the word the export path
+  // trusts, and a guarantee resting on an argument rather than a check is the
+  // kind this module exists to stop.
+  if (!meta || data === undefined) {
+    return { kind: "clip-missing", segment, take };
+  }
+  const clip = (
+    withSamples ? { meta, samples: new Int16Array(data as ArrayBuffer) } : meta
+  ) as C;
+  return { kind: "resolved", segment, take, clip };
 }
 
 /**
@@ -94,19 +131,7 @@ async function walkToTake(segmentId: SegmentId): Promise<TakeWalk> {
 export async function resolveSegmentAudio(
   segmentId: SegmentId
 ): Promise<SegmentAudio<ClipMeta>> {
-  const walk = await walkToTake(segmentId);
-  if (walk.kind !== "resolved") return walk;
-  const clip = await getClipMeta(walk.take.clipId);
-  // Both halves, not just the metadata. `putClip` and `deleteClip` each span
-  // the two stores in one transaction, so a clip with metadata and no samples
-  // is not reachable through this repository — but `resolved` is the word the
-  // export path trusts, and a guarantee that rests on an argument rather than
-  // a check is the kind this module was written to stop. The probe is a key
-  // lookup, not a read.
-  if (!clip || !(await clipDataExists(walk.take.clipId))) {
-    return { kind: "clip-missing", segment: walk.segment, take: walk.take };
-  }
-  return { kind: "resolved", segment: walk.segment, take: walk.take, clip };
+  return walk<ClipMeta>(segmentId, false);
 }
 
 /**
@@ -119,13 +144,7 @@ export async function resolveSegmentAudio(
 export async function loadSegmentClip(
   segmentId: SegmentId
 ): Promise<SegmentAudio<Clip>> {
-  const walk = await walkToTake(segmentId);
-  if (walk.kind !== "resolved") return walk;
-  const clip = await getClip(walk.take.clipId);
-  if (!clip) {
-    return { kind: "clip-missing", segment: walk.segment, take: walk.take };
-  }
-  return { kind: "resolved", segment: walk.segment, take: walk.take, clip };
+  return walk<Clip>(segmentId, true);
 }
 
 /**

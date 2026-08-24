@@ -73,8 +73,14 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
     // answers this walk gave, and the only one that offered Record over a
     // segment the model believes is already recorded.
     const fault = audio ? danglingReason(audio) : null;
-    if (fault) {
-      console.error("A section has no playable audio:", fault);
+    if (fault) console.error("A section has no playable audio:", fault);
+    // Only the faults recording can actually repair are counted. `addTake`
+    // throws "No such segment" when the segment row itself is gone
+    // (projects.ts), so telling the translator to record it again would send
+    // them into a save failure. Nothing in the tree deletes segment rows, so
+    // this is a guard rather than a live path — but the count drives copy that
+    // names an action, and an action that cannot work must not be named.
+    if (audio?.kind === "take-missing" || audio?.kind === "clip-missing") {
       audioFaults += 1;
     }
 
