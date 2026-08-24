@@ -4,6 +4,74 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-24 (evening) — Day 6: B0 lands, the pivot's first deletion
+
+**Branch:** `develop` · **PR:** #55 merged (`95418e6`) · **Issues:** closed #1, #5, #9, #26; noted #27
+
+### Completed
+
+- **B0 merged** (#55 → `develop`, `95418e6`) — the first pivot batch, deletion
+  before construction. Net ~−1400 lines across three orphaned paths:
+  - the **timing seam** (`lib/timing/**`, `types/timing.ts`, its test) —
+    supersedes ADR 0007, closes #5;
+  - the **reference-audio / narration path** (through `audio-io`,
+    `use-audio-session`, `section-view`, `App`, `use-chapter`, `view`) —
+    closes #9;
+  - the **OBS media cache accessors** (`hooks/obs-media.ts`,
+    `lib/storage/media.ts`, the `CachedMedia` export) — closes #1 as moot.
+- **Four review rounds, both reviewers clean.** A converging consequence-tail,
+  P3-only and shrinking after round 1 — no P1/P2 since round 1. Every round
+  triaged on the PR with dispositions and head SHAs.
+- **The #26 contradiction was settled first**, on the record: kill the whole
+  OBS media cache, not keep it. Q4 answered no, #1 closed as moot, ADR 0006 and
+  the pivot plan amended.
+
+### Two calls review corrected, recorded not glossed
+
+- **B0 makes no schema change.** The plan (and my #26 decision comment) had B0
+  removing the `media` object store from `db.ts`. Frank was right that this
+  edited a shipped migration step — the append-only violation the discipline
+  exists to prevent. Narrowed: B0 removes the **accessors and the `CachedMedia`
+  export**; the empty, unread `media` store stays until **B1's drop-and-recreate
+  (#27)**, where the schema change and its migration test belong. Frank's
+  blob-leak scenario was refuted — `downloadStoryMedia` never had a caller
+  outside the deleted code, so the store is empty on every device.
+- **The `"reference"` arbiter kind is gone.** I'd kept it as a "generic
+  mechanism / Phase 2 reference audio" residual. Both reviewers converged on it —
+  Frank as a P2, George naming it "a stub-for-later against the bar B0 is
+  enforcing." They were right; that is exactly the speculative-future the bar
+  rejects. `SourceKind` is now `"take" | "mic"`, and the reference-specific
+  arbiter tests were redundant with `"take"`.
+
+### What review caught that would have shipped
+
+- **`ChapterCard.title` went write-only** when B0 deleted the section-view
+  narration button that rendered it. Noted that B2's Books screen (#28) is the
+  reader, kept for that batch — consistent with how `imageUrl` and the `media`
+  store are kept for theirs.
+- **"No Phase 1 screen shows artwork" was the mockup, not the tree.** My own
+  round-1/2 doc edits carried it; the pre-pivot recording view still renders the
+  Door43 CDN `<img>`, so a tester on this build sees the frame on every section.
+  Qualified every instance to "no _mockup_ screen."
+
+### Blockers / needs a human
+
+- **None new.** B1 (#27) now carries the deferred `media`-store drop — recorded
+  on #27 and in the `db.ts` comments, so it is on the checklist, not only in a
+  comment.
+- Device coverage unchanged from Day 5: still one device, one pre-release build,
+  no Android; the three specific checks (background after Stop, sub-timeslice
+  take, anything on Android) remain open.
+
+### Next steps
+
+1. **B2 (#28) and B3 (#29)** — the pivot screens, sequenced ahead of B1.
+2. **B1 (#27)** once they land — drop-and-recreate migration, and **drop the v2
+   `media` store** B0 left behind.
+3. `develop` is now ahead of `staging` by B0; promotion is a separate call.
+
+---
+
 ## 2026-08-24 — Day 5: the gate, the audit, and the debt lanes
 
 **Branch:** `develop` · **PRs:** #22, #44–#52 merged · **Issues:** +1 (#43)
