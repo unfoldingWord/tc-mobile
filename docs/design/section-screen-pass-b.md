@@ -1,5 +1,46 @@
 # Section-by-section screen — Pass B (UI)
 
+**Status:** **B0 stands. The composition is superseded, 2026-08-24** ·
+**Date:** 2026-08-22, approved at Gate 2 the same day
+
+> **Read the split before you build from this.** Tim's mockups replaced this
+> screen (#25), and [`pivot-plan.md`](pivot-plan.md) is the plan of record. It
+> points here for the token work and **only** for the token work — that pointer
+> is not an endorsement of the composition below.
+>
+> The document is kept, unrewritten, as the dated record of how the visual
+> system was derived and what Gate 2 approved.
+
+**What still stands — B0, the token system.** `pivot-plan.md` keeps it
+explicitly: the mockups are wireframes and carry no type or spacing. The semantic
+colour they do carry agrees with these tokens — green for play, red for record,
+which is the existing `--s-live` split. The surface ramp, the three ink roles,
+the spacing levels, the control sizes and the B4 motion rules are unchanged.
+
+**What is overturned — the composition.** All three by decisions taken after Gate
+2 approved this page:
+
+- **"One control per row"** (B2, Row anatomy) — overturned outright by **G5**.
+  The Segments screen ships a transport button, a `⋮` overflow menu, and a
+  draggable position dot on the waveform. Pass A's argument for it — "two
+  controls per row would double the decision on every row of a fifty-row list
+  for a person who cannot read either of them" — is on the record and was
+  decided against, not overlooked.
+- **The image-first grid**, and the artwork tile as row identity — overturned by
+  **D6**. Artwork becomes an optional per-segment illustration and decides no
+  layout. Q4 keeps it in the model and the media cache, drawn on no Phase 1
+  screen, so the tile this composition builds a row around has nowhere to go yet.
+- **The reference-audio control** — "Reference audio — in v1, and story-level
+  only" — overturned by D5 and **G1**. Reference audio is out of Phase 1 and the
+  narration path is deleted in B0 (#26). The section's finding about uW
+  publishing no frame-level timing is still accurate and is why ADR 0007 was
+  superseded rather than kept.
+
+**The Gate 3 residuals are not resolved by any of this.** Wordless confirmation
+of a destructive action is still unsolved and now has two call sites rather than
+none (G4, G5). "No text is not no reading" and the invisible screen-reader text
+layer both survive intact, and neither has an owner.
+
 > Process: `ux-then-ui`, composed against `ui-craft`. Pass A and its Gate 1
 > approval are in [`section-screen.md`](section-screen.md).
 > **Gate 2 artifact:** <https://claude.ai/code/artifact/fd71a5a1-a3a2-40f7-ba56-11dfb7a48890>
