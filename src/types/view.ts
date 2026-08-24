@@ -34,6 +34,11 @@ export interface SectionCard {
 
 export interface ChapterCard {
   readonly chapterId: string;
+  /**
+   * Story title. B0 removed the section-view narration button that rendered it,
+   * so nothing reads it today; B2's Books screen (#28) is the reader. Kept for
+   * that batch rather than dropped and re-added.
+   */
   readonly title: string;
   readonly ordinal: number;
   /**

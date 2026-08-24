@@ -246,17 +246,17 @@ The original ordering rule was "nothing is built on a shape a later batch
 changes." B1's re-sequencing on 2026-08-24 traded it away deliberately; the note
 under the table says what that costs and why the trade is worth taking.
 
-| Batch  | Issue                                                    | Contents                                                                                      | Depends on  | Tier    |
-| ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------- | ------- |
-| **B0** | [#26](https://github.com/sethstoll3/tc-mobile/issues/26) | Delete the timing seam and the narration path. Supersede ADR 0007.                            | #21 merging | T2      |
-| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, migration | B2, B3      | **T1**  |
-| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell             | —           | T3      |
-| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`, `⋮` menu    | —           | T3      |
-| **B4** | [#30](https://github.com/sethstoll3/tc-mobile/issues/30) | Recorder sheet — breadcrumb, Finished toggle, fixed centerline, swipe, insert-record, pause   | B3          | T1 / T2 |
-| **B5** | [#31](https://github.com/sethstoll3/tc-mobile/issues/31) | Selection frame, cut to clipboard, paste at centerline, undo + redo, zoom                     | B4          | **T1**  |
-| **B6** | [#32](https://github.com/sethstoll3/tc-mobile/issues/32) | VU meter with show/hide, recorder `≡` menu, Erase Segment with confirmation                   | B4          | T2      |
-| **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                      | B1, B2      | T2      |
-| **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                          | B1          | **T1**  |
+| Batch  | Issue                                                    | Contents                                                                                                                                                   | Depends on  | Tier    |
+| ------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------- |
+| **B0** | [#26](https://github.com/sethstoll3/tc-mobile/issues/26) | Delete the timing seam, the narration path, and the OBS media cache accessors. Supersede ADR 0007.                                                         | #21 merging | T2      |
+| **B1** | [#27](https://github.com/sethstoll3/tc-mobile/issues/27) | Segment is the unit of work. Section removed, Project→Book, finished flag, roll-up, drop-and-recreate migration (drop the v2 `media` store B0 left behind) | B2, B3      | **T1**  |
+| **B2** | [#28](https://github.com/sethstoll3/tc-mobile/issues/28) | Books screen — list, expand/collapse, counters, New Book, New Chapter, menu shell                                                                          | —           | T3      |
+| **B3** | [#29](https://github.com/sethstoll3/tc-mobile/issues/29) | Segments screen — three row states, finished checkbox, scrub dot, transport, `+`, `⋮` menu                                                                 | —           | T3      |
+| **B4** | [#30](https://github.com/sethstoll3/tc-mobile/issues/30) | Recorder sheet — breadcrumb, Finished toggle, fixed centerline, swipe, insert-record, pause                                                                | B3          | T1 / T2 |
+| **B5** | [#31](https://github.com/sethstoll3/tc-mobile/issues/31) | Selection frame, cut to clipboard, paste at centerline, undo + redo, zoom                                                                                  | B4          | **T1**  |
+| **B6** | [#32](https://github.com/sethstoll3/tc-mobile/issues/32) | VU meter with show/hide, recorder `≡` menu, Erase Segment with confirmation                                                                                | B4          | T2      |
+| **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                                                                                   | B1, B2      | T2      |
+| **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                                                                                       | B1          | **T1**  |
 
 ### B1 was re-sequenced behind B2 and B3 — 2026-08-24
 
