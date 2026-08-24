@@ -52,20 +52,25 @@ export interface TcMobileDb extends DBSchema {
   /** Raw mono 16-bit PCM, stored as an ArrayBuffer keyed by ClipId. */
   clipData: { key: ClipId; value: ArrayBuffer };
   /**
-   * Reference media fetched from the Door43 CDN — OBS frame artwork and
-   * narration — keyed by its source URL. Cached here rather than in the
-   * Cache API so a downloaded story is durable, inspectable, and countable
-   * against the same storage budget as the recordings.
+   * OBS reference-media cache. B0 (#26) removed the accessor code
+   * (`hooks/obs-media.ts`, `lib/storage/media.ts`) and the exported
+   * `CachedMedia` type, but **left this store in place** — empty and unread.
+   * That keeps B0 free of any IndexedDB schema change: the migration below is
+   * untouched, so nothing has to migrate. The store itself is removed by B1's
+   * drop-and-recreate (#27), which is where the schema change, the version
+   * bump, and its migration test belong. The value type is inlined here
+   * precisely so it exports no symbol that would outlive its only reader.
    */
-  media: { key: string; value: CachedMedia };
-}
-
-export interface CachedMedia {
-  readonly url: string;
-  readonly blob: Blob;
-  readonly contentType: string;
-  readonly bytes: number;
-  readonly fetchedAt: number;
+  media: {
+    key: string;
+    value: {
+      readonly url: string;
+      readonly blob: Blob;
+      readonly contentType: string;
+      readonly bytes: number;
+      readonly fetchedAt: number;
+    };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
@@ -95,6 +100,12 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
         db.createObjectStore("clipData");
       }
 
+      // v2 added the `media` object store for the OBS reference-media cache.
+      // B0 (#26) removed the cache's accessor code but deliberately left this
+      // step and the store untouched: editing a shipped migration step is the
+      // append-only violation this database's discipline exists to prevent, and
+      // there is nothing to gain — the store is empty (no writer ever existed
+      // outside the deleted code). B1's drop-and-recreate (#27) removes it.
       if (oldVersion < 2) {
         db.createObjectStore("media", { keyPath: "url" });
       }

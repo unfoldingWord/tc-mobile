@@ -11,6 +11,24 @@ rejected the Section layer and the pivot
 ([`../design/pivot-plan.md`](../design/pivot-plan.md), #25) replaces the browse,
 so a frame is a **Segment**. The corrections are marked inline below.
 
+**Amended 2026-08-24 (B0, #26)** — **Q4 is answered: no.** The full-size-artwork
+**media cache is removed** from the tree — its accessor code
+(`hooks/obs-media.ts`, `lib/storage/media.ts`) and the exported `CachedMedia`
+type — along with the narration path. The `media` **object store** in
+`lib/storage/db.ts` is deliberately **left in place** (empty and unread) so B0
+makes no IndexedDB schema change; it is removed by B1's drop-and-recreate (#27),
+where the schema-change discipline and its migration test belong. It was kept on
+the bet that a later phase would
+wire per-segment artwork to it (#1), but no mockup places artwork anywhere, no
+batch was scheduled to wire it, and code nothing uses is the sprawl the bar
+rejects. **What still ships is unchanged:** the 2.5 MB bundle of 128px
+thumbnails and the catalogue JSON — those are precached, not cached-on-demand,
+and B0 does not touch them. #1 is closed as moot: with no cache to wire and no
+mockup screen that needs one, there is no rework to do (the pre-pivot recording
+view keeps its CDN `<img>` until B2/B3). Per-segment artwork is greenfield if a later
+phase asks for it; the removed cache is recoverable from git. The inline
+sentences below that still describe the cache as "kept" are struck.
+
 ## Context
 
 Phase 1 was scoped as a blank audio notebook. That makes it hard to beta test:
@@ -39,11 +57,14 @@ OBS maps onto the domain model with no translation at all:
 
 - _Frame artwork → "the section's non-textual identity."_ D6 makes artwork an
   optional per-segment illustration rather than the thing that decides the
-  browse layout, and open question Q4 keeps it in the model and the media cache
-  while drawing it in no Phase 1 screen.
+  browse layout. ~~open question Q4 keeps it in the model and the media cache~~
+  **Void, 2026-08-24 (B0, #26):** Q4 is answered no — the media cache is removed
+  and artwork is drawn in no _mockup_ screen. (The pre-pivot recording view still
+  renders the CDN image until B2/B3 replace it.)
 - _Story narration MP3 → "reference audio to translate from."_ Reference audio
-  is out of Phase 1 (D5). Narration is still fetched by code in the tree, and
-  B0 (#26) deletes that path.
+  is out of Phase 1 (D5). ~~Narration is still fetched by code in the tree, and
+  B0 (#26) deletes that path.~~ **Done, 2026-08-24:** B0 deleted the narration
+  path.
 
 The Section layer itself is rejected by ADR 0004; B1 (#27) removes it from the
 model.
@@ -58,13 +79,13 @@ list rendered tiles at 48–56px. Centre-cropped and downscaled to 128px (2x the
 largest tile), **the entire 598-frame set is 2.5 MB** — sixteen times smaller
 than the source, and small enough to simply ship.
 
-| Asset                                 | Size       | Decision                                                                                  |
-| ------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                 |
-| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled and precached** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs` |
-| Full-size artwork, 360px              | 46.8 MB    | Fetched per story into IndexedDB. No Phase 1 screen shows it — Q4                         |
-| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                        |
-| Story narration MP3, 32kbps           | ~1 MB each | Optional per-story download. Out of Phase 1 (D5); B0 (#26) deletes the path               |
+| Asset                                 | Size       | Decision                                                                                          |
+| ------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------- |
+| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                         |
+| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled and precached** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs`         |
+| Full-size artwork, 360px              | 46.8 MB    | **Removed (B0, #26).** Was fetched per story into IndexedDB; the cache is deleted, Q4 answered no |
+| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                                |
+| Story narration MP3, 32kbps           | ~1 MB each | **Removed (B0, #26).** Out of Phase 1 (D5); the fetch path is deleted                             |
 
 **What bundling bought, beyond offline-on-first-run:**
 
@@ -79,18 +100,24 @@ than the source, and small enough to simply ship.
    story to be browsed once before its pictures cache would strand them. The
    thumbnails are in the service-worker precache for exactly this reason.
 
-Full-size artwork is still fetched on demand, because 46.8 MB is not something
-to impose on a shared phone. The reason given on 22 Aug — that the recording
-view is the only place the picture is looked at — is now open rather than
-settled: no Phase 1 screen shows it at all (Q4).
+~~Full-size artwork is still fetched on demand~~ **Void, 2026-08-24 (B0, #26).**
+Full-size artwork is **no longer fetched or cached**: the on-demand fetch layer
+is removed. (The empty `media` object store stays until B1's drop-and-recreate,
+so B0 changes no schema — see the amendment note above.) No _mockup_ screen shows
+the picture (Q4, answered no), and the cache had no live reader, so there was
+nothing for it to serve. The pre-pivot recording view's `<img>` still points at
+the door43 CDN URL directly, which works online and is temporary — that view is
+replaced by B2/B3.
 
-Verified: the Door43 CDN serves `Access-Control-Allow-Origin: *` on artwork and
-narration, so on-demand fetches need no proxy and no Worker (ADR 0005).
+Verified (kept as a record): the Door43 CDN serves `Access-Control-Allow-Origin:
+*` on artwork and narration, so on-demand fetches needed no proxy and no Worker
+(ADR 0005). That mattered while the cache existed; it no longer does.
 
-Media fetched at runtime lives in IndexedDB rather than the Cache API because a
-story downloaded for field use is content the translator is relying on: it must
-be durable, countable against the storage budget (ADR 0002), and removable one
-story at a time.
+~~Media fetched at runtime lives in IndexedDB rather than the Cache API…~~
+**Void, 2026-08-24 (B0, #26).** There is no runtime media fetch after B0. The
+`media` store itself still exists — empty and unread — until B1 removes it. The
+rationale (durable, countable, removable per story) is kept only as the reason
+the store was chosen while it had a writer.
 
 ## Licensing
 
@@ -144,8 +171,9 @@ export path at all (#18). The decision is closed; the engineering is open.
   There is no section screen after the pivot, and a row's identity is its
   ordinal and its waveform (D6). `docs/design/section-screen.md` is pre-pivot
   design work, kept as a record and not as guidance.
-- Storage pressure grows: 46.8 MB of artwork sits alongside ~5.3 MB/min of PCM
-  (ADR 0002, and D3's MP3-on-Finished transcode). The per-story download model
-  is the mitigation, and it makes the cost visible instead of silent.
+- ~~Storage pressure grows: 46.8 MB of artwork sits alongside ~5.3 MB/min of
+  PCM…~~ **Void, 2026-08-24 (B0, #26).** Artwork is no longer cached, so it adds
+  nothing to storage. The PCM pressure (ADR 0002, D3's MP3-on-Finished
+  transcode) stands on its own; #12 owns it.
 - Refreshing the catalogue is `node scripts/build-obs-catalog.mjs`, which
   re-fetches from Door43 and fails loudly if a story parses to zero frames.

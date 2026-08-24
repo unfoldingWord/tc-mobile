@@ -20,7 +20,11 @@ export interface SectionCard {
   readonly scope: string;
   /** Bundled thumbnail, or `null` for a chapter with no artwork. */
   readonly thumbUrl: string | null;
-  /** Full-size artwork for the section view, fetched on demand. */
+  /**
+   * Door43 CDN URL for the pre-pivot recording view's `<img>`. Not cached —
+   * B0 (#26) removed the on-demand media cache, so this is online-only. B2/B3
+   * replace that view and delete this field.
+   */
   readonly imageUrl: string | null;
   /** Precomputed so the list never walks raw samples while scrolling. */
   readonly peaks: Peaks | null;
@@ -30,6 +34,11 @@ export interface SectionCard {
 
 export interface ChapterCard {
   readonly chapterId: string;
+  /**
+   * Story title. B0 removed the section-view narration button that rendered it,
+   * so nothing reads it today; B2's Books screen (#28) is the reader. Kept for
+   * that batch rather than dropped and re-added.
+   */
   readonly title: string;
   readonly ordinal: number;
   /**
@@ -37,8 +46,6 @@ export interface ChapterCard {
    * whole screen turns on.
    */
   readonly hasArtwork: boolean;
-  /** Story-level reference narration, when the content ships any. */
-  readonly referenceAudioUrl: string | null;
   /**
    * Sections whose take names audio the database cannot produce.
    *

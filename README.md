@@ -153,16 +153,19 @@ node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px
 Story text and frame metadata are bundled (230 KB), and so are the 128px
 thumbnails — 598 of them for 2.5 MB, precached by the service worker so the
 content is there on first run with no network (ADR 0006). **The 360px frames
-are not** — 46.8 MB for all 598 — so those are fetched per story on demand into
-IndexedDB and are offline-forever once downloaded.
+are not bundled**, and after B0 (#26) they are **not cached either**: the
+on-demand IndexedDB fetch for full-size artwork is removed. The recording
+view's `<img>` still points at the door43 CDN directly — online-only, and
+temporary until B2/B3 replace that view.
 
-Two things about this content changed with the pivot. Artwork is an optional
-per-segment illustration rather than the thing that decides the browse layout
-(D6), and no Phase 1 screen draws it — it stays in the model and the media
-cache while that question is open (Q4, #1). Reference audio is out of Phase 1
-(D5), so the narration MP3s — which the code hands out as a CDN URL and streams,
-rather than caching (`narrationUrl` in `src/hooks/obs-media.ts`) — are not a
-Phase 1 capability, and batch B0 (#26) deletes that path. See
+Two things about this content changed with the pivot, and B0 finished the job.
+Artwork is an optional per-segment illustration rather than the thing that
+decides the browse layout (D6), and no _mockup_ screen draws it — so B0 removed
+the media cache outright (Q4 answered no; #1 closed as moot). (The pre-pivot
+recording view still shows the CDN image, as noted above, until B2/B3 replace
+it.) Reference audio is
+out of Phase 1 (D5), so the narration path — the `narrationUrl` helper and the
+reference control — is gone too. See
 [ADR 0006](docs/decisions/0006-obs-content.md).
 
 ### Attribution

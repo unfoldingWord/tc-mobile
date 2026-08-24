@@ -1,18 +1,18 @@
 /**
  * The audio lifecycle arbiter.
  *
- * Three things can make sound on this screen — a recorded take, the reference
- * narration, and the microphone — and only one of them may be live at a time.
- * Before this existed, that rule was spelled out as `stopX()` calls scattered
- * across every handler in `App`, so each new handler was one more chance to
- * forget one, and every `await` between "start playing" and "here is the
- * handle" was a race nobody was watching.
+ * Two things make sound on this screen — a recorded take and the microphone —
+ * and only one of them may be live at a time. Before this existed, that rule
+ * was spelled out as `stopX()` calls scattered across every handler in `App`,
+ * so each new handler was one more chance to forget one, and every `await`
+ * between "start playing" and "here is the handle" was a race nobody was
+ * watching.
  *
  * The rules, stated once:
  *
  *   - Claiming the floor stops whatever held it.
  *   - The microphone outranks playback. `claim("mic")` always succeeds;
- *     `claim("take" | "reference")` is refused while the microphone is live.
+ *     `claim("take")` is refused while the microphone is live.
  *   - The session never stops the microphone itself. Abandoning a take is
  *     always a named call in the hook, never a side effect of a play tap.
  *   - A handle that arrives after its claim was superseded is stopped here,
@@ -31,7 +31,7 @@
  * anything that needs an element or a context belongs.
  */
 
-export type SourceKind = "take" | "reference" | "mic";
+export type SourceKind = "take" | "mic";
 
 /** Anything the arbiter can silence. Deliberately not a DOM type. */
 export interface Stoppable {
