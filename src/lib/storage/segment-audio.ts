@@ -17,7 +17,7 @@
  * about a dangling take is a product question that has not been answered yet.
  */
 
-import { getClip, getClipMeta } from "./clips";
+import { clipDataExists, getClip, getClipMeta } from "./clips";
 import { getDb } from "./db";
 import type { Clip, ClipMeta } from "@/types/audio";
 import type { Segment, SegmentId, Take, TakeId } from "@/types/domain";
@@ -97,7 +97,13 @@ export async function resolveSegmentAudio(
   const walk = await walkToTake(segmentId);
   if (walk.kind !== "resolved") return walk;
   const clip = await getClipMeta(walk.take.clipId);
-  if (!clip) {
+  // Both halves, not just the metadata. `putClip` and `deleteClip` each span
+  // the two stores in one transaction, so a clip with metadata and no samples
+  // is not reachable through this repository — but `resolved` is the word the
+  // export path trusts, and a guarantee that rests on an argument rather than
+  // a check is the kind this module was written to stop. The probe is a key
+  // lookup, not a read.
+  if (!clip || !(await clipDataExists(walk.take.clipId))) {
     return { kind: "clip-missing", segment: walk.segment, take: walk.take };
   }
   return { kind: "resolved", segment: walk.segment, take: walk.take, clip };

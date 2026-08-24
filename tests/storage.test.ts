@@ -344,12 +344,26 @@ describe("segment audio resolution", () => {
     const db = await getDb();
     await db.delete("clipData", clipId);
 
-    // Metadata alone still reads as resolved — it is all this variant looks
-    // at, and `putClip` writes both halves in one transaction.
-    expect((await resolveSegmentAudio(segmentId)).kind).toBe("resolved");
-    // Samples are what playback needs, so the half-clip is a miss there
-    // rather than a `Clip` with no audio in it.
+    // Both variants miss. `resolveSegmentAudio` probes the samples key
+    // without reading it, so "resolved" means the audio is actually there —
+    // the export path counts on that word.
+    expect((await resolveSegmentAudio(segmentId)).kind).toBe("clip-missing");
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
+  });
+
+  it("counts a metadata-only clip as missing from a chapter export", async () => {
+    const { chapterId, segmentId } = await oneSegment();
+    const clipId = await storedClip();
+    await addTake(segmentId, clipId, 100);
+    const db = await getDb();
+    await db.delete("clipData", clipId);
+
+    // The regression this whole module exists for: a chapter must not read as
+    // complete on the strength of a row that names audio the database cannot
+    // produce. A gap the count admits to is recoverable; one it does not is not.
+    const { clipIds, missing } = await resolveChapterClipIds(chapterId);
+    expect(clipIds).toEqual([]);
+    expect(missing).toBe(1);
   });
 
   it("reports a segment id with no row behind it", async () => {
