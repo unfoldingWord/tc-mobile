@@ -23,16 +23,25 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const REPO = join(import.meta.dirname, "..");
 const PROBE_DIR = join(REPO, ".lib-boundary-probe");
+// Not `npx`: execFileSync returns the CHILD's stdout, and npx prints its own
+// lines there (a warn-exec notice, an install prompt). The "compiles cleanly"
+// assertions below are `toBe("")`, so one npx line would fail a passing
+// compile. Spawn the resolved compiler directly.
+const TSC = join(REPO, "node_modules", "typescript", "bin", "tsc");
 
 /** Compile `source` under tsconfig.lib.json's options; return tsc's output. */
 function compileInLib(source: string): string {
   writeFileSync(join(PROBE_DIR, "probe.ts"), source);
   try {
-    execFileSync("npx", ["tsc", "-p", join(PROBE_DIR, "tsconfig.json")], {
-      cwd: REPO,
-      encoding: "utf8",
-      stdio: "pipe",
-    });
+    execFileSync(
+      process.execPath,
+      [TSC, "-p", join(PROBE_DIR, "tsconfig.json")],
+      {
+        cwd: REPO,
+        encoding: "utf8",
+        stdio: "pipe",
+      }
+    );
     return "";
   } catch (err) {
     // tsc exits non-zero on a type error and puts diagnostics on stdout.
@@ -57,7 +66,64 @@ afterAll(() => {
   rmSync(PROBE_DIR, { recursive: true, force: true });
 });
 
-describe("the lib/ DOM boundary", () => {
+describe("the lib/ DOM boundary — what the gate actually covers", () => {
+  it("compiles the real lib/ sources, not an empty program", () => {
+    // Everything below asserts how tsconfig.lib.json BEHAVES. None of it would
+    // notice if `include` stopped matching src/lib — narrow it to
+    // src/types/**, and tsc still exits 0, these probes still pass, and
+    // src/lib/audio/format.ts could take `x: AudioContext` with green CI
+    // because the app typecheck has the DOM. Pin the inputs too.
+    const files = execFileSync(
+      process.execPath,
+      [TSC, "-p", join(REPO, "tsconfig.lib.json"), "--listFilesOnly"],
+      { cwd: REPO, encoding: "utf8", stdio: "pipe" }
+    );
+    expect(files).toContain(join("src", "lib", "audio", "format.ts"));
+    expect(files).toContain(join("src", "lib", "storage", "db.ts"));
+    expect(files).toContain(join("src", "types", "domain.ts"));
+  });
+
+  it("bans navigator and localStorage as VALUES in the lib/ eslint config", () => {
+    // The compile gate cannot catch these: @types/node declares `var
+    // navigator` and `var localStorage`, so they type-check inside lib/ — and
+    // Node 22 really has `navigator`, so a unit test would not catch it
+    // either. eslint's no-restricted-globals is the only thing standing here.
+    // Without this case, deleting them from BROWSER_ONLY_GLOBALS leaves
+    // typecheck:lib green, every probe below green, and lint green.
+    //
+    // Asserted against the RESOLVED config for a real lib file rather than by
+    // linting a fixture: a fixture would have to live under src/lib for the
+    // rule to match it, and a stray file there breaks `tsc -b` if this test is
+    // interrupted.
+    const config = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          join(REPO, "node_modules", "eslint", "bin", "eslint.js"),
+          "--print-config",
+          join("src", "lib", "audio", "format.ts"),
+        ],
+        { cwd: REPO, encoding: "utf8", stdio: "pipe" }
+      )
+    ) as { rules: Record<string, unknown[]> };
+
+    const banned = (config.rules["no-restricted-globals"] ?? [])
+      .slice(1)
+      .map((entry) => (entry as { name: string }).name);
+
+    for (const name of [
+      "navigator",
+      "localStorage",
+      "sessionStorage",
+      "window",
+      "document",
+      "AudioContext",
+      "MediaRecorder",
+    ]) {
+      expect(banned).toContain(name);
+    }
+  });
+
   it.each([
     "AudioContext",
     "OfflineAudioContext",

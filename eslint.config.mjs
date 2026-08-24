@@ -90,7 +90,12 @@ const BROWSER_ONLY_GLOBALS = [
 ];
 
 export default tseslint.config(
-  { ignores: ["dist", "dev-dist", ".wrangler", "public"] },
+  // `.lib-boundary-probe` is written by tests/lib-boundary.test.ts and removed
+  // in afterAll. An interrupted run leaves it behind, and it contains
+  // deliberately-invalid code — gitignored, so it must be lint-ignored too.
+  {
+    ignores: ["dist", "dev-dist", ".wrangler", "public", ".lib-boundary-probe"],
+  },
 
   {
     extends: [...tseslint.configs.recommended],
