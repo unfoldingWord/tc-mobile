@@ -268,7 +268,11 @@ Full process, and the traps that make a failed run look like a clean pass, in
 1. **MP3 encoding runs on the main thread** and will jank on a long chapter.
    Move it to a Web Worker — ADR 0003.
 2. **PCM storage is ~5.3 MB/minute.** All 50 OBS stories is roughly 660 MB.
-   Mitigations are listed but undecided — ADR 0002. **Resolve before October.**
+   **Partly decided.** D3 took one of ADR 0002's three mitigations — PCM while
+   a segment is being edited, transcode to MP3 and drop the PCM on Finished,
+   ~660 MB to ~66 MB. The other two are still open: 22 050 Hz for speech, and
+   `navigator.storage.persist()`. #12 stays open on those. **Resolve before
+   October.**
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the

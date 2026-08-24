@@ -45,11 +45,12 @@ obligations are actually met, so they are listed here rather than assumed.
 
 1. **Keep the encoder behind a replaceable boundary.** **Not yet true.**
    `src/lib/audio/mp3.ts:21` imports `Mp3Encoder` statically; there is no
-   dynamic `import()` of lamejs anywhere in `src/`. Decision D3 moves the
-   encoder into a Web Worker, which is a _stronger_ boundary than a dynamic
-   import would be — so the licensing position improves as a side effect of the
-   performance work in #34. Until #34 lands, this obligation is outstanding,
-   not met.
+   dynamic `import()` of lamejs anywhere in `src/`. **#34** moves the encoder
+   into a Web Worker, which is a _stronger_ boundary than a dynamic import would
+   be — so the licensing position improves as a side effect of that performance
+   work. Until #34 lands, this obligation is outstanding, not met. (Not "D3":
+   D3 is transcode-on-Finished, which is what makes #34 a blocker rather than a
+   nicety. They are different tickets.)
 2. **Keep one module interface in front of it.** `encodeMp3` is the only entry
    point, so a user exercising their LGPL right to relink has exactly one thing
    to replace. Do not scatter lamejs calls.
@@ -79,6 +80,12 @@ MP3 when a translator marks a segment Finished, which puts the encoder on a
 user-visible path on every segment rather than behind an export button. It is now
 a blocker, tracked in #34.
 
-The encoder chunk is already loaded via dynamic `import()` so it does not delay
-first paint (169 kB, split from the 435 kB main bundle) while remaining
-precached by the service worker for offline use.
+**There is no encoder chunk.** Measured at `761b3c2`: the production build
+emits exactly two JS assets — `index-*.js` at 465,785 bytes and the OBS
+catalogue at 200,804 — and neither contains `Mp3Encoder`. lamejs is a static
+import in `src/lib/audio/mp3.ts:21`, and because `encodeMp3` has no caller
+outside its own test it is tree-shaken out of the bundle entirely. So the
+splitting, the 169 kB chunk and the service-worker precache described here
+before were all describing a build that does not exist. When #18 wires an
+export path lamejs enters the main graph; #34's worker is what puts it behind
+a real boundary.

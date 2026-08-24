@@ -21,7 +21,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A disposable vertical-slice UI exercising record → waveform → play → cut →
   encode MP3. Browser-verified only; no device, OS or browser was recorded at
   the time, and there is no export path out of the app (#18).
-- 53 unit tests covering the audio core, scope grammar, and storage layer.
+- Unit tests covering the audio core, scope grammar, and storage layer — 53 on
+  scaffold day, 149 as of 2026-08-24. Browser-only paths (MediaRecorder,
+  `decodeAudioData`) are not among them.
 - Docs: spec transcription, prior-art research, and five ADRs.
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
   metadata (230 KB), with artwork and narration fetched per story into
