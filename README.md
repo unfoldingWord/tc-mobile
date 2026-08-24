@@ -140,7 +140,10 @@ See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
 
 Fifty OBS stories (598 illustrated frames) ship as beta content so a tester
 does not have to invent their own structure before trying anything. OBS maps
-onto the domain model directly: **story → Chapter, frame → Segment**.
+onto the domain model directly: a story is a Chapter, and a frame is a
+**Section** today. After the pivot a frame is a **Segment** — `Section` goes
+when B1 (#27) lands, and `src/hooks/use-chapter.ts` still creates one per
+frame until it does.
 
 ```bash
 node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
@@ -157,8 +160,9 @@ Two things about this content changed with the pivot. Artwork is an optional
 per-segment illustration rather than the thing that decides the browse layout
 (D6), and no Phase 1 screen draws it — it stays in the model and the media
 cache while that question is open (Q4, #1). Reference audio is out of Phase 1
-(D5), so the narration MP3s the code still fetches are not a Phase 1 capability
-and batch B0 (#26) deletes that path. See
+(D5), so the narration MP3s — which the code hands out as a CDN URL and streams,
+rather than caching (`narrationUrl` in `src/hooks/obs-media.ts`) — are not a
+Phase 1 capability, and batch B0 (#26) deletes that path. See
 [ADR 0006](docs/decisions/0006-obs-content.md).
 
 ### Attribution

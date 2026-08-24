@@ -65,9 +65,10 @@ The plan of record is [`design/pivot-plan.md`](./design/pivot-plan.md);
   Segment → Takes. Pages 3–4 show no Section level and ADR 0004 rejects it, so
   the taxonomy is `Book → Chapter → Segment (→ Take)`. Removing Section from
   the model is B1 (#27).
-- **"Section-by-section" is segment-by-segment.** Only the name of the level
-  changed; the margin annotation still points at the same thing, and a segment
-  is the unit of work.
+- **"Section-by-section" is segment-by-segment.** Not a rename: the Section
+  level is removed, and the unit-of-work role moves down onto the Segment level
+  that already exists beneath it. The margin annotation still points at the
+  thing a translator records in one pass — that is now a segment.
 - **Takes are out of Phase 1** (A2). `Take` stays in the schema, hidden and 1:1
   with its segment (D1), because Phase 2 brings takes back. There is no take
   list and no take screen.

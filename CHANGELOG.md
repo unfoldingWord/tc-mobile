@@ -25,13 +25,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   encode MP3. Browser-verified only; no device, OS or browser was recorded at
   the time, and there is no export path out of the app (#18).
 - Unit tests covering the audio core, scope grammar, and storage layer — 53 on
-  scaffold day, 149 as of 2026-08-24. Browser-only paths (MediaRecorder,
-  `decodeAudioData`) are not among them.
+  scaffold day, and growing with every batch, so `npm test` is the count rather
+  than this line. Browser-only paths (MediaRecorder, `decodeAudioData`) are not
+  among them.
 - Docs: two spec transcriptions, prior-art research, seven ADRs, and the pivot
   plan of record (`docs/design/pivot-plan.md`, #25).
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
-  metadata (230 KB), with artwork and narration fetched per story into
-  IndexedDB. `scripts/build-obs-catalog.mjs` rebuilds the catalogue from
+  metadata (230 KB), with artwork fetched per story into IndexedDB and
+  narration streamed from the CDN, not cached. `scripts/build-obs-catalog.mjs` rebuilds the catalogue from
   Door43. IndexedDB schema bumped to v2 for the media store.
 - Cloudflare deployment: staging, production, and per-PR preview Workers.
   **Cloudflare Workers Builds owns deployment**, not Actions — the four Actions
