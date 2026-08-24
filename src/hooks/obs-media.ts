@@ -25,6 +25,12 @@ async function fetchInto(url: string): Promise<void> {
   await putMedia(url, await res.blob());
 }
 
+/**
+ * @pivotpending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
+ */
 export interface DownloadProgress {
   readonly done: number;
   readonly total: number;
@@ -41,6 +47,9 @@ export interface DownloadProgress {
  * Individual frame failures do not abort the download — a story that is
  * fifteen-sixteenths available is far more useful in a workshop than none of
  * it. The count of failures is returned so the UI can be honest about it.
+ *
+ * @pivotpending No caller. See the note on `DownloadProgress` — this is the
+ * cache side of #1.
  */
 export async function downloadStoryMedia(
   story: ObsStory,
@@ -71,6 +80,12 @@ export async function downloadStoryMedia(
 }
 
 /** How much of a story is already on the device, for a per-story indicator. */
+/**
+ * @pivotpending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
+ */
 export async function storyMediaStatus(
   story: ObsStory
 ): Promise<{ cached: number; total: number }> {
@@ -86,6 +101,12 @@ export async function storyMediaStatus(
  *
  * Callers must revoke the URL when done; leaking these on a fifty-row list is
  * a real memory problem on a low-end device.
+ */
+/**
+ * @pivotpending #1 — the recording view loads artwork straight from the
+ * door43 CDN (`use-chapter.ts:85` → `section-view.tsx:75`) and never from this
+ * IndexedDB cache. #1 is the rework that wires them together; open question Q4
+ * keeps the cache in the model until it does. Do not delete on knip's word.
  */
 export async function cachedImageObjectUrl(
   url: string

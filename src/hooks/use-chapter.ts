@@ -23,12 +23,7 @@ import {
 } from "@/lib/takes/pending-take";
 import { narrationUrl } from "./obs-media";
 import { saveFailureKind } from "./save-failure";
-import type {
-  ChapterId,
-  ProjectId,
-  SectionId,
-  SegmentId,
-} from "@/types/domain";
+import type { ChapterId, ProjectId, SegmentId } from "@/types/domain";
 import type { ChapterCard, SectionCard } from "@/types/view";
 
 const PEAK_BUCKETS = 120;
@@ -396,6 +391,4 @@ async function ensureObsChapter(
   return chapter.id;
 }
 
-export const OBS_PROJECT_NAME = "Open Bible Stories";
-
-export type { SectionId };
+const OBS_PROJECT_NAME = "Open Bible Stories";

@@ -34,7 +34,8 @@ npm run build          # production build
 npm run preview        # preview the build
 npm run lint           # ESLint, zero warnings allowed
 npm run typecheck      # tsc -b (project references)
-npm run knip           # unused files and dependencies
+npm run typecheck:lib  # lib/ + types/ compiled with NO DOM lib — see below
+npm run knip           # unused files, deps, exports and exported types
 npm test               # vitest run
 npm run format         # prettier --write
 npm run verify         # everything above, in one command
@@ -132,18 +133,59 @@ condition — over a message bubble.
 **No sprawl, no duplicates, no stubs.** Nothing shipped that nothing uses;
 nothing stubbed "for later."
 
-`knip` enforces the mechanical half — in `npm run verify` and in CI — and it is
-scoped to **unused files and unused dependencies**, not unused exports. That
-scope is deliberate and it is a gap: dead exports inside a live file pass it
-today — `downloadStoryMedia`, `cachedImageObjectUrl`, `formatBytes`,
-`storyMediaStatus`, `listMediaUrls` and `Mp3EncodeOptions` among them. Treat
-that list as illustrative, not exhaustive; only `knip --include exports` can
-enumerate it.
-Widening to `exports` means deleting or wiring those, which belongs to the
-change that reworks that code, not to a docs pass. **Do not read a green knip
-as "no dead code."** It found an unused `zustand`, an unused `lucide-react`
-that this document itself claimed was the icon library, and three dead barrel
-files on its first run — that is the class it catches.
+`knip` enforces the mechanical half, in `npm run verify` and in CI, scoped to
+**files, dependencies, unlisted imports, exports and exported types**. Exports
+were added 2026-08-24; before that the gate had never checked them and nineteen
+dead ones were passing.
+
+An export that is genuinely dead now but that a named pivot batch wires up
+carries a `@pivotpending` JSDoc tag, which knip honours.
+
+**The tag must name a tracking issue, and the batch when a batch owns it.** Not
+every pending export belongs to a B-batch — the OBS media cache is tagged
+against #1 and open question Q4, and there is no batch that will touch it. An
+export with **no** issue behind it does not get a tag; it gets deleted. An
+untagged unused export fails CI, and a tag without a reason is worse than the
+export it hides.
+
+**The tag is one alphabetic token on purpose.** knip parses tags with
+`/[a-zA-Z]+/` and keeps only the first run, so a hyphenated `@pivot-pending`
+is stored as `@pivot` — which would silently ignore _any_ future export tagged
+`@pivot`-anything. Do not reintroduce a hyphen here.
+
+**Two blind spots remain. Do not read a green knip as "no dead code."**
+
+1. **A `src/` module imported only by a test looks used.** `tests/**` is a knip
+   entry point, so a test import satisfies the `files` check. This is how 372
+   lines of timing seam plus 494 lines of its tests survived to be deleted by
+   hand. knip cannot tell that from `lib/audio/edit.ts`, which is the engine
+   B5 will consume — so the judgement stays human.
+2. **Nothing in this repo reads CSS at all.** knip says so itself
+   (`.css — Compiled extension excluded by project`). There is no stylelint and
+   no CSS plugin. An orphaned custom property or component token is invisible
+   to every check, which matters most in B2 and B3 — the largest UI deletion
+   this repo will do.
+
+What it does catch, on its first run: an unused `zustand`, an unused
+`lucide-react` that this document itself claimed was the icon library, and three
+dead barrel files.
+
+**The onion rule and the DOM ban are enforced, as of 2026-08-24.** Both were
+prose until then. `no-restricted-imports` now matches relative specifiers as
+well as `@/`-aliased ones, and `no-restricted-globals` bans the browser globals
+from `src/lib/**` — a probe file in `src/lib/audio/` using `AudioContext`,
+`document`, `window` and `navigator` previously produced zero ESLint and zero
+`tsc` diagnostics. The ban catches value references; a type-position reference
+is caught by `npm run typecheck:lib`, which compiles `src/lib` and `src/types`
+against `tsconfig.lib.json` with no DOM lib — in `verify` and in CI. **That gate
+has a named residual:** `"types": ["node"]` brings Node's own web globals, so
+`Navigator` and `Storage` type-check inside `lib/`. Deliberate — both run in
+plain Node and in a Worker, which is the property this rule protects — and
+`tests/lib-boundary.test.ts` asserts what fires and what does not, so the line
+cannot drift silently. Note `.husky/pre-commit` runs only `npm run typecheck`;
+the DOM-free pass is `verify` and CI. `scripts/**/*.mjs`
+are linted too — they matched no config block and ran with zero rules while
+fetching over the network and writing 598 files into `public/`.
 
 **Do not ramp up before it is needed.** Every rule above pays for itself now.
 A rule that will pay off after October can wait until after October.

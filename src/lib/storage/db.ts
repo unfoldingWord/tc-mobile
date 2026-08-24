@@ -27,8 +27,8 @@ import type {
 } from "@/types/domain";
 import type { ClipMeta } from "@/types/audio";
 
-export const DB_NAME = "tc-mobile";
-export const DB_VERSION = 2;
+const DB_NAME = "tc-mobile";
+const DB_VERSION = 2;
 
 export interface TcMobileDb extends DBSchema {
   projects: { key: ProjectId; value: Project };
