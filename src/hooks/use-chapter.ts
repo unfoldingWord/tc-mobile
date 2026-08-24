@@ -60,6 +60,7 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
   const sections = await getSectionsOfChapter(chapterId);
 
   const cards: SectionCard[] = [];
+  let audioFaults = 0;
   for (const [i, section] of sections.entries()) {
     const frame = story.frames[i];
     const segmentId = section.segmentIds[0] as SegmentId | undefined;
@@ -72,7 +73,10 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
     // answers this walk gave, and the only one that offered Record over a
     // segment the model believes is already recorded.
     const fault = audio ? danglingReason(audio) : null;
-    if (fault) console.error("A section has no playable audio:", fault);
+    if (fault) {
+      console.error("A section has no playable audio:", fault);
+      audioFaults += 1;
+    }
 
     const clip = audio?.kind === "resolved" ? audio.clip : null;
     const segment = audio && audio.kind !== "no-segment" ? audio.segment : null;
@@ -97,6 +101,7 @@ async function loadObsChapterCard(storyNumber: number): Promise<ChapterCard> {
     // The single conditional the whole browser turns on.
     hasArtwork: cards.some((c) => c.thumbUrl !== null),
     referenceAudioUrl: narrationUrl(storyNumber),
+    audioFaults,
     sections: cards,
   };
 }
