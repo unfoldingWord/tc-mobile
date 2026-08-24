@@ -4,6 +4,123 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-23 (evening) — Day 4: clearing the review queue
+
+**Branches:** `docs/pivot-plan-p3-p4`, `fix/review-round-1-scheme-independent`,
+`docs/correct-obs-audio-and-journal-claims` · **PRs:** #35 and #21 merged, #22
+mid-review · **Issues:** +5
+
+### Completed
+
+- **#35 merged** (`9c0230b`). Documentation-only, so CI green alone; the
+  decision to merge without a reviewer round is recorded on the PR rather than
+  taken silently.
+- **#21 merged** (`20df466`) — the round-1 fix lane, after **three more review
+  rounds**. B0 (#26) is unblocked.
+- **#22's five findings fixed**, awaiting one more round.
+
+### #21, rounds 3 to 5
+
+**Round 3 had run and was never triaged.** Both reports were sitting in
+`.review/` from earlier in the day with no comment on the PR — the exact failure
+AGENTS.md's mandatory-triage rule exists to prevent, since a finding whose only
+record is the author's disk is not verifiable by anyone else. Posted late, with
+dispositions, before doing anything else.
+
+Nine findings closed across the three rounds (`0418971`, `7fced15`, `3a5d205`):
+
+- **George's P1** — `ondataavailable` followed `chunksRef` rather than the array
+  the recording owns. MediaRecorder delivers its last slice _after_ `stop()` is
+  invoked, so a `cancel()` in that window sent the slice to a fresh array while
+  `stop()` built its blob from the old one. For a take under one 250 ms
+  timeslice — and on WebKit builds that ignore the timeslice entirely — that
+  slice is the whole recording: `blob.size === 0`, the section still reads
+  unrecorded. This is the one that mattered.
+- **Frank's P2** — a refused `getUserMedia` could leave the mic floor claimed
+  forever, because the only release was an effect keyed on a state the
+  denied-permission path may never present. `start()` now resolves to whether
+  capture began, and the claim is handed back on that completion.
+- **George's P2s** — a save that reported done before the card reflected it, so
+  Record re-enabled over a section reading as unrecorded and a second take
+  demoted the good one; a Retry guard on stale render state that let two taps
+  append two take rows for one clip; the same guard missing from Discard, its
+  sibling on the same screen; and `leave()` rewinding chapter narration on every
+  section step.
+- Plus the two findings #22 had deferred into this lane, and two P3s.
+
+**Round 5 was the stopping point, and it is recorded as an escalation rather
+than an approval.** Frank was clean twice running; George returned two more P2s
+and two P3s, all in territory no earlier round had touched. That is the tell:
+he was still discovering, not converging.
+
+### Why a 2,345-line PR does not converge
+
+Both review scripts build their input from `git diff "$BASE"...HEAD` — the whole
+branch, not the delta since the last reviewed SHA. So cost is pinned to the
+cumulative branch while the fixes shrink:
+
+|                          |                            |
+| ------------------------ | -------------------------- |
+| branch diff vs `develop` | 23 files, 2,345 insertions |
+| round 5's own commit     | 1 file, 11 insertions      |
+
+Across five rounds this PR had roughly 11,700 lines of diff reviewed, for a
+branch whose last three rounds changed 236 lines between them. One commit is
+most of the cause: `9f46e6a` closed five round-1 findings at once, 20 files and
+1,868 insertions.
+
+**The pivot already fixes this** — B0 through B8 are nine lanes instead of one
+bundle. #21 was the last PR of the old shape, and the lesson is worth keeping:
+a deep-tree lens does not terminate on a large branch by iterating.
+
+### One refusal worth recording
+
+George's round-5 P2 asked that the capture tracks be released the moment
+`recorder.stop()` is invoked. Only half taken. The final `dataavailable` arrives
+in exactly that window, and killing the tracks inside it truncates it — which is
+the round-3 P1 the chunk-ownership rewrite had just closed. The exposure was
+also narrower than stated: `abandonStream` already runs before the decode, so
+the microphone is live only across the `onstop` window. Bounding that wait
+(`3a5d205`, five seconds) closes the hang and the hot mic without touching the
+flush ordering. Taking both halves would have traded a five-second hot mic for a
+class of silent audio loss.
+
+### A process failure worth not repeating
+
+I reported George as having failed three times on #22 and concluded the harness
+was broken. **That was wrong.** The run I called dead finished with a
+9,800-byte report and a verdict; I checked it one to two minutes in, saw
+narration, and applied the "narration-only output is a stalled run" test to a
+run that had not finished. That test is for a _completed_ run.
+
+Measured properly, George's eight runs took 5, 5, 6, 11, 11, 12, 15 and 25
+minutes — median 12. The apparent slowness was polling, not the tool. Two
+lessons: **read the elapsed time before declaring a stall**, and a `pgrep -f`
+watcher whose own command line contains the pattern matches itself and never
+terminates, which is how several waits here appeared to hang.
+
+### Blockers
+
+- **#22 needs one more round** at `20c154b` — Frank had approved at `6f8f051`
+  before the fixes landed. It touches `ci.yml`, so it is a both-reviewers PR
+  unless the exemption is recorded.
+- **Nothing in the recorder path has run on iOS.** Every P1 closed across five
+  rounds was verified by reading, including one about WebKit MediaRecorder
+  behaviour that reading cannot settle, and the new `3a5d205` timeout is in the
+  same category. This is now the largest open risk on the project.
+
+### Next steps
+
+1. **Re-run both reviewers on #22** at `20c154b`, triage, merge.
+2. **Promote `develop` → `staging`** — the staging Worker only builds from
+   `staging`, and a phone needs the secure context.
+3. **Device test the recorder on iOS**: a take under 250 ms, and backgrounding
+   the app immediately after Stop. Those two exercise the round-3 P1 and the
+   flush timeout.
+4. **B0 (#26)**, the first code lane of the pivot.
+
+---
+
 ## 2026-08-23 — Day 3: the pivot, Gate 1, and a question register
 
 **Branch:** `docs/pivot-plan-p3-p4` · **PRs:** #23 merged, #35 opened ·
