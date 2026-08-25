@@ -83,6 +83,12 @@ export function Recorder({
   const dirty = useRef(false);
   /** Guards the async close so a double-tap on Back cannot commit twice. */
   const closing = useRef(false);
+  // Drives the UI: once Back is tapped the sheet is tearing down, and the
+  // post-stop save is in flight. Record must be dead through that window — the
+  // sheet still shows and a first take's waveform is still empty, so a second
+  // tap would start a capture that the closing `leave()` then discards (a take
+  // lost with no recovery screen).
+  const [isClosing, setIsClosing] = useState(false);
 
   const length = view?.lengthSamples ?? 0;
   const hasAudio = length > 0;
@@ -125,6 +131,7 @@ export function Recorder({
   const onPointerUp = useCallback(() => setDragging(false), []);
 
   const onRecordButton = useCallback(() => {
+    if (closing.current) return;
     if (recording) {
       audio.pauseRecording();
     } else if (paused) {
@@ -151,6 +158,7 @@ export function Recorder({
   const close = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
+    setIsClosing(true);
     void (async () => {
       // Commit on close (F8): if the mic is live or paused, stop it, then
       // splice what it captured into the segment's audio. `stopRecording`
@@ -287,7 +295,7 @@ export function Recorder({
                       : strings.record
                 }
                 variant="record"
-                disabled={busy}
+                disabled={busy || isClosing}
                 onClick={onRecordButton}
               />
               {/* Balances the toolbar so record sits central under the line. */}

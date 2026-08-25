@@ -58,6 +58,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
 
   const onNewBook = useCallback(async () => {
     const book = await createBook();
+    if (!book) return; // failed create surfaced through the hook's Notice
     // A new book opens expanded — the next action is adding its first chapter.
     setExpanded((prev) => new Set(prev).add(book.id));
     pendingScroll.current = book.id;
@@ -66,6 +67,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const onNewChapter = useCallback(
     async (bookId: BookId) => {
       const chapter = await addChapter(bookId);
+      if (!chapter) return; // failed create surfaced through the hook's Notice
       setExpanded((prev) => new Set(prev).add(bookId));
       pendingScroll.current = chapter.id;
     },

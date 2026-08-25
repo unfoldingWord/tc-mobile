@@ -111,21 +111,28 @@ export function useChapterSegments(chapterId: ChapterId) {
     setReloadToken((t) => t + 1);
   }, []);
 
-  const addSegment = useCallback(async (): Promise<Segment> => {
-    const segment = await addSegmentToChapter(chapterId);
-    // A brand-new segment has no audio, so the row is known without a read.
-    setRows((rs) => [
-      ...rs,
-      {
-        segmentId: segment.id,
-        ordinal: segment.index,
-        hasClip: false,
-        finished: false,
-        peaks: null,
-        durationMs: null,
-      },
-    ]);
-    return segment;
+  const addSegment = useCallback(async (): Promise<Segment | null> => {
+    try {
+      const segment = await addSegmentToChapter(chapterId);
+      // A brand-new segment has no audio, so the row is known without a read.
+      setRows((rs) => [
+        ...rs,
+        {
+          segmentId: segment.id,
+          ordinal: segment.index,
+          hasClip: false,
+          finished: false,
+          peaks: null,
+          durationMs: null,
+        },
+      ]);
+      setError(null);
+      return segment;
+    } catch (cause) {
+      // A failed append reaches the same Notice a load failure does.
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
+    }
   }, [chapterId]);
 
   const setFinished = useCallback(

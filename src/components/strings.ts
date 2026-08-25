@@ -32,6 +32,7 @@ export const strings = {
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,
   recordSegment: (n: number): string => `Record segment ${n}`,
+  editSegment: (n: number): string => `Edit segment ${n}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   markFinished: (n: number): string => `Mark segment ${n} finished`,
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,

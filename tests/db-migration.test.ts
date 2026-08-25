@@ -109,7 +109,10 @@ describe("v2 → v3 destructive recreate", () => {
       "bookId"
     );
 
-    // Destructive: the seeded v2 rows are gone, not migrated.
+    // Destructive ON PURPOSE: the v2→v3 upgrade is a one-time pre-alpha wipe,
+    // not a data-preserving migration (ADR 0008, DRI decision). This asserts the
+    // intended behaviour for a schema with no field data — it is not an
+    // endorsement of data loss as a pattern; append-only resumes from v3.
     expect(await v3.getAll("clipMeta")).toEqual([]);
     expect(await v3.count("takes")).toBe(0);
   });

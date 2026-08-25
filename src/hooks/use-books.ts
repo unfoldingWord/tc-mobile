@@ -86,19 +86,31 @@ export function useBooks() {
 
   const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
-  const createBook = useCallback(async (): Promise<Book> => {
+  const createBook = useCallback(async (): Promise<Book | null> => {
     // Named from the current count. Creation is append-only this lane, so the
     // count is the next ordinal; a rename/delete batch will need to revisit it.
-    const book = await createBookRow(nextBookName(books.length));
-    reload();
-    return book;
+    // A failed write (quota, aborted tx) reaches the same Notice a load failure
+    // does, never a silent unhandled rejection — the caller gets null.
+    try {
+      const book = await createBookRow(nextBookName(books.length));
+      reload();
+      return book;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
+    }
   }, [books.length, reload]);
 
   const addChapter = useCallback(
-    async (bookId: BookId): Promise<Chapter> => {
-      const chapter = await addChapterToBook(bookId);
-      reload();
-      return chapter;
+    async (bookId: BookId): Promise<Chapter | null> => {
+      try {
+        const chapter = await addChapterToBook(bookId);
+        reload();
+        return chapter;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
+      }
     },
     [reload]
   );

@@ -63,6 +63,9 @@ export const SegmentsScreen = forwardRef<
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
+  // What to scroll to once `rows` next includes it — a freshly appended
+  // segment. A ref, not state: `addSegment` already re-renders us.
+  const pendingScroll = useRef<SegmentId | null>(null);
 
   const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
     if (el) nodes.current.set(id, el);
@@ -79,9 +82,19 @@ export const SegmentsScreen = forwardRef<
       nodes.current.get(target.segmentId)?.scrollIntoView({ block: "nearest" });
   }, [loading, rows]);
 
+  useEffect(() => {
+    const id = pendingScroll.current;
+    if (id === null) return;
+    nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
+    pendingScroll.current = null;
+  }, [rows]);
+
   const onAppend = useCallback(async () => {
     const segment = await addSegment();
-    nodes.current.get(segment.id)?.scrollIntoView({ block: "nearest" });
+    if (!segment) return; // failed append surfaced through the hook's Notice
+    // The new <li> is not committed yet, so scroll once `rows` includes it —
+    // the same pending-id + effect pattern BooksScreen uses.
+    pendingScroll.current = segment.id;
   }, [addSegment]);
 
   const onSetFinished = useCallback(

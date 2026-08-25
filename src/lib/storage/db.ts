@@ -11,6 +11,9 @@
  *
  * ── Append-only migration is deliberately WAIVED for the pivot (v3) ──
  *
+ * Recorded as a DRI decision in docs/decisions/0008-pivot-destructive-recreate.md
+ * (a code comment cannot waive a repository rule; that ADR is the authority).
+ *
  * Append-only migration is the discipline this database normally holds to,
  * because a field device may be several versions behind and its recordings are
  * unrecoverable. The v3 upgrade breaks it once, on purpose. This is pre-alpha

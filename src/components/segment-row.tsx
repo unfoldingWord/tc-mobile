@@ -19,7 +19,8 @@ interface SegmentRowProps {
    * only when starting.
    */
   onPlay: (offsetSeconds: number) => void;
-  /** Open the recorder sheet for this segment (never-recorded rows only). */
+  /** Open the recorder sheet for this segment — to record an empty one, or to
+   * edit (insert/append/re-record) one that already has audio. */
   onOpenRecorder: () => void;
   onSetFinished: (finished: boolean) => void;
 }
@@ -32,8 +33,10 @@ const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
  * The three states are derived clip-presence-first (`segmentRowState`): a
  * dangling clip reads as never-recorded so the only offer is re-record, never
  * amber bars over audio the database cannot play. There is no per-row overflow
- * menu — that is deferred (#29). A recorded row can be played and finished; the
- * recorder is entered only from a never-recorded row this lane.
+ * menu — that is deferred (#29). A never-recorded row opens the recorder from
+ * its record button; a recorded row opens it (to insert/append/re-record — the
+ * pivot's unit of work) by tapping the ordinal, keeping play/pause as the
+ * transport. Erase and the like wait for the deferred menu.
  */
 export function SegmentRow({
   row,
@@ -142,12 +145,24 @@ export function SegmentRow({
     <div className="row">
       {checkbox}
 
-      <span
-        className="t-ordinal flex-none"
-        style={{ color: "var(--s-ink-muted)", minWidth: "16px" }}
-      >
-        {ordinal}
-      </span>
+      {hasClip ? (
+        <button
+          type="button"
+          onClick={onOpenRecorder}
+          aria-label={strings.editSegment(ordinal)}
+          className="t-ordinal flex-none border-0 bg-transparent p-0 text-left"
+          style={{ color: "var(--s-ink-muted)", minWidth: "16px" }}
+        >
+          {ordinal}
+        </button>
+      ) : (
+        <span
+          className="t-ordinal flex-none"
+          style={{ color: "var(--s-ink-muted)", minWidth: "16px" }}
+        >
+          {ordinal}
+        </span>
+      )}
 
       {hasClip ? (
         <div
