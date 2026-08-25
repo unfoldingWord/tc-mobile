@@ -242,9 +242,11 @@ export function Recorder({
           setIsClosing(false);
           return;
         }
-        // else: no samples and no error — a superseded stop, or an interruption
-        // that captured nothing. Nothing to save and nothing to say, so fall
-        // through and close, rather than dead-ending the sheet open (#59).
+        // else: no samples and no error — a superseded stop (a cancel/leave
+        // landed during it). Nothing to save and nothing to say, so fall through
+        // and close, rather than dead-ending the sheet open (#59). An empty
+        // capture is NOT this branch — it returns the "No sound" error above and
+        // stays open to retry.
       }
       // A toggle with no new take is a direct write — there is no take to carry
       // it. Only when the translator actually changed it from the stored value,

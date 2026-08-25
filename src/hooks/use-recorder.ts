@@ -241,6 +241,14 @@ export function useRecorder(): UseRecorder {
         if (generation !== generationRef.current) return;
         clearTick();
         setState("processing");
+        // Release the mic the moment the recorder has actually ended. On the
+        // `error` path the track can still be live — a hot mic on a frozen sheet
+        // until Back, potentially minutes. Only once inactive: the chunks are
+        // then final, so stopping the track drops no audio; on the `ended` path
+        // the track is already dead and this is a no-op.
+        if (recorder.state === "inactive") {
+          stream?.getTracks().forEach((track) => track.stop());
+        }
       };
       recorder.onerror = onInterrupted;
       stream.getTracks().forEach((track) => {
@@ -316,6 +324,11 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
+    // This invocation owns teardown now: detach the interruption handlers so a
+    // late `error`/`ended` event, delivered after our final `setState`, cannot
+    // repaint a stopped recorder back to "processing".
+    recorder.onerror = null;
+    stream?.getTracks().forEach((track) => (track.onended = null));
     // Take the stream OUT of the shared ref before the flush await. A cancel()
     // (pagehide, navigation, unmount) landing during the wait calls
     // releaseStream(), which stops whatever streamRef holds — and stopping THIS
@@ -329,11 +342,14 @@ export function useRecorder(): UseRecorder {
     let blob: Blob;
     if (recorder.state === "inactive") {
       // The recorder ended on its OWN — an interruption took the mic (#59), not
-      // a stop we drove. There is no flush to await: whatever it delivered
-      // before it died is already in `chunks` and is final. Assemble and recover
-      // it rather than dropping the take. The capture track is already dead;
-      // release the stream for the ref bookkeeping.
+      // a stop we drove. There is no `stop()` flush to await, but the recorder
+      // flips inactive before its final queued `dataavailable` is delivered — so
+      // yield one macrotask to let a tail slice already in flight land in
+      // `chunks` before we seal the blob. Then recover it rather than dropping
+      // the take. The capture track is already dead; release the stream for the
+      // ref bookkeeping.
       if (stream) abandonStream(stream);
+      await new Promise((resolve) => setTimeout(resolve, 0));
       blob = new Blob(chunks, { type: recorder.mimeType });
     } else {
       blob = await new Promise<Blob>((resolve) => {
