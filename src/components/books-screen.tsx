@@ -25,6 +25,13 @@ interface BooksScreenProps {
  */
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const { books, loading, error, createBook, addChapter } = useBooks();
+  // A first-mount shelf-read failure leaves `books` at [] with `error` set —
+  // indistinguishable from a genuinely empty shelf unless we say so. Reading it
+  // as empty would show "start a book" and a live New Book over a shelf that
+  // may hold books merely unavailable, inviting new data on top (Frank r8, the
+  // Books sibling of the Segments load-failure guard). The Notice is the
+  // recovery; the menu stays reachable.
+  const loadFailed = error !== null && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
@@ -82,6 +89,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           label={strings.newBook}
           variant="primary"
           size={26}
+          disabled={loadFailed}
           onClick={() => void onNewBook()}
         />
         <Control
@@ -95,7 +103,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       {error && <Notice>{error}</Notice>}
 
       <div className="flex-1 overflow-y-auto">
-        {!loading && books.length === 0 ? (
+        {!loading && !loadFailed && books.length === 0 ? (
           <EmptyBooks />
         ) : (
           <ul className="flex flex-col gap-[10px]">

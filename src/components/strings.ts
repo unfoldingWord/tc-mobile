@@ -28,6 +28,7 @@ export const strings = {
   backToBooks: "Back to books",
   addSegment: "Add segment",
   saving: "Saving your recording.",
+  loadingChapter: "Loading the chapter.",
   segmentsEmptyHint: "Tap the plus to add a segment",
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,

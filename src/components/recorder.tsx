@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Checkbox } from "./checkbox";
 import { Control } from "./control";
@@ -80,6 +80,7 @@ export function Recorder({
   const [panState, setPanState] = useState<number | null>(null);
   const [zoom, setZoom] = useState(ZOOM_WHOLE);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   const dragStartX = useRef(0);
   const panAtDragStart = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -267,6 +268,15 @@ export function Recorder({
     setFinished,
   ]);
 
+  // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
+  // user is not stranded on the now-`inert` list behind the modal. Mount-only —
+  // App keys the sheet on segmentId, so it remounts per open and per segment.
+  // The permission panel autofocuses its own Retry when it later appears, which
+  // is after this has run.
+  useEffect(() => {
+    sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
+  }, []);
+
   const denied =
     !audio.supported ||
     (state === "idle" && audio.error !== null && stopError === null);
@@ -274,17 +284,27 @@ export function Recorder({
   // The checkbox tracks the intent immediately (the write is deferred to close),
   // falling back to the stored flag until the translator touches it.
   const displayedFinished = finishedIntent ?? view?.finished ?? false;
+  // Enabled once a take WILL exist on close, not only when one already does:
+  // `view.hasClip` never updates mid-sheet, so keying on it alone left the
+  // Finished control dead for every FIRST take — the day-1 training path could
+  // record but never mark done from the recorder (G8). Safe to offer now: the
+  // mark rides the take through `addTake`, so it no longer needs the segment to
+  // already have one. Still disabled before Record, so an empty look-and-close
+  // cannot mark an audioless segment finished.
+  const willHaveAudio =
+    view !== null &&
+    (view.hasClip || recording || paused || finishedIntent !== null);
   const finishedState = !view
     ? "disabled"
     : displayedFinished
       ? "finished"
-      : view.hasClip
+      : willHaveAudio
         ? "empty"
         : "disabled";
 
   return (
     <div className="recorder-scrim" role="dialog" aria-modal="true">
-      <div className="recorder-sheet mx-auto max-w-md">
+      <div ref={sheetRef} className="recorder-sheet mx-auto max-w-md">
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
             icon="back"

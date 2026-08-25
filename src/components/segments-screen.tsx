@@ -148,6 +148,10 @@ export const SegmentsScreen = forwardRef<
           console. `console.error is not a channel on a phone in a village.` */}
       {(error ?? audio.error) ? (
         <Notice>{error ?? audio.error}</Notice>
+      ) : loading ? (
+        // First mount: a slow chapter (sequential PCM walk) is otherwise a
+        // header over a blank list with no reason given (G8).
+        <Notice tone="busy">{strings.loadingChapter}</Notice>
       ) : (
         refreshing && <Notice tone="busy">{strings.saving}</Notice>
       )}

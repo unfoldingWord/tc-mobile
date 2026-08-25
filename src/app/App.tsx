@@ -114,20 +114,36 @@ export function App() {
 
   return (
     <main className="app-shell mx-auto h-full max-w-md">
-      {chapterId === null ? (
-        <BooksScreen onOpenChapter={openChapter} />
-      ) : (
-        <SegmentsScreen
-          ref={segmentsRef}
-          chapterId={chapterId}
-          audio={audio}
-          onBack={backToBooks}
-          onOpenRecorder={openRecorder}
-        />
-      )}
+      {/* The recorder sheet is aria-modal, but the screen behind it stays
+          mounted so close can reload() it. `inert` takes that whole background
+          out of the focus and pointer tree while the sheet is open, so an
+          AT/keyboard/switch user cannot reach the list's Back or a row's Record
+          — both call leave() → cancel(), which silently drops the in-progress
+          take with no recovery screen (G8). `display: contents` (the `contents`
+          utility) keeps this wrapper layout-transparent; inertness still
+          propagates to its flat-tree descendants. */}
+      <div className="contents" inert={recorder !== null || undefined}>
+        {chapterId === null ? (
+          <BooksScreen onOpenChapter={openChapter} />
+        ) : (
+          <SegmentsScreen
+            ref={segmentsRef}
+            chapterId={chapterId}
+            audio={audio}
+            onBack={backToBooks}
+            onOpenRecorder={openRecorder}
+          />
+        )}
+      </div>
 
       {recorder && (
+        // Keyed on the segment: opening the sheet on a different segment (via a
+        // list Record that was reachable before `inert`, or any future path)
+        // must REMOUNT, not reuse the prior segment's loaded `view.samples` —
+        // splicing those into the new segment's save would write one segment's
+        // audio into another (G8).
         <Recorder
+          key={recorder.segmentId}
           segmentId={recorder.segmentId}
           audio={audio}
           saveRecording={saveRecording}
