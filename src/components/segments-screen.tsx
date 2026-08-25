@@ -61,6 +61,15 @@ export const SegmentsScreen = forwardRef<
 
   useImperativeHandle(ref, () => ({ reload }), [reload]);
 
+  // A first-mount load failure leaves `rows` at its initial `[]` with `error`
+  // set — indistinguishable from a genuinely empty chapter unless we say so.
+  // Reading it as empty would render the "add a segment" hint and a live `+`
+  // over a chapter that has recordings on disk, inviting work onto a phantom
+  // empty chapter (G7). A *reload* failure keeps prior rows, so this only trips
+  // the true hole: the initial read. The Notice above is the recovery — back out
+  // and re-enter re-mounts and re-loads.
+  const loadFailed = error !== null && rows.length === 0;
+
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
   // What to scroll to once `rows` next includes it — a freshly appended
@@ -129,7 +138,7 @@ export const SegmentsScreen = forwardRef<
           icon="plus"
           label={strings.addSegment}
           variant="quiet"
-          disabled={loading || refreshing}
+          disabled={loading || refreshing || loadFailed}
           onClick={() => void onAppend()}
         />
       </header>
@@ -144,7 +153,7 @@ export const SegmentsScreen = forwardRef<
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {!loading && rows.length === 0 ? (
+        {!loading && !loadFailed && rows.length === 0 ? (
           <p
             className="flex h-full items-center justify-center text-center text-[13px]"
             style={{ color: "var(--s-ink-muted)" }}

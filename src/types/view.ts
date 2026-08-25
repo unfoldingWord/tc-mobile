@@ -8,7 +8,7 @@
  */
 
 import type { Peaks } from "./audio";
-import type { BookId, ChapterId, SegmentId } from "./domain";
+import type { BookId, ChapterId, ClipId, SegmentId } from "./domain";
 
 // ── Books screen (B2) ──────────────────────────────────────────────────────
 
@@ -43,6 +43,13 @@ export interface SegmentRow {
   readonly hasClip: boolean;
   /** `isFinished(segment.status)`. */
   readonly finished: boolean;
+  /**
+   * The resolved clip's id, or null when there is none. A true identity for the
+   * audio: a re-record mints a fresh `ClipId`, so a row keyed on this resets its
+   * scrub across a 1:1 replace even when the new clip is the same length —
+   * duration is an attribute two different clips can share, not an identity.
+   */
+  readonly clipId: ClipId | null;
   /** Precomputed; null on never-recorded / dangling so scrolling stays cheap. */
   readonly peaks: Peaks | null;
   readonly durationMs: number | null;

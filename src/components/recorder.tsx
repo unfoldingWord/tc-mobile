@@ -162,6 +162,11 @@ export function Recorder({
       // The offset is fixed for the whole take here, at the idle→recording
       // edge; pause/resume continues at the same point (F9).
       setStopError(null);
+      // New audio is not approved audio: reset the Finished intent to false so
+      // the checkbox shows what a re-record will actually save (a demote to
+      // draft), not the prior take's approval it would otherwise keep showing
+      // all session (G7). Re-checking after recording marks the new take done.
+      setFinishedIntent(false);
       insertionOffset.current = win.centerlineSample;
       audio.startRecording();
     }

@@ -354,10 +354,21 @@ export function useRecorder(): UseRecorder {
 
     try {
       const samples = await decodeToCanonical(blob);
+      const decodedCurrent = generation === generationRef.current;
       // Returned even when superseded: these are confirmed samples, and the
       // caller decides what to do with them. Only the shared UI state is
       // withheld, because a newer recording owns it now.
-      if (generation === generationRef.current) setState("idle");
+      if (decodedCurrent) setState("idle");
+      // A successful decode to ZERO samples is "no sound" too — same class as an
+      // empty blob, not a usable take. Classified here, at the source, so a
+      // caller keying on `samples.length` never gets a non-null empty buffer
+      // paired with a null error (which showed no message at all — F7).
+      if (samples.length === 0) {
+        return {
+          samples: null,
+          error: decodedCurrent ? "No sound was recorded. Try again." : null,
+        };
+      }
       return { samples, error: null };
     } catch {
       const stillCurrent = generation === generationRef.current;

@@ -89,14 +89,15 @@ export function SegmentRow({
   // A 1:1 re-record replaces the clip under the SAME row instance (same key),
   // so the resting scrub must snap back to the start when the audio identity
   // changes — otherwise the dot points into a clip that no longer exists
-  // (G5-#4). Reset during render against the previous clip identity held in
-  // state — React's recommended shape for "reset state when a prop changes" (no
-  // effect, no extra commit). `lastElapsedFraction` needs no reset: it is only
-  // read after a playback session, which rewrites it every frame.
-  const clipKey = `${durationMs}:${hasClip}`;
-  const [prevClipKey, setPrevClipKey] = useState(clipKey);
-  if (clipKey !== prevClipKey) {
-    setPrevClipKey(clipKey);
+  // (G5-#4). Keyed on the clip's id, a TRUE identity: a re-record mints a fresh
+  // ClipId, so this fires even when the replacement is the same length (a
+  // duration key collided — F7). Reset during render against the previous id
+  // held in state, React's recommended shape for "reset state when a prop
+  // changes" (no effect, no extra commit). `lastElapsedFraction` needs no reset:
+  // it is only read after a playback session, which rewrites it every frame.
+  const [prevClipId, setPrevClipId] = useState(row.clipId);
+  if (row.clipId !== prevClipId) {
+    setPrevClipId(row.clipId);
     setPosition(0);
   }
 

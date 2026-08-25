@@ -6,7 +6,7 @@ Newest first. One entry per working session.
 
 ## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
 
-**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) (open, review **paused at round 5**) · **Issues:** #27–#30 in flight, #58 filed, #29 noted
+**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) (open, **review round 5 resumed → rounds 6–7**) · **Issues:** #27–#30 in flight, #58 filed, #29 noted
 
 ### Completed
 
@@ -28,17 +28,20 @@ Newest first. One entry per working session.
   No P1 in rounds 4 or 5.
 - **CI green** on the head (`46dcea4`); `npm run verify` green (141 tests).
 
-### In progress / paused
+### In progress — review resumed (rounds 6–7)
 
-- **PR #57 review paused at round 5** by DRI (resume after reboot). Six findings
-  OPEN, all in the recorder's error surfaces, none data-loss — full list and the
-  planned structural fix are in the [round-5 triage](https://github.com/sethstoll3/tc-mobile/pull/57).
-  **Two are regressions from the round-4 decode fix** (F5-#2 empty-blob, F5-#3
-  stale-closure decode). Resume plan: one structural pass — make `stop()` return a
-  `{samples | error}` result (closes F5-#2/#3), route finished-write failures to
-  the `Notice` (F5-#1), apply the finished write after `addTake` (G5-#2), reset
-  scrub position on clip replace (G5-#4), refresh stale docs (G5-#3) — then
-  re-review and merge on both-clean + CI green.
+- **The round-5 plan landed.** `stop()` returns a `{samples | error}` result
+  (F5-#2/#3), finished-write failures reach the `Notice` (F5-#1), the finished
+  mark rides the take through `addTake` (G5-#2), scrub resets on clip replace
+  (G5-#4), docs refreshed (G5-#3).
+- **Round 6** (Frank): one P2 — the deferred finished mark was dropped on a
+  save-failure retry. Fixed by carrying `finished` through the pending take so
+  `addTake` applies it atomically, on the first attempt or a retry.
+- **Round 7** (Frank + George): four P2 — scrub keyed on duration not clip id
+  (F7), empty _decoded_ PCM surfaced no message (F7), the checkbox showed a
+  demote-bound take as finished all session (G7), and a failed chapter _load_
+  rendered as an empty chapter with a live `+` (G7). All fixed; two P3 doc nits
+  with them. **Not yet clean — a further round is pending.**
 
 ### Blockers / needs a human
 

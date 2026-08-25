@@ -45,9 +45,12 @@ export interface RecorderSegmentView {
  * dangling take opens as an empty segment (record-only), never a waveform over
  * audio the database cannot produce — the same F3 rule the row uses.
  *
- * The finished toggle writes straight through to the store (`setSegmentFinished`
- * enforces the never-finish-empty invariant) and patches the local flag. The
- * caller reloads the Segments screen on close, so the row reflects it then.
+ * `setFinished` writes one segment's finished flag through to the store
+ * (`setSegmentFinished` enforces the never-finish-empty invariant) and patches
+ * the local flag. The recorder no longer calls it on every checkbox tap: the
+ * toggle is deferred to `close()` and, when a take commits, rides that take
+ * through `addTake` instead — so this write is the caller's, on close, for the
+ * no-new-take path. The Segments screen reloads on close and reflects it then.
  */
 export function useRecorderSegment(segmentId: SegmentId) {
   const [view, setView] = useState<RecorderSegmentView | null>(null);

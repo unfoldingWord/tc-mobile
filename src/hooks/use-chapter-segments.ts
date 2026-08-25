@@ -34,6 +34,7 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
     ordinal: segment.index,
     hasClip: clip !== null,
     finished: isFinished(segment.status),
+    clipId: clip?.meta.id ?? null,
     peaks: clip ? computePeaks(clip.samples, PEAK_BUCKETS) : null,
     durationMs: clip?.meta.durationMs ?? null,
   };
@@ -130,6 +131,7 @@ export function useChapterSegments(chapterId: ChapterId) {
           ordinal: segment.index,
           hasClip: false,
           finished: false,
+          clipId: null,
           peaks: null,
           durationMs: null,
         },
