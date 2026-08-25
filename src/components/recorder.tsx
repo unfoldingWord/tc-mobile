@@ -120,16 +120,24 @@ export function Recorder({
   const paused = state === "paused";
   const busy = state === "requesting" || state === "processing";
 
+  // A take is being made or committed: any non-idle recorder state, OR the F8
+  // close window (Back tapped, the stop→decode→save still in flight). Across all
+  // of it the segment is heading for a demote-or-mark, so the checkbox previews
+  // that and cannot be toggled — the close window included, or the box refills
+  // to the stored flag mid-save and a late tap misses the already-captured
+  // close (G10). A refused start returns to idle and lifts this.
+  const takeActive = state !== "idle" || isClosing;
+
   // `finishedIntent` is the translator's EXPLICIT choice, null until they tap
   // the checkbox — never written speculatively (an optimistic reset at Record
   // demoted an untouched approved segment when the mic was then denied, F9/G9).
   // The demote a re-record WILL cause is previewed here instead, by derivation:
-  // while capturing, an untouched box reads unchecked; a refused start returns
-  // to idle and the box reads the stored flag again. The commit path passes
-  // `finishedIntent === true` (a plain re-record defaults to draft); the
-  // no-commit path writes only a real toggle.
+  // while a take is active an untouched box reads unchecked; back at idle it
+  // reads the stored flag again. The commit path passes `finishedIntent === true`
+  // (a plain re-record defaults to draft); the no-commit path writes only a real
+  // toggle.
   const displayedFinished =
-    finishedIntent ?? (recording || paused ? false : (view?.finished ?? false));
+    finishedIntent ?? (takeActive ? false : (view?.finished ?? false));
 
   const pan = panState ?? length;
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
@@ -298,7 +306,7 @@ export function Recorder({
   // already have one. Still disabled before Record (an empty look-and-close
   // cannot mark an audioless segment finished), and a refused start returns to
   // idle and disables it again (G9).
-  const willHaveAudio = view !== null && (view.hasClip || recording || paused);
+  const willHaveAudio = view !== null && (view.hasClip || takeActive);
   const finishedState = !view
     ? "disabled"
     : displayedFinished
@@ -336,6 +344,11 @@ export function Recorder({
                 ? strings.markUnfinished(view.ordinal)
                 : strings.markFinished(view?.ordinal ?? 0)
             }
+            // Frozen through the requesting/processing/close window, exactly as
+            // Record is: a toggle there cannot reach the already-captured close,
+            // and the box must not invite one (G10). Live during recording/
+            // paused, where marking the in-progress take is the point.
+            disabled={isClosing || busy}
             onToggle={
               finishedState === "disabled" ? undefined : onToggleFinished
             }

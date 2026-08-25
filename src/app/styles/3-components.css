@@ -209,8 +209,9 @@
     border-color: var(--s-voice);
   }
   /* Never recorded: dashed and greyed, so the box itself says "nothing to
-     finish here yet" without a word. */
-  .checkbox:disabled .checkbox__box {
+     finish here yet" without a word. Keyed on the STATE, not `:disabled` — a
+     recorded box held inert during a save reload must not read as this (G10). */
+  .checkbox__box--none {
     border-style: dashed;
     color: var(--s-ink-faint);
     opacity: 0.6;

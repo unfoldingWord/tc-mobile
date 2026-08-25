@@ -40,7 +40,12 @@ export function Checkbox({
   disabled: inert = false,
 }: CheckboxProps) {
   const finished = state === "finished";
-  const disabled = inert || state === "disabled";
+  // The dashed, faded "nothing to finish here" glyph belongs to the
+  // never-recorded STATE, not to being momentarily `inert`: a recorded box held
+  // during a save reload must not read as never-recorded (G10). So the modifier
+  // keys on the state; the HTML `disabled` still covers both (state or inert).
+  const neverRecorded = state === "disabled";
+  const disabled = inert || neverRecorded;
   return (
     <button
       type="button"
@@ -52,7 +57,13 @@ export function Checkbox({
       onClick={onToggle}
       className="checkbox"
     >
-      <span className={cn("checkbox__box", finished && "checkbox__box--on")}>
+      <span
+        className={cn(
+          "checkbox__box",
+          finished && "checkbox__box--on",
+          neverRecorded && "checkbox__box--none"
+        )}
+      >
         {finished && <Icon name="check" size={18} />}
       </span>
     </button>
