@@ -43,7 +43,7 @@ export type SaveFailureKind = "quota" | "unknown";
  * The whole point of this shape is the `samples` field. Before it existed the
  * only reference to a take's PCM was a local in the function that was saving
  * it, so a rejected write unwound the stack and the recording was gone — no
- * message, and a section still showing "not recorded". Nothing else on the
+ * message, and a segment still showing "not recorded". Nothing else on the
  * device has that property: audio a translator captured in the field cannot be
  * recreated.
  */

@@ -7,7 +7,8 @@ import {
   resumeAudioContext,
 } from "./audio-io";
 
-export type RecorderState = "idle" | "requesting" | "recording" | "processing";
+export type RecorderState =
+  "idle" | "requesting" | "recording" | "paused" | "processing";
 
 /**
  * How long `stop()` waits for MediaRecorder to flush before taking what it has.
@@ -39,6 +40,13 @@ export interface UseRecorder {
    * `state`, which a React batch can hide.
    */
   start: () => Promise<boolean>;
+  /**
+   * Pause capture without ending the take. The same take resumes with
+   * `resume()`; the elapsed timer freezes. No-op unless currently recording.
+   */
+  pause: () => void;
+  /** Resume a paused take into the SAME recording. No-op unless paused. */
+  resume: () => void;
   /** Stop and return the captured audio as canonical mono 16-bit PCM. */
   stop: () => Promise<Int16Array | null>;
   cancel: () => void;
@@ -69,6 +77,16 @@ export function useRecorder(): UseRecorder {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  /**
+   * Elapsed time banked before the current running span.
+   *
+   * Pause/resume splits one take into several running spans. The timer cannot
+   * be `now - startedAt` any more — that would keep counting the paused gap.
+   * So each pause banks the span that just ended here, and the live timer adds
+   * only the current span on top. The take's length is the sum, never the wall
+   * clock since Record was first pressed.
+   */
+  const baseElapsedRef = useRef(0);
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
@@ -81,6 +99,16 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
+
+  /** Run the elapsed timer for the current span, on top of the banked total. */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      setElapsedMs(
+        baseElapsedRef.current + (performance.now() - startedAtRef.current)
+      );
+    }, 100);
+  }, [clearTick]);
 
   const releaseStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -175,12 +203,11 @@ export function useRecorder(): UseRecorder {
 
       recorder.start(250);
       startedAtRef.current = performance.now();
+      baseElapsedRef.current = 0;
       setElapsedMs(0);
       setState("recording");
 
-      tickRef.current = window.setInterval(() => {
-        setElapsedMs(performance.now() - startedAtRef.current);
-      }, 100);
+      startTick();
       return true;
     } catch (cause) {
       if (stream) abandonStream(stream);
@@ -197,7 +224,33 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, releaseStream, supported]);
+  }, [abandonStream, releaseStream, startTick, supported]);
+
+  /**
+   * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
+   * but keeps the recorder and stream alive, so `resume()` continues the same
+   * clip. The span that just ran is banked and the timer stopped, so the paused
+   * gap is not counted toward the take's length.
+   */
+  const pause = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.pause();
+    baseElapsedRef.current += performance.now() - startedAtRef.current;
+    clearTick();
+    setElapsedMs(baseElapsedRef.current);
+    setState("paused");
+  }, [clearTick]);
+
+  /** Resume the paused take into the same recording. */
+  const resume = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    recorder.resume();
+    startedAtRef.current = performance.now();
+    setState("recording");
+    startTick();
+  }, [startTick]);
 
   const stop = useCallback(async (): Promise<Int16Array | null> => {
     const recorder = recorderRef.current;
@@ -289,5 +342,15 @@ export function useRecorder(): UseRecorder {
   // Never leave the microphone hot if the screen unmounts mid-recording.
   useEffect(() => () => cancel(), [cancel]);
 
-  return { state, supported, elapsedMs, error, start, stop, cancel };
+  return {
+    state,
+    supported,
+    elapsedMs,
+    error,
+    start,
+    pause,
+    resume,
+    stop,
+    cancel,
+  };
 }

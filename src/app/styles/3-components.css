@@ -104,7 +104,7 @@
     height: var(--c-control-xl);
   }
 
-  /* --- rows and cells ---------------------------------------------------- */
+  /* --- rows ------------------------------------------------------------- */
   .row {
     display: flex;
     align-items: center;
@@ -114,33 +114,6 @@
     padding: var(--p-space-3);
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
-  }
-  .row--active {
-    background: var(--s-raised);
-  }
-  .row--next {
-    background: var(--s-raised);
-    border-color: var(--s-edge);
-  }
-
-  .cell {
-    position: relative;
-    display: block;
-    aspect-ratio: 1;
-    border-radius: var(--c-row-radius);
-    overflow: hidden;
-    background: var(--s-surface);
-    border: none;
-    padding: 0;
-    cursor: pointer;
-  }
-  .cell:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: var(--c-focus-offset);
-  }
-  .cell--next {
-    outline: 2px solid var(--s-live);
-    outline-offset: -2px;
   }
 
   /* --- type roles -------------------------------------------------------- */
@@ -194,5 +167,166 @@
     .rec-dot {
       animation: none;
     }
+  }
+}
+
+@layer components {
+  /* --- the finished box (B3 rows + B4 recorder header) ------------------- */
+  .checkbox {
+    display: grid;
+    place-items: center;
+    /* Touch target never below 44px, even though the drawn box is 22px. */
+    width: var(--c-control-md);
+    height: var(--c-control-md);
+    flex: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  .checkbox:disabled {
+    cursor: default;
+  }
+  .checkbox:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-radius: var(--p-radius-md);
+  }
+  .checkbox__box {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--p-radius-sm);
+    border: 2px solid var(--s-edge);
+    /* Ink of the tick when the box is filled. */
+    color: var(--s-voice-ink);
+    transition:
+      background var(--p-dur-base) var(--p-ease),
+      border-color var(--p-dur-base) var(--p-ease);
+  }
+  .checkbox__box--on {
+    background: var(--s-voice);
+    border-color: var(--s-voice);
+  }
+  /* Never recorded: dashed and greyed, so the box itself says "nothing to
+     finish here yet" without a word. */
+  .checkbox:disabled .checkbox__box {
+    border-style: dashed;
+    color: var(--s-ink-faint);
+    opacity: 0.6;
+  }
+
+  /* --- the scrub track + draggable dot (B3) ------------------------------ */
+  .scrub {
+    position: relative;
+    display: flex;
+    align-items: center;
+    /* The short waveform gets a full ≥44px vertical hit area (§3.4). */
+    min-height: var(--c-control-md);
+    cursor: pointer;
+    /* Let a vertical drag scroll the list; a horizontal drag scrubs. */
+    touch-action: pan-y;
+  }
+  .scrub:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-radius: var(--p-radius-sm);
+  }
+  .scrub-dot {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    border-radius: var(--p-radius-full);
+    background: var(--s-ink);
+    /* A ring in the floor colour so the dot reads over the amber bars. */
+    border: 2px solid var(--s-floor);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  /* --- the menu shell (hamburger drawer) --------------------------------- */
+  .menu-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    justify-content: flex-end;
+    z-index: 50;
+  }
+  .menu-panel {
+    width: min(320px, 84vw);
+    height: 100%;
+    background: var(--s-surface);
+    border-left: 1px solid var(--s-edge);
+    padding: var(--p-space-5) var(--p-space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--c-gap-items);
+    overflow-y: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .checkbox__box {
+      transition: none;
+    }
+  }
+}
+
+@layer components {
+  /* --- the recorder sheet (B4) ------------------------------------------ */
+  /* A sheet over the dimmed Segments list: the scrim IS the dimming, and the
+     sheet sits on top of it. The list stays mounted behind, so closing the
+     sheet returns to it in place. */
+  .recorder-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    align-items: stretch;
+    z-index: 60;
+  }
+  .recorder-sheet {
+    width: 100%;
+    height: 100%;
+    background: var(--s-floor);
+    display: flex;
+    flex-direction: column;
+    gap: var(--c-gap-items);
+    padding: var(--p-space-4) var(--p-space-3);
+  }
+  /* The waveform stage. `position: relative` anchors the recording indicator;
+     the centerline itself is drawn on the canvas so it stays pixel-aligned
+     with the bars at any zoom. */
+  .recorder-stage {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    background: var(--s-surface);
+    border-radius: var(--c-row-radius);
+    overflow: hidden;
+  }
+  .recorder-canvas {
+    width: 100%;
+    /* A horizontal drag pans the waveform; let a vertical gesture do nothing
+       here rather than fighting the pan. */
+    touch-action: none;
+    cursor: grab;
+  }
+  .recorder-canvas:active {
+    cursor: grabbing;
+  }
+  .recorder-status {
+    position: absolute;
+    top: var(--p-space-3);
+    left: var(--p-space-3);
+    color: var(--s-ink);
+  }
+  .recorder-toolbar {
+    gap: var(--c-gap-items);
+    padding-bottom: var(--p-space-3);
   }
 }

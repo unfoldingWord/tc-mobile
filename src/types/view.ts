@@ -1,70 +1,72 @@
 /**
- * View models shared by the section browser and the section view.
+ * View models for the three pivot screens (Books, Segments, Recorder).
  *
- * Both layouts render the same data — the grid and the list are two
- * compositions of one model, not two features. That is what makes
- * "a chapter with artwork is browsed by picture, one without is browsed by
- * sound" a single conditional rather than a fork in the product.
+ * The pre-pivot pair — `SectionCard`/`ChapterCard` with `hasArtwork`,
+ * `thumbUrl`, `imageUrl` — is gone (D6: artwork no longer decides layout).
+ * These are pure shapes plus a couple of pure derivations; building the rows
+ * (reading the repo, `segment-audio`, and `peaks`) is a `hooks/` job.
  */
 
 import type { Peaks } from "./audio";
-import type { RecordingStatus, SectionId, SegmentId } from "./domain";
+import type { BookId, ChapterId, SegmentId } from "./domain";
 
-export interface SectionCard {
-  readonly sectionId: SectionId;
-  /** The segment a recording attaches to. One per section in Phase 1. */
+// ── Books screen (B2) ──────────────────────────────────────────────────────
+
+export interface ChapterRow {
+  readonly chapterId: ChapterId;
+  readonly number: number;
+  /** From `chapterProgress` — count of segments with `status === "affirmed"`. */
+  readonly finishedCount: number;
+  /** 0 ⇒ the UI shows NO counter (an empty chapter is not "0/0"). */
+  readonly totalCount: number;
+}
+
+export interface BookCard {
+  readonly bookId: BookId;
+  readonly name: string;
+  readonly chapters: readonly ChapterRow[];
+}
+
+// ── Segments screen (B3) ───────────────────────────────────────────────────
+
+export interface SegmentRow {
   readonly segmentId: SegmentId;
-  /** 1-based position, and the only digit shown on the primary path. */
+  /** = `Segment.index`, the wordless identifier and the export position. */
   readonly ordinal: number;
-  /** Burrito scope string, e.g. "1:7". */
-  readonly scope: string;
-  /** Bundled thumbnail, or `null` for a chapter with no artwork. */
-  readonly thumbUrl: string | null;
   /**
-   * Door43 CDN URL for the pre-pivot recording view's `<img>`. Not cached —
-   * B0 (#26) removed the on-demand media cache, so this is online-only. B2/B3
-   * replace that view and delete this field.
+   * Playable audio is present — derived from
+   * `resolveSegmentAudio(...).kind === "resolved"`, NOT from
+   * `activeTakeId !== null`. This folds the dangling/undecodable cases into
+   * the never-recorded visual (F3), so the only action a broken row offers is
+   * re-record — never amber bars over audio the database cannot produce.
    */
-  readonly imageUrl: string | null;
-  /** Precomputed so the list never walks raw samples while scrolling. */
+  readonly hasClip: boolean;
+  /** `isFinished(segment.status)`. */
+  readonly finished: boolean;
+  /** Precomputed; null on never-recorded / dangling so scrolling stays cheap. */
   readonly peaks: Peaks | null;
   readonly durationMs: number | null;
-  readonly status: RecordingStatus;
 }
 
-export interface ChapterCard {
-  readonly chapterId: string;
-  /**
-   * Story title. B0 removed the section-view narration button that rendered it,
-   * so nothing reads it today; B2's Books screen (#28) is the reader. Kept for
-   * that batch rather than dropped and re-added.
-   */
-  readonly title: string;
-  readonly ordinal: number;
-  /**
-   * Drives both the layout and what a tap does. The single conditional the
-   * whole screen turns on.
-   */
-  readonly hasArtwork: boolean;
-  /**
-   * Sections whose take names audio the database cannot produce.
-   *
-   * They draw as unrecorded, because `SectionCard` has no way to say
-   * "recorded, audio gone" and inventing one belongs to B2/B3. Without this
-   * count nothing on the screen would say so at all: the play control is not
-   * rendered for a card with no duration, so the fault would reach the
-   * translator only as an offer to record over a segment the model already
-   * believes is recorded.
-   */
-  readonly audioFaults: number;
-  readonly sections: readonly SectionCard[];
+export type SegmentRowState = "finished" | "recorded" | "empty";
+
+/**
+ * The three row states of mockup 2, derived clip-presence-first (F3):
+ * a dangling/undecodable clip renders as "empty" so re-record is the only
+ * offer, never a finished-looking row with no audio behind it.
+ */
+export function segmentRowState(row: SegmentRow): SegmentRowState {
+  if (!row.hasClip) return "empty"; // dashed disabled box, flat line, red record
+  return row.finished ? "finished" : "recorded"; // checked / empty box, amber, play
 }
 
-export function recordedCount(chapter: ChapterCard): number {
-  return chapter.sections.filter((s) => s.durationMs !== null).length;
-}
-
-/** The first section with no recording — where a returning user should land. */
-export function firstUnrecorded(chapter: ChapterCard): SectionCard | null {
-  return chapter.sections.find((s) => s.durationMs === null) ?? null;
+/**
+ * F5 scroll target: where a returning user lands. Replaces `firstUnrecorded`
+ * — the pivot lands on the first *not finished* segment, not the first with no
+ * audio. All finished ⇒ null (caller scrolls to top).
+ */
+export function firstNotFinished(
+  rows: readonly SegmentRow[]
+): SegmentRow | null {
+  return rows.find((r) => !r.finished) ?? null;
 }

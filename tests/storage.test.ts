@@ -13,23 +13,26 @@ import {
 import { closeDb, getDb } from "@/lib/storage/db";
 import {
   addChapter,
-  addSection,
+  addSegment,
   addTake,
-  createProject,
-  getSectionsOfChapter,
-  listProjects,
+  chapterProgress,
+  createBook,
+  getBook,
+  getChapter,
+  getSegment,
+  getSegmentsOfChapter,
+  isFinished,
+  listBooks,
   resolveChapterClipIds,
-  setActiveTake,
-} from "@/lib/storage/projects";
+  setSegmentFinished,
+} from "@/lib/storage/books";
 import {
   danglingReason,
   loadSegmentClip,
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { SectionRef } from "@/types/domain";
-
-const ref = (n: number): SectionRef => ({ book: "RUT", scope: `1:${n}` });
+import type { RecordingStatus } from "@/types/domain";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -47,6 +50,14 @@ const storedClip = async (frames = 100) => {
   const id = newClipId();
   await putClip(id, samples(frames), CANONICAL_SAMPLE_RATE);
   return id;
+};
+
+/** A book → chapter → one segment, and the ids to address it by. */
+const oneSegment = async () => {
+  const book = await createBook("b");
+  const chapter = await addChapter(book.id);
+  const segment = await addSegment(chapter.id);
+  return { chapterId: chapter.id, segmentId: segment.id };
 };
 
 beforeEach(async () => {
@@ -131,76 +142,211 @@ describe("clip storage", () => {
   });
 });
 
-describe("project tree", () => {
-  it("creates and lists a project", async () => {
-    const project = await createProject("Nukak OBS", "nukak");
-    const all = await listProjects();
-    expect(all.map((p) => p.id)).toEqual([project.id]);
-    expect(all[0]?.languageCode).toBe("nukak");
+describe("book tree", () => {
+  it("creates and lists books newest-updated first", async () => {
+    // Create in the OPPOSITE order to the expected sort, with explicit and
+    // distinct timestamps, so an unsorted `getAll` (primary-key/uuid order)
+    // fails deterministically rather than passing by luck.
+    const older = await createBook("older", "nukak", 1000);
+    const newer = await createBook("newer", null, 2000);
+
+    const all = await listBooks();
+    expect(all.map((b) => b.id)).toEqual([newer.id, older.id]);
+    expect(all[0]?.chapterIds).toEqual([]);
+    expect(all[1]?.languageCode).toBe("nukak");
   });
 
-  it("creates each section with one segment ready to record", async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const { section, segment } = await addSection(chapter.id, ref(1));
-    expect(section.segmentIds).toEqual([segment.id]);
-    expect(segment.activeTakeId).toBeNull();
-    expect(segment.status).toBe("not-started");
+  it("numbers chapters max+1 and parents them to the book", async () => {
+    const book = await createBook("b");
+    const c1 = await addChapter(book.id);
+    const c2 = await addChapter(book.id);
+
+    expect(c1.number).toBe(1);
+    expect(c2.number).toBe(2); // max+1, not a constant
+    expect(c1.bookId).toBe(book.id);
+
+    const updated = await getBook(book.id);
+    expect(updated?.chapterIds).toEqual([c1.id, c2.id]);
   });
 
-  it("preserves section order as declared, not as stored", async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const a = await addSection(chapter.id, ref(1));
-    const b = await addSection(chapter.id, ref(2));
-    const c = await addSection(chapter.id, ref(3));
+  it("appends segments with a sequential index and empty defaults", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    const s3 = await addSegment(chapter.id);
 
-    const sections = await getSectionsOfChapter(chapter.id);
-    expect(sections.map((s) => s.id)).toEqual([
-      a.section.id,
-      b.section.id,
-      c.section.id,
-    ]);
+    expect([s1.index, s2.index, s3.index]).toEqual([1, 2, 3]);
+
+    const updated = await getChapter(chapter.id);
+    expect(updated?.segmentIds).toEqual([s1.id, s2.id, s3.id]);
+
+    for (const s of [s1, s2, s3]) {
+      expect(s.status).toBe("not-started");
+      expect(s.activeTakeId).toBeNull();
+      expect(s.reference).toBeNull();
+    }
   });
 
-  it("keeps prior takes and makes the newest active", async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const { segment } = await addSection(chapter.id, ref(1));
+  it("reads one segment by id, and nothing for an unknown id", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s = await addSegment(chapter.id);
 
-    const first = await addTake(segment.id, await storedClip(), 1000);
-    const second = await addTake(segment.id, await storedClip(), 1200);
+    const found = await getSegment(s.id);
+    expect(found?.id).toBe(s.id);
+    expect(found?.chapterId).toBe(chapter.id);
 
-    const { clipIds } = await resolveChapterClipIds(chapter.id);
-    expect(clipIds).toEqual([second.clipId]);
-
-    // The first take still exists and can be restored.
-    await setActiveTake(segment.id, first.id);
-    const after = await resolveChapterClipIds(chapter.id);
-    expect(after.clipIds).toEqual([first.clipId]);
+    const db = await getDb();
+    await db.delete("segments", s.id);
+    expect(await getSegment(s.id)).toBeUndefined();
   });
 
-  it("refuses to activate a take from another segment", async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const one = await addSection(chapter.id, ref(1));
-    const two = await addSection(chapter.id, ref(2));
-    const foreign = await addTake(two.segment.id, newClipId(), 500);
+  it("returns a chapter's segments in declared order, dropping dangling ids", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const a = await addSegment(chapter.id);
+    const b = await addSegment(chapter.id);
+    const c = await addSegment(chapter.id);
 
-    await expect(setActiveTake(one.segment.id, foreign.id)).rejects.toThrow(
-      /does not belong/
+    // Corrupt the middle segment out from under the chapter's id list.
+    const db = await getDb();
+    await db.delete("segments", b.id);
+
+    const segments = await getSegmentsOfChapter(chapter.id);
+    // Order preserved, dangling id dropped (not returned as undefined).
+    expect(segments.map((s) => s.id)).toEqual([a.id, c.id]);
+  });
+
+  it("maps the finished toggle onto the status enum", async () => {
+    const { segmentId } = await oneSegment();
+    await addTake(segmentId, await storedClip(), 100);
+    const db = await getDb();
+
+    await setSegmentFinished(segmentId, true);
+    expect((await db.get("segments", segmentId))?.status).toBe("affirmed");
+
+    await setSegmentFinished(segmentId, false);
+    expect((await db.get("segments", segmentId))?.status).toBe("draft");
+  });
+
+  it("refuses to mark a never-recorded segment finished", async () => {
+    const { segmentId } = await oneSegment();
+    await expect(setSegmentFinished(segmentId, true)).rejects.toThrow(
+      /no recording/
     );
+    const db = await getDb();
+    // Status unchanged — the reject must not have written anything.
+    expect((await db.get("segments", segmentId))?.status).toBe("not-started");
   });
 
-  it("resolves export order across sections and counts gaps", async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const s1 = await addSection(chapter.id, ref(1));
-    const s2 = await addSection(chapter.id, ref(2)); // left unrecorded
-    const s3 = await addSection(chapter.id, ref(3));
+  it("does not fabricate a draft when unfinishing an empty segment", async () => {
+    // M1: `setSegmentFinished(seg, false)` on a segment with no take must not
+    // write "draft". "draft" claims a recording exists; the row still renders
+    // empty (F3 keys on hasClip) but a Phase-2 reader of the enum would be lied
+    // to. Empty stays "not-started".
+    const { segmentId } = await oneSegment();
+    await setSegmentFinished(segmentId, false);
+    const db = await getDb();
+    expect((await db.get("segments", segmentId))?.status).toBe("not-started");
+  });
 
-    const t1 = await addTake(s1.segment.id, await storedClip(), 100);
-    const t3 = await addTake(s3.segment.id, await storedClip(), 100);
+  it("reads only affirmed as finished", () => {
+    expect(isFinished("affirmed")).toBe(true);
+    const notFinished: RecordingStatus[] = [
+      "not-started",
+      "partly-recorded",
+      "draft",
+      "refined",
+    ];
+    for (const status of notFinished) expect(isFinished(status)).toBe(false);
+  });
+
+  it("rolls up finished/total for the chapter counter", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    await addSegment(chapter.id);
+    await addSegment(chapter.id);
+    await addTake(s1.id, await storedClip(), 100);
+    await setSegmentFinished(s1.id, true);
+
+    expect(await chapterProgress(chapter.id)).toEqual({
+      finished: 1,
+      total: 3,
+    });
+
+    // An empty chapter is 0/0 — the UI hides the counter when total === 0.
+    const empty = await addChapter(book.id);
+    expect(await chapterProgress(empty.id)).toEqual({ finished: 0, total: 0 });
+  });
+
+  it("replaces the take on re-record, deleting the superseded clip (1:1)", async () => {
+    // M2: a segment has at most ONE take. Re-recording REPLACES it — no stacked
+    // history, and the old PCM is reclaimed, not left unreachable (#2/D3).
+    const { segmentId } = await oneSegment();
+    const firstClip = await storedClip();
+    const first = await addTake(segmentId, firstClip, 1000);
+    // Approve it, so the re-record's demotion is observable.
+    await setSegmentFinished(segmentId, true);
+
+    const secondClip = await storedClip();
+    const second = await addTake(segmentId, secondClip, 1200);
+
+    const db = await getDb();
+    // Exactly one take row for the segment, and it is the newest.
+    const takesForSegment = await db.getAllFromIndex(
+      "takes",
+      "segmentId",
+      segmentId
+    );
+    expect(takesForSegment.map((t) => t.id)).toEqual([second.id]);
+
+    const segment = await db.get("segments", segmentId);
+    expect(segment?.activeTakeId).toBe(second.id);
+    // Re-recording demotes an affirmed segment back to draft.
+    expect(segment?.status).toBe("draft");
+
+    // The old take row and its audio are gone — no orphan clip after re-record.
+    expect(await db.get("takes", first.id)).toBeUndefined();
+    expect(await db.get("clipMeta", firstClip)).toBeUndefined();
+    expect(await db.get("clipData", firstClip)).toBeUndefined();
+    // The new clip is intact.
+    expect(await db.get("clipData", secondClip)).toBeDefined();
+  });
+
+  it("keeps the audio when a re-record reuses the same clip id", async () => {
+    // The pending-take retry path re-runs the save with the SAME clipId
+    // (retrySave keeps it; putClip is an upsert). addTake then sees
+    // prior.clipId === new clipId, and deleting "the superseded clip" would
+    // strand the take it just wrote — the guard at books.ts is the only thing
+    // stopping that, and nothing else exercises it.
+    const { segmentId } = await oneSegment();
+    const clipId = await storedClip(1000);
+    await addTake(segmentId, clipId, 1000);
+
+    // Same id again, as a retry does: re-store (upsert) then re-add.
+    await putClip(clipId, samples(1000), CANONICAL_SAMPLE_RATE);
+    const second = await addTake(segmentId, clipId, 1000);
+
+    const db = await getDb();
+    expect((await db.get("segments", segmentId))?.activeTakeId).toBe(second.id);
+    // The audio the active take points at must still be present.
+    expect(await db.get("clipMeta", clipId)).toBeDefined();
+    expect(await db.get("clipData", clipId)).toBeDefined();
+    const audio = await loadSegmentClip(segmentId);
+    expect(audio.kind).toBe("resolved");
+  });
+
+  it("resolves export order across segments and counts gaps", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id); // left unrecorded
+    const s3 = await addSegment(chapter.id);
+
+    const t1 = await addTake(s1.id, await storedClip(), 100);
+    const t3 = await addTake(s3.id, await storedClip(), 100);
     void s2;
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
@@ -212,14 +358,14 @@ describe("project tree", () => {
     // The gap test above only exercises the `activeTakeId === null` branch.
     // This is the other one: the segment still points at a take row that is no
     // longer there. Dropping it from the export without counting it would make
-    // the UI report a chapter as complete while a section is silently absent
+    // the UI report a chapter as complete while a segment is silently absent
     // from the MP3.
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const s1 = await addSection(chapter.id, ref(1));
-    const s2 = await addSection(chapter.id, ref(2));
-    const t1 = await addTake(s1.segment.id, await storedClip(), 100);
-    const dangling = await addTake(s2.segment.id, await storedClip(), 100);
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    const t1 = await addTake(s1.id, await storedClip(), 100);
+    const dangling = await addTake(s2.id, await storedClip(), 100);
 
     const db = await getDb();
     await db.delete("takes", dangling.id);
@@ -230,15 +376,15 @@ describe("project tree", () => {
   });
 
   it("counts a segment whose active take points at no stored clip", async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const s1 = await addSection(chapter.id, ref(1));
-    const s2 = await addSection(chapter.id, ref(2));
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
 
-    const t1 = await addTake(s1.segment.id, await storedClip(), 100);
+    const t1 = await addTake(s1.id, await storedClip(), 100);
     // The take row is fine. The audio it names was never written — a save
     // that failed after `addTake`, or a clip deleted from under it.
-    await addTake(s2.segment.id, newClipId(), 100);
+    await addTake(s2.id, newClipId(), 100);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
@@ -261,14 +407,6 @@ describe("project tree", () => {
  * `activeTakeId` when the take row goes.
  */
 describe("segment audio resolution", () => {
-  /** A section with one segment, and the ids to address it by. */
-  const oneSegment = async () => {
-    const project = await createProject("p");
-    const chapter = await addChapter(project.id, 1);
-    const { segment } = await addSection(chapter.id, ref(1));
-    return { chapterId: chapter.id, segmentId: segment.id };
-  };
-
   it("resolves a segment whose take has stored audio", async () => {
     const { segmentId } = await oneSegment();
     const clipId = await storedClip(150);
