@@ -64,6 +64,13 @@ export interface PendingTake {
   readonly recorded: Int16Array;
   /** Sample offset under the centerline: mid-clip inserts, at/after end appends. */
   readonly offset: number;
+  /**
+   * The explicit Finished mark for this take. Carried through every transition
+   * so the commit — first attempt or a retry — applies it atomically with the
+   * take (`addTake`), rather than a separate write the recovery path never
+   * reaches. False is the default a plain recording lands in.
+   */
+  readonly finished: boolean;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
@@ -77,6 +84,8 @@ export interface NewTake {
   readonly existing: Int16Array;
   readonly recorded: Int16Array;
   readonly offset: number;
+  /** Whether the translator marked this take Finished (see `PendingTake`). */
+  readonly finished: boolean;
 }
 
 /**
@@ -98,6 +107,7 @@ export function startSave(
     existing: take.existing,
     recorded: take.recorded,
     offset: take.offset,
+    finished: take.finished,
     state: "saving",
     kind: null,
     attempts: 0,

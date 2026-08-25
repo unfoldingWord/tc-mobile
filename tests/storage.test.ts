@@ -327,13 +327,46 @@ describe("book tree", () => {
     expect(await db.get("clipData", secondClip)).toBeDefined();
   });
 
+  it("lands a take finished when the recorder carried an explicit mark", async () => {
+    // The recorder's Finished checkbox rides the take rather than a separate
+    // write after it: addTake sets the final status in the SAME transaction, so
+    // a save-failure retry re-applies the mark instead of dropping it. `true`
+    // means the translator explicitly marked THIS take done.
+    const { segmentId } = await oneSegment();
+    const take = await addTake(segmentId, await storedClip(), 100, {
+      finished: true,
+    });
+    const db = await getDb();
+    const segment = await db.get("segments", segmentId);
+    expect(segment?.activeTakeId).toBe(take.id);
+    expect(segment?.status).toBe("affirmed");
+    expect(isFinished(segment!.status)).toBe(true);
+  });
+
+  it("defaults a take to draft, so an unmarked re-record demotes", async () => {
+    // The default is what protects the demote invariant: a re-record the
+    // translator did NOT mark finished must not carry an earlier approval
+    // forward. `addTake` with no finished option, and with `false`, both land
+    // draft.
+    const { segmentId } = await oneSegment();
+    await addTake(segmentId, await storedClip(), 100, { finished: true });
+
+    const demoted = await addTake(segmentId, await storedClip(), 120);
+    const db = await getDb();
+    expect((await db.get("segments", segmentId))?.status).toBe("draft");
+    void demoted;
+
+    await addTake(segmentId, await storedClip(), 130, { finished: false });
+    expect((await db.get("segments", segmentId))?.status).toBe("draft");
+  });
+
   it("bumps the book's updatedAt when a segment is recorded (shelf recency)", async () => {
     // listBooks sorts by updatedAt; recording is activity, so the book being
     // worked in must float up, not sink under one that only got a new chapter.
     const book = await createBook("b", null, 1000);
     const chapter = await addChapter(book.id);
     const segment = await addSegment(chapter.id);
-    await addTake(segment.id, await storedClip(), 100, 5000);
+    await addTake(segment.id, await storedClip(), 100, { now: 5000 });
     expect((await getBook(book.id))?.updatedAt).toBe(5000);
   });
 

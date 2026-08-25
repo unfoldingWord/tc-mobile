@@ -63,7 +63,12 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // screen (retry re-runs this) rather than a dropped take.
       const merged = insertAt(take.existing, take.recorded, take.offset);
       const meta = await putClip(take.clipId, merged, CANONICAL_SAMPLE_RATE);
-      await addTake(take.segmentId, take.clipId, meta.durationMs);
+      // The Finished mark rides the take, applied atomically here — so a retry
+      // re-applies it, and it can never be clobbered by this same addTake's
+      // demote-to-draft the way a separate write after it would be.
+      await addTake(take.segmentId, take.clipId, meta.durationMs, {
+        finished: take.finished,
+      });
       // Cleared only here, and only for this attempt. A `finally` would drop
       // the samples on the failure path, which is the one path they exist for.
       setPending((held) => succeedSave(held, take.clipId));
@@ -105,7 +110,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       segmentId: SegmentId,
       existing: Int16Array,
       recorded: Int16Array,
-      insertionOffset: number
+      insertionOffset: number,
+      finished: boolean
     ): Promise<boolean> => {
       const take = startSave(pending, {
         segmentId,
@@ -116,6 +122,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
         existing,
         recorded,
         offset: insertionOffset,
+        finished,
       });
       // Identity means refused: a recording is already held, and displacing it
       // is the silent loss all of this exists to prevent. The screens disable

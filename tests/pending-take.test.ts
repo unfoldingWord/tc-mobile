@@ -46,7 +46,7 @@ function pcm(): Int16Array {
   return Int16Array.from([1, -1, 2, -2]);
 }
 
-function held(): { take: PendingTake; recorded: Int16Array } {
+function held(finished = false): { take: PendingTake; recorded: Int16Array } {
   const recorded = pcm();
   const take = startSave(null, {
     segmentId: SEGMENT,
@@ -54,6 +54,7 @@ function held(): { take: PendingTake; recorded: Int16Array } {
     existing: new Int16Array(0),
     recorded,
     offset: 0,
+    finished,
   });
   return { take, recorded };
 }
@@ -85,6 +86,7 @@ describe("startSave", () => {
       existing: new Int16Array(0),
       recorded: pcm(),
       offset: 0,
+      finished: false,
     });
     expect(second).toBe(take);
   });
@@ -198,6 +200,7 @@ describe("a take that is saved on the second attempt", () => {
       existing: new Int16Array(0),
       recorded,
       offset: 0,
+      finished: false,
     });
     const failed = failSave(started, CLIP, "quota");
     const retried = retrySave(failed);
@@ -205,5 +208,17 @@ describe("a take that is saved on the second attempt", () => {
     expect(retried?.clipId).toBe(CLIP);
     expect(retried?.segmentId).toBe(SEGMENT);
     expect(succeedSave(retried, CLIP)).toBeNull();
+  });
+
+  it("carries the Finished mark through fail and retry", () => {
+    // The property Frank's round-6 P2 turned on: a take marked Finished that
+    // fails to save must still be Finished when a retry commits it, or the
+    // translator's explicit mark is silently dropped on the recovery path.
+    const { take } = held(true);
+    expect(take.finished).toBe(true);
+    const failed = failSave(take, CLIP, "quota");
+    expect(failed?.finished).toBe(true);
+    const retried = retrySave(failed);
+    expect(retried?.finished).toBe(true);
   });
 });

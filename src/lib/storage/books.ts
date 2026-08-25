@@ -217,13 +217,21 @@ export async function getSegmentsOfChapter(
  * The prior clip is deleted only when it differs from the new one, so a retry
  * that reuses a clip id (the pending-take upsert path) never deletes the audio
  * it just committed.
+ *
+ * `finished` sets the segment's final status in this same transaction. It
+ * defaults to false — a new recording is draft, which is what demotes an
+ * approved segment — so `true` is only ever the recorder carrying an explicit
+ * Finished mark for THIS take. Writing it here, atomically with the take, is
+ * what lets the mark survive a save-failure retry (which re-runs this) instead
+ * of being lost to a separate write the recovery path never reaches.
  */
 export async function addTake(
   segmentId: SegmentId,
   clipId: ClipId,
   durationMs: number,
-  now: number = Date.now()
+  opts: { finished?: boolean; now?: number } = {}
 ): Promise<Take> {
+  const { finished = false, now = Date.now() } = opts;
   const db = await getDb();
   const tx = db.transaction(
     ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
@@ -248,9 +256,11 @@ export async function addTake(
   await tx.objectStore("segments").put({
     ...segment,
     activeTakeId: take.id,
-    // Any new recording means "recorded, not finished": a fresh take demotes
-    // an approved segment, and a first take moves it off "not-started".
-    status: UNFINISHED_STATUS,
+    // A new recording is draft unless the recorder carried an explicit Finished
+    // mark for it: a fresh take demotes an approved segment and moves a first
+    // take off "not-started", while an explicit mark lands finished atomically
+    // with the take (so a retry re-applies it, never a separate lost write).
+    status: finished ? FINISHED_STATUS : UNFINISHED_STATUS,
   });
 
   if (priorTake && priorTake.id !== take.id) {

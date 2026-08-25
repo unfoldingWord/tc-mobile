@@ -32,15 +32,17 @@ interface RecorderProps {
   /** The single audio owner, held by App so `leave()` fires on every nav. */
   audio: UseAudioSession;
   /**
-   * Persist the recording as an insert/append into the segment's audio. Never
-   * rejects — a failure becomes the recovery screen App renders. Held at App
+   * Persist the recording as an insert/append into the segment's audio, at the
+   * given Finished state. Never rejects — a failure becomes the recovery screen
+   * App renders, and `finished` rides the take so a retry keeps it. Held at App
    * level so the take survives this sheet being torn down.
    */
   saveRecording: (
     segmentId: SegmentId,
     existing: Int16Array,
     recorded: Int16Array,
-    insertionOffset: number
+    insertionOffset: number,
+    finished: boolean
   ) => Promise<boolean>;
   /**
    * Close the sheet. `dirty` ⇒ the segment changed (a take committed or the
@@ -183,16 +185,26 @@ export function Recorder({
       // splice what it captured into the segment's audio. `stopRecording`
       // releases the mic and never rejects; `saveRecording` never rejects and
       // turns a failure into the recovery screen App renders.
+      let committed = false;
       if (recording || paused || state === "processing") {
         const result = await audio.stopRecording();
         if (result.samples && result.samples.length > 0) {
+          // The Finished mark rides the take (applied atomically in addTake, on
+          // this attempt or a retry). Only an EXPLICIT mark this session marks
+          // it finished; a re-record the translator did not mark stays a
+          // demote-to-draft. The boolean saveRecording returns is deliberately
+          // not branched on here: on a failure App shows the recovery screen and
+          // the mark is preserved in the held take, so close() has nothing left
+          // to decide.
           await saveRecording(
             segmentId,
             view?.samples ?? NO_SAMPLES,
             result.samples,
-            insertionOffset.current
+            insertionOffset.current,
+            finishedIntent === true
           );
           dirty.current = true;
+          committed = true;
         } else {
           // The stop yielded no usable audio — an empty capture or a decode
           // failure. Its cause travels WITH the result, not the async `error`
@@ -208,12 +220,15 @@ export function Recorder({
           return;
         }
       }
-      // Apply the finished toggle LAST — after any take commit. `addTake`
-      // demotes to draft, so a mark written before it is clobbered; written here
-      // it wins, and it lands on a segment whose take now exists (which
-      // `setSegmentFinished` requires). Only when the translator actually
-      // changed it from the stored value.
-      if (view && finishedIntent !== null && finishedIntent !== view.finished) {
+      // A toggle with no new take is a direct write — there is no take to carry
+      // it. Only when the translator actually changed it from the stored value,
+      // and only when nothing was committed (a commit already carried the mark).
+      if (
+        !committed &&
+        view &&
+        finishedIntent !== null &&
+        finishedIntent !== view.finished
+      ) {
         try {
           await setFinished(finishedIntent);
         } catch (cause) {
