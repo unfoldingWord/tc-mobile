@@ -228,20 +228,23 @@ export function Recorder({
           );
           dirty.current = true;
           committed = true;
-        } else {
-          // The stop yielded no usable audio — an empty capture or a decode
-          // failure. Its cause travels WITH the result, not the async `error`
-          // state a render closure here would read one frame stale (the round-4
-          // regression that reopened the permission panel). Do NOT onExit:
-          // leave() would close silently on a take that cannot be recorded
-          // again. Surface it as a toolbar Notice (not the permission panel —
-          // this is not a permission miss) and re-enable so Back or Record
-          // works.
+        } else if (result.error) {
+          // The stop yielded no usable audio AND has something to say — an empty
+          // capture or a decode failure. Its cause travels WITH the result, not
+          // the async `error` state a render closure here would read one frame
+          // stale (the round-4 regression that reopened the permission panel).
+          // Do NOT onExit: leave() would close silently on a take that cannot be
+          // recorded again. Surface it as a toolbar Notice (not the permission
+          // panel — this is not a permission miss) and re-enable so Back or
+          // Record works.
           setStopError(result.error);
           closing.current = false;
           setIsClosing(false);
           return;
         }
+        // else: no samples and no error — a superseded stop, or an interruption
+        // that captured nothing. Nothing to save and nothing to say, so fall
+        // through and close, rather than dead-ending the sheet open (#59).
       }
       // A toggle with no new take is a direct write — there is no take to carry
       // it. Only when the translator actually changed it from the stored value,

@@ -226,6 +226,27 @@ export function useRecorder(): UseRecorder {
         if (event.data.size > 0) chunks.push(event.data);
       };
 
+      // The mic can be taken mid-take — an incoming call, a Bluetooth device
+      // change, an OS audio interruption — which ends the capture track and
+      // inactivates the recorder on its own. Without this the hook never learns:
+      // state stays "recording", the timer keeps ticking, Record stays a live
+      // no-op Pause, and the chunks captured before the interruption are
+      // stranded (#59). Freeze the UI into `processing` so Record is dead and
+      // the timer stops, and leave the state where `close()` still runs the
+      // commit path — `stop()` then recovers those chunks instead of dropping
+      // the take. Guarded by generation so an interruption on a superseded
+      // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
+      // teardown) does NOT fire `ended`, so this only reacts to real losses.
+      const onInterrupted = () => {
+        if (generation !== generationRef.current) return;
+        clearTick();
+        setState("processing");
+      };
+      recorder.onerror = onInterrupted;
+      stream.getTracks().forEach((track) => {
+        track.onended = onInterrupted;
+      });
+
       recorder.start(250);
       startedAtRef.current = performance.now();
       baseElapsedRef.current = 0;
@@ -249,7 +270,7 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, releaseStream, startTick, supported]);
+  }, [abandonStream, clearTick, releaseStream, startTick, supported]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
@@ -279,9 +300,7 @@ export function useRecorder(): UseRecorder {
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") {
-      return { samples: null, error: null };
-    }
+    if (!recorder) return { samples: null, error: null };
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -307,32 +326,43 @@ export function useRecorder(): UseRecorder {
     clearTick();
     setState("processing");
 
-    const blob = await new Promise<Blob>((resolve) => {
-      // Bounded. On the timeout we take whatever the local array already holds
-      // — everything MediaRecorder delivered before it stopped answering —
-      // rather than waiting for an event that is not coming.
-      //
-      // Deliberately NOT paired with releasing the tracks the moment `stop()`
-      // is invoked: the final `dataavailable` arrives between `stop()` and
-      // `onstop`, and killing the capture tracks inside that window is a way
-      // to truncate it. That slice is the whole recording for a take under one
-      // timeslice, which is the loss this module's chunk ownership exists to
-      // prevent. The microphone is released immediately after this await and
-      // before the decode, so bounding the wait bounds the hot mic too.
-      const finish = () =>
-        resolve(new Blob(chunks, { type: recorder.mimeType }));
-      const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
-      recorder.onstop = () => {
-        clearTimeout(timer);
-        finish();
-      };
-      recorder.stop();
-    });
+    let blob: Blob;
+    if (recorder.state === "inactive") {
+      // The recorder ended on its OWN — an interruption took the mic (#59), not
+      // a stop we drove. There is no flush to await: whatever it delivered
+      // before it died is already in `chunks` and is final. Assemble and recover
+      // it rather than dropping the take. The capture track is already dead;
+      // release the stream for the ref bookkeeping.
+      if (stream) abandonStream(stream);
+      blob = new Blob(chunks, { type: recorder.mimeType });
+    } else {
+      blob = await new Promise<Blob>((resolve) => {
+        // Bounded. On the timeout we take whatever the local array already holds
+        // — everything MediaRecorder delivered before it stopped answering —
+        // rather than waiting for an event that is not coming.
+        //
+        // Deliberately NOT paired with releasing the tracks the moment `stop()`
+        // is invoked: the final `dataavailable` arrives between `stop()` and
+        // `onstop`, and killing the capture tracks inside that window is a way
+        // to truncate it. That slice is the whole recording for a take under one
+        // timeslice, which is the loss this module's chunk ownership exists to
+        // prevent. The microphone is released immediately after this await and
+        // before the decode, so bounding the wait bounds the hot mic too.
+        const finish = () =>
+          resolve(new Blob(chunks, { type: recorder.mimeType }));
+        const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+        recorder.onstop = () => {
+          clearTimeout(timer);
+          finish();
+        };
+        recorder.stop();
+      });
 
-    // Only our own stream. `releaseStream()` reads the shared ref, which by now
-    // may hold a NEWER recording's stream — releasing that would cut off a
-    // recording in progress.
-    if (stream) abandonStream(stream);
+      // Only our own stream. `releaseStream()` reads the shared ref, which by now
+      // may hold a NEWER recording's stream — releasing that would cut off a
+      // recording in progress.
+      if (stream) abandonStream(stream);
+    }
 
     // The shared UI state belongs to the current generation; the failure travels
     // with the result to whoever called stop(). A superseded stop stays silent —
