@@ -226,7 +226,7 @@ export async function addTake(
 ): Promise<Take> {
   const db = await getDb();
   const tx = db.transaction(
-    ["segments", "takes", "clipMeta", "clipData"],
+    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
     "readwrite"
   );
   const segment = await tx.objectStore("segments").get(segmentId);
@@ -262,6 +262,17 @@ export async function addTake(
       await tx.objectStore("clipData").delete(priorTake.clipId);
     }
   }
+
+  // Recording is activity: float the book to the top of the shelf (listBooks
+  // sorts by updatedAt), in the SAME transaction so the take and the recency
+  // land together. A dangling chapter/book parent is skipped rather than
+  // failing a save that otherwise succeeded.
+  const chapter = await tx.objectStore("chapters").get(segment.chapterId);
+  const book = chapter
+    ? await tx.objectStore("books").get(chapter.bookId)
+    : undefined;
+  if (book) await tx.objectStore("books").put({ ...book, updatedAt: now });
+
   await tx.done;
   return take;
 }

@@ -270,6 +270,13 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
+    // Take the stream OUT of the shared ref before the flush await. A cancel()
+    // (pagehide, navigation, unmount) landing during the wait calls
+    // releaseStream(), which stops whatever streamRef holds — and stopping THIS
+    // stream mid-flush truncates the final `dataavailable`, which for a
+    // sub-timeslice take is the entire recording. Held only as the local
+    // `stream`, this stop owns it; cancel() finds the ref already null.
+    streamRef.current = null;
     clearTick();
     setState("processing");
 

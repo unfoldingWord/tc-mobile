@@ -150,13 +150,14 @@ export function Recorder({
 
   const onToggleFinished = useCallback(() => {
     if (!view) return;
-    void setFinished(!view.finished)
-      .then(() => {
-        dirty.current = true;
-      })
-      .catch((cause: unknown) => {
-        console.error("Could not change the finished flag", cause);
-      });
+    // Dirty synchronously, not in .then(): `close()` can reach onExit before the
+    // write resolves, and a reload keyed on the resolved flag would miss the
+    // toggle, leaving the row stale. If the write fails, this over-reports a
+    // change — a redundant reload, never a lost one.
+    dirty.current = true;
+    void setFinished(!view.finished).catch((cause: unknown) => {
+      console.error("Could not change the finished flag", cause);
+    });
   }, [view, setFinished]);
 
   const close = useCallback(() => {
@@ -178,6 +179,14 @@ export function Recorder({
             insertionOffset.current
           );
           dirty.current = true;
+        } else {
+          // The stop yielded nothing — a decode failure (audio.error is set) or
+          // an empty capture. Do NOT onExit: leave() would clear that error and
+          // close silently on a take that cannot be recorded again. Stay so the
+          // error surfaces, and re-enable so Back or Record works.
+          closing.current = false;
+          setIsClosing(false);
+          return;
         }
       }
       onExit(dirty.current);
@@ -235,7 +244,11 @@ export function Recorder({
         </header>
 
         {denied ? (
-          <PermissionPanel onRetry={audio.startRecording} onBack={close} />
+          <PermissionPanel
+            message={audio.error}
+            onRetry={audio.startRecording}
+            onBack={close}
+          />
         ) : loadError ? (
           <div className="flex-1 p-[12px]">
             <Notice>{loadError}</Notice>
@@ -321,9 +334,13 @@ export function Recorder({
 }
 
 function PermissionPanel({
+  message,
   onRetry,
   onBack,
 }: {
+  /** The actual error when there is one (a denied mic, or a failed decode) — */
+  /** honest over the generic mic-needed title. */
+  message: string | null;
   onRetry: () => void;
   onBack: () => void;
 }) {
@@ -333,7 +350,7 @@ function PermissionPanel({
         <Icon name="alert" size={52} />
       </span>
       <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.micNeededTitle}
+        {message ?? strings.micNeededTitle}
       </p>
       <Control
         icon="retry"

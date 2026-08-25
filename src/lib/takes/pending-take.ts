@@ -40,30 +40,43 @@ export type SaveFailureKind = "quota" | "unknown";
 /**
  * A finished recording that is not on disk yet.
  *
- * The whole point of this shape is the `samples` field. Before it existed the
- * only reference to a take's PCM was a local in the function that was saving
- * it, so a rejected write unwound the stack and the recording was gone — no
- * message, and a segment still showing "not recorded". Nothing else on the
- * device has that property: audio a translator captured in the field cannot be
- * recreated.
+ * The point of this shape is that it OWNS the audio before anything fallible
+ * runs. Before it existed the only reference to a take's PCM was a local in the
+ * function saving it, so a rejected write unwound the stack and the recording
+ * was gone — no message, a segment still showing "not recorded". Nothing else
+ * on the device has that property: field audio cannot be recreated.
+ *
+ * The audio is held as its MERGE RECIPE — the existing segment PCM, the newly
+ * recorded PCM, and the splice offset — not a pre-merged buffer. The merge
+ * itself allocates a buffer the size of both inputs and can throw on a
+ * low-memory device, so it is deferred to the write attempt (`commit`): a merge
+ * failure lands the take in the recovery screen for retry, exactly like a failed
+ * write, instead of dropping it before the slot owns anything.
  */
 export interface PendingTake {
   /** Captured when the recording stopped, never re-derived from what is on screen. */
   readonly segmentId: SegmentId;
   /** Minted once per recording, so a retry overwrites rather than duplicates. */
   readonly clipId: ClipId;
-  readonly samples: Int16Array;
+  /** Existing segment audio the recording splices into (empty on a first take). */
+  readonly existing: Int16Array;
+  /** The newly captured PCM. */
+  readonly recorded: Int16Array;
+  /** Sample offset under the centerline: mid-clip inserts, at/after end appends. */
+  readonly offset: number;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
   readonly attempts: number;
 }
 
-/** What a caller has to supply to open the slot: the audio and where it belongs. */
+/** What a caller has to supply to open the slot: the audio recipe and where it belongs. */
 export interface NewTake {
   readonly segmentId: SegmentId;
   readonly clipId: ClipId;
-  readonly samples: Int16Array;
+  readonly existing: Int16Array;
+  readonly recorded: Int16Array;
+  readonly offset: number;
 }
 
 /**
@@ -82,7 +95,9 @@ export function startSave(
   return {
     segmentId: take.segmentId,
     clipId: take.clipId,
-    samples: take.samples,
+    existing: take.existing,
+    recorded: take.recorded,
+    offset: take.offset,
     state: "saving",
     kind: null,
     attempts: 0,

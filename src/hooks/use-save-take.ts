@@ -57,11 +57,12 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     // same frame reads.
     savingRef.current = true;
     try {
-      const meta = await putClip(
-        take.clipId,
-        take.samples,
-        CANONICAL_SAMPLE_RATE
-      );
+      // Merge HERE, inside the guarded attempt. insertAt allocates a buffer the
+      // size of both inputs and can throw on a low-memory device; the inputs are
+      // already owned in the slot, so a merge failure becomes the recovery
+      // screen (retry re-runs this) rather than a dropped take.
+      const merged = insertAt(take.existing, take.recorded, take.offset);
+      const meta = await putClip(take.clipId, merged, CANONICAL_SAMPLE_RATE);
       await addTake(take.segmentId, take.clipId, meta.durationMs);
       // Cleared only here, and only for this attempt. A `finally` would drop
       // the samples on the failure path, which is the one path they exist for.
@@ -84,61 +85,20 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   }, []);
 
   /**
-   * Persist finished PCM against a segment. Never rejects — a failure becomes
-   * visible state — because the caller is a tap handler, where a rejection is
+   * Persist a recording as an insert/append into the segment's existing audio.
+   *
+   * The record-at-centerline path (B4). Never rejects — a failure becomes the
+   * recovery screen — because the caller is a tap handler where a rejection is
    * an unhandled promise that renders nothing.
    *
-   * `addTake` REPLACES the segment's take (1:1), so `samples` must be the whole
-   * segment's audio, not a fragment. `saveRecording` below is what produces
-   * that whole buffer from an insert/append; a caller that already holds the
-   * complete buffer can use this directly.
-   */
-  const saveTake = useCallback(
-    async (segmentId: SegmentId, samples: Int16Array): Promise<boolean> => {
-      const take = startSave(pending, {
-        segmentId,
-        // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
-        // retry with the same id overwrites the bytes a failed attempt may
-        // already have written instead of spending the space twice.
-        clipId: newClipId(),
-        samples,
-      });
-      // Identity means refused: a recording is already held, and displacing it
-      // is the silent loss all of this exists to prevent. The screens disable
-      // recording while a take is held, so reaching this is an invariant break
-      // — logged rather than passed over quietly.
-      if (take === pending) {
-        console.error(
-          "A finished take was refused: one is already held",
-          pending.clipId
-        );
-        return false;
-      }
-      // Before the first await, so there is never a moment when the only
-      // reference to a finished take is a local inside a function that can
-      // throw.
-      setPending(take);
-      return commit(take);
-    },
-    [commit, pending]
-  );
-
-  /**
-   * Commit a recording as an insert/append into the segment's existing audio.
-   *
-   * This is the record-at-centerline path (B4). The sample math is one pure
-   * call — `insertAt(existing, recorded, offset)` from `lib/audio/edit.ts`,
-   * where `offset` is the sample under the centerline: mid-clip inserts,
-   * at/after the end appends, and an empty segment splices into an empty
-   * buffer (`existing` is a zero-length array). The offset is clamped inside
-   * `insertAt`, so an out-of-range pan is an append rather than a throw.
-   *
-   * `existing` is passed in, already loaded — the recorder read it at mount for
-   * its waveform. It is NOT read here: a fallible IndexedDB read AFTER a
-   * recording exists could reject and drop the take before the pending slot
-   * owns it, with no recovery screen. So the merge is synchronous and `saveTake`
-   * takes ownership before its first await, keeping the never-lose property.
-   * The whole merged buffer becomes the segment's one take (1:1).
+   * The recipe is owned in the slot BEFORE anything fallible: `existing` (the
+   * segment's current audio, read by the recorder at mount — never read here,
+   * where a rejected read after the recording exists would drop it), `recorded`,
+   * and the splice `offset`. `commit` does the merge and the write; `addTake`
+   * REPLACES the segment's take (1:1), so the merged buffer is the whole
+   * segment's audio. A merge or write failure lands in the recovery screen, and
+   * retry re-runs `commit` — never `addTake` of the raw fragment, which under
+   * 1:1 would delete the original clip.
    */
   const saveRecording = useCallback(
     (
@@ -147,10 +107,32 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       recorded: Int16Array,
       insertionOffset: number
     ): Promise<boolean> => {
-      const merged = insertAt(existing, recorded, insertionOffset);
-      return saveTake(segmentId, merged);
+      const take = startSave(pending, {
+        segmentId,
+        // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
+        // retry with the same id overwrites the bytes a failed attempt may
+        // already have written instead of spending the space twice.
+        clipId: newClipId(),
+        existing,
+        recorded,
+        offset: insertionOffset,
+      });
+      // Identity means refused: a recording is already held, and displacing it
+      // is the silent loss all of this exists to prevent. The screens disable
+      // recording while a take is held, so reaching this is an invariant break.
+      if (take === pending) {
+        console.error(
+          "A finished take was refused: one is already held",
+          pending.clipId
+        );
+        return Promise.resolve(false);
+      }
+      // Before any await AND before the fallible merge, so the only reference to
+      // the recording is never a local in a function that can throw.
+      setPending(take);
+      return commit(take);
     },
-    [saveTake]
+    [commit, pending]
   );
 
   const retryPendingTake = useCallback(() => {
@@ -186,7 +168,6 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
 
   return {
     pendingTake: pending,
-    saveTake,
     saveRecording,
     retryPendingTake,
     discardPendingTake,

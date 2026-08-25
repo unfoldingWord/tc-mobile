@@ -327,6 +327,16 @@ describe("book tree", () => {
     expect(await db.get("clipData", secondClip)).toBeDefined();
   });
 
+  it("bumps the book's updatedAt when a segment is recorded (shelf recency)", async () => {
+    // listBooks sorts by updatedAt; recording is activity, so the book being
+    // worked in must float up, not sink under one that only got a new chapter.
+    const book = await createBook("b", null, 1000);
+    const chapter = await addChapter(book.id);
+    const segment = await addSegment(chapter.id);
+    await addTake(segment.id, await storedClip(), 100, 5000);
+    expect((await getBook(book.id))?.updatedAt).toBe(5000);
+  });
+
   it("keeps the audio when a re-record reuses the same clip id", async () => {
     // The pending-take retry path re-runs the save with the SAME clipId
     // (retrySave keeps it; putClip is an upsert). addTake then sees

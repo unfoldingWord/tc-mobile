@@ -25,11 +25,22 @@ interface CheckboxProps {
   label: string;
   /** Absent on a disabled box; the row still renders it, just inert. */
   onToggle?: () => void;
+  /**
+   * Temporarily inert without changing the drawn state — e.g. while a save is
+   * refreshing the list, so an in-flight reload cannot race a toggle. Distinct
+   * from `state==="disabled"`, which is the dashed never-recorded box.
+   */
+  disabled?: boolean;
 }
 
-export function Checkbox({ state, label, onToggle }: CheckboxProps) {
+export function Checkbox({
+  state,
+  label,
+  onToggle,
+  disabled: inert = false,
+}: CheckboxProps) {
   const finished = state === "finished";
-  const disabled = state === "disabled";
+  const disabled = inert || state === "disabled";
   return (
     <button
       type="button"

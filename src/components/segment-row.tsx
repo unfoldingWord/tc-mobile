@@ -136,12 +136,14 @@ export function SegmentRow({
       <Checkbox
         state="finished"
         label={strings.markUnfinished(ordinal)}
+        disabled={busy}
         onToggle={() => onSetFinished(false)}
       />
     ) : state === "recorded" ? (
       <Checkbox
         state="empty"
         label={strings.markFinished(ordinal)}
+        disabled={busy}
         onToggle={() => onSetFinished(true)}
       />
     ) : (

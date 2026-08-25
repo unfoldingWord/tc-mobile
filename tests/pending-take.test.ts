@@ -46,20 +46,26 @@ function pcm(): Int16Array {
   return Int16Array.from([1, -1, 2, -2]);
 }
 
-function held(): { take: PendingTake; samples: Int16Array } {
-  const samples = pcm();
+function held(): { take: PendingTake; recorded: Int16Array } {
+  const recorded = pcm();
   const take = startSave(null, {
     segmentId: SEGMENT,
     clipId: CLIP,
-    samples,
+    existing: new Int16Array(0),
+    recorded,
+    offset: 0,
   });
-  return { take, samples };
+  return { take, recorded };
 }
 
 describe("startSave", () => {
   it("takes hold of the samples before anything can throw", () => {
-    const { take, samples } = held();
-    expect(take.samples).toBe(samples);
+    const { take, recorded } = held();
+    // The recipe is owned before anything fallible: the newly recorded PCM,
+    // the (empty, here) existing audio, and the splice offset.
+    expect(take.recorded).toBe(recorded);
+    expect(take.existing).toHaveLength(0);
+    expect(take.offset).toBe(0);
     expect(take.segmentId).toBe(SEGMENT);
     expect(take.clipId).toBe(CLIP);
     expect(take.state).toBe("saving");
@@ -76,7 +82,9 @@ describe("startSave", () => {
     const second = startSave(take, {
       segmentId: "seg-2" as SegmentId,
       clipId: "clip-2" as ClipId,
-      samples: pcm(),
+      existing: new Int16Array(0),
+      recorded: pcm(),
+      offset: 0,
     });
     expect(second).toBe(take);
   });
@@ -86,9 +94,9 @@ describe("failSave", () => {
   it("keeps the samples on the failure path", () => {
     // The regression this guards is one line: a `finally { setPending(null) }`
     // in the hook's commit. The samples are the only copy of the recording.
-    const { take, samples } = held();
+    const { take, recorded } = held();
     const failed = failSave(take, CLIP, "quota");
-    expect(failed?.samples).toBe(samples);
+    expect(failed?.recorded).toBe(recorded);
     expect(failed?.state).toBe("failed");
     expect(failed?.kind).toBe("quota");
     expect(failed?.attempts).toBe(1);
@@ -119,11 +127,11 @@ describe("retrySave", () => {
     // A second id would spend the space twice on the phone that just ran out
     // of it; `put` with the held id overwrites whatever the failed attempt
     // already wrote.
-    const { take, samples } = held();
+    const { take, recorded } = held();
     const failed = failSave(take, CLIP, "quota");
     const again = retrySave(failed);
     expect(again?.clipId).toBe(CLIP);
-    expect(again?.samples).toBe(samples);
+    expect(again?.recorded).toBe(recorded);
     expect(again?.state).toBe("saving");
     // The old message is cleared so the screen shows "Saving", not the failure
     // that is being retried.
@@ -183,15 +191,17 @@ describe("discardSave", () => {
 
 describe("a take that is saved on the second attempt", () => {
   it("carries the same audio and the same clip through the whole sequence", () => {
-    const samples = pcm();
+    const recorded = pcm();
     const started = startSave(null, {
       segmentId: SEGMENT,
       clipId: CLIP,
-      samples,
+      existing: new Int16Array(0),
+      recorded,
+      offset: 0,
     });
     const failed = failSave(started, CLIP, "quota");
     const retried = retrySave(failed);
-    expect(retried?.samples).toBe(samples);
+    expect(retried?.recorded).toBe(recorded);
     expect(retried?.clipId).toBe(CLIP);
     expect(retried?.segmentId).toBe(SEGMENT);
     expect(succeedSave(retried, CLIP)).toBeNull();
