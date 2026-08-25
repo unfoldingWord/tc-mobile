@@ -120,6 +120,17 @@ export function Recorder({
   const paused = state === "paused";
   const busy = state === "requesting" || state === "processing";
 
+  // `finishedIntent` is the translator's EXPLICIT choice, null until they tap
+  // the checkbox — never written speculatively (an optimistic reset at Record
+  // demoted an untouched approved segment when the mic was then denied, F9/G9).
+  // The demote a re-record WILL cause is previewed here instead, by derivation:
+  // while capturing, an untouched box reads unchecked; a refused start returns
+  // to idle and the box reads the stored flag again. The commit path passes
+  // `finishedIntent === true` (a plain re-record defaults to draft); the
+  // no-commit path writes only a real toggle.
+  const displayedFinished =
+    finishedIntent ?? (recording || paused ? false : (view?.finished ?? false));
+
   const pan = panState ?? length;
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
@@ -163,11 +174,6 @@ export function Recorder({
       // The offset is fixed for the whole take here, at the idle→recording
       // edge; pause/resume continues at the same point (F9).
       setStopError(null);
-      // New audio is not approved audio: reset the Finished intent to false so
-      // the checkbox shows what a re-record will actually save (a demote to
-      // draft), not the prior take's approval it would otherwise keep showing
-      // all session (G7). Re-checking after recording marks the new take done.
-      setFinishedIntent(false);
       insertionOffset.current = win.centerlineSample;
       audio.startRecording();
     }
@@ -175,12 +181,15 @@ export function Recorder({
 
   const onToggleFinished = useCallback(() => {
     if (!view) return;
-    // Mark the intent; the store write is deferred to close() (see
-    // `finishedIntent`). Dirty synchronously so a reload reflects the toggle
-    // regardless — a redundant reload is the safe failure, never a lost one.
+    // Toggle from what the box currently SHOWS (the derived state above), not
+    // from the stored flag — while recording the two differ, and toggling off
+    // the stored value would leave the visible box unchanged. The store write is
+    // deferred to close() (see `finishedIntent`); dirty synchronously so a
+    // reload reflects the toggle regardless — a redundant reload is the safe
+    // failure, never a lost one.
     dirty.current = true;
-    setFinishedIntent((prev) => !(prev ?? view.finished));
-  }, [view]);
+    setFinishedIntent(!displayedFinished);
+  }, [view, displayedFinished]);
 
   const close = useCallback(() => {
     if (closing.current) return;
@@ -281,19 +290,15 @@ export function Recorder({
     !audio.supported ||
     (state === "idle" && audio.error !== null && stopError === null);
 
-  // The checkbox tracks the intent immediately (the write is deferred to close),
-  // falling back to the stored flag until the translator touches it.
-  const displayedFinished = finishedIntent ?? view?.finished ?? false;
   // Enabled once a take WILL exist on close, not only when one already does:
   // `view.hasClip` never updates mid-sheet, so keying on it alone left the
   // Finished control dead for every FIRST take — the day-1 training path could
   // record but never mark done from the recorder (G8). Safe to offer now: the
   // mark rides the take through `addTake`, so it no longer needs the segment to
-  // already have one. Still disabled before Record, so an empty look-and-close
-  // cannot mark an audioless segment finished.
-  const willHaveAudio =
-    view !== null &&
-    (view.hasClip || recording || paused || finishedIntent !== null);
+  // already have one. Still disabled before Record (an empty look-and-close
+  // cannot mark an audioless segment finished), and a refused start returns to
+  // idle and disables it again (G9).
+  const willHaveAudio = view !== null && (view.hasClip || recording || paused);
   const finishedState = !view
     ? "disabled"
     : displayedFinished

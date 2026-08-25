@@ -16,6 +16,8 @@ export const strings = {
   menuClose: "Close menu",
   booksEmpty: "No books yet",
   booksEmptyHint: "Tap the plus to start a book",
+  loadingBooks: "Loading your books.",
+  tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
     `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
       expanded ? "expanded" : "collapsed"

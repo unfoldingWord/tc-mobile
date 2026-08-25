@@ -24,7 +24,7 @@ interface BooksScreenProps {
  * because the next thing they do is add a chapter to it.
  */
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
-  const { books, loading, error, createBook, addChapter } = useBooks();
+  const { books, loading, error, reload, createBook, addChapter } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
@@ -89,7 +89,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           label={strings.newBook}
           variant="primary"
           size={26}
-          disabled={loadFailed}
+          disabled={loading || loadFailed}
           onClick={() => void onNewBook()}
         />
         <Control
@@ -100,7 +100,26 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         />
       </header>
 
-      {error && <Notice>{error}</Notice>}
+      {/* Books is home — a chapter opens on top and a failed shelf read has no
+          "back out and re-enter" recovery the way Segments does. So a load
+          failure carries a Retry (reload), not just a Notice, or the shelf is a
+          dead end with recordings invisible on disk (G9). */}
+      {error ? (
+        <Notice>
+          <span className="min-w-0 flex-1">{error}</span>
+          {loadFailed && (
+            <Control
+              icon="retry"
+              label={strings.tryAgain}
+              variant="quiet"
+              size={20}
+              onClick={reload}
+            />
+          )}
+        </Notice>
+      ) : (
+        loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {!loading && !loadFailed && books.length === 0 ? (
