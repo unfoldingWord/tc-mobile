@@ -6,7 +6,7 @@ Newest first. One entry per working session.
 
 ## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
 
-**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) (open, **review round 5 resumed → rounds 6–7**) · **Issues:** #27–#30 in flight, #58 filed, #29 noted
+**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) **merged** (`0d08445`) after 10 review rounds + a Fable adverse pass · **Issues:** closed via merge; **#59 (P1) blocks staging**, #60/#61 (P3), #58 deferred
 
 ### Completed
 
@@ -28,33 +28,48 @@ Newest first. One entry per working session.
   No P1 in rounds 4 or 5.
 - **CI green** on the head (`46dcea4`); `npm run verify` green (141 tests).
 
-### In progress — review resumed (rounds 6–7)
+### Review, resumed and finished (rounds 6–10 + Fable)
 
-- **The round-5 plan landed.** `stop()` returns a `{samples | error}` result
-  (F5-#2/#3), finished-write failures reach the `Notice` (F5-#1), the finished
-  mark rides the take through `addTake` (G5-#2), scrub resets on clip replace
-  (G5-#4), docs refreshed (G5-#3).
-- **Round 6** (Frank): one P2 — the deferred finished mark was dropped on a
-  save-failure retry. Fixed by carrying `finished` through the pending take so
-  `addTake` applies it atomically, on the first attempt or a retry.
-- **Round 7** (Frank + George): four P2 — scrub keyed on duration not clip id
-  (F7), empty _decoded_ PCM surfaced no message (F7), the checkbox showed a
-  demote-bound take as finished all session (G7), and a failed chapter _load_
-  rendered as an empty chapter with a live `+` (G7). All fixed; two P3 doc nits
-  with them. **Not yet clean — a further round is pending.**
+- **The round-5 plan landed** (`stop()` → `{samples | error}`; finished-write
+  failures reach the `Notice`; the finished mark rides the take through
+  `addTake`; scrub reset; docs) — then five more rounds hardened it.
+- **R6** one P2 (finished mark dropped on a save-retry → carry `finished`
+  through the pending take, atomic on first attempt and retry; tested +
+  mutation-checked). **R7** four P2 (scrub keyed on clip id not duration; empty
+  _decoded_ PCM; checkbox honesty; Segments load-failure). **R8** three P2
+  (Books load-failure sibling — class enumerated; first-take Finished; recorder
+  `key=`+`inert` for wrong-segment splice + modal isolation). **R9** Frank +
+  George _converged on the same fix_ — `finishedIntent` made explicit-only after
+  an optimistic reset demoted an untouched segment on a denied start; Books got
+  a Retry (home has no back-out). **R10** Frank **APPROVE**; George one P2 +
+  one P3 (checkbox frozen across the close window; dashed glyph keys on state).
+- **No P1 in any Frank/George round**; the never-lose and reload-race classes
+  stayed closed throughout. Per DRI, no 11th round — a **Fable adverse pass**
+  instead, then merge on green.
+- **Fable found one real P1** (below), plus two P3 (#60, #61). Its full walk of
+  the finished-flag state machine and the splice/pending-take machinery came
+  back clean.
 
 ### Blockers / needs a human
 
-- **#58 — pagehide cancels an in-progress take.** Real, but a browser-only path
-  that needs on-device verification (in tension with the confirmed 2026-08-24
-  backgrounded-capture note); deferred rather than blind-fixed. Accepted residual
-  on PR #57.
+- **#59 (P1) — a mid-take mic interruption (incoming call) silently drops the
+  recording and deadlocks the sheet.** No `onerror`/`onended`; `stop()` ignores
+  the held chunks on an inactive recorder. **Blocks the `develop` → `staging`
+  promotion** (DRI call — merged B1–B4 to develop, this fixes before staging).
+  Browser-only surface, on-device fix, same class as #58.
+- **#58 — pagehide cancels an in-progress take.** Deferred, on-device. Both #58
+  and #59 are the MediaRecorder interruption surface — fix and device-verify
+  together before staging.
 
 ### Next steps
 
-1. Resume PR #57: the round-6 structural pass above, then rounds 6+ to clean.
-2. Merge `feat/pivot-b1-b4` → `develop` on both-clean + green.
-3. Then B5–B8 remain; #58 needs a device.
+1. **#59 first — it gates staging.** Handle recorder interruption: register
+   `onerror`/track `onended`, make `stop()` recover held chunks on an inactive
+   recorder, and stop `close()` dead-locking on a `{null,null}` result. Device
+   test with a real incoming call mid-take, iOS and Android.
+2. #60/#61 (P3) alongside it — cheap, same file.
+3. **Then B5–B8.** develop is now ahead of staging by B1–B4; promotion waits on
+   #59.
 
 ---
 
