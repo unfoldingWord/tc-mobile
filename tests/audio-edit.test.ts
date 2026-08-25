@@ -77,6 +77,31 @@ describe("insertAt", () => {
   });
 });
 
+describe("insertAt as the record-at-centerline splice", () => {
+  // B4 records at the centerline: the insertion offset is the sample under the
+  // fixed line, and `insertAt(existing, recorded, offset)` is the whole commit.
+  // Offset in the middle inserts; offset at/after the end appends. These are
+  // the two branches the recorder depends on, named so a mutation that forces
+  // one is a named death rather than a coincidence.
+  const existing = seq(10);
+  const recorded = Int16Array.from([80, 81, 82]);
+
+  it("inserts the recording mid-clip when the centerline is inside the audio", () => {
+    const out = insertAt(existing, recorded, 4);
+    expect(Array.from(out)).toEqual([0, 1, 2, 3, 80, 81, 82, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it("appends when the centerline is at the end", () => {
+    const out = insertAt(existing, recorded, existing.length);
+    expect(Array.from(out)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 80, 81, 82]);
+  });
+
+  it("is the first take when the segment is empty (offset 0, empty base)", () => {
+    const out = insertAt(new Int16Array(0), recorded, 0);
+    expect(Array.from(out)).toEqual([80, 81, 82]);
+  });
+});
+
 describe("cut then paste", () => {
   it("round-trips back to the original when pasted at the cut point", () => {
     const original = seq(20);

@@ -138,12 +138,13 @@ See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
 
 ## Content — Open Bible Stories
 
-Fifty OBS stories (598 illustrated frames) ship as beta content so a tester
-does not have to invent their own structure before trying anything. OBS maps
-onto the domain model directly: a story is a Chapter, and a frame is a
-**Section** today. After the pivot a frame is a **Segment** — `Section` goes
-when B1 (#27) lands, and `src/hooks/use-chapter.ts` still creates one per
-frame until it does.
+Fifty OBS stories (598 illustrated frames) are bundled as beta content. Before
+the pivot they mapped onto the domain model directly — a story a Chapter, a
+frame a Section, one Section per frame built by `src/hooks/use-chapter.ts`.
+`Section` is gone from the model as of B1–B4, and so is that loader: the pivot
+screens (Books → Segments → Recorder) start from an **empty Books shelf** (G2),
+and the bundled OBS catalog is **not yet imported** into the Book model — that
+wiring is later pivot work.
 
 ```bash
 node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
@@ -151,19 +152,18 @@ node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px
 ```
 
 Story text and frame metadata are bundled (230 KB), and so are the 128px
-thumbnails — 598 of them for 2.5 MB, precached by the service worker so the
-content is there on first run with no network (ADR 0006). **The 360px frames
-are not** — 46.8 MB for all 598 — so those are fetched per story on demand into
-IndexedDB and are offline-forever once downloaded.
+thumbnails — 598 of them for 2.5 MB, precached by the service worker (ADR 0006).
+**The 360px frames are not bundled**, and after B0 (#26) they are **not cached
+either**: the on-demand IndexedDB fetch for full-size artwork is gone. The
+pre-pivot recording view that rendered a frame's CDN `<img>` is gone too, removed
+with the rest of the pre-pivot UI in B2–B4.
 
 Two things about this content changed with the pivot. Artwork is an optional
 per-segment illustration rather than the thing that decides the browse layout
-(D6), and no Phase 1 screen draws it — it stays in the model and the media
-cache while that question is open (Q4, #1). Reference audio is out of Phase 1
-(D5), so the narration MP3s — which the code hands out as a CDN URL and streams,
-rather than caching (`narrationUrl` in `src/hooks/obs-media.ts`) — are not a
-Phase 1 capability, and batch B0 (#26) deletes that path. See
-[ADR 0006](docs/decisions/0006-obs-content.md).
+(D6), and no _mockup_ screen draws it — so B0 removed the media cache outright
+(Q4 answered no; #1 closed as moot). Reference audio is out of Phase 1 (D5), so
+the narration path — the `narrationUrl` helper and the reference control — is
+gone too. See [ADR 0006](docs/decisions/0006-obs-content.md).
 
 ### Attribution
 

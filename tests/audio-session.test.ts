@@ -117,16 +117,16 @@ describe("createAudioSession", () => {
     session.claim("mic");
 
     expect(session.claim("take")).toBeNull();
-    expect(session.claim("reference")).toBeNull();
     expect(session.live).toBe("mic");
 
-    // Nothing outranks the microphone, including the microphone: session.ts:14
-    // states `claim("mic")` always succeeds, and narrowing that guard to
+    // Nothing outranks the microphone, including the microphone: session.ts's
+    // `claim` guard (`if (liveKind === "mic" && kind !== "mic") return null`)
+    // is what makes `claim("mic")` always succeed, and narrowing it to
     // `liveKind === "mic"` is a one-word change no other test here sees. The
-    // hook ignores this token (`startRecording`, use-audio-session.ts:226) and
+    // hook ignores this token (`startRecording`, use-audio-session.ts:168) and
     // starts the recorder regardless, but `claimFloor` returns early on a null
-    // token and so skips clearing `playing`, `reference` and `playbackError`
-    // (use-audio-session.ts:100-108) — capture would begin under a stale
+    // token and so skips clearing `playing` and `playbackError`
+    // (use-audio-session.ts:81-90) — capture would begin under a stale
     // playback UI.
     expect(session.claim("mic")).not.toBeNull();
     expect(session.live).toBe("mic");
@@ -156,19 +156,22 @@ describe("createAudioSession", () => {
     expect(session.live).toBeNull();
   });
 
-  it("makes the take and the reference mutually exclusive", () => {
+  it("stops a live playback source when another claims the floor", () => {
+    // Sequential playback, distinct from the concurrent-claim race above: each
+    // source settles before the next claims. Tap play on one segment, then
+    // another — the first has to stop when the second takes the floor.
     const session = createAudioSession();
-    const take = handle();
-    session.settle(session.claim("take") as number, take);
-
-    const reference = handle();
-    session.settle(session.claim("reference") as number, reference);
-    expect(take.stops).toBe(1);
-    expect(session.live).toBe("reference");
+    const first = handle();
+    session.settle(session.claim("take") as number, first);
 
     const second = handle();
     session.settle(session.claim("take") as number, second);
-    expect(reference.stops).toBe(1);
+    expect(first.stops).toBe(1);
+    expect(session.live).toBe("take");
+
+    const third = handle();
+    session.settle(session.claim("take") as number, third);
+    expect(second.stops).toBe(1);
     expect(session.live).toBe("take");
   });
 
@@ -190,11 +193,11 @@ describe("createAudioSession", () => {
     const session = createAudioSession();
     const stale = session.claim("take") as number;
     const current = handle();
-    const token = session.claim("reference") as number;
+    const token = session.claim("take") as number;
     session.settle(token, current);
 
     session.release(stale);
-    expect(session.live).toBe("reference");
+    expect(session.live).toBe("take");
     expect(session.isCurrent(token)).toBe(true);
     expect(current.stops).toBe(0);
   });

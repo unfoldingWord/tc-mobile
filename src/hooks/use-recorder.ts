@@ -7,7 +7,29 @@ import {
   resumeAudioContext,
 } from "./audio-io";
 
-export type RecorderState = "idle" | "requesting" | "recording" | "processing";
+export type RecorderState =
+  "idle" | "requesting" | "recording" | "paused" | "processing";
+
+/**
+ * The outcome of `stop()`.
+ *
+ * The failure travels WITH the result rather than through the `error` state, so
+ * the consumer deciding what to show reads the real cause synchronously instead
+ * of a render closure that has not caught up yet. That stale read was the
+ * round-4 regression: a decode failure set `error` asynchronously, `close()`
+ * read the still-null closure value, and the sheet fell through to the
+ * permission panel. It also gives the empty-capture case a message it never had.
+ */
+export interface StopResult {
+  /** Canonical PCM when the take produced usable audio, else null. */
+  readonly samples: Int16Array | null;
+  /**
+   * A translator-facing reason when `samples` is null and it is worth saying —
+   * an empty capture or an undecodable one. Null when there is nothing to say:
+   * a superseded stop, whose UI belongs to a newer recording.
+   */
+  readonly error: string | null;
+}
 
 /**
  * How long `stop()` waits for MediaRecorder to flush before taking what it has.
@@ -39,8 +61,19 @@ export interface UseRecorder {
    * `state`, which a React batch can hide.
    */
   start: () => Promise<boolean>;
-  /** Stop and return the captured audio as canonical mono 16-bit PCM. */
-  stop: () => Promise<Int16Array | null>;
+  /**
+   * Pause capture without ending the take. The same take resumes with
+   * `resume()`; the elapsed timer freezes. No-op unless currently recording.
+   */
+  pause: () => void;
+  /** Resume a paused take into the SAME recording. No-op unless paused. */
+  resume: () => void;
+  /**
+   * Stop and return the captured audio as canonical mono 16-bit PCM, or the
+   * reason it produced none. The failure is in the result, not the `error`
+   * state — see `StopResult`.
+   */
+  stop: () => Promise<StopResult>;
   cancel: () => void;
 }
 
@@ -69,6 +102,16 @@ export function useRecorder(): UseRecorder {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  /**
+   * Elapsed time banked before the current running span.
+   *
+   * Pause/resume splits one take into several running spans. The timer cannot
+   * be `now - startedAt` any more — that would keep counting the paused gap.
+   * So each pause banks the span that just ended here, and the live timer adds
+   * only the current span on top. The take's length is the sum, never the wall
+   * clock since Record was first pressed.
+   */
+  const baseElapsedRef = useRef(0);
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
@@ -81,6 +124,16 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
+
+  /** Run the elapsed timer for the current span, on top of the banked total. */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      setElapsedMs(
+        baseElapsedRef.current + (performance.now() - startedAtRef.current)
+      );
+    }, 100);
+  }, [clearTick]);
 
   const releaseStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -173,14 +226,42 @@ export function useRecorder(): UseRecorder {
         if (event.data.size > 0) chunks.push(event.data);
       };
 
+      // The mic can be taken mid-take — an incoming call, a Bluetooth device
+      // change, an OS audio interruption — which ends the capture track and
+      // inactivates the recorder on its own. Without this the hook never learns:
+      // state stays "recording", the timer keeps ticking, Record stays a live
+      // no-op Pause, and the chunks captured before the interruption are
+      // stranded (#59). Freeze the UI into `processing` so Record is dead and
+      // the timer stops, and leave the state where `close()` still runs the
+      // commit path — `stop()` then recovers those chunks instead of dropping
+      // the take. Guarded by generation so an interruption on a superseded
+      // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
+      // teardown) does NOT fire `ended`, so this only reacts to real losses.
+      const onInterrupted = () => {
+        if (generation !== generationRef.current) return;
+        clearTick();
+        setState("processing");
+        // Release the mic the moment the recorder has actually ended. On the
+        // `error` path the track can still be live — a hot mic on a frozen sheet
+        // until Back, potentially minutes. Only once inactive: the chunks are
+        // then final, so stopping the track drops no audio; on the `ended` path
+        // the track is already dead and this is a no-op.
+        if (recorder.state === "inactive") {
+          stream?.getTracks().forEach((track) => track.stop());
+        }
+      };
+      recorder.onerror = onInterrupted;
+      stream.getTracks().forEach((track) => {
+        track.onended = onInterrupted;
+      });
+
       recorder.start(250);
       startedAtRef.current = performance.now();
+      baseElapsedRef.current = 0;
       setElapsedMs(0);
       setState("recording");
 
-      tickRef.current = window.setInterval(() => {
-        setElapsedMs(performance.now() - startedAtRef.current);
-      }, 100);
+      startTick();
       return true;
     } catch (cause) {
       if (stream) abandonStream(stream);
@@ -197,11 +278,37 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, releaseStream, supported]);
+  }, [abandonStream, clearTick, releaseStream, startTick, supported]);
 
-  const stop = useCallback(async (): Promise<Int16Array | null> => {
+  /**
+   * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
+   * but keeps the recorder and stream alive, so `resume()` continues the same
+   * clip. The span that just ran is banked and the timer stopped, so the paused
+   * gap is not counted toward the take's length.
+   */
+  const pause = useCallback(() => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") return null;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.pause();
+    baseElapsedRef.current += performance.now() - startedAtRef.current;
+    clearTick();
+    setElapsedMs(baseElapsedRef.current);
+    setState("paused");
+  }, [clearTick]);
+
+  /** Resume the paused take into the same recording. */
+  const resume = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    recorder.resume();
+    startedAtRef.current = performance.now();
+    setState("recording");
+    startTick();
+  }, [startTick]);
+
+  const stop = useCallback(async (): Promise<StopResult> => {
+    const recorder = recorderRef.current;
+    if (!recorder) return { samples: null, error: null };
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -217,57 +324,107 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
+    // This invocation owns teardown now: detach the interruption handlers so a
+    // late `error`/`ended` event, delivered after our final `setState`, cannot
+    // repaint a stopped recorder back to "processing".
+    recorder.onerror = null;
+    stream?.getTracks().forEach((track) => (track.onended = null));
+    // Take the stream OUT of the shared ref before the flush await. A cancel()
+    // (pagehide, navigation, unmount) landing during the wait calls
+    // releaseStream(), which stops whatever streamRef holds — and stopping THIS
+    // stream mid-flush truncates the final `dataavailable`, which for a
+    // sub-timeslice take is the entire recording. Held only as the local
+    // `stream`, this stop owns it; cancel() finds the ref already null.
+    streamRef.current = null;
     clearTick();
     setState("processing");
 
-    const blob = await new Promise<Blob>((resolve) => {
-      // Bounded. On the timeout we take whatever the local array already holds
-      // — everything MediaRecorder delivered before it stopped answering —
-      // rather than waiting for an event that is not coming.
-      //
-      // Deliberately NOT paired with releasing the tracks the moment `stop()`
-      // is invoked: the final `dataavailable` arrives between `stop()` and
-      // `onstop`, and killing the capture tracks inside that window is a way
-      // to truncate it. That slice is the whole recording for a take under one
-      // timeslice, which is the loss this module's chunk ownership exists to
-      // prevent. The microphone is released immediately after this await and
-      // before the decode, so bounding the wait bounds the hot mic too.
-      const finish = () =>
-        resolve(new Blob(chunks, { type: recorder.mimeType }));
-      const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
-      recorder.onstop = () => {
-        clearTimeout(timer);
-        finish();
-      };
-      recorder.stop();
-    });
+    let blob: Blob;
+    if (recorder.state === "inactive") {
+      // The recorder ended on its OWN — an interruption took the mic (#59), not
+      // a stop we drove. There is no `stop()` flush to await, but the recorder
+      // flips inactive before its final queued `dataavailable` is delivered — so
+      // yield one macrotask to let a tail slice already in flight land in
+      // `chunks` before we seal the blob. Then recover it rather than dropping
+      // the take. The capture track is already dead; release the stream for the
+      // ref bookkeeping.
+      if (stream) abandonStream(stream);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      blob = new Blob(chunks, { type: recorder.mimeType });
+    } else {
+      blob = await new Promise<Blob>((resolve) => {
+        // Bounded. On the timeout we take whatever the local array already holds
+        // — everything MediaRecorder delivered before it stopped answering —
+        // rather than waiting for an event that is not coming.
+        //
+        // Deliberately NOT paired with releasing the tracks the moment `stop()`
+        // is invoked: the final `dataavailable` arrives between `stop()` and
+        // `onstop`, and killing the capture tracks inside that window is a way
+        // to truncate it. That slice is the whole recording for a take under one
+        // timeslice, which is the loss this module's chunk ownership exists to
+        // prevent. The microphone is released immediately after this await and
+        // before the decode, so bounding the wait bounds the hot mic too.
+        const finish = () =>
+          resolve(new Blob(chunks, { type: recorder.mimeType }));
+        const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+        recorder.onstop = () => {
+          clearTimeout(timer);
+          finish();
+        };
+        recorder.stop();
+      });
 
-    // Only our own stream. `releaseStream()` reads the shared ref, which by now
-    // may hold a NEWER recording's stream — releasing that would cut off a
-    // recording in progress.
-    if (stream) abandonStream(stream);
+      // Only our own stream. `releaseStream()` reads the shared ref, which by now
+      // may hold a NEWER recording's stream — releasing that would cut off a
+      // recording in progress.
+      if (stream) abandonStream(stream);
+    }
+
+    // The shared UI state belongs to the current generation; the failure travels
+    // with the result to whoever called stop(). A superseded stop stays silent —
+    // a newer recording owns both the state and the screen — so its `error` is
+    // null and only a current attempt earns a message to show. The failure is
+    // deliberately NOT written to the `error` state: routing it through the
+    // result lets the caller place it (a toolbar Notice, not the permission
+    // panel) and avoids the stale-closure read that reopened the panel in round
+    // 4.
+    const current = generation === generationRef.current;
 
     if (blob.size === 0) {
-      if (generation === generationRef.current) setState("idle");
-      return null;
+      if (current) setState("idle");
+      return {
+        samples: null,
+        error: current ? "No sound was recorded. Try again." : null,
+      };
     }
 
     try {
       const samples = await decodeToCanonical(blob);
+      const decodedCurrent = generation === generationRef.current;
       // Returned even when superseded: these are confirmed samples, and the
       // caller decides what to do with them. Only the shared UI state is
       // withheld, because a newer recording owns it now.
-      if (generation === generationRef.current) setState("idle");
-      return samples;
-    } catch {
-      // Guarded: a decode failure from a superseded attempt must not paint an
-      // error over a recorder that `cancel()` has already reset, or over a
-      // recording that has since started.
-      if (generation === generationRef.current) {
-        setState("idle");
-        setError("Recording could not be decoded on this device.");
+      if (decodedCurrent) setState("idle");
+      // A successful decode to ZERO samples is "no sound" too — same class as an
+      // empty blob, not a usable take. Classified here, at the source, so a
+      // caller keying on `samples.length` never gets a non-null empty buffer
+      // paired with a null error (which showed no message at all — F7).
+      if (samples.length === 0) {
+        return {
+          samples: null,
+          error: decodedCurrent ? "No sound was recorded. Try again." : null,
+        };
       }
-      return null;
+      return { samples, error: null };
+    } catch {
+      const stillCurrent = generation === generationRef.current;
+      if (stillCurrent) setState("idle");
+      return {
+        samples: null,
+        error: stillCurrent
+          ? "Recording could not be decoded on this device."
+          : null,
+      };
     }
   }, [abandonStream, clearTick]);
 
@@ -289,5 +446,15 @@ export function useRecorder(): UseRecorder {
   // Never leave the microphone hot if the screen unmounts mid-recording.
   useEffect(() => () => cancel(), [cancel]);
 
-  return { state, supported, elapsedMs, error, start, stop, cancel };
+  return {
+    state,
+    supported,
+    elapsedMs,
+    error,
+    start,
+    pause,
+    resume,
+    stop,
+    cancel,
+  };
 }

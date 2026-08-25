@@ -4,11 +4,11 @@
  * OBS maps onto the tC Mobile domain model without translation:
  *
  *   OBS story (1–50)  →  Chapter
- *   OBS frame         →  Section
+ *   OBS frame         →  Segment (hangs off the chapter directly; Section is gone)
  *
  * That is why it is the right beta content: testers get a real, ordered,
- * illustrated set of sections without having to build one, and the artwork
- * gives each section a non-textual identity — which is the whole problem this
+ * illustrated set of segments without having to build one, and the artwork
+ * gives each segment a non-textual identity — which is the whole problem this
  * app has to solve for people who cannot read.
  *
  * Licensing: CC BY-SA 4.0; artwork © Sweet Publishing, CC BY-SA 3.0.

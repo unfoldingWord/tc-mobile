@@ -31,9 +31,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Docs: two spec transcriptions, prior-art research, seven ADRs, and the pivot
   plan of record (`docs/design/pivot-plan.md`, #25).
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
-  metadata (230 KB), with artwork fetched per story into IndexedDB and
-  narration streamed from the CDN, not cached. `scripts/build-obs-catalog.mjs` rebuilds the catalogue from
-  Door43. IndexedDB schema bumped to v2 for the media store.
+  metadata (230 KB) plus 128px thumbnails precached for offline first-run.
+  `scripts/build-obs-catalog.mjs` rebuilds the catalogue from Door43. (B0 (#26)
+  removed the on-demand full-size-artwork cache and the narration path; the
+  empty v2 `media` store is retired by B1's drop-and-recreate.)
 - Cloudflare deployment: staging, production, and per-PR preview Workers.
   **Cloudflare Workers Builds owns deployment**, not Actions — the four Actions
   deploy workflows were deleted to remove a double-deploy collision, and

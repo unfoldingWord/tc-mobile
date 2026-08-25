@@ -4,6 +4,143 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
+
+**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) **merged** (`0d08445`) after 10 review rounds + a Fable adverse pass · **Issues:** closed via merge; **#59 (P1) blocks staging**, #60/#61 (P3), #58 deferred
+
+### Completed
+
+- **B1–B4 built as one clean lane** (`ultracode` workflow → `6b7b4e4`). Pre-alpha,
+  no field data, so the pre-pivot model/UI was torn out and replaced, not evolved:
+  - `Section` removed; `Segment` hangs off `Chapter` and is the unit of work.
+    `Project` → `Book`. `Take` 1:1/hidden (re-record replaces, reclaims PCM — the
+    `takeIds[]` leak is gone). Binary finished flag over the 5-value enum, with the
+    never-recorded-can't-be-finished invariant in the store.
+  - Books, Segments, and Recorder screens (fixed centerline, insert/append,
+    pause, zoom, no-permission screen). `projects.ts` → `books.ts`.
+  - **ADR 0008** waives append-only for the v2→v3 destructive recreate (DRI call,
+    pre-alpha) — supersedes #27's "still append-only" line for that one transition.
+- **Five review rounds, both reviewers each round** (Frank/George), every round
+  triaged on the PR with dispositions + head SHA. The data-loss class converged
+  and **closed by round 3** (own-before-fallible: the pending slot holds the merge
+  recipe, the merge is deferred into the guarded commit); the reload-race class
+  **closed by round 4** (coordinate the reload window; recorder awaits its writes).
+  No P1 in rounds 4 or 5.
+- **CI green** on the head (`46dcea4`); `npm run verify` green (141 tests).
+
+### Review, resumed and finished (rounds 6–10 + Fable)
+
+- **The round-5 plan landed** (`stop()` → `{samples | error}`; finished-write
+  failures reach the `Notice`; the finished mark rides the take through
+  `addTake`; scrub reset; docs) — then five more rounds hardened it.
+- **R6** one P2 (finished mark dropped on a save-retry → carry `finished`
+  through the pending take, atomic on first attempt and retry; tested +
+  mutation-checked). **R7** four P2 (scrub keyed on clip id not duration; empty
+  _decoded_ PCM; checkbox honesty; Segments load-failure). **R8** three P2
+  (Books load-failure sibling — class enumerated; first-take Finished; recorder
+  `key=`+`inert` for wrong-segment splice + modal isolation). **R9** Frank +
+  George _converged on the same fix_ — `finishedIntent` made explicit-only after
+  an optimistic reset demoted an untouched segment on a denied start; Books got
+  a Retry (home has no back-out). **R10** Frank **APPROVE**; George one P2 +
+  one P3 (checkbox frozen across the close window; dashed glyph keys on state).
+- **No P1 in any Frank/George round**; the never-lose and reload-race classes
+  stayed closed throughout. Per DRI, no 11th round — a **Fable adverse pass**
+  instead, then merge on green.
+- **Fable found one real P1** (below), plus two P3 (#60, #61). Its full walk of
+  the finished-flag state machine and the splice/pending-take machinery came
+  back clean.
+
+### Blockers / needs a human
+
+- **#59 (P1) — a mid-take mic interruption (incoming call) silently drops the
+  recording and deadlocks the sheet.** No `onerror`/`onended`; `stop()` ignores
+  the held chunks on an inactive recorder. **Blocks the `develop` → `staging`
+  promotion** (DRI call — merged B1–B4 to develop, this fixes before staging).
+  Browser-only surface, on-device fix, same class as #58.
+- **#58 — pagehide cancels an in-progress take.** Deferred, on-device. Both #58
+  and #59 are the MediaRecorder interruption surface — fix and device-verify
+  together before staging.
+
+### Next steps
+
+1. **#59 first — it gates staging.** Handle recorder interruption: register
+   `onerror`/track `onended`, make `stop()` recover held chunks on an inactive
+   recorder, and stop `close()` dead-locking on a `{null,null}` result. Device
+   test with a real incoming call mid-take, iOS and Android.
+2. #60/#61 (P3) alongside it — cheap, same file.
+3. **Then B5–B8.** develop is now ahead of staging by B1–B4; promotion waits on
+   #59.
+
+---
+
+## 2026-08-24 (evening) — Day 6: B0 lands, the pivot's first deletion
+
+**Branch:** `develop` · **PR:** #55 merged (`95418e6`) · **Issues:** closed #1, #5, #9, #26; noted #27
+
+### Completed
+
+- **B0 merged** (#55 → `develop`, `95418e6`) — the first pivot batch, deletion
+  before construction. Net ~−1400 lines across three orphaned paths:
+  - the **timing seam** (`lib/timing/**`, `types/timing.ts`, its test) —
+    supersedes ADR 0007, closes #5;
+  - the **reference-audio / narration path** (through `audio-io`,
+    `use-audio-session`, `section-view`, `App`, `use-chapter`, `view`) —
+    closes #9;
+  - the **OBS media cache accessors** (`hooks/obs-media.ts`,
+    `lib/storage/media.ts`, the `CachedMedia` export) — closes #1 as moot.
+- **Four review rounds, both reviewers clean.** A converging consequence-tail,
+  P3-only and shrinking after round 1 — no P1/P2 since round 1. Every round
+  triaged on the PR with dispositions and head SHAs.
+- **The #26 contradiction was settled first**, on the record: kill the whole
+  OBS media cache, not keep it. Q4 answered no, #1 closed as moot, ADR 0006 and
+  the pivot plan amended.
+
+### Two calls review corrected, recorded not glossed
+
+- **B0 makes no schema change.** The plan (and my #26 decision comment) had B0
+  removing the `media` object store from `db.ts`. Frank was right that this
+  edited a shipped migration step — the append-only violation the discipline
+  exists to prevent. Narrowed: B0 removes the **accessors and the `CachedMedia`
+  export**; the empty, unread `media` store stays until **B1's drop-and-recreate
+  (#27)**, where the schema change and its migration test belong. Frank's
+  blob-leak scenario was refuted — `downloadStoryMedia` never had a caller
+  outside the deleted code, so the store is empty on every device.
+- **The `"reference"` arbiter kind is gone.** I'd kept it as a "generic
+  mechanism / Phase 2 reference audio" residual. Both reviewers converged on it —
+  Frank as a P2, George naming it "a stub-for-later against the bar B0 is
+  enforcing." They were right; that is exactly the speculative-future the bar
+  rejects. `SourceKind` is now `"take" | "mic"`, and the reference-specific
+  arbiter tests were redundant with `"take"`.
+
+### What review caught that would have shipped
+
+- **`ChapterCard.title` went write-only** when B0 deleted the section-view
+  narration button that rendered it. Noted that B2's Books screen (#28) is the
+  reader, kept for that batch — consistent with how `imageUrl` and the `media`
+  store are kept for theirs.
+- **"No Phase 1 screen shows artwork" was the mockup, not the tree.** My own
+  round-1/2 doc edits carried it; the pre-pivot recording view still renders the
+  Door43 CDN `<img>`, so a tester on this build sees the frame on every section.
+  Qualified every instance to "no _mockup_ screen."
+
+### Blockers / needs a human
+
+- **None new.** B1 (#27) now carries the deferred `media`-store drop — recorded
+  on #27 and in the `db.ts` comments, so it is on the checklist, not only in a
+  comment.
+- Device coverage unchanged from Day 5: still one device, one pre-release build,
+  no Android; the three specific checks (background after Stop, sub-timeslice
+  take, anything on Android) remain open.
+
+### Next steps
+
+1. **B2 (#28) and B3 (#29)** — the pivot screens, sequenced ahead of B1.
+2. **B1 (#27)** once they land — drop-and-recreate migration, and **drop the v2
+   `media` store** B0 left behind.
+3. `develop` is now ahead of `staging` by B0; promotion is a separate call.
+
+---
+
 ## 2026-08-24 — Day 5: the gate, the audit, and the debt lanes
 
 **Branch:** `develop` · **PRs:** #22, #44–#52 merged · **Issues:** +1 (#43)

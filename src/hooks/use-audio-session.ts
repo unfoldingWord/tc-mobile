@@ -2,52 +2,64 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   playSamples,
-  resetNarration,
   resumeAudioContext,
-  startNarration,
-  stopNarration,
+  type PlaybackHandle,
 } from "./audio-io";
-import { useRecorder, type RecorderState } from "./use-recorder";
+import {
+  useRecorder,
+  type RecorderState,
+  type StopResult,
+} from "./use-recorder";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
-import type { SectionCard } from "@/types/view";
+import type { SegmentId } from "@/types/domain";
+import type { SegmentRow } from "@/types/view";
 
 export interface UseAudioSession {
-  /** The section whose take is sounding, or `null`. */
-  readonly playingId: string | null;
-  readonly referencePlaying: boolean;
+  /** The segment whose take is sounding, or `null`. */
+  readonly playingId: SegmentId | null;
+  /**
+   * Milliseconds into the sounding take, for the scrub dot / playhead. Zero
+   * whenever nothing is playing.
+   */
+  readonly playbackElapsedMs: number;
   readonly recorderState: RecorderState;
   readonly elapsedMs: number;
   readonly supported: boolean;
   readonly error: string | null;
-  playTake: (section: SectionCard) => void;
-  toggleReference: (url: string | null) => void;
-  startRecording: () => void;
-  /** Stop the microphone and return what it captured. Never rejects. */
-  stopRecording: () => Promise<Int16Array | null>;
   /**
-   * End every sound this screen owns, synchronously. Call on every navigation.
-   *
-   * `rewindNarration` returns the reference audio to the start. Pass it when
-   * leaving the *story*; stepping between sections of the same chapter must
-   * not, or a two-minute narration restarts from the top on every step.
+   * Play a segment's take, optionally from a scrub offset (seconds). Tapping
+   * the segment that is already playing stops it.
    */
-  leave: (options?: { rewindNarration?: boolean }) => void;
+  playTake: (row: SegmentRow, offsetSeconds?: number) => void;
+  startRecording: () => void;
+  /** Pause the in-progress recording without ending the take. */
+  pauseRecording: () => void;
+  /** Resume a paused recording into the same take. */
+  resumeRecording: () => void;
+  /**
+   * Stop the microphone and return what it captured, or the reason it captured
+   * nothing (`StopResult`). Never rejects.
+   */
+  stopRecording: () => Promise<StopResult>;
+  /** End every sound this screen owns, synchronously. Call on every navigation. */
+  leave: () => void;
 }
 
 /**
- * Everything on this screen that can make or capture sound, under one owner.
+ * Everything on screen that can make or capture sound, under one owner.
  *
  * The arbitration lives in `lib/audio/session.ts`, which is pure; this is only
- * the wiring around it — the playback handle, the narration, and the recorder,
- * each reached through `audio-io.ts`. Nothing above this layer holds an audio
- * reference any more, which is what makes "navigating away ends every sound"
- * a single call rather than a checklist.
+ * the wiring around it — the playback handle and the recorder, each reached
+ * through `audio-io.ts`. Nothing above this layer holds an audio reference, so
+ * "navigating away ends every sound" is a single `leave()` rather than a
+ * checklist, and "only one row plays at a time" / "opening the recorder stops
+ * playback" both fall out of the single floor for free.
  */
 export function useAudioSession(): UseAudioSession {
-  // Lazy `useState` rather than a ref: the arbiter must be created exactly
-  // once and never during a render pass, and its identity is what every
-  // callback below depends on. It is never set again, so it never re-renders.
+  // Lazy `useState` rather than a ref: the arbiter must be created exactly once
+  // and never during a render pass, and its identity is what every callback
+  // below depends on. It is never set again, so it never re-renders.
   const [session] = useState(createAudioSession);
 
   const recorder = useRecorder();
@@ -56,6 +68,8 @@ export function useAudioSession(): UseAudioSession {
   // churning its identity on every render.
   const {
     start: beginRecording,
+    pause: pauseCapture,
+    resume: resumeCapture,
     stop: endRecording,
     cancel: cancelRecording,
     state: recorderState,
@@ -64,32 +78,36 @@ export function useAudioSession(): UseAudioSession {
     supported,
   } = recorder;
 
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [referencePlaying, setReferencePlayingState] = useState(false);
+  const [playingId, setPlayingId] = useState<SegmentId | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
 
-  // Mirrored in refs because both are read from inside a tap handler to decide
-  // whether the tap means "start" or "stop". A second tap can land before
-  // React has re-rendered, and the render closure would answer for the
-  // previous frame — which is the toggle half of issue #2.
-  const playingIdRef = useRef<string | null>(null);
-  const referencePlayingRef = useRef(false);
+  // Mirrored in a ref because it is read from inside a tap handler to decide
+  // whether the tap means "start" or "stop". A second tap can land before React
+  // has re-rendered, and the render closure would answer for the previous frame
+  // — which is the toggle half of issue #2.
+  const playingIdRef = useRef<SegmentId | null>(null);
   /**
-   * The microphone's own claim, not merely the fact that a microphone holds
-   * the floor. `session.live` is a *kind*: a newer recording is also "mic", so
-   * matching on the kind lets a superseded stop release a floor it does not
-   * own — and the newer recording keeps capturing while `session.live` is null.
+   * The live playback handle, held so the scrub-position timer can read its
+   * `elapsed()` and so a stop can be immediate. Cleared whenever playback ends.
+   */
+  const playbackHandleRef = useRef<PlaybackHandle | null>(null);
+  /**
+   * The microphone's own claim, not merely the fact that a microphone holds the
+   * floor. `session.live` is a *kind*: a newer recording is also "mic", so
+   * matching on the kind lets a superseded stop release a floor it does not own.
    */
   const micTokenRef = useRef<number | null>(null);
 
-  const setPlaying = useCallback((id: string | null) => {
+  const setPlaying = useCallback((id: SegmentId | null) => {
     playingIdRef.current = id;
     setPlayingId(id);
-  }, []);
-
-  const setReference = useCallback((on: boolean) => {
-    referencePlayingRef.current = on;
-    setReferencePlayingState(on);
+    // The handle belongs to a single playing segment; when playback ends the
+    // position resets so a resting scrub dot never reads a stale elapsed.
+    if (id === null) {
+      playbackHandleRef.current = null;
+      setPlaybackElapsedMs(0);
+    }
   }, []);
 
   /**
@@ -104,16 +122,15 @@ export function useAudioSession(): UseAudioSession {
       const token = session.claim(kind);
       if (token === null) return null;
       setPlaying(null);
-      setReference(false);
       setPlaybackError(null);
       return token;
     },
-    [session, setPlaying, setReference]
+    [session, setPlaying]
   );
 
   const playTake = useCallback(
-    (section: SectionCard) => {
-      if (playingIdRef.current === section.sectionId) {
+    (row: SegmentRow, offsetSeconds = 0) => {
+      if (playingIdRef.current === row.segmentId) {
         // Only our own floor is released: stopping playback must never stop a
         // recording that has taken the floor since.
         if (session.live === "take") session.stopAll();
@@ -122,34 +139,32 @@ export function useAudioSession(): UseAudioSession {
       }
 
       const token = claimFloor("take");
-      // Refused: the microphone holds the floor. Nothing renders a play
-      // control while recording, so there is nothing to say — but if a future
-      // screen does, this refusal needs a visible answer rather than silence.
+      // Refused: the microphone holds the floor. Nothing renders a play control
+      // while recording, so there is nothing to say — but if a future screen
+      // does, this refusal needs a visible answer rather than silence.
       if (token === null) return;
 
-      // Unlock Web Audio inside the tap, before the IndexedDB reads below:
-      // iOS will not resume a suspended context once the activation is spent.
+      // Unlock Web Audio inside the tap, before the IndexedDB reads below: iOS
+      // will not resume a suspended context once the activation is spent.
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
       });
 
       // Optimistic, so the row responds to the tap rather than to the disk.
-      setPlaying(section.sectionId);
+      setPlaying(row.segmentId);
+      setPlaybackElapsedMs(offsetSeconds * 1000);
 
       void (async () => {
         try {
-          const audio = await loadSegmentClip(section.segmentId);
+          const audio = await loadSegmentClip(row.segmentId);
           // Superseded while we read: whoever took the floor owns the UI state
           // now, so touching it here would undo their work.
           if (!session.isCurrent(token)) return;
           if (audio.kind !== "resolved") {
-            // A segment nobody has recorded gives the floor back quietly —
-            // that is the ordinary case, and no control offers play on it.
-            // A segment that points at audio the database does not have is a
-            // different thing: the translator tapped play and heard nothing,
-            // so it goes through the same channel as any other playback
-            // failure rather than only to the console. Silence is what let
-            // three copies of this walk disagree about it in the first place.
+            // A segment nobody has recorded gives the floor back quietly. A
+            // segment that points at audio the database does not have is a
+            // different thing: the translator tapped play and heard nothing, so
+            // it goes through the same channel as any other playback failure.
             const fault = danglingReason(audio);
             if (fault) {
               console.error("Nothing to play for this take:", fault);
@@ -161,21 +176,23 @@ export function useAudioSession(): UseAudioSession {
           }
 
           const handle = await playSamples(audio.clip.samples, {
+            offsetSeconds,
             onEnded: () => {
               if (!session.isCurrent(token)) return;
               session.release(token);
               setPlaying(null);
             },
           });
-          // A `false` here means the handle was built for a claim that has
-          // since been superseded; `settle` has already stopped it.
-          session.settle(token, handle);
+          // A `false` here means the handle was built for a claim that has since
+          // been superseded; `settle` has already stopped it.
+          if (session.settle(token, handle)) {
+            playbackHandleRef.current = handle;
+          }
         } catch (cause) {
           console.error("Playing a take failed", cause);
           // Inside the guard: a failure that belongs to a superseded claim is
           // not this screen's news. Tapping play on B while A is still loading
-          // supersedes A, and A's rejection must not paint an alert over B —
-          // still less over whatever screen a `leave()` has moved on to.
+          // supersedes A, and A's rejection must not paint an alert over B.
           if (session.isCurrent(token)) {
             session.release(token);
             setPlaying(null);
@@ -187,51 +204,17 @@ export function useAudioSession(): UseAudioSession {
     [claimFloor, session, setPlaying]
   );
 
-  const stopReference = useCallback(() => {
-    if (session.live === "reference") session.stopAll();
-    setReference(false);
-  }, [session, setReference]);
-
-  const toggleReference = useCallback(
-    (url: string | null) => {
-      if (!url) return;
-      if (referencePlayingRef.current) {
-        stopReference();
-        return;
-      }
-
-      const token = claimFloor("reference");
-      if (token === null) return;
-
-      const narration = startNarration(url, {
-        onEnded: () => {
-          if (!session.isCurrent(token)) return;
-          session.release(token);
-          setReference(false);
-        },
-      });
-      // Settled before `started` is awaited, so a second tap during a slow
-      // load has something to stop. The arbiter silences the narration without
-      // knowing it is a media element rather than a buffer source.
-      session.settle(token, narration);
-
-      setReference(true);
-      void narration.started.catch((cause: unknown) => {
-        console.error("Playing the reference narration failed", cause);
-        // Inside the guard, and here it is not merely tidiness: stopping a
-        // pending `play()` rejects it, so the common way to reach this catch
-        // is the user tapping pause on a narration that had not loaded yet.
-        // Outside the guard that tap raises a red alert about a failure that
-        // did not happen.
-        if (session.isCurrent(token)) {
-          session.release(token);
-          setReference(false);
-          setPlaybackError("Could not play the story narration.");
-        }
-      });
-    },
-    [claimFloor, session, setReference, stopReference]
-  );
+  // Advance the scrub position while a take is sounding. The handle's own
+  // `elapsed()` is the source of truth (it clamps to the clip duration), polled
+  // rather than integrated so a pause or an end never leaves the dot drifting.
+  useEffect(() => {
+    if (playingId === null) return;
+    const id = window.setInterval(() => {
+      const handle = playbackHandleRef.current;
+      if (handle) setPlaybackElapsedMs(handle.elapsed() * 1000);
+    }, 60);
+    return () => clearInterval(id);
+  }, [playingId]);
 
   const startRecording = useCallback(() => {
     // A device that cannot record never takes the floor. `start()` only sets a
@@ -247,10 +230,8 @@ export function useAudioSession(): UseAudioSession {
         // The floor is handed back HERE, on the completion path, rather than
         // left to the effect below. A denied permission takes the recorder
         // idle -> requesting -> idle, and nothing guarantees a consumer ever
-        // observes the middle state; an effect keyed on a value that never
-        // appears to change does not re-run, and the floor stays claimed with
-        // no microphone open — refusing every later playback for the session.
-        // An imperative claim is released on a completion, not on a render.
+        // observes the middle state; an imperative claim is released on a
+        // completion, not on a render.
         if (micTokenRef.current === token) micTokenRef.current = null;
         if (session.isCurrent(token)) session.stopAll();
       })
@@ -259,72 +240,65 @@ export function useAudioSession(): UseAudioSession {
       });
   }, [beginRecording, claimFloor, session, supported]);
 
-  const stopRecording = useCallback(async (): Promise<Int16Array | null> => {
+  // Pause/resume keep the same take and the same floor: the microphone still
+  // owns the floor while paused, so there is no claim to release or reclaim
+  // here — only the capture is suspended.
+  const pauseRecording = useCallback(() => pauseCapture(), [pauseCapture]);
+  const resumeRecording = useCallback(() => resumeCapture(), [resumeCapture]);
+
+  const stopRecording = useCallback(async (): Promise<StopResult> => {
     // Snapshot BEFORE the await. `startRecording` writes every new claim into
     // the same ref, so reading it afterwards would hand us a *newer*
-    // recording's token — and releasing that is precisely the bug this token
-    // exists to prevent, one level up.
+    // recording's token — releasing that is precisely the bug this token exists
+    // to prevent, one level up.
     const token = micTokenRef.current;
     try {
       return await endRecording();
     } catch (cause) {
+      // Backstop only — `stop()` returns its failure in the result and does not
+      // reject. The reason rides the result to the recorder sheet (a toolbar
+      // Notice), rather than `playbackError`, which would bleed onto the
+      // Segments screen after the sheet is gone.
       console.error("Stopping the recorder failed", cause);
-      setPlaybackError("Could not finish this recording.");
-      return null;
+      return { samples: null, error: "Could not finish this recording." };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the
       // floor may have moved on to a *newer* recording, which is also "mic":
-      // matching on the kind would release that one's claim and leave it
-      // capturing with `session.live` null. The token identifies the claim.
+      // the token identifies the claim.
       if (token !== null && session.isCurrent(token)) {
-        // Clear only if the ref still names OUR claim: a newer recording that
-        // has already written its own token must keep it.
         if (micTokenRef.current === token) micTokenRef.current = null;
         session.stopAll();
       }
     }
   }, [endRecording, session]);
 
-  const leave = useCallback(
-    (options: { rewindNarration?: boolean } = {}) => {
-      // Synchronous and total. Navigation is not a moment to be waiting on a
-      // promise: the microphone has to be released in the same task as the tap.
-      //
-      // A take in progress is abandoned, not saved. `addTake` makes every new
-      // take the active one, so committing a fragment here would quietly
-      // replace a good recording with a truncated one — and a fragment renders
-      // a duration and a play button, so it *looks* finished. Losing an
-      // unconfirmed take is recoverable by recording again; that is not.
-      micTokenRef.current = null;
-      session.stopAll();
-      cancelRecording();
-      // The narration is a chapter's, not a section's. Leaving the story
-      // rewinds, so the next story's reference starts at the beginning rather
-      // than mid-sentence; stepping between sections of this chapter only
-      // silences it, because zeroing the playhead there restarts a two-minute
-      // story on every step — the opposite of treating it as the chapter's.
-      if (options.rewindNarration) resetNarration();
-      else stopNarration();
-      setPlaying(null);
-      setReference(false);
-      setPlaybackError(null);
-    },
-    [cancelRecording, session, setPlaying, setReference]
-  );
+  const leave = useCallback(() => {
+    // Synchronous and total. Navigation is not a moment to be waiting on a
+    // promise: the microphone has to be released in the same task as the tap.
+    //
+    // A take in progress is abandoned, not saved. `addTake` makes every new
+    // take the active one, so committing a fragment here would quietly replace
+    // a good recording with a truncated one. Losing an unconfirmed take is
+    // recoverable by recording again; that is not.
+    micTokenRef.current = null;
+    session.stopAll();
+    cancelRecording();
+    setPlaying(null);
+    setPlaybackError(null);
+  }, [cancelRecording, session, setPlaying]);
 
   useEffect(() => {
-    // Backstop only. `startRecording` releases a refused claim on the
-    // completion path, which does not depend on this effect observing an
-    // intermediate state; this still covers a recorder that reaches idle by
-    // some route that never resolved a `start()` at all.
+    // Backstop only. `startRecording` releases a refused claim on the completion
+    // path; this still covers a recorder that reaches idle by some route that
+    // never resolved a `start()` at all. Paused is not idle, so it does not
+    // trip this.
     if (recorderState === "idle" && session.live === "mic") session.stopAll();
   }, [recorderState, session]);
 
   useEffect(() => {
-    // The page may be discarded without ever unmounting. Whatever else is
-    // arguable about backgrounding, a hot microphone on a page that is going
-    // away is not.
+    // The page may be discarded without ever unmounting. A hot microphone on a
+    // page that is going away is not arguable.
     const onPageHide = () => leave();
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
@@ -334,7 +308,7 @@ export function useAudioSession(): UseAudioSession {
 
   return {
     playingId,
-    referencePlaying,
+    playbackElapsedMs,
     recorderState,
     elapsedMs,
     supported,
@@ -342,8 +316,9 @@ export function useAudioSession(): UseAudioSession {
     // translator just did, so it outranks a stale playback message.
     error: recorderError ?? playbackError,
     playTake,
-    toggleReference,
     startRecording,
+    pauseRecording,
+    resumeRecording,
     stopRecording,
     leave,
   };

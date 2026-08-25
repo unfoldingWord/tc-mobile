@@ -16,10 +16,15 @@ export type IconName =
   | "plus"
   | "prev"
   | "next"
-  | "speaker"
   | "trash"
   | "alert"
-  | "retry";
+  | "retry"
+  | "menu"
+  | "check"
+  | "chevron-down"
+  | "chevron-right"
+  | "zoom-in"
+  | "zoom-out";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -72,18 +77,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinejoin="round"
     />
   ),
-  speaker: (
-    <>
-      <path d="M4 8.5h3L11 5v12L7 13.5H4z" fill="currentColor" />
-      <path
-        d="M14 8c1.2 1.1 1.2 4.9 0 6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </>
-  ),
   trash: (
     <>
       <path
@@ -133,6 +126,72 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinejoin="round"
       />
     </>
+  ),
+  // Three rules — the global menu (hamburger). B2's menu shell opens from it.
+  menu: (
+    <path
+      d="M4 7h14M4 11h14M4 15h14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    />
+  ),
+  // The finished tick, drawn inside the checkbox when a segment is affirmed.
+  check: (
+    <path
+      d="M5 11.5 9.2 15.5 17 6.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Book disclosure: down = expanded, right = collapsed. Kept as two glyphs
+  // rather than one rotated so the affordance reads without a transform.
+  "chevron-down": (
+    <path
+      d="M5 8l6 6 6-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  "chevron-right": (
+    <path
+      d="M8 5l6 6-6 6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Zoom toggle, two glyphs for two states (recorder §4.4). Arrows spread
+  // apart = the whole segment fits the viewport (100%); arrows drawn toward
+  // the centre = a quarter of it fills the viewport (25%), the finer view.
+  "zoom-out": (
+    <path
+      d="M10 11H4m0 0 3-3M4 11l3 3M12 11h6m0 0-3-3m3 3-3 3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  "zoom-in": (
+    <path
+      d="M4 11h6m0 0-3-3m3 3-3 3M18 11h-6m0 0 3-3m-3 3 3 3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   ),
 };
 

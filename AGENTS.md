@@ -29,11 +29,14 @@ pre-pivot UI is **replaced, not evolved**.
 [#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
 and the work is nine batches, B0–B8 (#26–#34).
 
-**None of the batches has started.** Everything below this section describes
-the tree as it stands today, and that tree is still pre-pivot: `Section` is in
-the model, the timing seam and the narration path are still in `src/`, and no
-mockup screen exists. Do not read a description here as a description of the
-target.
+**B0–B4 have landed; B5–B8 have not.** `Section` is gone from the model — a
+`Segment` hangs off a `Chapter` directly and is the unit of work — and the three
+pivot screens (Books, Segments, Recorder) exist; `Project` is now `Book`. What
+B0 (#26) removed is still **gone** — the timing seam, the
+reference-audio/narration path, and the OBS media cache's accessor code
+(`hooks/obs-media.ts`, `lib/storage/media.ts`). Parts of the file below still
+describe pre-pivot scaffolding (the OBS section browser, the old `use-chapter`
+loader); do not read every description here as the target.
 
 ## Tech stack
 
@@ -165,10 +168,11 @@ dead ones were passing.
 An export that is genuinely dead now but that a named pivot batch wires up
 carries a `@pivotpending` JSDoc tag, which knip honours.
 
-**The tag must name a tracking issue, and the batch when a batch owns it.** Not
-every pending export belongs to a B-batch — the OBS media cache is tagged
-against #1 and open question Q4, and there is no batch that will touch it. An
-export with **no** issue behind it does not get a tag; it gets deleted. An
+**The tag must name a tracking issue, and the batch when a batch owns it.** A
+tag need not cite a B-batch — a bare issue or open question is allowed (the OBS
+media cache, tagged against #1 and Q4, was that example until B0 deleted it;
+every remaining tag is now batch-owned). An export with **no** issue behind it
+does not get a tag; it gets deleted. An
 untagged unused export fails CI, and a tag without a reason is worse than the
 export it hides.
 
@@ -358,10 +362,10 @@ Full process, and the traps that make a failed run look like a clean pass, in
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
    public repo. Someone needs to ask Han Chung.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
-   Reference audio is out of Phase 1 (D5), and B0 (#26) deletes the timing seam
-   and the narration path and supersedes ADR 0007. Until B0 lands both are
-   still in `src/`. The ask itself is still open: someone needs to ask uW to
-   publish timing files — #13.
+   Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
+   and the narration path and superseded ADR 0007 — both are gone from `src/`.
+   The ask itself is still open: someone needs to ask uW to publish timing
+   files — #13.
 8. **OBS-derived recordings are CC BY-SA** — settled, #15 closed. What is
    still open is the _implementation_: the data model cannot tell an
    OBS-derived recording from a user-authored one, and the export path carries
