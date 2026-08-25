@@ -23,6 +23,12 @@ interface SegmentRowProps {
    * edit (insert/append/re-record) one that already has audio. */
   onOpenRecorder: () => void;
   onSetFinished: (finished: boolean) => void;
+  /**
+   * A save is landing (the list is refreshing). Opening the recorder is held
+   * off until it does: the row still reads by its pre-save state, so entering
+   * now would open on stale audio. Play stays live.
+   */
+  busy?: boolean;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -45,6 +51,7 @@ export function SegmentRow({
   onPlay,
   onOpenRecorder,
   onSetFinished,
+  busy = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   const hasClip = row.hasClip;
@@ -149,8 +156,9 @@ export function SegmentRow({
         <button
           type="button"
           onClick={onOpenRecorder}
+          disabled={busy}
           aria-label={strings.editSegment(ordinal)}
-          className="t-ordinal flex-none border-0 bg-transparent p-0 text-left"
+          className="t-ordinal flex-none border-0 bg-transparent p-0 text-left disabled:opacity-50"
           style={{ color: "var(--s-ink-muted)", minWidth: "16px" }}
         >
           {ordinal}
@@ -212,6 +220,7 @@ export function SegmentRow({
           variant="record"
           size={22}
           className="flex-none"
+          disabled={busy}
           onClick={onOpenRecorder}
         />
       )}

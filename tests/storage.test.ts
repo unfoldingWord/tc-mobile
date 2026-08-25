@@ -17,6 +17,7 @@ import {
   addTake,
   chapterProgress,
   createBook,
+  createNextBook,
   getBook,
   getChapter,
   getSegment,
@@ -143,6 +144,17 @@ describe("clip storage", () => {
 });
 
 describe("book tree", () => {
+  it("auto-names concurrent New Book taps distinctly (race-safe)", async () => {
+    // Two taps before the first write lands must not both become "Book 001":
+    // the name comes from the count on disk inside one readwrite transaction,
+    // which IndexedDB serialises, so the second sees the first.
+    const [a, b] = await Promise.all([createNextBook(), createNextBook()]);
+    const names = [a.name, b.name].sort();
+    expect(names).toEqual(["Book 001", "Book 002"]);
+    const third = await createNextBook();
+    expect(third.name).toBe("Book 003");
+  });
+
   it("creates and lists books newest-updated first", async () => {
     // Create in the OPPOSITE order to the expected sort, with explicit and
     // distinct timestamps, so an unsorted `getAll` (primary-key/uuid order)

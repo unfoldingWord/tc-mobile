@@ -51,7 +51,15 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
   const book = await getBook(chapter.bookId);
   const segments = await getSegmentsOfChapter(chapterId);
-  const rows = await Promise.all(segments.map(loadSegmentRow));
+  // Sequentially, not Promise.all: each row loads the segment's full PCM to
+  // compute peaks, and a chapter of long recordings loaded at once is tens to
+  // hundreds of MB alive simultaneously on a low-end phone. One buffer at a
+  // time — computePeaks does not need them to coexist. (The pre-pivot loader
+  // walked sections sequentially for the same reason.)
+  const rows: SegmentRow[] = [];
+  for (const segment of segments) {
+    rows.push(await loadSegmentRow(segment));
+  }
   return {
     bookName: book?.name ?? "",
     chapterNumber: chapter.number,

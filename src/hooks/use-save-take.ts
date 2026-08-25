@@ -4,7 +4,6 @@ import { insertAt } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { addTake } from "@/lib/storage/books";
 import { deleteClip, newClipId, putClip } from "@/lib/storage/clips";
-import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
   discardSave,
   failSave,
@@ -131,25 +130,24 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    * call — `insertAt(existing, recorded, offset)` from `lib/audio/edit.ts`,
    * where `offset` is the sample under the centerline: mid-clip inserts,
    * at/after the end appends, and an empty segment splices into an empty
-   * buffer. The offset is clamped inside `insertAt`, so an out-of-range pan is
-   * an append rather than a throw.
+   * buffer (`existing` is a zero-length array). The offset is clamped inside
+   * `insertAt`, so an out-of-range pan is an append rather than a throw.
    *
-   * The whole merged buffer becomes the segment's one take (1:1) — reading the
-   * existing samples here rather than in a component keeps the splice, and the
-   * PCM it touches, out of the DOM layer entirely.
+   * `existing` is passed in, already loaded — the recorder read it at mount for
+   * its waveform. It is NOT read here: a fallible IndexedDB read AFTER a
+   * recording exists could reject and drop the take before the pending slot
+   * owns it, with no recovery screen. So the merge is synchronous and `saveTake`
+   * takes ownership before its first await, keeping the never-lose property.
+   * The whole merged buffer becomes the segment's one take (1:1).
    */
   const saveRecording = useCallback(
-    async (
+    (
       segmentId: SegmentId,
+      existing: Int16Array,
       recorded: Int16Array,
       insertionOffset: number
     ): Promise<boolean> => {
-      const existing = await loadSegmentClip(segmentId);
-      const base =
-        existing.kind === "resolved"
-          ? existing.clip.samples
-          : new Int16Array(0);
-      const merged = insertAt(base, recorded, insertionOffset);
+      const merged = insertAt(existing, recorded, insertionOffset);
       return saveTake(segmentId, merged);
     },
     [saveTake]

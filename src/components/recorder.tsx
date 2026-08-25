@@ -20,6 +20,9 @@ import type { SegmentId } from "@/types/domain";
  */
 const CENTER_FRACTION = 0.66;
 
+/** Reused so an empty segment's merge base is not re-allocated per render. */
+const NO_SAMPLES = new Int16Array(0);
+
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
 const ZOOM_QUARTER = 4;
@@ -35,6 +38,7 @@ interface RecorderProps {
    */
   saveRecording: (
     segmentId: SegmentId,
+    existing: Int16Array,
     recorded: Int16Array,
     insertionOffset: number
   ) => Promise<boolean>;
@@ -131,7 +135,7 @@ export function Recorder({
   const onPointerUp = useCallback(() => setDragging(false), []);
 
   const onRecordButton = useCallback(() => {
-    if (closing.current) return;
+    if (closing.current || !view) return;
     if (recording) {
       audio.pauseRecording();
     } else if (paused) {
@@ -142,7 +146,7 @@ export function Recorder({
       insertionOffset.current = win.centerlineSample;
       audio.startRecording();
     }
-  }, [recording, paused, audio, win.centerlineSample]);
+  }, [recording, paused, view, audio, win.centerlineSample]);
 
   const onToggleFinished = useCallback(() => {
     if (!view) return;
@@ -167,7 +171,12 @@ export function Recorder({
       if (recording || paused || state === "processing") {
         const samples = await audio.stopRecording();
         if (samples && samples.length > 0) {
-          await saveRecording(segmentId, samples, insertionOffset.current);
+          await saveRecording(
+            segmentId,
+            view?.samples ?? NO_SAMPLES,
+            samples,
+            insertionOffset.current
+          );
           dirty.current = true;
         }
       }
@@ -178,7 +187,7 @@ export function Recorder({
       console.error("Committing the recording on close failed", cause);
       onExit(dirty.current);
     });
-  }, [recording, paused, state, audio, saveRecording, segmentId, onExit]);
+  }, [recording, paused, state, view, audio, saveRecording, segmentId, onExit]);
 
   const denied = !audio.supported || (state === "idle" && audio.error !== null);
 
@@ -295,7 +304,7 @@ export function Recorder({
                       : strings.record
                 }
                 variant="record"
-                disabled={busy || isClosing}
+                disabled={busy || isClosing || !view}
                 onClick={onRecordButton}
               />
               {/* Balances the toolbar so record sits central under the line. */}

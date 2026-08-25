@@ -66,6 +66,33 @@ export async function createBook(
   return book;
 }
 
+/**
+ * Create a book auto-named "Book NNN" from the count already on disk, deriving
+ * the name and writing inside ONE readwrite transaction.
+ *
+ * The count must come from storage, not from a screen's render state: two rapid
+ * New Book taps both read `books.length === 0` from the same render and would
+ * both persist "Book 001". IndexedDB serialises overlapping readwrite
+ * transactions, so counting and putting in one transaction gives the second tap
+ * the first's write — "Book 001", then "Book 002". (Rename is deferred, Q1.)
+ */
+export async function createNextBook(now: number = Date.now()): Promise<Book> {
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  const count = await tx.store.count();
+  const book: Book = {
+    id: uuid() as BookId,
+    name: `Book ${String(count + 1).padStart(3, "0")}`,
+    languageCode: null,
+    chapterIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  await tx.store.put(book);
+  await tx.done;
+  return book;
+}
+
 export async function listBooks(): Promise<Book[]> {
   const db = await getDb();
   return (await db.getAll("books")).sort((a, b) => b.updatedAt - a.updatedAt);

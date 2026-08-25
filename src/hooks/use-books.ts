@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   addChapter as addChapterToBook,
   chapterProgress,
-  createBook as createBookRow,
+  createNextBook,
   getChapter,
   listBooks,
 } from "@/lib/storage/books";
@@ -46,11 +46,6 @@ async function loadBookCard(book: Book): Promise<BookCard> {
   };
 }
 
-/** Next auto-name for a one-tap New Book: "Book 001", "Book 002", … (Q1/F2). */
-function nextBookName(count: number): string {
-  return `Book ${String(count + 1).padStart(3, "0")}`;
-}
-
 /**
  * The Books screen (B2): the book/chapter tree and its two creation actions.
  *
@@ -87,19 +82,18 @@ export function useBooks() {
   const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
   const createBook = useCallback(async (): Promise<Book | null> => {
-    // Named from the current count. Creation is append-only this lane, so the
-    // count is the next ordinal; a rename/delete batch will need to revisit it.
-    // A failed write (quota, aborted tx) reaches the same Notice a load failure
+    // Auto-named from the count on disk (race-safe in storage), not from the
+    // stale render count. A failed write reaches the same Notice a load failure
     // does, never a silent unhandled rejection — the caller gets null.
     try {
-      const book = await createBookRow(nextBookName(books.length));
+      const book = await createNextBook();
       reload();
       return book;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       return null;
     }
-  }, [books.length, reload]);
+  }, [reload]);
 
   const addChapter = useCallback(
     async (bookId: BookId): Promise<Chapter | null> => {

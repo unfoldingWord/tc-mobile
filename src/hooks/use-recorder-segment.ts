@@ -26,6 +26,14 @@ export interface RecorderSegmentView {
   /** Length of the existing clip in samples — the pan/zoom domain and the */
   /** append offset. Zero on an empty segment. */
   readonly lengthSamples: number;
+  /**
+   * The existing clip's samples, loaded here at mount, or null on an empty
+   * segment. Held so the insert/append merge on close is synchronous: the save
+   * path must not do a fallible read AFTER a recording exists, or a rejected
+   * read would drop a take the translator cannot make again (never a recovery
+   * screen). The read's one failure point is this effect, before any recording.
+   */
+  readonly samples: Int16Array | null;
 }
 
 /**
@@ -64,6 +72,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
           hasClip: clip !== null,
           peaks: clip ? computePeaks(clip.samples, PEAK_BUCKETS) : null,
           lengthSamples: clip?.samples.length ?? 0,
+          samples: clip?.samples ?? null,
         });
         setError(null);
       } catch (cause) {
