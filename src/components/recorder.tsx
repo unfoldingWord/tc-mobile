@@ -87,6 +87,18 @@ export function Recorder({
   const dirty = useRef(false);
   /** Guards the async close so a double-tap on Back cannot commit twice. */
   const closing = useRef(false);
+  /**
+   * The in-flight finished-flag write, so `close()` can await it before onExit
+   * triggers App's list reload — otherwise the reload reads the segment's status
+   * from disk before this write lands and the row shows stale (F, round 4).
+   */
+  const finishedWrite = useRef<Promise<unknown>>(Promise.resolve());
+  /**
+   * A recording that could not be decoded (round 4). Distinct from a permission
+   * miss: the take is unrecoverable, and re-recording is the only recovery, so
+   * it shows as a toolbar Notice with Record live — not the permission panel.
+   */
+  const [stopError, setStopError] = useState<string | null>(null);
   // Drives the UI: once Back is tapped the sheet is tearing down, and the
   // post-stop save is in flight. Record must be dead through that window — the
   // sheet still shows and a first take's waveform is still empty, so a second
@@ -143,6 +155,7 @@ export function Recorder({
     } else {
       // The offset is fixed for the whole take here, at the idle→recording
       // edge; pause/resume continues at the same point (F9).
+      setStopError(null);
       insertionOffset.current = win.centerlineSample;
       audio.startRecording();
     }
@@ -155,9 +168,11 @@ export function Recorder({
     // toggle, leaving the row stale. If the write fails, this over-reports a
     // change — a redundant reload, never a lost one.
     dirty.current = true;
-    void setFinished(!view.finished).catch((cause: unknown) => {
-      console.error("Could not change the finished flag", cause);
-    });
+    finishedWrite.current = setFinished(!view.finished).catch(
+      (cause: unknown) => {
+        console.error("Could not change the finished flag", cause);
+      }
+    );
   }, [view, setFinished]);
 
   const close = useCallback(() => {
@@ -182,13 +197,18 @@ export function Recorder({
         } else {
           // The stop yielded nothing — a decode failure (audio.error is set) or
           // an empty capture. Do NOT onExit: leave() would clear that error and
-          // close silently on a take that cannot be recorded again. Stay so the
-          // error surfaces, and re-enable so Back or Record works.
+          // close silently on a take that cannot be recorded again. Surface it
+          // as a toolbar Notice (not the permission panel — this is not a
+          // permission miss), and re-enable so Back or Record works.
+          setStopError(audio.error);
           closing.current = false;
           setIsClosing(false);
           return;
         }
       }
+      // Let a finished-flag write land before onExit reloads the list, so the
+      // row does not read stale against a write still in flight.
+      await finishedWrite.current;
       onExit(dirty.current);
     })().catch((cause: unknown) => {
       // Neither call rejects by contract; this is the last net on the one path
@@ -198,7 +218,9 @@ export function Recorder({
     });
   }, [recording, paused, state, view, audio, saveRecording, segmentId, onExit]);
 
-  const denied = !audio.supported || (state === "idle" && audio.error !== null);
+  const denied =
+    !audio.supported ||
+    (state === "idle" && audio.error !== null && stopError === null);
 
   const finishedState = !view
     ? "disabled"
@@ -255,6 +277,11 @@ export function Recorder({
           </div>
         ) : (
           <>
+            {stopError && (
+              <div className="px-[12px] pt-[8px]">
+                <Notice>{stopError}</Notice>
+              </div>
+            )}
             <div className="recorder-stage flex-1">
               <div
                 ref={stageRef}

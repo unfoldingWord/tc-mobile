@@ -38,11 +38,12 @@ const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
  *
  * The three states are derived clip-presence-first (`segmentRowState`): a
  * dangling clip reads as never-recorded so the only offer is re-record, never
- * amber bars over audio the database cannot play. There is no per-row overflow
- * menu — that is deferred (#29). A never-recorded row opens the recorder from
- * its record button; a recorded row opens it (to insert/append/re-record — the
- * pivot's unit of work) by tapping the ordinal, keeping play/pause as the
- * transport. Erase and the like wait for the deferred menu.
+ * amber bars over audio the database cannot play. The per-row overflow menu
+ * (G5) is held until its occupants exist — Erase Segment is B6 and Share
+ * Segment is B7 — so B3 ships without it rather than an empty affordance
+ * (recorded on #29). A never-recorded row opens the recorder from its record
+ * button; a recorded row opens it (to insert/append/re-record — the pivot's
+ * unit of work) by tapping the ordinal, keeping play/pause as the transport.
  */
 export function SegmentRow({
   row,
@@ -97,11 +98,17 @@ export function SegmentRow({
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (!hasClip) return;
-      // Dragging while a row plays stops it and moves the dot (F4); the user
-      // presses play again to hear from the new spot.
-      if (playing) onPlay(0);
+      const frac = fractionFromEvent(e.clientX);
+      // Dragging while a row plays stops it and moves the dot (F4). Point the
+      // rest position at the tapped spot BEFORE stopping: the playing→false
+      // effect rests the dot at `lastElapsedFraction`, so without this a
+      // tap-to-seek would snap back to wherever playback had reached.
+      if (playing) {
+        lastElapsedFraction.current = frac;
+        onPlay(0);
+      }
       setDragging(true);
-      setPosition(fractionFromEvent(e.clientX));
+      setPosition(frac);
       e.currentTarget.setPointerCapture(e.pointerId);
     },
     [hasClip, playing, onPlay, fractionFromEvent]
@@ -213,6 +220,10 @@ export function SegmentRow({
           variant="play"
           size={20}
           className="flex-none"
+          // Held with the other controls while a save refreshes the list: the
+          // row still carries the pre-save durationMs, so an offset computed
+          // from it would seek the wrong place in the clip just written.
+          disabled={busy}
           onClick={() => onPlay(fraction * (durationMs / 1000))}
         />
       ) : (

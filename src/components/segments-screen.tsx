@@ -130,7 +130,7 @@ export const SegmentsScreen = forwardRef<
           icon="plus"
           label={strings.addSegment}
           variant="quiet"
-          disabled={refreshing}
+          disabled={loading || refreshing}
           onClick={() => void onAppend()}
         />
       </header>
