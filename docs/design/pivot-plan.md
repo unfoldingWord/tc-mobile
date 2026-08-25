@@ -258,6 +258,15 @@ under the table says what that costs and why the trade is worth taking.
 | **B7** | [#33](https://github.com/sethstoll3/tc-mobile/issues/33) | Template Library (OBS, Book of the Bible) and Share Chapter / Share Book                                                                                   | B1, B2      | T2      |
 | **B8** | [#34](https://github.com/sethstoll3/tc-mobile/issues/34) | MP3 on Finished, and the encoder off the main thread                                                                                                       | B1          | **T1**  |
 
+### B1 migration — append-only waived (ADR 0008, 2026-08-25)
+
+#27 called for a data-preserving v2→v3 migration ("still append-only"). On the
+review of PR #57 the DRI took the **one-time destructive recreate** instead:
+pre-alpha, no field data, so a Section-flattening transform would be ceremony
+for data that cannot exist in the field. Append-only resumes from v3. This
+supersedes #27's append-only line for that one transition only; the decision of
+record is [`docs/decisions/0008-pivot-destructive-recreate.md`](../decisions/0008-pivot-destructive-recreate.md).
+
 ### B1 was re-sequenced behind B2 and B3 — 2026-08-24
 
 The table above originally ran B1 first, on the principle that the model settles

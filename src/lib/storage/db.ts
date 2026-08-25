@@ -3,23 +3,43 @@
  *
  * Audio never leaves the device in Phase 1, so this is the system of record —
  * not a cache. Losing it means losing a translator's work, which is why the
- * repository functions below are unit-tested against fake-indexeddb rather
- * than left to on-device spot checks.
+ * repository functions are unit-tested against fake-indexeddb rather than left
+ * to on-device spot checks.
  *
  * Clip metadata and clip samples live in separate stores on purpose: listing
  * a chapter must not pull megabytes of PCM into memory just to show durations.
+ *
+ * ── Append-only migration is deliberately WAIVED for the pivot (v3) ──
+ *
+ * Recorded as a DRI decision in docs/decisions/0008-pivot-destructive-recreate.md
+ * (a code comment cannot waive a repository rule; that ADR is the authority).
+ *
+ * Append-only migration is the discipline this database normally holds to,
+ * because a field device may be several versions behind and its recordings are
+ * unrecoverable. The v3 upgrade breaks it once, on purpose. This is pre-alpha
+ * software with no field data — the cheapest moment a destructive schema
+ * change will ever cost. The v3 upgrade drops EVERY existing store (including
+ * any recorded clips on a dev device) and recreates the pivot schema from
+ * scratch: `sections` and the never-written `media` store are gone, `segments`
+ * are re-indexed by `chapterId` (segments hang off the chapter directly, no
+ * Section), `chapters` by `bookId`, and `projects` is renamed to `books`.
+ *
+ * This is a ONE-TIME destructive recreate. Append-only discipline resumes from
+ * v3 onward — the recreate is gated on `oldVersion < 3`, so a future v4 runs
+ * only its own additive step and never re-wipes real translator data.
+ *
+ * `DB_VERSION` must never be reset to 1: dev devices hold v2, and IndexedDB
+ * refuses to open at a lower version than the one on disk.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 import type {
+  Book,
+  BookId,
   Chapter,
   ChapterId,
   ClipId,
-  Project,
-  ProjectId,
-  Section,
-  SectionId,
   Segment,
   SegmentId,
   Take,
@@ -28,49 +48,24 @@ import type {
 import type { ClipMeta } from "@/types/audio";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export interface TcMobileDb extends DBSchema {
-  projects: { key: ProjectId; value: Project };
+  books: { key: BookId; value: Book };
   chapters: {
     key: ChapterId;
     value: Chapter;
-    indexes: { projectId: ProjectId };
-  };
-  sections: {
-    key: SectionId;
-    value: Section;
-    indexes: { chapterId: ChapterId };
+    indexes: { bookId: BookId };
   };
   segments: {
     key: SegmentId;
     value: Segment;
-    indexes: { sectionId: SectionId };
+    indexes: { chapterId: ChapterId };
   };
   takes: { key: TakeId; value: Take; indexes: { segmentId: SegmentId } };
   clipMeta: { key: ClipId; value: ClipMeta };
   /** Raw mono 16-bit PCM, stored as an ArrayBuffer keyed by ClipId. */
   clipData: { key: ClipId; value: ArrayBuffer };
-  /**
-   * OBS reference-media cache. B0 (#26) removed the accessor code
-   * (`hooks/obs-media.ts`, `lib/storage/media.ts`) and the exported
-   * `CachedMedia` type, but **left this store in place** — empty and unread.
-   * That keeps B0 free of any IndexedDB schema change: the migration below is
-   * untouched, so nothing has to migrate. The store itself is removed by B1's
-   * drop-and-recreate (#27), which is where the schema change, the version
-   * bump, and its migration test belong. The value type is inlined here
-   * precisely so it exports no symbol that would outlive its only reader.
-   */
-  media: {
-    key: string;
-    value: {
-      readonly url: string;
-      readonly blob: Blob;
-      readonly contentType: string;
-      readonly bytes: number;
-      readonly fetchedAt: number;
-    };
-  };
 }
 
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
@@ -78,36 +73,32 @@ let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
   dbPromise ??= openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion) {
-      // Migrations are cumulative and must stay append-only: this database is
-      // the system of record for a translator's work, and a field device may
-      // be several versions behind.
-      if (oldVersion < 1) {
-        db.createObjectStore("projects", { keyPath: "id" });
+      // One-time destructive recreate to the pivot schema (v3). See the header
+      // for why append-only is waived here. Gated on `oldVersion < 3` so this
+      // runs on a fresh install (0) and on the v2 dev schema, but a future
+      // v3→v4 upgrade skips it and runs only its own additive step — the
+      // append-only discipline the header promises resumes from v3.
+      if (oldVersion < 3) {
+        // Drop everything first. On a fresh install this list is empty and the
+        // loop no-ops; on a v2 device it clears the pre-pivot tree, the empty
+        // `media` store, and any dev clips (orphans once the tree is rebuilt).
+        for (const name of Array.from(db.objectStoreNames)) {
+          db.deleteObjectStore(name);
+        }
+
+        db.createObjectStore("books", { keyPath: "id" });
 
         const chapters = db.createObjectStore("chapters", { keyPath: "id" });
-        chapters.createIndex("projectId", "projectId");
-
-        const sections = db.createObjectStore("sections", { keyPath: "id" });
-        sections.createIndex("chapterId", "chapterId");
+        chapters.createIndex("bookId", "bookId");
 
         const segments = db.createObjectStore("segments", { keyPath: "id" });
-        segments.createIndex("sectionId", "sectionId");
+        segments.createIndex("chapterId", "chapterId");
 
         const takes = db.createObjectStore("takes", { keyPath: "id" });
         takes.createIndex("segmentId", "segmentId");
 
         db.createObjectStore("clipMeta", { keyPath: "id" });
         db.createObjectStore("clipData");
-      }
-
-      // v2 added the `media` object store for the OBS reference-media cache.
-      // B0 (#26) removed the cache's accessor code but deliberately left this
-      // step and the store untouched: editing a shipped migration step is the
-      // append-only violation this database's discipline exists to prevent, and
-      // there is nothing to gain — the store is empty (no writer ever existed
-      // outside the deleted code). B1's drop-and-recreate (#27) removes it.
-      if (oldVersion < 2) {
-        db.createObjectStore("media", { keyPath: "url" });
       }
     },
   });

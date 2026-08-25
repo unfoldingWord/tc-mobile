@@ -7,7 +7,29 @@ import {
   resumeAudioContext,
 } from "./audio-io";
 
-export type RecorderState = "idle" | "requesting" | "recording" | "processing";
+export type RecorderState =
+  "idle" | "requesting" | "recording" | "paused" | "processing";
+
+/**
+ * The outcome of `stop()`.
+ *
+ * The failure travels WITH the result rather than through the `error` state, so
+ * the consumer deciding what to show reads the real cause synchronously instead
+ * of a render closure that has not caught up yet. That stale read was the
+ * round-4 regression: a decode failure set `error` asynchronously, `close()`
+ * read the still-null closure value, and the sheet fell through to the
+ * permission panel. It also gives the empty-capture case a message it never had.
+ */
+export interface StopResult {
+  /** Canonical PCM when the take produced usable audio, else null. */
+  readonly samples: Int16Array | null;
+  /**
+   * A translator-facing reason when `samples` is null and it is worth saying —
+   * an empty capture or an undecodable one. Null when there is nothing to say:
+   * a superseded stop, whose UI belongs to a newer recording.
+   */
+  readonly error: string | null;
+}
 
 /**
  * How long `stop()` waits for MediaRecorder to flush before taking what it has.
@@ -39,8 +61,19 @@ export interface UseRecorder {
    * `state`, which a React batch can hide.
    */
   start: () => Promise<boolean>;
-  /** Stop and return the captured audio as canonical mono 16-bit PCM. */
-  stop: () => Promise<Int16Array | null>;
+  /**
+   * Pause capture without ending the take. The same take resumes with
+   * `resume()`; the elapsed timer freezes. No-op unless currently recording.
+   */
+  pause: () => void;
+  /** Resume a paused take into the SAME recording. No-op unless paused. */
+  resume: () => void;
+  /**
+   * Stop and return the captured audio as canonical mono 16-bit PCM, or the
+   * reason it produced none. The failure is in the result, not the `error`
+   * state — see `StopResult`.
+   */
+  stop: () => Promise<StopResult>;
   cancel: () => void;
 }
 
@@ -69,6 +102,16 @@ export function useRecorder(): UseRecorder {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  /**
+   * Elapsed time banked before the current running span.
+   *
+   * Pause/resume splits one take into several running spans. The timer cannot
+   * be `now - startedAt` any more — that would keep counting the paused gap.
+   * So each pause banks the span that just ended here, and the live timer adds
+   * only the current span on top. The take's length is the sum, never the wall
+   * clock since Record was first pressed.
+   */
+  const baseElapsedRef = useRef(0);
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
@@ -81,6 +124,16 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
+
+  /** Run the elapsed timer for the current span, on top of the banked total. */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      setElapsedMs(
+        baseElapsedRef.current + (performance.now() - startedAtRef.current)
+      );
+    }, 100);
+  }, [clearTick]);
 
   const releaseStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -175,12 +228,11 @@ export function useRecorder(): UseRecorder {
 
       recorder.start(250);
       startedAtRef.current = performance.now();
+      baseElapsedRef.current = 0;
       setElapsedMs(0);
       setState("recording");
 
-      tickRef.current = window.setInterval(() => {
-        setElapsedMs(performance.now() - startedAtRef.current);
-      }, 100);
+      startTick();
       return true;
     } catch (cause) {
       if (stream) abandonStream(stream);
@@ -197,11 +249,39 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, releaseStream, supported]);
+  }, [abandonStream, releaseStream, startTick, supported]);
 
-  const stop = useCallback(async (): Promise<Int16Array | null> => {
+  /**
+   * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
+   * but keeps the recorder and stream alive, so `resume()` continues the same
+   * clip. The span that just ran is banked and the timer stopped, so the paused
+   * gap is not counted toward the take's length.
+   */
+  const pause = useCallback(() => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") return null;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.pause();
+    baseElapsedRef.current += performance.now() - startedAtRef.current;
+    clearTick();
+    setElapsedMs(baseElapsedRef.current);
+    setState("paused");
+  }, [clearTick]);
+
+  /** Resume the paused take into the same recording. */
+  const resume = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    recorder.resume();
+    startedAtRef.current = performance.now();
+    setState("recording");
+    startTick();
+  }, [startTick]);
+
+  const stop = useCallback(async (): Promise<StopResult> => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") {
+      return { samples: null, error: null };
+    }
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -217,6 +297,13 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
+    // Take the stream OUT of the shared ref before the flush await. A cancel()
+    // (pagehide, navigation, unmount) landing during the wait calls
+    // releaseStream(), which stops whatever streamRef holds — and stopping THIS
+    // stream mid-flush truncates the final `dataavailable`, which for a
+    // sub-timeslice take is the entire recording. Held only as the local
+    // `stream`, this stop owns it; cancel() finds the ref already null.
+    streamRef.current = null;
     clearTick();
     setState("processing");
 
@@ -247,27 +334,51 @@ export function useRecorder(): UseRecorder {
     // recording in progress.
     if (stream) abandonStream(stream);
 
+    // The shared UI state belongs to the current generation; the failure travels
+    // with the result to whoever called stop(). A superseded stop stays silent —
+    // a newer recording owns both the state and the screen — so its `error` is
+    // null and only a current attempt earns a message to show. The failure is
+    // deliberately NOT written to the `error` state: routing it through the
+    // result lets the caller place it (a toolbar Notice, not the permission
+    // panel) and avoids the stale-closure read that reopened the panel in round
+    // 4.
+    const current = generation === generationRef.current;
+
     if (blob.size === 0) {
-      if (generation === generationRef.current) setState("idle");
-      return null;
+      if (current) setState("idle");
+      return {
+        samples: null,
+        error: current ? "No sound was recorded. Try again." : null,
+      };
     }
 
     try {
       const samples = await decodeToCanonical(blob);
+      const decodedCurrent = generation === generationRef.current;
       // Returned even when superseded: these are confirmed samples, and the
       // caller decides what to do with them. Only the shared UI state is
       // withheld, because a newer recording owns it now.
-      if (generation === generationRef.current) setState("idle");
-      return samples;
-    } catch {
-      // Guarded: a decode failure from a superseded attempt must not paint an
-      // error over a recorder that `cancel()` has already reset, or over a
-      // recording that has since started.
-      if (generation === generationRef.current) {
-        setState("idle");
-        setError("Recording could not be decoded on this device.");
+      if (decodedCurrent) setState("idle");
+      // A successful decode to ZERO samples is "no sound" too — same class as an
+      // empty blob, not a usable take. Classified here, at the source, so a
+      // caller keying on `samples.length` never gets a non-null empty buffer
+      // paired with a null error (which showed no message at all — F7).
+      if (samples.length === 0) {
+        return {
+          samples: null,
+          error: decodedCurrent ? "No sound was recorded. Try again." : null,
+        };
       }
-      return null;
+      return { samples, error: null };
+    } catch {
+      const stillCurrent = generation === generationRef.current;
+      if (stillCurrent) setState("idle");
+      return {
+        samples: null,
+        error: stillCurrent
+          ? "Recording could not be decoded on this device."
+          : null,
+      };
     }
   }, [abandonStream, clearTick]);
 
@@ -289,5 +400,15 @@ export function useRecorder(): UseRecorder {
   // Never leave the microphone hot if the screen unmounts mid-recording.
   useEffect(() => () => cancel(), [cancel]);
 
-  return { state, supported, elapsedMs, error, start, stop, cancel };
+  return {
+    state,
+    supported,
+    elapsedMs,
+    error,
+    start,
+    pause,
+    resume,
+    stop,
+    cancel,
+  };
 }

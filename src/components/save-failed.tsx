@@ -7,7 +7,7 @@ import type { SaveFailureKind } from "@/hooks/save-failure";
 interface SaveFailedProps {
   state: "saving" | "failed";
   kind: SaveFailureKind | null;
-  /** Which section the held recording belongs to, when it is in this chapter. */
+  /** Which segment the held recording belongs to, when it is in this chapter. */
   ordinal: number | null;
   attempts: number;
   onRetry: () => void;
@@ -65,7 +65,7 @@ export function SaveFailed({
       <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
         {ordinal === null
           ? "Your recording is still here."
-          : `Your recording of section ${ordinal} is still here.`}
+          : `Your recording of segment ${ordinal} is still here.`}
       </p>
 
       {!saving && (

@@ -4,6 +4,60 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
+
+**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) (open, **review round 5 resumed → rounds 6–7**) · **Issues:** #27–#30 in flight, #58 filed, #29 noted
+
+### Completed
+
+- **B1–B4 built as one clean lane** (`ultracode` workflow → `6b7b4e4`). Pre-alpha,
+  no field data, so the pre-pivot model/UI was torn out and replaced, not evolved:
+  - `Section` removed; `Segment` hangs off `Chapter` and is the unit of work.
+    `Project` → `Book`. `Take` 1:1/hidden (re-record replaces, reclaims PCM — the
+    `takeIds[]` leak is gone). Binary finished flag over the 5-value enum, with the
+    never-recorded-can't-be-finished invariant in the store.
+  - Books, Segments, and Recorder screens (fixed centerline, insert/append,
+    pause, zoom, no-permission screen). `projects.ts` → `books.ts`.
+  - **ADR 0008** waives append-only for the v2→v3 destructive recreate (DRI call,
+    pre-alpha) — supersedes #27's "still append-only" line for that one transition.
+- **Five review rounds, both reviewers each round** (Frank/George), every round
+  triaged on the PR with dispositions + head SHA. The data-loss class converged
+  and **closed by round 3** (own-before-fallible: the pending slot holds the merge
+  recipe, the merge is deferred into the guarded commit); the reload-race class
+  **closed by round 4** (coordinate the reload window; recorder awaits its writes).
+  No P1 in rounds 4 or 5.
+- **CI green** on the head (`46dcea4`); `npm run verify` green (141 tests).
+
+### In progress — review resumed (rounds 6–7)
+
+- **The round-5 plan landed.** `stop()` returns a `{samples | error}` result
+  (F5-#2/#3), finished-write failures reach the `Notice` (F5-#1), the finished
+  mark rides the take through `addTake` (G5-#2), scrub resets on clip replace
+  (G5-#4), docs refreshed (G5-#3).
+- **Round 6** (Frank): one P2 — the deferred finished mark was dropped on a
+  save-failure retry. Fixed by carrying `finished` through the pending take so
+  `addTake` applies it atomically, on the first attempt or a retry.
+- **Round 7** (Frank + George): four P2 — scrub keyed on duration not clip id
+  (F7), empty _decoded_ PCM surfaced no message (F7), the checkbox showed a
+  demote-bound take as finished all session (G7), and a failed chapter _load_
+  rendered as an empty chapter with a live `+` (G7). All fixed; two P3 doc nits
+  with them. **Not yet clean — a further round is pending.**
+
+### Blockers / needs a human
+
+- **#58 — pagehide cancels an in-progress take.** Real, but a browser-only path
+  that needs on-device verification (in tension with the confirmed 2026-08-24
+  backgrounded-capture note); deferred rather than blind-fixed. Accepted residual
+  on PR #57.
+
+### Next steps
+
+1. Resume PR #57: the round-6 structural pass above, then rounds 6+ to clean.
+2. Merge `feat/pivot-b1-b4` → `develop` on both-clean + green.
+3. Then B5–B8 remain; #58 needs a device.
+
+---
+
 ## 2026-08-24 (evening) — Day 6: B0 lands, the pivot's first deletion
 
 **Branch:** `develop` · **PR:** #55 merged (`95418e6`) · **Issues:** closed #1, #5, #9, #26; noted #27

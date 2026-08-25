@@ -29,12 +29,14 @@ pre-pivot UI is **replaced, not evolved**.
 [#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
 and the work is nine batches, B0–B8 (#26–#34).
 
-**B0 has landed; B1–B8 have not.** Everything below this section describes the
-tree as it stands today, and that tree is still largely pre-pivot: `Section` is
-in the model and no mockup screen exists. What B0 (#26) removed is **gone** —
-the timing seam, the reference-audio/narration path, and the OBS media cache's
-accessor code (`hooks/obs-media.ts`, `lib/storage/media.ts`). Do not read a
-description here as a description of the target.
+**B0–B4 have landed; B5–B8 have not.** `Section` is gone from the model — a
+`Segment` hangs off a `Chapter` directly and is the unit of work — and the three
+pivot screens (Books, Segments, Recorder) exist; `Project` is now `Book`. What
+B0 (#26) removed is still **gone** — the timing seam, the
+reference-audio/narration path, and the OBS media cache's accessor code
+(`hooks/obs-media.ts`, `lib/storage/media.ts`). Parts of the file below still
+describe pre-pivot scaffolding (the OBS section browser, the old `use-chapter`
+loader); do not read every description here as the target.
 
 ## Tech stack
 
