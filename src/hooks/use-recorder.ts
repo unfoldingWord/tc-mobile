@@ -11,6 +11,27 @@ export type RecorderState =
   "idle" | "requesting" | "recording" | "paused" | "processing";
 
 /**
+ * The outcome of `stop()`.
+ *
+ * The failure travels WITH the result rather than through the `error` state, so
+ * the consumer deciding what to show reads the real cause synchronously instead
+ * of a render closure that has not caught up yet. That stale read was the
+ * round-4 regression: a decode failure set `error` asynchronously, `close()`
+ * read the still-null closure value, and the sheet fell through to the
+ * permission panel. It also gives the empty-capture case a message it never had.
+ */
+export interface StopResult {
+  /** Canonical PCM when the take produced usable audio, else null. */
+  readonly samples: Int16Array | null;
+  /**
+   * A translator-facing reason when `samples` is null and it is worth saying —
+   * an empty capture or an undecodable one. Null when there is nothing to say:
+   * a superseded stop, whose UI belongs to a newer recording.
+   */
+  readonly error: string | null;
+}
+
+/**
  * How long `stop()` waits for MediaRecorder to flush before taking what it has.
  *
  * `onstop` is not guaranteed to fire. This module already special-cases WebKit
@@ -47,8 +68,12 @@ export interface UseRecorder {
   pause: () => void;
   /** Resume a paused take into the SAME recording. No-op unless paused. */
   resume: () => void;
-  /** Stop and return the captured audio as canonical mono 16-bit PCM. */
-  stop: () => Promise<Int16Array | null>;
+  /**
+   * Stop and return the captured audio as canonical mono 16-bit PCM, or the
+   * reason it produced none. The failure is in the result, not the `error`
+   * state — see `StopResult`.
+   */
+  stop: () => Promise<StopResult>;
   cancel: () => void;
 }
 
@@ -252,9 +277,11 @@ export function useRecorder(): UseRecorder {
     startTick();
   }, [startTick]);
 
-  const stop = useCallback(async (): Promise<Int16Array | null> => {
+  const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") return null;
+    if (!recorder || recorder.state === "inactive") {
+      return { samples: null, error: null };
+    }
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -307,9 +334,22 @@ export function useRecorder(): UseRecorder {
     // recording in progress.
     if (stream) abandonStream(stream);
 
+    // The shared UI state belongs to the current generation; the failure travels
+    // with the result to whoever called stop(). A superseded stop stays silent —
+    // a newer recording owns both the state and the screen — so its `error` is
+    // null and only a current attempt earns a message to show. The failure is
+    // deliberately NOT written to the `error` state: routing it through the
+    // result lets the caller place it (a toolbar Notice, not the permission
+    // panel) and avoids the stale-closure read that reopened the panel in round
+    // 4.
+    const current = generation === generationRef.current;
+
     if (blob.size === 0) {
-      if (generation === generationRef.current) setState("idle");
-      return null;
+      if (current) setState("idle");
+      return {
+        samples: null,
+        error: current ? "No sound was recorded. Try again." : null,
+      };
     }
 
     try {
@@ -318,16 +358,16 @@ export function useRecorder(): UseRecorder {
       // caller decides what to do with them. Only the shared UI state is
       // withheld, because a newer recording owns it now.
       if (generation === generationRef.current) setState("idle");
-      return samples;
+      return { samples, error: null };
     } catch {
-      // Guarded: a decode failure from a superseded attempt must not paint an
-      // error over a recorder that `cancel()` has already reset, or over a
-      // recording that has since started.
-      if (generation === generationRef.current) {
-        setState("idle");
-        setError("Recording could not be decoded on this device.");
-      }
-      return null;
+      const stillCurrent = generation === generationRef.current;
+      if (stillCurrent) setState("idle");
+      return {
+        samples: null,
+        error: stillCurrent
+          ? "Recording could not be decoded on this device."
+          : null,
+      };
     }
   }, [abandonStream, clearTick]);
 

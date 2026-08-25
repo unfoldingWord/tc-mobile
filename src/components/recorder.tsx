@@ -88,11 +88,15 @@ export function Recorder({
   /** Guards the async close so a double-tap on Back cannot commit twice. */
   const closing = useRef(false);
   /**
-   * The in-flight finished-flag write, so `close()` can await it before onExit
-   * triggers App's list reload — otherwise the reload reads the segment's status
-   * from disk before this write lands and the row shows stale (F, round 4).
+   * The finished checkbox's desired state, or null when the translator has not
+   * touched it this session. The write is deferred to `close()` and applied
+   * AFTER any take commit (G5-#2): `addTake` demotes an approved segment to
+   * draft, so a mark written eagerly is clobbered by a re-record on the same
+   * close — and would also hit `setSegmentFinished` before the take it needs
+   * exists. The checkbox reflects this immediately; the store learns it on
+   * close, like the take itself.
    */
-  const finishedWrite = useRef<Promise<unknown>>(Promise.resolve());
+  const [finishedIntent, setFinishedIntent] = useState<boolean | null>(null);
   /**
    * A recording that could not be decoded (round 4). Distinct from a permission
    * miss: the take is unrecoverable, and re-recording is the only recovery, so
@@ -163,17 +167,12 @@ export function Recorder({
 
   const onToggleFinished = useCallback(() => {
     if (!view) return;
-    // Dirty synchronously, not in .then(): `close()` can reach onExit before the
-    // write resolves, and a reload keyed on the resolved flag would miss the
-    // toggle, leaving the row stale. If the write fails, this over-reports a
-    // change — a redundant reload, never a lost one.
+    // Mark the intent; the store write is deferred to close() (see
+    // `finishedIntent`). Dirty synchronously so a reload reflects the toggle
+    // regardless — a redundant reload is the safe failure, never a lost one.
     dirty.current = true;
-    finishedWrite.current = setFinished(!view.finished).catch(
-      (cause: unknown) => {
-        console.error("Could not change the finished flag", cause);
-      }
-    );
-  }, [view, setFinished]);
+    setFinishedIntent((prev) => !(prev ?? view.finished));
+  }, [view]);
 
   const close = useCallback(() => {
     if (closing.current) return;
@@ -185,30 +184,49 @@ export function Recorder({
       // releases the mic and never rejects; `saveRecording` never rejects and
       // turns a failure into the recovery screen App renders.
       if (recording || paused || state === "processing") {
-        const samples = await audio.stopRecording();
-        if (samples && samples.length > 0) {
+        const result = await audio.stopRecording();
+        if (result.samples && result.samples.length > 0) {
           await saveRecording(
             segmentId,
             view?.samples ?? NO_SAMPLES,
-            samples,
+            result.samples,
             insertionOffset.current
           );
           dirty.current = true;
         } else {
-          // The stop yielded nothing — a decode failure (audio.error is set) or
-          // an empty capture. Do NOT onExit: leave() would clear that error and
-          // close silently on a take that cannot be recorded again. Surface it
-          // as a toolbar Notice (not the permission panel — this is not a
-          // permission miss), and re-enable so Back or Record works.
-          setStopError(audio.error);
+          // The stop yielded no usable audio — an empty capture or a decode
+          // failure. Its cause travels WITH the result, not the async `error`
+          // state a render closure here would read one frame stale (the round-4
+          // regression that reopened the permission panel). Do NOT onExit:
+          // leave() would close silently on a take that cannot be recorded
+          // again. Surface it as a toolbar Notice (not the permission panel —
+          // this is not a permission miss) and re-enable so Back or Record
+          // works.
+          setStopError(result.error);
           closing.current = false;
           setIsClosing(false);
           return;
         }
       }
-      // Let a finished-flag write land before onExit reloads the list, so the
-      // row does not read stale against a write still in flight.
-      await finishedWrite.current;
+      // Apply the finished toggle LAST — after any take commit. `addTake`
+      // demotes to draft, so a mark written before it is clobbered; written here
+      // it wins, and it lands on a segment whose take now exists (which
+      // `setSegmentFinished` requires). Only when the translator actually
+      // changed it from the stored value.
+      if (view && finishedIntent !== null && finishedIntent !== view.finished) {
+        try {
+          await setFinished(finishedIntent);
+        } catch (cause) {
+          // The store rejects a finished mark on a segment with no take — a take
+          // deleted externally between toggle and close. Surface it (F5-#1)
+          // rather than only the console, and stay open.
+          console.error("Could not change the finished flag", cause);
+          setStopError(strings.finishedWriteFailed);
+          closing.current = false;
+          setIsClosing(false);
+          return;
+        }
+      }
       onExit(dirty.current);
     })().catch((cause: unknown) => {
       // Neither call rejects by contract; this is the last net on the one path
@@ -216,15 +234,29 @@ export function Recorder({
       console.error("Committing the recording on close failed", cause);
       onExit(dirty.current);
     });
-  }, [recording, paused, state, view, audio, saveRecording, segmentId, onExit]);
+  }, [
+    recording,
+    paused,
+    state,
+    view,
+    audio,
+    saveRecording,
+    segmentId,
+    onExit,
+    finishedIntent,
+    setFinished,
+  ]);
 
   const denied =
     !audio.supported ||
     (state === "idle" && audio.error !== null && stopError === null);
 
+  // The checkbox tracks the intent immediately (the write is deferred to close),
+  // falling back to the stored flag until the translator touches it.
+  const displayedFinished = finishedIntent ?? view?.finished ?? false;
   const finishedState = !view
     ? "disabled"
-    : view.finished
+    : displayedFinished
       ? "finished"
       : view.hasClip
         ? "empty"
@@ -255,7 +287,7 @@ export function Recorder({
           <Checkbox
             state={finishedState}
             label={
-              view && view.finished
+              view && displayedFinished
                 ? strings.markUnfinished(view.ordinal)
                 : strings.markFinished(view?.ordinal ?? 0)
             }

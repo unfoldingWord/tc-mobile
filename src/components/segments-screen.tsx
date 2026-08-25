@@ -99,12 +99,11 @@ export const SegmentsScreen = forwardRef<
 
   const onSetFinished = useCallback(
     (segmentId: SegmentId, finished: boolean) => {
-      // The checkbox is disabled on a never-recorded row and the store rejects
-      // marking one finished, so a rejection here is a genuine backstop, not a
-      // routine path — it reaches the console rather than being swallowed.
-      void setFinished(segmentId, finished).catch((cause: unknown) => {
-        console.error("Could not change the finished flag", cause);
-      });
+      // The hook routes a failure to the screen's Notice (the checkbox is
+      // disabled on a never-recorded row and the store rejects marking one
+      // finished, so this is a backstop). It does not reject, so there is
+      // nothing to handle here.
+      void setFinished(segmentId, finished);
     },
     [setFinished]
   );

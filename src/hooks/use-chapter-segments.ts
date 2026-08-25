@@ -146,13 +146,19 @@ export function useChapterSegments(chapterId: ChapterId) {
   const setFinished = useCallback(
     async (segmentId: SegmentId, finished: boolean): Promise<void> => {
       // The store rejects marking a never-recorded segment finished; the
-      // checkbox is disabled there, so this is the backstop, and the rejection
-      // is left to propagate rather than swallowed. Only a landed write patches
-      // the row.
-      await setSegmentFinished(segmentId, finished);
-      setRows((rs) =>
-        rs.map((r) => (r.segmentId === segmentId ? { ...r, finished } : r))
-      );
+      // checkbox is disabled there, so this is a genuine backstop. Route a
+      // failure to the same Notice a load/append failure uses — `console.error`
+      // is not a channel on a phone in a village — rather than only the console.
+      // Only a landed write patches the row.
+      try {
+        await setSegmentFinished(segmentId, finished);
+        setRows((rs) =>
+          rs.map((r) => (r.segmentId === segmentId ? { ...r, finished } : r))
+        );
+        setError(null);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     },
     []
   );

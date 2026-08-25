@@ -54,4 +54,5 @@ export const strings = {
   micNeededTitle: "Microphone access is needed to record",
   micRetry: "Try again",
   micBack: "Go back",
+  finishedWriteFailed: "Could not save the finished mark.",
 } as const;

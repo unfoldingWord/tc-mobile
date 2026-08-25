@@ -5,7 +5,11 @@ import {
   resumeAudioContext,
   type PlaybackHandle,
 } from "./audio-io";
-import { useRecorder, type RecorderState } from "./use-recorder";
+import {
+  useRecorder,
+  type RecorderState,
+  type StopResult,
+} from "./use-recorder";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
@@ -33,8 +37,11 @@ export interface UseAudioSession {
   pauseRecording: () => void;
   /** Resume a paused recording into the same take. */
   resumeRecording: () => void;
-  /** Stop the microphone and return what it captured. Never rejects. */
-  stopRecording: () => Promise<Int16Array | null>;
+  /**
+   * Stop the microphone and return what it captured, or the reason it captured
+   * nothing (`StopResult`). Never rejects.
+   */
+  stopRecording: () => Promise<StopResult>;
   /** End every sound this screen owns, synchronously. Call on every navigation. */
   leave: () => void;
 }
@@ -239,7 +246,7 @@ export function useAudioSession(): UseAudioSession {
   const pauseRecording = useCallback(() => pauseCapture(), [pauseCapture]);
   const resumeRecording = useCallback(() => resumeCapture(), [resumeCapture]);
 
-  const stopRecording = useCallback(async (): Promise<Int16Array | null> => {
+  const stopRecording = useCallback(async (): Promise<StopResult> => {
     // Snapshot BEFORE the await. `startRecording` writes every new claim into
     // the same ref, so reading it afterwards would hand us a *newer*
     // recording's token — releasing that is precisely the bug this token exists
@@ -248,9 +255,12 @@ export function useAudioSession(): UseAudioSession {
     try {
       return await endRecording();
     } catch (cause) {
+      // Backstop only — `stop()` returns its failure in the result and does not
+      // reject. The reason rides the result to the recorder sheet (a toolbar
+      // Notice), rather than `playbackError`, which would bleed onto the
+      // Segments screen after the sheet is gone.
       console.error("Stopping the recorder failed", cause);
-      setPlaybackError("Could not finish this recording.");
-      return null;
+      return { samples: null, error: "Could not finish this recording." };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the
