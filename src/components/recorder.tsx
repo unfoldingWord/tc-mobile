@@ -145,18 +145,28 @@ export function Recorder({
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Nothing to pan on an empty segment (F11): the baseline does not slide.
-      if (!hasAudio || recording || paused) return;
+      // Also frozen while `busy` (requesting/processing): insertionOffset is
+      // captured at the Record tap, so a pan during a slow first-time permission
+      // prompt would slide the centerline off the sample the take actually splices
+      // into, breaking the drawn promise that record begins under the line (#61).
+      if (!hasAudio || recording || paused || busy) return;
       setDragging(true);
       dragStartX.current = e.clientX;
       panAtDragStart.current = pan;
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [hasAudio, recording, paused, pan]
+    [hasAudio, recording, paused, busy, pan]
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!dragging) return;
+      // Freeze a drag ALREADY in flight the moment the take goes non-idle, not
+      // just its start (onPointerDown). A pan begun while idle keeps its pointer
+      // capture, so with a second finger the translator can tap Record and keep
+      // moving the first finger through the `requesting` window — sliding the
+      // centerline off the sample insertionOffset already locked to at the tap
+      // (#61). The pointer-down guard alone left this multitouch path open.
+      if (!dragging || recording || paused || busy) return;
       const width = stageRef.current?.clientWidth ?? 1;
       // Drag right reveals earlier audio: the sample under the centerline
       // decreases. The move is scaled by what the viewport spans at this zoom,
@@ -167,7 +177,7 @@ export function Recorder({
         Math.max(0, Math.min(panAtDragStart.current + delta, length))
       );
     },
-    [dragging, win.visibleSamples, length]
+    [dragging, recording, paused, busy, win.visibleSamples, length]
   );
 
   const onPointerUp = useCallback(() => setDragging(false), []);
