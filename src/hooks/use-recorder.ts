@@ -53,12 +53,16 @@ export interface UseRecorder {
   readonly elapsedMs: number;
   readonly error: string | null;
   /**
-   * Open the microphone. Resolves `true` only when capture actually began.
+   * Open the microphone. Resolves `true` when capture is live after the call —
+   * a take this call started, or one already running when a redundant start was
+   * refused (the mic is live either way).
    *
-   * The result is the caller's release signal: a refused start (no permission,
-   * no device, superseded by a newer start) has to hand back the audio floor
-   * on this path rather than through an effect watching for an intermediate
-   * `state`, which a React batch can hide.
+   * `false` is the caller's release signal: a start that produced no live
+   * capture (no permission, no device, superseded by a newer start) has to hand
+   * back the audio floor on this path rather than through an effect watching for
+   * an intermediate `state`, which a React batch can hide. An already-live take
+   * is deliberately NOT this case — releasing the floor while capture continues
+   * would strand a live microphone with no floor holder.
    */
   start: () => Promise<boolean>;
   /**
@@ -158,14 +162,21 @@ export function useRecorder(): UseRecorder {
       setError("This device cannot record audio.");
       return false;
     }
-    // Refuse to open a second microphone while one is already live. Unreachable
+    // Refuse to open a SECOND microphone while one is already live. Unreachable
     // through the current UI — Record maps to pause/resume while non-idle and the
     // permission panel only renders at idle — but a future caller invoking start()
     // mid-take would otherwise overwrite streamRef, stranding the old stream as a
     // hot mic while its recorder kept capturing into an orphaned array (#60). Leave
-    // the running take's state and error untouched; just decline to begin a new one.
+    // the running take's state and error untouched; just decline to open a new one.
+    //
+    // Resolve `true`, NOT `false`: `false` is the caller's floor-release signal
+    // (`startRecording` calls `session.stopAll()` on it), and releasing the mic
+    // floor while capture continues would let playback claim the floor under a
+    // live microphone — the exact invariant the session refuses to gate on which
+    // buttons happen to be rendered. Capture is already happening, so the honest
+    // answer is "yes, the mic is live"; the caller keeps the floor it holds.
     const live = recorderRef.current;
-    if (live && live.state !== "inactive") return false;
+    if (live && live.state !== "inactive") return true;
     setError(null);
     setState("requesting");
     const generation = ++generationRef.current;
