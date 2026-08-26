@@ -158,6 +158,14 @@ export function useRecorder(): UseRecorder {
       setError("This device cannot record audio.");
       return false;
     }
+    // Refuse to open a second microphone while one is already live. Unreachable
+    // through the current UI — Record maps to pause/resume while non-idle and the
+    // permission panel only renders at idle — but a future caller invoking start()
+    // mid-take would otherwise overwrite streamRef, stranding the old stream as a
+    // hot mic while its recorder kept capturing into an orphaned array (#60). Leave
+    // the running take's state and error untouched; just decline to begin a new one.
+    const live = recorderRef.current;
+    if (live && live.state !== "inactive") return false;
     setError(null);
     setState("requesting");
     const generation = ++generationRef.current;

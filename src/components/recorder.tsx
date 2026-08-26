@@ -145,13 +145,17 @@ export function Recorder({
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Nothing to pan on an empty segment (F11): the baseline does not slide.
-      if (!hasAudio || recording || paused) return;
+      // Also frozen while `busy` (requesting/processing): insertionOffset is
+      // captured at the Record tap, so a pan during a slow first-time permission
+      // prompt would slide the centerline off the sample the take actually splices
+      // into, breaking the drawn promise that record begins under the line (#61).
+      if (!hasAudio || recording || paused || busy) return;
       setDragging(true);
       dragStartX.current = e.clientX;
       panAtDragStart.current = pan;
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [hasAudio, recording, paused, pan]
+    [hasAudio, recording, paused, busy, pan]
   );
 
   const onPointerMove = useCallback(
