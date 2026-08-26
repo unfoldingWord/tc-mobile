@@ -46,6 +46,18 @@
     padding: var(--p-space-4) var(--p-space-3);
   }
 
+  /* Build identity, pinned to the bottom of the shell (flex `margin-top:auto`)
+     and muted — tester metadata, never competing with the screen. */
+  .build-stamp {
+    margin-top: auto;
+    padding-top: var(--p-space-3);
+    text-align: center;
+    font-size: var(--p-text-xs);
+    color: var(--s-ink-faint);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+
   /* --- controls --------------------------------------------------------- */
   .control {
     display: grid;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BooksScreen } from "@/components/books-screen";
+import { BuildStamp } from "@/components/build-stamp";
 import { Recorder } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
 import {
@@ -166,6 +167,7 @@ export function App() {
           onExit={closeRecorder}
         />
       )}
+      <BuildStamp />
     </main>
   );
 }
