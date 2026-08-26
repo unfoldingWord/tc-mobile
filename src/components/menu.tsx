@@ -7,10 +7,16 @@ interface MenuProps {
   open: boolean;
   onClose: () => void;
   /**
-   * The menu's contents. Empty this lane by design: Template Library is B7
-   * (#33), the recorder menu is B6. An empty labelled panel is honest and
-   * operable infrastructure — it opens, traps focus, and closes — not a stub,
-   * because the mechanism is exactly what those batches mount into.
+   * Panel heading, announced by a screen reader. Defaults to the global menu's
+   * title; the recorder opens the same surface with its own title (Redo now, VU
+   * and Erase in B6).
+   */
+  title?: string;
+  /**
+   * The menu's contents. Empty on the global menu this lane: Template Library is
+   * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
+   * opens, traps focus, and closes — not a stub, because the mechanism is exactly
+   * what that batch mounts into.
    */
   children?: React.ReactNode;
 }
@@ -23,7 +29,12 @@ interface MenuProps {
  * reusable mechanism B6 and B7 both fill, so it earns its place now even while
  * it holds nothing.
  */
-export function Menu({ open, onClose, children }: MenuProps) {
+export function Menu({
+  open,
+  onClose,
+  title = strings.menuTitle,
+  children,
+}: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -73,11 +84,11 @@ export function Menu({ open, onClose, children }: MenuProps) {
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={strings.menuTitle}
+        aria-label={title}
         className="menu-panel"
       >
         <div className="flex items-center justify-between">
-          <span className="t-title">{strings.menuTitle}</span>
+          <span className="t-title">{title}</span>
           <Control
             icon="back"
             label={strings.menuClose}
