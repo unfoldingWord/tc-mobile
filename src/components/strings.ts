@@ -71,4 +71,5 @@ export const strings = {
   selectionStartHandle: "Selection start",
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
+  clearFailed: "Could not clear the audio. Try again.",
 } as const;

@@ -125,80 +125,108 @@ export function useSegmentEditor(
   // Apply a proposed history, allocating the new buffer INSIDE a guard. A paste
   // replays `insertAt`, which allocates the full result and can throw on a
   // low-memory device; a throw must neither advance history nor crash the render
-  // tree. On failure the op is dropped and the control reports it in place.
-  const advance = useCallback(
-    (nextLog: EditLog): boolean => {
+  // tree. On failure everything is dropped and the control reports it in place.
+  // `produce` runs ENTIRELY inside the guard — every buffer allocation (a
+  // paste's `insertAt`, a cut's `sliceRange`) included — so an OOM there cannot
+  // escape the handler with history half-advanced.
+  const runEdit = useCallback(
+    (produce: () => { next: History; after?: () => void }) => {
       try {
-        const next = materialize(base, nextLog);
-        setHist({ base, working: next, log: nextLog });
+        const { next, after } = produce();
+        setHist(next);
         setError(false);
-        return true;
+        after?.();
       } catch (cause) {
         console.error("An edit could not be applied", cause);
         setError(true);
-        return false;
       }
     },
-    [base]
+    []
   );
 
-  const openSelection = useCallback(
-    (initial: SampleRange) => {
-      setSelectionState(clampRange(initial, working.length));
-      setSelectionActive(true);
-    },
-    [working.length]
+  const applyLog = useCallback(
+    (nextLog: EditLog, after?: () => void) =>
+      runEdit(() => ({
+        next: { base, working: materialize(base, nextLog), log: nextLog },
+        after,
+      })),
+    [base, runEdit]
   );
 
-  const closeSelection = useCallback(() => {
+  const clearSelection = useCallback(() => {
     setSelectionActive(false);
     setSelectionState(null);
   }, []);
 
+  // Clamp each endpoint to the buffer but do NOT reorder: a handle dragged past
+  // the other edge must stay under the finger. The overlay renders a reversed
+  // span (lo/hi), and `cut` normalises with `clampRange` at the point it matters.
+  const clampPoint = useCallback(
+    (v: number) => Math.max(0, Math.min(v, working.length)),
+    [working.length]
+  );
+
+  const openSelection = useCallback(
+    (initial: SampleRange) => {
+      setSelectionState({
+        start: clampPoint(initial.start),
+        end: clampPoint(initial.end),
+      });
+      setSelectionActive(true);
+    },
+    [clampPoint]
+  );
+
+  const closeSelection = clearSelection;
+
   const setSelection = useCallback(
     (range: SampleRange) => {
-      setSelectionState(clampRange(range, working.length));
+      setSelectionState({
+        start: clampPoint(range.start),
+        end: clampPoint(range.end),
+      });
     },
-    [working.length]
+    [clampPoint]
   );
 
   const cut = useCallback(() => {
     if (!selection) return;
     const range = clampRange(selection, working.length);
     if (range.start === range.end) return; // nothing picked — not a no-op cut
-    const removed = sliceRange(working, range);
-    if (advance(pushOp(log, { kind: "cut", range }))) {
-      clipboard.set(removed);
-      setSelectionActive(false);
-      setSelectionState(null);
-    }
-  }, [selection, working, log, advance, clipboard]);
+    runEdit(() => {
+      const removed = sliceRange(working, range);
+      const nextLog = pushOp(log, { kind: "cut", range });
+      return {
+        next: { base, working: materialize(base, nextLog), log: nextLog },
+        after: () => {
+          clipboard.set(removed);
+          clearSelection();
+        },
+      };
+    });
+  }, [selection, working, log, base, runEdit, clipboard, clearSelection]);
 
   const paste = useCallback(
     (atSample: number) => {
       const clip = clipboard.clip;
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
-      advance(pushOp(log, { kind: "paste", at, clip }));
+      applyLog(pushOp(log, { kind: "paste", at, clip }));
     },
-    [clipboard.clip, working.length, log, advance]
+    [clipboard.clip, working.length, log, applyLog]
   );
 
   // Undo/redo re-materialise from base and clear any open selection, whose
   // sample range was measured against a buffer the history has just changed.
-  const undo = useCallback(() => {
-    if (advance(logUndo(log))) {
-      setSelectionActive(false);
-      setSelectionState(null);
-    }
-  }, [log, advance]);
+  const undo = useCallback(
+    () => applyLog(logUndo(log), clearSelection),
+    [log, applyLog, clearSelection]
+  );
 
-  const redo = useCallback(() => {
-    if (advance(logRedo(log))) {
-      setSelectionActive(false);
-      setSelectionState(null);
-    }
-  }, [log, advance]);
+  const redo = useCallback(
+    () => applyLog(logRedo(log), clearSelection),
+    [log, applyLog, clearSelection]
+  );
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)

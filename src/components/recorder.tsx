@@ -198,16 +198,18 @@ export function Recorder({
       // captured at the Record tap, so a pan during a slow first-time permission
       // prompt would slide the centerline off the sample the take actually splices
       // into, breaking the drawn promise that record begins under the line (#61).
-      // Also frozen while the selection frame is open: the stage drag belongs to
-      // the selection handles then, not the pan (B5), or the two would fight.
-      if (!hasAudio || recording || paused || busy || editor.selectionActive)
-        return;
+      // Pan stays available while the selection frame is open: a span can grow
+      // past the viewport, and panning is the only way to bring an off-screen
+      // handle back within reach (B5, George R2). The handles stop their own
+      // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
+      // never also starts a pan — only a drag on the bare canvas pans.
+      if (!hasAudio || recording || paused || busy) return;
       setDragging(true);
       dragStartX.current = e.clientX;
       panAtDragStart.current = pan;
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [hasAudio, recording, paused, busy, editor.selectionActive, pan]
+    [hasAudio, recording, paused, busy, pan]
   );
 
   const onPointerMove = useCallback(
@@ -218,8 +220,7 @@ export function Recorder({
       // moving the first finger through the `requesting` window — sliding the
       // centerline off the sample insertionOffset already locked to at the tap
       // (#61). The pointer-down guard alone left this multitouch path open.
-      if (!dragging || recording || paused || busy || editor.selectionActive)
-        return;
+      if (!dragging || recording || paused || busy) return;
       const width = stageRef.current?.clientWidth ?? 1;
       // Drag right reveals earlier audio: the sample under the centerline
       // decreases. The move is scaled by what the viewport spans at this zoom,
@@ -230,15 +231,7 @@ export function Recorder({
         Math.max(0, Math.min(panAtDragStart.current + delta, length))
       );
     },
-    [
-      dragging,
-      recording,
-      paused,
-      busy,
-      editor.selectionActive,
-      win.visibleSamples,
-      length,
-    ]
+    [dragging, recording, paused, busy, win.visibleSamples, length]
   );
 
   const onPointerUp = useCallback(() => setDragging(false), []);
@@ -346,18 +339,38 @@ export function Recorder({
         // capture is NOT this branch — it returns the "No sound" error above and
         // stays open to retry.
       }
-      // An edit-only close (B5): cuts/pastes but no recording this session. The
-      // whole flattened working buffer replaces the segment's audio through the
-      // same never-lose machinery (saveEditedSegment → the owned slot → recovery
-      // screen on failure). Like a re-record, an edit demotes an approved segment
-      // to draft unless the translator explicitly re-marked it finished, so the
-      // mark rides this write too and the finished-only branch below is skipped.
+      // An edit-only close (B5): cuts/pastes but no recording this session.
       if (!committed && editor.hasEdits) {
-        await saveEditedSegment(
-          segmentId,
-          editor.working,
-          finishedIntent === true
-        );
+        if (editor.workingLength === 0) {
+          // Cut down to nothing clears the take (no 0-frame ghost). Unlike a
+          // non-empty save it has NO recovery slot, so a failed clear must keep
+          // the sheet open with an in-place error — closing as if the erase
+          // happened would leave the original audio on disk under a UI that says
+          // it is gone (and a clipboard copy alongside it). Same shape as the
+          // finished-flag write failure below.
+          const cleared = await saveEditedSegment(
+            segmentId,
+            editor.working,
+            false
+          );
+          if (!cleared) {
+            setStopError(strings.clearFailed);
+            closing.current = false;
+            setIsClosing(false);
+            return;
+          }
+        } else {
+          // A non-empty edit replaces the audio through the same never-lose
+          // machinery a recording uses (the owned slot → App's recovery screen on
+          // failure), so its boolean is deliberately not branched on here — just
+          // like the record path. Like a re-record it demotes an approved segment
+          // to draft unless explicitly re-marked, and the mark rides the write.
+          await saveEditedSegment(
+            segmentId,
+            editor.working,
+            finishedIntent === true
+          );
+        }
         dirty.current = true;
         committed = true;
       }
@@ -427,13 +440,17 @@ export function Recorder({
   // updates mid-sheet, so a clip edited down to nothing (cut-all) would still
   // read as "will have audio" and could be marked finished onto a 0-frame take.
   const willHaveAudio = view !== null && (takeActive || hasAudio);
+  // `willHaveAudio` gates BEFORE `displayedFinished`, so a segment with no audio
+  // reads unchecked-and-disabled even if `finishedIntent` is still true — paste,
+  // mark finished, then cut-all must not leave a checked box on an empty segment
+  // (close clears it and ignores the mark, so this is only the UI catching up).
   const finishedState = !view
     ? "disabled"
-    : displayedFinished
-      ? "finished"
-      : willHaveAudio
-        ? "empty"
-        : "disabled";
+    : !willHaveAudio
+      ? "disabled"
+      : displayedFinished
+        ? "finished"
+        : "empty";
 
   return (
     <div className="recorder-scrim" role="dialog" aria-modal="true">

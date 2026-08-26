@@ -43,7 +43,10 @@ export function SelectionOverlay({
   endLabel,
 }: SelectionOverlayProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const dragEdge = useRef<"start" | "end" | null>(null);
+  // The edge under each active pointer, keyed by pointerId — so two fingers on
+  // the two handles do not overwrite one shared "which edge" and swap targets
+  // mid-drag (the multitouch class of #61, George R2).
+  const dragging = useRef<Map<number, "start" | "end">>(new Map());
 
   const lo = Math.min(selection.start, selection.end);
   const hi = Math.max(selection.start, selection.end);
@@ -51,8 +54,8 @@ export function SelectionOverlay({
   const widthPct = pct(hi, win) - leftPct;
 
   const moveEdge = useCallback(
-    (clientX: number) => {
-      const edge = dragEdge.current;
+    (pointerId: number, clientX: number) => {
+      const edge = dragging.current.get(pointerId);
       if (!edge) return;
       const host = hostRef.current;
       if (!host) return;
@@ -79,16 +82,19 @@ export function SelectionOverlay({
       className="selection-handle"
       style={{ left: `${pct(valueNow, win)}%` }}
       onPointerDown={(e) => {
-        dragEdge.current = edge;
+        // Stop the pan on the canvas beneath from also arming on this grab: only
+        // a drag on the bare canvas pans; a handle adjusts its edge (George R2).
+        e.stopPropagation();
+        dragging.current.set(e.pointerId, edge);
         e.currentTarget.setPointerCapture(e.pointerId);
       }}
-      onPointerMove={(e) => moveEdge(e.clientX)}
+      onPointerMove={(e) => moveEdge(e.pointerId, e.clientX)}
       onPointerUp={(e) => {
-        dragEdge.current = null;
+        dragging.current.delete(e.pointerId);
         e.currentTarget.releasePointerCapture(e.pointerId);
       }}
-      onPointerCancel={() => {
-        dragEdge.current = null;
+      onPointerCancel={(e) => {
+        dragging.current.delete(e.pointerId);
       }}
       onKeyDown={(e) => {
         // Nudge one bucket per arrow press, so the frame is operable without a
