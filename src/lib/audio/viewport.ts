@@ -53,3 +53,41 @@ export function viewportWindow(
   const end = centerlineSample + (1 - centerFraction) * visibleSamples;
   return { start, end, visibleSamples, centerlineSample };
 }
+
+/**
+ * Map a pointer x within the waveform stage to a sample position.
+ *
+ * The inverse of `sampleToViewportX`. `x` is in CSS pixels from the left edge
+ * of the stage, `width` the stage's `clientWidth`. B5's selection handles read
+ * a pointer position back into sample space with this — the same scale the pan
+ * drag already uses (`delta = -(dx / width) * visibleSamples`), so a handle and
+ * a pan move the waveform by the same amount per pixel.
+ *
+ * Deliberately unclamped, matching `viewportWindow`: the result can be < 0 or
+ * > length in the blank head/tail, and the caller clamps to `[0, length]` when
+ * it turns the sample into a selection edge.
+ */
+export function viewportXToSample(
+  x: number,
+  width: number,
+  win: WaveformViewport
+): number {
+  return win.start + (x / width) * win.visibleSamples;
+}
+
+/**
+ * Map a sample position to its x within the stage, in CSS pixels.
+ *
+ * The inverse of `viewportXToSample`. B5 positions the selection rectangle and
+ * its edge handles with this. Equivalent to the canvas' own fraction form
+ * (`x = ((s/length - startFraction) / span) * w`) but expressed in the sample
+ * units the viewport already works in, so the overlay and the pan share one
+ * coordinate model.
+ */
+export function sampleToViewportX(
+  sample: number,
+  width: number,
+  win: WaveformViewport
+): number {
+  return ((sample - win.start) / win.visibleSamples) * width;
+}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { viewportWindow } from "@/lib/audio/viewport";
+import {
+  sampleToViewportX,
+  viewportWindow,
+  viewportXToSample,
+} from "@/lib/audio/viewport";
 
 /**
  * The recorder viewport is pure geometry, so the pan/zoom cases that would need
@@ -42,5 +46,63 @@ describe("viewportWindow", () => {
     expect(v.centerlineSample).toBe(1000);
     expect(v.start).toBeCloseTo(1000 - 0.66 * 1000); // 340 — audio to the left
     expect(v.end).toBeGreaterThan(1000); // blank to the right
+  });
+});
+
+/**
+ * The two conversions B5's selection handles ride on. They must be exact
+ * inverses across the viewport, and must agree with the pan drag's own scale
+ * (a pixel of travel moves the same number of samples either way), or a handle
+ * would grab a different sample than the one drawn under the finger.
+ */
+describe("viewportXToSample / sampleToViewportX", () => {
+  const win = viewportWindow(1000, 500, 1, 0.66); // start -160, visible 1000
+  const width = 400;
+
+  it("maps the left edge to the first visible sample and the right edge past it", () => {
+    expect(viewportXToSample(0, width, win)).toBeCloseTo(win.start);
+    expect(viewportXToSample(width, width, win)).toBeCloseTo(win.end);
+  });
+
+  it("places a sample at the centerline's x and back", () => {
+    // The centerline sits at centerFraction of the width; the sample under it
+    // is centerlineSample. Round-trips through both conversions.
+    const centerX = 0.66 * width;
+    expect(sampleToViewportX(win.centerlineSample, width, win)).toBeCloseTo(
+      centerX
+    );
+    expect(viewportXToSample(centerX, width, win)).toBeCloseTo(
+      win.centerlineSample
+    );
+  });
+
+  it("is an exact inverse for arbitrary samples and pixels", () => {
+    for (const s of [-160, 0, 250, 500, 840]) {
+      expect(
+        viewportXToSample(sampleToViewportX(s, width, win), width, win)
+      ).toBeCloseTo(s);
+    }
+    for (const x of [0, 137, 200, 400]) {
+      expect(
+        sampleToViewportX(viewportXToSample(x, width, win), width, win)
+      ).toBeCloseTo(x);
+    }
+  });
+
+  it("moves the same samples-per-pixel as the pan drag scale", () => {
+    // The pan drag uses delta = -(dx / width) * visibleSamples
+    // (recorder.tsx). A handle dragged dx pixels must cover the same span.
+    const dx = 40;
+    const span =
+      viewportXToSample(dx, width, win) - viewportXToSample(0, width, win);
+    expect(span).toBeCloseTo((dx / width) * win.visibleSamples);
+  });
+
+  it("tracks zoom: a quarter-view pixel covers a quarter of the samples", () => {
+    const zoomed = viewportWindow(1000, 500, 4, 0.66); // visible 250
+    const span =
+      viewportXToSample(width, width, zoomed) -
+      viewportXToSample(0, width, zoomed);
+    expect(span).toBeCloseTo(250);
   });
 });
