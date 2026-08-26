@@ -16,6 +16,7 @@ import {
   addSegment,
   addTake,
   chapterProgress,
+  clearSegmentTake,
   createBook,
   createNextBook,
   getBook,
@@ -130,6 +131,15 @@ describe("clip storage", () => {
 
     await deleteClip(id);
     expect(await db.get("clipData", id)).toBeUndefined();
+  });
+
+  it("refuses to store a 0-frame clip", async () => {
+    // George R4: a 0-frame clip resolves as playable silent audio and can be
+    // counted finished — the ghost take. The store rejects it rather than
+    // trusting callers, the same way setSegmentFinished guards its own invariant.
+    await expect(
+      putClip(newClipId(), new Int16Array(0), CANONICAL_SAMPLE_RATE)
+    ).rejects.toThrow();
   });
 
   it("reports total bytes held on device", async () => {
@@ -391,6 +401,75 @@ describe("book tree", () => {
     expect(await db.get("clipData", clipId)).toBeDefined();
     const audio = await loadSegmentClip(segmentId);
     expect(audio.kind).toBe("resolved");
+  });
+
+  it("clears a segment back to never-recorded, deleting the take and its clip", async () => {
+    // B5 cut-to-nothing lands here: an empty edited buffer must NOT persist as a
+    // 0-frame take (which would resolve as a real, silent recording). The take,
+    // the pointer, and the PCM all go, and the segment reads not-started again.
+    const { segmentId } = await oneSegment();
+    const clipId = await storedClip(1000);
+    const take = await addTake(segmentId, clipId, 1000, { finished: true });
+
+    await clearSegmentTake(segmentId);
+
+    const db = await getDb();
+    const segment = await db.get("segments", segmentId);
+    expect(segment?.activeTakeId).toBeNull();
+    expect(segment?.status).toBe("not-started");
+    expect(await db.get("takes", take.id)).toBeUndefined();
+    expect(await db.get("clipMeta", clipId)).toBeUndefined();
+    expect(await db.get("clipData", clipId)).toBeUndefined();
+    // And nothing downstream can mistake it for playable audio.
+    expect((await loadSegmentClip(segmentId)).kind).not.toBe("resolved");
+  });
+
+  it("is an idempotent no-op on a segment that has no take", async () => {
+    const { segmentId } = await oneSegment();
+    await clearSegmentTake(segmentId); // never recorded
+    const db = await getDb();
+    const segment = await db.get("segments", segmentId);
+    expect(segment?.activeTakeId).toBeNull();
+    expect(segment?.status).toBe("not-started");
+    // A second clear is still safe.
+    await expect(clearSegmentTake(segmentId)).resolves.toBeUndefined();
+  });
+
+  it("keeps a clip that another take still references when clearing", async () => {
+    // Frank R4: clips are 1:1 today, but if two takes ever share a clipId,
+    // clearing one segment must NOT delete the audio the other still plays.
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    const shared = await storedClip(500);
+    await addTake(s1.id, shared, 100);
+    await addTake(s2.id, shared, 100); // both point at the same clip
+
+    await clearSegmentTake(s1.id);
+
+    const db = await getDb();
+    expect((await db.get("segments", s1.id))?.activeTakeId).toBeNull();
+    // The shared clip survives because s2 still references it.
+    expect(await db.get("clipMeta", shared)).toBeDefined();
+    expect(await db.get("clipData", shared)).toBeDefined();
+    expect((await loadSegmentClip(s2.id)).kind).toBe("resolved");
+  });
+
+  it("leaves other segments untouched when one is cleared", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    await addTake(s1.id, await storedClip(), 100);
+    const keep = await addTake(s2.id, await storedClip(), 100);
+
+    await clearSegmentTake(s1.id);
+
+    const db = await getDb();
+    expect((await db.get("segments", s1.id))?.activeTakeId).toBeNull();
+    expect((await db.get("segments", s2.id))?.activeTakeId).toBe(keep.id);
+    expect((await loadSegmentClip(s2.id)).kind).toBe("resolved");
   });
 
   it("resolves export order across segments and counts gaps", async () => {

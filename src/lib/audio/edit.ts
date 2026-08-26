@@ -77,6 +77,27 @@ export function replaceRange(
 }
 
 /**
+ * Combine a segment's existing audio with a newly recorded fragment at an
+ * offset — the record-at-centerline splice: insert mid-clip, append at the end.
+ *
+ * With nothing recorded (`recorded` empty) there is nothing to splice, so
+ * `existing` is returned as-is rather than allocating a full-length copy of a
+ * multi-megabyte segment. That is the B5 edit-only save, where `existing` is
+ * already the whole flattened, edited buffer and the "recording" is empty.
+ * Callers persist the result immediately, so returning the input by reference
+ * is safe (the store copies through its own buffer).
+ */
+export function mergeTake(
+  existing: Int16Array,
+  recorded: Int16Array,
+  offset: number
+): Int16Array {
+  return recorded.length === 0
+    ? existing
+    : insertAt(existing, recorded, offset);
+}
+
+/**
  * Join buffers end to end. This is what "export recording to MP3 —
  * concatenation of sections" reduces to once every clip is at the canonical
  * sample rate.

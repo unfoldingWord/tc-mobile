@@ -58,4 +58,18 @@ export const strings = {
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
+
+  // ── Waveform editing (B5) ────────────────────────────────────────────────
+  selectStart: "Select a span to edit",
+  selectStop: "Close the selection",
+  cut: "Cut the selection",
+  paste: "Paste at the line",
+  undo: "Undo",
+  redo: "Redo",
+  recorderMenuTitle: "More",
+  recorderMenuOpen: "More actions",
+  selectionStartHandle: "Selection start",
+  selectionEndHandle: "Selection end",
+  editFailed: "That edit could not be applied. Try a shorter selection.",
+  clearFailed: "Could not clear the audio. Try again.",
 } as const;

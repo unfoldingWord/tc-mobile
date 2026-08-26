@@ -40,10 +40,21 @@ export function App() {
   // when the recorder opened, so it survives the sheet closing on a failed
   // save. State, not a ref, because the recovery screen reads it during render.
   const [recordingOrdinal, setRecordingOrdinal] = useState<number | null>(null);
+  // The cut/paste clipboard (B5), held here so it survives the recorder sheet
+  // remounting per segment — G3: it reaches across a chapter and is lost on
+  // close. Cleared on every chapter change so it never carries audio from one
+  // chapter into another; lost on page close naturally (never persisted).
+  const [clipboard, setClipboard] = useState<Int16Array | null>(null);
 
   const audio = useAudioSession();
   const { leave } = audio;
-  const { pendingTake, saveRecording, retryPendingTake, discardPendingTake } =
+  const {
+    pendingTake,
+    saveRecording,
+    saveEditedSegment,
+    retryPendingTake,
+    discardPendingTake,
+  } =
     // A landed save leaves the row reading as unrecorded until the screen
     // rebuilds, which is the window a second take is lost in — so reload then.
     useSaveTake({ onSaved: () => segmentsRef.current?.reload() });
@@ -51,6 +62,7 @@ export function App() {
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
+      setClipboard(null); // chapter-scoped (G3)
       setRecorder(null);
       setChapterId(id);
     },
@@ -59,6 +71,7 @@ export function App() {
 
   const backToBooks = useCallback(() => {
     leave();
+    setClipboard(null); // chapter-scoped (G3)
     setRecorder(null);
     setChapterId(null);
   }, [leave]);
@@ -147,6 +160,9 @@ export function App() {
           segmentId={recorder.segmentId}
           audio={audio}
           saveRecording={saveRecording}
+          saveEditedSegment={saveEditedSegment}
+          clipboard={clipboard}
+          onClipboardChange={setClipboard}
           onExit={closeRecorder}
         />
       )}

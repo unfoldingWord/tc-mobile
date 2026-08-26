@@ -24,7 +24,12 @@ export type IconName =
   | "chevron-down"
   | "chevron-right"
   | "zoom-in"
-  | "zoom-out";
+  | "zoom-out"
+  | "selection"
+  | "scissors"
+  | "paste"
+  | "undo"
+  | "redo";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -186,6 +191,81 @@ const PATHS: Record<IconName, React.ReactNode> = {
   "zoom-in": (
     <path
       d="M4 11h6m0 0-3-3m3 3-3 3M18 11h-6m0 0 3-3m-3 3 3 3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Selection-frame toggle: the two brackets that frame the picked span (mockup
+  // 4). Drawn as a facing pair so the button reads as "enclose a region".
+  selection: (
+    <path
+      d="M9 5.5H6v11h3M13 5.5h3v11h-3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Cut: two finger loops and crossing blades. Appears below the waveform once a
+  // selection exists (mockup 4).
+  scissors: (
+    <>
+      <circle
+        cx="6.5"
+        cy="7.4"
+        r="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <circle
+        cx="6.5"
+        cy="14.6"
+        r="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M8.3 8.6 17 15M8.3 13.4 17 7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // Paste: audio dropping onto the centerline (mockup 5). A down arrow over the
+  // line it inserts at.
+  paste: (
+    <path
+      d="M11 4v8m-3.5-3.5L11 12l3.5-3.5M6 16h10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Undo: an arrow curving back to the left (↶), toolbar control.
+  undo: (
+    <path
+      d="M8.5 6.5 5 10l3.5 3.5M5 10h6.5a4.5 4.5 0 0 1 0 9H9"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Redo: undo mirrored (↝), lives in the recorder menu.
+  redo: (
+    <path
+      d="M13.5 6.5 17 10l-3.5 3.5M17 10h-6.5a4.5 4.5 0 0 0 0 9H13"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"

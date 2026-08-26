@@ -3,12 +3,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Checkbox } from "./checkbox";
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
-import { viewportWindow } from "@/lib/audio/viewport";
+import { useSegmentEditor } from "@/hooks/use-segment-editor";
+import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
 import { formatDuration } from "@/lib/utils";
 import type { SegmentId } from "@/types/domain";
 
@@ -19,9 +22,6 @@ import type { SegmentId } from "@/types/domain";
  * right to grow into on an append (mockup 3). One constant to retune.
  */
 const CENTER_FRACTION = 0.66;
-
-/** Reused so an empty segment's merge base is not re-allocated per render. */
-const NO_SAMPLES = new Int16Array(0);
 
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
@@ -45,33 +45,70 @@ interface RecorderProps {
     finished: boolean
   ) => Promise<boolean>;
   /**
-   * Close the sheet. `dirty` ⇒ the segment changed (a take committed or the
-   * finished flag toggled), so App reloads the Segments screen behind it.
+   * Persist an already-flattened, edited segment buffer (B5 edit-only close —
+   * cut/paste with no new recording). Never rejects — a failure becomes App's
+   * recovery screen, exactly like `saveRecording`.
+   */
+  saveEditedSegment: (
+    segmentId: SegmentId,
+    buffer: Int16Array,
+    finished: boolean
+  ) => Promise<boolean>;
+  /**
+   * The cut/paste clipboard, held by App so it outlives this sheet (G3: reaches
+   * across a chapter, lost on close). Read for paste; replaced on cut.
+   */
+  clipboard: Int16Array | null;
+  onClipboardChange: (clip: Int16Array | null) => void;
+  /**
+   * Close the sheet. `dirty` ⇒ the segment changed (a take committed, an edit
+   * persisted, or the finished flag toggled), so App reloads the Segments screen
+   * behind it.
    */
   onExit: (dirty: boolean) => void;
 }
 
 /**
- * B4 — the recorder sheet, over the dimmed Segments list.
+ * The recorder sheet (B4 + B5 editing), over the dimmed Segments list.
  *
  * The waveform pans under a FIXED centerline (the line never travels); record
  * begins at whatever sample sits under it, inserting mid-clip or appending at
  * the end. There is no Stop control drawn: a take is committed when the sheet
- * closes (F8), which is also the only place the merged buffer is spliced and
- * saved. Pause/resume is one contiguous take at the offset captured when
+ * closes (F8). Pause/resume is one contiguous take at the offset captured when
  * recording began (F9).
  *
- * The toolbar is exactly two controls — zoom and record/pause — plus the
- * finished toggle in the header. Selection, cut, undo, the VU meter and the
- * recorder menu are all later batches and are absent, not stubbed (§0).
+ * B5 layers waveform editing on top, over a working buffer (`useSegmentEditor`):
+ * a selection frame that cuts to a chapter-scoped clipboard, a paste at the
+ * centerline, and an in-memory undo/redo log. Editing is strictly idle (Model A:
+ * edits first, then one record commits on close), so a live take disables the
+ * edit controls, and the record's splice base is the edited buffer. On close the
+ * working buffer is persisted — spliced with the recording, or on its own for an
+ * edit-only session (`saveEditedSegment`).
+ *
+ * The toolbar is [zoom] [select] [record] [undo] [menu]; the finished toggle is
+ * in the header, Redo is in the menu. The VU meter and Erase Segment are B6 —
+ * absent, not stubbed (§0).
  */
 export function Recorder({
   segmentId,
   audio,
   saveRecording,
+  saveEditedSegment,
+  clipboard,
+  onClipboardChange,
   onExit,
 }: RecorderProps) {
   const { view, error: loadError, setFinished } = useRecorderSegment(segmentId);
+
+  // The waveform-editing session (B5): a working buffer over the loaded clip,
+  // an in-memory undo log, and the shared clipboard. `view.samples` is the base;
+  // it is null until the async load resolves and on an empty segment, and the
+  // editor is an empty no-op buffer until then.
+  const editor = useSegmentEditor(view?.samples ?? null, {
+    clip: clipboard,
+    set: onClipboardChange,
+  });
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // `null` ⇒ resting at the end of the existing audio (append-ready, F7). A
   // derived rest, rather than a value set in an effect once `view` loads: the
@@ -113,12 +150,18 @@ export function Recorder({
   // lost with no recovery screen).
   const [isClosing, setIsClosing] = useState(false);
 
-  const length = view?.lengthSamples ?? 0;
+  // The edit-aware length: the working buffer, not the loaded clip, is the
+  // pan/zoom domain and the append offset — a cut shortens it, a paste grows it.
+  const length = editor.workingLength;
   const hasAudio = length > 0;
   const state = audio.recorderState;
   const recording = state === "recording";
   const paused = state === "paused";
   const busy = state === "requesting" || state === "processing";
+  // Editing is a strictly-idle activity (Model A: edits, then a record commits
+  // on close). It is off while a take is live or the sheet is committing, and
+  // off with no segment loaded.
+  const idleEditable = view !== null && state === "idle" && !isClosing;
 
   // A take is being made or committed: any non-idle recorder state, OR the F8
   // close window (Back tapped, the stop→decode→save still in flight). Across all
@@ -136,10 +179,21 @@ export function Recorder({
   // reads the stored flag again. The commit path passes `finishedIntent === true`
   // (a plain re-record defaults to draft); the no-commit path writes only a real
   // toggle.
+  //
+  // A B5 edit demotes the same way a re-record does — the audio changed, so an
+  // approved segment returns to draft unless re-marked — so pending edits preview
+  // the demote here too. Without this the box would read "finished" all through
+  // an idle edit and then silently flip to draft on close.
+  const pendingDemote = takeActive || editor.hasEdits;
   const displayedFinished =
-    finishedIntent ?? (takeActive ? false : (view?.finished ?? false));
+    finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
-  const pan = panState ?? length;
+  // Clamp to the current length: an edit (a cut) can shorten `working` past a
+  // `panState` set before it, and a stale pan beyond the end would sit the record
+  // offset at the new end rather than where the translator was looking (George
+  // R4). `viewportWindow` also clamps `centerlineSample`, so drawing was already
+  // safe; this keeps the offset honest too.
+  const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
   const onPointerDown = useCallback(
@@ -149,6 +203,11 @@ export function Recorder({
       // captured at the Record tap, so a pan during a slow first-time permission
       // prompt would slide the centerline off the sample the take actually splices
       // into, breaking the drawn promise that record begins under the line (#61).
+      // Pan stays available while the selection frame is open: a span can grow
+      // past the viewport, and panning is the only way to bring an off-screen
+      // handle back within reach (B5, George R2). The handles stop their own
+      // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
+      // never also starts a pan — only a drag on the bare canvas pans.
       if (!hasAudio || recording || paused || busy) return;
       setDragging(true);
       dragStartX.current = e.clientX;
@@ -189,13 +248,48 @@ export function Recorder({
     } else if (paused) {
       audio.resumeRecording();
     } else {
+      // Starting a record ends the editing phase (Model A: edits then record).
+      // Close the selection frame so the stage drag returns to the pan, and the
+      // menu, so a Redo left open cannot rematerialise the working buffer out
+      // from under the offset just locked below (George R4).
+      editor.closeSelection();
+      setMenuOpen(false);
       // The offset is fixed for the whole take here, at the idle→recording
-      // edge; pause/resume continues at the same point (F9).
+      // edge; pause/resume continues at the same point (F9). It is an offset
+      // into the WORKING buffer, which is also the record's splice base on close.
       setStopError(null);
       insertionOffset.current = win.centerlineSample;
       audio.startRecording();
     }
-  }, [recording, paused, view, audio, win.centerlineSample]);
+  }, [recording, paused, view, audio, editor, win.centerlineSample]);
+
+  const onToggleSelection = useCallback(() => {
+    if (editor.selectionActive) {
+      editor.closeSelection();
+      return;
+    }
+    // Seed a grabbable span around the centerline (~30% of the visible window),
+    // so the frame opens with handles under the finger rather than collapsed.
+    const half = win.visibleSamples * 0.15;
+    editor.openSelection({
+      start: win.centerlineSample - half,
+      end: win.centerlineSample + half,
+    });
+  }, [editor, win.centerlineSample, win.visibleSamples]);
+
+  const onCut = useCallback(() => {
+    const removed = editor.cut();
+    // Keep the centerline on the same audio: a cut before it shortens the buffer
+    // to its left, so shift an absolute pan by what was removed (George R5). A
+    // null/resting pan already follows the new end.
+    if (removed !== null) {
+      setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
+    }
+  }, [editor]);
+
+  const onPaste = useCallback(() => {
+    editor.paste(win.centerlineSample);
+  }, [editor, win.centerlineSample]);
 
   const onToggleFinished = useCallback(() => {
     if (!view) return;
@@ -219,7 +313,15 @@ export function Recorder({
       // releases the mic and never rejects; `saveRecording` never rejects and
       // turns a failure into the recovery screen App renders.
       let committed = false;
-      if (recording || paused || state === "processing") {
+      // A take was in play at close (live, paused, or an interruption froze it to
+      // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
+      // generation mid-flush — returning no samples and no error. B4 just closed
+      // then, original intact. B5 must keep that: the edit-only block below must
+      // NOT run on a superseded capture, or a cut-to-empty would clear the
+      // original recording (gone) with the replacement never landed and the cut
+      // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
+      const attemptedCapture = recording || paused || state === "processing";
+      if (attemptedCapture) {
         const result = await audio.stopRecording();
         if (result.samples && result.samples.length > 0) {
           // The Finished mark rides the take (applied atomically in addTake, on
@@ -229,9 +331,13 @@ export function Recorder({
           // not branched on here: on a failure App shows the recovery screen and
           // the mark is preserved in the held take, so close() has nothing left
           // to decide.
+          // The splice base is the WORKING buffer, not the loaded clip: any
+          // cut/paste this session came first (Model A) and must be part of what
+          // the recording splices into. insertionOffset was captured against the
+          // same working length.
           await saveRecording(
             segmentId,
-            view?.samples ?? NO_SAMPLES,
+            editor.working,
             result.samples,
             insertionOffset.current,
             finishedIntent === true
@@ -257,6 +363,43 @@ export function Recorder({
         // and close, rather than dead-ending the sheet open (#59). An empty
         // capture is NOT this branch — it returns the "No sound" error above and
         // stays open to retry.
+      }
+      // An edit-only close (B5): cuts/pastes with no take committed. Gated on
+      // `!attemptedCapture` so a superseded capture stop (above) abandons the
+      // session like B4 — persisting or clearing there is the George-R5 loss.
+      if (!committed && !attemptedCapture && editor.hasEdits) {
+        if (editor.workingLength === 0) {
+          // Cut down to nothing clears the take (no 0-frame ghost). Unlike a
+          // non-empty save it has NO recovery slot, so a failed clear must keep
+          // the sheet open with an in-place error — closing as if the erase
+          // happened would leave the original audio on disk under a UI that says
+          // it is gone (and a clipboard copy alongside it). Same shape as the
+          // finished-flag write failure below.
+          const cleared = await saveEditedSegment(
+            segmentId,
+            editor.working,
+            false
+          );
+          if (!cleared) {
+            setStopError(strings.clearFailed);
+            closing.current = false;
+            setIsClosing(false);
+            return;
+          }
+        } else {
+          // A non-empty edit replaces the audio through the same never-lose
+          // machinery a recording uses (the owned slot → App's recovery screen on
+          // failure), so its boolean is deliberately not branched on here — just
+          // like the record path. Like a re-record it demotes an approved segment
+          // to draft unless explicitly re-marked, and the mark rides the write.
+          await saveEditedSegment(
+            segmentId,
+            editor.working,
+            finishedIntent === true
+          );
+        }
+        dirty.current = true;
+        committed = true;
       }
       // A toggle with no new take is a direct write — there is no take to carry
       // it. Only when the translator actually changed it from the stored value,
@@ -294,6 +437,8 @@ export function Recorder({
     view,
     audio,
     saveRecording,
+    saveEditedSegment,
+    editor,
     segmentId,
     onExit,
     finishedIntent,
@@ -309,30 +454,53 @@ export function Recorder({
     sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
   }, []);
 
+  // A mic permission/start failure, sitting in `audio.error` at idle (distinct
+  // from a decode failure, which travels as `stopError`).
+  const micError =
+    state === "idle" && audio.error !== null && stopError === null;
+  // The full-body permission panel REPLACES the sheet body, so it may only take
+  // over when there is nothing on screen to lose: the device cannot record, or a
+  // mic error on a segment with no audio and no pending edits. With audio or
+  // edits present, the error shows in place (the `audio.error` Notice below,
+  // Record acting as Retry) so the waveform — and undo — stay reachable; hiding
+  // them once lost an edit that Back then persisted with no way to undo (George
+  // R3). Same principle a decode failure already follows via `stopError`.
   const denied =
-    !audio.supported ||
-    (state === "idle" && audio.error !== null && stopError === null);
+    !audio.supported || (micError && !hasAudio && !editor.hasEdits);
 
-  // Enabled once a take WILL exist on close, not only when one already does:
-  // `view.hasClip` never updates mid-sheet, so keying on it alone left the
-  // Finished control dead for every FIRST take — the day-1 training path could
-  // record but never mark done from the recorder (G8). Safe to offer now: the
-  // mark rides the take through `addTake`, so it no longer needs the segment to
-  // already have one. Still disabled before Record (an empty look-and-close
-  // cannot mark an audioless segment finished), and a refused start returns to
-  // idle and disables it again (G9).
-  const willHaveAudio = view !== null && (view.hasClip || takeActive);
+  // Enabled once a take WILL exist on close, not only when one already does.
+  // `takeActive` covers the FIRST take — recording/closing before any clip
+  // exists — so the day-1 path can record and mark done in one sheet (G8); the
+  // mark rides the take through `addTake`. `hasAudio` (the WORKING buffer) covers
+  // an existing clip and a B5 edit alike — including a paste into an empty
+  // segment. Deliberately NOT keyed on the stale `view.hasClip`: that never
+  // updates mid-sheet, so a clip edited down to nothing (cut-all) would still
+  // read as "will have audio" and could be marked finished onto a 0-frame take.
+  const willHaveAudio = view !== null && (takeActive || hasAudio);
+  // `willHaveAudio` gates BEFORE `displayedFinished`, so a segment with no audio
+  // reads unchecked-and-disabled even if `finishedIntent` is still true — paste,
+  // mark finished, then cut-all must not leave a checked box on an empty segment
+  // (close clears it and ignores the mark, so this is only the UI catching up).
   const finishedState = !view
     ? "disabled"
-    : displayedFinished
-      ? "finished"
-      : willHaveAudio
-        ? "empty"
-        : "disabled";
+    : !willHaveAudio
+      ? "disabled"
+      : displayedFinished
+        ? "finished"
+        : "empty";
 
   return (
     <div className="recorder-scrim" role="dialog" aria-modal="true">
-      <div ref={sheetRef} className="recorder-sheet mx-auto max-w-md">
+      {/* `inert` the sheet while the menu is open. Nested aria-modal dialogs do
+          not reliably hide the background for AT/switch users — G8 already
+          refused to trust that on the Segments list — so without this an AT user
+          could reach the covered Record while the menu is up and mutate the
+          splice base under a Redo (George R4). */}
+      <div
+        ref={sheetRef}
+        className="recorder-sheet mx-auto max-w-md"
+        inert={menuOpen || undefined}
+      >
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
             icon="back"
@@ -387,6 +555,11 @@ export function Recorder({
                 <Notice>{stopError}</Notice>
               </div>
             )}
+            {editor.error && (
+              <div className="px-[12px] pt-[8px]">
+                <Notice>{strings.editFailed}</Notice>
+              </div>
+            )}
             <div className="recorder-stage flex-1">
               <div
                 ref={stageRef}
@@ -397,7 +570,7 @@ export function Recorder({
                 onPointerCancel={onPointerUp}
               >
                 <Waveform
-                  peaks={hasAudio ? (view?.peaks ?? null) : null}
+                  peaks={editor.peaks}
                   height={200}
                   recorded={hasAudio}
                   view={{
@@ -406,7 +579,49 @@ export function Recorder({
                     centerFraction: CENTER_FRACTION,
                   }}
                 />
+                {editor.selectionActive && editor.selection && (
+                  <SelectionOverlay
+                    win={win}
+                    selection={editor.selection}
+                    workingLength={length}
+                    onChange={editor.setSelection}
+                    startLabel={strings.selectionStartHandle}
+                    endLabel={strings.selectionEndHandle}
+                  />
+                )}
+                {idleEditable && editor.canPaste && !editor.selectionActive && (
+                  // The paste marker rides the centerline (mockup 5): tapping it
+                  // inserts the clipboard there. stopPropagation so the tap does
+                  // not also arm a pan on the stage beneath it.
+                  <button
+                    type="button"
+                    className="paste-marker"
+                    style={{ left: `${CENTER_FRACTION * 100}%` }}
+                    aria-label={strings.paste}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={onPaste}
+                  >
+                    <Icon name="paste" size={26} />
+                  </button>
+                )}
               </div>
+              {idleEditable && editor.canCut && (
+                // The Cut affordance sits under the frame (mockup 4). Cutting
+                // drops the selection and turns the paste marker on. Gated on
+                // `idleEditable` like every other edit control: without it a Cut
+                // tapped during the async close would mutate the working buffer
+                // after close() already captured the pre-cut one — a silently
+                // dropped edit.
+                <div className="recorder-cut flex justify-center">
+                  <Control
+                    icon="scissors"
+                    label={strings.cut}
+                    variant="quiet"
+                    size={26}
+                    onClick={onCut}
+                  />
+                </div>
+              )}
               {(recording || paused) && (
                 <div
                   className="recorder-status flex items-center gap-[8px]"
@@ -440,6 +655,18 @@ export function Recorder({
                 }
               />
               <Control
+                icon="selection"
+                label={
+                  editor.selectionActive
+                    ? strings.selectStop
+                    : strings.selectStart
+                }
+                variant={editor.selectionActive ? "primary" : "quiet"}
+                size={24}
+                disabled={!idleEditable || !hasAudio}
+                onClick={onToggleSelection}
+              />
+              <Control
                 icon={recording ? "pause" : "record"}
                 label={
                   recording
@@ -452,15 +679,45 @@ export function Recorder({
                 disabled={busy || isClosing || !view}
                 onClick={onRecordButton}
               />
-              {/* Balances the toolbar so record sits central under the line. */}
-              <span
-                aria-hidden="true"
-                style={{ width: "var(--c-control-sm)" }}
+              <Control
+                icon="undo"
+                label={strings.undo}
+                variant="quiet"
+                size={24}
+                disabled={!idleEditable || !editor.canUndo}
+                onClick={editor.undo}
+              />
+              <Control
+                icon="menu"
+                label={strings.recorderMenuOpen}
+                variant="quiet"
+                size={24}
+                disabled={!idleEditable}
+                onClick={() => setMenuOpen(true)}
               />
             </div>
           </>
         )}
       </div>
+      <Menu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        title={strings.recorderMenuTitle}
+      >
+        <Control
+          icon="redo"
+          label={strings.redo}
+          variant="quiet"
+          // Idle-gated like Undo (George R4): a Redo fired while a take is live
+          // would rematerialise the working buffer to a different length under
+          // the insertion offset already locked at Record.
+          disabled={!idleEditable || !editor.canRedo}
+          onClick={() => {
+            editor.redo();
+            setMenuOpen(false);
+          }}
+        />
+      </Menu>
     </div>
   );
 }

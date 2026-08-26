@@ -21,6 +21,14 @@ export async function putClip(
   sampleRate: number,
   createdAt: number = Date.now()
 ): Promise<ClipMeta> {
+  // A 0-frame clip is not a recording — it resolves as playable, silent audio
+  // and can be counted finished (the ghost take `clearSegmentTake` exists to
+  // avoid). No caller writes one today; rejecting it here makes the store, not
+  // just the hook, the authority, the same way `setSegmentFinished` enforces its
+  // own empty invariant rather than trusting a disabled control.
+  if (samples.length === 0) {
+    throw new Error("Refusing to store a 0-frame clip");
+  }
   const meta: ClipMeta = {
     id,
     sampleRate,
