@@ -31,8 +31,9 @@ interface SelectionOverlayProps {
  * turn a pointer x back into a sample (the same conversion the pan uses).
  *
  * The body is pointer-transparent; only the two handles take pointer events, so
- * the frame never eats a tap meant for a control. Panning is suspended while the
- * frame is open (the recorder gates it), so nothing competes for the drag.
+ * the frame never eats a tap meant for a control. Panning stays available on the
+ * bare canvas beneath while the frame is open (the handles stopPropagation their
+ * own grab), so an off-screen handle can be panned back into reach (George R2).
  */
 export function SelectionOverlay({
   win,
@@ -47,6 +48,13 @@ export function SelectionOverlay({
   // the two handles do not overwrite one shared "which edge" and swap targets
   // mid-drag (the multitouch class of #61, George R2).
   const dragging = useRef<Map<number, "start" | "end">>(new Map());
+  // The authoritative range DURING a drag. Each move rebuilds from this ref, not
+  // the render closure, so two edges moved in one frame compose instead of the
+  // last write clobbering the other's edge (George R3). It is snapshotted from
+  // the current selection on the FIRST finger down (below) and updated by every
+  // move; between drags the props are authoritative, so no render-time sync is
+  // needed (and none is allowed — refs cannot be read during render).
+  const liveRange = useRef<SampleRange>(selection);
 
   const lo = Math.min(selection.start, selection.end);
   const hi = Math.max(selection.start, selection.end);
@@ -62,13 +70,14 @@ export function SelectionOverlay({
       const rect = host.getBoundingClientRect();
       if (rect.width === 0) return;
       const sample = viewportXToSample(clientX - rect.left, rect.width, win);
-      onChange(
+      const next =
         edge === "start"
-          ? { start: sample, end: selection.end }
-          : { start: selection.start, end: sample }
-      );
+          ? { start: sample, end: liveRange.current.end }
+          : { start: liveRange.current.start, end: sample };
+      liveRange.current = next;
+      onChange(next);
     },
-    [onChange, win, selection.start, selection.end]
+    [onChange, win]
   );
 
   const handle = (edge: "start" | "end", label: string, valueNow: number) => (
@@ -85,6 +94,10 @@ export function SelectionOverlay({
         // Stop the pan on the canvas beneath from also arming on this grab: only
         // a drag on the bare canvas pans; a handle adjusts its edge (George R2).
         e.stopPropagation();
+        // Snapshot the authoritative range on the FIRST finger down, so a second
+        // handle grabbed while the first is mid-drag does not reset the shared
+        // ref to a stale committed value (George R3).
+        if (dragging.current.size === 0) liveRange.current = selection;
         dragging.current.set(e.pointerId, edge);
         e.currentTarget.setPointerCapture(e.pointerId);
       }}

@@ -427,9 +427,19 @@ export function Recorder({
     sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
   }, []);
 
+  // A mic permission/start failure, sitting in `audio.error` at idle (distinct
+  // from a decode failure, which travels as `stopError`).
+  const micError =
+    state === "idle" && audio.error !== null && stopError === null;
+  // The full-body permission panel REPLACES the sheet body, so it may only take
+  // over when there is nothing on screen to lose: the device cannot record, or a
+  // mic error on a segment with no audio and no pending edits. With audio or
+  // edits present, the error shows in place (the `audio.error` Notice below,
+  // Record acting as Retry) so the waveform — and undo — stay reachable; hiding
+  // them once lost an edit that Back then persisted with no way to undo (George
+  // R3). Same principle a decode failure already follows via `stopError`.
   const denied =
-    !audio.supported ||
-    (state === "idle" && audio.error !== null && stopError === null);
+    !audio.supported || (micError && !hasAudio && !editor.hasEdits);
 
   // Enabled once a take WILL exist on close, not only when one already does.
   // `takeActive` covers the FIRST take — recording/closing before any clip
