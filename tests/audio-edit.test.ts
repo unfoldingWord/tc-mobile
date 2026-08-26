@@ -5,6 +5,7 @@ import {
   concat,
   cut,
   insertAt,
+  mergeTake,
   replaceRange,
   silence,
   sliceRange,
@@ -108,6 +109,32 @@ describe("cut then paste", () => {
     const { remaining, removed } = cut(original, { start: 5, end: 12 });
     const restored = insertAt(remaining, removed, 5);
     expect(Array.from(restored)).toEqual(Array.from(original));
+  });
+});
+
+describe("mergeTake", () => {
+  it("splices a recording into the existing audio at the offset", () => {
+    const out = mergeTake(seq(6), Int16Array.from([90, 91]), 3);
+    expect(Array.from(out)).toEqual([0, 1, 2, 90, 91, 3, 4, 5]);
+  });
+
+  it("appends when the offset is at the end", () => {
+    const out = mergeTake(seq(3), Int16Array.from([9]), 3);
+    expect(Array.from(out)).toEqual([0, 1, 2, 9]);
+  });
+
+  it("returns the existing buffer itself when nothing was recorded (edit-only)", () => {
+    // B5: `existing` is already the whole flattened edited buffer, so there is
+    // no splice and no copy — the same reference comes back, not an equal copy.
+    const existing = seq(4);
+    const out = mergeTake(existing, new Int16Array(0), 0);
+    expect(out).toBe(existing);
+  });
+
+  it("is a first take from an empty base and an empty recording", () => {
+    // The offset is irrelevant when there is nothing to merge into or from.
+    const out = mergeTake(new Int16Array(0), new Int16Array(0), 0);
+    expect(out.length).toBe(0);
   });
 });
 

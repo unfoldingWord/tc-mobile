@@ -288,6 +288,71 @@ export async function addTake(
 }
 
 /**
+ * Clear a segment's audio, returning it to never-recorded.
+ *
+ * B5's cut-to-nothing lands here: a selection over the whole clip, cut, then
+ * close leaves an empty working buffer, and persisting that as a 0-frame take
+ * would fabricate a recorded state — a resolved clip that plays silence and can
+ * be counted finished. Instead the take and its clip are removed and the segment
+ * returns to "not-started" (the same shape B6's Erase Segment will reuse, G4).
+ *
+ * One atomic transaction, like `addTake`: the pointer reset, the take-row delete
+ * and the clip delete land together, so an interrupted clear never strands a
+ * segment pointing at a take that is gone. Idempotent — a segment with no active
+ * take is left "not-started" and nothing is deleted — so a repeated close, or a
+ * cut-to-empty on an already-empty segment, is a safe no-op.
+ */
+export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(
+    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
+    "readwrite"
+  );
+  const segment = await tx.objectStore("segments").get(segmentId);
+  if (!segment) throw new Error(`No such segment: ${segmentId}`);
+
+  const priorTakeId = segment.activeTakeId;
+  if (priorTakeId !== null) {
+    const priorTake = await tx.objectStore("takes").get(priorTakeId);
+    await tx.objectStore("takes").delete(priorTakeId);
+    if (priorTake) {
+      // Delete the clip only when no OTHER take still points at it. Nothing
+      // shares a clip today (every take mints a fresh `newClipId()`), but a
+      // future content-addressed import could dedupe, and an unconditional
+      // delete would then punch a hole in another segment — unrecoverable audio
+      // loss (Frank R4). The take row is already gone, so `getAll` sees only the
+      // survivors. NOTE: `addTake`'s prior-clip delete has the same latent
+      // property and is tracked in #68.
+      const survivors = await tx.objectStore("takes").getAll();
+      const stillReferenced = survivors.some(
+        (t) => t.clipId === priorTake.clipId
+      );
+      if (!stillReferenced) {
+        await tx.objectStore("clipMeta").delete(priorTake.clipId);
+        await tx.objectStore("clipData").delete(priorTake.clipId);
+      }
+    }
+  }
+
+  await tx.objectStore("segments").put({
+    ...segment,
+    activeTakeId: null,
+    status: "not-started",
+  });
+
+  // Editing is activity: float the book to the top of the shelf in the same
+  // transaction, exactly as recording does.
+  const chapter = await tx.objectStore("chapters").get(segment.chapterId);
+  const book = chapter
+    ? await tx.objectStore("books").get(chapter.bookId)
+    : undefined;
+  if (book)
+    await tx.objectStore("books").put({ ...book, updatedAt: Date.now() });
+
+  await tx.done;
+}
+
+/**
  * The binary "finished" write boundary over the 5-value enum (D-FIN).
  *
  * A never-recorded segment can be neither finished nor "draft": there is no

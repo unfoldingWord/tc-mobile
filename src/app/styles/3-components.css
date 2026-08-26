@@ -311,6 +311,7 @@
     overflow: hidden;
   }
   .recorder-canvas {
+    position: relative;
     width: 100%;
     /* A horizontal drag pans the waveform; let a vertical gesture do nothing
        here rather than fighting the pan. */
@@ -319,6 +320,58 @@
   }
   .recorder-canvas:active {
     cursor: grabbing;
+  }
+  /* Selection frame (B5): a translucent band over the picked span with a grab
+     handle at each edge, laid over the canvas. The overlay is pointer-
+     transparent so only the handles take a drag; the band and handles use the
+     voice accent — this is an edit of the audio that exists. */
+  .selection-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .selection-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--s-voice) 20%, transparent);
+    border-inline: 2px solid var(--s-voice);
+  }
+  .selection-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+    /* A thin bar centred in a wide, finger-sized target. */
+    background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
+      100% no-repeat;
+  }
+  .selection-handle:focus-visible {
+    outline: 2px solid var(--s-focus);
+    outline-offset: -2px;
+  }
+  /* The paste marker rides the centerline when the clipboard is full. */
+  .paste-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    padding: var(--p-space-2);
+    color: var(--s-voice);
+    background: var(--s-raised);
+    border: 1px solid var(--s-voice);
+    border-radius: 999px;
+    pointer-events: auto;
+  }
+  .recorder-cut {
+    padding-top: var(--p-space-2);
+    color: var(--s-voice);
   }
   .recorder-status {
     position: absolute;

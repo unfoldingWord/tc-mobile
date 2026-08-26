@@ -4,9 +4,72 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-26 — Day 8: B5 waveform editing, and two recorder P3s
+
+**Branch:** `develop` · **PRs:** [#64](https://github.com/sethstoll3/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/sethstoll3/tc-mobile/pull/65) (B5) both merged · **On `develop`** (`94f9f01`) · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
+
+### Completed
+
+- **#60/#61 shipped** (#64 → `develop`, `d15563f`) — the two Fable-pass P3s on the
+  recorder: `start()` gains an idle guard (no hot-mic on a double-start; returns
+  `true` so the mic floor is held), and the waveform pan freezes an in-flight drag
+  while `busy`, not just its start. Two review rounds (round 1 caught a converged
+  pan P2 + a floor-semantics P2), round 2 clean.
+- **B5 — waveform editing shipped** (#65 → `develop`, `94f9f01`), mockups 4 & 5:
+  selection frame with drag handles, cut to a chapter-scoped clipboard, paste at
+  the centerline, undo/redo, over an in-memory working buffer.
+  - **Undo = O-B** (in-memory operation log, `lib/audio/edit-log.ts`, replayed from
+    the original; D2's "survives a restart" resolved against G3's ephemeral
+    clipboard — the flattened result persists on close, the history does not). **No
+    schema change.**
+  - **Record×edit = Model A** (edits at idle, one record commits on close, splice
+    base = the edited buffer). G3 was already decided at Gate 1 — #31's "blocked"
+    line was stale.
+  - Clipboard lives in `App` (survives the per-segment sheet remount), cleared on
+    chapter change. Persist reuses the never-lose slot; an edit-only cut-to-empty
+    clears the take instead of writing a 0-frame ghost.
+
+### Five review rounds, both reviewers each round (Frank/George)
+
+- The cap is 4; **round 5 was DRI-authorized**. Every round triaged on the PR with
+  dispositions + head SHA. Convergences each round were the highest-value class.
+- **R1** cut-to-empty persisted a phantom 0-frame recording (converged). **R2** the
+  cut-to-empty _failure_ was swallowed on close; cut allocated outside the edit
+  guard; selection-clamp teleport; off-viewport handle. **R3** permission panel hid
+  the editor (edits lost); multitouch handle race. **R4** Frank **P1** —
+  `clearSegmentTake` could delete a shared clip; George — AT `inert`/Redo gating +
+  0-frame invariant belongs in the T1 store. **DRI chose to harden the store**
+  (reference-counted clip delete; `putClip` rejects empty). **R5** George **P1** —
+  a superseded stop (pagehide) during cut-all+record erased the original; fixed by
+  gating the edit-only close on `!attemptedCapture`. Cut pan-remap (#66) closed.
+- **Merged on a DRI override** of the both-clean rule (Frank APPROVE since R3;
+  George's R5 findings fixed but not re-reviewed), recorded on the PR.
+
+### Blockers / needs a human
+
+- **On-device is the real gate for B5 (T1 audio).** The overlay, pointer, canvas,
+  and the `close()` state machine are browser-only (no jsdom) — none of it is
+  Node-tested. Smoke the editing path (select → cut → paste → undo/redo →
+  close/reopen persistence) on **iOS and Android**. Android remains the standing
+  gap across #59/#58 too.
+- **#67** SaveFailed copy says "recording" for an edit-only fail (cosmetic, safety
+  intact). **#68** `addTake`'s parallel unconditional clip-delete (latent; lands
+  with content-addressed clips).
+
+### Next steps
+
+1. **On-device B5 smoke** (iOS + Android), plus the still-open #59/#58 Android
+   checks and the two day-1 cases.
+2. **B6 (#32)** — VU meter, the recorder `≡` menu's Erase Segment (G4; the
+   `clearSegmentTake` store op B5 added is its foundation), erase confirmation.
+3. `staging` promotion once B5 is device-verified; `staging→main` stays gated on
+   Android.
+
+---
+
 ## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
 
-**Branch:** `feat/pivot-b1-b4` · **PR:** [#57](https://github.com/sethstoll3/tc-mobile/issues/57) **merged** (`0d08445`) after 10 review rounds + a Fable adverse pass · **Issues:** closed via merge; **#59 (P1) blocks staging**, #60/#61 (P3), #58 deferred
+**Branch:** `feat/pivot-b1-b4` → `develop` → **`staging`** · **PRs:** [#57](https://github.com/sethstoll3/tc-mobile/pull/57) (B1–B4), [#62](https://github.com/sethstoll3/tc-mobile/pull/62) (#59 fix), [#63](https://github.com/sethstoll3/tc-mobile/pull/63) (promotion) all merged · **On staging** (`c7ef2af`) and device-smoked on iOS · **Open:** #59/#58 (Android), #60/#61 (P3)
 
 ### Completed
 
@@ -46,30 +109,45 @@ Newest first. One entry per working session.
 - **No P1 in any Frank/George round**; the never-lose and reload-race classes
   stayed closed throughout. Per DRI, no 11th round — a **Fable adverse pass**
   instead, then merge on green.
-- **Fable found one real P1** (below), plus two P3 (#60, #61). Its full walk of
+- **Fable found one real P1** (#59), plus two P3 (#60, #61). Its full walk of
   the finished-flag state machine and the splice/pending-take machinery came
   back clean.
 
+### Shipped to staging, and first device evidence on the pivot build
+
+- **#59 (P1) fixed** (#62, `4b4482b`): a mid-take mic interruption used to drop
+  the recording silently and deadlock the sheet (no `onerror`/`onended`; `stop()`
+  ignored the held chunks). Now `start()` registers `onerror` + track `onended`
+  (freeze to `processing`, release the mic once inactive), and `stop()` recovers
+  the held chunks from an inactive recorder so **Back commits the partial take**.
+  A second Fable pass on the fix: **no P1/P2**; its four P3 hardenings folded in.
+- **Promoted `develop` → `staging`** (#63, `c7ef2af`) — B0 + B1–B4 + the #59 fix,
+  auto-deployed to `tc-mobile-staging`.
+- **On-device (iPhone / Safari, staging):** record+playback work; backgrounding
+  mid-take keeps recording; **an incoming call mid-take (via Google Voice)
+  stopped capture but saved the partial take as a playable segment — #59
+  confirmed on iOS.** Logged in AGENTS.md (`2937311`).
+
 ### Blockers / needs a human
 
-- **#59 (P1) — a mid-take mic interruption (incoming call) silently drops the
-  recording and deadlocks the sheet.** No `onerror`/`onended`; `stop()` ignores
-  the held chunks on an inactive recorder. **Blocks the `develop` → `staging`
-  promotion** (DRI call — merged B1–B4 to develop, this fixes before staging).
-  Browser-only surface, on-device fix, same class as #58.
-- **#58 — pagehide cancels an in-progress take.** Deferred, on-device. Both #58
-  and #59 are the MediaRecorder interruption surface — fix and device-verify
-  together before staging.
+- **Android — untested, all of it.** #59 and #58 both specified iOS _and_
+  Android; nothing has run there. Now the single biggest coverage gap. #59 is
+  reopened, iOS-verified, Android-pending.
+- **#58 — pagehide.** Distinct from backgrounding (which was verified): pagehide
+  discards the page. Still unverified, iOS and Android.
+- Other on-device gaps: a take under one 250 ms timeslice; backgrounding
+  _immediately after Stop_; a Bluetooth-mic disconnect as the interruption
+  trigger (only an incoming call was exercised).
 
 ### Next steps
 
-1. **#59 first — it gates staging.** Handle recorder interruption: register
-   `onerror`/track `onended`, make `stop()` recover held chunks on an inactive
-   recorder, and stop `close()` dead-locking on a `{null,null}` result. Device
-   test with a real incoming call mid-take, iOS and Android.
-2. #60/#61 (P3) alongside it — cheap, same file.
-3. **Then B5–B8.** develop is now ahead of staging by B1–B4; promotion waits on
-   #59.
+1. **Android on staging** — the interruption path (#59), pagehide (#58), and the
+   two day-1 checks. Closes the last of #59/#58.
+2. **#60/#61 (P3)** recorder nits — cheap, same file, whenever.
+3. **B5–B8** (#31–#34) — waveform editing, VU/menu/erase, template+share, MP3
+   off the main thread. B5 (#31) consumes the `lib/audio/edit.ts` engine.
+4. `staging → main` is the production gate — untouched, waits on the device
+   checks (esp. Android) passing.
 
 ---
 

@@ -114,6 +114,13 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   cases in `docs/progress_tracker.md` — a take shorter than one 250 ms
   timeslice, and backgrounding immediately after Stop — are still open. Say so
   honestly rather than claiming coverage that does not exist.
+- **Second on-device run: 2026-08-25, Seth, iPhone / Safari (staging pivot
+  build).** Record → playback works. Backgrounding mid-take still records, and an
+  incoming call mid-take (dialed in via Google Voice) stopped capture but **saved
+  the partial take as a playable segment** — the #59 interruption fix, verified
+  on iOS. Still **iOS Safari only; Android has never been run**, so #59 and #58
+  (pagehide) remain open for Android. The two cases above (sub-timeslice take,
+  background right after Stop) are also still unrun. iOS version not recorded.
 - **There is no export path at all** — `encodeMp3` exists in `lib/audio/mp3.ts`
   with no call site outside tests, and nothing calls `navigator.share`. Do not
   list the share sheet as an untested surface; it is an absent one (#18).
