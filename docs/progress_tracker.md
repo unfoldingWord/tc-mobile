@@ -4,6 +4,69 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-26 — Day 8: B5 waveform editing, and two recorder P3s
+
+**Branch:** `develop` · **PRs:** [#64](https://github.com/sethstoll3/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/sethstoll3/tc-mobile/pull/65) (B5) both merged · **On `develop`** (`94f9f01`) · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
+
+### Completed
+
+- **#60/#61 shipped** (#64 → `develop`, `d15563f`) — the two Fable-pass P3s on the
+  recorder: `start()` gains an idle guard (no hot-mic on a double-start; returns
+  `true` so the mic floor is held), and the waveform pan freezes an in-flight drag
+  while `busy`, not just its start. Two review rounds (round 1 caught a converged
+  pan P2 + a floor-semantics P2), round 2 clean.
+- **B5 — waveform editing shipped** (#65 → `develop`, `94f9f01`), mockups 4 & 5:
+  selection frame with drag handles, cut to a chapter-scoped clipboard, paste at
+  the centerline, undo/redo, over an in-memory working buffer.
+  - **Undo = O-B** (in-memory operation log, `lib/audio/edit-log.ts`, replayed from
+    the original; D2's "survives a restart" resolved against G3's ephemeral
+    clipboard — the flattened result persists on close, the history does not). **No
+    schema change.**
+  - **Record×edit = Model A** (edits at idle, one record commits on close, splice
+    base = the edited buffer). G3 was already decided at Gate 1 — #31's "blocked"
+    line was stale.
+  - Clipboard lives in `App` (survives the per-segment sheet remount), cleared on
+    chapter change. Persist reuses the never-lose slot; an edit-only cut-to-empty
+    clears the take instead of writing a 0-frame ghost.
+
+### Five review rounds, both reviewers each round (Frank/George)
+
+- The cap is 4; **round 5 was DRI-authorized**. Every round triaged on the PR with
+  dispositions + head SHA. Convergences each round were the highest-value class.
+- **R1** cut-to-empty persisted a phantom 0-frame recording (converged). **R2** the
+  cut-to-empty _failure_ was swallowed on close; cut allocated outside the edit
+  guard; selection-clamp teleport; off-viewport handle. **R3** permission panel hid
+  the editor (edits lost); multitouch handle race. **R4** Frank **P1** —
+  `clearSegmentTake` could delete a shared clip; George — AT `inert`/Redo gating +
+  0-frame invariant belongs in the T1 store. **DRI chose to harden the store**
+  (reference-counted clip delete; `putClip` rejects empty). **R5** George **P1** —
+  a superseded stop (pagehide) during cut-all+record erased the original; fixed by
+  gating the edit-only close on `!attemptedCapture`. Cut pan-remap (#66) closed.
+- **Merged on a DRI override** of the both-clean rule (Frank APPROVE since R3;
+  George's R5 findings fixed but not re-reviewed), recorded on the PR.
+
+### Blockers / needs a human
+
+- **On-device is the real gate for B5 (T1 audio).** The overlay, pointer, canvas,
+  and the `close()` state machine are browser-only (no jsdom) — none of it is
+  Node-tested. Smoke the editing path (select → cut → paste → undo/redo →
+  close/reopen persistence) on **iOS and Android**. Android remains the standing
+  gap across #59/#58 too.
+- **#67** SaveFailed copy says "recording" for an edit-only fail (cosmetic, safety
+  intact). **#68** `addTake`'s parallel unconditional clip-delete (latent; lands
+  with content-addressed clips).
+
+### Next steps
+
+1. **On-device B5 smoke** (iOS + Android), plus the still-open #59/#58 Android
+   checks and the two day-1 cases.
+2. **B6 (#32)** — VU meter, the recorder `≡` menu's Erase Segment (G4; the
+   `clearSegmentTake` store op B5 added is its foundation), erase confirmation.
+3. `staging` promotion once B5 is device-verified; `staging→main` stays gated on
+   Android.
+
+---
+
 ## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
 
 **Branch:** `feat/pivot-b1-b4` → `develop` → **`staging`** · **PRs:** [#57](https://github.com/sethstoll3/tc-mobile/pull/57) (B1–B4), [#62](https://github.com/sethstoll3/tc-mobile/pull/62) (#59 fix), [#63](https://github.com/sethstoll3/tc-mobile/pull/63) (promotion) all merged · **On staging** (`c7ef2af`) and device-smoked on iOS · **Open:** #59/#58 (Android), #60/#61 (P3)
