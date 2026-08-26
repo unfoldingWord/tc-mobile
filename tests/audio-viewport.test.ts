@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  panAfterCut,
   sampleToViewportX,
   viewportWindow,
   viewportXToSample,
@@ -104,5 +105,30 @@ describe("viewportXToSample / sampleToViewportX", () => {
       viewportXToSample(width, width, zoomed) -
       viewportXToSample(0, width, zoomed);
     expect(span).toBeCloseTo(250);
+  });
+});
+
+describe("panAfterCut", () => {
+  // Pan at sample 1000 throughout.
+  it("shifts the pan left by a cut entirely before it", () => {
+    expect(panAfterCut(1000, { start: 100, end: 300 })).toBe(800);
+  });
+
+  it("leaves the pan when the cut is entirely after it", () => {
+    expect(panAfterCut(1000, { start: 1200, end: 1500 })).toBe(1000);
+  });
+
+  it("lands the pan at the cut start when the cut straddles it", () => {
+    // Removes [900, 1100); the 100 samples before the pan (900–1000) go, so the
+    // pan drops to 900 — the start of the removed span.
+    expect(panAfterCut(1000, { start: 900, end: 1100 })).toBe(900);
+  });
+
+  it("ignores order (a reversed range is normalised)", () => {
+    expect(panAfterCut(1000, { start: 300, end: 100 })).toBe(800);
+  });
+
+  it("is a no-op for a cut touching the pan from the right", () => {
+    expect(panAfterCut(1000, { start: 1000, end: 1200 })).toBe(1000);
   });
 });

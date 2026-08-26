@@ -11,7 +11,7 @@ import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
-import { viewportWindow } from "@/lib/audio/viewport";
+import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
 import { formatDuration } from "@/lib/utils";
 import type { SegmentId } from "@/types/domain";
 
@@ -277,6 +277,16 @@ export function Recorder({
     });
   }, [editor, win.centerlineSample, win.visibleSamples]);
 
+  const onCut = useCallback(() => {
+    const removed = editor.cut();
+    // Keep the centerline on the same audio: a cut before it shortens the buffer
+    // to its left, so shift an absolute pan by what was removed (George R5). A
+    // null/resting pan already follows the new end.
+    if (removed !== null) {
+      setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
+    }
+  }, [editor]);
+
   const onPaste = useCallback(() => {
     editor.paste(win.centerlineSample);
   }, [editor, win.centerlineSample]);
@@ -303,7 +313,15 @@ export function Recorder({
       // releases the mic and never rejects; `saveRecording` never rejects and
       // turns a failure into the recovery screen App renders.
       let committed = false;
-      if (recording || paused || state === "processing") {
+      // A take was in play at close (live, paused, or an interruption froze it to
+      // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
+      // generation mid-flush — returning no samples and no error. B4 just closed
+      // then, original intact. B5 must keep that: the edit-only block below must
+      // NOT run on a superseded capture, or a cut-to-empty would clear the
+      // original recording (gone) with the replacement never landed and the cut
+      // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
+      const attemptedCapture = recording || paused || state === "processing";
+      if (attemptedCapture) {
         const result = await audio.stopRecording();
         if (result.samples && result.samples.length > 0) {
           // The Finished mark rides the take (applied atomically in addTake, on
@@ -346,8 +364,10 @@ export function Recorder({
         // capture is NOT this branch — it returns the "No sound" error above and
         // stays open to retry.
       }
-      // An edit-only close (B5): cuts/pastes but no recording this session.
-      if (!committed && editor.hasEdits) {
+      // An edit-only close (B5): cuts/pastes with no take committed. Gated on
+      // `!attemptedCapture` so a superseded capture stop (above) abandons the
+      // session like B4 — persisting or clearing there is the George-R5 loss.
+      if (!committed && !attemptedCapture && editor.hasEdits) {
         if (editor.workingLength === 0) {
           // Cut down to nothing clears the take (no 0-frame ghost). Unlike a
           // non-empty save it has NO recovery slot, so a failed clear must keep
@@ -598,7 +618,7 @@ export function Recorder({
                     label={strings.cut}
                     variant="quiet"
                     size={26}
-                    onClick={editor.cut}
+                    onClick={onCut}
                   />
                 </div>
               )}

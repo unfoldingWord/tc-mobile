@@ -18,6 +18,8 @@
  * such thing as inserting before the start or after the end.
  */
 
+import type { SampleRange } from "@/types/audio";
+
 export interface WaveformViewport {
   /** First sample visible. May be < 0 — blank space to the left of the audio. */
   readonly start: number;
@@ -90,4 +92,22 @@ export function sampleToViewportX(
   win: WaveformViewport
 ): number {
   return ((sample - win.start) / win.visibleSamples) * width;
+}
+
+/**
+ * Where an absolute pan sits after `range` is cut from the buffer.
+ *
+ * The B4 centerline marks a fixed sample; a B5 cut that removes audio BEFORE it
+ * shifts that sample left, or the line would silently come to mark a later point
+ * in the speech and a record would splice there (George R5). Subtract only the
+ * removed samples that lay before the pan: a cut entirely after the line leaves
+ * it, and a cut straddling it lands the line at the cut's start. A paste needs no
+ * companion because it always inserts AT the centerline (`at === pan`), which
+ * pushes only the audio to the line's right.
+ */
+export function panAfterCut(pan: number, range: SampleRange): number {
+  const lo = Math.min(range.start, range.end);
+  const hi = Math.max(range.start, range.end);
+  const removedBeforePan = Math.min(hi, pan) - Math.min(lo, pan);
+  return pan - removedBeforePan;
 }

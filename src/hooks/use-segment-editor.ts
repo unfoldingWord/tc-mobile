@@ -54,8 +54,9 @@ export interface SegmentEditor {
   readonly closeSelection: () => void;
   /** Update the picked span as a handle drags. Clamped to the buffer. */
   readonly setSelection: (range: SampleRange) => void;
-  /** Cut the selection to the clipboard, then drop the frame. */
-  readonly cut: () => void;
+  /** Cut the selection to the clipboard, then drop the frame. Returns the range
+   *  removed (normalised) or null if nothing was cut. */
+  readonly cut: () => SampleRange | null;
   /** Paste the clipboard at a sample offset (the centerline). */
   readonly paste: (atSample: number) => void;
   readonly undo: () => void;
@@ -130,15 +131,17 @@ export function useSegmentEditor(
   // paste's `insertAt`, a cut's `sliceRange`) included — so an OOM there cannot
   // escape the handler with history half-advanced.
   const runEdit = useCallback(
-    (produce: () => { next: History; after?: () => void }) => {
+    (produce: () => { next: History; after?: () => void }): boolean => {
       try {
         const { next, after } = produce();
         setHist(next);
         setError(false);
         after?.();
+        return true;
       } catch (cause) {
         console.error("An edit could not be applied", cause);
         setError(true);
+        return false;
       }
     },
     []
@@ -189,11 +192,14 @@ export function useSegmentEditor(
     [clampPoint]
   );
 
-  const cut = useCallback(() => {
-    if (!selection) return;
+  // Returns the range actually removed (normalised), or null if nothing was cut
+  // or the edit failed — so the recorder can shift the pan left by a cut that
+  // fell before the centerline.
+  const cut = useCallback((): SampleRange | null => {
+    if (!selection) return null;
     const range = clampRange(selection, working.length);
-    if (range.start === range.end) return; // nothing picked — not a no-op cut
-    runEdit(() => {
+    if (range.start === range.end) return null; // nothing picked — not a no-op
+    const applied = runEdit(() => {
       const removed = sliceRange(working, range);
       const nextLog = pushOp(log, { kind: "cut", range });
       return {
@@ -204,6 +210,7 @@ export function useSegmentEditor(
         },
       };
     });
+    return applied ? range : null;
   }, [selection, working, log, base, runEdit, clipboard, clearSelection]);
 
   const paste = useCallback(
