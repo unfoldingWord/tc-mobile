@@ -188,7 +188,12 @@ export function Recorder({
   const displayedFinished =
     finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
-  const pan = panState ?? length;
+  // Clamp to the current length: an edit (a cut) can shorten `working` past a
+  // `panState` set before it, and a stale pan beyond the end would sit the record
+  // offset at the new end rather than where the translator was looking (George
+  // R4). `viewportWindow` also clamps `centerlineSample`, so drawing was already
+  // safe; this keeps the offset honest too.
+  const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
   const onPointerDown = useCallback(
@@ -245,8 +250,10 @@ export function Recorder({
     } else {
       // Starting a record ends the editing phase (Model A: edits then record).
       // Close the selection frame so the stage drag returns to the pan, and the
-      // edit controls disable while the take is live.
+      // menu, so a Redo left open cannot rematerialise the working buffer out
+      // from under the offset just locked below (George R4).
       editor.closeSelection();
+      setMenuOpen(false);
       // The offset is fixed for the whole take here, at the idle→recording
       // edge; pause/resume continues at the same point (F9). It is an offset
       // into the WORKING buffer, which is also the record's splice base on close.
@@ -464,7 +471,16 @@ export function Recorder({
 
   return (
     <div className="recorder-scrim" role="dialog" aria-modal="true">
-      <div ref={sheetRef} className="recorder-sheet mx-auto max-w-md">
+      {/* `inert` the sheet while the menu is open. Nested aria-modal dialogs do
+          not reliably hide the background for AT/switch users — G8 already
+          refused to trust that on the Segments list — so without this an AT user
+          could reach the covered Record while the menu is up and mutate the
+          splice base under a Redo (George R4). */}
+      <div
+        ref={sheetRef}
+        className="recorder-sheet mx-auto max-w-md"
+        inert={menuOpen || undefined}
+      >
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
             icon="back"
@@ -672,7 +688,10 @@ export function Recorder({
           icon="redo"
           label={strings.redo}
           variant="quiet"
-          disabled={!editor.canRedo}
+          // Idle-gated like Undo (George R4): a Redo fired while a take is live
+          // would rematerialise the working buffer to a different length under
+          // the insertion offset already locked at Record.
+          disabled={!idleEditable || !editor.canRedo}
           onClick={() => {
             editor.redo();
             setMenuOpen(false);

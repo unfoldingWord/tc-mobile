@@ -316,8 +316,21 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
     const priorTake = await tx.objectStore("takes").get(priorTakeId);
     await tx.objectStore("takes").delete(priorTakeId);
     if (priorTake) {
-      await tx.objectStore("clipMeta").delete(priorTake.clipId);
-      await tx.objectStore("clipData").delete(priorTake.clipId);
+      // Delete the clip only when no OTHER take still points at it. Nothing
+      // shares a clip today (every take mints a fresh `newClipId()`), but a
+      // future content-addressed import could dedupe, and an unconditional
+      // delete would then punch a hole in another segment — unrecoverable audio
+      // loss (Frank R4). The take row is already gone, so `getAll` sees only the
+      // survivors. NOTE: `addTake`'s prior-clip delete has the same latent
+      // property and is tracked in #68.
+      const survivors = await tx.objectStore("takes").getAll();
+      const stillReferenced = survivors.some(
+        (t) => t.clipId === priorTake.clipId
+      );
+      if (!stillReferenced) {
+        await tx.objectStore("clipMeta").delete(priorTake.clipId);
+        await tx.objectStore("clipData").delete(priorTake.clipId);
+      }
     }
   }
 

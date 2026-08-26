@@ -40,7 +40,7 @@ export interface SegmentEditor {
   readonly hasEdits: boolean;
   /** The picked span while selection mode is open, or null (nothing picked). */
   readonly selection: SampleRange | null;
-  /** Selection mode is on: the frame is shown and panning is suspended. */
+  /** Selection mode is on: the frame is shown (pan stays available beneath it). */
   readonly selectionActive: boolean;
   readonly canCut: boolean;
   readonly canPaste: boolean;

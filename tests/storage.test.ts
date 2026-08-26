@@ -133,6 +133,15 @@ describe("clip storage", () => {
     expect(await db.get("clipData", id)).toBeUndefined();
   });
 
+  it("refuses to store a 0-frame clip", async () => {
+    // George R4: a 0-frame clip resolves as playable silent audio and can be
+    // counted finished — the ghost take. The store rejects it rather than
+    // trusting callers, the same way setSegmentFinished guards its own invariant.
+    await expect(
+      putClip(newClipId(), new Int16Array(0), CANONICAL_SAMPLE_RATE)
+    ).rejects.toThrow();
+  });
+
   it("reports total bytes held on device", async () => {
     await putClip(newClipId(), samples(100), CANONICAL_SAMPLE_RATE);
     await putClip(newClipId(), samples(50), CANONICAL_SAMPLE_RATE);
@@ -424,6 +433,27 @@ describe("book tree", () => {
     expect(segment?.status).toBe("not-started");
     // A second clear is still safe.
     await expect(clearSegmentTake(segmentId)).resolves.toBeUndefined();
+  });
+
+  it("keeps a clip that another take still references when clearing", async () => {
+    // Frank R4: clips are 1:1 today, but if two takes ever share a clipId,
+    // clearing one segment must NOT delete the audio the other still plays.
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const s1 = await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    const shared = await storedClip(500);
+    await addTake(s1.id, shared, 100);
+    await addTake(s2.id, shared, 100); // both point at the same clip
+
+    await clearSegmentTake(s1.id);
+
+    const db = await getDb();
+    expect((await db.get("segments", s1.id))?.activeTakeId).toBeNull();
+    // The shared clip survives because s2 still references it.
+    expect(await db.get("clipMeta", shared)).toBeDefined();
+    expect(await db.get("clipData", shared)).toBeDefined();
+    expect((await loadSegmentClip(s2.id)).kind).toBe("resolved");
   });
 
   it("leaves other segments untouched when one is cleared", async () => {
