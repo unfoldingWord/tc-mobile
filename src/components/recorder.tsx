@@ -418,17 +418,15 @@ export function Recorder({
     !audio.supported ||
     (state === "idle" && audio.error !== null && stopError === null);
 
-  // Enabled once a take WILL exist on close, not only when one already does:
-  // `view.hasClip` never updates mid-sheet, so keying on it alone left the
-  // Finished control dead for every FIRST take — the day-1 training path could
-  // record but never mark done from the recorder (G8). Safe to offer now: the
-  // mark rides the take through `addTake`, so it no longer needs the segment to
-  // already have one. `hasAudio` (the working buffer) covers a B5 edit that
-  // produced audio too — e.g. pasting into an empty segment. Still disabled
-  // before Record on an empty segment (an empty look-and-close cannot mark an
-  // audioless segment finished), and a refused start returns to idle (G9).
-  const willHaveAudio =
-    view !== null && (view.hasClip || takeActive || hasAudio);
+  // Enabled once a take WILL exist on close, not only when one already does.
+  // `takeActive` covers the FIRST take — recording/closing before any clip
+  // exists — so the day-1 path can record and mark done in one sheet (G8); the
+  // mark rides the take through `addTake`. `hasAudio` (the WORKING buffer) covers
+  // an existing clip and a B5 edit alike — including a paste into an empty
+  // segment. Deliberately NOT keyed on the stale `view.hasClip`: that never
+  // updates mid-sheet, so a clip edited down to nothing (cut-all) would still
+  // read as "will have audio" and could be marked finished onto a 0-frame take.
+  const willHaveAudio = view !== null && (takeActive || hasAudio);
   const finishedState = !view
     ? "disabled"
     : displayedFinished
@@ -494,6 +492,11 @@ export function Recorder({
                 <Notice>{stopError}</Notice>
               </div>
             )}
+            {editor.error && (
+              <div className="px-[12px] pt-[8px]">
+                <Notice>{strings.editFailed}</Notice>
+              </div>
+            )}
             <div className="recorder-stage flex-1">
               <div
                 ref={stageRef}
@@ -539,9 +542,13 @@ export function Recorder({
                   </button>
                 )}
               </div>
-              {editor.canCut && (
+              {idleEditable && editor.canCut && (
                 // The Cut affordance sits under the frame (mockup 4). Cutting
-                // drops the selection and turns the paste marker on.
+                // drops the selection and turns the paste marker on. Gated on
+                // `idleEditable` like every other edit control: without it a Cut
+                // tapped during the async close would mutate the working buffer
+                // after close() already captured the pre-cut one — a silently
+                // dropped edit.
                 <div className="recorder-cut flex justify-center">
                   <Control
                     icon="scissors"

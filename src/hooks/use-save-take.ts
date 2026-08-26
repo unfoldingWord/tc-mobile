@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { addTake } from "@/lib/storage/books";
+import { addTake, clearSegmentTake } from "@/lib/storage/books";
 import { deleteClip, newClipId, putClip } from "@/lib/storage/clips";
 import {
   discardSave,
@@ -158,14 +158,35 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    * than reimplemented. `addTake`'s 1:1 replace makes this buffer the segment's
    * audio, and its single transaction keeps the prior clip intact until the new
    * one is written, so a failed edit-save leaves the original recoverable.
+   *
+   * An EMPTY buffer is a cut down to nothing, not a recording: persisting a
+   * 0-frame take would fabricate a recorded state (a resolved clip that plays
+   * silence and can be counted finished). It routes to `clearSegmentTake`
+   * instead, returning the segment to never-recorded — the removed audio is in
+   * the clipboard, so this is a deliberate erase, not the silent loss the slot
+   * exists to prevent, and it does not need the slot. A clear failure leaves the
+   * original take in place (no loss); it is reported, not sent to the recovery
+   * screen, whose copy and retry are about a recording that could not be saved.
    */
   const saveEditedSegment = useCallback(
     (
       segmentId: SegmentId,
       buffer: Int16Array,
       finished: boolean
-    ): Promise<boolean> =>
-      saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished),
+    ): Promise<boolean> => {
+      if (buffer.length === 0) {
+        return clearSegmentTake(segmentId)
+          .then(() => {
+            onSavedRef.current?.();
+            return true;
+          })
+          .catch((cause: unknown) => {
+            console.error("Clearing an edited-to-empty segment failed", cause);
+            return false;
+          });
+      }
+      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished);
+    },
     [saveRecording]
   );
 

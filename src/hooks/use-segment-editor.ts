@@ -46,6 +46,8 @@ export interface SegmentEditor {
   readonly canPaste: boolean;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
+  /** A last edit could not be applied (an allocation failed). */
+  readonly error: boolean;
   /** Enter selection mode with a seed span (recorder derives it from the view). */
   readonly openSelection: (initial: SampleRange) => void;
   /** Leave selection mode without cutting (the toggle pressed again). */
@@ -60,14 +62,28 @@ export interface SegmentEditor {
   readonly redo: () => void;
 }
 
+/** The base buffer, the current edited buffer, and the history that maps between. */
+interface History {
+  readonly base: Int16Array;
+  readonly working: Int16Array;
+  readonly log: EditLog;
+}
+
 /**
  * The waveform-editing state for one recorder session (B5).
  *
- * The edit history is an in-memory operation log (`edit-log.ts`, O-B): `working`
- * is `original` with the applied ops replayed, so undo/redo is a cursor move and
+ * The edit history is an operation log (`edit-log.ts`, O-B): `working` is
+ * `original` with the applied ops replayed, so undo/redo is a cursor move and
  * costs a reference per step rather than a buffer snapshot. The log lives only
  * for this session — the flattened `working` is persisted on close, the history
  * is not — which is why this is a hook (session state), not a store.
+ *
+ * `working` is held in state and recomputed INSIDE the edit handlers, not in a
+ * render-time `useMemo`: replaying a paste allocates a buffer the size of the
+ * result and can throw on a low-memory device, and a throw during render would
+ * crash the sheet (there is no error boundary). Allocating in the handler lets a
+ * failure drop the op and surface in place instead — the same move the record
+ * save path made for the same OOM class.
  *
  * The clipboard is passed in rather than owned here: it must outlive the sheet
  * (G3), so it belongs to `App`. Cut writes it, paste reads it.
@@ -79,15 +95,51 @@ export function useSegmentEditor(
   original: Int16Array | null,
   clipboard: Clipboard
 ): SegmentEditor {
-  const [log, setLog] = useState<EditLog>(emptyLog);
+  const base = original ?? EMPTY;
+  const [hist, setHist] = useState<History>(() => ({
+    base,
+    working: base,
+    log: emptyLog(),
+  }));
   const [selection, setSelectionState] = useState<SampleRange | null>(null);
   const [selectionActive, setSelectionActive] = useState(false);
+  const [error, setError] = useState(false);
 
-  const base = original ?? EMPTY;
-  const working = useMemo(() => materialize(base, log), [base, log]);
+  // Reset when the loaded clip changes (the async load resolves, or the hook is
+  // reused for a different base). Adjusting state during render — React's
+  // documented pattern — keeps `working` consistent with `base` in the same
+  // render, with no one-frame empty flash an effect would leave on open.
+  if (hist.base !== base) {
+    setHist({ base, working: base, log: emptyLog() });
+    setSelectionState(null);
+    setSelectionActive(false);
+    setError(false);
+  }
+  const { working, log } = hist;
+
   const peaks = useMemo(
     () => (working.length > 0 ? computePeaks(working, PEAK_BUCKETS) : null),
     [working]
+  );
+
+  // Apply a proposed history, allocating the new buffer INSIDE a guard. A paste
+  // replays `insertAt`, which allocates the full result and can throw on a
+  // low-memory device; a throw must neither advance history nor crash the render
+  // tree. On failure the op is dropped and the control reports it in place.
+  const advance = useCallback(
+    (nextLog: EditLog): boolean => {
+      try {
+        const next = materialize(base, nextLog);
+        setHist({ base, working: next, log: nextLog });
+        setError(false);
+        return true;
+      } catch (cause) {
+        console.error("An edit could not be applied", cause);
+        setError(true);
+        return false;
+      }
+    },
+    [base]
   );
 
   const openSelection = useCallback(
@@ -114,35 +166,39 @@ export function useSegmentEditor(
     if (!selection) return;
     const range = clampRange(selection, working.length);
     if (range.start === range.end) return; // nothing picked — not a no-op cut
-    clipboard.set(sliceRange(working, range));
-    setLog((l) => pushOp(l, { kind: "cut", range }));
-    setSelectionActive(false);
-    setSelectionState(null);
-  }, [selection, working, clipboard]);
+    const removed = sliceRange(working, range);
+    if (advance(pushOp(log, { kind: "cut", range }))) {
+      clipboard.set(removed);
+      setSelectionActive(false);
+      setSelectionState(null);
+    }
+  }, [selection, working, log, advance, clipboard]);
 
   const paste = useCallback(
     (atSample: number) => {
       const clip = clipboard.clip;
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
-      setLog((l) => pushOp(l, { kind: "paste", at, clip }));
+      advance(pushOp(log, { kind: "paste", at, clip }));
     },
-    [clipboard.clip, working.length]
+    [clipboard.clip, working.length, log, advance]
   );
 
-  // Undo/redo move the cursor and clear any open selection, whose sample range
-  // was measured against a buffer the history has just changed under it.
+  // Undo/redo re-materialise from base and clear any open selection, whose
+  // sample range was measured against a buffer the history has just changed.
   const undo = useCallback(() => {
-    setLog(logUndo);
-    setSelectionActive(false);
-    setSelectionState(null);
-  }, []);
+    if (advance(logUndo(log))) {
+      setSelectionActive(false);
+      setSelectionState(null);
+    }
+  }, [log, advance]);
 
   const redo = useCallback(() => {
-    setLog(logRedo);
-    setSelectionActive(false);
-    setSelectionState(null);
-  }, []);
+    if (advance(logRedo(log))) {
+      setSelectionActive(false);
+      setSelectionState(null);
+    }
+  }, [log, advance]);
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)
@@ -162,6 +218,7 @@ export function useSegmentEditor(
     canPaste: clipboard.clip !== null && clipboard.clip.length > 0,
     canUndo: logCanUndo(log),
     canRedo: logCanRedo(log),
+    error,
     openSelection,
     closeSelection,
     setSelection,

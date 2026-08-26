@@ -1,8 +1,12 @@
 import { useCallback, useRef } from "react";
 
-import { viewportXToSample } from "@/lib/audio/viewport";
+import { sampleToViewportX, viewportXToSample } from "@/lib/audio/viewport";
 import type { WaveformViewport } from "@/lib/audio/viewport";
 import type { SampleRange } from "@/types/audio";
+
+/** A sample's position as a percentage of the viewport width (width cancels). */
+const pct = (sample: number, win: WaveformViewport): number =>
+  sampleToViewportX(sample, 100, win);
 
 interface SelectionOverlayProps {
   /** The viewport the waveform is drawn under — the sample↔x mapping. */
@@ -43,8 +47,8 @@ export function SelectionOverlay({
 
   const lo = Math.min(selection.start, selection.end);
   const hi = Math.max(selection.start, selection.end);
-  const leftPct = ((lo - win.start) / win.visibleSamples) * 100;
-  const widthPct = ((hi - lo) / win.visibleSamples) * 100;
+  const leftPct = pct(lo, win);
+  const widthPct = pct(hi, win) - leftPct;
 
   const moveEdge = useCallback(
     (clientX: number) => {
@@ -73,9 +77,7 @@ export function SelectionOverlay({
       aria-valuenow={Math.round(valueNow)}
       tabIndex={0}
       className="selection-handle"
-      style={{
-        left: `${((valueNow - win.start) / win.visibleSamples) * 100}%`,
-      }}
+      style={{ left: `${pct(valueNow, win)}%` }}
       onPointerDown={(e) => {
         dragEdge.current = edge;
         e.currentTarget.setPointerCapture(e.pointerId);

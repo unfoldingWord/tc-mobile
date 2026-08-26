@@ -70,4 +70,5 @@ export const strings = {
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
   selectionEndHandle: "Selection end",
+  editFailed: "That edit could not be applied. Try a shorter selection.",
 } as const;
