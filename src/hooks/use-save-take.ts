@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-import { insertAt } from "@/lib/audio/edit";
+import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { addTake } from "@/lib/storage/books";
 import { deleteClip, newClipId, putClip } from "@/lib/storage/clips";
@@ -14,6 +14,9 @@ import {
 } from "@/lib/takes/pending-take";
 import { saveFailureKind } from "./save-failure";
 import type { SegmentId } from "@/types/domain";
+
+/** Shared empty base — an edit-only save carries no newly recorded PCM. */
+const NO_SAMPLES = new Int16Array(0);
 
 /**
  * The one unsaved recording the app is holding, and its save/retry/discard.
@@ -57,11 +60,13 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     // same frame reads.
     savingRef.current = true;
     try {
-      // Merge HERE, inside the guarded attempt. insertAt allocates a buffer the
-      // size of both inputs and can throw on a low-memory device; the inputs are
-      // already owned in the slot, so a merge failure becomes the recovery
-      // screen (retry re-runs this) rather than a dropped take.
-      const merged = insertAt(take.existing, take.recorded, take.offset);
+      // Merge HERE, inside the guarded attempt. `mergeTake` allocates a buffer
+      // the size of both inputs and can throw on a low-memory device; the inputs
+      // are already owned in the slot, so a merge failure becomes the recovery
+      // screen (retry re-runs this) rather than a dropped take. On the B5
+      // edit-only path `recorded` is empty and `mergeTake` returns `existing` (the
+      // whole flattened buffer) without a copy.
+      const merged = mergeTake(take.existing, take.recorded, take.offset);
       const meta = await putClip(take.clipId, merged, CANONICAL_SAMPLE_RATE);
       // The Finished mark rides the take, applied atomically here — so a retry
       // re-applies it, and it can never be clobbered by this same addTake's
@@ -142,6 +147,28 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     [commit, pending]
   );
 
+  /**
+   * Persist an already-flattened, edited segment buffer (B5).
+   *
+   * A cut/paste session produces the whole new segment audio in memory; there is
+   * no fresh recording to splice. So this reuses the exact record path with an
+   * empty `recorded` and offset 0 — `commit` skips the merge and `putClip`s the
+   * buffer as-is — which means the never-lose recovery machinery (the owned slot,
+   * the retry, the recovery screen on a failed write) is shared verbatim rather
+   * than reimplemented. `addTake`'s 1:1 replace makes this buffer the segment's
+   * audio, and its single transaction keeps the prior clip intact until the new
+   * one is written, so a failed edit-save leaves the original recoverable.
+   */
+  const saveEditedSegment = useCallback(
+    (
+      segmentId: SegmentId,
+      buffer: Int16Array,
+      finished: boolean
+    ): Promise<boolean> =>
+      saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished),
+    [saveRecording]
+  );
+
   const retryPendingTake = useCallback(() => {
     // The live guard, ahead of the pure one: `pending` here is last render's
     // slot, and `SaveFailed` only hides Retry once the saving re-render lands.
@@ -176,6 +203,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   return {
     pendingTake: pending,
     saveRecording,
+    saveEditedSegment,
     retryPendingTake,
     discardPendingTake,
   };
