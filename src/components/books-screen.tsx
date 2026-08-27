@@ -33,6 +33,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Books sibling of the Segments load-failure guard). The Notice is the
   // recovery; the menu stays reachable.
   const loadFailed = error !== null && books.length === 0;
+  // The empty state carries its own present primary CTA, so the header create
+  // control would be a second, equal "New book" — two CTAs read as none
+  // (ui-craft §21), and a screen reader would announce it twice. Hide the
+  // corner + exactly while the invite is up; it returns once the shelf fills.
+  const showEmpty = !loading && !loadFailed && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
@@ -85,14 +90,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   return (
     <div className="flex h-full flex-col gap-[14px]">
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
-        <Control
-          icon="plus"
-          label={strings.newBook}
-          variant="primary"
-          size={26}
-          disabled={loading || loadFailed}
-          onClick={() => void onNewBook()}
-        />
+        {!showEmpty && (
+          <Control
+            icon="plus"
+            label={strings.newBook}
+            variant="primary"
+            size={26}
+            disabled={loading || loadFailed}
+            onClick={() => void onNewBook()}
+          />
+        )}
         <Control
           icon="menu"
           label={strings.menuOpen}
@@ -123,14 +130,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {!loading && !loadFailed && books.length === 0 ? (
+        {showEmpty ? (
           <EmptyState
             headline={strings.booksEmpty}
             teach={strings.booksEmptyTeach}
             ctaLabel={strings.newBook}
             ctaIcon="plus"
             onCta={() => void onNewBook()}
-            disabled={loading || loadFailed}
           />
         ) : (
           <ul className="flex flex-col gap-[10px]">

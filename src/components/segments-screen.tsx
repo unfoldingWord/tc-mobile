@@ -111,6 +111,9 @@ export const SegmentsScreen = forwardRef<
   // the true hole: the initial read. The Notice above is the recovery — back out
   // and re-enter re-mounts and re-loads.
   const loadFailed = error !== null && rows.length === 0;
+  // See books-screen: hide the header create + while the invite's own primary
+  // CTA is up, so there is one create action, announced once.
+  const showEmpty = !loading && !loadFailed && rows.length === 0;
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -179,13 +182,15 @@ export const SegmentsScreen = forwardRef<
         >
           {bookName} &gt; {strings.chapterName(chapterNumber)}
         </button>
-        <Control
-          icon="plus"
-          label={strings.addSegment}
-          variant="quiet"
-          disabled={loading || refreshing || loadFailed}
-          onClick={() => void onAppend()}
-        />
+        {!showEmpty && (
+          <Control
+            icon="plus"
+            label={strings.addSegment}
+            variant="quiet"
+            disabled={loading || refreshing || loadFailed}
+            onClick={() => void onAppend()}
+          />
+        )}
       </header>
 
       {/* One line, one place: a load failure or a playback failure (a
@@ -202,14 +207,13 @@ export const SegmentsScreen = forwardRef<
       )}
 
       <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
-        {!loading && !loadFailed && rows.length === 0 ? (
+        {showEmpty ? (
           <EmptyState
             headline={strings.segmentsEmpty}
             teach={strings.segmentsEmptyTeach}
             ctaLabel={strings.addSegment}
             ctaIcon="plus"
             onCta={() => void onAppend()}
-            disabled={loading || refreshing || loadFailed}
           />
         ) : (
           <ul className="flex flex-col gap-[8px]">

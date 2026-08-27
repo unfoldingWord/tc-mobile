@@ -11,13 +11,14 @@ interface EmptyStateProps {
    */
   teach: string;
   /**
-   * The present primary action, in the empty state itself rather than only the
-   * demoted corner control. `label` is the whole accessible name.
+   * The single present primary action. While the invite is up, the screen hides
+   * its header create control, so this is the one create affordance on the
+   * screen — visually and to a screen reader. `label` is the whole accessible
+   * name.
    */
   ctaLabel: string;
   ctaIcon: IconName;
   onCta: () => void;
-  disabled?: boolean;
 }
 
 /**
@@ -31,7 +32,6 @@ export function EmptyState({
   ctaLabel,
   ctaIcon,
   onCta,
-  disabled,
 }: EmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[14px] px-[24px] text-center">
@@ -49,7 +49,6 @@ export function EmptyState({
         label={ctaLabel}
         variant="primary"
         size={28}
-        disabled={disabled}
         onClick={onCta}
       />
     </div>
