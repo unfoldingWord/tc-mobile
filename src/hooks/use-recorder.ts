@@ -299,13 +299,9 @@ export function useRecorder(): UseRecorder {
       const onInterrupted = () => {
         if (generation !== generationRef.current) return;
         clearTick();
-        // DISCONNECT the tap's graph (readLevel -> 0) but leave its cloned tracks
-        // live — this is the #59 recovery path: the recorder freezes to
-        // `processing` and `close()` -> `stop()` RECOVERS the pending chunks, so
-        // stopping any capture track here (even a clone, on a WebKit build where
-        // clone-stop reaches the shared source) risks truncating the final slice,
-        // exactly as on the `stop()` path. `stop()` full-closes the tap after the
-        // flush; cancel/leave close it if the take is abandoned instead (George R-B6).
+        // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
+        // tracks are stopped depends on the recorder state below, exactly as for
+        // the original tracks.
         tapRef.current?.disconnect();
         setState("processing");
         // Release the mic the moment the recorder has actually ended. On the
@@ -314,7 +310,15 @@ export function useRecorder(): UseRecorder {
         // then final, so stopping the track drops no audio; on the `ended` path
         // the track is already dead and this is a no-op.
         if (recorder.state === "inactive") {
+          // Chunks final — stop BOTH the original tracks AND the VU clone. A
+          // cloned getUserMedia track is independent, so disconnect() alone left
+          // it live and kept the mic device captured until Back (a hot mic the
+          // original-track stop was written to prevent — George R-B6). Safe here
+          // for the same reason the original stop is: the chunks are final. NOT
+          // on the error path (recorder still active), where clone-stop could
+          // truncate the slice stop() will recover.
           stream?.getTracks().forEach((track) => track.stop());
+          closeTap();
         }
       };
       recorder.onerror = onInterrupted;
@@ -356,7 +360,7 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, clearTick, releaseStream, startTick, supported]);
+  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
@@ -402,13 +406,19 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
-    // Capture is ending; DISCONNECT the VU tap's graph up front so readLevel()
-    // returns 0 from here — but do NOT stop its cloned tracks yet. Stopping any
-    // capture track between MediaRecorder.stop() and onstop can truncate the
-    // final `dataavailable` (the whole take under one timeslice), the very
-    // window the stream handoff below exists to protect. The clone is stopped
-    // after the flush, at closeTap() further down (George R-B6).
-    tapRef.current?.disconnect();
+    // OWN the VU tap exactly as the stream is owned (below): steal it into a
+    // local and null the ref. Two flush-window races this closes (Frank + George
+    // R-B6): (1) a concurrent cancel()/leave()/pagehide runs releaseStream() ->
+    // closeTap() during our flush await — reading the ref, it would stop THIS
+    // take's clone mid-`dataavailable` and, on a WebKit build where clone-stop
+    // reaches the shared source, truncate the final slice; nulling the ref makes
+    // that a no-op. (2) an OLDER stop() resuming after a newer recording B
+    // installed its tap would close B's tap through the shared ref. disconnect
+    // now (readLevel -> 0); the clone tracks are stopped after the flush, on the
+    // LOCAL tap.
+    const tap = tapRef.current;
+    tapRef.current = null;
+    tap?.disconnect();
     // This invocation owns teardown now: detach the interruption handlers so a
     // late `error`/`ended` event, delivered after our final `setState`, cannot
     // repaint a stopped recorder back to "processing".
@@ -465,10 +475,10 @@ export function useRecorder(): UseRecorder {
       if (stream) abandonStream(stream);
     }
 
-    // The flush window is past — now stop the VU tap's cloned capture tracks
-    // (its graph was already disconnected up top). Deferred to here so the clone
-    // could not truncate the final slice mid-flush.
-    closeTap();
+    // The flush window is past — now stop the cloned capture tracks of THIS
+    // stop's tap (its graph was disconnected up top). The local `tap`, not
+    // closeTap(): a newer recording's tap in the ref must not be touched.
+    tap?.close();
 
     // The shared UI state belongs to the current generation; the failure travels
     // with the result to whoever called stop(). A superseded stop stays silent —
@@ -516,7 +526,7 @@ export function useRecorder(): UseRecorder {
           : null,
       };
     }
-  }, [abandonStream, clearTick, closeTap]);
+  }, [abandonStream, clearTick]);
 
   const cancel = useCallback(() => {
     generationRef.current++;
