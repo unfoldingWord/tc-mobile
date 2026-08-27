@@ -31,6 +31,11 @@
 
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
+
+    /* The waveform stroke. Defaults to the voice accent; a finished row remaps
+       it to done (green) and the canvas reads it back — no prop drilling, and
+       the recorder's waveform (never under `.row--finished`) stays amber. */
+    --c-wave-stroke: var(--s-voice);
   }
 
   /* --- the shell ------------------------------------------------------- */
@@ -84,10 +89,35 @@
     outline-offset: var(--c-focus-offset);
   }
   .control:disabled {
-    /* Desaturate rather than fade, so the glyph stays legible. */
-    filter: saturate(0.15);
     cursor: default;
     transform: none;
+    /* No hover punch on an inert control: the base .control:hover brightness
+       would otherwise still brighten a disabled button (George R1 P2). */
+    filter: none;
+  }
+  /* Monochrome quiet glyphs (select/undo/cut): saturate() barely moves an
+     already-grey glyph, so dim to read as inactive. Precedent: the row
+     ordinal's disabled:opacity-50. */
+  .control--quiet:disabled {
+    opacity: 0.4;
+  }
+  /* A disabled quiet control must not pick up the hover surface/ink — on a
+     client with sticky :hover after a tap (iOS Safari), a dead tap would leave
+     the disabled Cut/Select/Undo looking live (George R2 P3). Higher specificity
+     than .control--quiet:hover, so it wins regardless of source order. */
+  .control--quiet:disabled:hover {
+    background: transparent;
+    color: var(--s-ink-muted);
+  }
+  /* A COLOURED control (live-red record, play, primary) must drain its chroma
+     when inert — a 40%-opaque red still reads as armed/live, and red is "the
+     live recording moment, and nothing else" (1-primitives). Desaturate so it
+     reads grey-inert instead. */
+  .control--record:disabled,
+  .control--play:disabled,
+  .control--primary:disabled {
+    filter: saturate(0.12);
+    opacity: 0.55;
   }
 
   .control--record {
@@ -217,8 +247,12 @@
       border-color var(--p-dur-base) var(--p-ease);
   }
   .checkbox__box--on {
-    background: var(--s-voice);
-    border-color: var(--s-voice);
+    /* Finished is the green (`--s-done`) role, not voice-amber. The recorder
+       header checkbox is the only remaining Checkbox consumer, and it must
+       agree with the list's green finished row (George R1 P3). */
+    background: var(--s-done);
+    border-color: var(--s-done);
+    color: var(--s-done-ink);
   }
   /* Never recorded: dashed and greyed, so the box itself says "nothing to
      finish here yet" without a word. Keyed on the STATE, not `:disabled` — a
@@ -355,6 +389,11 @@
   .recorder-stage {
     position: relative;
     display: flex;
+    /* Column, so the always-mounted Cut (George R2 P2) stacks UNDER the canvas
+       (mockup 4, matching .recorder-cut's padding-top) instead of sitting beside
+       it as a row sibling — which narrowed the full-width canvas and pushed the
+       CENTER_FRACTION=0.5 line off the stage's true centre. */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 0;
@@ -441,8 +480,10 @@
   /* --- the VU level strip (B6, mockup 3) --------------------------------- */
   /* A pull-model meter: the component polls the live tap on its own rAF and
      writes width + zone straight to the DOM, so the recorder does not re-render
-     per frame. The zones are named green/yellow/red, but this palette has no
-     green and reserves red for the live recording moment — which is exactly
+     per frame. The zones are named green/yellow/red. `--s-done` is green now,
+     but it is the FINISHED role, not a level, so the good-level zone stays the
+     amber voice accent on purpose (do not point it at --s-done; George R3 P3).
+     Red is the live recording moment — which is exactly
      when this strip shows — so each zone is spent in the palette's own roles:
      the amber "voice" accent for a good level, warn for hot, live red at clip. */
   .vu-meter {
@@ -491,5 +532,88 @@
       var(--s-edge) 4px,
       var(--s-edge) 8px
     );
+  }
+}
+
+@layer components {
+  /* --- the segment-row left zone (#79) ----------------------------------- */
+  /* One button spanning the status slot and the ordinal: tapping anywhere in
+     the left space opens the segment in the recorder/editor. Replaces the old
+     finished-checkbox + ordinal-button pair. */
+  .row-open {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    flex: none;
+    min-width: var(--c-control-md);
+    min-height: var(--c-control-md);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--s-ink-muted);
+    text-align: left;
+  }
+  .row-open:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-radius: var(--p-radius-md);
+  }
+  .row-open:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* The status slot: a fixed 22px box that reserves space so ordinals stay
+     left-aligned down the list. Holds the green check-circle only on a finished
+     row (the fill is applied by `.row--finished .row-status`). */
+  .row-status {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: var(--p-radius-full);
+  }
+
+  /* --- the record button's footprint on an empty row (#82) --------------- */
+  /* An empty row has no trailing menu; this inert spacer reserves the menu's
+     width so the record button lands on the same axis as a recorded row's play
+     button, and the flex-1 waveform gets identical width in both. */
+  .row-menu-spacer {
+    width: var(--c-control-sm);
+    flex: none;
+  }
+
+  /* #82: inside a row the record button matches the play button's 44px box, so
+     the transport column reads uniform down the list. Scoped to `.row` on
+     purpose — the recorder's own big red button and the erase-confirm button
+     both keep `--c-control-lg`. */
+  .row .control--record {
+    width: var(--c-control-md);
+    height: var(--c-control-md);
+  }
+
+  /* The menu's Finished entry shows green while already finished. A standalone
+     class, not a `.row--finished` descendant: the menu is portalled to <body>,
+     outside the row, so inheritance cannot reach it. */
+  .control.is-done {
+    color: var(--s-done);
+  }
+
+  /* --- a finished row (#81) ---------------------------------------------- */
+  /* The whole row goes green: waveform stroke, play button, a quiet surface
+     wash and border. `color-mix` is already the technique the selection band
+     uses, so it is accepted here. */
+  .row--finished {
+    --c-wave-stroke: var(--s-done);
+    background: color-mix(in srgb, var(--s-done) 8%, var(--s-surface));
+    border-color: color-mix(in srgb, var(--s-done) 35%, transparent);
+  }
+  .row--finished .row-status {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  .row--finished .control--play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
   }
 }

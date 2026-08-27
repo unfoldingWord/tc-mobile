@@ -265,8 +265,10 @@ function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
         {hasCounter && (
           <span
             className={cn("t-count", "flex-none")}
-            // All finished glows amber — a wordless "chapter complete" read.
-            style={allDone ? { color: "var(--s-voice)" } : undefined}
+            // All finished glows green (--s-done) — the wordless "chapter
+            // complete" read, matching the green finished rows. Amber is now
+            // "audio exists", not "finished" (George R3 P2).
+            style={allDone ? { color: "var(--s-done)" } : undefined}
           >
             {finishedCount}/{totalCount}
           </span>

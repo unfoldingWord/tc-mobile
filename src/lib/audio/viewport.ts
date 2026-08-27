@@ -40,8 +40,8 @@ export interface WaveformViewport {
  * `zoom` is "how many times the clip is wider than the viewport": 1 fits the
  * whole clip, 4 shows a quarter of it (the 100% / 25% toggle). `centerFraction`
  * is where the fixed centerline sits across the viewport width (0 = left edge,
- * 1 = right edge); B4 puts it right of centre, so the recorded audio sits to
- * its left with room to the right to grow into.
+ * 1 = right edge). The UI owns that value; this function honours whatever it is
+ * given (the recorder passes `CENTER_FRACTION`).
  */
 export function viewportWindow(
   length: number,

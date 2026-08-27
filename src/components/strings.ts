@@ -36,11 +36,11 @@ export const strings = {
   pauseSegment: (n: number): string => `Pause segment ${n}`,
   recordSegment: (n: number): string => `Record segment ${n}`,
   editSegment: (n: number): string => `Edit segment ${n}`,
+  editSegmentFinished: (n: number): string => `Edit segment ${n}, finished`,
+  openSegment: (n: number): string => `Open segment ${n}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   markFinished: (n: number): string => `Mark segment ${n} finished`,
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
-  segmentNoRecording: (n: number): string =>
-    `Segment ${n} has no recording yet`,
 
   // ── Recorder sheet (B4) ──────────────────────────────────────────────────
   closeRecorder: "Close recorder",

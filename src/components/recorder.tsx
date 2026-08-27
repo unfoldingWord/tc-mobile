@@ -21,10 +21,12 @@ import type { SegmentId } from "@/types/domain";
 /**
  * Where the fixed centerline sits across the waveform viewport (F6).
  *
- * Right of centre, so the recorded audio sits to its left with room to the
- * right to grow into on an append (mockup 3). One constant to retune.
+ * Centered. Sitting it right-of-centre gave the recorded audio room to the
+ * right to grow into on an append (mockup 3), but Tim's v0.1.2 review asked for
+ * it centered on every screen — that overrides the append-headroom tradeoff.
+ * One constant to retune.
  */
-const CENTER_FRACTION = 0.66;
+const CENTER_FRACTION = 0.5;
 
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
@@ -638,23 +640,23 @@ export function Recorder({
                   </button>
                 )}
               </div>
-              {idleEditable && editor.canCut && (
-                // The Cut affordance sits under the frame (mockup 4). Cutting
-                // drops the selection and turns the paste marker on. Gated on
-                // `idleEditable` like every other edit control: without it a Cut
-                // tapped during the async close would mutate the working buffer
-                // after close() already captured the pre-cut one — a silently
-                // dropped edit.
-                <div className="recorder-cut flex justify-center">
-                  <Control
-                    icon="scissors"
-                    label={strings.cut}
-                    variant="quiet"
-                    size={26}
-                    onClick={onCut}
-                  />
-                </div>
-              )}
+              <div className="recorder-cut flex justify-center">
+                {/* The Cut affordance sits under the frame (mockup 4). Cutting
+                    drops the selection and turns the paste marker on. Rendered
+                    always and disabled (like select/undo) rather than unmounted,
+                    so it grays instead of vanishing. `disabled` keeps the same
+                    `idleEditable` safety: without it a Cut tapped during the
+                    async close would mutate the working buffer after close()
+                    already captured the pre-cut one — a silently dropped edit. */}
+                <Control
+                  icon="scissors"
+                  label={strings.cut}
+                  variant="quiet"
+                  size={26}
+                  disabled={!idleEditable || !editor.canCut}
+                  onClick={onCut}
+                />
+              </div>
               {(recording || paused) && (
                 <div
                   className="recorder-status flex items-center gap-[8px]"

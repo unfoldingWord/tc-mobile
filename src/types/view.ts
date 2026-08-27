@@ -63,8 +63,8 @@ export type SegmentRowState = "finished" | "recorded" | "empty";
  * offer, never a finished-looking row with no audio behind it.
  */
 export function segmentRowState(row: SegmentRow): SegmentRowState {
-  if (!row.hasClip) return "empty"; // dashed disabled box, flat line, red record
-  return row.finished ? "finished" : "recorded"; // checked / empty box, amber, play
+  if (!row.hasClip) return "empty"; // no status glyph, flat line, red record
+  return row.finished ? "finished" : "recorded"; // green check + green wave / amber wave, play
 }
 
 /**

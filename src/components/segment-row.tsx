@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Checkbox } from "./checkbox";
 import { Control } from "./control";
+import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { strings } from "./strings";
 import { Waveform } from "./waveform";
+import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/types/view";
 import type { SegmentRow as SegmentRowModel } from "@/types/view";
 
@@ -50,16 +51,23 @@ interface SegmentRowProps {
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
 /**
- * One segment, as a row (mockup 2): [checkbox] [ordinal] [waveform] [transport].
+ * One segment, as a row (mockup 2, v0.1.2 rework):
+ *   [ status + ordinal ] [ waveform ] [ transport ] [ menu | spacer ]
  *
  * The three states are derived clip-presence-first (`segmentRowState`): a
  * dangling clip reads as never-recorded so the only offer is re-record, never
- * amber bars over audio the database cannot play. The per-row overflow menu
- * (G5) is held until its occupants exist — Erase Segment is B6 and Share
- * Segment is B7 — so B3 ships without it rather than an empty affordance
- * (recorded on #29). A never-recorded row opens the recorder from its record
- * button; a recorded row opens it (to insert/append/re-record — the pivot's
- * unit of work) by tapping the ordinal, keeping play/pause as the transport.
+ * amber bars over audio the database cannot play.
+ *
+ * The whole left zone is one `.row-open` button in all three states (#79):
+ * tapping the status slot or the ordinal opens the segment in the recorder/
+ * editor. The status slot holds a green check-circle only on a finished row and
+ * otherwise reserves its 22px so ordinals stay left-aligned down the list. A
+ * finished row is tinted green throughout (#81) — waveform, play button, a
+ * quiet surface wash. The per-row overflow menu (#80) carries Edit / Finished /
+ * Delete, and renders only on a recorded row: a never-recorded segment has no
+ * audio to erase and, since Finished lives only in that menu, cannot be marked
+ * finished — the finished-invariant made structural. A never-recorded row opens
+ * the recorder from its record button, sized to match play (#82).
  */
 export function SegmentRow({
   row,
@@ -182,48 +190,32 @@ export function SegmentRow({
     [hasClip]
   );
 
-  const checkbox =
-    state === "finished" ? (
-      <Checkbox
-        state="finished"
-        label={strings.markUnfinished(ordinal)}
-        disabled={busy}
-        onToggle={() => onSetFinished(false)}
-      />
-    ) : state === "recorded" ? (
-      <Checkbox
-        state="empty"
-        label={strings.markFinished(ordinal)}
-        disabled={busy}
-        onToggle={() => onSetFinished(true)}
-      />
-    ) : (
-      <Checkbox state="disabled" label={strings.segmentNoRecording(ordinal)} />
-    );
+  // The left zone opens the segment in all three states (#79). The finished
+  // aria-label is now the ONLY place the finished state reaches AT on the row —
+  // the checkbox's `aria-checked` is gone and the menu is closed — so it carries
+  // "finished" explicitly. `openSegment` on an empty row stays distinct from the
+  // record button's "Record segment N" so the two do not collide.
+  const openLabel =
+    state === "finished"
+      ? strings.editSegmentFinished(ordinal)
+      : hasClip
+        ? strings.editSegment(ordinal)
+        : strings.openSegment(ordinal);
 
   return (
-    <div className="row">
-      {checkbox}
-
-      {hasClip ? (
-        <button
-          type="button"
-          onClick={onOpenRecorder}
-          disabled={busy}
-          aria-label={strings.editSegment(ordinal)}
-          className="t-ordinal flex-none border-0 bg-transparent p-0 text-left disabled:opacity-50"
-          style={{ color: "var(--s-ink-muted)", minWidth: "16px" }}
-        >
-          {ordinal}
-        </button>
-      ) : (
-        <span
-          className="t-ordinal flex-none"
-          style={{ color: "var(--s-ink-muted)", minWidth: "16px" }}
-        >
-          {ordinal}
+    <div className={cn("row", state === "finished" && "row--finished")}>
+      <button
+        type="button"
+        onClick={onOpenRecorder}
+        disabled={busy}
+        aria-label={openLabel}
+        className="row-open"
+      >
+        <span className="row-status">
+          {state === "finished" && <Icon name="check" size={16} />}
         </span>
-      )}
+        <span className="t-ordinal">{ordinal}</span>
+      </button>
 
       {hasClip ? (
         <div
@@ -240,7 +232,11 @@ export function SegmentRow({
           onKeyDown={onKeyDown}
           className="scrub min-w-0 flex-1"
         >
-          <Waveform peaks={row.peaks} height={26} />
+          <Waveform
+            peaks={row.peaks}
+            height={26}
+            finished={state === "finished"}
+          />
           <span
             className="scrub-dot"
             style={{ left: `${fraction * 100}%` }}
@@ -271,21 +267,29 @@ export function SegmentRow({
           onClick={() => onPlay(fraction * (durationMs / 1000))}
         />
       ) : (
-        <Control
-          icon="record"
-          label={strings.recordSegment(ordinal)}
-          variant="record"
-          size={22}
-          className="flex-none"
-          disabled={busy}
-          onClick={onOpenRecorder}
-        />
+        <>
+          <Control
+            icon="record"
+            label={strings.recordSegment(ordinal)}
+            variant="record"
+            size={20}
+            className="flex-none"
+            disabled={busy}
+            onClick={onOpenRecorder}
+          />
+          {/* Reserve the menu's footprint an empty row lacks, so the record
+              button lands on the same axis as a recorded row's play button and
+              the flex-1 waveform gets identical width in both (#82). */}
+          <span className="row-menu-spacer" aria-hidden="true" />
+        </>
       )}
 
-      {/* The per-row overflow (G5), shipped Erase-only in B6 — Share Segment is
-          B7. Only on a recorded row: a never-recorded segment has no audio to
-          erase. The same hook and the same confirm the recorder menu uses live
-          in the screen, so both entry points erase one way. */}
+      {/* The per-row overflow (#80): Edit / Finished / Delete. Only on a
+          recorded row — a never-recorded segment has no audio to erase, and
+          gating Finished here is what keeps the finished-invariant structural:
+          an empty row has no menu, so `onSetFinished(true)` is unreachable from
+          it. The same Erase hook and confirm the recorder menu uses live in the
+          screen, so both entry points erase one way. */}
       {hasClip && (
         <>
           <Control
@@ -302,6 +306,31 @@ export function SegmentRow({
             onClose={() => setMenuOpen(false)}
             title={strings.recorderMenuTitle}
           >
+            <Control
+              icon="edit"
+              label={strings.editSegment(ordinal)}
+              variant="quiet"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenRecorder();
+              }}
+            />
+            <Control
+              icon="check"
+              label={
+                row.finished
+                  ? strings.markUnfinished(ordinal)
+                  : strings.markFinished(ordinal)
+              }
+              variant="quiet"
+              // Green while already finished. A standalone class, not inheritance
+              // — the menu is portalled to <body>, outside `.row--finished`.
+              className={row.finished ? "is-done" : undefined}
+              onClick={() => {
+                setMenuOpen(false);
+                onSetFinished(!row.finished);
+              }}
+            />
             <Control
               icon="trash"
               label={strings.eraseSegment}
