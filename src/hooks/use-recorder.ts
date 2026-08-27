@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  createLevelTap,
   decodeToCanonical,
   isRecordingSupported,
+  type LevelTap,
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
@@ -79,6 +81,15 @@ export interface UseRecorder {
    */
   stop: () => Promise<StopResult>;
   cancel: () => void;
+  /**
+   * The live capture level for the VU meter, in the raw amplitude domain (RMS of
+   * the latest frame). A PULL read (D-LEVEL-PULL): the meter polls this on its
+   * own animation clock so the recorder never re-renders per frame. Returns 0
+   * whenever nothing is capturing — the tap is opened with the recording and
+   * closed the instant the stream is torn down, so this never reads a dead or
+   * superseded analyser.
+   */
+  readLevel: () => number;
 }
 
 /**
@@ -105,6 +116,14 @@ export function useRecorder(): UseRecorder {
    */
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  /**
+   * The VU tap on the current capture stream, or null when nothing is
+   * capturing. Its lifetime is exactly the stream's: opened right after
+   * `recorder.start()` and closed at every teardown (`releaseStream`, `stop()`,
+   * and the interruption path), so no analyser ever outlives its stream and
+   * `readLevel()` cannot read a superseded or dead one.
+   */
+  const tapRef = useRef<LevelTap | null>(null);
   const startedAtRef = useRef(0);
   /**
    * Elapsed time banked before the current running span.
@@ -139,11 +158,21 @@ export function useRecorder(): UseRecorder {
     }, 100);
   }, [clearTick]);
 
+  /** Close the VU tap if one is open. Safe to call when there is none. */
+  const closeTap = useCallback(() => {
+    tapRef.current?.close();
+    tapRef.current = null;
+  }, []);
+
+  /** The current capture level for the VU meter, 0 when nothing is capturing. */
+  const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
+
   const releaseStream = useCallback(() => {
+    closeTap();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
-  }, []);
+  }, [closeTap]);
 
   /**
    * Stop a stream this `start()` acquired but will not use.
@@ -259,6 +288,10 @@ export function useRecorder(): UseRecorder {
       const onInterrupted = () => {
         if (generation !== generationRef.current) return;
         clearTick();
+        // The capture is gone; the tap must not outlive it. `stop()` (which
+        // `close()` still drives on this path) also closes it, but the VU has no
+        // business reading a lost mic in the meantime.
+        closeTap();
         setState("processing");
         // Release the mic the moment the recorder has actually ended. On the
         // `error` path the track can still be live — a hot mic on a frozen sheet
@@ -275,6 +308,15 @@ export function useRecorder(): UseRecorder {
       });
 
       recorder.start(250);
+      // Open the VU tap on the live stream. Non-fatal: a device with a quirky
+      // Web Audio implementation should still record even if the meter cannot
+      // be wired, so a failure here is logged and the recorder runs meterless.
+      try {
+        tapRef.current = createLevelTap(stream);
+      } catch (tapCause) {
+        console.error("Could not open the level meter", tapCause);
+        tapRef.current = null;
+      }
       startedAtRef.current = performance.now();
       baseElapsedRef.current = 0;
       setElapsedMs(0);
@@ -297,7 +339,7 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, clearTick, releaseStream, startTick, supported]);
+  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
@@ -343,6 +385,10 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
+    // Capture is ending; close the VU tap up front so no analyser reads across
+    // the flush/decode. `readLevel()` returns 0 from here, matching the state
+    // leaving "recording".
+    closeTap();
     // This invocation owns teardown now: detach the interruption handlers so a
     // late `error`/`ended` event, delivered after our final `setState`, cannot
     // repaint a stopped recorder back to "processing".
@@ -445,7 +491,7 @@ export function useRecorder(): UseRecorder {
           : null,
       };
     }
-  }, [abandonStream, clearTick]);
+  }, [abandonStream, clearTick, closeTap]);
 
   const cancel = useCallback(() => {
     generationRef.current++;
@@ -475,5 +521,6 @@ export function useRecorder(): UseRecorder {
     resume,
     stop,
     cancel,
+    readLevel,
   };
 }

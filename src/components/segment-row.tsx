@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Checkbox } from "./checkbox";
 import { Control } from "./control";
+import { Menu } from "./menu";
 import { strings } from "./strings";
 import { Waveform } from "./waveform";
 import { segmentRowState } from "@/types/view";
@@ -23,6 +24,14 @@ interface SegmentRowProps {
    * edit (insert/append/re-record) one that already has audio. */
   onOpenRecorder: () => void;
   onSetFinished: (finished: boolean) => void;
+  /**
+   * Ask to erase this segment's recording (B6, D-TWO-ENTRIES). Picked from the
+   * row's overflow menu; the screen owns the confirm and the store op, so both
+   * Erase entry points share one implementation and one dialog. Only wired on a
+   * recorded row — a never-recorded row has no audio to erase, so it shows no
+   * overflow.
+   */
+  onErase: () => void;
   /**
    * A save is landing (the list is refreshing). Opening the recorder is held
    * off until it does: the row still reads by its pre-save state, so entering
@@ -52,9 +61,11 @@ export function SegmentRow({
   onPlay,
   onOpenRecorder,
   onSetFinished,
+  onErase,
   busy = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
+  const [menuOpen, setMenuOpen] = useState(false);
   const hasClip = row.hasClip;
   const durationMs = row.durationMs ?? 0;
   const ordinal = row.ordinal;
@@ -251,6 +262,39 @@ export function SegmentRow({
           disabled={busy}
           onClick={onOpenRecorder}
         />
+      )}
+
+      {/* The per-row overflow (G5), shipped Erase-only in B6 — Share Segment is
+          B7. Only on a recorded row: a never-recorded segment has no audio to
+          erase. The same hook and the same confirm the recorder menu uses live
+          in the screen, so both entry points erase one way. */}
+      {hasClip && (
+        <>
+          <Control
+            icon="menu"
+            label={strings.segmentMenu(ordinal)}
+            variant="quiet"
+            size={20}
+            className="flex-none"
+            disabled={busy}
+            onClick={() => setMenuOpen(true)}
+          />
+          <Menu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            title={strings.recorderMenuTitle}
+          >
+            <Control
+              icon="trash"
+              label={strings.eraseSegment}
+              variant="quiet"
+              onClick={() => {
+                setMenuOpen(false);
+                onErase();
+              }}
+            />
+          </Menu>
+        </>
       )}
     </div>
   );

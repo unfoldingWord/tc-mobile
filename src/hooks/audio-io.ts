@@ -13,6 +13,7 @@ import {
   floatToInt16,
   int16ToFloat,
 } from "@/lib/audio/format";
+import { rmsLevel } from "@/lib/audio/meter";
 
 /**
  * Candidate capture formats, best first.
@@ -87,6 +88,62 @@ function getAudioContext(): AudioContext {
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext();
   if (ctx.state === "suspended") await ctx.resume();
+}
+
+/** A live level tap on a capture stream, for the recorder's VU meter. */
+export interface LevelTap {
+  /**
+   * The current raw capture amplitude in [0, 1] (RMS of the latest frame), the
+   * domain `@/lib/audio/meter`'s `toDisplayLevel` maps from. Returns 0 once the
+   * tap is closed, so a stale read after teardown is silent, not a throw.
+   */
+  read: () => number;
+  /** Disconnect the tap. Never closes the shared context, which outlives it. */
+  close: () => void;
+}
+
+/**
+ * Open a read-only level tap on a live capture stream.
+ *
+ * The Web Audio graph stays inside this boundary; the meter math is imported
+ * from `lib/`, so the pure part is unit-tested and this file only wires the
+ * `AnalyserNode`. The source is connected to the analyser and to NOTHING else —
+ * in particular not to `ctx.destination`, which would route the microphone back
+ * out of the speakers as a feedback loop. The analyser reads the time-domain
+ * frame into one reused buffer, so a per-frame `read()` allocates nothing.
+ */
+export function createLevelTap(stream: MediaStream): LevelTap {
+  const ctx = getAudioContext();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  // source -> analyser ONLY. Never analyser -> destination: that is a mic
+  // monitored to the speaker, i.e. feedback.
+  source.connect(analyser);
+
+  const frame = new Float32Array(analyser.fftSize);
+  let closed = false;
+
+  return {
+    read: () => {
+      if (closed) return 0;
+      analyser.getFloatTimeDomainData(frame);
+      return rmsLevel(frame);
+    },
+    close: () => {
+      if (closed) return;
+      closed = true;
+      // Tear down only this tap's own nodes; the shared context stays open for
+      // playback and the next recording.
+      try {
+        source.disconnect();
+        analyser.disconnect();
+      } catch {
+        // Already disconnected — Web Audio throws on a redundant disconnect and
+        // there is nothing to do about it.
+      }
+    },
+  };
 }
 
 /**

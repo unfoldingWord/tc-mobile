@@ -280,6 +280,42 @@
     overflow-y: auto;
   }
 
+  /* --- the erase confirm dialog (B6) ------------------------------------- */
+  /* A centred sheet, not the side drawer: it sits above the recorder sheet
+     (z 60) and the menu (z 50) because it can be raised from either. */
+  .confirm-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--p-space-5);
+    z-index: 70;
+  }
+  .confirm-panel {
+    width: min(320px, 84vw);
+    background: var(--s-surface);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-lg);
+    padding: var(--p-space-6) var(--p-space-5);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--c-gap-items);
+    text-align: center;
+  }
+  /* The subject glyph, tinted destructive so the dialog reads as "delete"
+     before a word is parsed. */
+  .confirm-glyph {
+    color: var(--s-live);
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--c-gap-items);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .checkbox__box {
       transition: none;
@@ -394,5 +430,46 @@
   .recorder-toolbar {
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
+  }
+}
+
+@layer components {
+  /* --- the VU level strip (B6, mockup 3) --------------------------------- */
+  /* A pull-model meter: the component polls the live tap on its own rAF and
+     writes width + zone straight to the DOM, so the recorder does not re-render
+     per frame. The zones are named green/yellow/red, but this palette has no
+     green and reserves red for the live recording moment — which is exactly
+     when this strip shows — so each zone is spent in the palette's own roles:
+     the amber "voice" accent for a good level, warn for hot, live red at clip. */
+  .vu-meter {
+    width: 100%;
+    flex: none;
+  }
+  .vu-meter__track {
+    width: 100%;
+    height: var(--p-space-3);
+    background: var(--s-raised);
+    border-radius: var(--p-radius-full);
+    overflow: hidden;
+  }
+  /* Grows from the left as the effect writes scaleX each frame. Starts empty so
+     there is no full-width flash before the first frame lands. No transition —
+     the bar must track the live level, not lag it. */
+  .vu-meter__fill {
+    height: 100%;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: left center;
+    border-radius: inherit;
+    background: var(--s-voice);
+  }
+  .vu-meter__fill[data-zone="green"] {
+    background: var(--s-voice);
+  }
+  .vu-meter__fill[data-zone="yellow"] {
+    background: var(--s-warn);
+  }
+  .vu-meter__fill[data-zone="red"] {
+    background: var(--s-live);
   }
 }

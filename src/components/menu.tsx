@@ -52,8 +52,14 @@ export function Menu({
       if (e.key !== "Tab" || !panel) return;
       // Keep Tab inside the panel: with nothing behind it reachable, focus
       // wrapping is what makes the scrim a real boundary and not just paint.
+      // Exclude disabled controls: a disabled button can never be
+      // `document.activeElement`, so if a disabled entry were `last` the
+      // forward-Tab wrap (keyed on `activeElement === last`) would never fire
+      // and focus would escape the panel. The recorder menu's Erase entry is
+      // disabled on a never-recorded segment and sits last, which is exactly
+      // that case (B6). Matches EraseConfirm's selector.
       const focusable = panel.querySelectorAll<HTMLElement>(
-        'button, [href], input, [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
       );
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
