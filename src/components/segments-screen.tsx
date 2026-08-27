@@ -56,6 +56,7 @@ export const SegmentsScreen = forwardRef<
     chapterNumber,
     rows,
     loading,
+    loaded,
     refreshing,
     error,
     reload,
@@ -110,10 +111,15 @@ export const SegmentsScreen = forwardRef<
   // empty chapter (G7). A *reload* failure keeps prior rows, so this only trips
   // the true hole: the initial read. The Notice above is the recovery — back out
   // and re-enter re-mounts and re-loads.
-  const loadFailed = error !== null && rows.length === 0;
+  //
+  // `loaded` (from the hook) latches on the first successful read: a failed
+  // *append* also sets `error`, but on a known-empty chapter it must keep the
+  // invite CTA (the only enabled create, no Retry here) up with the error in the
+  // Notice, not tear it down and strand focus on Back (George R3 P2).
+  const loadFailed = error !== null && !loaded;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
-  const showEmpty = !loading && !loadFailed && rows.length === 0;
+  const showEmpty = loaded && rows.length === 0;
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -147,7 +153,12 @@ export const SegmentsScreen = forwardRef<
     }
     const focusId = pendingFocus.current;
     if (focusId !== null) {
-      nodes.current.get(focusId)?.querySelector("button")?.focus();
+      // Target the row's open/record control explicitly (not DOM order) — the
+      // right next move on a never-recorded row (George R3 P3).
+      nodes.current
+        .get(focusId)
+        ?.querySelector<HTMLElement>(".row-open")
+        ?.focus();
       pendingFocus.current = null;
     }
   }, [rows]);

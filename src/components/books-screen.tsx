@@ -25,19 +25,26 @@ interface BooksScreenProps {
  * because the next thing they do is add a chapter to it.
  */
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
-  const { books, loading, error, reload, createBook, addChapter } = useBooks();
+  const { books, loading, loaded, error, reload, createBook, addChapter } =
+    useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
   // may hold books merely unavailable, inviting new data on top (Frank r8, the
   // Books sibling of the Segments load-failure guard). The Notice is the
   // recovery; the menu stays reachable.
-  const loadFailed = error !== null && books.length === 0;
+  //
+  // `loaded` (from the hook) latches on the first successful read, so this
+  // guards a failed *read* only. A failed create also sets `error`, but once
+  // the shelf is known-empty that failure must keep the invite — and its CTA,
+  // the only enabled create — up with the error in the Notice, not tear it down
+  // and strand focus (George R3 P2).
+  const loadFailed = error !== null && !loaded;
   // The empty state carries its own present primary CTA, so the header create
   // control would be a second, equal "New book" — two CTAs read as none
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
-  const showEmpty = !loading && !loadFailed && books.length === 0;
+  const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
@@ -65,7 +72,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     }
     const focusId = pendingFocus.current;
     if (focusId !== null) {
-      nodes.current.get(focusId)?.querySelector("button")?.focus();
+      // The row's first <button> is the expand/collapse toggle; a second
+      // activation there would collapse the new book. Target the add-chapter
+      // Control (`.control`) — the actual next action (George R3 P3).
+      nodes.current
+        .get(focusId)
+        ?.querySelector<HTMLElement>("button.control")
+        ?.focus();
       pendingFocus.current = null;
     }
   }, [books]);

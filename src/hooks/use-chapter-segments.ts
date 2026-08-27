@@ -83,6 +83,10 @@ export function useChapterSegments(chapterId: ChapterId) {
   const [chapterNumber, setChapterNumber] = useState(0);
   const [rows, setRows] = useState<SegmentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Latches on the first successful read — see use-books: distinguishes a
+  // genuinely empty chapter from a read that never succeeded, which `error`
+  // (also set by a failed append) and `loading` (never re-armed) cannot.
+  const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -97,6 +101,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         setChapterNumber(view.chapterNumber);
         setRows(view.rows);
         setError(null);
+        setLoaded(true);
       } catch (cause) {
         if (cancelled) return;
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -194,6 +199,7 @@ export function useChapterSegments(chapterId: ChapterId) {
     chapterNumber,
     rows,
     loading,
+    loaded,
     refreshing,
     error,
     reload,
