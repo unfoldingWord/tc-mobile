@@ -173,6 +173,10 @@
     font-size: var(--p-text-xs);
     font-weight: var(--p-weight-strong);
     line-height: 1;
+    /* The third numeric role: self-sufficient tabular figures like `.t-count`
+       (a 9→10 segment ordinal shifts width otherwise, and the row could be
+       reused in a portaled surface out of `.app-shell`'s inheritance). */
+    font-variant-numeric: tabular-nums;
   }
   .t-title {
     font-size: var(--p-text-lg);

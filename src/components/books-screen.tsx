@@ -46,6 +46,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // change already re-renders us; clearing a ref here avoids a setState-in-
   // effect cascade.
   const pendingScroll = useRef<string | null>(null);
+  // The empty-state CTA unmounts on the create it triggers. Without this, focus
+  // falls to the document and the first header stop takes over — on a chapter
+  // that would be Back, one activation from leaving. Hand focus to the new row.
+  const pendingFocus = useRef<string | null>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
 
   const setNode = useCallback((id: string, el: HTMLElement | null) => {
@@ -55,9 +59,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
 
   useEffect(() => {
     const id = pendingScroll.current;
-    if (id === null) return;
-    nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-    pendingScroll.current = null;
+    if (id !== null) {
+      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
+      pendingScroll.current = null;
+    }
+    const focusId = pendingFocus.current;
+    if (focusId !== null) {
+      nodes.current.get(focusId)?.querySelector("button")?.focus();
+      pendingFocus.current = null;
+    }
   }, [books]);
 
   const toggle = useCallback((id: BookId) => {
@@ -70,12 +80,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, []);
 
   const onNewBook = useCallback(async () => {
+    // Only a create from the invite (the corner + is hidden while empty) hands
+    // off focus, so a corner-+ create on a populated shelf doesn't yank it.
+    const fromEmpty = books.length === 0;
     const book = await createBook();
     if (!book) return; // failed create surfaced through the hook's Notice
     // A new book opens expanded — the next action is adding its first chapter.
     setExpanded((prev) => new Set(prev).add(book.id));
     pendingScroll.current = book.id;
-  }, [createBook]);
+    if (fromEmpty) pendingFocus.current = book.id;
+  }, [createBook, books]);
 
   const onNewChapter = useCallback(
     async (bookId: BookId) => {

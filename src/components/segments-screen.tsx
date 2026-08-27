@@ -120,6 +120,9 @@ export const SegmentsScreen = forwardRef<
   // What to scroll to once `rows` next includes it — a freshly appended
   // segment. A ref, not state: `addSegment` already re-renders us.
   const pendingScroll = useRef<SegmentId | null>(null);
+  // See books-screen: the invite CTA unmounts on the append it triggers, so
+  // hand focus to the new row rather than let it fall to Back in the header.
+  const pendingFocus = useRef<SegmentId | null>(null);
 
   const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
     if (el) nodes.current.set(id, el);
@@ -138,18 +141,28 @@ export const SegmentsScreen = forwardRef<
 
   useEffect(() => {
     const id = pendingScroll.current;
-    if (id === null) return;
-    nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-    pendingScroll.current = null;
+    if (id !== null) {
+      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
+      pendingScroll.current = null;
+    }
+    const focusId = pendingFocus.current;
+    if (focusId !== null) {
+      nodes.current.get(focusId)?.querySelector("button")?.focus();
+      pendingFocus.current = null;
+    }
   }, [rows]);
 
   const onAppend = useCallback(async () => {
+    // Only the first append comes from the invite (the corner + is hidden while
+    // empty); that CTA unmounts, so it hands focus to the new row.
+    const fromEmpty = rows.length === 0;
     const segment = await addSegment();
     if (!segment) return; // failed append surfaced through the hook's Notice
     // The new <li> is not committed yet, so scroll once `rows` includes it —
     // the same pending-id + effect pattern BooksScreen uses.
     pendingScroll.current = segment.id;
-  }, [addSegment]);
+    if (fromEmpty) pendingFocus.current = segment.id;
+  }, [addSegment, rows]);
 
   const onSetFinished = useCallback(
     (segmentId: SegmentId, finished: boolean) => {
