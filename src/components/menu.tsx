@@ -3,6 +3,19 @@ import { useEffect, useRef } from "react";
 import { Control } from "./control";
 import { strings } from "./strings";
 
+/**
+ * Focusable controls inside the panel — disabled ones excluded on purpose.
+ *
+ * A disabled button can never be `document.activeElement`, so it must be skipped
+ * for BOTH the initial focus (landing on it focuses nothing, stranding the user
+ * behind the scrim) and the Tab-wrap boundary (a disabled `last` never turns the
+ * wrap). The recorder menu's Redo and Erase are disabled at idle/no-clip while
+ * the VU toggle stays live, which is exactly when a single shared selector
+ * matters. Mirrors EraseConfirm.
+ */
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 interface MenuProps {
   open: boolean;
   onClose: () => void;
@@ -41,8 +54,9 @@ export function Menu({
     if (!open) return;
     const panel = panelRef.current;
     // Land focus inside the panel so a keyboard/switch user is not left behind
-    // the scrim on the page they just covered.
-    panel?.querySelector<HTMLElement>("button")?.focus();
+    // the scrim on the page they just covered. First ENABLED control, never a
+    // disabled one (focusing it is a no-op that strands them — Frank R-B6).
+    panel?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -52,15 +66,7 @@ export function Menu({
       if (e.key !== "Tab" || !panel) return;
       // Keep Tab inside the panel: with nothing behind it reachable, focus
       // wrapping is what makes the scrim a real boundary and not just paint.
-      // Exclude disabled controls: a disabled button can never be
-      // `document.activeElement`, so if a disabled entry were `last` the
-      // forward-Tab wrap (keyed on `activeElement === last`) would never fire
-      // and focus would escape the panel. The recorder menu's Erase entry is
-      // disabled on a never-recorded segment and sits last, which is exactly
-      // that case (B6). Matches EraseConfirm's selector.
-      const focusable = panel.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
+      const focusable = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (!first || !last) return;

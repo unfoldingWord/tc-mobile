@@ -320,12 +320,14 @@ export function Recorder({
   const erase = useEraseSegment();
   const onConfirmErase = useCallback(() => {
     void (async () => {
-      const ok = await erase.erase(segmentId);
-      // Success unmounts this sheet; the working buffer and any pending edits go
-      // with it, which is the point — the whole segment audio is being erased.
-      // A failure keeps the sheet, drops the confirm, and shows the notice.
-      if (ok) onExit(true);
-      else setConfirmOpen(false);
+      const result = await erase.erase(segmentId);
+      // "ok": success unmounts this sheet; the working buffer and any pending
+      // edits go with it, which is the point. "failed": keep the sheet, drop the
+      // confirm, show the notice. "busy": a double-tap's refused second call —
+      // ignore it, the first call still owns the dialog (else the confirm would
+      // vanish mid-erase, exposing Back and its save path over the delete).
+      if (result === "ok") onExit(true);
+      else if (result === "failed") setConfirmOpen(false);
     })();
   }, [erase, segmentId, onExit]);
 
@@ -525,7 +527,7 @@ export function Recorder({
       <div
         ref={sheetRef}
         className="recorder-sheet mx-auto max-w-md"
-        inert={menuOpen || undefined}
+        inert={menuOpen || confirmOpen || undefined}
       >
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
@@ -737,7 +739,13 @@ export function Recorder({
                 label={strings.recorderMenuOpen}
                 variant="quiet"
                 size={24}
-                disabled={!idleEditable}
+                // Live during recording/paused, not only at idle: the menu now
+                // holds the VU toggle, whose whole purpose is DURING a take, so
+                // gating the opener on `idleEditable` would strand a translator
+                // who hid the strip with no way to bring it back short of saving
+                // (George R-B6). The entries that are unsafe mid-take (Redo,
+                // Erase) gate themselves. Blocked only through the close window.
+                disabled={!view || isClosing}
                 onClick={() => setMenuOpen(true)}
               />
             </div>
@@ -776,9 +784,12 @@ export function Recorder({
           icon="trash"
           label={strings.eraseSegment}
           variant="quiet"
-          // Only when there is stored audio to erase; a first, uncommitted
-          // recording in this session has nothing on disk yet.
-          disabled={!view?.hasClip}
+          // Only when there is stored audio to erase (a first, uncommitted
+          // recording has nothing on disk yet) AND only at idle: erasing the
+          // stored take out from under a live capture is nonsensical, and the
+          // menu opener is now reachable mid-take for the VU toggle, so this
+          // entry must refuse there itself (George R-B6).
+          disabled={!idleEditable || !view?.hasClip}
           onClick={() => {
             setMenuOpen(false);
             setConfirmOpen(true);

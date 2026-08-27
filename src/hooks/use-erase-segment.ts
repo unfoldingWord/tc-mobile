@@ -43,9 +43,22 @@ export async function performErase(
   }
 }
 
+/**
+ * The outcome of a call to `erase`.
+ *
+ * `"busy"` is distinct from `"failed"` on purpose: a double-tap's second call is
+ * refused by the in-flight guard, and a caller must NOT treat that refusal as a
+ * result and dismiss its confirmation — the first call is still running and owns
+ * the outcome. Conflating the two let a second tap tear the dialog down mid-erase
+ * (Frank + George converged, B6). Callers act on `"ok"`/`"failed"` and ignore
+ * `"busy"`.
+ */
+type EraseResult = "ok" | "failed" | "busy";
+
 export interface UseEraseSegment {
-  /** Erase the segment's audio. Resolves `true` on success, `false` on failure or while another erase is in flight. */
-  erase(segmentId: SegmentId): Promise<boolean>;
+  /** Erase the segment's audio. `"ok"` on success, `"failed"` on a store error,
+   *  `"busy"` when another erase is already in flight (ignore it — not a result). */
+  erase(segmentId: SegmentId): Promise<EraseResult>;
   /** True while an erase is in flight — the confirm/menu disables its Erase button on this. */
   erasing: boolean;
   /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
@@ -73,15 +86,16 @@ export function useEraseSegment(
   const erasingRef = useRef(false);
 
   const erase = useCallback(
-    async (segmentId: SegmentId): Promise<boolean> => {
-      if (erasingRef.current) return false;
+    async (segmentId: SegmentId): Promise<EraseResult> => {
+      // Refused, not failed: the first tap owns the outcome (see EraseResult).
+      if (erasingRef.current) return "busy";
       erasingRef.current = true;
       setErasing(true);
       setError(null);
       try {
         const result = await performErase(segmentId, onErased);
         if (!result.ok) setError(result.error);
-        return result.ok;
+        return result.ok ? "ok" : "failed";
       } finally {
         // Releases the guard rather than dropping state, so it is safe in
         // `finally`; a guard left set would lock out every later erase.

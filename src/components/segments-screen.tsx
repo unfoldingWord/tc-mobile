@@ -71,15 +71,24 @@ export const SegmentsScreen = forwardRef<
   // failure the reason surfaces in the screen's Notice.
   const [eraseTarget, setEraseTarget] = useState<SegmentId | null>(null);
   const erase = useEraseSegment({ onErased: reload });
+  const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
     void (async () => {
-      await erase.erase(eraseTarget);
-      // Close the confirm either way: success reloads via `onErased`, failure
-      // leaves `erase.error` set for the Notice below.
-      setEraseTarget(null);
+      // Stop playback first if THIS row is the one sounding. `clearSegmentTake`
+      // deletes the clip, but `playTake` already handed a live source node built
+      // from in-memory PCM, so the deleted recording would keep playing to its
+      // end — and after the reload there is no pause control to stop it (George
+      // R-B6). Only our own target: another row's playback is not ours to stop,
+      // and only one thing sounds at a time, so `leave()` here ends exactly it.
+      if (audio.playingId === eraseTarget) audio.leave();
+      const result = await erase.erase(eraseTarget);
+      // Dismiss on a real outcome ("ok" reloads via `onErased`, "failed" leaves
+      // `erase.error` for the Notice). A double-tap's "busy" is ignored, so the
+      // confirm does not vanish while the first erase is still running.
+      if (result !== "busy") setEraseTarget(null);
     })();
-  }, [erase, eraseTarget]);
+  }, [audio, erase, eraseTarget]);
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -215,7 +224,9 @@ export const SegmentsScreen = forwardRef<
         cancelLabel={strings.eraseCancel}
         busy={erase.erasing}
         onConfirm={onConfirmErase}
-        onCancel={() => setEraseTarget(null)}
+        // Stable identity: a fresh lambda each render would, together with the
+        // 60 ms playback tick, thrash EraseConfirm's focus effect (George R-B6).
+        onCancel={closeErase}
       />
     </div>
   );

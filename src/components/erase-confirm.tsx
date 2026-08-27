@@ -41,25 +41,46 @@ export function EraseConfirm({
   onCancel,
 }: EraseConfirmProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // Read from the keydown listener without re-subscribing it. The listener is
+  // bound once per open (below); keying it on `busy`/`onCancel` instead would
+  // re-run the whole effect — and re-fire the focus grab — on every parent
+  // render, which while a take plays is every 60 ms, yanking a keyboard user off
+  // Erase before they can confirm (George R-B6). Refs updated each render keep
+  // the handler current without that churn.
+  const busyRef = useRef(busy);
+  const onCancelRef = useRef(onCancel);
+  // Synced in an effect, not during render (refs must not be written while
+  // rendering): the keydown listener reads the latest values without the effect
+  // that binds it re-running.
+  useEffect(() => {
+    busyRef.current = busy;
+    onCancelRef.current = onCancel;
+  });
 
+  // Land on Cancel, the safe action, ONCE on the closed→open edge — not the
+  // first control in DOM order (this is destructive), and not on every render.
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.querySelector<HTMLElement>(".confirm-cancel")?.focus();
+  }, [open]);
+
+  // The focus trap + Escape, bound once per open. Reads `busy`/`onCancel`
+  // through refs so a parent re-render never re-attaches it or re-grabs focus.
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
-    // Land on Cancel, not the first control in DOM order: this is destructive,
-    // so a keyboard/switch user's default keypress must be the safe one.
-    panel?.querySelector<HTMLElement>(".confirm-cancel")?.focus();
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         // Mid-erase, Escape does nothing: the op is already committing.
-        if (!busy) onCancel();
+        if (!busyRef.current) onCancelRef.current();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
       // Keep Tab inside the panel; with the scrim covering everything behind,
-      // wrapping is what makes it a real boundary.
+      // wrapping is what makes it a real boundary. Cancel stays enabled while
+      // busy (see below), so the trap is never empty and Tab cannot escape.
       const focusable = panel.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
       );
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -74,7 +95,7 @@ export function EraseConfirm({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, busy, onCancel]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -100,8 +121,14 @@ export function EraseConfirm({
             icon="back"
             label={cancelLabel}
             variant="quiet"
-            disabled={busy}
-            onClick={onCancel}
+            // Deliberately NOT disabled while busy: disabling both buttons would
+            // empty the focus trap and let Tab escape the dialog (George R-B6,
+            // the same disabled-last-item hole this round closed in menu.tsx).
+            // The action is guarded instead — a tap mid-erase is a no-op, since
+            // the transaction is already committing — so the trap stays honest.
+            onClick={() => {
+              if (!busy) onCancel();
+            }}
             className="confirm-cancel"
           />
           <Control
