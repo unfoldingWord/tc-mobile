@@ -71,7 +71,13 @@ export function Waveform({
     ctx.clearRect(0, 0, w, h);
 
     const styles = getComputedStyle(canvas);
-    const voice = styles.getPropertyValue("--s-voice").trim() || "#e6a444";
+    // The bar colour is a component token so a finished row can remap it to green
+    // (`.row--finished { --c-wave-stroke: var(--s-done) }`) without a prop. Falls
+    // back to the resolved voice value, then to amber, for a canvas outside a row.
+    const stroke =
+      styles.getPropertyValue("--c-wave-stroke").trim() ||
+      styles.getPropertyValue("--s-voice").trim() ||
+      "#e6a444";
     const faint = styles.getPropertyValue("--s-ink-faint").trim() || "#5f6b7a";
     const ink = styles.getPropertyValue("--s-ink").trim() || "#e7ecf3";
     const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
@@ -97,7 +103,7 @@ export function Waveform({
     }
 
     const buckets = peaks.min.length;
-    ctx.fillStyle = voice;
+    ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible
       // window falls; a bucket outside the window is simply skipped. The span

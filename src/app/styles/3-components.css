@@ -31,6 +31,11 @@
 
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
+
+    /* The waveform stroke. Defaults to the voice accent; a finished row remaps
+       it to done (green) and the canvas reads it back — no prop drilling, and
+       the recorder's waveform (never under `.row--finished`) stays amber. */
+    --c-wave-stroke: var(--s-voice);
   }
 
   /* --- the shell ------------------------------------------------------- */
@@ -84,8 +89,10 @@
     outline-offset: var(--c-focus-offset);
   }
   .control:disabled {
-    /* Desaturate rather than fade, so the glyph stays legible. */
-    filter: saturate(0.15);
+    /* Dim so it clearly reads as inactive. Desaturating alone is nearly
+       invisible on the monochrome quiet glyphs (select/undo/cut). Matches the
+       disabled:opacity-50 precedent used on the row ordinal. */
+    opacity: 0.4;
     cursor: default;
     transform: none;
   }
@@ -491,5 +498,88 @@
       var(--s-edge) 4px,
       var(--s-edge) 8px
     );
+  }
+}
+
+@layer components {
+  /* --- the segment-row left zone (#79) ----------------------------------- */
+  /* One button spanning the status slot and the ordinal: tapping anywhere in
+     the left space opens the segment in the recorder/editor. Replaces the old
+     finished-checkbox + ordinal-button pair. */
+  .row-open {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    flex: none;
+    min-width: var(--c-control-md);
+    min-height: var(--c-control-md);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--s-ink-muted);
+    text-align: left;
+  }
+  .row-open:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-radius: var(--p-radius-md);
+  }
+  .row-open:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* The status slot: a fixed 22px box that reserves space so ordinals stay
+     left-aligned down the list. Holds the green check-circle only on a finished
+     row (the fill is applied by `.row--finished .row-status`). */
+  .row-status {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: var(--p-radius-full);
+  }
+
+  /* --- the record button's footprint on an empty row (#82) --------------- */
+  /* An empty row has no trailing menu; this inert spacer reserves the menu's
+     width so the record button lands on the same axis as a recorded row's play
+     button, and the flex-1 waveform gets identical width in both. */
+  .row-menu-spacer {
+    width: var(--c-control-sm);
+    flex: none;
+  }
+
+  /* #82: inside a row the record button matches the play button's 44px box, so
+     the transport column reads uniform down the list. Scoped to `.row` on
+     purpose — the recorder's own big red button and the erase-confirm button
+     both keep `--c-control-lg`. */
+  .row .control--record {
+    width: var(--c-control-md);
+    height: var(--c-control-md);
+  }
+
+  /* The menu's Finished entry shows green while already finished. A standalone
+     class, not a `.row--finished` descendant: the menu is portalled to <body>,
+     outside the row, so inheritance cannot reach it. */
+  .control.is-done {
+    color: var(--s-done);
+  }
+
+  /* --- a finished row (#81) ---------------------------------------------- */
+  /* The whole row goes green: waveform stroke, play button, a quiet surface
+     wash and border. `color-mix` is already the technique the selection band
+     uses, so it is accepted here. */
+  .row--finished {
+    --c-wave-stroke: var(--s-done);
+    background: color-mix(in srgb, var(--s-done) 8%, var(--s-surface));
+    border-color: color-mix(in srgb, var(--s-done) 35%, transparent);
+  }
+  .row--finished .row-status {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  .row--finished .control--play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
   }
 }
