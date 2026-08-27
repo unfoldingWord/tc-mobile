@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -57,6 +58,33 @@ export function EraseConfirm({
     onCancelRef.current = onCancel;
   });
 
+  // The synchronous in-flight latch. `busy` reaches this component only after the
+  // parent renders and a passive effect syncs `busyRef` — a window in which the
+  // guard is still false. For a NON-destructive control that is harmless, but
+  // here an Escape/Cancel/scrim in that window would tear the dialog down while
+  // clearSegmentTake is committing, un-inert the recorder sheet, and let Back's
+  // close() SAVE over the erase (Frank R-B6). So confirm latches this ref
+  // synchronously, before onConfirm runs; every cancel path checks it. Reset on
+  // the open edge so a reused dialog starts clean.
+  const inFlightRef = useRef(false);
+  useEffect(() => {
+    if (open) inFlightRef.current = false;
+  }, [open]);
+
+  // The one cancel path. Blocked the instant Erase is activated (`inFlightRef`),
+  // and while the parent reports `busy` (belt-and-braces). Stable identity (reads
+  // only refs) so the bound-once keydown effect can depend on it without
+  // re-binding.
+  const cancel = useCallback(() => {
+    if (inFlightRef.current || busyRef.current) return;
+    onCancelRef.current();
+  }, []);
+  const beginConfirm = () => {
+    if (inFlightRef.current) return; // also the synchronous double-activation guard
+    inFlightRef.current = true;
+    onConfirm();
+  };
+
   // Land on Cancel, the safe action, ONCE on the closed→open edge — not the
   // first control in DOM order (this is destructive), and not on every render.
   useEffect(() => {
@@ -72,7 +100,7 @@ export function EraseConfirm({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         // Mid-erase, Escape does nothing: the op is already committing.
-        if (!busyRef.current) onCancelRef.current();
+        cancel();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
@@ -95,16 +123,21 @@ export function EraseConfirm({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, cancel]);
 
   if (!open) return null;
 
-  return (
+  // Portalled to <body>, like Menu: on the recorder path this dialog is rendered
+  // inside `.recorder-scrim` (z 60), so without the portal its own z-index would
+  // only compete INSIDE that stacking context and the portalled menu (z 80) would
+  // paint over it. At <body> its z 90 sits above both (George R-B6). It also
+  // keeps the confirm out of any caller subtree that goes `inert`.
+  return createPortal(
     <div
       className="confirm-scrim"
       // A tap on the scrim, but not the panel, cancels — unless mid-erase.
       onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onCancel();
+        if (e.target === e.currentTarget) cancel();
       }}
     >
       <div
@@ -124,11 +157,9 @@ export function EraseConfirm({
             // Deliberately NOT disabled while busy: disabling both buttons would
             // empty the focus trap and let Tab escape the dialog (George R-B6,
             // the same disabled-last-item hole this round closed in menu.tsx).
-            // The action is guarded instead — a tap mid-erase is a no-op, since
-            // the transaction is already committing — so the trap stays honest.
-            onClick={() => {
-              if (!busy) onCancel();
-            }}
+            // The action is guarded by `cancel()` instead — a tap once Erase is
+            // activated is a no-op — so the trap stays honest.
+            onClick={cancel}
             className="confirm-cancel"
           />
           <Control
@@ -136,10 +167,11 @@ export function EraseConfirm({
             label={confirmLabel}
             variant="record"
             disabled={busy}
-            onClick={onConfirm}
+            onClick={beginConfirm}
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -107,9 +107,11 @@ export interface LevelTap {
   disconnect: () => void;
   /**
    * Full teardown: disconnect the graph (if not already) AND stop the cloned
-   * capture tracks. Use once the flush window is safely past, or wherever
-   * dropping the take is the point (cancel/interruption). Never closes the
-   * shared context, which outlives it.
+   * capture tracks. Use once the flush window is safely past (`stop()`), or where
+   * the take is being abandoned outright (cancel/leave). NOT on the #59
+   * interruption path, which freezes to `processing` and recovers the chunks via
+   * `stop()` — there the graph is only `disconnect()`ed. Never closes the shared
+   * context, which outlives it.
    */
   close: () => void;
 }

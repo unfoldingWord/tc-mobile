@@ -299,10 +299,14 @@ export function useRecorder(): UseRecorder {
       const onInterrupted = () => {
         if (generation !== generationRef.current) return;
         clearTick();
-        // The capture is gone; the tap must not outlive it. `stop()` (which
-        // `close()` still drives on this path) also closes it, but the VU has no
-        // business reading a lost mic in the meantime.
-        closeTap();
+        // DISCONNECT the tap's graph (readLevel -> 0) but leave its cloned tracks
+        // live — this is the #59 recovery path: the recorder freezes to
+        // `processing` and `close()` -> `stop()` RECOVERS the pending chunks, so
+        // stopping any capture track here (even a clone, on a WebKit build where
+        // clone-stop reaches the shared source) risks truncating the final slice,
+        // exactly as on the `stop()` path. `stop()` full-closes the tap after the
+        // flush; cancel/leave close it if the take is abandoned instead (George R-B6).
+        tapRef.current?.disconnect();
         setState("processing");
         // Release the mic the moment the recorder has actually ended. On the
         // `error` path the track can still be live — a hot mic on a frozen sheet
@@ -352,7 +356,7 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
+  }, [abandonStream, clearTick, releaseStream, startTick, supported]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
