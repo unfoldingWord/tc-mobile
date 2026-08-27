@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
+import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
@@ -123,7 +124,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
 
       <div className="flex-1 overflow-y-auto">
         {!loading && !loadFailed && books.length === 0 ? (
-          <EmptyBooks />
+          <EmptyState
+            headline={strings.booksEmpty}
+            teach={strings.booksEmptyTeach}
+            ctaLabel={strings.newBook}
+            ctaIcon="plus"
+            onCta={() => void onNewBook()}
+            disabled={loading || loadFailed}
+          />
         ) : (
           <ul className="flex flex-col gap-[10px]">
             {books.map((book) => (
@@ -142,26 +150,6 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       </div>
 
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
-    </div>
-  );
-}
-
-function EmptyBooks() {
-  return (
-    <div
-      className="flex h-full flex-col items-center justify-center gap-[10px] text-center"
-      style={{ color: "var(--s-ink-muted)" }}
-    >
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.booksEmpty}
-      </p>
-      {/* Points back at the one control that does something on an empty shelf. */}
-      <p className="flex items-center gap-[6px] text-[13px]">
-        {strings.booksEmptyHint}
-        <span style={{ color: "var(--s-voice)" }}>
-          <Icon name="plus" size={18} />
-        </span>
-      </p>
     </div>
   );
 }

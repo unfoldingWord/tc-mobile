@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Control } from "./control";
+import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
@@ -202,12 +203,14 @@ export const SegmentsScreen = forwardRef<
 
       <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
         {!loading && !loadFailed && rows.length === 0 ? (
-          <p
-            className="flex h-full items-center justify-center text-center text-[13px]"
-            style={{ color: "var(--s-ink-muted)" }}
-          >
-            {strings.segmentsEmptyHint}
-          </p>
+          <EmptyState
+            headline={strings.segmentsEmpty}
+            teach={strings.segmentsEmptyTeach}
+            ctaLabel={strings.addSegment}
+            ctaIcon="plus"
+            onCta={() => void onAppend()}
+            disabled={loading || refreshing || loadFailed}
+          />
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {rows.map((row) => (
