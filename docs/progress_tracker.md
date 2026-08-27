@@ -4,6 +4,43 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-27 (evening) — Tim's v0.1.2 UI review shipped to staging (v0.1.3); packaging + org-transfer research
+
+**Branch:** `feat/tim-v012-ui-review` → `develop` → **`staging`** · **PRs merged:** [#85](https://github.com/sethstoll3/tc-mobile/pull/85) (UI review), [#87](https://github.com/sethstoll3/tc-mobile/pull/87) (promotion) · **On `staging`** (`1730a07`), deployed and **verified serving `v0.1.3`** · **Closed:** #79–#84 (UI review), #86 (counter-case) · **Filed:** #79–#84, #86 · **Production untouched** (`main` at `3464a30`).
+
+### Completed
+
+- **Tim's v0.1.2 UI review built and shipped** (#79–#84, PR #85). From Tim's annotated review of the live v0.1.2 staging build (`A06`): the Segments-row rework — the actionable checkbox replaced by a **non-interactive green check-circle**, the whole left zone opens the editor, the row `⋮` menu now **Edit / Finished / Delete**, and a finished segment tints **green** (new `--s-done` semantic token) while in-progress stays amber; plus recorder fixes — centerline **0.66 → 0.5** (centered), disabled controls made legibly inactive, Cut stacks under the canvas. **The finished-invariant is now structural** (Finished lives only in the recorded-row menu, so a never-recorded segment cannot be marked finished).
+- **Built via an ultracode workflow** — a design pass on the coupled row rework + 2 disjoint file-cluster build lanes (Segments-row / recorder) + integrate. Then **4 dual-review rounds** (Frank/George); merged at the round cap on a **recorded DRI override** (Frank APPROVE since R3; George's findings all fixed + enumerated, no P1 any round).
+- **Promoted `develop` → `staging`, bumped to `v0.1.3`** (build-stamp convention) so the iOS pass can name the build. Auto-deployed by Cloudflare Workers Builds and **verified live** at the staging URL.
+- **Tim's F1 reply captured and built** — the checkbox was "too easy to trigger" (reads as select-all-to-delete); it becomes a green-circle **status indicator**, tapping the left zone opens the editor, marking finished moves to the menu.
+
+### Research deliverables (for the go/no-go and the org move)
+
+- **Native packaging recommendation** — `docs/research/native-packaging.md` + [artifact](https://claude.ai/code/artifact/957762b8-be38-4b83-9d7d-629f174360de). **Capacitor** (wrap the PWA): ~92% of `src` reuses untouched, ~8% boundary rework. Storage durability is the field data-loss reason to leave the bare PWA. Tim resolved: store accounts already live, no native-widget requirement.
+- **Anti-Capacitor counter-case** (#86) appended to the same doc + artifact — the steelman: the field-critical 8% (background audio, durable storage) is exactly what Capacitor doesn't solve for free. **The whole decision hinges on one experiment: the WKWebView background-audio spike** — run it before the go/no-go.
+- **Org-transfer plan** — `docs/org-transfer-plan.md`. Moving `sethstoll3/tc-mobile` → `unfoldingWord`. tC Mobile already exceeds its uW siblings on LICENSE/SECURITY/CONTRIBUTING/CI; the move gates on **one human approval** (tech-lead + recorded DRI + public/private) and two deliberate deviations to keep-and-record (Workers Builds deploy, the develop/staging/main branch model). A GitHub _transfer_ preserves issues/PRs/history.
+- **Product-name suggestions** — [artifact](https://claude.ai/code/artifact/47f4b11d-fc75-4d7b-be7b-fc2b459e1d32). Rooted in the estate + first-users' languages: **Sauti** (Swahili "voice", lead), **Neno** ("word"), **Rhema** (Greek "spoken word"); the `.bible` TLD route (uW owns `churchbased.bible`). Availability unverified (no DNS in the research env).
+
+### Lesson worth keeping
+
+- **Don't double-background the review script.** Wrapping `nohup … &` inside `run_in_background` makes the launcher return exit 0 immediately — a **false "completed"** while `both.sh`/George keep running detached. Launch the script directly under the background runner and wait on the real process. (Adjacent to the day-4 "read elapsed before declaring George stalled" lesson.)
+
+### Blockers / needs a human
+
+- **On-device pass on `v0.1.3` is the gate** before `staging → main` and before Tim's wider-testing link goes out. All the UI review changes are **CSS/layout — browser-only, unverified by CI**: green hue + waveform actually repainting on toggle, left-zone tap opens editor, record/play alignment, centered line + Cut-under-canvas, disabled legibility, completed-chapter counter green.
+- **The Capacitor go/no-go hinges on the audio spike** (#86) — put the current recorder in a Capacitor WebView on a real iPhone + Android and test background capture + interruption. Decides days-vs-weeks and whether Capacitor is even right.
+- **Org move (D1)** needs a uW human to approve name + ownership and record the DRI/tech-lead; route via Birch.
+
+### Next steps
+
+1. **On-device pass on staging (`v0.1.3`)** — the open gate. Then send Tim the staging link for wider testing (his weekend ask), and `staging → main` when ready.
+2. **Run the WKWebView audio spike** — the single input that settles the Capacitor go/no-go.
+3. **B7 (#33)** — Template Library + Share; the next build lane (subsumes #18 export, most of #20).
+4. Carry the counter-case doc (`develop` is 1 commit ahead of `staging`) on the next promotion.
+
+---
+
 ## 2026-08-27 — Day 9: B6 (VU meter, recorder menu, erase segment) — shipped to staging, v0.1.2
 
 **Branch:** `feat/b6-vu-erase` → `develop` → **`staging`** · **PRs merged:** [#74](https://github.com/sethstoll3/tc-mobile/pull/74) (B6), [#78](https://github.com/sethstoll3/tc-mobile/pull/78) (promotion) · **On `staging`** (`27a8ba3`), deployed and serving `v0.1.2` (bundle verified: VU meter, erase confirm, meter-unavailable hatch all present) · **Closed:** #32, and #8/#37/#40/#41 (pre-pivot dead wood) · **Filed:** #73, #75, #76, #77 · **Production untouched** (`main` at `3464a30`).
