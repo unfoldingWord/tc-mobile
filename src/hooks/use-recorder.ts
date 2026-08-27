@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  createLevelTap,
   decodeToCanonical,
   isRecordingSupported,
+  type LevelTap,
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
@@ -79,6 +81,21 @@ export interface UseRecorder {
    */
   stop: () => Promise<StopResult>;
   cancel: () => void;
+  /**
+   * The live capture level for the VU meter, in the raw amplitude domain (RMS of
+   * the latest frame). A PULL read (D-LEVEL-PULL): the meter polls this on its
+   * own animation clock so the recorder never re-renders per frame. Returns 0
+   * whenever nothing is capturing — the tap is opened with the recording and
+   * closed the instant the stream is torn down, so this never reads a dead or
+   * superseded analyser.
+   */
+  readLevel: () => number;
+  /**
+   * The level tap could not be wired for the current take (a quirky Web Audio
+   * implementation). Recording is unaffected; the meter should show unavailable
+   * rather than a resting-empty strip. False while it is working or idle.
+   */
+  meterFailed: boolean;
 }
 
 /**
@@ -92,6 +109,11 @@ export function useRecorder(): UseRecorder {
   const [state, setState] = useState<RecorderState>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // The VU tap could not be wired on this device (createLevelTap threw). The
+  // recorder runs meterless, but the UI must be able to SHOW the meter as
+  // unavailable rather than an empty strip a translator reads as a dead mic —
+  // console.error is not a channel on a phone in a village (Frank R-B6).
+  const [meterFailed, setMeterFailed] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   /**
@@ -105,6 +127,14 @@ export function useRecorder(): UseRecorder {
    */
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  /**
+   * The VU tap on the current capture stream, or null when nothing is
+   * capturing. Its lifetime is exactly the stream's: opened right after
+   * `recorder.start()` and closed at every teardown (`releaseStream`, `stop()`,
+   * and the interruption path), so no analyser ever outlives its stream and
+   * `readLevel()` cannot read a superseded or dead one.
+   */
+  const tapRef = useRef<LevelTap | null>(null);
   const startedAtRef = useRef(0);
   /**
    * Elapsed time banked before the current running span.
@@ -139,11 +169,21 @@ export function useRecorder(): UseRecorder {
     }, 100);
   }, [clearTick]);
 
+  /** Close the VU tap if one is open. Safe to call when there is none. */
+  const closeTap = useCallback(() => {
+    tapRef.current?.close();
+    tapRef.current = null;
+  }, []);
+
+  /** The current capture level for the VU meter, 0 when nothing is capturing. */
+  const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
+
   const releaseStream = useCallback(() => {
+    closeTap();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
-  }, []);
+  }, [closeTap]);
 
   /**
    * Stop a stream this `start()` acquired but will not use.
@@ -259,6 +299,10 @@ export function useRecorder(): UseRecorder {
       const onInterrupted = () => {
         if (generation !== generationRef.current) return;
         clearTick();
+        // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
+        // tracks are stopped depends on the recorder state below, exactly as for
+        // the original tracks.
+        tapRef.current?.disconnect();
         setState("processing");
         // Release the mic the moment the recorder has actually ended. On the
         // `error` path the track can still be live — a hot mic on a frozen sheet
@@ -266,7 +310,15 @@ export function useRecorder(): UseRecorder {
         // then final, so stopping the track drops no audio; on the `ended` path
         // the track is already dead and this is a no-op.
         if (recorder.state === "inactive") {
+          // Chunks final — stop BOTH the original tracks AND the VU clone. A
+          // cloned getUserMedia track is independent, so disconnect() alone left
+          // it live and kept the mic device captured until Back (a hot mic the
+          // original-track stop was written to prevent — George R-B6). Safe here
+          // for the same reason the original stop is: the chunks are final. NOT
+          // on the error path (recorder still active), where clone-stop could
+          // truncate the slice stop() will recover.
           stream?.getTracks().forEach((track) => track.stop());
+          closeTap();
         }
       };
       recorder.onerror = onInterrupted;
@@ -275,6 +327,17 @@ export function useRecorder(): UseRecorder {
       });
 
       recorder.start(250);
+      // Open the VU tap on the live stream. Non-fatal: a device with a quirky
+      // Web Audio implementation should still record even if the meter cannot
+      // be wired, so a failure here is logged and the recorder runs meterless.
+      try {
+        tapRef.current = createLevelTap(stream);
+        setMeterFailed(false);
+      } catch (tapCause) {
+        console.error("Could not open the level meter", tapCause);
+        tapRef.current = null;
+        setMeterFailed(true);
+      }
       startedAtRef.current = performance.now();
       baseElapsedRef.current = 0;
       setElapsedMs(0);
@@ -297,7 +360,7 @@ export function useRecorder(): UseRecorder {
       );
       return false;
     }
-  }, [abandonStream, clearTick, releaseStream, startTick, supported]);
+  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
@@ -343,6 +406,19 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
+    // OWN the VU tap exactly as the stream is owned (below): steal it into a
+    // local and null the ref. Two flush-window races this closes (Frank + George
+    // R-B6): (1) a concurrent cancel()/leave()/pagehide runs releaseStream() ->
+    // closeTap() during our flush await — reading the ref, it would stop THIS
+    // take's clone mid-`dataavailable` and, on a WebKit build where clone-stop
+    // reaches the shared source, truncate the final slice; nulling the ref makes
+    // that a no-op. (2) an OLDER stop() resuming after a newer recording B
+    // installed its tap would close B's tap through the shared ref. disconnect
+    // now (readLevel -> 0); the clone tracks are stopped after the flush, on the
+    // LOCAL tap.
+    const tap = tapRef.current;
+    tapRef.current = null;
+    tap?.disconnect();
     // This invocation owns teardown now: detach the interruption handlers so a
     // late `error`/`ended` event, delivered after our final `setState`, cannot
     // repaint a stopped recorder back to "processing".
@@ -398,6 +474,11 @@ export function useRecorder(): UseRecorder {
       // recording in progress.
       if (stream) abandonStream(stream);
     }
+
+    // The flush window is past — now stop the cloned capture tracks of THIS
+    // stop's tap (its graph was disconnected up top). The local `tap`, not
+    // closeTap(): a newer recording's tap in the ref must not be touched.
+    tap?.close();
 
     // The shared UI state belongs to the current generation; the failure travels
     // with the result to whoever called stop(). A superseded stop stays silent —
@@ -475,5 +556,7 @@ export function useRecorder(): UseRecorder {
     resume,
     stop,
     cancel,
+    readLevel,
+    meterFailed,
   };
 }

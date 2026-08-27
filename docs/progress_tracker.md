@@ -4,9 +4,9 @@ Newest first. One entry per working session.
 
 ---
 
-## 2026-08-26 — Day 8: B5 waveform editing, and two recorder P3s
+## 2026-08-26 — Day 8: B5 waveform editing, two recorder P3s, build stamp, staging deploy
 
-**Branch:** `develop` · **PRs:** [#64](https://github.com/sethstoll3/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/sethstoll3/tc-mobile/pull/65) (B5) both merged · **On `develop`** (`94f9f01`) · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
+**Branch:** `develop` · **PRs merged:** [#64](https://github.com/sethstoll3/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/sethstoll3/tc-mobile/pull/65) (B5), [#70](https://github.com/sethstoll3/tc-mobile/pull/70) (build stamp), promotions [#69](https://github.com/sethstoll3/tc-mobile/pull/69)/[#71](https://github.com/sethstoll3/tc-mobile/pull/71) (develop→staging) · **On `staging`** (`c75cf01`), deployed and serving `v0.1.1 · c75cf01` · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
 
 ### Completed
 
@@ -28,6 +28,14 @@ Newest first. One entry per working session.
   - Clipboard lives in `App` (survives the per-segment sheet remount), cleared on
     chapter change. Persist reuses the never-lose slot; an edit-only cut-to-empty
     clears the take instead of writing a 0-frame ghost.
+- **Build-identity footer stamp** (#70, `66cf125`) — `v{version} · {sha}` at the
+  shell bottom (`__BUILD_SHA__` added beside the existing `__APP_VERSION__`
+  define). Bumped to **0.1.1** — the first stamped build; bump per testable
+  release. Lets a tester name their build and confirm the PWA SW updated.
+- **Promoted `develop` → `staging` twice** (#69 B5+P3s, #71 the stamp).
+  **B5 + the stamp are live on `staging`** (`c75cf01`, `v0.1.1 · c75cf01`),
+  verified in the served bundle. **Production untouched** (`main` at `3464a30`,
+  serving its own pre-B5 bundle).
 
 ### Five review rounds, both reviewers each round (Frank/George)
 
@@ -55,15 +63,31 @@ Newest first. One entry per working session.
 - **#67** SaveFailed copy says "recording" for an edit-only fail (cosmetic, safety
   intact). **#68** `addTake`'s parallel unconditional clip-delete (latent; lands
   with content-addressed clips).
+- **Cloudflare Workers Builds config has drifted from AGENTS.md (two dashboard
+  settings, DRI to toggle).** The repo config is correct (`wrangler.jsonc`
+  top-level `tc-mobile`, `[env.staging]` → `tc-mobile-staging`; `deploy:staging`
+  uses `--env staging`). But in the dashboard: (1) `tc-mobile` appears to have
+  **non-production branch builds ON** — every develop/staging push fires a wasted
+  `tc-mobile` preview build (should be OFF; only `tc-mobile-staging` keeps them
+  on). (2) `tc-mobile-staging`'s **Deploy command is `npx wrangler deploy`**,
+  missing `--env staging` — currently lands on staging via Cloudflare's per-Worker
+  scoping, but a bare `wrangler deploy` _names_ the production Worker, so it is a
+  latent footgun. **Production was verified clean throughout** (previews never
+  touch the production URL). Fix both in the Cloudflare dashboard.
 
 ### Next steps
 
-1. **On-device B5 smoke** (iOS + Android), plus the still-open #59/#58 Android
-   checks and the two day-1 cases.
-2. **B6 (#32)** — VU meter, the recorder `≡` menu's Erase Segment (G4; the
+1. **On-device B5 smoke on staging** (`v0.1.1 · c75cf01`), iOS + Android — the
+   open T1 gate. High-value cases automated tests can't reach: cut the WHOLE clip
+   then close/reopen (reads never-recorded, not a silent take); cut→record→
+   background mid-save (the superseded-stop path). Plus the still-open #59/#58
+   Android checks and the two day-1 cases.
+2. **Toggle the two Cloudflare dashboard settings** (see Blockers) — `tc-mobile`
+   non-prod builds OFF; `tc-mobile-staging` deploy command → `--env staging`.
+3. **B6 (#32)** — VU meter, the recorder `≡` menu's Erase Segment (G4; the
    `clearSegmentTake` store op B5 added is its foundation), erase confirmation.
-3. `staging` promotion once B5 is device-verified; `staging→main` stays gated on
-   Android.
+4. `staging → main` (the production gate) once B5 is device-verified, esp. Android.
+   Consider `git tag v0.1.1` for greppable release history.
 
 ---
 

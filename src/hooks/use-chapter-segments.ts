@@ -165,6 +165,29 @@ export function useChapterSegments(chapterId: ChapterId) {
     []
   );
 
+  const eraseRow = useCallback((segmentId: SegmentId) => {
+    // Erase makes ONE row never-recorded and touches no other clip, so patch it
+    // in place — exactly like addSegment/setFinished — rather than reload() the
+    // whole chapter. reload() flips `refreshing` on, which disables Play/Pause
+    // on EVERY row while it re-walks each clip's PCM (tens–hundreds of MB on a
+    // long chapter), so erasing one segment would freeze the transport of a
+    // sibling that is still playing, with no way to stop it (George R-B6).
+    setRows((rs) =>
+      rs.map((r) =>
+        r.segmentId === segmentId
+          ? {
+              ...r,
+              hasClip: false,
+              finished: false,
+              clipId: null,
+              peaks: null,
+              durationMs: null,
+            }
+          : r
+      )
+    );
+  }, []);
+
   return {
     bookName,
     chapterNumber,
@@ -175,5 +198,6 @@ export function useChapterSegments(chapterId: ChapterId) {
     reload,
     addSegment,
     setFinished,
+    eraseRow,
   };
 }

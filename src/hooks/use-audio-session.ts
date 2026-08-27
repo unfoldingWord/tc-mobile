@@ -44,6 +44,15 @@ export interface UseAudioSession {
   stopRecording: () => Promise<StopResult>;
   /** End every sound this screen owns, synchronously. Call on every navigation. */
   leave: () => void;
+  /**
+   * The live capture level for the VU meter, in the raw amplitude domain. A PULL
+   * read (D-LEVEL-PULL): the meter polls it on its own frame clock, so nothing
+   * above this layer re-renders per frame. 0 whenever nothing is capturing.
+   */
+  readLevel: () => number;
+  /** The VU tap could not be wired for the current take; the meter shows
+   *  unavailable rather than a resting-empty strip. Recording is unaffected. */
+  meterFailed: boolean;
 }
 
 /**
@@ -76,6 +85,8 @@ export function useAudioSession(): UseAudioSession {
     error: recorderError,
     elapsedMs,
     supported,
+    readLevel,
+    meterFailed,
   } = recorder;
 
   const [playingId, setPlayingId] = useState<SegmentId | null>(null);
@@ -321,5 +332,7 @@ export function useAudioSession(): UseAudioSession {
     resumeRecording,
     stopRecording,
     leave,
+    readLevel,
+    meterFailed,
   };
 }

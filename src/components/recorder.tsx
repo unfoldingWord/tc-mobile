@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Checkbox } from "./checkbox";
 import { Control } from "./control";
+import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
+import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
@@ -109,6 +112,12 @@ export function Recorder({
     set: onClipboardChange,
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  // The VU strip is visible by default when the sheet opens (D-VU-DEFAULT); the
+  // menu toggles it. Per-session local state — there is no prefs layer to
+  // persist it across opens.
+  const [vuVisible, setVuVisible] = useState(true);
+  // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // `null` ⇒ resting at the end of the existing audio (append-ready, F7). A
   // derived rest, rather than a value set in an effect once `view` loads: the
@@ -302,6 +311,25 @@ export function Recorder({
     dirty.current = true;
     setFinishedIntent(!displayedFinished);
   }, [view, displayedFinished]);
+
+  // Erase Segment (D-ERASE-OP / D-TWO-ENTRIES): the same hook the Segments-row
+  // overflow uses. It clears the stored take and returns the segment to
+  // never-recorded, then this sheet closes dirty so App reloads the list. Only
+  // offered on a segment that has stored audio — a first, uncommitted recording
+  // in this session has nothing on disk to erase.
+  const erase = useEraseSegment();
+  const onConfirmErase = useCallback(() => {
+    void (async () => {
+      const result = await erase.erase(segmentId);
+      // "ok": success unmounts this sheet; the working buffer and any pending
+      // edits go with it, which is the point. "failed": keep the sheet, drop the
+      // confirm, show the notice. "busy": a double-tap's refused second call —
+      // ignore it, the first call still owns the dialog (else the confirm would
+      // vanish mid-erase, exposing Back and its save path over the delete).
+      if (result === "ok") onExit(true);
+      else if (result === "failed") setConfirmOpen(false);
+    })();
+  }, [erase, segmentId, onExit]);
 
   const close = useCallback(() => {
     if (closing.current) return;
@@ -499,7 +527,7 @@ export function Recorder({
       <div
         ref={sheetRef}
         className="recorder-sheet mx-auto max-w-md"
-        inert={menuOpen || undefined}
+        inert={menuOpen || confirmOpen || undefined}
       >
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
@@ -558,6 +586,11 @@ export function Recorder({
             {editor.error && (
               <div className="px-[12px] pt-[8px]">
                 <Notice>{strings.editFailed}</Notice>
+              </div>
+            )}
+            {erase.error && (
+              <div className="px-[12px] pt-[8px]">
+                <Notice>{strings.eraseFailed}</Notice>
               </div>
             )}
             <div className="recorder-stage flex-1">
@@ -640,6 +673,26 @@ export function Recorder({
               )}
             </div>
 
+            {vuVisible && (
+              // Under the waveform (mockup 3), visible by default. `active` gates
+              // its own rAF loop, so it only animates while a take is live and
+              // rests empty otherwise — the sheet never re-renders per frame
+              // (D-LEVEL-PULL: it polls `audio.readLevel` on its own clock).
+              <div className="px-[16px]">
+                <VuMeter
+                  readLevel={audio.readLevel}
+                  // Only while actually recording — NOT paused. MediaRecorder
+                  // pause does not pause the mic track, so the analyser keeps
+                  // reading; a live bar over a paused take reads as "still
+                  // recording" for audio that is not being captured (George R-B6).
+                  active={recording}
+                  unavailable={audio.meterFailed}
+                  label={strings.vuMeterLabel}
+                  unavailableLabel={strings.vuMeterUnavailable}
+                />
+              </div>
+            )}
+
             {audio.error && <Notice>{audio.error}</Notice>}
 
             <div className="recorder-toolbar flex items-center justify-between px-[16px]">
@@ -692,7 +745,13 @@ export function Recorder({
                 label={strings.recorderMenuOpen}
                 variant="quiet"
                 size={24}
-                disabled={!idleEditable}
+                // Live during recording/paused, not only at idle: the menu now
+                // holds the VU toggle, whose whole purpose is DURING a take, so
+                // gating the opener on `idleEditable` would strand a translator
+                // who hid the strip with no way to bring it back short of saving
+                // (George R-B6). The entries that are unsafe mid-take (Redo,
+                // Erase) gate themselves. Blocked only through the close window.
+                disabled={!view || isClosing}
                 onClick={() => setMenuOpen(true)}
               />
             </div>
@@ -717,7 +776,41 @@ export function Recorder({
             setMenuOpen(false);
           }}
         />
+        <Control
+          icon={vuVisible ? "eye-off" : "eye"}
+          label={vuVisible ? strings.vuHide : strings.vuShow}
+          variant="quiet"
+          // Close the menu so the change to the strip behind it is visible.
+          onClick={() => {
+            setVuVisible((v) => !v);
+            setMenuOpen(false);
+          }}
+        />
+        <Control
+          icon="trash"
+          label={strings.eraseSegment}
+          variant="quiet"
+          // Only when there is stored audio to erase (a first, uncommitted
+          // recording has nothing on disk yet) AND only at idle: erasing the
+          // stored take out from under a live capture is nonsensical, and the
+          // menu opener is now reachable mid-take for the VU toggle, so this
+          // entry must refuse there itself (George R-B6).
+          disabled={!idleEditable || !view?.hasClip}
+          onClick={() => {
+            setMenuOpen(false);
+            setConfirmOpen(true);
+          }}
+        />
       </Menu>
+      <EraseConfirm
+        open={confirmOpen}
+        title={strings.eraseConfirmTitle}
+        confirmLabel={strings.eraseConfirm}
+        cancelLabel={strings.eraseCancel}
+        busy={erase.erasing}
+        onConfirm={onConfirmErase}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
