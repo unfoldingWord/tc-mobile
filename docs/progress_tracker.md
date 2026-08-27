@@ -1,6 +1,34 @@
 # Progress tracker — tC Mobile
 
-Newest first. One entry per working session.
+Newest first. **One entry per working session, not per day** — a single date can
+carry several sessions, so entries are titled by date plus a session marker
+(e.g. "(evening)"). The historical "Day N" labels below predate this convention
+and do not imply one entry per day.
+
+---
+
+## 2026-08-27 (late) — UI audit (ux-then-ui + ui-craft), updated mockups, Tim sign-off
+
+**Branch:** `develop` (no code shipped — a design/planning session) · **Filed:** #88–#91 · **Artifacts:** [updated mockups](https://claude.ai/code/artifact/9edaa5d6-22cb-4d0c-9f15-c82441f93d10) · **No commits** beyond this tracker entry.
+
+### What happened
+
+- **Ran ux-then-ui + ui-craft over the three pivot screens** (Books, Segments, Recorder). These are _product_ surfaces, so identity/swap-test don't apply; the value was A0/A1/A2/A3 + the applicable ui-craft rows, audited **read-only against the code** (rendered visuals/motion/interactive-states are `n/t` — they belong to the on-device pass).
+- **Verdict: no major failure.** The screens genuinely fit their audience (a non-reading field translator): text-free-leaning, glyph+colour carry state, errors route to a Notice channel not the console, state-in-place over toasts. Gate 1 already ran on Tim's mockups. So this was **polish + two questions for Tim, not a rework** — and the strong states/error-channel/microcopy were explicitly flagged "don't churn."
+- **Findings → four issues:** #88 (F1 — `.t-timer`/`.t-count` lack `tabular-nums`, so the live clock jitters; confirmed in code), #89 (F2 — split the recorder into a calm record mode and a deliberate edit mode; absorbs F4, the signature-screen character point), #90 (F3 — warmer empty states with a present primary CTA), #91 (F5 — non-reader affordance for the abstract editing controls; forward-looking, the `strings.ts` aria-label routing is its attach point).
+- **Built the updated-mockups artifact** — all three screens (+ empty state, + edit mode) in the app's **real dark tokens**, no new colours.
+- **Tim approved the whole direction** ("absolutely gorgeous… let's go with those") and added the missing **Play button**: record + play centered as a pair, record the hero, play a step smaller to its right and dimmed while recording, the `≡` menu moved top-right. This resolves the old "recorder has no Play control" thread. #89 un-gated (`needs-decision` removed); mockup updated.
+
+### Blockers / needs a human (unchanged from the prior session)
+
+- **On-device pass on `v0.1.3`** remains the gate before `staging → main` and before Tim's wider-testing link.
+- **The Capacitor go/no-go still hinges on the WKWebView audio spike** (#86).
+
+### Next steps
+
+1. **#88 + #90** — small `fix(ui)` lane, both Tim-approved and build-ready (F1 is a two-line CSS fix; F3 is copy + one CTA element).
+2. **#89** — build the record/edit split via a quick **ux-then-ui Gate-1** (job list + record/edit states) to pin behaviour, then implement to the approved mockup.
+3. **#91** after #89 (the mode split shrinks its exposure). Then out through `develop → staging` as usual.
 
 ---
 
