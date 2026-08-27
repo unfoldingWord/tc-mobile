@@ -98,6 +98,32 @@ describe("performErase", () => {
     expect(after?.status).toBe("not-started");
   });
 
+  it("keeps a committed delete a success even when onErased throws", async () => {
+    // The delete is irreversible once clearSegmentTake commits, so a failing
+    // notification (a reload that threw, say) must NOT report the erase as
+    // failed and invite a retry against an already-cleared segment (Frank R-B6).
+    const { segmentId, clipId } = await recordedSegment();
+    const onErased = vi.fn(() => {
+      throw new Error("reload failed");
+    });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const result = await performErase(segmentId, onErased);
+
+    // The throwing callback does not turn a committed deletion into a failure.
+    expect(result).toEqual({ ok: true });
+    expect(onErased).toHaveBeenCalledTimes(1);
+    // And the audio really is gone — the store op ran to completion.
+    const after = await getSegment(segmentId);
+    expect(after?.activeTakeId).toBeNull();
+    expect(await getClipMeta(clipId)).toBeUndefined();
+    // The notification failure is logged, never swallowed.
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("catches a store rejection, surfaces the reason, and does not fire onErased", async () => {
     // A segment id with no row: `clearSegmentTake` throws "No such segment: …".
     // This is the failure path the hook maps to `error` and a `false` return.

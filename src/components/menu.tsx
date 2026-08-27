@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import { Control } from "./control";
 import { strings } from "./strings";
@@ -49,18 +50,34 @@ export function Menu({
   children,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // Read `onClose` from the keydown listener without re-subscribing it. Both B6
+  // consumers pass an inline `onClose` and open the menu over a TICKING parent —
+  // the recorder menu is now live mid-take (elapsedMs every 100 ms) and the row
+  // menu sits on a list that repaints every 60 ms during playback. Keying the
+  // effect on `onClose` would re-run it — and re-grab focus — on every tick,
+  // yanking a keyboard user off the entry they were on (George R-B6, the same
+  // defect EraseConfirm already fixed). A ref keeps the handler current without
+  // that churn, so the effect binds once per open.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
+  // Land focus inside the panel ONCE on the open edge — first ENABLED control,
+  // never a disabled one (focusing it is a no-op that strands the user behind
+  // the scrim — Frank R-B6) — and not again on every parent render.
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+  }, [open]);
+
+  // The focus trap + Escape, bound once per open; reads `onClose` via the ref.
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
-    // Land focus inside the panel so a keyboard/switch user is not left behind
-    // the scrim on the page they just covered. First ENABLED control, never a
-    // disabled one (focusing it is a no-op that strands them — Frank R-B6).
-    panel?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
@@ -80,11 +97,16 @@ export function Menu({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
-  return (
+  // Portalled to <body>, out of the caller's subtree. A caller that goes `inert`
+  // to hide its own background from AT (the Segments list does this while a
+  // dialog is up) must not thereby inert the open menu itself — which it would
+  // if the menu rendered inline inside it. The scrim is `position: fixed`, so
+  // the DOM parent never mattered for layout. (Frank/George R-B6.)
+  return createPortal(
     <div
       className="menu-scrim"
       // A tap on the scrim, but not on the panel, closes.
@@ -110,6 +132,7 @@ export function Menu({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

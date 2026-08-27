@@ -60,6 +60,7 @@ export const SegmentsScreen = forwardRef<
     reload,
     addSegment,
     setFinished,
+    eraseRow,
   } = useChapterSegments(chapterId);
 
   useImperativeHandle(ref, () => ({ reload }), [reload]);
@@ -70,7 +71,12 @@ export const SegmentsScreen = forwardRef<
   // `onErased` reloads, so the row returns to its never-recorded look; on
   // failure the reason surfaces in the screen's Notice.
   const [eraseTarget, setEraseTarget] = useState<SegmentId | null>(null);
-  const erase = useEraseSegment({ onErased: reload });
+  // A row's overflow menu is open. Lifted here so the list can go `inert` behind
+  // it for AT/switch users (the menu itself is portalled out, so it stays live);
+  // only one is ever open at a time — the open menu's scrim blocks reaching a
+  // second row's trigger. (George R-B6.)
+  const [rowMenuOpen, setRowMenuOpen] = useState(false);
+  const erase = useEraseSegment();
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
@@ -78,17 +84,23 @@ export const SegmentsScreen = forwardRef<
       // Stop playback first if THIS row is the one sounding. `clearSegmentTake`
       // deletes the clip, but `playTake` already handed a live source node built
       // from in-memory PCM, so the deleted recording would keep playing to its
-      // end — and after the reload there is no pause control to stop it (George
+      // end — and after the patch there is no pause control to stop it (George
       // R-B6). Only our own target: another row's playback is not ours to stop,
       // and only one thing sounds at a time, so `leave()` here ends exactly it.
       if (audio.playingId === eraseTarget) audio.leave();
       const result = await erase.erase(eraseTarget);
-      // Dismiss on a real outcome ("ok" reloads via `onErased`, "failed" leaves
-      // `erase.error` for the Notice). A double-tap's "busy" is ignored, so the
-      // confirm does not vanish while the first erase is still running.
+      // On success patch that ONE row to never-recorded in place — NOT reload(),
+      // which deadens every transport while it re-walks the chapter's PCM
+      // (George R-B6). "failed" leaves `erase.error` for the Notice; a
+      // double-tap's "busy" is ignored so the confirm does not vanish under the
+      // first erase.
+      if (result === "ok") eraseRow(eraseTarget);
       if (result !== "busy") setEraseTarget(null);
     })();
-  }, [audio, erase, eraseTarget]);
+  }, [audio, erase, eraseTarget, eraseRow]);
+  // The list is hidden from AT while a dialog is up, mirroring the recorder
+  // sheet (G8: aria-modal alone is not trusted to hide the background).
+  const listInert = eraseTarget !== null || rowMenuOpen;
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -148,7 +160,10 @@ export const SegmentsScreen = forwardRef<
 
   return (
     <div className="flex h-full flex-col gap-[14px]">
-      <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
+      <header
+        className="flex items-center gap-[8px] px-[4px] py-[2px]"
+        inert={listInert || undefined}
+      >
         <Control
           icon="back"
           label={strings.backToBooks}
@@ -185,7 +200,7 @@ export const SegmentsScreen = forwardRef<
         refreshing && <Notice tone="busy">{strings.saving}</Notice>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
         {!loading && !loadFailed && rows.length === 0 ? (
           <p
             className="flex h-full items-center justify-center text-center text-[13px]"
@@ -210,6 +225,7 @@ export const SegmentsScreen = forwardRef<
                     onSetFinished(row.segmentId, finished)
                   }
                   onErase={() => setEraseTarget(row.segmentId)}
+                  onMenuOpenChange={setRowMenuOpen}
                 />
               </li>
             ))}

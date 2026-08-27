@@ -107,19 +107,37 @@ export interface LevelTap {
  *
  * The Web Audio graph stays inside this boundary; the meter math is imported
  * from `lib/`, so the pure part is unit-tested and this file only wires the
- * `AnalyserNode`. The source is connected to the analyser and to NOTHING else —
- * in particular not to `ctx.destination`, which would route the microphone back
- * out of the speakers as a feedback loop. The analyser reads the time-domain
- * frame into one reused buffer, so a per-frame `read()` allocates nothing.
+ * `AnalyserNode`. Two WebKit-driven decisions, both owed an iOS on-device check
+ * (George R-B6):
+ *
+ *   - The tap reads a CLONE of the capture stream, not the stream MediaRecorder
+ *     owns. Some WebKit builds have produced silent or truncated takes when an
+ *     analyser's `MediaStreamSource` shares the recorder's stream. The clone
+ *     carries the same microphone input, so the meter is unaffected, but the
+ *     recorder is fully isolated from the graph — the meter can never cost a
+ *     recording, which is the one thing it must never do.
+ *   - The graph terminates at `destination` through a SILENCED gain. WebKit does
+ *     not pull an `AnalyserNode` unless the graph reaches `destination` (Chrome
+ *     pulls a dangling analyser; Safari returns zeros), so a mic-only connection
+ *     leaves the strip dead on iOS. `gain = 0` keeps the graph live with no
+ *     audible monitor — no feedback, because nothing reaches the speaker.
+ *
+ * The analyser reads the time-domain frame into one reused buffer, so a
+ * per-frame `read()` allocates nothing.
  */
 export function createLevelTap(stream: MediaStream): LevelTap {
   const ctx = getAudioContext();
-  const source = ctx.createMediaStreamSource(stream);
+  const tapStream = stream.clone();
+  const source = ctx.createMediaStreamSource(tapStream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
-  // source -> analyser ONLY. Never analyser -> destination: that is a mic
-  // monitored to the speaker, i.e. feedback.
+  // source -> analyser -> gain(0) -> destination. The silenced gain terminates
+  // the graph so WebKit processes the analyser, without monitoring the mic.
+  const sink = ctx.createGain();
+  sink.gain.value = 0;
   source.connect(analyser);
+  analyser.connect(sink);
+  sink.connect(ctx.destination);
 
   const frame = new Float32Array(analyser.fftSize);
   let closed = false;
@@ -138,10 +156,13 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       try {
         source.disconnect();
         analyser.disconnect();
+        sink.disconnect();
       } catch {
         // Already disconnected — Web Audio throws on a redundant disconnect and
         // there is nothing to do about it.
       }
+      // Stop the cloned tracks; the recorder's own stream is left untouched.
+      tapStream.getTracks().forEach((t) => t.stop());
     },
   };
 }

@@ -33,6 +33,13 @@ interface SegmentRowProps {
    */
   onErase: () => void;
   /**
+   * Reports this row's overflow menu opening and closing, so the screen can go
+   * `inert` behind it for AT/switch users (the menu is portalled out, so it
+   * stays reachable while the list does not). Optional — a consumer that does
+   * not manage list inertness can ignore it.
+   */
+  onMenuOpenChange?: (open: boolean) => void;
+  /**
    * A save is landing (the list is refreshing). Opening the recorder is held
    * off until it does: the row still reads by its pre-save state, so entering
    * now would open on stale audio. Play stays live.
@@ -62,10 +69,21 @@ export function SegmentRow({
   onOpenRecorder,
   onSetFinished,
   onErase,
+  onMenuOpenChange,
   busy = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Report the menu's open state up so the screen can inert the list behind it.
+  // An effect, not a call inside each setter, so it fires once per real change;
+  // the cleanup releases the list if the row unmounts while its menu is open.
+  // Re-reporting `false` when already closed is a no-op React bails out on.
+  useEffect(() => {
+    onMenuOpenChange?.(menuOpen);
+    return () => {
+      if (menuOpen) onMenuOpenChange?.(false);
+    };
+  }, [menuOpen, onMenuOpenChange]);
   const hasClip = row.hasClip;
   const durationMs = row.durationMs ?? 0;
   const ordinal = row.ordinal;

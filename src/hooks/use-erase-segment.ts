@@ -30,10 +30,13 @@ export async function performErase(
   segmentId: SegmentId,
   onErased?: () => void
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Only the STORE op is fallible-and-reportable. Once `clearSegmentTake`
+  // commits, the audio is irreversibly gone, so the result is success no matter
+  // what the notification does — a throwing `onErased` (a reload that failed,
+  // say) must NOT report "could not erase" and invite a retry against a segment
+  // that is already cleared (Frank R-B6). So `onErased` runs outside this guard.
   try {
     await clearSegmentTake(segmentId);
-    onErased?.();
-    return { ok: true };
   } catch (cause) {
     console.error("Erasing a segment failed", cause);
     return {
@@ -41,6 +44,14 @@ export async function performErase(
       error: cause instanceof Error ? cause.message : String(cause),
     };
   }
+  // The delete has committed. A notification failure is logged, never folded
+  // back into the erase result.
+  try {
+    onErased?.();
+  } catch (cause) {
+    console.error("Post-erase notification failed", cause);
+  }
+  return { ok: true };
 }
 
 /**
