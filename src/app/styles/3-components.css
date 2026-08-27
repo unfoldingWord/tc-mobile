@@ -101,6 +101,14 @@
   .control--quiet:disabled {
     opacity: 0.4;
   }
+  /* A disabled quiet control must not pick up the hover surface/ink — on a
+     client with sticky :hover after a tap (iOS Safari), a dead tap would leave
+     the disabled Cut/Select/Undo looking live (George R2 P3). Higher specificity
+     than .control--quiet:hover, so it wins regardless of source order. */
+  .control--quiet:disabled:hover {
+    background: transparent;
+    color: var(--s-ink-muted);
+  }
   /* A COLOURED control (live-red record, play, primary) must drain its chroma
      when inert — a 40%-opaque red still reads as armed/live, and red is "the
      live recording moment, and nothing else" (1-primitives). Desaturate so it
@@ -381,6 +389,11 @@
   .recorder-stage {
     position: relative;
     display: flex;
+    /* Column, so the always-mounted Cut (George R2 P2) stacks UNDER the canvas
+       (mockup 4, matching .recorder-cut's padding-top) instead of sitting beside
+       it as a row sibling — which narrowed the full-width canvas and pushed the
+       CENTER_FRACTION=0.5 line off the stage's true centre. */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 0;
