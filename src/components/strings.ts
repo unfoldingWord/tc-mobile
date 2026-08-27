@@ -75,6 +75,7 @@ export const strings = {
 
   // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
   vuMeterLabel: "Recording level",
+  vuMeterUnavailable: "Level meter unavailable on this device",
   vuShow: "Show the level meter",
   vuHide: "Hide the level meter",
   eraseSegment: "Erase recording",

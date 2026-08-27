@@ -266,7 +266,11 @@
     background: var(--s-scrim);
     display: flex;
     justify-content: flex-end;
-    z-index: 50;
+    /* Above the recorder sheet (z 60): the menu is portalled to <body>, so it no
+       longer inherits the recorder scrim's stacking context and must out-rank it
+       explicitly, or a recorder menu paints behind the inert sheet — unreachable
+       by touch (George R-B6). */
+    z-index: 80;
   }
   .menu-panel {
     width: min(320px, 84vw);
@@ -282,7 +286,7 @@
 
   /* --- the erase confirm dialog (B6) ------------------------------------- */
   /* A centred sheet, not the side drawer: it sits above the recorder sheet
-     (z 60) and the menu (z 50) because it can be raised from either. */
+     (z 60) and the menu (z 80) because it can be raised from either. */
   .confirm-scrim {
     position: fixed;
     inset: 0;
@@ -291,7 +295,7 @@
     align-items: center;
     justify-content: center;
     padding: var(--p-space-5);
-    z-index: 70;
+    z-index: 90;
   }
   .confirm-panel {
     width: min(320px, 84vw);
@@ -471,5 +475,21 @@
   }
   .vu-meter__fill[data-zone="red"] {
     background: var(--s-live);
+  }
+  /* Meter unavailable: the level tap could not be wired on this device. A
+     hatched, dimmed track reads as "not working" rather than "no sound" — so a
+     permanently-empty strip is not mistaken for a dead microphone (Frank R-B6).
+     The fill stays empty. */
+  .vu-meter[data-state="unavailable"] {
+    opacity: 0.55;
+  }
+  .vu-meter[data-state="unavailable"] .vu-meter__track {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--s-raised),
+      var(--s-raised) 4px,
+      var(--s-edge) 4px,
+      var(--s-edge) 8px
+    );
   }
 }

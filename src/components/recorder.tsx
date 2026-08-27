@@ -681,8 +681,14 @@ export function Recorder({
               <div className="px-[16px]">
                 <VuMeter
                   readLevel={audio.readLevel}
-                  active={recording || paused}
+                  // Only while actually recording — NOT paused. MediaRecorder
+                  // pause does not pause the mic track, so the analyser keeps
+                  // reading; a live bar over a paused take reads as "still
+                  // recording" for audio that is not being captured (George R-B6).
+                  active={recording}
+                  unavailable={audio.meterFailed}
                   label={strings.vuMeterLabel}
+                  unavailableLabel={strings.vuMeterUnavailable}
                 />
               </div>
             )}

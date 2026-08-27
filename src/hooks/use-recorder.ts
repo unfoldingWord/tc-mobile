@@ -90,6 +90,12 @@ export interface UseRecorder {
    * superseded analyser.
    */
   readLevel: () => number;
+  /**
+   * The level tap could not be wired for the current take (a quirky Web Audio
+   * implementation). Recording is unaffected; the meter should show unavailable
+   * rather than a resting-empty strip. False while it is working or idle.
+   */
+  meterFailed: boolean;
 }
 
 /**
@@ -103,6 +109,11 @@ export function useRecorder(): UseRecorder {
   const [state, setState] = useState<RecorderState>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // The VU tap could not be wired on this device (createLevelTap threw). The
+  // recorder runs meterless, but the UI must be able to SHOW the meter as
+  // unavailable rather than an empty strip a translator reads as a dead mic —
+  // console.error is not a channel on a phone in a village (Frank R-B6).
+  const [meterFailed, setMeterFailed] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   /**
@@ -313,9 +324,11 @@ export function useRecorder(): UseRecorder {
       // be wired, so a failure here is logged and the recorder runs meterless.
       try {
         tapRef.current = createLevelTap(stream);
+        setMeterFailed(false);
       } catch (tapCause) {
         console.error("Could not open the level meter", tapCause);
         tapRef.current = null;
+        setMeterFailed(true);
       }
       startedAtRef.current = performance.now();
       baseElapsedRef.current = 0;
@@ -385,10 +398,13 @@ export function useRecorder(): UseRecorder {
     const generation = generationRef.current;
     const chunks = chunksRef.current;
     const stream = streamRef.current;
-    // Capture is ending; close the VU tap up front so no analyser reads across
-    // the flush/decode. `readLevel()` returns 0 from here, matching the state
-    // leaving "recording".
-    closeTap();
+    // Capture is ending; DISCONNECT the VU tap's graph up front so readLevel()
+    // returns 0 from here — but do NOT stop its cloned tracks yet. Stopping any
+    // capture track between MediaRecorder.stop() and onstop can truncate the
+    // final `dataavailable` (the whole take under one timeslice), the very
+    // window the stream handoff below exists to protect. The clone is stopped
+    // after the flush, at closeTap() further down (George R-B6).
+    tapRef.current?.disconnect();
     // This invocation owns teardown now: detach the interruption handlers so a
     // late `error`/`ended` event, delivered after our final `setState`, cannot
     // repaint a stopped recorder back to "processing".
@@ -444,6 +460,11 @@ export function useRecorder(): UseRecorder {
       // recording in progress.
       if (stream) abandonStream(stream);
     }
+
+    // The flush window is past — now stop the VU tap's cloned capture tracks
+    // (its graph was already disconnected up top). Deferred to here so the clone
+    // could not truncate the final slice mid-flush.
+    closeTap();
 
     // The shared UI state belongs to the current generation; the failure travels
     // with the result to whoever called stop(). A superseded stop stays silent —
@@ -522,5 +543,6 @@ export function useRecorder(): UseRecorder {
     stop,
     cancel,
     readLevel,
+    meterFailed,
   };
 }

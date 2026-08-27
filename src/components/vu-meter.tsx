@@ -14,10 +14,18 @@ interface VuMeterProps {
   /** Whether capture is live. While false the strip rests empty and the loop is off. */
   active: boolean;
   /**
+   * The level tap could not be wired on this device. The strip shows a hatched,
+   * dimmed "unavailable" state instead of an empty bar, so a permanently-empty
+   * meter is not mistaken for a dead microphone (Frank R-B6). The loop is off.
+   */
+  unavailable?: boolean;
+  /**
    * The whole accessible name. A meter is decorative status, so the graphic is
    * hidden from the reader and this label speaks for it once, not per frame.
    */
   label: string;
+  /** The accessible name while `unavailable` — distinct from a resting meter. */
+  unavailableLabel: string;
   className?: string;
 }
 
@@ -34,7 +42,14 @@ interface VuMeterProps {
  * hardcoded. `transform`/`data-zone` are set imperatively and never declared in
  * JSX, so a parent re-render cannot clobber the live values.
  */
-export function VuMeter({ readLevel, active, label, className }: VuMeterProps) {
+export function VuMeter({
+  readLevel,
+  active,
+  unavailable = false,
+  label,
+  unavailableLabel,
+  className,
+}: VuMeterProps) {
   const fillRef = useRef<HTMLDivElement | null>(null);
   // Hold the latest reader without retriggering the loop: the hook may hand us
   // a fresh function identity each render, and restarting the loop for that
@@ -48,8 +63,9 @@ export function VuMeter({ readLevel, active, label, className }: VuMeterProps) {
     const fill = fillRef.current;
     if (!fill) return;
 
-    if (!active) {
-      // Rest strip: empty and un-zoned, nothing animating.
+    if (!active || unavailable) {
+      // Rest / unavailable: empty and un-zoned, nothing animating. (Unavailable
+      // adds a hatched track via data-state below; the fill stays empty.)
       fill.style.transform = "scaleX(0)";
       delete fill.dataset.zone;
       return;
@@ -70,10 +86,20 @@ export function VuMeter({ readLevel, active, label, className }: VuMeterProps) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [active]);
+  }, [active, unavailable]);
+
+  // Surface "unavailable" only while a take is live — the moment an empty strip
+  // could be misread as a dead mic. At idle the meter rests empty either way, and
+  // a stale failure from a prior take should not pre-emptively read as broken.
+  const showUnavailable = active && unavailable;
 
   return (
-    <div className={cn("vu-meter", className)} role="img" aria-label={label}>
+    <div
+      className={cn("vu-meter", className)}
+      role="img"
+      aria-label={showUnavailable ? unavailableLabel : label}
+      data-state={showUnavailable ? "unavailable" : undefined}
+    >
       <div className="vu-meter__track">
         <div ref={fillRef} className="vu-meter__fill" />
       </div>

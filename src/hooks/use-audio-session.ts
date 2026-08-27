@@ -50,6 +50,9 @@ export interface UseAudioSession {
    * above this layer re-renders per frame. 0 whenever nothing is capturing.
    */
   readLevel: () => number;
+  /** The VU tap could not be wired for the current take; the meter shows
+   *  unavailable rather than a resting-empty strip. Recording is unaffected. */
+  meterFailed: boolean;
 }
 
 /**
@@ -83,6 +86,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    meterFailed,
   } = recorder;
 
   const [playingId, setPlayingId] = useState<SegmentId | null>(null);
@@ -329,5 +333,6 @@ export function useAudioSession(): UseAudioSession {
     stopRecording,
     leave,
     readLevel,
+    meterFailed,
   };
 }

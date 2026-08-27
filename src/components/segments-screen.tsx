@@ -68,8 +68,8 @@ export const SegmentsScreen = forwardRef<
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
   // uses — with the target segment held here while the dialog is up. On success
-  // `onErased` reloads, so the row returns to its never-recorded look; on
-  // failure the reason surfaces in the screen's Notice.
+  // `eraseRow` patches that one row to never-recorded in place (not reload());
+  // on failure the reason surfaces in the screen's Notice.
   const [eraseTarget, setEraseTarget] = useState<SegmentId | null>(null);
   // A row's overflow menu is open. Lifted here so the list can go `inert` behind
   // it for AT/switch users (the menu itself is portalled out, so it stays live);
