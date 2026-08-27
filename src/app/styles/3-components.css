@@ -480,8 +480,10 @@
   /* --- the VU level strip (B6, mockup 3) --------------------------------- */
   /* A pull-model meter: the component polls the live tap on its own rAF and
      writes width + zone straight to the DOM, so the recorder does not re-render
-     per frame. The zones are named green/yellow/red, but this palette has no
-     green and reserves red for the live recording moment — which is exactly
+     per frame. The zones are named green/yellow/red. `--s-done` is green now,
+     but it is the FINISHED role, not a level, so the good-level zone stays the
+     amber voice accent on purpose (do not point it at --s-done; George R3 P3).
+     Red is the live recording moment — which is exactly
      when this strip shows — so each zone is spent in the palette's own roles:
      the amber "voice" accent for a good level, warn for hot, live red at clip. */
   .vu-meter {

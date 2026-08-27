@@ -17,6 +17,7 @@
   --color-ink-muted: var(--s-ink-muted);
   --color-ink-faint: var(--s-ink-faint);
   --color-voice: var(--s-voice);
+  --color-done: var(--s-done);
   --color-live: var(--s-live);
   --color-warn: var(--s-warn);
 }
