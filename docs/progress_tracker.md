@@ -4,6 +4,37 @@ Newest first. One entry per working session.
 
 ---
 
+## 2026-08-27 — Day 9: B6 (VU meter, recorder menu, erase segment) — shipped to staging, v0.1.2
+
+**Branch:** `feat/b6-vu-erase` → `develop` → **`staging`** · **PRs merged:** [#74](https://github.com/sethstoll3/tc-mobile/pull/74) (B6), [#78](https://github.com/sethstoll3/tc-mobile/pull/78) (promotion) · **On `staging`** (`27a8ba3`), deployed and serving `v0.1.2` (bundle verified: VU meter, erase confirm, meter-unavailable hatch all present) · **Closed:** #32, and #8/#37/#40/#41 (pre-pivot dead wood) · **Filed:** #73, #75, #76, #77 · **Production untouched** (`main` at `3464a30`).
+
+### Completed
+
+- **B6 built** (`c6f3552`, ultracode workflow → 4 disjoint build lanes + one integration): the VU meter (green/yellow/red, on by default, `≡`-menu toggle), the recorder menu's VU show/hide + **Erase Segment** with a minimal-text confirm, and the B3/G5 `⋮` **row menu** (Erase-only; Share stays B7). Erase **reuses `clearSegmentTake` verbatim** — no new T1 op (G4: audio gone, row kept). One implementation + one confirm behind both entry points.
+- **VU is the only new audio work.** Pure, Node-tested `lib/audio/meter.ts` (RMS → dB-compressed display → green/yellow/red zone, threshold tripwire tests); the browser-only tap (`createLevelTap`) lives in `audio-io.ts` (the onion boundary).
+- **Promoted `develop` → `staging`**, bumped to **v0.1.2** (build-stamp convention from #70) so the iOS pass can name the build. Live at `tc-mobile-staging.unfoldingword.workers.dev`, bundle grep-verified.
+
+### Six dual-review rounds (Frank codex / George grok)
+
+- Erase/menu/confirm **converged by round 2.** **Rounds 3–5 were one chain on the VU tap lifecycle** — it entangles with the recorder's stop/cancel/pagehide/interruption flush machinery, and each round found an adjacent invariant miss (menu z-index regression from the round-2 portal; interruption teardown; the confirm busy-latch window). **Root fix (R5):** the tap now obeys the SAME ownership/generation discipline as `streamRef` — `stop()` steals it into a local and nulls `tapRef`, so a concurrent `cancel()`/`pagehide` during the flush can't stop THIS take's clone mid-`dataavailable` (WebKit truncation). iOS graph: `stream.clone()` + `analyser → gain(0) → destination`.
+- **R6: Frank APPROVE; George one residual P2** (#76) + 3 P3 (#77). **Merged on a recorded DRI override** (Seth's call) — George's P2 is a device-behaviour question routed to the iOS pass, not a blind unverifiable fix. Every round triaged on #74 with dispositions + head SHA.
+- **Process trap hit:** editing the tree during George's round-4 run corrupted it (George reads files from disk) — cost a wasted round. Don't touch the worktree while George runs.
+
+### Blockers / needs a human
+
+- **The iOS on-device pass is the field gate before `staging → main`.** Front-load **#76**: record → background Safari → return — does the VU strip go empty (should read _unavailable_/hatched)? Also unverified on WebKit: the strip actually moves, the take is **not** silenced by the clone/destination edge, erase from both menus, sub-250 ms take. **Android never run** (#58/#59).
+- **#12** PCM storage strategy — decision owed before October (22 050 Hz + `persist()` still open).
+- **Cloudflare Workers Builds** auto-deploy is slow/opaque (wrangler version-list lagged the actual deploy) and the **#72** dashboard drift is still open (dashboard-only toggle).
+
+### Next steps
+
+1. **iOS on-device pass on staging** (`v0.1.2`) — the open T1/T2 gate; #76 first, then the standing checks. Android too.
+2. **B7 (#33)** — Template Library (OBS + Bible book) and Share Chapter/Book. Subsumes #18 (export) and most of #20 (non-OBS path).
+3. **B8 (#34)** — MP3 on Finished + encoder off the main thread (T1).
+4. Deferred nits: #73, #75, #77. Resolve **#12** with Tim before October. Then `staging → main` once B6 is device-verified.
+
+---
+
 ## 2026-08-26 — Day 8: B5 waveform editing, two recorder P3s, build stamp, staging deploy
 
 **Branch:** `develop` · **PRs merged:** [#64](https://github.com/sethstoll3/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/sethstoll3/tc-mobile/pull/65) (B5), [#70](https://github.com/sethstoll3/tc-mobile/pull/70) (build stamp), promotions [#69](https://github.com/sethstoll3/tc-mobile/pull/69)/[#71](https://github.com/sethstoll3/tc-mobile/pull/71) (develop→staging) · **On `staging`** (`c75cf01`), deployed and serving `v0.1.1 · c75cf01` · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
