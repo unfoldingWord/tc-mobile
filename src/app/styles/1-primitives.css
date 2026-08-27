@@ -35,6 +35,13 @@
     --p-amber-100: #f7e3c2;
     --p-amber-950: #3a2a0c;
 
+    /* --- Green: a segment that is finished ---------------------------------- */
+    --p-green-600: #2e8b4c;
+    --p-green-500: #3fb968;
+    --p-green-400: #6fca8c;
+    --p-green-100: #cfead6;
+    --p-green-950: #10331e;
+
     /* --- Red: the live recording moment, and nothing else ------------------ */
     --p-red-600: #c8433a;
     --p-red-500: #e2564a;

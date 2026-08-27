@@ -32,6 +32,14 @@ interface WaveformProps {
    * centerline stays put while the audio pans under it. Omitted for a row.
    */
   view?: WaveformWindow | null;
+  /**
+   * A finished row repaints in the green (`--s-done`) role. The stroke colour
+   * still comes from the inherited `--c-wave-stroke` (remapped by
+   * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
+   * finished toggles — a canvas painted once cannot observe a CSS-variable
+   * change on its own (Frank/George R1 P2, the converged finding).
+   */
+  finished?: boolean;
 }
 
 /**
@@ -51,6 +59,7 @@ export function Waveform({
   recorded = true,
   className,
   view = null,
+  finished = false,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -71,7 +80,13 @@ export function Waveform({
     ctx.clearRect(0, 0, w, h);
 
     const styles = getComputedStyle(canvas);
-    const voice = styles.getPropertyValue("--s-voice").trim() || "#e6a444";
+    // The bar colour is a component token so a finished row can remap it to green
+    // (`.row--finished { --c-wave-stroke: var(--s-done) }`) without a prop. Falls
+    // back to the resolved voice value, then to amber, for a canvas outside a row.
+    const stroke =
+      styles.getPropertyValue("--c-wave-stroke").trim() ||
+      styles.getPropertyValue("--s-voice").trim() ||
+      "#e6a444";
     const faint = styles.getPropertyValue("--s-ink-faint").trim() || "#5f6b7a";
     const ink = styles.getPropertyValue("--s-ink").trim() || "#e7ecf3";
     const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
@@ -97,7 +112,7 @@ export function Waveform({
     }
 
     const buckets = peaks.min.length;
-    ctx.fillStyle = voice;
+    ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible
       // window falls; a bucket outside the window is simply skipped. The span
@@ -127,7 +142,10 @@ export function Waveform({
       ctx.fillStyle = ink;
       ctx.fillRect(Math.min(w - 2, playhead * w), 0, 2, h);
     }
-  }, [peaks, playhead, recorded, height, view]);
+    // `finished` is in the deps for its side effect only: it changes with the
+    // `.row--finished` class, so listing it re-runs this draw (which re-reads
+    // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
+  }, [peaks, playhead, recorded, height, view, finished]);
 
   return (
     <canvas

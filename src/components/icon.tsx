@@ -20,6 +20,7 @@ export type IconName =
   | "alert"
   | "retry"
   | "menu"
+  | "edit"
   | "check"
   | "chevron-down"
   | "chevron-right"
@@ -142,6 +143,18 @@ const PATHS: Record<IconName, React.ReactNode> = {
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
+    />
+  ),
+  // Edit: a pencil over its stroke. The row menu's "Edit" entry, which reopens
+  // the recorder to insert/append/re-record the segment.
+  edit: (
+    <path
+      d="M4 18v-3L14.5 4.5l3 3L7 18H4zM12.5 6.5l3 3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     />
   ),
   // The finished tick, drawn inside the checkbox when a segment is affirmed.

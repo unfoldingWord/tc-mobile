@@ -2,9 +2,10 @@ import { cn } from "@/lib/utils";
 import { Icon } from "./icon";
 
 /**
- * The finished box, in its three drawn states (mockup 2). It sits on every
- * segment row and, unchanged, in the recorder header — one component so the
- * two places read identically and toggle the same flag.
+ * The finished box, in its three drawn states (mockup 2). Since the v0.1.2 row
+ * rework (#79) the segment list no longer uses it — a row shows a green
+ * `.row-status` circle instead — so this is now the RECORDER HEADER's control
+ * only, where the square 3-state box toggles the finished flag.
  *
  *   finished  solid box + tick   enabled   status === "affirmed"
  *   empty     solid empty box    enabled   has a recording, not finished
