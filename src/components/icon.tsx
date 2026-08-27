@@ -29,7 +29,9 @@ export type IconName =
   | "scissors"
   | "paste"
   | "undo"
-  | "redo";
+  | "redo"
+  | "eye"
+  | "eye-off";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -272,6 +274,49 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinecap="round"
       strokeLinejoin="round"
     />
+  ),
+  // VU-meter "show": an open eye (an almond with a pupil). The menu toggle pairs
+  // it with `eye-off` to read as visible/hidden.
+  eye: (
+    <>
+      <path
+        d="M2.5 11S6 5.5 11 5.5 19.5 11 19.5 11 16 16.5 11 16.5 2.5 11 2.5 11z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="11"
+        cy="11"
+        r="2.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+    </>
+  ),
+  // VU-meter "hide": the same eye, struck through — the level strip is off.
+  "eye-off": (
+    <>
+      <path
+        d="M2.5 11S6 5.5 11 5.5 19.5 11 19.5 11 16 16.5 11 16.5 2.5 11 2.5 11z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.55"
+      />
+      <path
+        d="M4.5 4.5 17.5 17.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </>
   ),
 };
 

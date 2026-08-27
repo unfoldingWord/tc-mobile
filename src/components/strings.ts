@@ -72,4 +72,16 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
+
+  // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
+  vuMeterLabel: "Recording level",
+  vuMeterUnavailable: "Level meter unavailable on this device",
+  vuShow: "Show the level meter",
+  vuHide: "Hide the level meter",
+  eraseSegment: "Erase recording",
+  segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  eraseConfirmTitle: "Erase this recording?",
+  eraseConfirm: "Erase",
+  eraseCancel: "Cancel",
+  eraseFailed: "Could not erase the recording. Try again.",
 } as const;

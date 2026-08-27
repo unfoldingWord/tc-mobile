@@ -4,14 +4,17 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
 } from "react";
 
 import { Control } from "./control";
+import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { strings } from "./strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
@@ -57,9 +60,47 @@ export const SegmentsScreen = forwardRef<
     reload,
     addSegment,
     setFinished,
+    eraseRow,
   } = useChapterSegments(chapterId);
 
   useImperativeHandle(ref, () => ({ reload }), [reload]);
+
+  // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
+  // one confirm for the whole list — the same implementation the recorder menu
+  // uses — with the target segment held here while the dialog is up. On success
+  // `eraseRow` patches that one row to never-recorded in place (not reload());
+  // on failure the reason surfaces in the screen's Notice.
+  const [eraseTarget, setEraseTarget] = useState<SegmentId | null>(null);
+  // A row's overflow menu is open. Lifted here so the list can go `inert` behind
+  // it for AT/switch users (the menu itself is portalled out, so it stays live);
+  // only one is ever open at a time — the open menu's scrim blocks reaching a
+  // second row's trigger. (George R-B6.)
+  const [rowMenuOpen, setRowMenuOpen] = useState(false);
+  const erase = useEraseSegment();
+  const closeErase = useCallback(() => setEraseTarget(null), []);
+  const onConfirmErase = useCallback(() => {
+    if (eraseTarget === null) return;
+    void (async () => {
+      // Stop playback first if THIS row is the one sounding. `clearSegmentTake`
+      // deletes the clip, but `playTake` already handed a live source node built
+      // from in-memory PCM, so the deleted recording would keep playing to its
+      // end — and after the patch there is no pause control to stop it (George
+      // R-B6). Only our own target: another row's playback is not ours to stop,
+      // and only one thing sounds at a time, so `leave()` here ends exactly it.
+      if (audio.playingId === eraseTarget) audio.leave();
+      const result = await erase.erase(eraseTarget);
+      // On success patch that ONE row to never-recorded in place — NOT reload(),
+      // which deadens every transport while it re-walks the chapter's PCM
+      // (George R-B6). "failed" leaves `erase.error` for the Notice; a
+      // double-tap's "busy" is ignored so the confirm does not vanish under the
+      // first erase.
+      if (result === "ok") eraseRow(eraseTarget);
+      if (result !== "busy") setEraseTarget(null);
+    })();
+  }, [audio, erase, eraseTarget, eraseRow]);
+  // The list is hidden from AT while a dialog is up, mirroring the recorder
+  // sheet (G8: aria-modal alone is not trusted to hide the background).
+  const listInert = eraseTarget !== null || rowMenuOpen;
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -119,7 +160,10 @@ export const SegmentsScreen = forwardRef<
 
   return (
     <div className="flex h-full flex-col gap-[14px]">
-      <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
+      <header
+        className="flex items-center gap-[8px] px-[4px] py-[2px]"
+        inert={listInert || undefined}
+      >
         <Control
           icon="back"
           label={strings.backToBooks}
@@ -146,8 +190,8 @@ export const SegmentsScreen = forwardRef<
       {/* One line, one place: a load failure or a playback failure (a
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.` */}
-      {(error ?? audio.error) ? (
-        <Notice>{error ?? audio.error}</Notice>
+      {(error ?? audio.error ?? (erase.error ? strings.eraseFailed : null)) ? (
+        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
@@ -156,7 +200,7 @@ export const SegmentsScreen = forwardRef<
         refreshing && <Notice tone="busy">{strings.saving}</Notice>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
         {!loading && !loadFailed && rows.length === 0 ? (
           <p
             className="flex h-full items-center justify-center text-center text-[13px]"
@@ -180,12 +224,26 @@ export const SegmentsScreen = forwardRef<
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)
                   }
+                  onErase={() => setEraseTarget(row.segmentId)}
+                  onMenuOpenChange={setRowMenuOpen}
                 />
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <EraseConfirm
+        open={eraseTarget !== null}
+        title={strings.eraseConfirmTitle}
+        confirmLabel={strings.eraseConfirm}
+        cancelLabel={strings.eraseCancel}
+        busy={erase.erasing}
+        onConfirm={onConfirmErase}
+        // Stable identity: a fresh lambda each render would, together with the
+        // 60 ms playback tick, thrash EraseConfirm's focus effect (George R-B6).
+        onCancel={closeErase}
+      />
     </div>
   );
 });

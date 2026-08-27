@@ -13,6 +13,7 @@ import {
   floatToInt16,
   int16ToFloat,
 } from "@/lib/audio/format";
+import { rmsLevel } from "@/lib/audio/meter";
 
 /**
  * Candidate capture formats, best first.
@@ -87,6 +88,137 @@ function getAudioContext(): AudioContext {
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext();
   if (ctx.state === "suspended") await ctx.resume();
+}
+
+/** A live level tap on a capture stream, for the recorder's VU meter. */
+export interface LevelTap {
+  /**
+   * The current raw capture amplitude in [0, 1] (RMS of the latest frame), the
+   * domain `@/lib/audio/meter`'s `toDisplayLevel` maps from. Returns 0 once the
+   * tap is closed, so a stale read after teardown is silent, not a throw.
+   */
+  read: () => number;
+  /**
+   * Disconnect the graph so `read()` returns 0, but LEAVE the cloned capture
+   * tracks live. Safe to call inside the MediaRecorder flush window (between
+   * `stop()` and `onstop`): stopping any capture track there can truncate the
+   * final `dataavailable`. Idempotent.
+   */
+  disconnect: () => void;
+  /**
+   * Full teardown: disconnect the graph (if not already) AND stop the cloned
+   * capture tracks. Use once the flush window is safely past (`stop()`), or where
+   * the take is being abandoned outright (cancel/leave). NOT on the #59
+   * interruption path, which freezes to `processing` and recovers the chunks via
+   * `stop()` — there the graph is only `disconnect()`ed. Never closes the shared
+   * context, which outlives it.
+   */
+  close: () => void;
+}
+
+/**
+ * Open a read-only level tap on a live capture stream.
+ *
+ * The Web Audio graph stays inside this boundary; the meter math is imported
+ * from `lib/`, so the pure part is unit-tested and this file only wires the
+ * `AnalyserNode`. Two WebKit-driven decisions, both owed an iOS on-device check
+ * (George R-B6):
+ *
+ *   - The tap reads a CLONE of the capture stream, not the stream MediaRecorder
+ *     owns. Some WebKit builds have produced silent or truncated takes when an
+ *     analyser's `MediaStreamSource` shares the recorder's stream. The clone
+ *     carries the same microphone input, so the meter is unaffected, but the
+ *     recorder is fully isolated from the graph — the meter can never cost a
+ *     recording, which is the one thing it must never do.
+ *   - The graph terminates at `destination` through a SILENCED gain. WebKit does
+ *     not pull an `AnalyserNode` unless the graph reaches `destination` (Chrome
+ *     pulls a dangling analyser; Safari returns zeros), so a mic-only connection
+ *     leaves the strip dead on iOS. `gain = 0` keeps the graph live with no
+ *     audible monitor — no feedback, because nothing reaches the speaker.
+ *
+ * The analyser reads the time-domain frame into one reused buffer, so a
+ * per-frame `read()` allocates nothing.
+ */
+export function createLevelTap(stream: MediaStream): LevelTap {
+  const ctx = getAudioContext();
+  const tapStream = stream.clone();
+
+  // Disconnect one node, tolerating a node that was never connected — Web Audio
+  // throws on a redundant disconnect and there is nothing to do about it. Each
+  // node is torn down independently so one failure does not skip the rest.
+  const disconnect = (node: AudioNode | undefined) => {
+    if (!node) return;
+    try {
+      node.disconnect();
+    } catch {
+      // Already disconnected / never connected — nothing to do.
+    }
+  };
+  // Stop the cloned tracks; the recorder's own stream is left untouched.
+  const stopClone = () => tapStream.getTracks().forEach((t) => t.stop());
+
+  let source: MediaStreamAudioSourceNode | undefined;
+  let analyser: AnalyserNode | undefined;
+  let sink: GainNode | undefined;
+  try {
+    source = ctx.createMediaStreamSource(tapStream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    // source -> analyser -> gain(0) -> destination. The silenced gain terminates
+    // the graph so WebKit processes the analyser, without monitoring the mic.
+    sink = ctx.createGain();
+    sink.gain.value = 0;
+    source.connect(analyser);
+    analyser.connect(sink);
+    sink.connect(ctx.destination);
+  } catch (cause) {
+    // Own-before-fallible: the clone was taken before these fallible calls, so a
+    // throw here must not leak a hot microphone. Tear down whatever was built,
+    // stop the cloned tracks, and rethrow for the caller's meterless fallback.
+    disconnect(source);
+    disconnect(analyser);
+    disconnect(sink);
+    stopClone();
+    throw cause;
+  }
+
+  if (!source || !analyser || !sink) {
+    // Unreachable — the catch above rethrows on any failure — but this satisfies
+    // definite-assignment and cleans up if a node came back falsy.
+    disconnect(source);
+    disconnect(analyser);
+    disconnect(sink);
+    stopClone();
+    throw new Error("Level tap graph did not initialise");
+  }
+
+  const graph = analyser;
+  const frame = new Float32Array(graph.fftSize);
+  let disconnected = false;
+
+  // Tear down only this tap's own nodes; the shared context stays open for
+  // playback and the next recording. Idempotent.
+  const disconnectGraph = () => {
+    if (disconnected) return;
+    disconnected = true;
+    disconnect(source);
+    disconnect(analyser);
+    disconnect(sink);
+  };
+
+  return {
+    read: () => {
+      if (disconnected) return 0;
+      graph.getFloatTimeDomainData(frame);
+      return rmsLevel(frame);
+    },
+    disconnect: disconnectGraph,
+    close: () => {
+      // Disconnect the graph (if not already), THEN stop the cloned tracks.
+      disconnectGraph();
+      stopClone();
+    },
+  };
 }
 
 /**
