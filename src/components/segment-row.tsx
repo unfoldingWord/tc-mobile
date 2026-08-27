@@ -232,7 +232,11 @@ export function SegmentRow({
           onKeyDown={onKeyDown}
           className="scrub min-w-0 flex-1"
         >
-          <Waveform peaks={row.peaks} height={26} />
+          <Waveform
+            peaks={row.peaks}
+            height={26}
+            finished={state === "finished"}
+          />
           <span
             className="scrub-dot"
             style={{ left: `${fraction * 100}%` }}

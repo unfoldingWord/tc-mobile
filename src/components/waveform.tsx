@@ -32,6 +32,14 @@ interface WaveformProps {
    * centerline stays put while the audio pans under it. Omitted for a row.
    */
   view?: WaveformWindow | null;
+  /**
+   * A finished row repaints in the green (`--s-done`) role. The stroke colour
+   * still comes from the inherited `--c-wave-stroke` (remapped by
+   * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
+   * finished toggles — a canvas painted once cannot observe a CSS-variable
+   * change on its own (Frank/George R1 P2, the converged finding).
+   */
+  finished?: boolean;
 }
 
 /**
@@ -51,6 +59,7 @@ export function Waveform({
   recorded = true,
   className,
   view = null,
+  finished = false,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -133,7 +142,10 @@ export function Waveform({
       ctx.fillStyle = ink;
       ctx.fillRect(Math.min(w - 2, playhead * w), 0, 2, h);
     }
-  }, [peaks, playhead, recorded, height, view]);
+    // `finished` is in the deps for its side effect only: it changes with the
+    // `.row--finished` class, so listing it re-runs this draw (which re-reads
+    // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
+  }, [peaks, playhead, recorded, height, view, finished]);
 
   return (
     <canvas

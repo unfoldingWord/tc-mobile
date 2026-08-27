@@ -89,12 +89,27 @@
     outline-offset: var(--c-focus-offset);
   }
   .control:disabled {
-    /* Dim so it clearly reads as inactive. Desaturating alone is nearly
-       invisible on the monochrome quiet glyphs (select/undo/cut). Matches the
-       disabled:opacity-50 precedent used on the row ordinal. */
-    opacity: 0.4;
     cursor: default;
     transform: none;
+    /* No hover punch on an inert control: the base .control:hover brightness
+       would otherwise still brighten a disabled button (George R1 P2). */
+    filter: none;
+  }
+  /* Monochrome quiet glyphs (select/undo/cut): saturate() barely moves an
+     already-grey glyph, so dim to read as inactive. Precedent: the row
+     ordinal's disabled:opacity-50. */
+  .control--quiet:disabled {
+    opacity: 0.4;
+  }
+  /* A COLOURED control (live-red record, play, primary) must drain its chroma
+     when inert — a 40%-opaque red still reads as armed/live, and red is "the
+     live recording moment, and nothing else" (1-primitives). Desaturate so it
+     reads grey-inert instead. */
+  .control--record:disabled,
+  .control--play:disabled,
+  .control--primary:disabled {
+    filter: saturate(0.12);
+    opacity: 0.55;
   }
 
   .control--record {
@@ -224,8 +239,12 @@
       border-color var(--p-dur-base) var(--p-ease);
   }
   .checkbox__box--on {
-    background: var(--s-voice);
-    border-color: var(--s-voice);
+    /* Finished is the green (`--s-done`) role, not voice-amber. The recorder
+       header checkbox is the only remaining Checkbox consumer, and it must
+       agree with the list's green finished row (George R1 P3). */
+    background: var(--s-done);
+    border-color: var(--s-done);
+    color: var(--s-done-ink);
   }
   /* Never recorded: dashed and greyed, so the box itself says "nothing to
      finish here yet" without a word. Keyed on the STATE, not `:disabled` — a
