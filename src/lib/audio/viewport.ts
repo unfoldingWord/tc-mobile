@@ -111,3 +111,23 @@ export function panAfterCut(pan: number, range: SampleRange): number {
   const removedBeforePan = Math.min(hi, pan) - Math.min(lo, pan);
   return pan - removedBeforePan;
 }
+
+/**
+ * Map a playback position — a fraction `[0,1]` of the WHOLE clip — to its x as a
+ * fraction of the current viewport width, given the window's clip-fraction edges
+ * (`startFraction`/`endFraction`, the same `view` the bars are drawn through).
+ *
+ * The recorder's playhead rides the identical transform the bars use
+ * (`(clipFraction - startFraction) / span`), so it lands over the sample it
+ * marks. The result is deliberately UNCLAMPED: a value < 0 or > 1 means the
+ * playhead is off-screen in the blank head/tail, and the draw code skips it
+ * rather than pinning it to an edge. The window span is never zero (zoom ≥ 1,
+ * length ≥ 1), matching `viewportWindow`, so no divide-by-zero guard.
+ */
+export function playheadViewportX(
+  playheadClipFraction: number,
+  startFraction: number,
+  endFraction: number
+): number {
+  return (playheadClipFraction - startFraction) / (endFraction - startFraction);
+}

@@ -7,6 +7,179 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-28 (night) — #89 recorder Play button + record/edit mode split, merged to develop
+
+**Branch:** `feat/recorder-play-mode-split` → **`develop`** · **PR merged:**
+[#100](https://github.com/sethstoll3/tc-mobile/pull/100) (squash, `ac06a15`) ·
+**Filed:** #101, #102, #103, #104 · **On `develop`** — **not yet promoted**
+(`staging` still `v0.1.5`, production `main` untouched at `3464a30`).
+
+### Completed
+
+- **#89 built and merged** — the recorder splits into a **record mode** (a
+  centered Record + Play hero pair, `≡` menu top-right) and an **edit mode** (the
+  `[zoom][select][undo][redo][≡]` toolbar + selection/paste/cut behind the menu,
+  an "Editing" pill), per Tim's approved 2026-08-27 wireframe.
+- **Play plays the in-memory working buffer** via a new `playBuffer`/`stopBuffer`
+  seam on `useAudioSession` — reuses `playSamples` + the single-owner floor,
+  skips the disk load `playTake` does, so the stored recording + unsaved edits
+  are audible. **Playback is a listen-only overlay:** whole-clip view, centerline
+  suppressed, Record + pan disabled, buffer stopped at every boundary (menu open,
+  edit entry, close, floor steal, leave).
+- **Waveform playhead** with the clip-fraction→viewport-x mapping extracted to a
+  pure, **red-first-tested** `lib/audio/viewport.ts` helper (the one unit-testable
+  slice; the rest is browser-only).
+- **Finished moved into the `≡` menu** (D1, reversible — flagged for Tim), keying
+  green/label on the resolved `finishedState`. **`Checkbox` component deleted**
+  (recorder was its only consumer). The mic permission panel now keys on the
+  recorder's **own** error, so a failed Play can't raise it.
+
+### Built via ultracode, then five dual-review rounds (Frank/George)
+
+- **Ultracode workflow:** design pass + two disjoint build lanes (the seam; the
+  playhead + helper) + integration. Then I reviewed the diff by hand and tightened
+  a real fragility (a "stop via re-call the toggle" idiom → an explicit `stopBuffer`).
+- **The chain, and where it converged.** George (deep-tree) walked a real class
+  across rounds — **buffer playback is a new idle-time source, and every call
+  site that assumed "idle == silent" had to stop it.** R1 (6 P2: playhead
+  visibility, finished-green lie, back-doesn't-stop, zoom-leak, an over-claim) →
+  R2 (2: the whole-clip view left Record/pan/centerline live → made playback a
+  listen-only overlay) → R3 (1: mic could go live in edit via the permission
+  Retry) → R4 (1: `denied` conflated a playback error with a mic error → split
+  `recorderError` out) → R5 (1: Erase locked its confirm over live sound). **R5
+  closed the class at its gateway** — the `≡` menu is the one path to every
+  idle-time action during playback, so stopping the buffer on menu-open cuts off
+  the sibling stream instead of patching one more site. Frank (diff-local)
+  APPROVE at R3 and R5; his R4 test-coverage P2 was refuted (the arbitration is
+  fully covered in `session.ts`; the hook glue is the project's no-renderer
+  on-device surface). A triage with dispositions + head SHA every round.
+- **Round cap + DRI calls.** Hit the round-4 cap; DRI (Seth) authorized a
+  confirming round 5, then **merge-on-green** after R5 closed the class. Squash
+  merge on green (feature→develop convention).
+
+### Blockers / needs a human
+
+- **On-device pass (iOS + Android) owed on this** before `staging → main` — all
+  browser-only: Play sounds the buffer, the playhead sweeps, Play dims while
+  recording, the mode split, Finished-from-menu still marks/rides the take. Joins
+  the existing `v0.1.5` device debt.
+- **Tim owes two confirms on #89** (both reversible, built to a default): D1
+  (Finished in the menu vs deleted from the recorder) and D2 (the "Editing" pill
+  as the non-reader edit affordance vs more, → #91).
+- **Unchanged:** Capacitor go/no-go on the WKWebView audio spike (#86); org move
+  (D1) needs a uW human; #12 PCM storage owed before October.
+
+### Follow-ups filed
+
+- **#101** — preview an uncommitted take in-sheet (Model A splices only on close).
+- **#102** — recorder-playback perf: the inert Segments list re-renders ~16×/s,
+  and the waveform reallocates its backing store per playhead tick (pull-model
+  playhead is the fix for both).
+- **#103** — latent: the Segments-list erase keys only on `playingId`, not
+  `playingBuffer` (unreachable today).
+- **#104** — `playSamples` should re-check the session token after
+  `resumeAudioContext` (pre-existing, both playback paths).
+
+### Next steps
+
+1. **Promote `develop` → `staging`** (bump the build stamp) so #89 can get its
+   on-device pass, alongside the still-owed `v0.1.5` checks. Then `staging → main`
+   once both hold.
+2. **Tim answers the two #89 confirms.**
+3. **B7 (#33)** — Template Library + Share, the October spine.
+
+---
+
+## 2026-08-28 (evening) — P3 cleanup lanes (#67/#77/#94), #89 Gate 1, promoted to staging v0.1.5
+
+**Branches:** `fix/ui-p3-a11y-copy` → `develop` (#96), `fix/timer-pad-minutes` →
+`develop` (#98), then `develop` → **`staging`** (#99) · **PRs merged:**
+[#96](https://github.com/sethstoll3/tc-mobile/pull/96),
+[#98](https://github.com/sethstoll3/tc-mobile/pull/98),
+[#99](https://github.com/sethstoll3/tc-mobile/pull/99) (promotion) · **Closed:**
+#67, #73, #77, #94 · **Filed:** #97 · **On `staging` serving `v0.1.5`** (`3cdd700`,
+deploy triggered — verify bundle once live) · **Production untouched**
+(`main` at `3464a30`).
+
+### Completed
+
+- **#96 — P3 copy + a11y batch.** #67: an explicit `editOnly` flag on
+  `PendingTake` (Node-tested), so the SaveFailed recovery screen words itself
+  honestly — a failed edit-save keeps the previously stored recording on disk, so
+  "delete this recording for good" is now "discard these changes" for an edit.
+  #77: Books chrome goes `inert` behind its menu (New Book was reachable behind
+  the scrim for AT/switch users); the post-change reload Notice reads a neutral
+  "Updating the chapter." (was "Saving your recording." even after a
+  recorder-path erase, which saved nothing); EraseConfirm's `busy` JSDoc
+  corrected + focus moves to Cancel when Erase disables mid-op.
+- **#98 — #94 timer width.** `formatDuration` now zero-pads minutes, so the live
+  recorder clock holds five glyphs across the `9:59 → 10:00` rollover
+  (`tabular-nums` fixes glyph width, not string length). Format is now `00:05` —
+  **flagged for Tim** as the visible change. New `tests/utils.test.ts`
+  (`formatDuration` had no coverage); the cases assert width stability, the exact
+  regression.
+- **Promoted `develop` → `staging`, bumped to `v0.1.5`** (build-stamp convention)
+  so the on-device pass can name this build. Auto-deployed by Cloudflare.
+- **#89 Gate 1 (ux-then-ui) — recorder record/edit split.** A0 diagnosis
+  (record competes with six editing controls on open), two-mode job list, ten
+  states, the A3 cut (record mode stops asking for the editing toolbar). Product
+  surface on the locked system, so identity/swap-test skipped. Artifact:
+  <https://claude.ai/code/artifact/a4dbf740-5ebe-4fd9-98b9-d64b787d5b77>. Recorded
+  on #89. **Gate 1 is a stop** — two questions owed from Tim before Gate 2.
+
+### The review catch worth keeping
+
+- **George (deep-tree) killed the #73 focus-restore hook, correctly, and the
+  problem was bigger than his two P2s.** The `activeElement`-in-a-passive-effect
+  capture does not compose with the app's `inert` model: `inert` blurs the
+  trigger to `<body>` in the mutation phase _before_ the passive capture runs, so
+  the hook captured body and no-op'd for **every** menu path whose trigger goes
+  inert on open — including the Books hamburger that #96's own #77a had just made
+  inert. Pulled the hook whole rather than half-fix. The correct version
+  (synchronous trigger capture at click time, threaded through each opener, plus
+  the row-menu inert-sync George's P2-2 named) is **#97**, sequenced with #89's
+  recorder rewrite and #93. **Lesson: a focus fix that ignores `inert` is dead
+  code — capture the trigger at the click, never in an effect after the DOM
+  commits.**
+
+### Process notes
+
+- **gh-writes + merge policy set (Seth):** run `gh` writes directly (comments,
+  labels, issue-close); **check with Seth before merging any PR**; prod
+  (`staging → main`) is doubly gated — explicit go **and** the on-device pass.
+  Tonight's develop-lane merges ran on a standing merge-on-clean-and-green
+  authorization. Memory updated.
+- **#93 was mis-scoped as a quick batch and corrected before building:** its core
+  finding (hand focus to the new row after an empty-state create) already shipped
+  in #92 — both Books and Segments do it. The residual is the Books
+  reload-window double-tap race (the clean fix, an optimistic insert in
+  `use-books`, tripped the react-compiler no-setState-in-effect rule once), not a
+  nit.
+
+### Blockers / needs a human
+
+- **On-device pass owed on `v0.1.5`** before `staging → main`. Every #96/#98
+  change is browser-only (focus/inert/copy, live timer width) and unverified by
+  CI: SaveFailed edit-vs-record copy, Books inert + focus behind the menu,
+  EraseConfirm focus-on-disable, the timer holding width past `10:00`.
+- **#89 waits on Tim** — Q1: edit-mode entry/exit affordance and the non-reader
+  "you are now editing" legibility (adjacent to #91); Q2: confirm Finished stays a
+  top-corner checkbox and does not join the centered Record+Play pair. Gate 2
+  (composition) cannot start until these land.
+- **Unchanged:** Capacitor go/no-go hinges on the WKWebView background-audio spike
+  (#86); org move (D1) needs a uW human; #12 PCM storage owed before October.
+
+### Next steps
+
+1. **Tim answers the two #89 Gate-1 questions**, then Gate 2 (composition) → build
+   the record/edit split (absorbs #75 and #97).
+2. **On-device pass on staging `v0.1.5`** — the browser-only changes above; then
+   `staging → main` once it and #92's pass both hold.
+3. **#93** Books double-tap race as its own lane; **B7 (#33)** — Template Library
+   - Share, the October spine.
+
+---
+
 ## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
 
 **Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) → **`staging`** (`f93ffa5`) · **PRs merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) (lane), [#95](https://github.com/sethstoll3/tc-mobile/pull/95) (promotion) · **Closed:** #88, #90 · **Filed:** #93, #94 · **On `staging` serving `v0.1.4`** (bundle grep-verified) · **Production untouched** (`main` at `3464a30`).
