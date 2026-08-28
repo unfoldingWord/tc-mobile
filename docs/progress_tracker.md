@@ -7,6 +7,96 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-28 (evening) — P3 cleanup lanes (#67/#77/#94), #89 Gate 1, promoted to staging v0.1.5
+
+**Branches:** `fix/ui-p3-a11y-copy` → `develop` (#96), `fix/timer-pad-minutes` →
+`develop` (#98), then `develop` → **`staging`** (#99) · **PRs merged:**
+[#96](https://github.com/sethstoll3/tc-mobile/pull/96),
+[#98](https://github.com/sethstoll3/tc-mobile/pull/98),
+[#99](https://github.com/sethstoll3/tc-mobile/pull/99) (promotion) · **Closed:**
+#67, #73, #77, #94 · **Filed:** #97 · **On `staging` serving `v0.1.5`** (`3cdd700`,
+deploy triggered — verify bundle once live) · **Production untouched**
+(`main` at `3464a30`).
+
+### Completed
+
+- **#96 — P3 copy + a11y batch.** #67: an explicit `editOnly` flag on
+  `PendingTake` (Node-tested), so the SaveFailed recovery screen words itself
+  honestly — a failed edit-save keeps the previously stored recording on disk, so
+  "delete this recording for good" is now "discard these changes" for an edit.
+  #77: Books chrome goes `inert` behind its menu (New Book was reachable behind
+  the scrim for AT/switch users); the post-change reload Notice reads a neutral
+  "Updating the chapter." (was "Saving your recording." even after a
+  recorder-path erase, which saved nothing); EraseConfirm's `busy` JSDoc
+  corrected + focus moves to Cancel when Erase disables mid-op.
+- **#98 — #94 timer width.** `formatDuration` now zero-pads minutes, so the live
+  recorder clock holds five glyphs across the `9:59 → 10:00` rollover
+  (`tabular-nums` fixes glyph width, not string length). Format is now `00:05` —
+  **flagged for Tim** as the visible change. New `tests/utils.test.ts`
+  (`formatDuration` had no coverage); the cases assert width stability, the exact
+  regression.
+- **Promoted `develop` → `staging`, bumped to `v0.1.5`** (build-stamp convention)
+  so the on-device pass can name this build. Auto-deployed by Cloudflare.
+- **#89 Gate 1 (ux-then-ui) — recorder record/edit split.** A0 diagnosis
+  (record competes with six editing controls on open), two-mode job list, ten
+  states, the A3 cut (record mode stops asking for the editing toolbar). Product
+  surface on the locked system, so identity/swap-test skipped. Artifact:
+  <https://claude.ai/code/artifact/a4dbf740-5ebe-4fd9-98b9-d64b787d5b77>. Recorded
+  on #89. **Gate 1 is a stop** — two questions owed from Tim before Gate 2.
+
+### The review catch worth keeping
+
+- **George (deep-tree) killed the #73 focus-restore hook, correctly, and the
+  problem was bigger than his two P2s.** The `activeElement`-in-a-passive-effect
+  capture does not compose with the app's `inert` model: `inert` blurs the
+  trigger to `<body>` in the mutation phase _before_ the passive capture runs, so
+  the hook captured body and no-op'd for **every** menu path whose trigger goes
+  inert on open — including the Books hamburger that #96's own #77a had just made
+  inert. Pulled the hook whole rather than half-fix. The correct version
+  (synchronous trigger capture at click time, threaded through each opener, plus
+  the row-menu inert-sync George's P2-2 named) is **#97**, sequenced with #89's
+  recorder rewrite and #93. **Lesson: a focus fix that ignores `inert` is dead
+  code — capture the trigger at the click, never in an effect after the DOM
+  commits.**
+
+### Process notes
+
+- **gh-writes + merge policy set (Seth):** run `gh` writes directly (comments,
+  labels, issue-close); **check with Seth before merging any PR**; prod
+  (`staging → main`) is doubly gated — explicit go **and** the on-device pass.
+  Tonight's develop-lane merges ran on a standing merge-on-clean-and-green
+  authorization. Memory updated.
+- **#93 was mis-scoped as a quick batch and corrected before building:** its core
+  finding (hand focus to the new row after an empty-state create) already shipped
+  in #92 — both Books and Segments do it. The residual is the Books
+  reload-window double-tap race (the clean fix, an optimistic insert in
+  `use-books`, tripped the react-compiler no-setState-in-effect rule once), not a
+  nit.
+
+### Blockers / needs a human
+
+- **On-device pass owed on `v0.1.5`** before `staging → main`. Every #96/#98
+  change is browser-only (focus/inert/copy, live timer width) and unverified by
+  CI: SaveFailed edit-vs-record copy, Books inert + focus behind the menu,
+  EraseConfirm focus-on-disable, the timer holding width past `10:00`.
+- **#89 waits on Tim** — Q1: edit-mode entry/exit affordance and the non-reader
+  "you are now editing" legibility (adjacent to #91); Q2: confirm Finished stays a
+  top-corner checkbox and does not join the centered Record+Play pair. Gate 2
+  (composition) cannot start until these land.
+- **Unchanged:** Capacitor go/no-go hinges on the WKWebView background-audio spike
+  (#86); org move (D1) needs a uW human; #12 PCM storage owed before October.
+
+### Next steps
+
+1. **Tim answers the two #89 Gate-1 questions**, then Gate 2 (composition) → build
+   the record/edit split (absorbs #75 and #97).
+2. **On-device pass on staging `v0.1.5`** — the browser-only changes above; then
+   `staging → main` once it and #92's pass both hold.
+3. **#93** Books double-tap race as its own lane; **B7 (#33)** — Template Library
+   - Share, the October spine.
+
+---
+
 ## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
 
 **Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) → **`staging`** (`f93ffa5`) · **PRs merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) (lane), [#95](https://github.com/sethstoll3/tc-mobile/pull/95) (promotion) · **Closed:** #88, #90 · **Filed:** #93, #94 · **On `staging` serving `v0.1.4`** (bundle grep-verified) · **Production untouched** (`main` at `3464a30`).
