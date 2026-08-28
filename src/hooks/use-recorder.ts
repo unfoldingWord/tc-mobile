@@ -382,6 +382,15 @@ export function useRecorder(): UseRecorder {
   const resume = useCallback(() => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state !== "paused") return;
+    // Re-arm Web Audio in the resume gesture. A pause that spanned an iOS
+    // interruption or a backgrounding can leave the shared context suspended or
+    // interrupted; the VU tap then reads zeros — an empty strip a translator
+    // reads as a dead mic — even though capture is fine. This is the moment iOS
+    // allows the un-suspend (a user gesture), so fire it here. Fire-and-forget:
+    // the resume must not gate the recorder's own resume (#76).
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
     recorder.resume();
     startedAtRef.current = performance.now();
     setState("recording");
