@@ -1,6 +1,7 @@
 # Native packaging — one codebase to Android and iPhone
 
-**Status:** recommendation, for the go/no-go decision. Not yet decided.
+**Status:** recommendation + argued counter-case (#86), for the go/no-go
+decision. Not yet decided.
 **Date:** 2026-08-27 · **Author:** Seth (with Claude) · **For:** Tim, go/no-go
 **Requested by:** Tim, 2026-08-27 call — "one code base that compiles into
 Android and iPhone."
@@ -141,3 +142,86 @@ app either way.
 
 With both settled, the single remaining unknown before the go/no-go is the
 audio-boundary spike in §Recommendation, step 2.
+
+## The counter-case — why we should NOT use Capacitor
+
+A recommendation with no argued opposition is a claim with its debt unpaid
+(#86). This section is the strongest honest case _against_ Capacitor — enough
+that a reasonable engineer could choose React Native or fully-native instead.
+It is deliberately adversarial; §"When the counter-case should flip the
+decision" says when to actually act on it.
+
+**C1 — The audio boundary is the whole product, and it is exactly what
+Capacitor does not solve for free.** The reuse pitch is "keep 92%, swap ~8% at
+the boundary." But that 8% — reliable background capture, interruption
+recovery, durable storage — _is_ the hard, field-critical part; the 92% is
+mostly UI that is cheap to rebuild. If the spike shows background capture needs
+a **native audio plugin** (plausible: WKWebView's MediaRecorder is not a
+guaranteed background recorder), then we are writing and maintaining native
+audio code _anyway_ — but through a JS↔native bridge, which is strictly harder
+to debug and reason about than owning the audio natively. Capacitor's central
+promise evaporates precisely where this app lives or dies.
+
+**C2 — WKWebView is not Safari, and Safari is the only surface we have
+validated.** Every on-device pass to date (iOS 27 beta, backgrounding,
+interruption) ran in **Safari**. A Capacitor app runs in **WKWebView**, which
+differs in storage eviction, media-capture permissions, autoplay/gesture
+gating, and background lifecycle. Shipping Capacitor means the one surface we
+have field evidence for is _not_ the one users run. We would be re-validating
+from close to zero — the same iOS risk AGENTS.md already calls the platform
+most likely to break here.
+
+**C3 — App Store §4.2 "minimum functionality" risk.** Apple has historically
+rejected thin WebView wrappers. A recorder is more than a wrapper, but the
+review risk is real, it is discovered late (at submission, against an October
+deadline), and mitigating it can mean adding native features solely to satisfy
+review — cost that lands when there is no time.
+
+**C4 — Performance ceiling on the target hardware.** The users are on
+entry-level Android. A WebView + our ~500 KB JS bundle + a canvas waveform +
+main-thread MP3 encode (open item #1, still unmoved) is a stack that can jank
+where native would not. The onion architecture makes the _code_ portable; it
+does nothing for the runtime cost of running a browser inside an app on a cheap
+phone.
+
+**C5 — Bridge and plugin risk is a standing tax.** Capacitor adds a dependency
+whose plugins can lag OS releases, get abandoned, or need forking; every
+native capability crosses a JS↔native seam that is harder to debug than either
+side alone; and a Capacitor major-version upgrade is its own migration each
+time iOS/Android shift under it. This is recurring maintenance for a
+skeleton team (Tim's own framing) that has no slack.
+
+**C6 — The UX ceiling, for users who read least.** A WebView can feel subtly
+non-native — scroll physics, keyboard, gestures, haptics, back-button. For a
+tool aimed at people who may not read, _feel_ is much of the usability budget,
+and it is the hardest thing to fix from inside a WebView.
+
+**C7 — Now is the cheapest a rewrite will ever be, and the exit cost only
+grows.** The app is ~8.6k lines and pre-alpha. If we adopt Capacitor and it
+does not hold, migrating _off_ it to React Native or native later is far more
+expensive than choosing RN now, against a larger codebase with field data and
+users. "Reuse 92%" is most seductive exactly when the rewrite is cheapest —
+which is a reason to weigh RN seriously today, not a reason to defer it.
+
+## When the counter-case should flip the decision
+
+Capacitor stays the recommendation **unless** the pre-go/no-go spike or the
+requirements move one of these:
+
+- **The audio spike needs a native plugin for reliable background capture.**
+  This is the decisive one. If we are maintaining native audio regardless
+  (C1), the reuse argument no longer dominates, and building where audio is
+  first-class (RN with a native module, or fully native) becomes the honest
+  choice. **Run the spike before deciding.**
+- **The field bar rejects WebView feel or entry-level-Android performance**
+  (C4/C6) once measured on a real cheap device — not assumed, measured.
+- **This is a long-lived, invested product, not a ship-and-maintain-minimally
+  tool.** A multi-year commitment amortizes a native rewrite; a
+  get-it-to-October-and-iterate posture favors Capacitor's speed.
+
+If none of these fires — the spike shows the existing WebView audio path holds,
+performance is acceptable on target hardware, and the near-term goal is October
+— Capacitor remains correct, because it is the only path that ships a moving UI
+on time. The counter-case is not a prediction that Capacitor fails; it is the
+set of conditions under which we would be wrong to have chosen it, named in
+advance so the spike is judged against them.

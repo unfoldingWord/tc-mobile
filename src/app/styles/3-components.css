@@ -163,11 +163,20 @@
     font-size: var(--p-text-sm);
     font-weight: var(--p-weight-medium);
     color: var(--s-ink-muted);
+    /* A numeric role declares its own tabular figures rather than depending on
+       inheriting them from `.app-shell` — so a count rendered in a portaled
+       surface (a menu, a future relocated sheet) can't silently regress to
+       proportional. Redundant in today's in-shell tree; hardening, not a fix. */
+    font-variant-numeric: tabular-nums;
   }
   .t-ordinal {
     font-size: var(--p-text-xs);
     font-weight: var(--p-weight-strong);
     line-height: 1;
+    /* The third numeric role: self-sufficient tabular figures like `.t-count`
+       (a 9→10 segment ordinal shifts width otherwise, and the row could be
+       reused in a portaled surface out of `.app-shell`'s inheritance). */
+    font-variant-numeric: tabular-nums;
   }
   .t-title {
     font-size: var(--p-text-lg);
@@ -178,6 +187,8 @@
     font-size: var(--p-text-xl);
     font-weight: var(--p-weight-strong);
     letter-spacing: -0.02em;
+    /* Self-sufficient tabular figures on the live clock (see `.t-count`). */
+    font-variant-numeric: tabular-nums;
   }
 }
 

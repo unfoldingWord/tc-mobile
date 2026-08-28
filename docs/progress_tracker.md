@@ -1,6 +1,108 @@
 # Progress tracker — tC Mobile
 
-Newest first. One entry per working session.
+Newest first. **One entry per working session, not per day** — a single date can
+carry several sessions, so entries are titled by date plus a session marker
+(e.g. "(evening)"). The historical "Day N" labels below predate this convention
+and do not imply one entry per day.
+
+---
+
+## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
+
+**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) · **PR merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) · **Closed:** #88, #90 · **Filed:** #93, #94 · **Staging/production untouched.**
+
+### Completed
+
+- **#90 — invite empty states (Books + Segments).** Reframed the two "nothing here" notes into the ui-craft §21 invite shape: confident headline, one teaching line (vocabulary + "stays on this phone"), and a single **present primary CTA** that reuses the real create handlers (`onNewBook`/`onAppend`). New shared `EmptyState` component. The header create `+` now **hides while the invite is up**, so there is one create action — visually and to a screen reader. Strings are the shape only; exact words are Tim's, in `strings.ts`.
+- **#88 — tabular figures on the numeric type roles**, reframed and shipped as **regression-hardening, not a jitter fix.** The digits never jittered: `.app-shell` sets `font-variant-numeric: tabular-nums` (inherited), and every call site is in-shell. Declared it directly on `.t-count` / `.t-timer` / `.t-ordinal` so a future portaled surface can't regress to proportional.
+- **Built direct (not a workflow) on purpose** — a two-line CSS change + copy/one element is below the bar for fan-out, and the one real risk (CSS/focus on device) is exactly what no subagent can verify. Recorded the call with Seth.
+
+### Four dual-review rounds (Frank codex / George grok) — a converging chain
+
+- **R1:** Frank APPROVE; George P2 = two equal primary CTAs on the empty shelf → hid the corner `+`.
+- **R2:** George P2 = hiding it stranded focus (Back became first tab stop, an Enter from leaving the chapter) → focus handoff to the new row.
+- **R3:** George P2 = the hidden corner exposed that `loadFailed` conflated a failed _read_ with a failed _create_, so a create failure tore down the invite → **root-fixed** by latching `loaded` in `useBooks`/`useChapterSegments` (`loadFailed = error && !loaded`, `showEmpty = loaded && empty`). Plus the R3 focus target hit the row's first `<button>` (Books' toggle) → now targets `button.control` / `.row-open` explicitly.
+- **Frank APPROVE every round; no P1 any round.** Merged at the **round-4 cap on a recorded DRI override** (Seth's O2), rationale enumerated on #92. Triage posted every round with dispositions + head SHA.
+- **Process note:** the `gh pr comment`/`merge`/`issue close` writes were blocked by the auto-mode classifier; Seth ran them by hand via `!`. The override executed by the DRI is arguably the more correct form.
+
+### Deferred / accepted residuals (tracked)
+
+- **#93** — empty-CTA focus/first-run cluster: the Books reload-window double-tap (race-safe, no data loss; clean fix is optimistic insert in `use-books` — a `creating` busy-latch tripped the react-compiler no-setState-in-effect rule, not suppressed), and the first-run AT autofocus order. Adjacent to #73/#77.
+- **#94** — `formatDuration` grows the clock a digit at the 10:00 rollover (tabular figures don't fix a length change). Fix is `padStart` (visible `00:05`, Tim's call) or a `ch` width reserve.
+
+### Blockers / needs a human (unchanged)
+
+- **On-device pass** is the gate before `staging → main`: the empty states render + the CTA creates + focus lands on the new row + the timer/counts hold digit width. All browser-only — invisible to CI and knip.
+- **Capacitor go/no-go** still hinges on the WKWebView background-audio spike (#86). **Org move (D1)** needs a uW human. **#12** PCM storage strategy owed before October.
+
+### Next steps
+
+1. **Fast lane:** the #67/#73/#75/#77 P3 batch — today's exact shape, low-risk, one `fix(ui)` PR.
+2. **Big lane:** **B7 (#33)** Template Library + Share — the October spine (subsumes #18 export, most of #20); the right ux-then-ui Gate-1 + ultracode candidate.
+3. **#89** recorder record/edit split (ultracode candidate), then **#91**. **B8 (#34)** after B7.
+4. Send Tim the staging link for wider testing once the on-device pass clears.
+
+---
+
+## 2026-08-27 (late) — UI audit (ux-then-ui + ui-craft), updated mockups, Tim sign-off
+
+**Branch:** `develop` (no code shipped — a design/planning session) · **Filed:** #88–#91 · **Artifacts:** [updated mockups](https://claude.ai/code/artifact/9edaa5d6-22cb-4d0c-9f15-c82441f93d10) · **No commits** beyond this tracker entry.
+
+### What happened
+
+- **Ran ux-then-ui + ui-craft over the three pivot screens** (Books, Segments, Recorder). These are _product_ surfaces, so identity/swap-test don't apply; the value was A0/A1/A2/A3 + the applicable ui-craft rows, audited **read-only against the code** (rendered visuals/motion/interactive-states are `n/t` — they belong to the on-device pass).
+- **Verdict: no major failure.** The screens genuinely fit their audience (a non-reading field translator): text-free-leaning, glyph+colour carry state, errors route to a Notice channel not the console, state-in-place over toasts. Gate 1 already ran on Tim's mockups. So this was **polish + two questions for Tim, not a rework** — and the strong states/error-channel/microcopy were explicitly flagged "don't churn."
+- **Findings → four issues:** #88 (F1 — `.t-timer`/`.t-count` lack `tabular-nums`, so the live clock jitters; confirmed in code), #89 (F2 — split the recorder into a calm record mode and a deliberate edit mode; absorbs F4, the signature-screen character point), #90 (F3 — warmer empty states with a present primary CTA), #91 (F5 — non-reader affordance for the abstract editing controls; forward-looking, the `strings.ts` aria-label routing is its attach point).
+- **Built the updated-mockups artifact** — all three screens (+ empty state, + edit mode) in the app's **real dark tokens**, no new colours.
+- **Tim approved the whole direction** ("absolutely gorgeous… let's go with those") and added the missing **Play button**: record + play centered as a pair, record the hero, play a step smaller to its right and dimmed while recording, the `≡` menu moved top-right. This resolves the old "recorder has no Play control" thread. #89 un-gated (`needs-decision` removed); mockup updated.
+
+### Blockers / needs a human (unchanged from the prior session)
+
+- **On-device pass on `v0.1.3`** remains the gate before `staging → main` and before Tim's wider-testing link.
+- **The Capacitor go/no-go still hinges on the WKWebView audio spike** (#86).
+
+### Next steps
+
+1. **#88 + #90** — small `fix(ui)` lane, both Tim-approved and build-ready (F1 is a two-line CSS fix; F3 is copy + one CTA element).
+2. **#89** — build the record/edit split via a quick **ux-then-ui Gate-1** (job list + record/edit states) to pin behaviour, then implement to the approved mockup.
+3. **#91** after #89 (the mode split shrinks its exposure). Then out through `develop → staging` as usual.
+
+---
+
+## 2026-08-27 (evening) — Tim's v0.1.2 UI review shipped to staging (v0.1.3); packaging + org-transfer research
+
+**Branch:** `feat/tim-v012-ui-review` → `develop` → **`staging`** · **PRs merged:** [#85](https://github.com/sethstoll3/tc-mobile/pull/85) (UI review), [#87](https://github.com/sethstoll3/tc-mobile/pull/87) (promotion) · **On `staging`** (`1730a07`), deployed and **verified serving `v0.1.3`** · **Closed:** #79–#84 (UI review), #86 (counter-case) · **Filed:** #79–#84, #86 · **Production untouched** (`main` at `3464a30`).
+
+### Completed
+
+- **Tim's v0.1.2 UI review built and shipped** (#79–#84, PR #85). From Tim's annotated review of the live v0.1.2 staging build (`A06`): the Segments-row rework — the actionable checkbox replaced by a **non-interactive green check-circle**, the whole left zone opens the editor, the row `⋮` menu now **Edit / Finished / Delete**, and a finished segment tints **green** (new `--s-done` semantic token) while in-progress stays amber; plus recorder fixes — centerline **0.66 → 0.5** (centered), disabled controls made legibly inactive, Cut stacks under the canvas. **The finished-invariant is now structural** (Finished lives only in the recorded-row menu, so a never-recorded segment cannot be marked finished).
+- **Built via an ultracode workflow** — a design pass on the coupled row rework + 2 disjoint file-cluster build lanes (Segments-row / recorder) + integrate. Then **4 dual-review rounds** (Frank/George); merged at the round cap on a **recorded DRI override** (Frank APPROVE since R3; George's findings all fixed + enumerated, no P1 any round).
+- **Promoted `develop` → `staging`, bumped to `v0.1.3`** (build-stamp convention) so the iOS pass can name the build. Auto-deployed by Cloudflare Workers Builds and **verified live** at the staging URL.
+- **Tim's F1 reply captured and built** — the checkbox was "too easy to trigger" (reads as select-all-to-delete); it becomes a green-circle **status indicator**, tapping the left zone opens the editor, marking finished moves to the menu.
+
+### Research deliverables (for the go/no-go and the org move)
+
+- **Native packaging recommendation** — `docs/research/native-packaging.md` + [artifact](https://claude.ai/code/artifact/957762b8-be38-4b83-9d7d-629f174360de). **Capacitor** (wrap the PWA): ~92% of `src` reuses untouched, ~8% boundary rework. Storage durability is the field data-loss reason to leave the bare PWA. Tim resolved: store accounts already live, no native-widget requirement.
+- **Anti-Capacitor counter-case** (#86) appended to the same doc + artifact — the steelman: the field-critical 8% (background audio, durable storage) is exactly what Capacitor doesn't solve for free. **The whole decision hinges on one experiment: the WKWebView background-audio spike** — run it before the go/no-go.
+- **Org-transfer plan** — `docs/org-transfer-plan.md`. Moving `sethstoll3/tc-mobile` → `unfoldingWord`. tC Mobile already exceeds its uW siblings on LICENSE/SECURITY/CONTRIBUTING/CI; the move gates on **one human approval** (tech-lead + recorded DRI + public/private) and two deliberate deviations to keep-and-record (Workers Builds deploy, the develop/staging/main branch model). A GitHub _transfer_ preserves issues/PRs/history.
+- **Product-name suggestions** — [artifact](https://claude.ai/code/artifact/47f4b11d-fc75-4d7b-be7b-fc2b459e1d32). Rooted in the estate + first-users' languages: **Sauti** (Swahili "voice", lead), **Neno** ("word"), **Rhema** (Greek "spoken word"); the `.bible` TLD route (uW owns `churchbased.bible`). Availability unverified (no DNS in the research env).
+
+### Lesson worth keeping
+
+- **Don't double-background the review script.** Wrapping `nohup … &` inside `run_in_background` makes the launcher return exit 0 immediately — a **false "completed"** while `both.sh`/George keep running detached. Launch the script directly under the background runner and wait on the real process. (Adjacent to the day-4 "read elapsed before declaring George stalled" lesson.)
+
+### Blockers / needs a human
+
+- **On-device pass on `v0.1.3` is the gate** before `staging → main` and before Tim's wider-testing link goes out. All the UI review changes are **CSS/layout — browser-only, unverified by CI**: green hue + waveform actually repainting on toggle, left-zone tap opens editor, record/play alignment, centered line + Cut-under-canvas, disabled legibility, completed-chapter counter green.
+- **The Capacitor go/no-go hinges on the audio spike** (#86) — put the current recorder in a Capacitor WebView on a real iPhone + Android and test background capture + interruption. Decides days-vs-weeks and whether Capacitor is even right.
+- **Org move (D1)** needs a uW human to approve name + ownership and record the DRI/tech-lead; route via Birch.
+
+### Next steps
+
+1. **On-device pass on staging (`v0.1.3`)** — the open gate. Then send Tim the staging link for wider testing (his weekend ask), and `staging → main` when ready.
+2. **Run the WKWebView audio spike** — the single input that settles the Capacitor go/no-go.
+3. **B7 (#33)** — Template Library + Share; the next build lane (subsumes #18 export, most of #20).
+4. Carry the counter-case doc (`develop` is 1 commit ahead of `staging`) on the next promotion.
 
 ---
 

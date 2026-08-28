@@ -56,6 +56,11 @@ async function loadBookCard(book: Book): Promise<BookCard> {
 export function useBooks() {
   const [books, setBooks] = useState<BookCard[]>([]);
   const [loading, setLoading] = useState(true);
+  // Latches true on the first read that completes without throwing. `loading`
+  // can't stand in: `reload()` never flips it back on, and `error` is also set
+  // by a failed create — so only this distinguishes "a genuinely empty shelf"
+  // from "a read that never succeeded" for the caller's empty-vs-retry choice.
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -67,6 +72,7 @@ export function useBooks() {
         if (cancelled) return;
         setBooks(cards);
         setError(null);
+        setLoaded(true);
       } catch (cause) {
         if (cancelled) return;
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -109,5 +115,5 @@ export function useBooks() {
     [reload]
   );
 
-  return { books, loading, error, reload, createBook, addChapter };
+  return { books, loading, loaded, error, reload, createBook, addChapter };
 }

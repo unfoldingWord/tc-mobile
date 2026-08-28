@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
+import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
@@ -24,14 +25,26 @@ interface BooksScreenProps {
  * because the next thing they do is add a chapter to it.
  */
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
-  const { books, loading, error, reload, createBook, addChapter } = useBooks();
+  const { books, loading, loaded, error, reload, createBook, addChapter } =
+    useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
   // may hold books merely unavailable, inviting new data on top (Frank r8, the
   // Books sibling of the Segments load-failure guard). The Notice is the
   // recovery; the menu stays reachable.
-  const loadFailed = error !== null && books.length === 0;
+  //
+  // `loaded` (from the hook) latches on the first successful read, so this
+  // guards a failed *read* only. A failed create also sets `error`, but once
+  // the shelf is known-empty that failure must keep the invite — and its CTA,
+  // the only enabled create — up with the error in the Notice, not tear it down
+  // and strand focus (George R3 P2).
+  const loadFailed = error !== null && !loaded;
+  // The empty state carries its own present primary CTA, so the header create
+  // control would be a second, equal "New book" — two CTAs read as none
+  // (ui-craft §21), and a screen reader would announce it twice. Hide the
+  // corner + exactly while the invite is up; it returns once the shelf fills.
+  const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
@@ -40,6 +53,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // change already re-renders us; clearing a ref here avoids a setState-in-
   // effect cascade.
   const pendingScroll = useRef<string | null>(null);
+  // The empty-state CTA unmounts on the create it triggers. Without this, focus
+  // falls to the document and the first header stop takes over — on a chapter
+  // that would be Back, one activation from leaving. Hand focus to the new row.
+  const pendingFocus = useRef<string | null>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
 
   const setNode = useCallback((id: string, el: HTMLElement | null) => {
@@ -49,9 +66,21 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
 
   useEffect(() => {
     const id = pendingScroll.current;
-    if (id === null) return;
-    nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-    pendingScroll.current = null;
+    if (id !== null) {
+      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
+      pendingScroll.current = null;
+    }
+    const focusId = pendingFocus.current;
+    if (focusId !== null) {
+      // The row's first <button> is the expand/collapse toggle; a second
+      // activation there would collapse the new book. Target the add-chapter
+      // Control (`.control`) — the actual next action (George R3 P3).
+      nodes.current
+        .get(focusId)
+        ?.querySelector<HTMLElement>("button.control")
+        ?.focus();
+      pendingFocus.current = null;
+    }
   }, [books]);
 
   const toggle = useCallback((id: BookId) => {
@@ -64,12 +93,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, []);
 
   const onNewBook = useCallback(async () => {
+    // Only a create from the invite (the corner + is hidden while empty) hands
+    // off focus, so a corner-+ create on a populated shelf doesn't yank it.
+    const fromEmpty = books.length === 0;
     const book = await createBook();
     if (!book) return; // failed create surfaced through the hook's Notice
     // A new book opens expanded — the next action is adding its first chapter.
     setExpanded((prev) => new Set(prev).add(book.id));
     pendingScroll.current = book.id;
-  }, [createBook]);
+    if (fromEmpty) pendingFocus.current = book.id;
+  }, [createBook, books]);
 
   const onNewChapter = useCallback(
     async (bookId: BookId) => {
@@ -84,14 +117,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   return (
     <div className="flex h-full flex-col gap-[14px]">
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
-        <Control
-          icon="plus"
-          label={strings.newBook}
-          variant="primary"
-          size={26}
-          disabled={loading || loadFailed}
-          onClick={() => void onNewBook()}
-        />
+        {!showEmpty && (
+          <Control
+            icon="plus"
+            label={strings.newBook}
+            variant="primary"
+            size={26}
+            disabled={loading || loadFailed}
+            onClick={() => void onNewBook()}
+          />
+        )}
         <Control
           icon="menu"
           label={strings.menuOpen}
@@ -122,8 +157,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {!loading && !loadFailed && books.length === 0 ? (
-          <EmptyBooks />
+        {showEmpty ? (
+          <EmptyState
+            headline={strings.booksEmpty}
+            teach={strings.booksEmptyTeach}
+            ctaLabel={strings.newBook}
+            ctaIcon="plus"
+            onCta={() => void onNewBook()}
+          />
         ) : (
           <ul className="flex flex-col gap-[10px]">
             {books.map((book) => (
@@ -142,26 +183,6 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       </div>
 
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
-    </div>
-  );
-}
-
-function EmptyBooks() {
-  return (
-    <div
-      className="flex h-full flex-col items-center justify-center gap-[10px] text-center"
-      style={{ color: "var(--s-ink-muted)" }}
-    >
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.booksEmpty}
-      </p>
-      {/* Points back at the one control that does something on an empty shelf. */}
-      <p className="flex items-center gap-[6px] text-[13px]">
-        {strings.booksEmptyHint}
-        <span style={{ color: "var(--s-voice)" }}>
-          <Icon name="plus" size={18} />
-        </span>
-      </p>
     </div>
   );
 }
