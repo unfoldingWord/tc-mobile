@@ -12,7 +12,10 @@
  * they cannot drift.
  */
 
-import { getDb } from "./db";
+import type { IDBPDatabase } from "idb";
+
+import { buildClipMeta } from "./clips";
+import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
 import type {
   Book,
@@ -28,6 +31,24 @@ import type {
 } from "@/types/domain";
 
 const uuid = (): string => crypto.randomUUID();
+
+/**
+ * Open the transaction a take write needs: the take row and segment pointer, the
+ * clip both `saveTake` writes and a superseded take's clip is deleted from, and
+ * the book/chapter parents floated to the top of the shelf. `addTake` and
+ * `saveTake` open the identical transaction — `saveTake` just also writes the
+ * clip inside it — so the store list and the take logic are shared, not
+ * duplicated. `TakeTx` is derived from this call's return so the helper's
+ * parameter type cannot drift from what actually opens.
+ */
+function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
+  return db.transaction(
+    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
+    "readwrite"
+  );
+}
+
+type TakeTx = ReturnType<typeof openTakeTx>;
 
 // ── The finished flag — binary UI over the 5-value enum (D-FIN) ────────────
 
@@ -225,18 +246,23 @@ export async function getSegmentsOfChapter(
  * what lets the mark survive a save-failure retry (which re-runs this) instead
  * of being lost to a separate write the recovery path never reaches.
  */
-export async function addTake(
+/**
+ * The take write itself, on a caller-provided transaction.
+ *
+ * Shared by `addTake` (clip already on disk) and `saveTake` (clip written in the
+ * same transaction), so the 1:1 replace, the finished-mark, the prior-clip
+ * cleanup and the book float exist once. Does NOT open or close the transaction:
+ * the caller owns its lifetime, which is what lets `saveTake` make the clip write
+ * and this take write atomic together.
+ */
+async function writeTakeInTx(
+  tx: TakeTx,
   segmentId: SegmentId,
   clipId: ClipId,
   durationMs: number,
   opts: { finished?: boolean; now?: number } = {}
 ): Promise<Take> {
   const { finished = false, now = Date.now() } = opts;
-  const db = await getDb();
-  const tx = db.transaction(
-    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
-    "readwrite"
-  );
   const segment = await tx.objectStore("segments").get(segmentId);
   if (!segment) throw new Error(`No such segment: ${segmentId}`);
 
@@ -283,8 +309,91 @@ export async function addTake(
     : undefined;
   if (book) await tx.objectStore("books").put({ ...book, updatedAt: now });
 
+  return take;
+}
+
+/**
+ * Point a segment at an already-stored clip as its active take.
+ *
+ * Assumes the clip is on disk (its caller `putClip`s first). For the record/edit
+ * commit path, prefer `saveTake`, which writes the clip in the SAME transaction
+ * so a failure cannot strand an orphan.
+ */
+export async function addTake(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  durationMs: number,
+  opts: { finished?: boolean; now?: number } = {}
+): Promise<Take> {
+  const db = await getDb();
+  const tx = openTakeTx(db);
+  const take = await writeTakeInTx(tx, segmentId, clipId, durationMs, opts);
   await tx.done;
   return take;
+}
+
+/**
+ * Persist a recording — the clip AND the take — in ONE transaction.
+ *
+ * This is the commit path's write, and its atomicity is the #38 fix. The old
+ * flow was `putClip` (transaction A) then `addTake` (transaction B): if the
+ * second failed — quota on the take/segment write, or the clip write itself
+ * succeeding and then the process dying — the clip was already durable with no
+ * take referencing it. That orphan consumed the very space the recovery screen
+ * tells the translator to free, so freeing space and retrying failed again: the
+ * quota death spiral. One transaction removes the half-written state entirely —
+ * a quota failure rolls back the clip too, so there is nothing to reap.
+ *
+ * The clip write is the same shape as `putClip` (build meta, reject a 0-frame
+ * clip, copy through a fresh ArrayBuffer so a trimmed view does not serialise its
+ * whole backing buffer); the take write is `writeTakeInTx`, shared with
+ * `addTake`. `putClip` is an upsert on `clipId`, so a retry with the same id
+ * overwrites rather than duplicating.
+ */
+export async function saveTake(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  samples: Int16Array,
+  sampleRate: number,
+  opts: { finished?: boolean; now?: number } = {}
+): Promise<Take> {
+  const now = opts.now ?? Date.now();
+  // Built before the transaction opens, so a 0-frame clip is rejected without
+  // ever starting a write.
+  const meta = buildClipMeta(clipId, samples, sampleRate, now);
+  const bytes = new Int16Array(samples);
+
+  const db = await getDb();
+  const tx = openTakeTx(db);
+  try {
+    await tx.objectStore("clipMeta").put(meta);
+    await tx.objectStore("clipData").put(bytes.buffer, clipId);
+    const take = await writeTakeInTx(tx, segmentId, clipId, meta.durationMs, {
+      ...opts,
+      now,
+    });
+    await tx.done;
+    return take;
+  } catch (cause) {
+    // A THROWN error mid-transaction (e.g. `writeTakeInTx` finding no such
+    // segment) does not roll the clip write back on its own: IndexedDB
+    // auto-commits an inactive transaction unless it is aborted. Abort so the
+    // clip rolls back WITH the failed take — the single-transaction atomicity
+    // #38 depends on, and without which the clip would be the very orphan this
+    // rewrite exists to prevent. (A failed *request* — quota on the clip write —
+    // already aborts the transaction on its own; this covers the thrown case.)
+    try {
+      tx.abort();
+    } catch {
+      // Already settled — aborted by a request failure, or committed. Nothing
+      // to undo; the original cause below is what the caller needs.
+    }
+    // Observe the aborted transaction's `done` (idb creates it eagerly and it
+    // rejects with AbortError on abort), so it is not an unhandled rejection.
+    // The original cause is what the caller acts on.
+    await tx.done.catch(() => {});
+    throw cause;
+  }
 }
 
 /**

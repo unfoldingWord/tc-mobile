@@ -2,8 +2,8 @@ import { useCallback, useRef, useState } from "react";
 
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { addTake, clearSegmentTake } from "@/lib/storage/books";
-import { deleteClip, newClipId, putClip } from "@/lib/storage/clips";
+import { clearSegmentTake, saveTake } from "@/lib/storage/books";
+import { deleteClip, newClipId } from "@/lib/storage/clips";
 import {
   discardSave,
   failSave,
@@ -67,13 +67,21 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // edit-only path `recorded` is empty and `mergeTake` returns `existing` (the
       // whole flattened buffer) without a copy.
       const merged = mergeTake(take.existing, take.recorded, take.offset);
-      const meta = await putClip(take.clipId, merged, CANONICAL_SAMPLE_RATE);
-      // The Finished mark rides the take, applied atomically here — so a retry
-      // re-applies it, and it can never be clobbered by this same addTake's
+      // Clip and take in ONE transaction (`saveTake`): a failure on either rolls
+      // back both, so a quota-failed save leaves no orphaned clip eating the
+      // space the recovery screen tells the translator to free (#38). The
+      // Finished mark rides the take, applied atomically here — so a retry
+      // re-applies it, and it can never be clobbered by the same write's
       // demote-to-draft the way a separate write after it would be.
-      await addTake(take.segmentId, take.clipId, meta.durationMs, {
-        finished: take.finished,
-      });
+      await saveTake(
+        take.segmentId,
+        take.clipId,
+        merged,
+        CANONICAL_SAMPLE_RATE,
+        {
+          finished: take.finished,
+        }
+      );
       // Cleared only here, and only for this attempt. A `finally` would drop
       // the samples on the failure path, which is the one path they exist for.
       setPending((held) => succeedSave(held, take.clipId));
@@ -104,11 +112,11 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    * The recipe is owned in the slot BEFORE anything fallible: `existing` (the
    * segment's current audio, read by the recorder at mount — never read here,
    * where a rejected read after the recording exists would drop it), `recorded`,
-   * and the splice `offset`. `commit` does the merge and the write; `addTake`
-   * REPLACES the segment's take (1:1), so the merged buffer is the whole
-   * segment's audio. A merge or write failure lands in the recovery screen, and
-   * retry re-runs `commit` — never `addTake` of the raw fragment, which under
-   * 1:1 would delete the original clip.
+   * and the splice `offset`. `commit` does the merge and the write; `saveTake`
+   * REPLACES the segment's take (1:1) in one transaction, so the merged buffer is
+   * the whole segment's audio. A merge or write failure lands in the recovery
+   * screen, and retry re-runs `commit` — never a save of the raw fragment, which
+   * under 1:1 would delete the original clip.
    */
   const saveRecording = useCallback(
     (
@@ -156,12 +164,13 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    *
    * A cut/paste session produces the whole new segment audio in memory; there is
    * no fresh recording to splice. So this reuses the exact record path with an
-   * empty `recorded` and offset 0 — `commit` skips the merge and `putClip`s the
+   * empty `recorded` and offset 0 — `commit` skips the merge and `saveTake`s the
    * buffer as-is — which means the never-lose recovery machinery (the owned slot,
    * the retry, the recovery screen on a failed write) is shared verbatim rather
-   * than reimplemented. `addTake`'s 1:1 replace makes this buffer the segment's
+   * than reimplemented. `saveTake`'s 1:1 replace makes this buffer the segment's
    * audio, and its single transaction keeps the prior clip intact until the new
-   * one is written, so a failed edit-save leaves the original recoverable.
+   * one is written — and rolls the new clip back on a failed write — so a failed
+   * edit-save leaves the original recoverable.
    *
    * An EMPTY buffer is a cut down to nothing, not a recording: persisting a
    * 0-frame take would fabricate a recorded state (a resolved clip that plays
