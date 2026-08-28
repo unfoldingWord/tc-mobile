@@ -250,13 +250,18 @@ export function Recorder({
       // handle back within reach (B5, George R2). The handles stop their own
       // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
       // never also starts a pan — only a drag on the bare canvas pans.
-      if (!hasAudio || recording || paused || busy) return;
+      // Frozen during playback too: the canvas is showing the whole-clip view,
+      // so a drag would move the hidden record `pan`/insert offset the translator
+      // cannot see, and the viewport would jump when playback stops (Frank/George
+      // R2). Playback is listen-only — no scrub in v1 (D4).
+      if (!hasAudio || recording || paused || busy || audio.playingBuffer)
+        return;
       setDragging(true);
       dragStartX.current = e.clientX;
       panAtDragStart.current = pan;
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [hasAudio, recording, paused, busy, pan]
+    [hasAudio, recording, paused, busy, audio.playingBuffer, pan]
   );
 
   const onPointerMove = useCallback(
@@ -267,7 +272,9 @@ export function Recorder({
       // moving the first finger through the `requesting` window — sliding the
       // centerline off the sample insertionOffset already locked to at the tap
       // (#61). The pointer-down guard alone left this multitouch path open.
-      if (!dragging || recording || paused || busy) return;
+      // Also frozen once playback starts mid-drag (same whole-clip desync, R2).
+      if (!dragging || recording || paused || busy || audio.playingBuffer)
+        return;
       const width = stageRef.current?.clientWidth ?? 1;
       // Drag right reveals earlier audio: the sample under the centerline
       // decreases. The move is scaled by what the viewport spans at this zoom,
@@ -278,7 +285,15 @@ export function Recorder({
         Math.max(0, Math.min(panAtDragStart.current + delta, length))
       );
     },
-    [dragging, recording, paused, busy, win.visibleSamples, length]
+    [
+      dragging,
+      recording,
+      paused,
+      busy,
+      audio.playingBuffer,
+      win.visibleSamples,
+      length,
+    ]
   );
 
   const onPointerUp = useCallback(() => setDragging(false), []);
@@ -642,6 +657,10 @@ export function Recorder({
               className="modepill"
               aria-label={strings.doneEditing}
               title={strings.doneEditing}
+              // Frozen through the close window, same gate as the record-mode
+              // menu opener: a mode flip mid-save would drop the translator into
+              // record mode over unsaved edits if that save then fails (George R2).
+              disabled={isClosing}
               onClick={onExitEdit}
             >
               {strings.modepillEditing}
@@ -799,7 +818,11 @@ export function Recorder({
                         : strings.record
                   }
                   variant="record"
-                  disabled={busy || isClosing || !view}
+                  // Disabled while the buffer plays: the visible whole-clip view
+                  // no longer shows the insert centerline, so a record started
+                  // here would splice at the hidden append offset the translator
+                  // cannot see (George R2). Stop playback (tap Play) first.
+                  disabled={busy || isClosing || !view || audio.playingBuffer}
                   onClick={onRecordButton}
                 />
                 <Control
@@ -889,8 +912,11 @@ export function Recorder({
               icon="edit"
               label={strings.enterEdit}
               variant="quiet"
-              // Editing is idle-only, and there is nothing to edit with no audio.
-              disabled={!idleEditable || !hasAudio}
+              // Idle-only. Editable when there is audio to edit OR a full
+              // clipboard to paste — a never-recorded segment with a pending clip
+              // must still open edit mode to receive it, or the chapter-wide
+              // clipboard (G3) could never land on an empty segment (George R2).
+              disabled={!idleEditable || (!hasAudio && !editor.canPaste)}
               onClick={onEnterEdit}
             />
             <Control

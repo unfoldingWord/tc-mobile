@@ -95,8 +95,12 @@ export function Waveform({
 
     // The fixed centerline (recorder mode): drawn last so it sits over the
     // audio, and in the record colour because it is where recording starts.
+    // Suppressed while a playhead is present: during playback the recorder swaps
+    // to a whole-clip view where the centerline would fall mid-clip and read as a
+    // (red, insert-here) marker the disabled Record cannot act on — the sweeping
+    // playhead is the only position cue that means anything then (George R2).
     const drawCenterline = () => {
-      if (!view) return;
+      if (!view || playhead !== null) return;
       ctx.fillStyle = live;
       ctx.fillRect(Math.round(view.centerFraction * w) - 1, 0, 2, h);
     };

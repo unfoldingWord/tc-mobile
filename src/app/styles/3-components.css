@@ -473,6 +473,10 @@
   .modepill:hover {
     filter: brightness(1.12);
   }
+  .modepill:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
   .modepill:focus-visible {
     outline: var(--c-focus-ring);
     outline-offset: var(--c-focus-offset);
