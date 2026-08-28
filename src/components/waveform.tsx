@@ -34,6 +34,16 @@ interface WaveformProps {
    */
   view?: WaveformWindow | null;
   /**
+   * The recorder is actively capturing (recording or paused). Keeps the red
+   * centerline visible during a FIRST take — when there is no committed audio
+   * yet (`recorded` is false) but the line still marks where recording is
+   * happening. Without it, gating the centerline on `recorded` alone would drop
+   * the record-position marker mid-first-take. Idle + never-recorded (neither
+   * `recorded` nor `capturing`) shows no red line, per Tim's build feedback:
+   * the centerline appears only when a waveform exists or one is being made.
+   */
+  capturing?: boolean;
+  /**
    * A finished row repaints in the green (`--s-done`) role. The stroke colour
    * still comes from the inherited `--c-wave-stroke` (remapped by
    * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
@@ -61,6 +71,7 @@ export function Waveform({
   className,
   view = null,
   finished = false,
+  capturing = false,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -101,6 +112,10 @@ export function Waveform({
     // playhead is the only position cue that means anything then (George R2).
     const drawCenterline = () => {
       if (!view || playhead !== null) return;
+      // Only when a waveform exists (`recorded`) or one is being made
+      // (`capturing`); an idle never-recorded segment shows the dotted rule with
+      // no red line (Tim's build feedback).
+      if (!recorded && !capturing) return;
       ctx.fillStyle = live;
       ctx.fillRect(Math.round(view.centerFraction * w) - 1, 0, 2, h);
     };
@@ -165,7 +180,7 @@ export function Waveform({
     // `finished` is in the deps for its side effect only: it changes with the
     // `.row--finished` class, so listing it re-runs this draw (which re-reads
     // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
-  }, [peaks, playhead, recorded, height, view, finished]);
+  }, [peaks, playhead, recorded, height, view, finished, capturing]);
 
   return (
     <canvas
