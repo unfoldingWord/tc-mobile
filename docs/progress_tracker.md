@@ -7,12 +7,14 @@ and do not imply one entry per day.
 
 ---
 
-## 2026-08-28 (night) — #89 recorder Play button + record/edit mode split, merged to develop
+## 2026-08-28 (night) — #89 recorder Play button + record/edit mode split → staging v0.1.6
 
-**Branch:** `feat/recorder-play-mode-split` → **`develop`** · **PR merged:**
-[#100](https://github.com/sethstoll3/tc-mobile/pull/100) (squash, `ac06a15`) ·
-**Filed:** #101, #102, #103, #104 · **On `develop`** — **not yet promoted**
-(`staging` still `v0.1.5`, production `main` untouched at `3464a30`).
+**Branch:** `feat/recorder-play-mode-split` → **`develop`** → **`staging`** ·
+**PRs merged:** [#100](https://github.com/sethstoll3/tc-mobile/pull/100) (#89,
+squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
+(promotion, merge, `e333fee`) · **Filed:** #101, #102, #103, #104 · **On
+`staging` serving `v0.1.6`** (`index-CkbJkhCs.js`, bundle grep-verified live) ·
+**Production `main` untouched** at `3464a30`.
 
 ### Completed
 
@@ -82,11 +84,15 @@ and do not imply one entry per day.
 
 ### Next steps
 
-1. **Promote `develop` → `staging`** (bump the build stamp) so #89 can get its
-   on-device pass, alongside the still-owed `v0.1.5` checks. Then `staging → main`
-   once both hold.
-2. **Tim answers the two #89 confirms.**
-3. **B7 (#33)** — Template Library + Share, the October spine.
+1. **On-device pass on staging `v0.1.6`** (iOS + Android) — the #89 browser-only
+   checks (Play sounds the buffer, playhead sweeps, Play dims while recording,
+   the mode split, Finished-from-menu, playback stops at every boundary) plus the
+   carried `v0.1.5` checks. The gate before `staging → main`.
+2. **Tim answers the two #89 confirms** (D1 Finished-in-menu, D2 the pill).
+3. **B7 (#33)** — Template Library + Share, the October spine (subsumes #18
+   export, most of #20). The next build lane. Competing priority: close the
+   Android interruption/pagehide gap (#59/#58) and #38/#39 (save-death, processing
+   lock) — field data-loss risks before October.
 
 ---
 
