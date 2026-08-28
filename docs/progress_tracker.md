@@ -9,7 +9,7 @@ and do not imply one entry per day.
 
 ## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
 
-**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) · **PR merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) · **Closed:** #88, #90 · **Filed:** #93, #94 · **Staging/production untouched.**
+**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) → **`staging`** (`f93ffa5`) · **PRs merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) (lane), [#95](https://github.com/sethstoll3/tc-mobile/pull/95) (promotion) · **Closed:** #88, #90 · **Filed:** #93, #94 · **On `staging` serving `v0.1.4`** (bundle grep-verified) · **Production untouched** (`main` at `3464a30`).
 
 ### Completed
 
