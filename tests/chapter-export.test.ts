@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -14,6 +14,7 @@ import {
   createBook,
   saveTake,
 } from "@/lib/storage/books";
+import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import type { ChapterId } from "@/types/domain";
@@ -119,6 +120,38 @@ describe("gatherChapterPcm", () => {
     expect(segments).toBe(0);
     expect(missing).toBe(2);
     expect(pcm.length).toBe(0);
+  });
+
+  it("counts a clip erased between resolution and load as missing", async () => {
+    // `resolveChapterClipIds` resolves both clips (missing 0). The bug is the
+    // window AFTER that walk: a clip erased before `gatherChapterPcm` reads it
+    // returns nothing from `getClip` and is skipped — it must be counted, or a
+    // chapter with a hole exports "as if whole" (Frank F3). Deleting clipData up
+    // front cannot reproduce it: the metadata walk would then count it missing
+    // itself, masking the loop's own count. So intercept the SECOND `getClip`
+    // (the second segment) to miss, exactly as a mid-gather erase would.
+    const chapterId = await chapterWith([
+      { n: 100, v: 100 },
+      { n: 100, v: 200 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let call = 0;
+    const spy = vi
+      .spyOn(clips, "getClip")
+      .mockImplementation((id) =>
+        ++call === 2 ? Promise.resolve(undefined) : real(id)
+      );
+
+    const {
+      samples: pcm,
+      segments,
+      missing,
+    } = await gatherChapterPcm(chapterId);
+
+    expect(segments).toBe(1); // only the first segment survived the read
+    expect(missing).toBe(1); // the erased one — silently 0 before the fix
+    expect(pcm.length).toBe(100); // one segment, no gap
+    spy.mockRestore();
   });
 });
 

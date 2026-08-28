@@ -92,16 +92,19 @@ export function useChapterShare(): UseChapterShare {
   // so `send` reads it synchronously inside the gesture — before any render —
   // and the `navigator.share` call keeps the activation the tap granted.
   const fileRef = useRef<File | null>(null);
-  // Set on unmount so a prepare that resolves after the screen is gone (Back
-  // mid-encode) does not `setState` or reach a share sheet on a dead screen.
-  const cancelledRef = useRef(false);
+  // A generation token invalidating an in-flight `prepare`. Both unmount AND
+  // `reset` bump it, so a prepare that resolves after the screen is gone (Back
+  // mid-encode) or after the menu was closed mid-gather does not `setState` or
+  // arm a File behind a closed menu. `gatherChapterPcm` awaits per clip, and the
+  // menu's close/scrim stay live during those yields, so this race is reachable.
+  const runIdRef = useRef(0);
   // Re-entry guard for tap 1: a second tap before the first render commits must
-  // not start a second encode.
+  // not start a second (expensive) encode.
   const preparingRef = useRef(false);
 
   useEffect(
     () => () => {
-      cancelledRef.current = true;
+      runIdRef.current += 1;
     },
     []
   );
@@ -112,6 +115,10 @@ export function useChapterShare(): UseChapterShare {
       // the prepare control while `ready`, so this is a re-entry backstop.)
       if (preparingRef.current || fileRef.current !== null) return;
       preparingRef.current = true;
+      // Claim this run. A later `reset` (menu close) or unmount bumps the token,
+      // and every resumption below bails when its captured id is stale.
+      const runId = (runIdRef.current += 1);
+      const current = () => runId === runIdRef.current;
       setError(null);
       setMissing(0);
       setStatus("preparing");
@@ -121,7 +128,7 @@ export function useChapterShare(): UseChapterShare {
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
         const result = await exportChapterMp3(chapterId);
-        if (cancelledRef.current) return;
+        if (!current()) return;
         if (!result) {
           setError("nothing");
           setStatus("idle");
@@ -146,7 +153,7 @@ export function useChapterShare(): UseChapterShare {
         setMissing(result.missing);
         setStatus("ready");
       } catch (cause) {
-        if (cancelledRef.current) return;
+        if (!current()) return;
         console.error("Preparing the chapter to share failed", cause);
         setError("failed");
         setStatus("idle");
@@ -160,6 +167,9 @@ export function useChapterShare(): UseChapterShare {
   const send = useCallback(async (): Promise<ShareOutcome> => {
     const file = fileRef.current;
     if (file === null) return "failed";
+    // A reset/unmount while the sheet is open must not write state afterwards.
+    const runId = runIdRef.current;
+    const current = () => runId === runIdRef.current;
     // `navigator.share` is invoked synchronously here: an async function runs to
     // its first await, and this call IS that boundary, so no work precedes it and
     // the tap's user activation is still valid.
@@ -168,7 +178,7 @@ export function useChapterShare(): UseChapterShare {
       // Shared. Drop the File — a later flow re-encodes, since a fresh take may
       // have changed the chapter since this one was prepared.
       fileRef.current = null;
-      if (!cancelledRef.current) {
+      if (current()) {
         setStatus("idle");
         setMissing(0);
       }
@@ -184,7 +194,7 @@ export function useChapterShare(): UseChapterShare {
       fileRef.current = null;
       if (outcome === "failed")
         console.error("Sharing the chapter failed", cause);
-      if (!cancelledRef.current) {
+      if (current()) {
         setStatus("idle");
         setMissing(0);
         if (outcome === "failed") setError("failed");
@@ -194,6 +204,9 @@ export function useChapterShare(): UseChapterShare {
   }, []);
 
   const reset = useCallback(() => {
+    // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
+    // a File behind the now-closed menu.
+    runIdRef.current += 1;
     fileRef.current = null;
     preparingRef.current = false;
     setStatus("idle");

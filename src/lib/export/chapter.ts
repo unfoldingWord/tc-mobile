@@ -58,15 +58,24 @@ export async function gatherChapterPcm(
   const gap = silence(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
   const parts: Int16Array[] = [];
   let segments = 0;
+  // `resolveChapterClipIds` resolves through clip *metadata* only; `getClip`
+  // needs the sample rows too. A clip whose halves have come apart, or one
+  // erased between that walk and this read, resolves there but returns nothing
+  // here — so it is a segment that contributed no audio and must be counted,
+  // not silently dropped, or a gappy chapter exports "as if whole" (Frank F3).
+  let missingAudio = missing;
   for (const clipId of clipIds) {
     const clip = await getClip(clipId);
-    if (!clip || clip.samples.length === 0) continue;
+    if (!clip || clip.samples.length === 0) {
+      missingAudio++;
+      continue;
+    }
     if (segments > 0) parts.push(gap);
     parts.push(clip.samples);
     segments++;
   }
 
-  return { samples: concat(parts), segments, missing };
+  return { samples: concat(parts), segments, missing: missingAudio };
 }
 
 /**
