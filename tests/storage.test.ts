@@ -563,6 +563,25 @@ describe("atomic take save (saveTake)", () => {
     expect(segment?.activeTakeId).toBe(take.id);
   });
 
+  it("stores only the trimmed audio when given a subarray view", async () => {
+    // Guards the copy in saveTake independently of putClip's (George R1 P3):
+    // saveTake writes the clip through its own `new Int16Array(samples)`, so a
+    // view onto a large edit buffer must not drag the whole backing buffer into
+    // IndexedDB — the quota pressure #38 exists to close. Dropping saveTake's
+    // copy while keeping putClip's would leave putClip's test green; this fails.
+    const { segmentId } = await oneSegment();
+    const backing = samples(10_000);
+    const clipId = newClipId();
+    await saveTake(
+      segmentId,
+      clipId,
+      backing.subarray(0, 100),
+      CANONICAL_SAMPLE_RATE
+    );
+    const loaded = await getClip(clipId);
+    expect(loaded?.samples.length).toBe(100);
+  });
+
   it("leaves NO orphaned clip when the take write fails (#38 atomicity)", async () => {
     const clipId = newClipId();
     // An unknown segment makes `writeTakeInTx` throw AFTER the clip has been
