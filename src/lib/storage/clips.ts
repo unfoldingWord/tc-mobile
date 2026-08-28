@@ -12,6 +12,36 @@ export function newClipId(): ClipId {
 }
 
 /**
+ * Build a clip's metadata, rejecting a 0-frame clip.
+ *
+ * Pure and exported so the clip-write invariant lives in one place: `putClip`
+ * writes clip+meta on its own, and `saveTake` (books.ts) writes them inside the
+ * take's transaction for atomicity (#38) — both must reject a 0-frame clip and
+ * compute duration the same way. A 0-frame clip is not a recording: it resolves
+ * as playable, silent audio and can be counted finished (the ghost take
+ * `clearSegmentTake` exists to avoid). Rejecting it here makes the store, not
+ * just the hook, the authority, the same way `setSegmentFinished` enforces its
+ * own empty invariant rather than trusting a disabled control.
+ */
+export function buildClipMeta(
+  id: ClipId,
+  samples: Int16Array,
+  sampleRate: number,
+  createdAt: number = Date.now()
+): ClipMeta {
+  if (samples.length === 0) {
+    throw new Error("Refusing to store a 0-frame clip");
+  }
+  return {
+    id,
+    sampleRate,
+    frameCount: samples.length,
+    durationMs: framesToMs(samples.length, sampleRate),
+    createdAt,
+  };
+}
+
+/**
  * Persist samples and their metadata in a single transaction spanning both
  * stores, so a failure can never leave metadata pointing at absent audio.
  */
@@ -21,21 +51,7 @@ export async function putClip(
   sampleRate: number,
   createdAt: number = Date.now()
 ): Promise<ClipMeta> {
-  // A 0-frame clip is not a recording — it resolves as playable, silent audio
-  // and can be counted finished (the ghost take `clearSegmentTake` exists to
-  // avoid). No caller writes one today; rejecting it here makes the store, not
-  // just the hook, the authority, the same way `setSegmentFinished` enforces its
-  // own empty invariant rather than trusting a disabled control.
-  if (samples.length === 0) {
-    throw new Error("Refusing to store a 0-frame clip");
-  }
-  const meta: ClipMeta = {
-    id,
-    sampleRate,
-    frameCount: samples.length,
-    durationMs: framesToMs(samples.length, sampleRate),
-    createdAt,
-  };
+  const meta = buildClipMeta(id, samples, sampleRate, createdAt);
 
   const db = await getDb();
   const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
