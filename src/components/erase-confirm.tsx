@@ -13,8 +13,9 @@ interface EraseConfirmProps {
   confirmLabel: string;
   /** Accessible name of the safe action. */
   cancelLabel: string;
-  /** The erase is in flight: both buttons disabled, and neither Escape nor a
-   *  scrim tap dismisses, so a destructive op is not abandoned half-done. */
+  /** The erase is in flight: Erase disables, while Cancel stays enabled so the
+   *  focus trap is never empty — but its action, like Escape and a scrim tap, is
+   *  guarded to a no-op, so a destructive op is not abandoned half-done. */
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -91,6 +92,18 @@ export function EraseConfirm({
     if (!open) return;
     panelRef.current?.querySelector<HTMLElement>(".confirm-cancel")?.focus();
   }, [open]);
+
+  // When the erase commits, Erase disables (below). If it held focus, focus
+  // would fall out of the panel to the document, breaking the trap for a
+  // keyboard/switch user mid-op. Move it to Cancel — which stays enabled, its
+  // action guarded to a no-op — so focus stays inside the dialog (#77). Fires
+  // only on the busy edge; on the open edge `busy` is false, so it never fights
+  // the Cancel-focus grab above.
+  useEffect(() => {
+    if (open && busy) {
+      panelRef.current?.querySelector<HTMLElement>(".confirm-cancel")?.focus();
+    }
+  }, [open, busy]);
 
   // The focus trap + Escape, bound once per open. Reads `busy`/`onCancel`
   // through refs so a parent re-render never re-attaches it or re-grabs focus.

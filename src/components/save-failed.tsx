@@ -7,6 +7,13 @@ import type { SaveFailureKind } from "@/hooks/save-failure";
 interface SaveFailedProps {
   state: "saving" | "failed";
   kind: SaveFailureKind | null;
+  /**
+   * An edit-only save (B5) rather than a recording. It words this screen
+   * honestly: discarding a failed edit-save drops the edited buffer while the
+   * previously stored recording survives on disk, so the record path's "delete
+   * this recording for good" would be a lie about an edit.
+   */
+  editOnly: boolean;
   /** Which segment the held recording belongs to, when it is in this chapter. */
   ordinal: number | null;
   attempts: number;
@@ -14,10 +21,17 @@ interface SaveFailedProps {
   onDiscard: () => void;
 }
 
-const MESSAGE: Record<SaveFailureKind, string> = {
-  quota: "No room left on this phone.",
-  unknown: "This recording could not be saved.",
-};
+/**
+ * The headline. `quota` is the same either way — the phone is full whether the
+ * held work is a recording or an edit — but the `unknown` line names what could
+ * not be saved so the two paths read honestly.
+ */
+function failureTitle(kind: SaveFailureKind, editOnly: boolean): string {
+  if (kind === "quota") return "No room left on this phone.";
+  return editOnly
+    ? "Your changes could not be saved."
+    : "This recording could not be saved.";
+}
 
 /**
  * The screen that stands between a failed save and losing the recording.
@@ -33,6 +47,7 @@ const MESSAGE: Record<SaveFailureKind, string> = {
 export function SaveFailed({
   state,
   kind,
+  editOnly,
   ordinal,
   attempts,
   onRetry,
@@ -47,11 +62,29 @@ export function SaveFailed({
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
 
+  // The held work: a fresh recording, or the edited buffer of one. Every visible
+  // line names it correctly, because on the edit path the previously stored
+  // recording is untouched — discarding drops only the edit.
+  const subject = editOnly ? "edited recording" : "recording";
+  const stillHere =
+    ordinal === null
+      ? `Your ${subject} is still here.`
+      : `Your ${subject} of segment ${ordinal} is still here.`;
+  const discardLabel = armed
+    ? editOnly
+      ? "Tap again to discard these changes"
+      : "Tap again to delete this recording for good"
+    : editOnly
+      ? "Discard these changes"
+      : "Delete this recording";
+
   return (
     <div
       role="alertdialog"
       aria-modal="true"
-      aria-label="This recording is not saved"
+      aria-label={
+        editOnly ? "Your changes are not saved" : "This recording is not saved"
+      }
       className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
       <span style={{ color: saving ? "var(--s-ink-muted)" : "var(--s-live)" }}>
@@ -59,13 +92,11 @@ export function SaveFailed({
       </span>
 
       <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {saving ? "Saving" : MESSAGE[kind ?? "unknown"]}
+        {saving ? "Saving" : failureTitle(kind ?? "unknown", editOnly)}
       </p>
 
       <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
-        {ordinal === null
-          ? "Your recording is still here."
-          : `Your recording of segment ${ordinal} is still here.`}
+        {stillHere}
       </p>
 
       {!saving && (
@@ -90,18 +121,16 @@ export function SaveFailed({
           <div className="mt-[10px] flex flex-col items-center gap-[8px]">
             <Control
               icon="trash"
-              label={
-                armed
-                  ? "Tap again to delete this recording for good"
-                  : "Delete this recording"
-              }
+              label={discardLabel}
               variant="quiet"
               className={armed ? "text-[var(--s-live)]" : undefined}
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
               <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
-                Tap again to delete it.
+                {editOnly
+                  ? "Tap again to discard them."
+                  : "Tap again to delete it."}
               </p>
             )}
           </div>

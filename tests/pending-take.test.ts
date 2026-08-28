@@ -46,7 +46,10 @@ function pcm(): Int16Array {
   return Int16Array.from([1, -1, 2, -2]);
 }
 
-function held(finished = false): { take: PendingTake; recorded: Int16Array } {
+function held(
+  finished = false,
+  editOnly = false
+): { take: PendingTake; recorded: Int16Array } {
   const recorded = pcm();
   const take = startSave(null, {
     segmentId: SEGMENT,
@@ -55,6 +58,7 @@ function held(finished = false): { take: PendingTake; recorded: Int16Array } {
     recorded,
     offset: 0,
     finished,
+    editOnly,
   });
   return { take, recorded };
 }
@@ -87,6 +91,7 @@ describe("startSave", () => {
       recorded: pcm(),
       offset: 0,
       finished: false,
+      editOnly: false,
     });
     expect(second).toBe(take);
   });
@@ -201,6 +206,7 @@ describe("a take that is saved on the second attempt", () => {
       recorded,
       offset: 0,
       finished: false,
+      editOnly: false,
     });
     const failed = failSave(started, CLIP, "quota");
     const retried = retrySave(failed);
@@ -220,5 +226,17 @@ describe("a take that is saved on the second attempt", () => {
     expect(failed?.finished).toBe(true);
     const retried = retrySave(failed);
     expect(retried?.finished).toBe(true);
+  });
+
+  it("carries the edit-only flag through fail and retry", () => {
+    // The recovery screen words itself off `editOnly` (#67): an edit-save that
+    // fails must still read as an edit — not "delete this recording for good" —
+    // through every transition, or the screen lies about what discarding costs.
+    const { take } = held(false, true);
+    expect(take.editOnly).toBe(true);
+    const failed = failSave(take, CLIP, "unknown");
+    expect(failed?.editOnly).toBe(true);
+    const retried = retrySave(failed);
+    expect(retried?.editOnly).toBe(true);
   });
 });

@@ -116,7 +116,10 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       existing: Int16Array,
       recorded: Int16Array,
       insertionOffset: number,
-      finished: boolean
+      finished: boolean,
+      // Set by the edit-only path below; a fresh recording leaves it false. Only
+      // the recovery screen's wording depends on it — the save itself is identical.
+      editOnly = false
     ): Promise<boolean> => {
       const take = startSave(pending, {
         segmentId,
@@ -128,6 +131,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
         recorded,
         offset: insertionOffset,
         finished,
+        editOnly,
       });
       // Identity means refused: a recording is already held, and displacing it
       // is the silent loss all of this exists to prevent. The screens disable
@@ -185,7 +189,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
             return false;
           });
       }
-      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished);
+      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
     },
     [saveRecording]
   );
