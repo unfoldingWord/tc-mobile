@@ -223,7 +223,11 @@ export function Recorder({
   const workingDurationMs = (length / CANONICAL_SAMPLE_RATE) * 1000;
   const playhead =
     audio.playingBuffer && workingDurationMs > 0
-      ? audio.playbackElapsedMs / workingDurationMs
+      ? // Clamp to [0,1]: `elapsed()` clamps to the AudioBuffer duration and
+        // `workingDurationMs` is derived from the same sample count, but a float
+        // overshoot > 1 would make `playheadViewportX` skip the final tick
+        // (George R5). Elapsed is never negative, so the floor is belt-only.
+        Math.min(1, Math.max(0, audio.playbackElapsedMs / workingDurationMs))
       : null;
 
   // While the buffer plays, show the WHOLE working buffer so the sweeping
@@ -352,6 +356,16 @@ export function Recorder({
     audio.startRecording();
   }, [audio]);
 
+  // Open the ≡ menu. Stops buffer playback first: the menu is the one gateway to
+  // every idle-time action reachable while a buffer sounds (Edit, Finished, VU,
+  // Erase), and opening it inerts the sheet — so Play, the only stop control,
+  // goes unreachable, and Erase locks a confirm behind that scrim (George R5).
+  // Stopping here closes that whole class at the boundary, like entering edit.
+  const openMenu = useCallback(() => {
+    audio.stopBuffer();
+    setMenuOpen(true);
+  }, [audio]);
+
   // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
   // row share this. Close any open selection AND reset zoom to whole: record
   // mode has no zoom control, so a quarter-zoom carried out of edit would leave
@@ -411,6 +425,12 @@ export function Recorder({
   // in this session has nothing on disk to erase.
   const erase = useEraseSegment();
   const onConfirmErase = useCallback(() => {
+    // Stop any buffer playback before the delete: EraseConfirm latches its
+    // in-flight guard synchronously and the sheet is inert, so Play — the only
+    // stop control — is unreachable across the whole IDB write (George R5).
+    // Reaching the confirm already goes through `openMenu`, which stops it; this
+    // is the belt to that suspenders, and matches the Segments list's leave().
+    audio.stopBuffer();
     void (async () => {
       const result = await erase.erase(segmentId);
       // "ok": success unmounts this sheet; the working buffer and any pending
@@ -421,7 +441,7 @@ export function Recorder({
       if (result === "ok") onExit(true);
       else if (result === "failed") setConfirmOpen(false);
     })();
-  }, [erase, segmentId, onExit]);
+  }, [erase, segmentId, onExit, audio]);
 
   const close = useCallback(() => {
     if (closing.current) return;
@@ -665,7 +685,7 @@ export function Recorder({
               // would put the scrim over the panel's Retry with no way to reach it
               // until the menu is dismissed (George R4).
               disabled={!view || isClosing || denied}
-              onClick={() => setMenuOpen(true)}
+              onClick={openMenu}
             />
           ) : (
             // The "Editing" pill (D2): the visible mode marker for a sighted
@@ -913,7 +933,7 @@ export function Recorder({
                   variant="quiet"
                   size={24}
                   disabled={!view || isClosing}
-                  onClick={() => setMenuOpen(true)}
+                  onClick={openMenu}
                 />
               </div>
             )}

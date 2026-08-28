@@ -275,6 +275,13 @@ export function useAudioSession(): UseAudioSession {
         return;
       }
 
+      // Nothing to play: never claim the floor for an empty buffer. `toAudioBuffer`
+      // pads a 0-sample clip to one frame (audio-io.ts), so this would otherwise
+      // sound a frame of silence and hold the floor until it ended. The recorder
+      // disables Play on an empty buffer, so this mirrors playTake's bail as
+      // defence (George R5).
+      if (samples.length === 0) return;
+
       const token = claimFloor("take");
       // Refused: the microphone holds the floor. The recorder disables Play
       // while recording, so this is defensive — but a refusal must fail quiet.
