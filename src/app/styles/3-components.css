@@ -224,56 +224,6 @@
 }
 
 @layer components {
-  /* --- the finished box (B3 rows + B4 recorder header) ------------------- */
-  .checkbox {
-    display: grid;
-    place-items: center;
-    /* Touch target never below 44px, even though the drawn box is 22px. */
-    width: var(--c-control-md);
-    height: var(--c-control-md);
-    flex: none;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-  }
-  .checkbox:disabled {
-    cursor: default;
-  }
-  .checkbox:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: var(--c-focus-offset);
-    border-radius: var(--p-radius-md);
-  }
-  .checkbox__box {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: var(--p-radius-sm);
-    border: 2px solid var(--s-edge);
-    /* Ink of the tick when the box is filled. */
-    color: var(--s-voice-ink);
-    transition:
-      background var(--p-dur-base) var(--p-ease),
-      border-color var(--p-dur-base) var(--p-ease);
-  }
-  .checkbox__box--on {
-    /* Finished is the green (`--s-done`) role, not voice-amber. The recorder
-       header checkbox is the only remaining Checkbox consumer, and it must
-       agree with the list's green finished row (George R1 P3). */
-    background: var(--s-done);
-    border-color: var(--s-done);
-    color: var(--s-done-ink);
-  }
-  /* Never recorded: dashed and greyed, so the box itself says "nothing to
-     finish here yet" without a word. Keyed on the STATE, not `:disabled` — a
-     recorded box held inert during a save reload must not read as this (G10). */
-  .checkbox__box--none {
-    border-style: dashed;
-    color: var(--s-ink-faint);
-    opacity: 0.6;
-  }
-
   /* --- the scrub track + draggable dot (B3) ------------------------------ */
   .scrub {
     position: relative;
@@ -363,12 +313,6 @@
     display: flex;
     justify-content: center;
     gap: var(--c-gap-items);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .checkbox__box {
-      transition: none;
-    }
   }
 }
 
@@ -484,6 +428,54 @@
   .recorder-toolbar {
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
+  }
+  /* Record mode: the centered hero pair (Record + Play). */
+  .recorder-toolbar.pair {
+    justify-content: center;
+    gap: var(--c-gap-blocks);
+  }
+  /* The record hero at xl (68px), scoped to the pair so the global 52px record
+     variant and the erase-confirm button are untouched — beats the bare
+     .control--record by specificity only inside the pair. */
+  .recorder-toolbar.pair .control--record {
+    width: var(--c-control-xl);
+    height: var(--c-control-xl);
+  }
+  /* Play one step smaller than the hero (52px): the bare .control--play is the
+     44px md box, the pair bumps it. */
+  .recorder-toolbar.pair .control--play {
+    width: var(--c-control-lg);
+    height: var(--c-control-lg);
+  }
+  /* Edit mode: the spread editing toolbar. */
+  .recorder-toolbar.edit {
+    justify-content: space-between;
+  }
+
+  /* The edit-mode marker + Done affordance (D2, #89), in the header-right slot.
+     `--s-voice` (amber) is the audio-edit accent the selection band and paste
+     marker already use, so the pill reads as "you are in the edit context". */
+  .modepill {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    padding: var(--p-space-1) var(--p-space-3);
+    border: none;
+    border-radius: var(--p-radius-full);
+    font-size: var(--p-text-sm);
+    font-weight: var(--p-weight-strong);
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    color: var(--s-voice);
+    background: color-mix(in srgb, var(--s-voice) 15%, transparent);
+    transition: filter var(--p-dur-base) var(--p-ease);
+  }
+  .modepill:hover {
+    filter: brightness(1.12);
+  }
+  .modepill:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
   }
 }
 

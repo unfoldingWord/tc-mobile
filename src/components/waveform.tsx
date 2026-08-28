@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { playheadViewportX } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 
@@ -127,6 +128,21 @@ export function Waveform({
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
       drawCenterline();
+      // Playback playhead: the clip-fraction position mapped through the same
+      // window as the bars. Off-screen (in the blank head/tail) ⇒ skip, rather
+      // than pin it to an edge. Drawn in `ink` so it reads over both the audio
+      // and the record-coloured centerline.
+      if (playhead !== null) {
+        const px = playheadViewportX(
+          playhead,
+          view.startFraction,
+          view.endFraction
+        );
+        if (px >= 0 && px <= 1) {
+          ctx.fillStyle = ink;
+          ctx.fillRect(Math.min(w - 2, px * w), 0, 2, h);
+        }
+      }
       return;
     }
 

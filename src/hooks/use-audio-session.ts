@@ -19,6 +19,13 @@ export interface UseAudioSession {
   /** The segment whose take is sounding, or `null`. */
   readonly playingId: SegmentId | null;
   /**
+   * Whether the in-memory recorder buffer is sounding. Distinct from
+   * `playingId`, which names a Segments row loaded from IndexedDB: this is the
+   * recorder's edited working buffer, played straight from memory with no disk
+   * load. The two share the floor, so only one is ever true at a time.
+   */
+  readonly playingBuffer: boolean;
+  /**
    * Milliseconds into the sounding take, for the scrub dot / playhead. Zero
    * whenever nothing is playing.
    */
@@ -32,6 +39,14 @@ export interface UseAudioSession {
    * the segment that is already playing stops it.
    */
   playTake: (row: SegmentRow, offsetSeconds?: number) => void;
+  /**
+   * Play a raw in-memory PCM buffer — the recorder's edited working buffer —
+   * optionally from a scrub offset (seconds), with no IndexedDB load. Tapping
+   * while it is already sounding stops it.
+   */
+  playBuffer: (samples: Int16Array, offsetSeconds?: number) => void;
+  /** Stop buffer playback if it is the one sounding. A no-op otherwise. */
+  stopBuffer: () => void;
   startRecording: () => void;
   /** Pause the in-progress recording without ending the take. */
   pauseRecording: () => void;
@@ -90,6 +105,7 @@ export function useAudioSession(): UseAudioSession {
   } = recorder;
 
   const [playingId, setPlayingId] = useState<SegmentId | null>(null);
+  const [playingBuffer, setPlayingBufferState] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
 
@@ -98,6 +114,9 @@ export function useAudioSession(): UseAudioSession {
   // has re-rendered, and the render closure would answer for the previous frame
   // — which is the toggle half of issue #2.
   const playingIdRef = useRef<SegmentId | null>(null);
+  // The buffer's equivalent, read from inside the tap for the same start-vs-stop
+  // decision. `playingId` and this share the floor, so at most one is ever set.
+  const playingBufferRef = useRef(false);
   /**
    * The live playback handle, held so the scrub-position timer can read its
    * `elapsed()` and so a stop can be immediate. Cleared whenever playback ends.
@@ -121,6 +140,18 @@ export function useAudioSession(): UseAudioSession {
     }
   }, []);
 
+  // The buffer's parallel setter, with the same handle/position cleanup as
+  // `setPlaying(null)` — the two playback paths share `playbackHandleRef` and
+  // the scrub position, so whichever one ends must leave both clean.
+  const setPlayingBuffer = useCallback((sounding: boolean) => {
+    playingBufferRef.current = sounding;
+    setPlayingBufferState(sounding);
+    if (!sounding) {
+      playbackHandleRef.current = null;
+      setPlaybackElapsedMs(0);
+    }
+  }, []);
+
   /**
    * Take the floor and clear the outgoing source's UI state.
    *
@@ -133,10 +164,15 @@ export function useAudioSession(): UseAudioSession {
       const token = session.claim(kind);
       if (token === null) return null;
       setPlaying(null);
+      // The floor is shared, so taking it also invalidates a buffer that was
+      // sounding — including the floor-steal case where a new recording claims
+      // "mic". The arbiter stops the source; this resets the React flag it left
+      // behind, exactly as `setPlaying(null)` does for a segment take.
+      setPlayingBuffer(false);
       setPlaybackError(null);
       return token;
     },
-    [session, setPlaying]
+    [session, setPlaying, setPlayingBuffer]
   );
 
   const playTake = useCallback(
@@ -215,17 +251,80 @@ export function useAudioSession(): UseAudioSession {
     [claimFloor, session, setPlaying]
   );
 
-  // Advance the scrub position while a take is sounding. The handle's own
-  // `elapsed()` is the source of truth (it clamps to the clip duration), polled
-  // rather than integrated so a pause or an end never leaves the dot drifting.
+  const stopBuffer = useCallback(() => {
+    // Nothing sounding from us, nothing to do. Only our OWN floor is released:
+    // stopping buffer playback must never stop a recording that has taken the
+    // floor since.
+    if (!playingBufferRef.current) return;
+    if (session.live === "take") session.stopAll();
+    setPlayingBuffer(false);
+  }, [session, setPlayingBuffer]);
+
+  const playBuffer = useCallback(
+    (samples: Int16Array, offsetSeconds = 0) => {
+      if (playingBufferRef.current) {
+        stopBuffer();
+        return;
+      }
+
+      const token = claimFloor("take");
+      // Refused: the microphone holds the floor. The recorder disables Play
+      // while recording, so this is defensive — but a refusal must fail quiet.
+      if (token === null) return;
+
+      // Unlock Web Audio inside the tap: iOS will not resume a suspended context
+      // once the activation is spent. There is no disk read to follow — the
+      // samples are already in hand — but the gesture rule is unchanged.
+      void resumeAudioContext().catch((cause: unknown) => {
+        console.error("Could not resume the audio context", cause);
+      });
+
+      // Optimistic, so the control responds to the tap rather than to the graph.
+      setPlayingBuffer(true);
+      setPlaybackElapsedMs(offsetSeconds * 1000);
+
+      void (async () => {
+        try {
+          const handle = await playSamples(samples, {
+            offsetSeconds,
+            onEnded: () => {
+              if (!session.isCurrent(token)) return;
+              session.release(token);
+              setPlayingBuffer(false);
+            },
+          });
+          // A `false` here means the handle was built for a claim that has since
+          // been superseded; `settle` has already stopped it.
+          if (session.settle(token, handle)) {
+            playbackHandleRef.current = handle;
+          }
+        } catch (cause) {
+          console.error("Playing the buffer failed", cause);
+          // Inside the guard, exactly as in `playTake`: a failure that belongs
+          // to a superseded claim is not this screen's news.
+          if (session.isCurrent(token)) {
+            session.release(token);
+            setPlayingBuffer(false);
+            setPlaybackError("Could not play this recording.");
+          }
+        }
+      })();
+    },
+    [claimFloor, session, setPlayingBuffer, stopBuffer]
+  );
+
+  // Advance the scrub position while a take or the buffer is sounding. The
+  // handle's own `elapsed()` is the source of truth (it clamps to the clip
+  // duration), polled rather than integrated so a pause or an end never leaves
+  // the dot drifting.
   useEffect(() => {
-    if (playingId === null) return;
+    if (playingId === null && !playingBuffer) return;
     const id = window.setInterval(() => {
       const handle = playbackHandleRef.current;
       if (handle) setPlaybackElapsedMs(handle.elapsed() * 1000);
     }, 60);
     return () => clearInterval(id);
-  }, [playingId]);
+  }, [playingId, playingBuffer]);
 
   const startRecording = useCallback(() => {
     // A device that cannot record never takes the floor. `start()` only sets a
@@ -296,8 +395,11 @@ export function useAudioSession(): UseAudioSession {
     session.stopAll();
     cancelRecording();
     setPlaying(null);
+    // `stopAll` silences a sounding buffer through the shared floor; this clears
+    // the React flag it leaves behind, the same reset `setPlaying(null)` does.
+    setPlayingBuffer(false);
     setPlaybackError(null);
-  }, [cancelRecording, session, setPlaying]);
+  }, [cancelRecording, session, setPlaying, setPlayingBuffer]);
 
   useEffect(() => {
     // Backstop only. `startRecording` releases a refused claim on the completion
@@ -319,6 +421,7 @@ export function useAudioSession(): UseAudioSession {
 
   return {
     playingId,
+    playingBuffer,
     playbackElapsedMs,
     recorderState,
     elapsedMs,
@@ -327,6 +430,8 @@ export function useAudioSession(): UseAudioSession {
     // translator just did, so it outranks a stale playback message.
     error: recorderError ?? playbackError,
     playTake,
+    playBuffer,
+    stopBuffer,
     startRecording,
     pauseRecording,
     resumeRecording,
