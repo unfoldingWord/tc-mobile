@@ -14,8 +14,9 @@ export const strings = {
   menuOpen: "Open menu",
   menuTitle: "Menu",
   menuClose: "Close menu",
-  booksEmpty: "No books yet",
-  booksEmptyHint: "Tap the plus to start a book",
+  booksEmpty: "Start your first book",
+  booksEmptyTeach:
+    "A book holds the chapters you record — and everything stays on this phone.",
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
@@ -31,7 +32,9 @@ export const strings = {
   addSegment: "Add segment",
   saving: "Saving your recording.",
   loadingChapter: "Loading the chapter.",
-  segmentsEmptyHint: "Tap the plus to add a segment",
+  segmentsEmpty: "Add the first segment",
+  segmentsEmptyTeach:
+    "A segment is one passage of the chapter — record it, play it back, record it again.",
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,
   recordSegment: (n: number): string => `Record segment ${n}`,

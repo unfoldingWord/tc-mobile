@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Control } from "./control";
+import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
@@ -55,6 +56,7 @@ export const SegmentsScreen = forwardRef<
     chapterNumber,
     rows,
     loading,
+    loaded,
     refreshing,
     error,
     reload,
@@ -109,13 +111,24 @@ export const SegmentsScreen = forwardRef<
   // empty chapter (G7). A *reload* failure keeps prior rows, so this only trips
   // the true hole: the initial read. The Notice above is the recovery — back out
   // and re-enter re-mounts and re-loads.
-  const loadFailed = error !== null && rows.length === 0;
+  //
+  // `loaded` (from the hook) latches on the first successful read: a failed
+  // *append* also sets `error`, but on a known-empty chapter it must keep the
+  // invite CTA (the only enabled create, no Retry here) up with the error in the
+  // Notice, not tear it down and strand focus on Back (George R3 P2).
+  const loadFailed = error !== null && !loaded;
+  // See books-screen: hide the header create + while the invite's own primary
+  // CTA is up, so there is one create action, announced once.
+  const showEmpty = loaded && rows.length === 0;
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
   // What to scroll to once `rows` next includes it — a freshly appended
   // segment. A ref, not state: `addSegment` already re-renders us.
   const pendingScroll = useRef<SegmentId | null>(null);
+  // See books-screen: the invite CTA unmounts on the append it triggers, so
+  // hand focus to the new row rather than let it fall to Back in the header.
+  const pendingFocus = useRef<SegmentId | null>(null);
 
   const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
     if (el) nodes.current.set(id, el);
@@ -134,18 +147,33 @@ export const SegmentsScreen = forwardRef<
 
   useEffect(() => {
     const id = pendingScroll.current;
-    if (id === null) return;
-    nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-    pendingScroll.current = null;
+    if (id !== null) {
+      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
+      pendingScroll.current = null;
+    }
+    const focusId = pendingFocus.current;
+    if (focusId !== null) {
+      // Target the row's open/record control explicitly (not DOM order) — the
+      // right next move on a never-recorded row (George R3 P3).
+      nodes.current
+        .get(focusId)
+        ?.querySelector<HTMLElement>(".row-open")
+        ?.focus();
+      pendingFocus.current = null;
+    }
   }, [rows]);
 
   const onAppend = useCallback(async () => {
+    // Only the first append comes from the invite (the corner + is hidden while
+    // empty); that CTA unmounts, so it hands focus to the new row.
+    const fromEmpty = rows.length === 0;
     const segment = await addSegment();
     if (!segment) return; // failed append surfaced through the hook's Notice
     // The new <li> is not committed yet, so scroll once `rows` includes it —
     // the same pending-id + effect pattern BooksScreen uses.
     pendingScroll.current = segment.id;
-  }, [addSegment]);
+    if (fromEmpty) pendingFocus.current = segment.id;
+  }, [addSegment, rows]);
 
   const onSetFinished = useCallback(
     (segmentId: SegmentId, finished: boolean) => {
@@ -178,13 +206,15 @@ export const SegmentsScreen = forwardRef<
         >
           {bookName} &gt; {strings.chapterName(chapterNumber)}
         </button>
-        <Control
-          icon="plus"
-          label={strings.addSegment}
-          variant="quiet"
-          disabled={loading || refreshing || loadFailed}
-          onClick={() => void onAppend()}
-        />
+        {!showEmpty && (
+          <Control
+            icon="plus"
+            label={strings.addSegment}
+            variant="quiet"
+            disabled={loading || refreshing || loadFailed}
+            onClick={() => void onAppend()}
+          />
+        )}
       </header>
 
       {/* One line, one place: a load failure or a playback failure (a
@@ -201,13 +231,14 @@ export const SegmentsScreen = forwardRef<
       )}
 
       <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
-        {!loading && !loadFailed && rows.length === 0 ? (
-          <p
-            className="flex h-full items-center justify-center text-center text-[13px]"
-            style={{ color: "var(--s-ink-muted)" }}
-          >
-            {strings.segmentsEmptyHint}
-          </p>
+        {showEmpty ? (
+          <EmptyState
+            headline={strings.segmentsEmpty}
+            teach={strings.segmentsEmptyTeach}
+            ctaLabel={strings.addSegment}
+            ctaIcon="plus"
+            onCta={() => void onAppend()}
+          />
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {rows.map((row) => (
