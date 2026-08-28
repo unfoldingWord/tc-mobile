@@ -67,6 +67,19 @@ export const strings = {
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
 
+  // ── Recorder mode split (#89) ────────────────────────────────────────────
+  // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
+  // the action is stop (D4), so the label says "Stop playing".
+  playRecording: "Play recording",
+  stopPlayback: "Stop playing",
+  // The record-menu "Edit" row — distinct from `editSegment(n)`, the Segments
+  // list's per-row label.
+  enterEdit: "Edit recording",
+  // The edit-menu row and the "Editing" pill's spoken action.
+  doneEditing: "Done editing",
+  // The pill's visible text — the mode marker for a sighted non-reader (D2).
+  modepillEditing: "Editing",
+
   // ── Waveform editing (B5) ────────────────────────────────────────────────
   selectStart: "Select a span to edit",
   selectStop: "Close the selection",

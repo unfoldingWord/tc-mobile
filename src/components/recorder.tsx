@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Checkbox } from "./checkbox";
 import { Control } from "./control";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
@@ -14,6 +13,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
 import { formatDuration } from "@/lib/utils";
 import type { SegmentId } from "@/types/domain";
@@ -90,9 +90,11 @@ interface RecorderProps {
  * working buffer is persisted — spliced with the recording, or on its own for an
  * edit-only session (`saveEditedSegment`).
  *
- * The toolbar is [zoom] [select] [record] [undo] [menu]; the finished toggle is
- * in the header, Redo is in the menu. The VU meter and Erase Segment are B6 —
- * absent, not stubbed (§0).
+ * The sheet is two modes (#89). RECORD mode is the hero Record + Play pair with
+ * the menu opener in the header; the finished toggle lives in that menu. EDIT
+ * mode — entered deliberately from the record menu, strictly idle — is the
+ * [zoom] [select] [undo] [redo] [menu] spread with the selection frame, paste
+ * marker and floating Cut, marked by a header "Editing" pill that also exits.
  */
 export function Recorder({
   segmentId,
@@ -114,6 +116,12 @@ export function Recorder({
     set: onClipboardChange,
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  // The sheet is two modes over one segment (#89): a record mode (the hero
+  // Record + Play pair) and an edit mode (the waveform-editing toolbar). The
+  // sheet always opens in record; App keys it on `segmentId` so it remounts per
+  // open, so `"record"` is the open state with no reset effect needed. Edit is
+  // entered deliberately from the record menu and is strictly idle.
+  const [mode, setMode] = useState<"record" | "edit">("record");
   // The VU strip is visible by default when the sheet opens (D-VU-DEFAULT); the
   // menu toggles it. Per-session local state — there is no prefs layer to
   // persist it across opens.
@@ -207,6 +215,33 @@ export function Recorder({
   const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
+  // The record-mode playback playhead (#89), as a fraction of the WHOLE working
+  // buffer — the same clip-fraction domain `Waveform`'s `view` bars are drawn
+  // through, so `playheadViewportX` lands it over the sample it marks. Null
+  // whenever the buffer is not sounding; guarded on a non-zero duration so an
+  // empty buffer never divides to NaN (Play is disabled there anyway).
+  const workingDurationMs = (length / CANONICAL_SAMPLE_RATE) * 1000;
+  const playhead =
+    audio.playingBuffer && workingDurationMs > 0
+      ? // Clamp to [0,1]: `elapsed()` clamps to the AudioBuffer duration and
+        // `workingDurationMs` is derived from the same sample count, but a float
+        // overshoot > 1 would make `playheadViewportX` skip the final tick
+        // (George R5). Elapsed is never negative, so the floor is belt-only.
+        Math.min(1, Math.max(0, audio.playbackElapsedMs / workingDurationMs))
+      : null;
+
+  // While the buffer plays, show the WHOLE working buffer so the sweeping
+  // playhead is always on screen (George R1). The pan/zoom window exists to
+  // choose an insert point for a record, not to watch playback travel — resting
+  // at the append-ready end it hides the first half of the clip from a playhead
+  // that starts at 0. Playback overrides it with a full-clip view; the record
+  // window returns the moment playback stops.
+  const waveView = {
+    startFraction: audio.playingBuffer ? 0 : hasAudio ? win.start / length : 0,
+    endFraction: audio.playingBuffer ? 1 : hasAudio ? win.end / length : 1,
+    centerFraction: CENTER_FRACTION,
+  };
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Nothing to pan on an empty segment (F11): the baseline does not slide.
@@ -219,13 +254,18 @@ export function Recorder({
       // handle back within reach (B5, George R2). The handles stop their own
       // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
       // never also starts a pan — only a drag on the bare canvas pans.
-      if (!hasAudio || recording || paused || busy) return;
+      // Frozen during playback too: the canvas is showing the whole-clip view,
+      // so a drag would move the hidden record `pan`/insert offset the translator
+      // cannot see, and the viewport would jump when playback stops (Frank/George
+      // R2). Playback is listen-only — no scrub in v1 (D4).
+      if (!hasAudio || recording || paused || busy || audio.playingBuffer)
+        return;
       setDragging(true);
       dragStartX.current = e.clientX;
       panAtDragStart.current = pan;
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [hasAudio, recording, paused, busy, pan]
+    [hasAudio, recording, paused, busy, audio.playingBuffer, pan]
   );
 
   const onPointerMove = useCallback(
@@ -236,7 +276,9 @@ export function Recorder({
       // moving the first finger through the `requesting` window — sliding the
       // centerline off the sample insertionOffset already locked to at the tap
       // (#61). The pointer-down guard alone left this multitouch path open.
-      if (!dragging || recording || paused || busy) return;
+      // Also frozen once playback starts mid-drag (same whole-clip desync, R2).
+      if (!dragging || recording || paused || busy || audio.playingBuffer)
+        return;
       const width = stageRef.current?.clientWidth ?? 1;
       // Drag right reveals earlier audio: the sample under the centerline
       // decreases. The move is scaled by what the viewport spans at this zoom,
@@ -247,7 +289,15 @@ export function Recorder({
         Math.max(0, Math.min(panAtDragStart.current + delta, length))
       );
     },
-    [dragging, recording, paused, busy, win.visibleSamples, length]
+    [
+      dragging,
+      recording,
+      paused,
+      busy,
+      audio.playingBuffer,
+      win.visibleSamples,
+      length,
+    ]
   );
 
   const onPointerUp = useCallback(() => setDragging(false), []);
@@ -273,6 +323,60 @@ export function Recorder({
       audio.startRecording();
     }
   }, [recording, paused, view, audio, editor, win.centerlineSample]);
+
+  // Play the in-memory WORKING buffer from offset 0 (D3/D4): the segment's
+  // stored recording plus any unsaved edits (cut/paste) made this session. It is
+  // NOT a just-captured take — a new recording is decoded and spliced only on
+  // close (Model A, commit-on-close), so a fresh capture becomes playable after
+  // it commits and the sheet reopens, not before (#101). The pause-glyph the
+  // wireframe shows while sounding stops it. Routed through the same single-owner
+  // floor as `playTake`, so `startRecording()` stops it for free (no hand-stop
+  // in `onRecordButton`, F3).
+  const onPlayButton = useCallback(() => {
+    if (audio.playingBuffer) audio.stopBuffer();
+    else audio.playBuffer(editor.working);
+  }, [audio, editor]);
+
+  // Enter edit mode from the record menu. Play is a record-only control, so any
+  // live buffer playback is stopped first — else it would orphan itself with no
+  // control to stop it.
+  const onEnterEdit = useCallback(() => {
+    audio.stopBuffer();
+    setMode("edit");
+    setMenuOpen(false);
+  }, [audio]);
+
+  // The permission panel's Retry. It bypasses `onRecordButton`, so it must force
+  // record mode itself: Edit is reachable while the panel is up (empty segment +
+  // full clipboard), and a Retry from there would otherwise start the mic with
+  // the edit toolbar on screen and no Record/Pause/VU — "Editing" over a live
+  // capture (George R3). Any path that starts the mic belongs in record mode.
+  const onRetryRecord = useCallback(() => {
+    setMode("record");
+    audio.startRecording();
+  }, [audio]);
+
+  // Open the ≡ menu. Stops buffer playback first: the menu is the one gateway to
+  // every idle-time action reachable while a buffer sounds (Edit, Finished, VU,
+  // Erase), and opening it inerts the sheet — so Play, the only stop control,
+  // goes unreachable, and Erase locks a confirm behind that scrim (George R5).
+  // Stopping here closes that whole class at the boundary, like entering edit.
+  const openMenu = useCallback(() => {
+    audio.stopBuffer();
+    setMenuOpen(true);
+  }, [audio]);
+
+  // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
+  // row share this. Close any open selection AND reset zoom to whole: record
+  // mode has no zoom control, so a quarter-zoom carried out of edit would leave
+  // the record view stuck zoomed with no way to widen it (George R1). It only
+  // switches mode, it never closes the sheet (that is Back/`close`).
+  const onExitEdit = useCallback(() => {
+    editor.closeSelection();
+    setZoom(ZOOM_WHOLE);
+    setMode("record");
+    setMenuOpen(false);
+  }, [editor]);
 
   const onToggleSelection = useCallback(() => {
     if (editor.selectionActive) {
@@ -321,6 +425,12 @@ export function Recorder({
   // in this session has nothing on disk to erase.
   const erase = useEraseSegment();
   const onConfirmErase = useCallback(() => {
+    // Stop any buffer playback before the delete: EraseConfirm latches its
+    // in-flight guard synchronously and the sheet is inert, so Play — the only
+    // stop control — is unreachable across the whole IDB write (George R5).
+    // Reaching the confirm already goes through `openMenu`, which stops it; this
+    // is the belt to that suspenders, and matches the Segments list's leave().
+    audio.stopBuffer();
     void (async () => {
       const result = await erase.erase(segmentId);
       // "ok": success unmounts this sheet; the working buffer and any pending
@@ -331,12 +441,18 @@ export function Recorder({
       if (result === "ok") onExit(true);
       else if (result === "failed") setConfirmOpen(false);
     })();
-  }, [erase, segmentId, onExit]);
+  }, [erase, segmentId, onExit, audio]);
 
   const close = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
     setIsClosing(true);
+    // Silence buffer playback now, not at the eventual unmount `leave()`: the
+    // async commit below can run a save while a long buffer keeps sounding, and
+    // Play goes `disabled` on `isClosing` so nothing on screen can stop it
+    // (George R1). `stopBuffer` only releases its own "take" floor — never a
+    // capture, so it is safe ahead of the `stopRecording` commit path.
+    audio.stopBuffer();
     void (async () => {
       // Commit on close (F8): if the mic is live or paused, stop it, then
       // splice what it captured into the segment's audio. `stopRecording`
@@ -484,10 +600,15 @@ export function Recorder({
     sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
   }, []);
 
-  // A mic permission/start failure, sitting in `audio.error` at idle (distinct
-  // from a decode failure, which travels as `stopError`).
+  // A mic permission/start failure, at idle (distinct from a decode failure,
+  // which travels as `stopError`). Keyed on `recorderError`, NOT the merged
+  // `audio.error`: `playBuffer` is the first in-sheet path that can set a
+  // playback error, and a failed Play must not raise the mic permission panel
+  // (whose Retry starts the mic) — it stays a toolbar Notice via `audio.error`
+  // below (George R4). `audio.error` still equals `recorderError` when this is
+  // true, so the panel message is unchanged.
   const micError =
-    state === "idle" && audio.error !== null && stopError === null;
+    state === "idle" && audio.recorderError !== null && stopError === null;
   // The full-body permission panel REPLACES the sheet body, so it may only take
   // over when there is nothing on screen to lose: the device cannot record, or a
   // mic error on a segment with no audio and no pending edits. With audio or
@@ -550,28 +671,46 @@ export function Recorder({
                 )
               : ""}
           </span>
-          <Checkbox
-            state={finishedState}
-            label={
-              view && displayedFinished
-                ? strings.markUnfinished(view.ordinal)
-                : strings.markFinished(view?.ordinal ?? 0)
-            }
-            // Frozen through the requesting/processing/close window, exactly as
-            // Record is: a toggle there cannot reach the already-captured close,
-            // and the box must not invite one (G10). Live during recording/
-            // paused, where marking the in-progress take is the point.
-            disabled={isClosing || busy}
-            onToggle={
-              finishedState === "disabled" ? undefined : onToggleFinished
-            }
-          />
+          {mode === "record" ? (
+            // The menu opener lives in the header in record mode (the toolbar is
+            // just the Record + Play pair). Same gate the old toolbar opener
+            // used — reachable mid-take for the VU toggle, blocked only through
+            // the close window.
+            <Control
+              icon="menu"
+              label={strings.recorderMenuOpen}
+              variant="quiet"
+              // Also closed while `denied`: the permission panel owns the body
+              // and its Retry/Back, and opening the menu inerts the sheet — which
+              // would put the scrim over the panel's Retry with no way to reach it
+              // until the menu is dismissed (George R4).
+              disabled={!view || isClosing || denied}
+              onClick={openMenu}
+            />
+          ) : (
+            // The "Editing" pill (D2): the visible mode marker for a sighted
+            // non-reader AND the Done exit in one element — text says the mode,
+            // aria-label/title speak the action, tapping exits to record.
+            <button
+              type="button"
+              className="modepill"
+              aria-label={strings.doneEditing}
+              title={strings.doneEditing}
+              // Frozen through the close window, same gate as the record-mode
+              // menu opener: a mode flip mid-save would drop the translator into
+              // record mode over unsaved edits if that save then fails (George R2).
+              disabled={isClosing}
+              onClick={onExitEdit}
+            >
+              {strings.modepillEditing}
+            </button>
+          )}
         </header>
 
         {denied ? (
           <PermissionPanel
             message={audio.error}
-            onRetry={audio.startRecording}
+            onRetry={onRetryRecord}
             onBack={close}
           />
         ) : loadError ? (
@@ -608,55 +747,59 @@ export function Recorder({
                   peaks={editor.peaks}
                   height={200}
                   recorded={hasAudio}
-                  view={{
-                    startFraction: hasAudio ? win.start / length : 0,
-                    endFraction: hasAudio ? win.end / length : 1,
-                    centerFraction: CENTER_FRACTION,
-                  }}
+                  playhead={playhead}
+                  view={waveView}
                 />
-                {editor.selectionActive && editor.selection && (
-                  <SelectionOverlay
-                    win={win}
-                    selection={editor.selection}
-                    workingLength={length}
-                    onChange={editor.setSelection}
-                    startLabel={strings.selectionStartHandle}
-                    endLabel={strings.selectionEndHandle}
+                {mode === "edit" &&
+                  editor.selectionActive &&
+                  editor.selection && (
+                    <SelectionOverlay
+                      win={win}
+                      selection={editor.selection}
+                      workingLength={length}
+                      onChange={editor.setSelection}
+                      startLabel={strings.selectionStartHandle}
+                      endLabel={strings.selectionEndHandle}
+                    />
+                  )}
+                {mode === "edit" &&
+                  idleEditable &&
+                  editor.canPaste &&
+                  !editor.selectionActive && (
+                    // The paste marker rides the centerline (mockup 5): tapping it
+                    // inserts the clipboard there. stopPropagation so the tap does
+                    // not also arm a pan on the stage beneath it.
+                    <button
+                      type="button"
+                      className="paste-marker"
+                      style={{ left: `${CENTER_FRACTION * 100}%` }}
+                      aria-label={strings.paste}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={onPaste}
+                    >
+                      <Icon name="paste" size={26} />
+                    </button>
+                  )}
+              </div>
+              {mode === "edit" && (
+                <div className="recorder-cut flex justify-center">
+                  {/* The Cut affordance sits under the frame (mockup 4). Cutting
+                      drops the selection and turns the paste marker on. Edit-mode
+                      only — the block is absent from the record-mode tree — but
+                      still `disabled` on the same `idleEditable` safety: without
+                      it a Cut tapped during the async close would mutate the
+                      working buffer after close() already captured the pre-cut
+                      one — a silently dropped edit. */}
+                  <Control
+                    icon="scissors"
+                    label={strings.cut}
+                    variant="quiet"
+                    size={26}
+                    disabled={!idleEditable || !editor.canCut}
+                    onClick={onCut}
                   />
-                )}
-                {idleEditable && editor.canPaste && !editor.selectionActive && (
-                  // The paste marker rides the centerline (mockup 5): tapping it
-                  // inserts the clipboard there. stopPropagation so the tap does
-                  // not also arm a pan on the stage beneath it.
-                  <button
-                    type="button"
-                    className="paste-marker"
-                    style={{ left: `${CENTER_FRACTION * 100}%` }}
-                    aria-label={strings.paste}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={onPaste}
-                  >
-                    <Icon name="paste" size={26} />
-                  </button>
-                )}
-              </div>
-              <div className="recorder-cut flex justify-center">
-                {/* The Cut affordance sits under the frame (mockup 4). Cutting
-                    drops the selection and turns the paste marker on. Rendered
-                    always and disabled (like select/undo) rather than unmounted,
-                    so it grays instead of vanishing. `disabled` keeps the same
-                    `idleEditable` safety: without it a Cut tapped during the
-                    async close would mutate the working buffer after close()
-                    already captured the pre-cut one — a silently dropped edit. */}
-                <Control
-                  icon="scissors"
-                  label={strings.cut}
-                  variant="quiet"
-                  size={26}
-                  disabled={!idleEditable || !editor.canCut}
-                  onClick={onCut}
-                />
-              </div>
+                </div>
+              )}
               {(recording || paused) && (
                 <div
                   className="recorder-status flex items-center gap-[8px]"
@@ -675,8 +818,9 @@ export function Recorder({
               )}
             </div>
 
-            {vuVisible && (
-              // Under the waveform (mockup 3), visible by default. `active` gates
+            {mode === "record" && vuVisible && (
+              // Under the waveform (mockup 3), visible by default. Record-mode
+              // only — no mic take can exist in edit mode. `active` gates
               // its own rAF loop, so it only animates while a take is live and
               // rests empty otherwise — the sheet never re-renders per frame
               // (D-LEVEL-PULL: it polls `audio.readLevel` on its own clock).
@@ -697,66 +841,102 @@ export function Recorder({
 
             {audio.error && <Notice>{audio.error}</Notice>}
 
-            <div className="recorder-toolbar flex items-center justify-between px-[16px]">
-              <Control
-                icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
-                label={
-                  zoom === ZOOM_WHOLE ? strings.zoomQuarter : strings.zoomWhole
-                }
-                variant="quiet"
-                size={24}
-                onClick={() =>
-                  setZoom((z) => (z === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE))
-                }
-              />
-              <Control
-                icon="selection"
-                label={
-                  editor.selectionActive
-                    ? strings.selectStop
-                    : strings.selectStart
-                }
-                variant={editor.selectionActive ? "primary" : "quiet"}
-                size={24}
-                disabled={!idleEditable || !hasAudio}
-                onClick={onToggleSelection}
-              />
-              <Control
-                icon={recording ? "pause" : "record"}
-                label={
-                  recording
-                    ? strings.pause
-                    : paused
-                      ? strings.resume
-                      : strings.record
-                }
-                variant="record"
-                disabled={busy || isClosing || !view}
-                onClick={onRecordButton}
-              />
-              <Control
-                icon="undo"
-                label={strings.undo}
-                variant="quiet"
-                size={24}
-                disabled={!idleEditable || !editor.canUndo}
-                onClick={editor.undo}
-              />
-              <Control
-                icon="menu"
-                label={strings.recorderMenuOpen}
-                variant="quiet"
-                size={24}
-                // Live during recording/paused, not only at idle: the menu now
-                // holds the VU toggle, whose whole purpose is DURING a take, so
-                // gating the opener on `idleEditable` would strand a translator
-                // who hid the strip with no way to bring it back short of saving
-                // (George R-B6). The entries that are unsafe mid-take (Redo,
-                // Erase) gate themselves. Blocked only through the close window.
-                disabled={!view || isClosing}
-                onClick={() => setMenuOpen(true)}
-              />
-            </div>
+            {mode === "record" ? (
+              // Record mode: the centered hero pair. Record (xl 68px) is THE
+              // action; Play (lg 52px) sits to its right, dead while any take is
+              // live/committing or the mic is spinning up, live at idle with
+              // audio. The menu opener is in the header, not here.
+              <div className="recorder-toolbar pair flex items-center px-[16px]">
+                <Control
+                  icon={recording ? "pause" : "record"}
+                  label={
+                    recording
+                      ? strings.pause
+                      : paused
+                        ? strings.resume
+                        : strings.record
+                  }
+                  variant="record"
+                  // Disabled while the buffer plays: the visible whole-clip view
+                  // no longer shows the insert centerline, so a record started
+                  // here would splice at the hidden append offset the translator
+                  // cannot see (George R2). Stop playback (tap Play) first.
+                  disabled={busy || isClosing || !view || audio.playingBuffer}
+                  onClick={onRecordButton}
+                />
+                <Control
+                  icon={audio.playingBuffer ? "pause" : "play"}
+                  label={
+                    audio.playingBuffer
+                      ? strings.stopPlayback
+                      : strings.playRecording
+                  }
+                  variant="play"
+                  disabled={takeActive || busy || !hasAudio}
+                  onClick={onPlayButton}
+                />
+              </div>
+            ) : (
+              // Edit mode: the spread editing toolbar. Redo is a visible button
+              // here (out of the menu); the menu opener lives at the end.
+              <div className="recorder-toolbar edit flex items-center px-[16px]">
+                <Control
+                  icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
+                  label={
+                    zoom === ZOOM_WHOLE
+                      ? strings.zoomQuarter
+                      : strings.zoomWhole
+                  }
+                  variant="quiet"
+                  size={24}
+                  onClick={() =>
+                    setZoom((z) =>
+                      z === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE
+                    )
+                  }
+                />
+                <Control
+                  icon="selection"
+                  label={
+                    editor.selectionActive
+                      ? strings.selectStop
+                      : strings.selectStart
+                  }
+                  variant={editor.selectionActive ? "primary" : "quiet"}
+                  size={24}
+                  disabled={!idleEditable || !hasAudio}
+                  onClick={onToggleSelection}
+                />
+                <Control
+                  icon="undo"
+                  label={strings.undo}
+                  variant="quiet"
+                  size={24}
+                  disabled={!idleEditable || !editor.canUndo}
+                  onClick={editor.undo}
+                />
+                <Control
+                  icon="redo"
+                  label={strings.redo}
+                  variant="quiet"
+                  size={24}
+                  // Same guard the menu Redo had (George R4): a Redo mid-take
+                  // would rematerialise the working buffer under the locked
+                  // insertion offset — but `idleEditable` forbids that, and edit
+                  // mode is idle-only regardless.
+                  disabled={!idleEditable || !editor.canRedo}
+                  onClick={editor.redo}
+                />
+                <Control
+                  icon="menu"
+                  label={strings.recorderMenuOpen}
+                  variant="quiet"
+                  size={24}
+                  disabled={!view || isClosing}
+                  onClick={openMenu}
+                />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -765,44 +945,100 @@ export function Recorder({
         onClose={() => setMenuOpen(false)}
         title={strings.recorderMenuTitle}
       >
-        <Control
-          icon="redo"
-          label={strings.redo}
-          variant="quiet"
-          // Idle-gated like Undo (George R4): a Redo fired while a take is live
-          // would rematerialise the working buffer to a different length under
-          // the insertion offset already locked at Record.
-          disabled={!idleEditable || !editor.canRedo}
-          onClick={() => {
-            editor.redo();
-            setMenuOpen(false);
-          }}
-        />
-        <Control
-          icon={vuVisible ? "eye-off" : "eye"}
-          label={vuVisible ? strings.vuHide : strings.vuShow}
-          variant="quiet"
-          // Close the menu so the change to the strip behind it is visible.
-          onClick={() => {
-            setVuVisible((v) => !v);
-            setMenuOpen(false);
-          }}
-        />
-        <Control
-          icon="trash"
-          label={strings.eraseSegment}
-          variant="quiet"
-          // Only when there is stored audio to erase (a first, uncommitted
-          // recording has nothing on disk yet) AND only at idle: erasing the
-          // stored take out from under a live capture is nonsensical, and the
-          // menu opener is now reachable mid-take for the VU toggle, so this
-          // entry must refuse there itself (George R-B6).
-          disabled={!idleEditable || !view?.hasClip}
-          onClick={() => {
-            setMenuOpen(false);
-            setConfirmOpen(true);
-          }}
-        />
+        {mode === "record" ? (
+          <>
+            <Control
+              icon="edit"
+              label={strings.enterEdit}
+              variant="quiet"
+              // Idle-only. Editable when there is audio to edit OR a full
+              // clipboard to paste — a never-recorded segment with a pending clip
+              // must still open edit mode to receive it, or the chapter-wide
+              // clipboard (G3) could never land on an empty segment (George R2).
+              // Never while `denied`: the permission panel owns the body, and
+              // entering edit there strands the edit toolbar over a Retry that
+              // starts the mic (George R3, with onRetryRecord as the other half).
+              disabled={
+                !idleEditable || denied || (!hasAudio && !editor.canPaste)
+              }
+              onClick={onEnterEdit}
+            />
+            <Control
+              icon="check"
+              // Green AND the mark/unmark label both key on `finishedState`, the
+              // resolved state the store will actually write — NOT the raw
+              // `displayedFinished` intent. They diverge on an emptied segment:
+              // mark finished, Edit, cut all, Done → `finishedState` is
+              // "disabled" (a 0-frame take cannot be finished, and close writes
+              // `finished: false`), but `displayedFinished` is still true, so
+              // keying the paint on it would show a green, "Unmark finished" row
+              // that lies until close (George R1). `finishedState === "finished"`
+              // is true only when the mark will stick.
+              label={
+                view && finishedState === "finished"
+                  ? strings.markUnfinished(view.ordinal)
+                  : strings.markFinished(view?.ordinal ?? 0)
+              }
+              variant="quiet"
+              // Same `onToggleFinished`/`finishedIntent` semantics the header
+              // checkbox carried (D1) — only the trigger moved. It does NOT close
+              // the menu: the row re-renders in place so the check turns green as
+              // the translator taps, the record-and-mark-done-in-one-sheet flow.
+              // Frozen through the requesting/processing/close window exactly as
+              // Record is (G10), plus the never-recorded `finishedState ===
+              // "disabled"` the Checkbox encoded via `state`.
+              className={finishedState === "finished" ? "is-done" : undefined}
+              disabled={finishedState === "disabled" || isClosing || busy}
+              onClick={onToggleFinished}
+            />
+            <Control
+              icon={vuVisible ? "eye-off" : "eye"}
+              label={vuVisible ? strings.vuHide : strings.vuShow}
+              variant="quiet"
+              // Close the menu so the change to the strip behind it is visible.
+              onClick={() => {
+                setVuVisible((v) => !v);
+                setMenuOpen(false);
+              }}
+            />
+            <Control
+              icon="trash"
+              label={strings.eraseSegment}
+              variant="quiet"
+              // Only when there is stored audio to erase (a first, uncommitted
+              // recording has nothing on disk yet) AND only at idle: erasing the
+              // stored take out from under a live capture is nonsensical, and the
+              // menu opener is reachable mid-take for the VU toggle, so this
+              // entry must refuse there itself (George R-B6).
+              disabled={!idleEditable || !view?.hasClip}
+              onClick={() => {
+                setMenuOpen(false);
+                setConfirmOpen(true);
+              }}
+            />
+          </>
+        ) : (
+          <>
+            <Control
+              icon="check"
+              label={strings.doneEditing}
+              variant="quiet"
+              onClick={onExitEdit}
+            />
+            <Control
+              icon="trash"
+              label={strings.eraseSegment}
+              variant="quiet"
+              // Kept reachable from edit mode too — erasing is a segment-level op
+              // useful in either mode. Same idle + has-stored-clip guard.
+              disabled={!idleEditable || !view?.hasClip}
+              onClick={() => {
+                setMenuOpen(false);
+                setConfirmOpen(true);
+              }}
+            />
+          </>
+        )}
       </Menu>
       <EraseConfirm
         open={confirmOpen}

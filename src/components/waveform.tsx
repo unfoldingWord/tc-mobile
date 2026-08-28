@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { playheadViewportX } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 
@@ -94,8 +95,12 @@ export function Waveform({
 
     // The fixed centerline (recorder mode): drawn last so it sits over the
     // audio, and in the record colour because it is where recording starts.
+    // Suppressed while a playhead is present: during playback the recorder swaps
+    // to a whole-clip view where the centerline would fall mid-clip and read as a
+    // (red, insert-here) marker the disabled Record cannot act on — the sweeping
+    // playhead is the only position cue that means anything then (George R2).
     const drawCenterline = () => {
-      if (!view) return;
+      if (!view || playhead !== null) return;
       ctx.fillStyle = live;
       ctx.fillRect(Math.round(view.centerFraction * w) - 1, 0, 2, h);
     };
@@ -127,6 +132,21 @@ export function Waveform({
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
       drawCenterline();
+      // Playback playhead: the clip-fraction position mapped through the same
+      // window as the bars. Off-screen (in the blank head/tail) ⇒ skip, rather
+      // than pin it to an edge. Drawn in `ink` so it reads over both the audio
+      // and the record-coloured centerline.
+      if (playhead !== null) {
+        const px = playheadViewportX(
+          playhead,
+          view.startFraction,
+          view.endFraction
+        );
+        if (px >= 0 && px <= 1) {
+          ctx.fillStyle = ink;
+          ctx.fillRect(Math.min(w - 2, px * w), 0, 2, h);
+        }
+      }
       return;
     }
 
