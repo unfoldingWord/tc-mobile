@@ -149,7 +149,11 @@ export function useChapterShare(): UseChapterShare {
       // return before the browser paints).
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
-        const result = await exportChapterMp3(chapterId);
+        // Pass `current` so a cancel during the gather skips the blocking encode
+        // (the gather awaits; the encode does not). A cancelled run returns null
+        // here and is caught by the `!current()` bail below — distinct from a
+        // genuinely empty chapter, which returns null with the run still current.
+        const result = await exportChapterMp3(chapterId, {}, current);
         if (!current()) return;
         if (!result) {
           setError("nothing");
@@ -194,7 +198,13 @@ export function useChapterShare(): UseChapterShare {
     // a double-tap cannot open a second share whose rejection drops the File.
     if (sendingRef.current) return "retry";
     const file = fileRef.current;
-    if (file === null) return "failed";
+    if (file === null) {
+      // Reachable only through a guard hole (ready with no armed File); surface
+      // it rather than no-op silently behind a "Share now" that does nothing.
+      setError("failed");
+      setStatus("idle");
+      return "failed";
+    }
     sendingRef.current = true;
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
@@ -210,10 +220,11 @@ export function useChapterShare(): UseChapterShare {
     // resolves — the File already carries `filename` as its name (George R-B7).
     try {
       await navigator.share({ files: [file] });
-      // Shared. Drop the File — a later flow re-encodes, since a fresh take may
-      // have changed the chapter since this one was prepared.
-      fileRef.current = null;
+      // Shared. Drop the File — but only if this run still owns the state. A
+      // `reset` while the sheet was open bumped the token and may have armed a
+      // NEW File; nulling here unguarded would drop that one (George R-B7).
       if (current()) {
+        fileRef.current = null;
         setStatus("idle");
         setMissing(0);
       }
@@ -225,11 +236,12 @@ export function useChapterShare(): UseChapterShare {
         // another tap can hand it over. Not a failure the translator should see.
         return "retry";
       }
-      // Dismissed or a real failure: the flow is over. Drop the File.
-      fileRef.current = null;
       if (outcome === "failed")
         console.error("Sharing the chapter failed", cause);
+      // Dismissed or a real failure: end the flow — but, as above, only for the
+      // run that still owns the File.
       if (current()) {
+        fileRef.current = null;
         setStatus("idle");
         setMissing(0);
         if (outcome === "failed") setError("failed");

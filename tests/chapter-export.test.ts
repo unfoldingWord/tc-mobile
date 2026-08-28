@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import * as mp3 from "@/lib/audio/mp3";
 import {
   SEGMENT_GAP_SECONDS,
   exportChapterMp3,
@@ -172,5 +173,26 @@ describe("exportChapterMp3", () => {
   it("returns null when the chapter has nothing recorded", async () => {
     const chapterId = await chapterWith([null]);
     expect(await exportChapterMp3(chapterId)).toBeNull();
+  });
+
+  it("skips the encode and returns null when shouldEncode() is false after the gather", async () => {
+    // The gather awaits (cancellable); the encode is one blocking main-thread
+    // pass. A caller cancelled during the gather returns false to skip it rather
+    // than freeze the UI for a share already dismissed (George R-B7).
+    const chapterId = await chapterWith([{ n: 100, v: 100 }]);
+    const encodeSpy = vi.spyOn(mp3, "encodeMp3");
+
+    const result = await exportChapterMp3(chapterId, {}, () => false);
+
+    expect(result).toBeNull();
+    expect(encodeSpy).not.toHaveBeenCalled(); // the blocking pass was skipped
+    encodeSpy.mockRestore();
+  });
+
+  it("encodes when shouldEncode() is true", async () => {
+    const chapterId = await chapterWith([{ n: 100, v: 100 }]);
+    const result = await exportChapterMp3(chapterId, {}, () => true);
+    expect(result).not.toBeNull();
+    expect(result!.mp3.length).toBeGreaterThan(0);
   });
 });

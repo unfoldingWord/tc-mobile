@@ -116,10 +116,13 @@ export const strings = {
   sharePreparing: "Preparing the chapter to share.",
   shareNothing: "Record a segment before sharing this chapter.",
   shareFailed: "Could not share this chapter. Try again.",
+  // Neutral on the cause: `missing` counts every segment whose audio did not
+  // resolve — never-recorded, but also a dangling take or a half-missing clip —
+  // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
     n === 1
-      ? "1 segment has no recording yet and was left out."
-      : `${n} segments have no recording yet and were left out.`,
+      ? "1 segment could not be included."
+      : `${n} segments could not be included.`,
   shareFilename: (book: string, chapter: number): string =>
     `${book} - Chapter ${chapter}.mp3`,
 } as const;

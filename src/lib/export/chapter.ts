@@ -109,12 +109,20 @@ export async function gatherChapterPcm(
 /**
  * Encode a chapter's recorded segments, in order, as one MP3. Returns `null`
  * when the chapter has no resolvable audio — there is nothing to share.
+ *
+ * `shouldEncode` is checked after the gather and before the encode: the gather
+ * awaits per clip (cancellable), but `encodeMp3` is one synchronous main-thread
+ * pass with no abort until B8 (#34) moves it to a worker. A caller that was
+ * cancelled during the gather returns `false` to skip that blocking pass rather
+ * than freeze the UI for a share the user already dismissed (George R-B7).
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
-  options: EncodeMp3Options = {}
+  options: EncodeMp3Options = {},
+  shouldEncode?: () => boolean
 ): Promise<ChapterExport | null> {
   const { samples, segments, missing } = await gatherChapterPcm(chapterId);
   if (segments === 0) return null;
+  if (shouldEncode && !shouldEncode()) return null;
   return { mp3: encodeMp3(samples, options), segments, missing };
 }
