@@ -226,6 +226,18 @@ export function Recorder({
       ? audio.playbackElapsedMs / workingDurationMs
       : null;
 
+  // While the buffer plays, show the WHOLE working buffer so the sweeping
+  // playhead is always on screen (George R1). The pan/zoom window exists to
+  // choose an insert point for a record, not to watch playback travel — resting
+  // at the append-ready end it hides the first half of the clip from a playhead
+  // that starts at 0. Playback overrides it with a full-clip view; the record
+  // window returns the moment playback stops.
+  const waveView = {
+    startFraction: audio.playingBuffer ? 0 : hasAudio ? win.start / length : 0,
+    endFraction: audio.playingBuffer ? 1 : hasAudio ? win.end / length : 1,
+    centerFraction: CENTER_FRACTION,
+  };
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Nothing to pan on an empty segment (F11): the baseline does not slide.
@@ -293,11 +305,14 @@ export function Recorder({
     }
   }, [recording, paused, view, audio, editor, win.centerlineSample]);
 
-  // Play the in-memory WORKING buffer from offset 0 (D3/D4), never the stored
-  // clip — a just-recorded or just-edited unsaved take must be audible. The
-  // pause-glyph the wireframe shows while sounding stops it. Routed through the
-  // same single-owner floor as `playTake`, so `startRecording()` stops it for
-  // free (no hand-stop in `onRecordButton`, F3).
+  // Play the in-memory WORKING buffer from offset 0 (D3/D4): the segment's
+  // stored recording plus any unsaved edits (cut/paste) made this session. It is
+  // NOT a just-captured take — a new recording is decoded and spliced only on
+  // close (Model A, commit-on-close), so a fresh capture becomes playable after
+  // it commits and the sheet reopens, not before (#101). The pause-glyph the
+  // wireframe shows while sounding stops it. Routed through the same single-owner
+  // floor as `playTake`, so `startRecording()` stops it for free (no hand-stop
+  // in `onRecordButton`, F3).
   const onPlayButton = useCallback(() => {
     if (audio.playingBuffer) audio.stopBuffer();
     else audio.playBuffer(editor.working);
@@ -313,10 +328,13 @@ export function Recorder({
   }, [audio]);
 
   // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
-  // row share this. Close any open selection so record mode returns clean; it
-  // only switches mode, it never closes the sheet (that is Back/`close`).
+  // row share this. Close any open selection AND reset zoom to whole: record
+  // mode has no zoom control, so a quarter-zoom carried out of edit would leave
+  // the record view stuck zoomed with no way to widen it (George R1). It only
+  // switches mode, it never closes the sheet (that is Back/`close`).
   const onExitEdit = useCallback(() => {
     editor.closeSelection();
+    setZoom(ZOOM_WHOLE);
     setMode("record");
     setMenuOpen(false);
   }, [editor]);
@@ -384,6 +402,12 @@ export function Recorder({
     if (closing.current) return;
     closing.current = true;
     setIsClosing(true);
+    // Silence buffer playback now, not at the eventual unmount `leave()`: the
+    // async commit below can run a save while a long buffer keeps sounding, and
+    // Play goes `disabled` on `isClosing` so nothing on screen can stop it
+    // (George R1). `stopBuffer` only releases its own "take" floor — never a
+    // capture, so it is safe ahead of the `stopRecording` commit path.
+    audio.stopBuffer();
     void (async () => {
       // Commit on close (F8): if the mic is live or paused, stop it, then
       // splice what it captured into the segment's audio. `stopRecording`
@@ -666,11 +690,7 @@ export function Recorder({
                   height={200}
                   recorded={hasAudio}
                   playhead={playhead}
-                  view={{
-                    startFraction: hasAudio ? win.start / length : 0,
-                    endFraction: hasAudio ? win.end / length : 1,
-                    centerFraction: CENTER_FRACTION,
-                  }}
+                  view={waveView}
                 />
                 {mode === "edit" &&
                   editor.selectionActive &&
@@ -875,21 +895,29 @@ export function Recorder({
             />
             <Control
               icon="check"
+              // Green AND the mark/unmark label both key on `finishedState`, the
+              // resolved state the store will actually write — NOT the raw
+              // `displayedFinished` intent. They diverge on an emptied segment:
+              // mark finished, Edit, cut all, Done → `finishedState` is
+              // "disabled" (a 0-frame take cannot be finished, and close writes
+              // `finished: false`), but `displayedFinished` is still true, so
+              // keying the paint on it would show a green, "Unmark finished" row
+              // that lies until close (George R1). `finishedState === "finished"`
+              // is true only when the mark will stick.
               label={
-                view && displayedFinished
+                view && finishedState === "finished"
                   ? strings.markUnfinished(view.ordinal)
                   : strings.markFinished(view?.ordinal ?? 0)
               }
               variant="quiet"
-              // Green = finished, muted quiet = not, greyed = disabled. Same
-              // derived preview and same `onToggleFinished`/`finishedIntent`
-              // semantics the header checkbox carried (D1) — only the trigger
-              // moved. It does NOT close the menu: the row re-renders in place so
-              // the check turns green as the translator taps, the record-and-mark
-              // -done-in-one-sheet flow. Frozen through the requesting/processing/
-              // close window exactly as Record is (G10), plus the never-recorded
-              // `finishedState === "disabled"` the Checkbox encoded via `state`.
-              className={displayedFinished ? "is-done" : undefined}
+              // Same `onToggleFinished`/`finishedIntent` semantics the header
+              // checkbox carried (D1) — only the trigger moved. It does NOT close
+              // the menu: the row re-renders in place so the check turns green as
+              // the translator taps, the record-and-mark-done-in-one-sheet flow.
+              // Frozen through the requesting/processing/close window exactly as
+              // Record is (G10), plus the never-recorded `finishedState ===
+              // "disabled"` the Checkbox encoded via `state`.
+              className={finishedState === "finished" ? "is-done" : undefined}
               disabled={finishedState === "disabled" || isClosing || busy}
               onClick={onToggleFinished}
             />

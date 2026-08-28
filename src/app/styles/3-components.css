@@ -477,6 +477,11 @@
     outline: var(--c-focus-ring);
     outline-offset: var(--c-focus-offset);
   }
+  @media (prefers-reduced-motion: reduce) {
+    .modepill {
+      transition: none;
+    }
+  }
 }
 
 @layer components {
