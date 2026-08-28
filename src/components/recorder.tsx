@@ -342,6 +342,16 @@ export function Recorder({
     setMenuOpen(false);
   }, [audio]);
 
+  // The permission panel's Retry. It bypasses `onRecordButton`, so it must force
+  // record mode itself: Edit is reachable while the panel is up (empty segment +
+  // full clipboard), and a Retry from there would otherwise start the mic with
+  // the edit toolbar on screen and no Record/Pause/VU — "Editing" over a live
+  // capture (George R3). Any path that starts the mic belongs in record mode.
+  const onRetryRecord = useCallback(() => {
+    setMode("record");
+    audio.startRecording();
+  }, [audio]);
+
   // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
   // row share this. Close any open selection AND reset zoom to whole: record
   // mode has no zoom control, so a quarter-zoom carried out of edit would leave
@@ -671,7 +681,7 @@ export function Recorder({
         {denied ? (
           <PermissionPanel
             message={audio.error}
-            onRetry={audio.startRecording}
+            onRetry={onRetryRecord}
             onBack={close}
           />
         ) : loadError ? (
@@ -916,7 +926,12 @@ export function Recorder({
               // clipboard to paste — a never-recorded segment with a pending clip
               // must still open edit mode to receive it, or the chapter-wide
               // clipboard (G3) could never land on an empty segment (George R2).
-              disabled={!idleEditable || (!hasAudio && !editor.canPaste)}
+              // Never while `denied`: the permission panel owns the body, and
+              // entering edit there strands the edit toolbar over a Retry that
+              // starts the mic (George R3, with onRetryRecord as the other half).
+              disabled={
+                !idleEditable || denied || (!hasAudio && !editor.canPaste)
+              }
               onClick={onEnterEdit}
             />
             <Control

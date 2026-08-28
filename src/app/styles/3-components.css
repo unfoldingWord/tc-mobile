@@ -459,6 +459,11 @@
     display: inline-flex;
     align-items: center;
     flex: none;
+    /* The 44px touch floor — this pill IS the Done control (D2), and the header
+       menu button it swaps with, plus the checkbox it replaced, both sat at
+       --c-control-md. A ~20px text pill next to a 44px Back that commits is too
+       easy to miss (George R3). */
+    min-height: var(--c-control-md);
     padding: var(--p-space-1) var(--p-space-3);
     border: none;
     border-radius: var(--p-radius-full);
