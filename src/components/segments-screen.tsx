@@ -350,11 +350,14 @@ export const SegmentsScreen = forwardRef<
             onClick={onSendShare}
           />
         ) : (
+          // Stays enabled while `preparing`: a re-tap is already a no-op via the
+          // hook's `preparingRef`, and disabling it would drop this control out of
+          // Menu's `FOCUSABLE` set (which excludes `[disabled]`), breaking the Tab
+          // trap and letting focus escape the portal (George R-B7).
           <Control
             icon="share"
             label={strings.shareChapter}
             variant="quiet"
-            disabled={share.status === "preparing"}
             onClick={onPrepareShare}
           />
         )}

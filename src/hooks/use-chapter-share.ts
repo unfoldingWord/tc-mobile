@@ -101,6 +101,12 @@ export function useChapterShare(): UseChapterShare {
   // Re-entry guard for tap 1: a second tap before the first render commits must
   // not start a second (expensive) encode.
   const preparingRef = useRef(false);
+  // Re-entry guard for tap 2: `navigator.share` is only ever in flight once. A
+  // double-tap (or two clicks before the OS sheet paints) must not open a second
+  // share of the same File — the second's rejection would be classified `failed`
+  // and drop the armed File out from under the first. Mirrors `use-erase-segment`'s
+  // double-tap guard, which exists for exactly this reason.
+  const sendingRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -158,15 +164,22 @@ export function useChapterShare(): UseChapterShare {
         setError("failed");
         setStatus("idle");
       } finally {
-        preparingRef.current = false;
+        // Only clear the guard for the run that still owns it. A stale run whose
+        // token was bumped by `reset` must NOT release a newer run's guard, or a
+        // further tap would start a third full-chapter encode over the same PCM.
+        if (current()) preparingRef.current = false;
       }
     },
     []
   );
 
   const send = useCallback(async (): Promise<ShareOutcome> => {
+    // A share is already in flight: ignore this tap and leave the File armed, so
+    // a double-tap cannot open a second share whose rejection drops the File.
+    if (sendingRef.current) return "retry";
     const file = fileRef.current;
     if (file === null) return "failed";
+    sendingRef.current = true;
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
     const current = () => runId === runIdRef.current;
@@ -200,6 +213,8 @@ export function useChapterShare(): UseChapterShare {
         if (outcome === "failed") setError("failed");
       }
       return outcome;
+    } finally {
+      sendingRef.current = false;
     }
   }, []);
 
