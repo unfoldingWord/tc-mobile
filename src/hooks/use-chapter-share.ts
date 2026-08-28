@@ -35,16 +35,24 @@ export type ShareOutcome = "sent" | "dismissed" | "retry" | "failed";
  * How to treat a `navigator.share` rejection.
  *
  * `dismissed`: the user closed the sheet (`AbortError`) — expected, not a
- * failure to alarm a translator with. `retry`: the platform refused the
- * activation (`NotAllowedError`) — the prepared File still stands, so a fresh
- * tap can hand it over; surfacing this as "failed" would send the translator
- * back to re-encode a chapter that is already sitting ready. `failed`: anything
- * else is a real error.
+ * failure to alarm a translator with. `failed`: a real error.
+ *
+ * `NotAllowedError` is overloaded, so `hadActivation` — whether user activation
+ * was live at the moment we called `share` — decides it. With NO active
+ * activation it means the tap's activation was spent, and the prepared File
+ * still stands, so `retry` lets a fresh tap hand it over. WITH activation live
+ * it is a standing refusal (a Permissions-Policy block on Web Share), which no
+ * number of taps will clear — that is `failed`, so the translator gets an error
+ * channel instead of a "Share now" button that loops forever (Frank R-B7).
  */
-export function classifyShareError(cause: unknown): ShareOutcome {
+export function classifyShareError(
+  cause: unknown,
+  hadActivation: boolean
+): ShareOutcome {
   if (cause instanceof DOMException) {
     if (cause.name === "AbortError") return "dismissed";
-    if (cause.name === "NotAllowedError") return "retry";
+    if (cause.name === "NotAllowedError")
+      return hadActivation ? "failed" : "retry";
   }
   return "failed";
 }
@@ -120,6 +128,14 @@ export function useChapterShare(): UseChapterShare {
       // Already encoding, or a File is already armed: ignore. (The screen hides
       // the prepare control while `ready`, so this is a re-entry backstop.)
       if (preparingRef.current || fileRef.current !== null) return;
+      // Fail before the encode, not after: a browser with no Web Share should not
+      // pay for a whole-chapter MP3 only to be told it cannot share it. The
+      // file-level `canShare` still runs post-encode (it needs the File), but the
+      // capability itself is knowable now (George R-B7).
+      if (typeof navigator.share !== "function") {
+        setError("failed");
+        return;
+      }
       preparingRef.current = true;
       // Claim this run. A later `reset` (menu close) or unmount bumps the token,
       // and every resumption below bails when its captured id is stale.
@@ -183,11 +199,17 @@ export function useChapterShare(): UseChapterShare {
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
     const current = () => runId === runIdRef.current;
+    // Whether activation is live at the call decides how a NotAllowedError reads
+    // (see classifyShareError). Read it immediately before `share`.
+    const hadActivation = navigator.userActivation?.isActive ?? false;
     // `navigator.share` is invoked synchronously here: an async function runs to
     // its first await, and this call IS that boundary, so no work precedes it and
-    // the tap's user activation is still valid.
+    // the tap's user activation is still valid. Pass ONLY `files`: adding `title`
+    // alongside a file is a known iOS share-target bug where some apps
+    // (WhatsApp/Signal) take the title and drop the file while `share` still
+    // resolves — the File already carries `filename` as its name (George R-B7).
     try {
-      await navigator.share({ files: [file], title: file.name });
+      await navigator.share({ files: [file] });
       // Shared. Drop the File — a later flow re-encodes, since a fresh take may
       // have changed the chapter since this one was prepared.
       fileRef.current = null;
@@ -197,7 +219,7 @@ export function useChapterShare(): UseChapterShare {
       }
       return "sent";
     } catch (cause) {
-      const outcome = classifyShareError(cause);
+      const outcome = classifyShareError(cause, hadActivation);
       if (outcome === "retry") {
         // Activation was spent — keep the File stashed and stay `ready` so
         // another tap can hand it over. Not a failure the translator should see.

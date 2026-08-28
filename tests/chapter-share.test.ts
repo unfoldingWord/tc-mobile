@@ -20,27 +20,37 @@ import { classifyShareError } from "@/hooks/use-chapter-share";
  * File armed for a fresh tap.
  */
 describe("classifyShareError", () => {
-  it("treats a dismissed sheet (AbortError) as dismissed, not a failure", () => {
+  it("treats a dismissed sheet (AbortError) as dismissed, whatever the activation", () => {
     const abort = new DOMException("user cancelled", "AbortError");
-    expect(classifyShareError(abort)).toBe("dismissed");
+    expect(classifyShareError(abort, false)).toBe("dismissed");
+    expect(classifyShareError(abort, true)).toBe("dismissed");
   });
 
-  it("treats a spent activation (NotAllowedError) as retry, keeping the File", () => {
+  it("treats NotAllowedError with NO live activation as retry, keeping the File", () => {
+    // The tap's activation was spent; a fresh tap can still hand over the File.
     const notAllowed = new DOMException("permission denied", "NotAllowedError");
-    expect(classifyShareError(notAllowed)).toBe("retry");
+    expect(classifyShareError(notAllowed, false)).toBe("retry");
+  });
+
+  it("treats NotAllowedError WITH live activation as a real failure, not a loop", () => {
+    // Activation was live and share still refused: a standing block (Permissions
+    // Policy), so surface an error rather than a "Share now" that never works.
+    const notAllowed = new DOMException("blocked by policy", "NotAllowedError");
+    expect(classifyShareError(notAllowed, true)).toBe("failed");
   });
 
   it("treats any other DOMException as a real failure", () => {
     const other = new DOMException("boom", "DataError");
-    expect(classifyShareError(other)).toBe("failed");
+    expect(classifyShareError(other, false)).toBe("failed");
+    expect(classifyShareError(other, true)).toBe("failed");
   });
 
   it("treats a plain Error as a real failure", () => {
-    expect(classifyShareError(new Error("network"))).toBe("failed");
+    expect(classifyShareError(new Error("network"), false)).toBe("failed");
   });
 
   it("treats a non-error throw as a real failure", () => {
-    expect(classifyShareError("nope")).toBe("failed");
-    expect(classifyShareError(undefined)).toBe("failed");
+    expect(classifyShareError("nope", false)).toBe("failed");
+    expect(classifyShareError(undefined, true)).toBe("failed");
   });
 });

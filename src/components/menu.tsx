@@ -50,6 +50,9 @@ export function Menu({
   children,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // The header (title + Close). Held so the open-edge focus can skip past it to
+  // the first real action rather than landing on the dismiss control.
+  const headerRef = useRef<HTMLDivElement | null>(null);
   // Read `onClose` from the keydown listener without re-subscribing it. Both B6
   // consumers pass an inline `onClose` and open the menu over a TICKING parent —
   // the recorder menu is now live mid-take (elapsedMs every 100 ms) and the row
@@ -66,9 +69,22 @@ export function Menu({
   // Land focus inside the panel ONCE on the open edge — first ENABLED control,
   // never a disabled one (focusing it is a no-op that strands the user behind
   // the scrim — Frank R-B6) — and not again on every parent render.
+  //
+  // Skip the header's Close to land on the first ACTION: a menu that opens with
+  // focus on its dismiss control invites an immediate close, and a one-action
+  // menu (Share chapter, B7) makes that the wrong first target (George R-B7).
+  // Fall back to the panel's first focusable, which is Close on an empty menu.
   useEffect(() => {
     if (!open) return;
-    panelRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    const panel = panelRef.current;
+    if (!panel) return;
+    const focusables = Array.from(
+      panel.querySelectorAll<HTMLElement>(FOCUSABLE)
+    );
+    const target =
+      focusables.find((el) => !headerRef.current?.contains(el)) ??
+      focusables[0];
+    target?.focus();
   }, [open]);
 
   // The focus trap + Escape, bound once per open; reads `onClose` via the ref.
@@ -121,7 +137,7 @@ export function Menu({
         aria-label={title}
         className="menu-panel"
       >
-        <div className="flex items-center justify-between">
+        <div ref={headerRef} className="flex items-center justify-between">
           <span className="t-title">{title}</span>
           <Control
             icon="back"

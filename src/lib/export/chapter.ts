@@ -12,12 +12,12 @@
  * ordering and gap are asserted directly on samples, without decoding an MP3.
  */
 
-import { concat, silence } from "@/lib/audio/edit";
+import { silence } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3, type EncodeMp3Options } from "@/lib/audio/mp3";
 import { resolveChapterClipIds } from "@/lib/storage/books";
-import { getClip } from "@/lib/storage/clips";
-import type { ChapterId } from "@/types/domain";
+import { getClip, getClipMeta } from "@/lib/storage/clips";
+import type { ChapterId, ClipId } from "@/types/domain";
 
 /**
  * Silence between concatenated segments, in seconds. A chapter whose segments
@@ -54,28 +54,56 @@ export async function gatherChapterPcm(
   chapterId: ChapterId
 ): Promise<ChapterPcm> {
   const { clipIds, missing } = await resolveChapterClipIds(chapterId);
-
-  const gap = silence(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
-  const parts: Int16Array[] = [];
-  let segments = 0;
-  // `resolveChapterClipIds` resolves through clip *metadata* only; `getClip`
-  // needs the sample rows too. A clip whose halves have come apart, or one
-  // erased between that walk and this read, resolves there but returns nothing
-  // here — so it is a segment that contributed no audio and must be counted,
-  // not silently dropped, or a gappy chapter exports "as if whole" (Frank F3).
   let missingAudio = missing;
+
+  // Two passes so only ONE chapter-sized PCM buffer is ever live. Building an
+  // array of clip samples and then `concat`-ing it holds every clip AND the
+  // joined result at once — ~2x peak, ~160 MB on a 15-minute chapter, enough to
+  // kill the tab on a low-end phone (George R-B7). Pass 1 reads only metadata
+  // (frame counts) to size the buffer; pass 2 copies each clip in and drops it.
+
+  // Pass 1 — size from metadata. `resolveChapterClipIds` resolves through the
+  // same metadata, so a meta absent here is the "halves apart" / erased-since
+  // case and counts as no audio, exactly as the read below does (Frank F3).
+  const gapFrames = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
+  const present: ClipId[] = [];
+  let capacity = 0;
   for (const clipId of clipIds) {
+    const meta = await getClipMeta(clipId);
+    if (!meta || meta.frameCount === 0) {
+      missingAudio++;
+      continue;
+    }
+    if (present.length > 0) capacity += gapFrames;
+    capacity += meta.frameCount;
+    present.push(clipId);
+  }
+  if (present.length === 0)
+    return { samples: new Int16Array(0), segments: 0, missing: missingAudio };
+
+  // Pass 2 — fill the one buffer. A clip erased in the window between the two
+  // passes returns nothing from `getClip`: skip and count it, and trim the
+  // returned view to what was actually written rather than leave a silent hole.
+  const gap = silence(gapFrames);
+  const out = new Int16Array(capacity);
+  let written = 0;
+  let segments = 0;
+  for (const clipId of present) {
     const clip = await getClip(clipId);
     if (!clip || clip.samples.length === 0) {
       missingAudio++;
       continue;
     }
-    if (segments > 0) parts.push(gap);
-    parts.push(clip.samples);
+    if (segments > 0) {
+      out.set(gap, written);
+      written += gap.length;
+    }
+    out.set(clip.samples, written);
+    written += clip.samples.length;
     segments++;
   }
 
-  return { samples: concat(parts), segments, missing: missingAudio };
+  return { samples: out.subarray(0, written), segments, missing: missingAudio };
 }
 
 /**
