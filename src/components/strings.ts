@@ -105,4 +105,24 @@ export const strings = {
   eraseConfirm: "Erase",
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+
+  // ── Share (B7) ───────────────────────────────────────────────────────────
+  chapterMenuOpen: "More actions for this chapter",
+  chapterMenuTitle: "Chapter",
+  shareChapter: "Share chapter",
+  // Tap 2 of the two-gesture flow: the File is encoded and armed, this hands it
+  // to the OS share sheet. A distinct, primary action so the tap is deliberate.
+  shareSend: "Share now",
+  sharePreparing: "Preparing the chapter to share.",
+  shareNothing: "Record a segment before sharing this chapter.",
+  shareFailed: "Could not share this chapter. Try again.",
+  // Neutral on the cause: `missing` counts every segment whose audio did not
+  // resolve — never-recorded, but also a dangling take or a half-missing clip —
+  // so "no recording yet" would misdescribe a hole the translator never left.
+  shareMissing: (n: number): string =>
+    n === 1
+      ? "1 segment could not be included."
+      : `${n} segments could not be included.`,
+  shareFilename: (book: string, chapter: number): string =>
+    `${book} - Chapter ${chapter}.mp3`,
 } as const;

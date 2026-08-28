@@ -32,7 +32,8 @@ export type IconName =
   | "undo"
   | "redo"
   | "eye"
-  | "eye-off";
+  | "eye-off"
+  | "share";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -328,6 +329,34 @@ const PATHS: Record<IconName, React.ReactNode> = {
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
+      />
+    </>
+  ),
+  // Share: a tray with an up-arrow leaving it — the OS share-sheet glyph.
+  share: (
+    <>
+      <path
+        d="M11 4 L11 13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7.7 7 L11 3.7 L14.3 7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </>
   ),

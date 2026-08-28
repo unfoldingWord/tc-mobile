@@ -747,6 +747,7 @@ export function Recorder({
                   peaks={editor.peaks}
                   height={200}
                   recorded={hasAudio}
+                  capturing={recording || paused}
                   playhead={playhead}
                   view={waveView}
                 />

@@ -26,6 +26,7 @@ import {
   isFinished,
   listBooks,
   resolveChapterClipIds,
+  saveTake,
   setSegmentFinished,
 } from "@/lib/storage/books";
 import {
@@ -529,6 +530,108 @@ describe("book tree", () => {
     await expect(addTake("nope" as never, newClipId(), 100)).rejects.toThrow(
       /No such segment/
     );
+  });
+});
+
+/**
+ * The atomic commit write — clip and take in ONE transaction (#38).
+ *
+ * The regression these catch: the old commit was two transactions (`putClip`
+ * then `addTake`). A failure on the second left the clip durable with no take
+ * referencing it — an orphan that consumed the space the recovery screen tells
+ * the translator to free, so freeing space and retrying failed again. The
+ * atomicity test below fails against that two-transaction flow (the clip would
+ * survive the failed take write) and passes against `saveTake` (the clip rolls
+ * back with the take).
+ */
+describe("atomic take save (saveTake)", () => {
+  it("writes the clip and the take together", async () => {
+    const { segmentId } = await oneSegment();
+    const clipId = newClipId();
+    const take = await saveTake(
+      segmentId,
+      clipId,
+      samples(1000),
+      CANONICAL_SAMPLE_RATE
+    );
+
+    expect(take.clipId).toBe(clipId);
+    // Clip is on disk and the segment points at the take.
+    expect(await getClip(clipId)).toBeDefined();
+    expect(await getClipMeta(clipId)).toBeDefined();
+    const segment = await getSegment(segmentId);
+    expect(segment?.activeTakeId).toBe(take.id);
+  });
+
+  it("stores only the trimmed audio when given a subarray view", async () => {
+    // Guards the copy in saveTake independently of putClip's (George R1 P3):
+    // saveTake writes the clip through its own `new Int16Array(samples)`, so a
+    // view onto a large edit buffer must not drag the whole backing buffer into
+    // IndexedDB — the quota pressure #38 exists to close. Dropping saveTake's
+    // copy while keeping putClip's would leave putClip's test green; this fails.
+    const { segmentId } = await oneSegment();
+    const backing = samples(10_000);
+    const clipId = newClipId();
+    await saveTake(
+      segmentId,
+      clipId,
+      backing.subarray(0, 100),
+      CANONICAL_SAMPLE_RATE
+    );
+    const loaded = await getClip(clipId);
+    expect(loaded?.samples.length).toBe(100);
+  });
+
+  it("leaves NO orphaned clip when the take write fails (#38 atomicity)", async () => {
+    const clipId = newClipId();
+    // An unknown segment makes `writeTakeInTx` throw AFTER the clip has been
+    // written into the same transaction. One transaction, so the clip write
+    // must roll back with it.
+    await expect(
+      saveTake("nope" as never, clipId, samples(1000), CANONICAL_SAMPLE_RATE)
+    ).rejects.toThrow(/No such segment/);
+
+    expect(await getClip(clipId)).toBeUndefined();
+    expect(await getClipMeta(clipId)).toBeUndefined();
+    expect(await totalClipBytes()).toBe(0);
+  });
+
+  it("rejects a 0-frame clip and writes nothing", async () => {
+    const { segmentId } = await oneSegment();
+    const clipId = newClipId();
+    await expect(
+      saveTake(segmentId, clipId, new Int16Array(0), CANONICAL_SAMPLE_RATE)
+    ).rejects.toThrow(/0-frame/);
+
+    expect(await getClip(clipId)).toBeUndefined();
+    // The segment is untouched — still never-recorded.
+    expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
+  });
+
+  it("lands the Finished mark atomically with the take", async () => {
+    const { segmentId } = await oneSegment();
+    await saveTake(
+      segmentId,
+      newClipId(),
+      samples(500),
+      CANONICAL_SAMPLE_RATE,
+      { finished: true }
+    );
+    expect(isFinished((await getSegment(segmentId))!.status)).toBe(true);
+  });
+
+  it("replaces the prior take 1:1 and reaps its now-unreferenced clip", async () => {
+    const { segmentId } = await oneSegment();
+    const firstClip = newClipId();
+    await saveTake(segmentId, firstClip, samples(400), CANONICAL_SAMPLE_RATE);
+    const secondClip = newClipId();
+    await saveTake(segmentId, secondClip, samples(600), CANONICAL_SAMPLE_RATE);
+
+    // The superseded clip is gone; the current one remains and the segment
+    // points at a take (the second).
+    expect(await getClip(firstClip)).toBeUndefined();
+    expect(await getClip(secondClip)).toBeDefined();
+    expect((await getSegment(segmentId))?.activeTakeId).not.toBeNull();
   });
 });
 

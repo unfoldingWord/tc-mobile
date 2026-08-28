@@ -25,9 +25,9 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * orphan report.
  *
  * What is NOT covered here: everything the hook does with the results. The
- * `putClip` / `addTake` writes, the `deleteClip` of the orphan, the `useState`
- * slot surviving a re-render, and the recovery screen taking over are all
- * outside this module. `discardSave` reports which clip is orphaned; it does not
+ * `saveTake` write (clip + take in one transaction), the `deleteClip` of the
+ * orphan, the `useState` slot surviving a re-render, and the recovery screen
+ * taking over are all outside this module. `discardSave` reports which clip is orphaned; it does not
  * delete it, and nothing here asserts that a delete happened. The storage calls
  * themselves are covered by `tests/storage.test.ts`. The wiring between them
  * has no automated coverage and needs a specific on-device check that has not
