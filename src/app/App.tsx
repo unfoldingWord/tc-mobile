@@ -117,6 +117,7 @@ export function App() {
         <SaveFailed
           state={recovery.state}
           kind={recovery.kind}
+          editOnly={recovery.editOnly}
           ordinal={recordingOrdinal}
           attempts={recovery.attempts}
           onRetry={retryPendingTake}

@@ -115,7 +115,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   );
 
   return (
-    <div className="flex h-full flex-col gap-[14px]">
+    // While the menu is open, take the whole shelf chrome — New Book included —
+    // out of the focus/pointer tree for AT/switch users, matching how Segments
+    // inerts behind its dialogs (G8: aria-modal alone is not trusted to hide the
+    // background). The Menu portals to <body>, so it stays live above this (#77).
+    <div
+      className="flex h-full flex-col gap-[14px]"
+      inert={menuOpen || undefined}
+    >
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
         {!showEmpty && (
           <Control
