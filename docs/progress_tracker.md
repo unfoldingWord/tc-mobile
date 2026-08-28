@@ -7,6 +7,89 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-28 (night) — #89 recorder Play button + record/edit mode split, merged to develop
+
+**Branch:** `feat/recorder-play-mode-split` → **`develop`** · **PR merged:**
+[#100](https://github.com/sethstoll3/tc-mobile/pull/100) (squash, `ac06a15`) ·
+**Filed:** #101, #102, #103, #104 · **On `develop`** — **not yet promoted**
+(`staging` still `v0.1.5`, production `main` untouched at `3464a30`).
+
+### Completed
+
+- **#89 built and merged** — the recorder splits into a **record mode** (a
+  centered Record + Play hero pair, `≡` menu top-right) and an **edit mode** (the
+  `[zoom][select][undo][redo][≡]` toolbar + selection/paste/cut behind the menu,
+  an "Editing" pill), per Tim's approved 2026-08-27 wireframe.
+- **Play plays the in-memory working buffer** via a new `playBuffer`/`stopBuffer`
+  seam on `useAudioSession` — reuses `playSamples` + the single-owner floor,
+  skips the disk load `playTake` does, so the stored recording + unsaved edits
+  are audible. **Playback is a listen-only overlay:** whole-clip view, centerline
+  suppressed, Record + pan disabled, buffer stopped at every boundary (menu open,
+  edit entry, close, floor steal, leave).
+- **Waveform playhead** with the clip-fraction→viewport-x mapping extracted to a
+  pure, **red-first-tested** `lib/audio/viewport.ts` helper (the one unit-testable
+  slice; the rest is browser-only).
+- **Finished moved into the `≡` menu** (D1, reversible — flagged for Tim), keying
+  green/label on the resolved `finishedState`. **`Checkbox` component deleted**
+  (recorder was its only consumer). The mic permission panel now keys on the
+  recorder's **own** error, so a failed Play can't raise it.
+
+### Built via ultracode, then five dual-review rounds (Frank/George)
+
+- **Ultracode workflow:** design pass + two disjoint build lanes (the seam; the
+  playhead + helper) + integration. Then I reviewed the diff by hand and tightened
+  a real fragility (a "stop via re-call the toggle" idiom → an explicit `stopBuffer`).
+- **The chain, and where it converged.** George (deep-tree) walked a real class
+  across rounds — **buffer playback is a new idle-time source, and every call
+  site that assumed "idle == silent" had to stop it.** R1 (6 P2: playhead
+  visibility, finished-green lie, back-doesn't-stop, zoom-leak, an over-claim) →
+  R2 (2: the whole-clip view left Record/pan/centerline live → made playback a
+  listen-only overlay) → R3 (1: mic could go live in edit via the permission
+  Retry) → R4 (1: `denied` conflated a playback error with a mic error → split
+  `recorderError` out) → R5 (1: Erase locked its confirm over live sound). **R5
+  closed the class at its gateway** — the `≡` menu is the one path to every
+  idle-time action during playback, so stopping the buffer on menu-open cuts off
+  the sibling stream instead of patching one more site. Frank (diff-local)
+  APPROVE at R3 and R5; his R4 test-coverage P2 was refuted (the arbitration is
+  fully covered in `session.ts`; the hook glue is the project's no-renderer
+  on-device surface). A triage with dispositions + head SHA every round.
+- **Round cap + DRI calls.** Hit the round-4 cap; DRI (Seth) authorized a
+  confirming round 5, then **merge-on-green** after R5 closed the class. Squash
+  merge on green (feature→develop convention).
+
+### Blockers / needs a human
+
+- **On-device pass (iOS + Android) owed on this** before `staging → main` — all
+  browser-only: Play sounds the buffer, the playhead sweeps, Play dims while
+  recording, the mode split, Finished-from-menu still marks/rides the take. Joins
+  the existing `v0.1.5` device debt.
+- **Tim owes two confirms on #89** (both reversible, built to a default): D1
+  (Finished in the menu vs deleted from the recorder) and D2 (the "Editing" pill
+  as the non-reader edit affordance vs more, → #91).
+- **Unchanged:** Capacitor go/no-go on the WKWebView audio spike (#86); org move
+  (D1) needs a uW human; #12 PCM storage owed before October.
+
+### Follow-ups filed
+
+- **#101** — preview an uncommitted take in-sheet (Model A splices only on close).
+- **#102** — recorder-playback perf: the inert Segments list re-renders ~16×/s,
+  and the waveform reallocates its backing store per playhead tick (pull-model
+  playhead is the fix for both).
+- **#103** — latent: the Segments-list erase keys only on `playingId`, not
+  `playingBuffer` (unreachable today).
+- **#104** — `playSamples` should re-check the session token after
+  `resumeAudioContext` (pre-existing, both playback paths).
+
+### Next steps
+
+1. **Promote `develop` → `staging`** (bump the build stamp) so #89 can get its
+   on-device pass, alongside the still-owed `v0.1.5` checks. Then `staging → main`
+   once both hold.
+2. **Tim answers the two #89 confirms.**
+3. **B7 (#33)** — Template Library + Share, the October spine.
+
+---
+
 ## 2026-08-28 (evening) — P3 cleanup lanes (#67/#77/#94), #89 Gate 1, promoted to staging v0.1.5
 
 **Branches:** `fix/ui-p3-a11y-copy` → `develop` (#96), `fix/timer-pad-minutes` →
