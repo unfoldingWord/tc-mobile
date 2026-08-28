@@ -580,10 +580,15 @@ export function Recorder({
     sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
   }, []);
 
-  // A mic permission/start failure, sitting in `audio.error` at idle (distinct
-  // from a decode failure, which travels as `stopError`).
+  // A mic permission/start failure, at idle (distinct from a decode failure,
+  // which travels as `stopError`). Keyed on `recorderError`, NOT the merged
+  // `audio.error`: `playBuffer` is the first in-sheet path that can set a
+  // playback error, and a failed Play must not raise the mic permission panel
+  // (whose Retry starts the mic) — it stays a toolbar Notice via `audio.error`
+  // below (George R4). `audio.error` still equals `recorderError` when this is
+  // true, so the panel message is unchanged.
   const micError =
-    state === "idle" && audio.error !== null && stopError === null;
+    state === "idle" && audio.recorderError !== null && stopError === null;
   // The full-body permission panel REPLACES the sheet body, so it may only take
   // over when there is nothing on screen to lose: the device cannot record, or a
   // mic error on a segment with no audio and no pending edits. With audio or
@@ -655,7 +660,11 @@ export function Recorder({
               icon="menu"
               label={strings.recorderMenuOpen}
               variant="quiet"
-              disabled={!view || isClosing}
+              // Also closed while `denied`: the permission panel owns the body
+              // and its Retry/Back, and opening the menu inerts the sheet — which
+              // would put the scrim over the panel's Retry with no way to reach it
+              // until the menu is dismissed (George R4).
+              disabled={!view || isClosing || denied}
               onClick={() => setMenuOpen(true)}
             />
           ) : (

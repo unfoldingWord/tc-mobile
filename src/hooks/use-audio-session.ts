@@ -33,7 +33,15 @@ export interface UseAudioSession {
   readonly recorderState: RecorderState;
   readonly elapsedMs: number;
   readonly supported: boolean;
+  /** One surface for the sheet's Notice — a recorder failure, else a playback one. */
   readonly error: string | null;
+  /**
+   * The RECORDER's own error, without the playback message `error` folds in. A
+   * caller deciding "the mic failed, show the permission panel" must key on this,
+   * not `error`: a failed `playBuffer`/`playTake` sets a playback message that is
+   * not a mic miss and must not raise the mic panel or its Retry.
+   */
+  readonly recorderError: string | null;
   /**
    * Play a segment's take, optionally from a scrub offset (seconds). Tapping
    * the segment that is already playing stops it.
@@ -429,6 +437,7 @@ export function useAudioSession(): UseAudioSession {
     // One surface, newest cause first: a recorder failure is what the
     // translator just did, so it outranks a stale playback message.
     error: recorderError ?? playbackError,
+    recorderError,
     playTake,
     playBuffer,
     stopBuffer,
