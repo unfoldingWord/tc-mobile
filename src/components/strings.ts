@@ -30,7 +30,12 @@ export const strings = {
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
   addSegment: "Add segment",
-  saving: "Saving your recording.",
+  // Shown while the chapter list rebuilds after any change — a save landed, an
+  // edit, a finished toggle, or an erase. Neutral on purpose: the recorder-path
+  // erase reaches here too, where "Saving your recording." claimed a save that
+  // never happened, and even after a real save the write is already done by the
+  // time this shows — the list is recomputing peaks, not saving (#77).
+  updating: "Updating the chapter.",
   loadingChapter: "Loading the chapter.",
   segmentsEmpty: "Add the first segment",
   segmentsEmptyTeach:

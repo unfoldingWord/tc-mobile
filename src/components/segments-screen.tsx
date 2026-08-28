@@ -227,7 +227,7 @@ export const SegmentsScreen = forwardRef<
         // header over a blank list with no reason given (G8).
         <Notice tone="busy">{strings.loadingChapter}</Notice>
       ) : (
-        refreshing && <Notice tone="busy">{strings.saving}</Notice>
+        refreshing && <Notice tone="busy">{strings.updating}</Notice>
       )}
 
       <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>

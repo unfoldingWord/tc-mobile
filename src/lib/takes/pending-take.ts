@@ -71,6 +71,14 @@ export interface PendingTake {
    * reaches. False is the default a plain recording lands in.
    */
   readonly finished: boolean;
+  /**
+   * Whether this save came from an edit-only close (B5), where `recorded` is
+   * empty and the whole flattened buffer is in `existing`, versus a fresh
+   * recording. The recovery screen reads it to word itself honestly: discarding
+   * a failed edit-save drops the edited buffer while the previously stored take
+   * survives, so "delete this recording for good" is only true of a recording.
+   */
+  readonly editOnly: boolean;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
@@ -86,6 +94,8 @@ export interface NewTake {
   readonly offset: number;
   /** Whether the translator marked this take Finished (see `PendingTake`). */
   readonly finished: boolean;
+  /** Whether this is an edit-only save rather than a recording (see `PendingTake`). */
+  readonly editOnly: boolean;
 }
 
 /**
@@ -108,6 +118,7 @@ export function startSave(
     recorded: take.recorded,
     offset: take.offset,
     finished: take.finished,
+    editOnly: take.editOnly,
     state: "saving",
     kind: null,
     attempts: 0,

@@ -9,7 +9,7 @@ and do not imply one entry per day.
 
 ## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
 
-**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) · **PR merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) · **Closed:** #88, #90 · **Filed:** #93, #94 · **Staging/production untouched.**
+**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) → **`staging`** (`f93ffa5`) · **PRs merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) (lane), [#95](https://github.com/sethstoll3/tc-mobile/pull/95) (promotion) · **Closed:** #88, #90 · **Filed:** #93, #94 · **On `staging` serving `v0.1.4`** (bundle grep-verified) · **Production untouched** (`main` at `3464a30`).
 
 ### Completed
 
@@ -30,9 +30,12 @@ and do not imply one entry per day.
 - **#93** — empty-CTA focus/first-run cluster: the Books reload-window double-tap (race-safe, no data loss; clean fix is optimistic insert in `use-books` — a `creating` busy-latch tripped the react-compiler no-setState-in-effect rule, not suppressed), and the first-run AT autofocus order. Adjacent to #73/#77.
 - **#94** — `formatDuration` grows the clock a digit at the 10:00 rollover (tabular figures don't fix a length change). Fix is `padStart` (visible `00:05`, Tim's call) or a `ch` width reserve.
 
+### On-device pass — PASSED (2026-08-28, Seth, iPhone 16 / iOS 27 beta 7 / Safari, staging `v0.1.4`)
+
+The lane's owed browser-only checks were verified on device by Seth: empty Books/Segments render one centered CTA (no corner `+`, **E1**); the invite CTA creates and, on VoiceOver, focus lands on the new row's control rather than Back (**E5** — the least code-provable one); the recording timer holds digit width while counting (**T1**). This **clears the `staging → main` gate for #92's changes.** Still **iOS Safari only on a pre-release build** (iOS 27 beta 7); Android never run.
+
 ### Blockers / needs a human (unchanged)
 
-- **On-device pass** is the gate before `staging → main`: the empty states render + the CTA creates + focus lands on the new row + the timer/counts hold digit width. All browser-only — invisible to CI and knip.
 - **Capacitor go/no-go** still hinges on the WKWebView background-audio spike (#86). **Org move (D1)** needs a uW human. **#12** PCM storage strategy owed before October.
 
 ### Next steps
