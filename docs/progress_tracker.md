@@ -7,6 +7,43 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
+
+**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) · **PR merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) · **Closed:** #88, #90 · **Filed:** #93, #94 · **Staging/production untouched.**
+
+### Completed
+
+- **#90 — invite empty states (Books + Segments).** Reframed the two "nothing here" notes into the ui-craft §21 invite shape: confident headline, one teaching line (vocabulary + "stays on this phone"), and a single **present primary CTA** that reuses the real create handlers (`onNewBook`/`onAppend`). New shared `EmptyState` component. The header create `+` now **hides while the invite is up**, so there is one create action — visually and to a screen reader. Strings are the shape only; exact words are Tim's, in `strings.ts`.
+- **#88 — tabular figures on the numeric type roles**, reframed and shipped as **regression-hardening, not a jitter fix.** The digits never jittered: `.app-shell` sets `font-variant-numeric: tabular-nums` (inherited), and every call site is in-shell. Declared it directly on `.t-count` / `.t-timer` / `.t-ordinal` so a future portaled surface can't regress to proportional.
+- **Built direct (not a workflow) on purpose** — a two-line CSS change + copy/one element is below the bar for fan-out, and the one real risk (CSS/focus on device) is exactly what no subagent can verify. Recorded the call with Seth.
+
+### Four dual-review rounds (Frank codex / George grok) — a converging chain
+
+- **R1:** Frank APPROVE; George P2 = two equal primary CTAs on the empty shelf → hid the corner `+`.
+- **R2:** George P2 = hiding it stranded focus (Back became first tab stop, an Enter from leaving the chapter) → focus handoff to the new row.
+- **R3:** George P2 = the hidden corner exposed that `loadFailed` conflated a failed _read_ with a failed _create_, so a create failure tore down the invite → **root-fixed** by latching `loaded` in `useBooks`/`useChapterSegments` (`loadFailed = error && !loaded`, `showEmpty = loaded && empty`). Plus the R3 focus target hit the row's first `<button>` (Books' toggle) → now targets `button.control` / `.row-open` explicitly.
+- **Frank APPROVE every round; no P1 any round.** Merged at the **round-4 cap on a recorded DRI override** (Seth's O2), rationale enumerated on #92. Triage posted every round with dispositions + head SHA.
+- **Process note:** the `gh pr comment`/`merge`/`issue close` writes were blocked by the auto-mode classifier; Seth ran them by hand via `!`. The override executed by the DRI is arguably the more correct form.
+
+### Deferred / accepted residuals (tracked)
+
+- **#93** — empty-CTA focus/first-run cluster: the Books reload-window double-tap (race-safe, no data loss; clean fix is optimistic insert in `use-books` — a `creating` busy-latch tripped the react-compiler no-setState-in-effect rule, not suppressed), and the first-run AT autofocus order. Adjacent to #73/#77.
+- **#94** — `formatDuration` grows the clock a digit at the 10:00 rollover (tabular figures don't fix a length change). Fix is `padStart` (visible `00:05`, Tim's call) or a `ch` width reserve.
+
+### Blockers / needs a human (unchanged)
+
+- **On-device pass** is the gate before `staging → main`: the empty states render + the CTA creates + focus lands on the new row + the timer/counts hold digit width. All browser-only — invisible to CI and knip.
+- **Capacitor go/no-go** still hinges on the WKWebView background-audio spike (#86). **Org move (D1)** needs a uW human. **#12** PCM storage strategy owed before October.
+
+### Next steps
+
+1. **Fast lane:** the #67/#73/#75/#77 P3 batch — today's exact shape, low-risk, one `fix(ui)` PR.
+2. **Big lane:** **B7 (#33)** Template Library + Share — the October spine (subsumes #18 export, most of #20); the right ux-then-ui Gate-1 + ultracode candidate.
+3. **#89** recorder record/edit split (ultracode candidate), then **#91**. **B8 (#34)** after B7.
+4. Send Tim the staging link for wider testing once the on-device pass clears.
+
+---
+
 ## 2026-08-27 (late) — UI audit (ux-then-ui + ui-craft), updated mockups, Tim sign-off
 
 **Branch:** `develop` (no code shipped — a design/planning session) · **Filed:** #88–#91 · **Artifacts:** [updated mockups](https://claude.ai/code/artifact/9edaa5d6-22cb-4d0c-9f15-c82441f93d10) · **No commits** beyond this tracker entry.
