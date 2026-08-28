@@ -232,6 +232,7 @@ export function useAudioSession(): UseAudioSession {
 
           const handle = await playSamples(audio.clip.samples, {
             offsetSeconds,
+            isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
               if (!session.isCurrent(token)) return;
               session.release(token);
@@ -302,6 +303,7 @@ export function useAudioSession(): UseAudioSession {
         try {
           const handle = await playSamples(samples, {
             offsetSeconds,
+            isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
               if (!session.isCurrent(token)) return;
               session.release(token);

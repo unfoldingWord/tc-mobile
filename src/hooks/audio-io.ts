@@ -85,9 +85,29 @@ function getAudioContext(): AudioContext {
   return sharedContext;
 }
 
+/**
+ * Which AudioContext states need a `resume()` to become audible.
+ *
+ * Pure and exported so the one bit of logic that decides audibility is unit-
+ * tested without a Web Audio mock (the rest of this module is browser-only).
+ *
+ * The states are the standard three — `"suspended" | "running" | "closed"` —
+ * plus WebKit's non-standard fourth, `"interrupted"`, entered on an OS audio
+ * interruption (a call, Siri, a route change) and on backgrounding. A context
+ * left `"interrupted"` plays every subsequent source SILENTLY with no error and
+ * no rejection, for the life of the page — the iOS silent-playback report. So
+ * the rule is "anything that is not already running and is still openable needs
+ * a resume", which is every state but `"running"` and `"closed"`. Compared as
+ * strings, not against the DOM `AudioContextState` union, because `"interrupted"`
+ * is not in it.
+ */
+export function contextNeedsResume(state: string): boolean {
+  return state !== "running" && state !== "closed";
+}
+
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext();
-  if (ctx.state === "suspended") await ctx.resume();
+  if (contextNeedsResume(ctx.state)) await ctx.resume();
 }
 
 /** A live level tap on a capture stream, for the recorder's VU meter. */
@@ -291,9 +311,33 @@ export interface PlaybackHandle {
 /** Play canonical PCM, optionally from an offset. Returns a stop handle. */
 export async function playSamples(
   samples: Int16Array,
-  options: { offsetSeconds?: number; onEnded?: () => void } = {}
+  options: {
+    offsetSeconds?: number;
+    onEnded?: () => void;
+    /**
+     * Re-checked AFTER the resume await, just before the source starts. A play
+     * claim can be superseded (a Stop, a competing take, a mic claim) during
+     * `resumeAudioContext` — which on iOS is a real await that also un-suspends a
+     * suspended/interrupted context. Without this the source starts and is only
+     * then stopped by the caller's `settle`, a sub-perceptible start-then-stop,
+     * worst case an audible click on iOS after the resume. Bailing here means
+     * nothing ever sounds. Both `playTake` and `playBuffer` pass it, so the guard
+     * lives once in the shared sink (#104).
+     */
+    isStillCurrent?: () => boolean;
+  } = {}
 ): Promise<PlaybackHandle> {
   await resumeAudioContext();
+
+  if (options.isStillCurrent && !options.isStillCurrent()) {
+    // Superseded during the resume await. Return an inert handle before building
+    // any node — nothing is created, nothing reaches `ctx.destination`, nothing
+    // sounds. The caller's `settle` stops it (a no-op) and discards it; `onEnded`
+    // is deliberately not called, since nothing started and the newer claim owns
+    // the UI state now.
+    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+  }
+
   const ctx = getAudioContext();
   const buffer = toAudioBuffer(samples);
   const source = ctx.createBufferSource();
