@@ -110,9 +110,16 @@ export const strings = {
   chapterMenuOpen: "More actions for this chapter",
   chapterMenuTitle: "Chapter",
   shareChapter: "Share chapter",
+  // Tap 2 of the two-gesture flow: the File is encoded and armed, this hands it
+  // to the OS share sheet. A distinct, primary action so the tap is deliberate.
+  shareSend: "Share now",
   sharePreparing: "Preparing the chapter to share.",
   shareNothing: "Record a segment before sharing this chapter.",
   shareFailed: "Could not share this chapter. Try again.",
+  shareMissing: (n: number): string =>
+    n === 1
+      ? "1 segment has no recording yet and was left out."
+      : `${n} segments have no recording yet and were left out.`,
   shareFilename: (book: string, chapter: number): string =>
     `${book} - Chapter ${chapter}.mp3`,
 } as const;

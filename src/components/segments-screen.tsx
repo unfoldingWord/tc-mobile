@@ -84,13 +84,35 @@ export const SegmentsScreen = forwardRef<
   // chapter actions. Like the row menu, the list goes inert behind it.
   const [chapterMenuOpen, setChapterMenuOpen] = useState(false);
   const share = useChapterShare();
-  const onShareChapter = useCallback(() => {
-    setChapterMenuOpen(false);
-    void share.shareChapter(
+  // Tap 1 — encode the chapter and arm the send gesture. Free the audio floor
+  // first: a clip may be sounding when the menu opens, and the encode has taken
+  // over the chapter's PCM. The menu stays open across both gestures, so the
+  // header and list stay `inert` (see listInert) for the whole flow — that is
+  // what keeps Record, append, and erase out of an in-flight share.
+  const onPrepareShare = useCallback(() => {
+    audio.leave();
+    void share.prepare(
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
     );
-  }, [share, chapterId, bookName, chapterNumber]);
+  }, [audio, share, chapterId, bookName, chapterNumber]);
+  // Tap 2 — hand the armed File to the OS share sheet. `send()` calls
+  // `navigator.share` synchronously inside this gesture; the `.then` runs after
+  // the sheet settles. Close the menu once the flow is done, but NOT on `retry`
+  // (the File is still armed for another tap) or `failed` (the error Notice
+  // lives in the menu and must stay visible).
+  const onSendShare = useCallback(() => {
+    void share.send().then((outcome) => {
+      if (outcome === "sent" || outcome === "dismissed")
+        setChapterMenuOpen(false);
+    });
+  }, [share]);
+  // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
+  // File and clear state so a stale "ready" cannot linger behind a closed menu.
+  const onCloseChapterMenu = useCallback(() => {
+    setChapterMenuOpen(false);
+    share.reset();
+  }, [share]);
   const erase = useEraseSegment();
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
@@ -134,8 +156,10 @@ export const SegmentsScreen = forwardRef<
   // CTA is up, so there is one create action, announced once.
   const showEmpty = loaded && rows.length === 0;
 
-  // Share (B7) speaks through the same one Notice channel: its error mapped from
-  // the hook's code, and its "preparing" busy state.
+  // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
+  // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
+  // what the translator is looking at. Its error code is mapped to copy here and
+  // rendered in the menu below.
   const shareErrorText =
     share.error === "nothing"
       ? strings.shareNothing
@@ -242,7 +266,7 @@ export const SegmentsScreen = forwardRef<
             icon="menu"
             label={strings.chapterMenuOpen}
             variant="quiet"
-            disabled={loading || refreshing || loadFailed || share.sharing}
+            disabled={loading || refreshing || loadFailed}
             onClick={() => setChapterMenuOpen(true)}
           />
         )}
@@ -250,21 +274,14 @@ export const SegmentsScreen = forwardRef<
 
       {/* One line, one place: a load failure or a playback failure (a
           dangling/undecodable clip routes to audio.error) — never only the
-          console. `console.error is not a channel on a phone in a village.` */}
-      {(error ??
-      audio.error ??
-      shareErrorText ??
-      (erase.error ? strings.eraseFailed : null)) ? (
-        <Notice>
-          {error ?? audio.error ?? shareErrorText ?? strings.eraseFailed}
-        </Notice>
+          console. `console.error is not a channel on a phone in a village.`
+          Share speaks in its own menu, not here. */}
+      {(error ?? audio.error ?? (erase.error ? strings.eraseFailed : null)) ? (
+        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
         <Notice tone="busy">{strings.loadingChapter}</Notice>
-      ) : share.sharing ? (
-        // The main-thread encode blocks briefly; say why the screen is held.
-        <Notice tone="busy">{strings.sharePreparing}</Notice>
       ) : (
         refreshing && <Notice tone="busy">{strings.updating}</Notice>
       )}
@@ -317,15 +334,40 @@ export const SegmentsScreen = forwardRef<
 
       <Menu
         open={chapterMenuOpen}
-        onClose={() => setChapterMenuOpen(false)}
+        onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
       >
-        <Control
-          icon="share"
-          label={strings.shareChapter}
-          variant="quiet"
-          onClick={onShareChapter}
-        />
+        {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once armed
+            it becomes a primary "Share now" that hands the File to the sheet in a
+            fresh activation (tap 2). autoFocus moves focus onto it as it appears,
+            since the Menu only lands focus on its open edge. */}
+        {share.status === "ready" ? (
+          <Control
+            icon="share"
+            label={strings.shareSend}
+            variant="primary"
+            autoFocus
+            onClick={onSendShare}
+          />
+        ) : (
+          <Control
+            icon="share"
+            label={strings.shareChapter}
+            variant="quiet"
+            disabled={share.status === "preparing"}
+            onClick={onPrepareShare}
+          />
+        )}
+        {/* Feedback rides inside the panel because the flow keeps the menu open:
+            the busy state while encoding, a gap warning once armed, and any error
+            code mapped above. */}
+        {share.status === "preparing" && (
+          <Notice tone="busy">{strings.sharePreparing}</Notice>
+        )}
+        {share.status === "ready" && share.missing > 0 && (
+          <Notice tone="busy">{strings.shareMissing(share.missing)}</Notice>
+        )}
+        {shareErrorText && <Notice>{shareErrorText}</Notice>}
       </Menu>
     </div>
   );
