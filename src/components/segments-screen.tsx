@@ -10,11 +10,13 @@ import {
 import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
+import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { strings } from "./strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
+import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
@@ -78,6 +80,17 @@ export const SegmentsScreen = forwardRef<
   // only one is ever open at a time — the open menu's scrim blocks reaching a
   // second row's trigger. (George R-B6.)
   const [rowMenuOpen, setRowMenuOpen] = useState(false);
+  // The chapter-level ≡ menu (B7) — holds Share chapter, and the home for future
+  // chapter actions. Like the row menu, the list goes inert behind it.
+  const [chapterMenuOpen, setChapterMenuOpen] = useState(false);
+  const share = useChapterShare();
+  const onShareChapter = useCallback(() => {
+    setChapterMenuOpen(false);
+    void share.shareChapter(
+      chapterId,
+      strings.shareFilename(bookName, chapterNumber)
+    );
+  }, [share, chapterId, bookName, chapterNumber]);
   const erase = useEraseSegment();
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
@@ -102,7 +115,7 @@ export const SegmentsScreen = forwardRef<
   }, [audio, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
   // sheet (G8: aria-modal alone is not trusted to hide the background).
-  const listInert = eraseTarget !== null || rowMenuOpen;
+  const listInert = eraseTarget !== null || rowMenuOpen || chapterMenuOpen;
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -120,6 +133,15 @@ export const SegmentsScreen = forwardRef<
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = loaded && rows.length === 0;
+
+  // Share (B7) speaks through the same one Notice channel: its error mapped from
+  // the hook's code, and its "preparing" busy state.
+  const shareErrorText =
+    share.error === "nothing"
+      ? strings.shareNothing
+      : share.error === "failed"
+        ? strings.shareFailed
+        : null;
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -215,17 +237,34 @@ export const SegmentsScreen = forwardRef<
             onClick={() => void onAppend()}
           />
         )}
+        {!showEmpty && (
+          <Control
+            icon="menu"
+            label={strings.chapterMenuOpen}
+            variant="quiet"
+            disabled={loading || refreshing || loadFailed || share.sharing}
+            onClick={() => setChapterMenuOpen(true)}
+          />
+        )}
       </header>
 
       {/* One line, one place: a load failure or a playback failure (a
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.` */}
-      {(error ?? audio.error ?? (erase.error ? strings.eraseFailed : null)) ? (
-        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
+      {(error ??
+      audio.error ??
+      shareErrorText ??
+      (erase.error ? strings.eraseFailed : null)) ? (
+        <Notice>
+          {error ?? audio.error ?? shareErrorText ?? strings.eraseFailed}
+        </Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
         <Notice tone="busy">{strings.loadingChapter}</Notice>
+      ) : share.sharing ? (
+        // The main-thread encode blocks briefly; say why the screen is held.
+        <Notice tone="busy">{strings.sharePreparing}</Notice>
       ) : (
         refreshing && <Notice tone="busy">{strings.updating}</Notice>
       )}
@@ -275,6 +314,19 @@ export const SegmentsScreen = forwardRef<
         // 60 ms playback tick, thrash EraseConfirm's focus effect (George R-B6).
         onCancel={closeErase}
       />
+
+      <Menu
+        open={chapterMenuOpen}
+        onClose={() => setChapterMenuOpen(false)}
+        title={strings.chapterMenuTitle}
+      >
+        <Control
+          icon="share"
+          label={strings.shareChapter}
+          variant="quiet"
+          onClick={onShareChapter}
+        />
+      </Menu>
     </div>
   );
 });

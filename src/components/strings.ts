@@ -105,4 +105,14 @@ export const strings = {
   eraseConfirm: "Erase",
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+
+  // ── Share (B7) ───────────────────────────────────────────────────────────
+  chapterMenuOpen: "More actions for this chapter",
+  chapterMenuTitle: "Chapter",
+  shareChapter: "Share chapter",
+  sharePreparing: "Preparing the chapter to share.",
+  shareNothing: "Record a segment before sharing this chapter.",
+  shareFailed: "Could not share this chapter. Try again.",
+  shareFilename: (book: string, chapter: number): string =>
+    `${book} - Chapter ${chapter}.mp3`,
 } as const;
