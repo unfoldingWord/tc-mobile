@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 
 import { Control } from "./control";
 import { strings } from "./strings";
-import { useRestoreFocusOnClose } from "@/hooks/use-restore-focus";
 
 /**
  * Focusable controls inside the panel — disabled ones excluded on purpose.
@@ -63,11 +62,6 @@ export function Menu({
   useEffect(() => {
     onCloseRef.current = onClose;
   });
-
-  // Before the panel-focus effect below, so it captures the opening trigger (the
-  // hamburger, or the recorder/row `⋮`) and not the control that effect focuses.
-  // On close, focus returns there instead of falling to the document (#73).
-  useRestoreFocusOnClose(open);
 
   // Land focus inside the panel ONCE on the open edge — first ENABLED control,
   // never a disabled one (focusing it is a no-op that strands the user behind

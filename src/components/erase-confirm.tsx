@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
-import { useRestoreFocusOnClose } from "@/hooks/use-restore-focus";
 
 interface EraseConfirmProps {
   open: boolean;
@@ -86,11 +85,6 @@ export function EraseConfirm({
     inFlightRef.current = true;
     onConfirm();
   };
-
-  // Before the Cancel-focus grab below, so it captures the opening `⋮` trigger
-  // rather than Cancel; on close, focus returns there and not to the document
-  // (#73). Placed here because effects run in declaration order.
-  useRestoreFocusOnClose(open);
 
   // Land on Cancel, the safe action, ONCE on the closed→open edge — not the
   // first control in DOM order (this is destructive), and not on every render.
