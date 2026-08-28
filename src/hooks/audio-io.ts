@@ -315,21 +315,28 @@ export async function playSamples(
     offsetSeconds?: number;
     onEnded?: () => void;
     /**
-     * Re-checked AFTER the resume await, just before the source starts. A play
+     * Re-checked AFTER the resume await, just before any node is built. A play
      * claim can be superseded (a Stop, a competing take, a mic claim) during
      * `resumeAudioContext` — which on iOS is a real await that also un-suspends a
      * suspended/interrupted context. Without this the source starts and is only
      * then stopped by the caller's `settle`, a sub-perceptible start-then-stop,
      * worst case an audible click on iOS after the resume. Bailing here means
-     * nothing ever sounds. Both `playTake` and `playBuffer` pass it, so the guard
-     * lives once in the shared sink (#104).
+     * nothing ever sounds.
+     *
+     * REQUIRED, not optional: every playback claims the floor and holds a token,
+     * so there is always a supersession predicate to pass. An optional callback
+     * that a future caller forgot would silently restore the #104 start-then-stop
+     * (the sink would wait out `resume()` and start a source `settle` then kills).
+     * A caller with genuinely no token passes `() => true`. Both `playTake` and
+     * `playBuffer` pass `() => session.isCurrent(token)`, so the guard lives once
+     * in the shared sink (#104, George R1).
      */
-    isStillCurrent?: () => boolean;
-  } = {}
+    isStillCurrent: () => boolean;
+  }
 ): Promise<PlaybackHandle> {
   await resumeAudioContext();
 
-  if (options.isStillCurrent && !options.isStillCurrent()) {
+  if (!options.isStillCurrent()) {
     // Superseded during the resume await. Return an inert handle before building
     // any node — nothing is created, nothing reaches `ctx.destination`, nothing
     // sounds. The caller's `settle` stops it (a no-op) and discards it; `onEnded`
