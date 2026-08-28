@@ -7,6 +7,90 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-28 (late) — Tim's v0.1.6 feedback: three fixes merged; B7 Share Chapter built (rework)
+
+**Branches:** `fix/audio-context-interrupted-recovery`, `fix/atomic-take-save`,
+`fix/recorder-ui-clear-items` → **`develop`** (all merged); `feat/b7-chapter-export`
+(open, rework). **PRs merged:** [#107](https://github.com/sethstoll3/tc-mobile/pull/107)
+(`dd949e4`), [#109](https://github.com/sethstoll3/tc-mobile/pull/109) (`3fa8a95`),
+[#110](https://github.com/sethstoll3/tc-mobile/pull/110) (`dae17f9`) · **PR open:**
+[#111](https://github.com/sethstoll3/tc-mobile/pull/111) (B7 Share Chapter,
+REQUEST_CHANGES) · **Closed:** #6 (moot), #104 (via #107) · **Filed:** #106, #108 ·
+**Production `main` untouched** (`3464a30`). **Merge permission granted** — develop
+lanes now merge autonomously on clean-and-green (prod still doubly gated).
+
+### Merged to develop (each: build → Frank+George dual review → merge)
+
+- **#107 — silent-playback fix (Tim's iPhone 13 mini / iOS 26.6).** Root cause:
+  `resumeAudioContext` only resumed `"suspended"`, not WebKit's `"interrupted"`
+  state (iOS enters it on a call / background / route change). An interrupted
+  context plays every later `playSamples` source **silently, no error, for the
+  page's life**. Fix: broaden the resume (pure, mutation-tested `contextNeedsResume`
+  - a fake-`AudioContext` wiring test), bail `playSamples` before `source.start()`
+    if superseded (**closes #104**, both paths), `resumeRecording` re-arms (#76 resume
+    half). 2 review rounds. Filed **#106** (the bug + on-device checklist), **#108**
+    (start() now awaits an interrupted resume — latency, device-gated).
+- **#109 — #38 atomic take save.** The commit was two IDB transactions (`putClip`
+  then `addTake`); a quota fail on the 2nd stranded an orphan clip that ate the
+  space the recovery screen tells you to free — the death spiral. New `saveTake`
+  writes clip + take in **one transaction** (addTake's tx already spanned the clip
+  stores → **no schema change/migration**); shared `writeTakeInTx` + `buildClipMeta`.
+  Gotcha: a THROWN mid-tx error doesn't roll IndexedDB back (auto-commits) — must
+  `tx.abort()` + consume the abort's `done` rejection. Mutation-proven. 2 rounds.
+  #38 stays open for residual (b)/(c).
+- **#110 — red centerline only when `recorded || capturing`** (Tim's "only when a
+  waveform exists"). The `capturing` half keeps it during a first take. T3 canvas,
+  device-owed. 1 clean round.
+
+### B7 started — Share Chapter built, in a rework (PR #111, NOT merged)
+
+- **Export core** (`lib/export/chapter.ts`, `798a0ed`): `gatherChapterPcm` (ordered
+  concat + 0.5s gaps + missing-count) and `exportChapterMp3` — **#18's missing
+  implementation**, Node-tested, mutation-proven. Composes existing pieces only,
+  DOM-free.
+- **Share Chapter UI** (`463c587`): chapter `≡` menu on the Segments screen → Share,
+  `useChapterShare` hook (`navigator.share`), a `share` icon + strings.
+- **Both reviewers REQUEST_CHANGES on a real P1 (my miss):** `navigator.share` runs
+  after the encode's `await`s, so iOS spends the user-activation window → Safari
+  rejects `NotAllowedError`, the sheet never opens. Needs a **two-gesture rework**
+  (encode on tap 1, share synchronously on tap 2) + lifecycle wiring (busy/inert/
+  unmount-cancel, P2) + surface `missing` (P3). Full triage on #111. The Node-tested
+  export core stands.
+
+### Tim's feedback — findings + a stale-build discovery
+
+- **Tim's screenshots are v0.1.3, not v0.1.6** (image footer stamps `v0.1.3`; the
+  recorder shots show the record button alone with the old unified toolbar — no
+  Play-beside-Record, no record/edit split). His PWA is cached on the old build, so
+  **"this screen wants a play button right of record" is already shipped in #89**.
+  **Action: get Tim to hard-refresh the staging link** before more recorder feedback.
+- **Seth's build decisions (this session):** build recorder #2/#3 (edit pencil onto
+  the toolbar; Cut off the centerline) with my placement, flagged for Tim; **build
+  the live-waveform-during-recording feature** (grows from the playhead, scrolls
+  R→L) as its own lane; **build landscape full-width**; export gap stays 0.5s;
+  Template Library deferred (Share first).
+
+### Blockers / needs a human
+
+- **On-device pass owed** on all of this before `staging → main`: #107 (playback
+  audible after an interruption — #106), #109 (#38 failure path), #110 (centerline),
+  plus the carried v0.1.5/v0.1.6 debt. Android still never run.
+- **#111 rework** (two-gesture share) before Share Chapter can merge.
+- Tim still owes the #89 D1/D2 confirms (Finished-in-menu, the "Editing" pill).
+
+### Next steps
+
+1. **#111 rework** — two-gesture Share (prepare on tap 1, `navigator.share`
+   synchronously on tap 2), lifecycle wiring, surface `missing`; re-review → merge.
+2. **Recorder UI lane** — edit pencil onto the toolbar (#2) + Cut off the centerline
+   (#3) + landscape full-width, flagged for Tim.
+3. **Live-waveform-during-recording** lane (the big recorder feature).
+4. **Share Book** (zip of chapter MP3s, adds `fflate`); then Template Library.
+5. Promote `develop → staging` (bump version) so the three merged fixes reach a
+   device; send Tim the refreshed link.
+
+---
+
 ## 2026-08-28 (night) — #89 recorder Play button + record/edit mode split → staging v0.1.6
 
 **Branch:** `feat/recorder-play-mode-split` → **`develop`** → **`staging`** ·
