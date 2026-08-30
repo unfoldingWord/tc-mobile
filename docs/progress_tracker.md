@@ -7,6 +7,150 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-30 — B7 Share Book built, dual-reviewed to Frank-clean, merged to develop
+
+**Branch:** `feat/b7-book-export` → **`develop`** (merged, deleted). **PR:**
+[#114](https://github.com/sethstoll3/tc-mobile/pull/114) B7 Share Book
+(squash `342e3db`). **Filed:** [#115](https://github.com/sethstoll3/tc-mobile/issues/115),
+[#116](https://github.com/sethstoll3/tc-mobile/issues/116); note added to
+[#34](https://github.com/sethstoll3/tc-mobile/issues/34). **Production `main`
+untouched** (`3464a30`); **`staging`** still v0.1.7 (`6790a59`).
+
+### Shipped
+
+- **B7 Share Book (#114, #33/#18).** A book → one **zip of per-chapter MP3s**
+  to the OS share sheet — the sibling of Share Chapter, the second half of #18's
+  export path. `lib/export/book.ts` `exportBookZip` composes `exportChapterMp3`
+  over `resolveBookChapters` and archives with `fflate` `zipSync` (level 0 —
+  MP3 is already compressed). DOM-free, Node-tested, mutation-proven. Adds
+  `fflate ^0.8.3`.
+- **The two-gesture flow is now shared, not duplicated.** Extracted
+  `hooks/share-flow.ts` `useShareFlow` (the iOS user-activation contract, the
+  run-generation token, both re-entry guards) from `use-chapter-share`, whose
+  public API is unchanged (segments-screen untouched); `use-book-share` is the
+  parallel wrapper. `classifyShareError` moved with it (test →
+  `tests/share-flow.test.ts`).
+- **Books screen:** a per-book `≡` menu beside the `+` (after it, so add-chapter
+  stays the row's first `.control` for the focus hand-off); one share flow for
+  the screen; shelf goes inert behind the menu. Book share strings.
+
+### The review — 2 rounds, both reviewers each round
+
+Full triage on #114 (both rounds, head SHAs stamped).
+
+- **Round 1** (both at `50f56d6`): both **REQUEST_CHANGES** → **3 P2s, all
+  fixed + mutation-proven:** (a) duplicate chapter `number` collided in the zip
+  and silently dropped a chapter's audio → `uniqueEntryName` disambiguates,
+  lossless; (b) a dangling chapter record fell out of the `missing` count →
+  `getChaptersOfBook` reshaped to `resolveBookChapters` returning
+  `{ chapters, missing }` (mirrors `resolveChapterClipIds`); (c) a stale
+  `send()` returned `sent`/`dismissed` and the Books caller reset on it,
+  dropping a newer book's zip → new `superseded` outcome. Plus a P3 (dropped two
+  needless full-archive copies via `Uint8Array<ArrayBuffer>`).
+- **Round 2** (at `af5dae0`): **Frank APPROVE.** George REQUEST_CHANGES, no P1,
+  2 P2 + 3 P3. One P3 fixed (`7dfb0e1`: the cancel test now bites the
+  between-chapters guard, not just iteration 0). The **two P2s accepted as
+  residuals by the DRI:** the send-race is unreachable on the modal iOS/Android
+  share sheets that are the only target platforms (desktop-only); the zip peak
+  memory (~Σ MP3s ×2 on a long book) is B8-shaped — fflate can't fix it
+  main-thread — deferred to **#34**.
+- **Merge:** Frank clean + CI green (Build, Code Quality, Secret Scan) + the two
+  George residuals explicitly DRI-accepted → admin squash-merge to `develop`
+  (`342e3db`). develop-integration lane, not the prod gate.
+
+### Blockers / needs a human
+
+- **On-device iOS + Android** for Share Book: the whole `navigator.share`/zip
+  path is device-only, including `navigator.canShare({ files: [zip] })` for
+  `application/zip` (George's one unverifiable residual). Owed with the rest of
+  the v0.1.x device pass.
+- **Local `develop` in the main checkout is behind** `342e3db` — `git pull`.
+
+### Next steps
+
+1. **Promote `develop` → `staging`** (Share Book onto the testers' link; likely
+   a `chore(release)` version bump as #113 did for v0.1.7).
+2. **On-device pass** on staging, then the `staging → main` production PR for
+   v0.1.7 if clean.
+3. **Rest of B7:** the **Template Library** (the remaining half of #33).
+4. **Recorder UI lane** and **live-waveform-during-recording** lane.
+5. Deferred from this review: **#115** (Q6 folders/manifest, Pending Tim),
+   **#116** (segment-grain `missing`), **#34** (B8: encode off-thread + stream
+   the book zip).
+
+---
+
+## 2026-08-28 (night) — B7 Share Chapter reworked to clean, merged, promoted to staging v0.1.7
+
+**Branch:** `feat/b7-chapter-export` → **`develop`** (merged, deleted). **PRs:**
+[#111](https://github.com/sethstoll3/tc-mobile/pull/111) B7 Share Chapter
+(squash `9adf9fc`), [#113](https://github.com/sethstoll3/tc-mobile/pull/113)
+develop→staging promotion. **Filed:** [#112](https://github.com/sethstoll3/tc-mobile/issues/112).
+**Released:** **v0.1.7** on staging, **deploy verified live** (bundle embeds `0.1.7`).
+**Production `main` untouched** (`3464a30`).
+
+### Shipped
+
+- **B7 Share Chapter (#111, #33/#18).** The two-gesture rework that fixes the
+  round-1 P1: `navigator.share` after `await exportChapterMp3` spent the iOS
+  user-activation window → `NotAllowedError`, sheet never opened. Now tap 1
+  (`prepare`) encodes + stashes the `File`; tap 2 (`send`) calls `navigator.share`
+  synchronously in a fresh activation. `lib/export/chapter.ts` is #18's missing
+  chapter-export core (ordered concat + 0.5s gaps + `missing` count), DOM-free,
+  node-tested, mutation-proven.
+- **Promotion to staging v0.1.7** carries the day's four fixes: #107
+  (interrupted-context playback), #109 (atomic take save), #110 (recorder
+  centerline), #111 (Share Chapter). Sent Seth the on-device test list.
+
+### The review — 4 rounds after the rework, a converging chain
+
+Frank (diff-local) **APPROVE** at `8b8f72b`. George (deep-tree) raised a chain of
+concurrency P2s across rounds 2–5, **every one fixed** (full triage on #111):
+
+- R2: in-flight prepare cancel + StrictMode wedge (one **run-generation token**
+  replaced a set-once `cancelledRef`); mid-gather clip loss now counted.
+- R3: `send` double-tap guard (`sendingRef`); stale-`finally` guard; stop
+  disabling the prepare control (broke Menu's focus trap).
+- R4: `NotAllowedError` split by live activation (permanent block → error, not an
+  infinite retry loop); **single-buffer gather** (~160MB→~80MB peak on a 15-min
+  chapter); dropped `title` from `share()` (iOS file-drop bug — WhatsApp/Signal
+  take title, drop file); menu focuses the action not Close; fail-fast when Web
+  Share absent.
+- R5: cancel now skips the blocking encode (`shouldEncode` checkpoint);
+  generation-guarded the `fileRef` null-clears; neutral `shareMissing` copy.
+
+**Root cause of the residual class = the synchronous main-thread `encodeMp3`**
+(George's own read). Merged on Frank-approve + Seth's explicit acceptance of
+George's residual (he had not re-reviewed the final `d8b4d54`), this being the
+develop integration branch, not the prod gate. The real abort/non-block is **B8
+(#34)** — commented there to reinforce it before October.
+
+### Process note
+
+George's round-3 run was **discarded**: a self-review edit changed the working
+tree under a deep-tree pass mid-review, which voids it. Re-reviewed clean at a
+new SHA. The lesson: never touch the tree while George is reading it.
+
+### Blockers / needs a human
+
+- **On-device iOS + Android** for v0.1.7 is owed before `staging → main`: #107
+  (audible after an interruption), #109 (#38 failure path), #110 (centerline),
+  and #111 (Share Chapter end-to-end — especially the WhatsApp/Signal file-drop
+  check). **Android still never run.** Test list sent to Seth.
+- **#112** — Notice has no "info" tone (the Share gap-warning nit), deferred.
+- **#34 (B8)** — move `encodeMp3` off the main thread; reinforced by this review.
+
+### Next steps
+
+1. **On-device pass on staging v0.1.7**, then the `staging → main` production PR
+   if clean.
+2. **Rest of B7:** Share Book (zip of chapter MP3s, adds `fflate`), then Template
+   Library.
+3. **Recorder UI lane** (edit pencil onto the toolbar #2, Cut off the centerline
+   #3, landscape full-width) and the **live-waveform-during-recording** lane.
+
+---
+
 ## 2026-08-28 (late) — Tim's v0.1.6 feedback: three fixes merged; B7 Share Chapter built (rework)
 
 **Branches:** `fix/audio-context-interrupted-recovery`, `fix/atomic-take-save`,

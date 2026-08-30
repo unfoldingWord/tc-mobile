@@ -125,4 +125,21 @@ export const strings = {
       : `${n} segments could not be included.`,
   shareFilename: (book: string, chapter: number): string =>
     `${book} - Chapter ${chapter}.mp3`,
+
+  // Share Book — the book-level ≡ menu and its zip-of-chapter-MP3s share. Names
+  // each book so AT users can tell one shelf row's menu from the next.
+  bookMenuOpen: (book: string): string => `More actions for ${book}`,
+  bookMenuTitle: "Book",
+  shareBook: "Share book",
+  shareBookPreparing: "Preparing the book to share.",
+  shareBookNothing: "Record a segment before sharing this book.",
+  shareBookFailed: "Could not share this book. Try again.",
+  // `missing` here counts whole chapters left out of the zip — a chapter with no
+  // resolvable audio at all. A chapter that is merely partial still ships (its
+  // own gaps are the chapter share's concern), so this speaks in chapters.
+  shareBookMissing: (n: number): string =>
+    n === 1
+      ? "1 chapter could not be included."
+      : `${n} chapters could not be included.`,
+  shareBookFilename: (book: string): string => `${book}.zip`,
 } as const;
