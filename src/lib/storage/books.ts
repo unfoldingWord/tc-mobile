@@ -172,6 +172,26 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
   return (await getDb()).get("chapters", id);
 }
 
+/**
+ * Resolve a book to its chapters, in `book.chapterIds` order, alongside the count
+ * of ids that no longer resolve to a chapter record — the export order a Share
+ * Book walks. Mirrors `resolveChapterClipIds`'s `{ …, missing }` shape: a
+ * dangling id is dropped from the list but COUNTED, so an export can admit to a
+ * hole rather than share a book "as if whole" (Frank R-B7-book P2).
+ */
+export async function resolveBookChapters(
+  bookId: BookId
+): Promise<{ chapters: Chapter[]; missing: number }> {
+  const db = await getDb();
+  const book = await db.get("books", bookId);
+  if (!book) return { chapters: [], missing: 0 };
+  const resolved = await Promise.all(
+    book.chapterIds.map((id) => db.get("chapters", id))
+  );
+  const chapters = resolved.filter((c): c is Chapter => c !== undefined);
+  return { chapters, missing: resolved.length - chapters.length };
+}
+
 // ── Segments ─────────────────────────────────────────────────────────────
 
 /**

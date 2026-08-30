@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyShareError } from "@/hooks/use-chapter-share";
+import { classifyShareError } from "@/hooks/share-flow";
 
 /**
- * B7 Share Chapter — the share-rejection classifier.
+ * B7 Share (chapter + book) — the share-rejection classifier.
  *
- * The two-gesture flow lives in `useChapterShare`, whose state machine and the
- * `navigator.share` handoff are React + browser glue this repo has no renderer
- * to exercise (the constraint `tests/use-erase-segment.test.ts` documents). What
- * IS node-testable is the pure decision the classifier makes about a rejection,
+ * The two-gesture flow lives in `useShareFlow` (wrapped by `useChapterShare` and
+ * `useBookShare`), whose state machine and the `navigator.share` handoff are
+ * React + browser glue this repo has no renderer to exercise (the constraint
+ * `tests/use-erase-segment.test.ts` documents). What IS node-testable is the pure
+ * decision the classifier makes about a rejection,
  * and it is the one with real product weight: it decides whether a translator
  * sees a failure, gets a silent retry, or the flow simply ends.
  *

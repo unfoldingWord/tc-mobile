@@ -1,61 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 
+import {
+  type ShareError,
+  type ShareOutcome,
+  type ShareStatus,
+  useShareFlow,
+} from "./share-flow";
 import { exportChapterMp3 } from "@/lib/export/chapter";
 import type { ChapterId } from "@/types/domain";
-
-/**
- * Why a share did not proceed. A CODE, not a message — the screen maps it to a
- * translator-facing string, so this browser-boundary hook stays free of UI copy.
- * `nothing`: the chapter has no recorded audio to share. `failed`: encoding, the
- * share sheet, or an unsupported browser.
- */
-type ShareError = "nothing" | "failed";
-
-/**
- * The two-gesture share flow.
- *
- * `idle`: nothing prepared. `preparing`: tap 1's encode is in flight (busy).
- * `ready`: a File is stashed and the send gesture (tap 2) is armed.
- *
- * Two gestures are not a nicety — they are the platform contract. iOS grants a
- * tap a short user-activation window and revokes it the moment the call stack
- * awaits. Encoding a chapter walks IndexedDB and runs a synchronous MP3 encode,
- * far past that window, so a `navigator.share` after the encode is refused with
- * `NotAllowedError` and the sheet never opens. The same rule
- * `use-audio-session.ts` already obeys for `resumeAudioContext`. So tap 1
- * encodes and stashes the File, and tap 2 — a fresh activation — hands it to the
- * sheet with no await before the call.
- */
-type ShareStatus = "idle" | "preparing" | "ready";
-
-/** What a send gesture resolved to, so the caller can react (e.g. close a menu). */
-export type ShareOutcome = "sent" | "dismissed" | "retry" | "failed";
-
-/**
- * How to treat a `navigator.share` rejection.
- *
- * `dismissed`: the user closed the sheet (`AbortError`) — expected, not a
- * failure to alarm a translator with. `failed`: a real error.
- *
- * `NotAllowedError` is overloaded, so `hadActivation` — whether user activation
- * was live at the moment we called `share` — decides it. With NO active
- * activation it means the tap's activation was spent, and the prepared File
- * still stands, so `retry` lets a fresh tap hand it over. WITH activation live
- * it is a standing refusal (a Permissions-Policy block on Web Share), which no
- * number of taps will clear — that is `failed`, so the translator gets an error
- * channel instead of a "Share now" button that loops forever (Frank R-B7).
- */
-export function classifyShareError(
-  cause: unknown,
-  hadActivation: boolean
-): ShareOutcome {
-  if (cause instanceof DOMException) {
-    if (cause.name === "AbortError") return "dismissed";
-    if (cause.name === "NotAllowedError")
-      return hadActivation ? "failed" : "retry";
-  }
-  return "failed";
-}
 
 export interface UseChapterShare {
   readonly status: ShareStatus;
@@ -67,201 +19,43 @@ export interface UseChapterShare {
    */
   readonly missing: number;
   /**
-   * Tap 1: encode the chapter to one MP3 and stash the File for the send
-   * gesture. Never rejects — a reason surfaces through `error`.
+   * Tap 1: encode the chapter to one MP3 and stash the File for the send gesture.
+   * Never rejects — a reason surfaces through `error`.
    */
   prepare: (chapterId: ChapterId, filename: string) => Promise<void>;
-  /**
-   * Tap 2: hand the stashed File to the OS share sheet. MUST be called straight
-   * from a user gesture: it calls `navigator.share` with no await before it, so
-   * the activation the platform requires is still live. The caller must not
-   * await anything before `send()` inside the same gesture. Resolves to the
-   * outcome once the sheet settles.
-   */
+  /** Tap 2: hand the stashed File to the OS share sheet. See {@link useShareFlow}. */
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
   reset: () => void;
 }
 
 /**
- * Share a chapter as one concatenated MP3 to the OS share sheet (B7, A4), as a
- * two-gesture flow — see {@link ShareStatus} for why one gesture cannot work.
- *
- * The encode runs on the main thread for now — B8 (#34) moves `encodeMp3` to a
- * Web Worker, at which point `preparing` can carry a real progress bar. Until
- * then a long chapter briefly janks during `preparing`; it is a busy state, not
- * a meter, because a synchronous encode cannot repaint mid-loop.
+ * Share a chapter as one concatenated MP3 to the OS share sheet (B7, A4). A thin
+ * wrapper over {@link useShareFlow}: tap 1 builds the chapter MP3 into a File, and
+ * the shared flow owns the two-gesture state machine and the `navigator.share`
+ * handoff.
  */
 export function useChapterShare(): UseChapterShare {
-  const [status, setStatus] = useState<ShareStatus>("idle");
-  const [error, setError] = useState<ShareError | null>(null);
-  const [missing, setMissing] = useState(0);
-  // The File prepared by tap 1, waiting for the send gesture. A ref, not state,
-  // so `send` reads it synchronously inside the gesture — before any render —
-  // and the `navigator.share` call keeps the activation the tap granted.
-  const fileRef = useRef<File | null>(null);
-  // A generation token invalidating an in-flight `prepare`. Both unmount AND
-  // `reset` bump it, so a prepare that resolves after the screen is gone (Back
-  // mid-encode) or after the menu was closed mid-gather does not `setState` or
-  // arm a File behind a closed menu. `gatherChapterPcm` awaits per clip, and the
-  // menu's close/scrim stay live during those yields, so this race is reachable.
-  const runIdRef = useRef(0);
-  // Re-entry guard for tap 1: a second tap before the first render commits must
-  // not start a second (expensive) encode.
-  const preparingRef = useRef(false);
-  // Re-entry guard for tap 2: `navigator.share` is only ever in flight once. A
-  // double-tap (or two clicks before the OS sheet paints) must not open a second
-  // share of the same File — the second's rejection would be classified `failed`
-  // and drop the armed File out from under the first. Mirrors `use-erase-segment`'s
-  // double-tap guard, which exists for exactly this reason.
-  const sendingRef = useRef(false);
-
-  useEffect(
-    () => () => {
-      runIdRef.current += 1;
-    },
-    []
-  );
+  const { status, error, missing, prepare: run, send, reset } = useShareFlow();
 
   const prepare = useCallback(
-    async (chapterId: ChapterId, filename: string): Promise<void> => {
-      // Already encoding, or a File is already armed: ignore. (The screen hides
-      // the prepare control while `ready`, so this is a re-entry backstop.)
-      if (preparingRef.current || fileRef.current !== null) return;
-      // Fail before the encode, not after: a browser with no Web Share should not
-      // pay for a whole-chapter MP3 only to be told it cannot share it. The
-      // file-level `canShare` still runs post-encode (it needs the File), but the
-      // capability itself is knowable now (George R-B7).
-      if (typeof navigator.share !== "function") {
-        setError("failed");
-        return;
-      }
-      preparingRef.current = true;
-      // Claim this run. A later `reset` (menu close) or unmount bumps the token,
-      // and every resumption below bails when its captured id is stale.
-      const runId = (runIdRef.current += 1);
-      const current = () => runId === runIdRef.current;
-      setError(null);
-      setMissing(0);
-      setStatus("preparing");
-      // Yield once so `preparing` paints before the synchronous encode blocks
-      // the main thread (the gather awaits also yield, but a tiny chapter can
-      // return before the browser paints).
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      try {
-        // Pass `current` so a cancel during the gather skips the blocking encode
-        // (the gather awaits; the encode does not). A cancelled run returns null
-        // here and is caught by the `!current()` bail below — distinct from a
-        // genuinely empty chapter, which returns null with the run still current.
-        const result = await exportChapterMp3(chapterId, {}, current);
-        if (!current()) return;
-        if (!result) {
-          setError("nothing");
-          setStatus("idle");
-          return;
-        }
+    (chapterId: ChapterId, filename: string): Promise<void> =>
+      run(async (isCurrent) => {
+        const result = await exportChapterMp3(chapterId, {}, isCurrent);
+        // exportChapterMp3 returns null both for an empty chapter and for a run
+        // cancelled during the gather (its shouldEncode check). `isCurrent`
+        // distinguishes them: still live means genuinely nothing to share.
+        if (result === null) return isCurrent() ? "nothing" : null;
         // Copy into a plain ArrayBuffer-backed view: `encodeMp3` returns
-        // `Uint8Array<ArrayBufferLike>`, which `BlobPart` rejects because it
-        // could (in principle) be SharedArrayBuffer-backed. A fresh copy is the
-        // cast-free way to give `File` a buffer it accepts.
+        // `Uint8Array<ArrayBufferLike>`, which `BlobPart` rejects because it could
+        // (in principle) be SharedArrayBuffer-backed. A fresh copy is the cast-free
+        // way to give `File` a buffer it accepts.
         const bytes = new Uint8Array(result.mp3);
         const file = new File([bytes], filename, { type: "audio/mpeg" });
-        const canShareFiles =
-          typeof navigator.share === "function" &&
-          (typeof navigator.canShare !== "function" ||
-            navigator.canShare({ files: [file] }));
-        if (!canShareFiles) {
-          setError("failed");
-          setStatus("idle");
-          return;
-        }
-        fileRef.current = file;
-        setMissing(result.missing);
-        setStatus("ready");
-      } catch (cause) {
-        if (!current()) return;
-        console.error("Preparing the chapter to share failed", cause);
-        setError("failed");
-        setStatus("idle");
-      } finally {
-        // Only clear the guard for the run that still owns it. A stale run whose
-        // token was bumped by `reset` must NOT release a newer run's guard, or a
-        // further tap would start a third full-chapter encode over the same PCM.
-        if (current()) preparingRef.current = false;
-      }
-    },
-    []
+        return { file, missing: result.missing };
+      }),
+    [run]
   );
-
-  const send = useCallback(async (): Promise<ShareOutcome> => {
-    // A share is already in flight: ignore this tap and leave the File armed, so
-    // a double-tap cannot open a second share whose rejection drops the File.
-    if (sendingRef.current) return "retry";
-    const file = fileRef.current;
-    if (file === null) {
-      // Reachable only through a guard hole (ready with no armed File); surface
-      // it rather than no-op silently behind a "Share now" that does nothing.
-      setError("failed");
-      setStatus("idle");
-      return "failed";
-    }
-    sendingRef.current = true;
-    // A reset/unmount while the sheet is open must not write state afterwards.
-    const runId = runIdRef.current;
-    const current = () => runId === runIdRef.current;
-    // Whether activation is live at the call decides how a NotAllowedError reads
-    // (see classifyShareError). Read it immediately before `share`.
-    const hadActivation = navigator.userActivation?.isActive ?? false;
-    // `navigator.share` is invoked synchronously here: an async function runs to
-    // its first await, and this call IS that boundary, so no work precedes it and
-    // the tap's user activation is still valid. Pass ONLY `files`: adding `title`
-    // alongside a file is a known iOS share-target bug where some apps
-    // (WhatsApp/Signal) take the title and drop the file while `share` still
-    // resolves — the File already carries `filename` as its name (George R-B7).
-    try {
-      await navigator.share({ files: [file] });
-      // Shared. Drop the File — but only if this run still owns the state. A
-      // `reset` while the sheet was open bumped the token and may have armed a
-      // NEW File; nulling here unguarded would drop that one (George R-B7).
-      if (current()) {
-        fileRef.current = null;
-        setStatus("idle");
-        setMissing(0);
-      }
-      return "sent";
-    } catch (cause) {
-      const outcome = classifyShareError(cause, hadActivation);
-      if (outcome === "retry") {
-        // Activation was spent — keep the File stashed and stay `ready` so
-        // another tap can hand it over. Not a failure the translator should see.
-        return "retry";
-      }
-      if (outcome === "failed")
-        console.error("Sharing the chapter failed", cause);
-      // Dismissed or a real failure: end the flow — but, as above, only for the
-      // run that still owns the File.
-      if (current()) {
-        fileRef.current = null;
-        setStatus("idle");
-        setMissing(0);
-        if (outcome === "failed") setError("failed");
-      }
-      return outcome;
-    } finally {
-      sendingRef.current = false;
-    }
-  }, []);
-
-  const reset = useCallback(() => {
-    // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
-    // a File behind the now-closed menu.
-    runIdRef.current += 1;
-    fileRef.current = null;
-    preparingRef.current = false;
-    setStatus("idle");
-    setError(null);
-    setMissing(0);
-  }, []);
 
   return { status, error, missing, prepare, send, reset };
 }
