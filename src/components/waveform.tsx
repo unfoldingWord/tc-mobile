@@ -2,23 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { playheadViewportX } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
-import type { Peaks } from "@/types/audio";
-
-/**
- * Recorder view: which slice of the clip is on screen, and where the fixed
- * centerline sits across it. The fractions are of the whole clip and may fall
- * outside `[0,1]` — that overhang is the blank the audio pans over and an
- * append grows into. Absent ⇒ the whole clip is drawn across the full width
- * (the B3 row view).
- */
-interface WaveformWindow {
-  /** Clip fraction at the viewport's left edge (may be < 0). */
-  readonly startFraction: number;
-  /** Clip fraction at the viewport's right edge (may be > 1). */
-  readonly endFraction: number;
-  /** Where the fixed centerline is drawn, as a fraction of viewport width. */
-  readonly centerFraction: number;
-}
+import type { Peaks, WaveformWindow } from "@/types/audio";
 
 interface WaveformProps {
   /** Precomputed peaks, or `null` for a segment with no recording. */

@@ -18,7 +18,7 @@
  * such thing as inserting before the start or after the end.
  */
 
-import type { SampleRange } from "@/types/audio";
+import type { SampleRange, WaveformWindow } from "@/types/audio";
 
 export interface WaveformViewport {
   /** First sample visible. May be < 0 — blank space to the left of the audio. */
@@ -110,6 +110,40 @@ export function panAfterCut(pan: number, range: SampleRange): number {
   const hi = Math.max(range.start, range.end);
   const removedBeforePan = Math.min(hi, pan) - Math.min(lo, pan);
   return pan - removedBeforePan;
+}
+
+/**
+ * The view window for the live capture scope: newest column at `headFraction`,
+ * captured history scrolling left, blank to the head's right.
+ *
+ * Live capture is a THIRD view mode, distinct from the B4 pan window: there the
+ * audio pans under a fixed line; here it grows from the head and streams
+ * right-to-left (#120). Mapping the ring's clip-fractions [0,1] onto screen
+ * [0, headFraction] puts the newest column (fraction → 1) at the head and the
+ * oldest (fraction → 0) at the left edge, so a `CapturePeaks` of `capacity`
+ * columns drawn through the existing `view` path right-aligns onto the head
+ * with fixed spacing — no new draw branch. Solving `(1 - start)/span =
+ * headFraction` with `start = 0` gives `endFraction = 1 / headFraction`.
+ *
+ * `headFraction` is where the record head sits across the width. **Which value
+ * ships is a deferred UX call (Tim, #120):** the B4 `CENTER_FRACTION` (0.5,
+ * history fills the left half) or the right edge (1, a full-width scope). This
+ * function serves either and degrades correctly — at 1 the span is 1 and the
+ * scope spans the whole width. A non-positive or non-finite head (0, negative,
+ * NaN) has no room to its left and would divide by zero, so it clamps up to
+ * `EPSILON` — the same `!(x > 0)` guard `meter.ts` uses, which also rejects NaN.
+ *
+ * No production caller yet: #120's browser lane passes this as the `Waveform`
+ * `view` while capturing. It is green under knip only because the capture tests
+ * import it (the test-only blind spot AGENTS.md names), so "unused" here means
+ * "unwired", not dead. It is deliberately untagged — the pivot-pending tag is
+ * for exports knip would otherwise fail on, which a test-kept export is not.
+ */
+export function captureWindow(headFraction: number): WaveformWindow {
+  // `!(x > 0)` is true for 0, negatives, and NaN — the divide-by-zero / NaN
+  // cases — so they all clamp to EPSILON; anything past the right edge caps at 1.
+  const head = headFraction > 0 ? Math.min(1, headFraction) : Number.EPSILON;
+  return { startFraction: 0, endFraction: 1 / head, centerFraction: head };
 }
 
 /**

@@ -53,3 +53,20 @@ export interface SampleRange {
   readonly start: number;
   readonly end: number;
 }
+
+/**
+ * Which slice of a clip the recorder draws, and where the fixed line sits
+ * across it — the `view` the canvas `Waveform` renders through. The fractions
+ * are of the whole clip and may fall outside `[0,1]`: that overhang is the
+ * blank the audio pans over (the B4 pan window) or grows into (the live-capture
+ * scope, #120). One shared shape so the pan window, the capture window
+ * (`captureWindow`), and the component's `view` prop cannot drift apart.
+ */
+export interface WaveformWindow {
+  /** Clip fraction at the viewport's left edge (may be < 0). */
+  readonly startFraction: number;
+  /** Clip fraction at the viewport's right edge (may be > 1). */
+  readonly endFraction: number;
+  /** Where the fixed line is drawn, as a fraction of viewport width. */
+  readonly centerFraction: number;
+}
