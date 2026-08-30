@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { strings } from "./strings";
+import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
@@ -46,6 +47,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
+  // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
+  // share flow for the screen — only one menu is open at a time (its scrim blocks
+  // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
+  // resolves the id back to a row, auto-closing the menu if that book vanishes.
+  const [shareMenuBookId, setShareMenuBookId] = useState<BookId | null>(null);
+  const bookShare = useBookShare();
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
   // What to scroll to once the list next reloads — a freshly made book or
@@ -114,6 +121,43 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     [addChapter]
   );
 
+  // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
+  // menu — including if the book is gone by the time this render runs.
+  const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
+  // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
+  const onCloseShareMenu = useCallback(() => {
+    setShareMenuBookId(null);
+    bookShare.reset();
+  }, [bookShare]);
+  // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
+  // menu stays open across both gestures (the shelf is `inert` behind it), so the
+  // panel is what the translator is looking at.
+  const onPrepareBookShare = useCallback(() => {
+    if (!shareMenuBook) return;
+    void bookShare.prepare(
+      shareMenuBook.bookId,
+      strings.shareBookFilename(shareMenuBook.name),
+      (n) => strings.shareFilename(shareMenuBook.name, n)
+    );
+  }, [bookShare, shareMenuBook]);
+  // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
+  // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
+  // error Notice lives in the menu and must stay visible).
+  const onSendBookShare = useCallback(() => {
+    void bookShare.send().then((outcome) => {
+      if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+    });
+  }, [bookShare, onCloseShareMenu]);
+  // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
+  // the menu open across prepare → ready → send. Map its error code to copy here.
+  const bookShareErrorText =
+    bookShare.error === "nothing"
+      ? strings.shareBookNothing
+      : bookShare.error === "failed"
+        ? strings.shareBookFailed
+        : null;
+
   return (
     // While the menu is open, take the whole shelf chrome — New Book included —
     // out of the focus/pointer tree for AT/switch users, matching how Segments
@@ -121,7 +165,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // background). The Menu portals to <body>, so it stays live above this (#77).
     <div
       className="flex h-full flex-col gap-[14px]"
-      inert={menuOpen || undefined}
+      inert={menuOpen || shareMenuBook !== null || undefined}
     >
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
         {!showEmpty && (
@@ -181,6 +225,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
                 expanded={expanded.has(book.bookId)}
                 onToggle={() => toggle(book.bookId)}
                 onNewChapter={() => void onNewChapter(book.bookId)}
+                onOpenShareMenu={() => setShareMenuBookId(book.bookId)}
                 onOpenChapter={onOpenChapter}
                 setNode={setNode}
               />
@@ -190,6 +235,43 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       </div>
 
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+
+      {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
+          the same spot — "Share book" encodes + zips (tap 1), then a primary
+          "Share now" hands the File to the sheet in a fresh activation (tap 2) —
+          with the busy state, a gap warning, and any error riding inside the
+          panel because the flow keeps it open. */}
+      <Menu
+        open={shareMenuBook !== null}
+        onClose={onCloseShareMenu}
+        title={strings.bookMenuTitle}
+      >
+        {bookShare.status === "ready" ? (
+          <Control
+            icon="share"
+            label={strings.shareSend}
+            variant="primary"
+            autoFocus
+            onClick={onSendBookShare}
+          />
+        ) : (
+          <Control
+            icon="share"
+            label={strings.shareBook}
+            variant="quiet"
+            onClick={onPrepareBookShare}
+          />
+        )}
+        {bookShare.status === "preparing" && (
+          <Notice tone="busy">{strings.shareBookPreparing}</Notice>
+        )}
+        {bookShare.status === "ready" && bookShare.missing > 0 && (
+          <Notice tone="busy">
+            {strings.shareBookMissing(bookShare.missing)}
+          </Notice>
+        )}
+        {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
+      </Menu>
     </div>
   );
 }
@@ -199,6 +281,7 @@ interface BookItemProps {
   expanded: boolean;
   onToggle: () => void;
   onNewChapter: () => void;
+  onOpenShareMenu: () => void;
   onOpenChapter: (chapterId: ChapterId) => void;
   setNode: (id: string, el: HTMLElement | null) => void;
 }
@@ -208,6 +291,7 @@ function BookItem({
   expanded,
   onToggle,
   onNewChapter,
+  onOpenShareMenu,
   onOpenChapter,
   setNode,
 }: BookItemProps) {
@@ -248,6 +332,14 @@ function BookItem({
           label={strings.addChapter(book.name)}
           variant="quiet"
           onClick={onNewChapter}
+        />
+        {/* Overflow ≡ after the +, so the add-chapter Control stays the row's
+            first `.control` — the target the new-book focus hand-off relies on. */}
+        <Control
+          icon="menu"
+          label={strings.bookMenuOpen(book.name)}
+          variant="quiet"
+          onClick={onOpenShareMenu}
         />
       </div>
 

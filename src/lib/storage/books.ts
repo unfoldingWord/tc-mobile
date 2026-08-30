@@ -172,6 +172,21 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
   return (await getDb()).get("chapters", id);
 }
 
+/**
+ * Every chapter of a book, in `book.chapterIds` order — the export order a Share
+ * Book walks. Mirrors `getSegmentsOfChapter`: it preserves the declared order and
+ * drops any dangling id rather than surface a hole.
+ */
+export async function getChaptersOfBook(bookId: BookId): Promise<Chapter[]> {
+  const db = await getDb();
+  const book = await db.get("books", bookId);
+  if (!book) return [];
+  const chapters = await Promise.all(
+    book.chapterIds.map((id) => db.get("chapters", id))
+  );
+  return chapters.filter((c): c is Chapter => c !== undefined);
+}
+
 // ── Segments ─────────────────────────────────────────────────────────────
 
 /**
