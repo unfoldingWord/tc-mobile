@@ -77,9 +77,10 @@ export function reduceFrame(frame: Float32Array): CaptureColumn {
  * `push` folds a frame in; `toPeaks` renders the ring to a `Peaks` the canvas
  * draws, ordered oldest-left to newest-right with the newest column at the last
  * index (the record head). While fewer than `capacity` columns have arrived the
- * front is zero-padded, so a just-started take shows a few bars beside the head
- * and blank space where history has not yet accumulated — the audio grows into
- * the blank, it does not stretch to fill it.
+ * front is zero-valued and `count` is short of `capacity` — the real columns
+ * keep fixed spacing beside the head rather than stretching to fill. A `{0,0}`
+ * slot is silence to a canvas, not blank, so the drawer skips the first
+ * `capacity - count` slots via `count` (see `createCapturePeaks`).
  */
 export interface CapturePeaks {
   /** Fold one time-domain frame in as the newest column, evicting the oldest. */
@@ -115,19 +116,37 @@ export interface CapturePeaks {
  * this module's — it only promises the ring behaves for whatever size it is
  * given.
  *
- * No production caller yet: #120's browser lane wires this to an rAF loop over
- * the `LevelTap` and feeds `toPeaks()` into `Waveform`. It stays green under
- * knip only because the capture tests import it — the test-only blind spot
- * AGENTS.md names — so treat "unused" here as "unwired", not dead. It is
- * deliberately untagged: the pivot-pending tag is for exports knip would
- * otherwise fail on, and a test-kept export is not one.
+ * No production caller yet — this is the pure slice of #120; the browser lane
+ * owns the rendering integration, and it is NOT the "drop `toPeaks()` onto the
+ * existing `Waveform`" an earlier draft of this comment implied (George R1).
+ * That lane must:
+ *   - extend the existing `LevelTap` to expose the time-domain frame — its
+ *     `read()` reduces to RMS and discards the frame — rather than open a
+ *     second `AudioContext`/analyser, which iOS caps (audio-io.ts, AGENTS.md);
+ *   - skip the zero-padded prefix using `count`: a `{0,0}` slot is SILENCE to
+ *     the canvas (`Math.max(1.5, 0)` still ticks a bar), not blank, so a drawer
+ *     that paints every bucket renders the unfilled head as amber silence;
+ *   - draw pull-model, not `setState(toPeaks())` per frame — that re-renders the
+ *     recorder sheet at frame rate and reassigns the canvas backing store, the
+ *     D-LEVEL-PULL / #102 trap `VuMeter` exists to avoid;
+ *   - gate on `recording`, not `paused` — a paused mic still emits frames
+ *     (`VuMeter` keys `active={recording}`, R-B6).
+ * That contract is tracked on #120.
+ *
+ * @pivotpending #120 wires this into the recorder. knip does not flag it (the
+ * capture tests import it), so this tag emits an "Unused tag" hint rather than
+ * suppressing a failure — it stays as the honest marker the no-sprawl rule asks
+ * for (Frank R1), naming the batch that consumes it.
  */
 export function createCapturePeaks(capacity: number): CapturePeaks {
-  // `|| 0` turns a non-finite or non-positive floor into 0, so the `max(1, …)`
-  // floor genuinely holds at 1 (a ring of 0 columns would give zero-length
-  // buffers and a NaN modulus). The browser lane passes a real integer; this is
-  // the honest floor the docblock promises, not a guard against a live caller.
-  const size = Math.max(1, Math.floor(capacity) || 0);
+  // Floor to at least 1. A non-finite capacity must short-circuit BEFORE the
+  // floor: `Math.floor(Infinity)` is Infinity and `new Float32Array(Infinity)`
+  // THROWS RangeError (Frank R1), while `Math.floor(NaN)` gives a zero-length
+  // ring — neither is the "at least 1" this promises. Non-positive floors to 1
+  // too. The browser lane passes a real integer; this is the honest floor.
+  const size = Number.isFinite(capacity)
+    ? Math.max(1, Math.floor(capacity))
+    : 1;
 
   // The ring proper, written modulo `size`, plus the reused output buffers so
   // `toPeaks` allocates nothing per frame.
@@ -158,8 +177,9 @@ export function createCapturePeaks(capacity: number): CapturePeaks {
     toPeaks(): Peaks {
       // Walk back from the newest column, placing it at the last output index
       // and older columns leftward, so the head sits on the right. The unfilled
-      // front stays zero — the blank the audio grows into, not a flat silent
-      // bar. `outMin`/`outMax` are overwritten every call, so no stale ring
+      // front stays zero-valued; `count` (= `filled`) is what tells the drawer
+      // those slots are "not yet", since to a canvas `{0,0}` is silence, not
+      // blank. `outMin`/`outMax` are overwritten every call, so no stale ring
       // data leaks past `filled`.
       for (let k = 0; k < size; k++) {
         const outIndex = size - 1 - k;

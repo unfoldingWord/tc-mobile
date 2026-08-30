@@ -113,31 +113,33 @@ export function panAfterCut(pan: number, range: SampleRange): number {
 }
 
 /**
- * The view window for the live capture scope: newest column at `headFraction`,
- * captured history scrolling left, blank to the head's right.
+ * The view window for the live capture scope: the ring's clip-fractions [0,1]
+ * mapped onto screen [0, headFraction], so the newest column sits toward the
+ * head and history runs left, with the head's right left blank.
  *
  * Live capture is a THIRD view mode, distinct from the B4 pan window: there the
  * audio pans under a fixed line; here it grows from the head and streams
- * right-to-left (#120). Mapping the ring's clip-fractions [0,1] onto screen
- * [0, headFraction] puts the newest column (fraction → 1) at the head and the
- * oldest (fraction → 0) at the left edge, so a `CapturePeaks` of `capacity`
- * columns drawn through the existing `view` path right-aligns onto the head
- * with fixed spacing — no new draw branch. Solving `(1 - start)/span =
- * headFraction` with `start = 0` gives `endFraction = 1 / headFraction`.
+ * right-to-left (#120). Solving `(1 - start)/span = headFraction` with
+ * `start = 0` gives `endFraction = 1 / headFraction`. This is the pure geometry
+ * ONLY. The browser lane owns how the columns are actually drawn through it —
+ * the exact bar placement, and whether it reuses the `view` draw path or a
+ * dedicated one — because that path maps a column at `i / capacity`, so the
+ * newest bar butts up just short of the head rather than landing dead on it:
+ * fine for a scope, but a claim to pin against a real drawer, not here (#120,
+ * George R1).
  *
  * `headFraction` is where the record head sits across the width. **Which value
  * ships is a deferred UX call (Tim, #120):** the B4 `CENTER_FRACTION` (0.5,
  * history fills the left half) or the right edge (1, a full-width scope). This
- * function serves either and degrades correctly — at 1 the span is 1 and the
- * scope spans the whole width. A non-positive or non-finite head (0, negative,
- * NaN) has no room to its left and would divide by zero, so it clamps up to
- * `EPSILON` — the same `!(x > 0)` guard `meter.ts` uses, which also rejects NaN.
+ * function serves either — at 1 the span is 1 and the scope spans the whole
+ * width. A non-positive or non-finite head (0, negative, NaN) has no room to
+ * its left and would divide by zero, so it clamps up to `EPSILON` — the same
+ * `!(x > 0)` guard `meter.ts` uses, which also rejects NaN.
  *
- * No production caller yet: #120's browser lane passes this as the `Waveform`
- * `view` while capturing. It is green under knip only because the capture tests
- * import it (the test-only blind spot AGENTS.md names), so "unused" here means
- * "unwired", not dead. It is deliberately untagged — the pivot-pending tag is
- * for exports knip would otherwise fail on, which a test-kept export is not.
+ * @pivotpending #120 passes this as the `Waveform` `view` while capturing;
+ * until then it has no production caller. Test-imported, so knip does not fail
+ * on it — the tag emits an "Unused tag" hint and stands as the honest marker
+ * (Frank R1).
  */
 export function captureWindow(headFraction: number): WaveformWindow {
   // `!(x > 0)` is true for 0, negatives, and NaN — the divide-by-zero / NaN

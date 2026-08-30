@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createCapturePeaks, reduceFrame } from "@/lib/audio/capture-peaks";
-import { captureWindow, sampleToViewportX } from "@/lib/audio/viewport";
+import { captureWindow } from "@/lib/audio/viewport";
 
 /** A frame whose extremes are exactly `min` and `max`. */
 function col(min: number, max: number): Float32Array {
@@ -83,15 +83,22 @@ describe("createCapturePeaks — ring behaviour", () => {
     expect(ring.toPeaks().min.length).toBe(1);
   });
 
-  it("floors a non-finite capacity to 1 rather than a NaN-length ring", () => {
-    // `Math.floor(NaN)` is NaN and `new Float32Array(NaN)` is length 0, so
-    // without the `|| 0` the ring silently holds nothing and reports capacity
-    // NaN — the "floored to at least 1" promise broken.
-    const ring = createCapturePeaks(Number.NaN);
-    expect(ring.capacity).toBe(1);
-    expect(ring.toPeaks().min.length).toBe(1);
-    ring.push(col(0, 0.5));
-    expect(ring.toPeaks().max[0]).toBeCloseTo(0.5, 6);
+  it("floors a non-finite capacity (NaN, ±Infinity) to 1, and never throws", () => {
+    // `Math.floor(NaN)` is NaN → a zero-length ring; `Math.floor(Infinity)` is
+    // Infinity → `new Float32Array(Infinity)` THROWS RangeError (Frank R1). The
+    // isFinite short-circuit must catch both BEFORE the floor — `|| 0` did not,
+    // since Infinity is truthy.
+    for (const cap of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
+      const ring = createCapturePeaks(cap);
+      expect(ring.capacity).toBe(1);
+      expect(ring.toPeaks().min.length).toBe(1);
+      ring.push(col(0, 0.5));
+      expect(ring.toPeaks().max[0]).toBeCloseTo(0.5, 6);
+    }
   });
 
   it("renders exactly `capacity` columns regardless of how many were pushed", () => {
@@ -237,32 +244,37 @@ describe("createCapturePeaks — ring behaviour", () => {
 });
 
 describe("captureWindow — the R→L capture geometry", () => {
-  it("puts the newest column (clip fraction 1) at the head across the width", () => {
-    // Drawing a `capacity`-column ring through this window, the last column sits
-    // at clip fraction ≈ 1; it must map to headFraction of the stage width.
+  // Mirror the exact x the Waveform view loop computes for bucket `i`
+  // (waveform.tsx): `((i / buckets - startFraction) / span) * w`. Testing
+  // against the real bucket mapping — not an invented clip fraction of 1 — is
+  // Frank R1's correction: fraction 1 is never assigned to any bucket.
+  function bucketX(
+    i: number,
+    buckets: number,
+    win: ReturnType<typeof captureWindow>,
+    w: number
+  ): number {
+    const span = win.endFraction - win.startFraction;
+    return ((i / buckets - win.startFraction) / span) * w;
+  }
+
+  it("draws the oldest bucket at the left edge (x = 0)", () => {
     const win = captureWindow(0.5);
-    const w = 300;
-    // sampleToViewportX works in the same fraction→x mapping the canvas uses
-    // (start + f*visibleSamples), so feed it clip fraction 1 as a "sample".
-    const xAtHead = sampleToViewportX(1, w, {
-      start: win.startFraction,
-      end: win.endFraction,
-      visibleSamples: win.endFraction - win.startFraction,
-      centerlineSample: 0,
-    });
-    expect(xAtHead).toBeCloseTo(0.5 * w, 6);
+    expect(bucketX(0, 150, win, 300)).toBeCloseTo(0, 6);
   });
 
-  it("fills from the left edge — the oldest column sits at x = 0", () => {
+  it("draws the newest bucket just short of the head, within one bar of it", () => {
+    // The loop maps bucket i at `i/buckets`, so the newest (i = buckets-1) lands
+    // one bucket-width BELOW the head, not dead on it — the honest geometry
+    // (Frank R1 / George R1). It approaches the head as capacity grows.
     const win = captureWindow(0.5);
+    const buckets = 150;
     const w = 300;
-    const xAtOldest = sampleToViewportX(0, w, {
-      start: win.startFraction,
-      end: win.endFraction,
-      visibleSamples: win.endFraction - win.startFraction,
-      centerlineSample: 0,
-    });
-    expect(xAtOldest).toBeCloseTo(0, 6);
+    const head = 0.5 * w;
+    const x = bucketX(buckets - 1, buckets, win, w);
+    const barStep = w / buckets / (win.endFraction - win.startFraction);
+    expect(x).toBeLessThan(head); // just short of the head, never past it
+    expect(head - x).toBeLessThanOrEqual(barStep + 1e-9); // within one bucket-width
   });
 
   it("at a right-edge head (1.0) the scope spans the whole width", () => {
