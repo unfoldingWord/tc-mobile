@@ -221,4 +221,33 @@ describe("exportBookZip", () => {
     chapterSpy.mockRestore();
     encodeSpy.mockRestore();
   });
+
+  it("stops before the NEXT chapter once cancelled mid-book", async () => {
+    // The between-chapters guard specifically: a cancel that arrives AFTER
+    // chapter 1 encodes must skip chapter 2 entirely — chapter 2's own
+    // shouldEncode would skip only its encode, still paying for its gather. Flip
+    // the seam false the moment chapter 1 finishes, then assert exportChapterMp3
+    // was never entered for chapter 2 (George R-B7-book R2). Dropping the in-loop
+    // guard would call it twice, so the call count is what bites the regression.
+    const bookId = await bookWith([[{ n: 100, v: 100 }], [{ n: 100, v: 200 }]]);
+    const real = chapterExport.exportChapterMp3;
+    let firstDone = false;
+    const chapterSpy = vi
+      .spyOn(chapterExport, "exportChapterMp3")
+      .mockImplementation(async (id, opts, cont) => {
+        const r = await real(id, opts, cont);
+        firstDone = true; // chapter 1 fully gathered + encoded
+        return r;
+      });
+    const encodeSpy = vi.spyOn(mp3, "encodeMp3");
+    const shouldContinue = () => !firstDone;
+
+    const result = await exportBookZip(bookId, nameChapter, {}, shouldContinue);
+
+    expect(result).toBeNull(); // cancelled → whole book abandoned
+    expect(chapterSpy).toHaveBeenCalledTimes(1); // chapter 2 never entered
+    expect(encodeSpy).toHaveBeenCalledTimes(1); // only chapter 1 encoded
+    chapterSpy.mockRestore();
+    encodeSpy.mockRestore();
+  });
 });
