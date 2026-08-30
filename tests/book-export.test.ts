@@ -11,7 +11,7 @@ import {
   addChapter,
   addSegment,
   createBook,
-  getChaptersOfBook,
+  resolveBookChapters,
   saveTake,
 } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
@@ -59,28 +59,33 @@ async function bookWith(
   return book.id;
 }
 
-describe("getChaptersOfBook", () => {
-  it("returns a book's chapters in declared order", async () => {
+describe("resolveBookChapters", () => {
+  it("returns a book's chapters in declared order, missing 0", async () => {
     const bookId = await bookWith([[], [], []]);
-    const chapters = await getChaptersOfBook(bookId);
+    const { chapters, missing } = await resolveBookChapters(bookId);
     expect(chapters.map((c) => c.number)).toEqual([1, 2, 3]);
+    expect(missing).toBe(0);
   });
 
-  it("drops a dangling chapter id rather than surface a hole", async () => {
+  it("drops a dangling chapter id from the list but counts it missing", async () => {
     const bookId = await bookWith([[], [], []]);
     // Erase the middle chapter's record while its id stays in book.chapterIds —
-    // the dangling case the filter exists for.
-    const second = (await getChaptersOfBook(bookId))[1];
+    // the dangling case: dropped from the list, but not from the count.
+    const second = (await resolveBookChapters(bookId)).chapters[1];
     expect(second).toBeDefined();
     const db = await getDb();
     await db.delete("chapters", second!.id);
 
-    const chapters = await getChaptersOfBook(bookId);
+    const { chapters, missing } = await resolveBookChapters(bookId);
     expect(chapters.map((c) => c.number)).toEqual([1, 3]);
+    expect(missing).toBe(1);
   });
 
-  it("returns [] for an unknown book", async () => {
-    expect(await getChaptersOfBook("nope" as BookId)).toEqual([]);
+  it("returns empty for an unknown book", async () => {
+    expect(await resolveBookChapters("nope" as BookId)).toEqual({
+      chapters: [],
+      missing: 0,
+    });
   });
 });
 
@@ -102,7 +107,7 @@ describe("exportBookZip", () => {
 
     // Each entry is exactly that chapter's own MP3 — proves the right chapter's
     // audio landed under the right name, not merely that two files exist.
-    const chapters = await getChaptersOfBook(bookId);
+    const { chapters } = await resolveBookChapters(bookId);
     for (const chapter of chapters) {
       const solo = await chapterExport.exportChapterMp3(chapter.id);
       expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
@@ -126,6 +131,66 @@ describe("exportBookZip", () => {
       "Chapter 1.mp3",
       "Chapter 4.mp3",
     ]);
+  });
+
+  it("counts a dangling chapter id in missing rather than sharing a book with a hole", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }],
+      [{ n: 100, v: 150 }],
+      [{ n: 100, v: 200 }],
+    ]);
+    // Erase the middle chapter record; its id stays in book.chapterIds.
+    const mid = (await resolveBookChapters(bookId)).chapters[1];
+    const db = await getDb();
+    await db.delete("chapters", mid!.id);
+
+    const result = await exportBookZip(bookId, nameChapter);
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(2);
+    expect(result!.missing).toBe(1); // the dangling chapter — silently 0 before the fix
+    expect(Object.keys(unzipSync(result!.zip))).toEqual([
+      "Chapter 1.mp3",
+      "Chapter 3.mp3",
+    ]);
+  });
+
+  it("keeps both chapters' audio when their numbers collide, under distinct names", async () => {
+    // addChapter permits an explicit duplicate number, so nameChapter can map two
+    // chapters to the same path. Both recordings must survive — a zip key is an
+    // object key, and a second write to it silently drops the first while `chapters`
+    // still counts two.
+    const book = await createBook("b");
+    const c1 = await addChapter(book.id, 1);
+    const c2 = await addChapter(book.id, 1); // same number, on purpose
+    const s1 = await addSegment(c1.id);
+    await saveTake(
+      s1.id,
+      newClipId(),
+      samples(CANONICAL_SAMPLE_RATE, 1000),
+      CANONICAL_SAMPLE_RATE
+    );
+    const s2 = await addSegment(c2.id);
+    await saveTake(
+      s2.id,
+      newClipId(),
+      samples(CANONICAL_SAMPLE_RATE * 2, 800), // a different length → different bytes
+      CANONICAL_SAMPLE_RATE
+    );
+
+    const result = await exportBookZip(book.id, nameChapter);
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(2);
+    const entries = unzipSync(result!.zip);
+    // Two distinct entries — the collision was renamed, not overwritten.
+    expect(Object.keys(entries)).toEqual([
+      "Chapter 1.mp3",
+      "Chapter 1 (2).mp3",
+    ]);
+    expect(entries["Chapter 1.mp3"]!.length).toBeGreaterThan(0);
+    expect(entries["Chapter 1 (2).mp3"]!.length).toBeGreaterThan(0);
+    expect(entries["Chapter 1.mp3"]).not.toEqual(entries["Chapter 1 (2).mp3"]);
   });
 
   it("returns null when no chapter has any audio", async () => {

@@ -32,8 +32,17 @@ export type ShareError = "nothing" | "failed";
  */
 export type ShareStatus = "idle" | "preparing" | "ready";
 
-/** What a send gesture resolved to, so the caller can react (e.g. close a menu). */
-export type ShareOutcome = "sent" | "dismissed" | "retry" | "failed";
+/**
+ * What a send gesture resolved to, so the caller can react (e.g. close a menu).
+ *
+ * `superseded` means the sheet settled for a run a newer prepare had already
+ * replaced (a menu closed + a different item armed while the OS sheet was up).
+ * The stale send did NOT touch the newer run's File — and callers must not act
+ * on it either. A caller that closes-and-resets on `sent`/`dismissed` would
+ * otherwise drop the File the new run just prepared (George R-B7-book P2).
+ */
+export type ShareOutcome =
+  "sent" | "dismissed" | "retry" | "failed" | "superseded";
 
 /**
  * The File tap 1 built, plus how many units it had to leave out (segments for a
@@ -235,14 +244,14 @@ export function useShareFlow(): UseShareFlow {
     // resolves — the File already carries its name (George R-B7).
     try {
       await navigator.share({ files: [file] });
-      // Shared. Drop the File — but only if this run still owns the state. A
-      // `reset` while the sheet was open bumped the token and may have armed a NEW
-      // File; nulling here unguarded would drop that one (George R-B7).
-      if (current()) {
-        fileRef.current = null;
-        setStatus("idle");
-        setMissing(0);
-      }
+      // Shared. If a newer run has taken over (a `reset` while the sheet was open
+      // bumped the token and may have armed a NEW File), leave its state alone AND
+      // tell the caller `superseded` so it does not close/reset over the new run
+      // (George R-B7-book P2). Only the owning run clears the File.
+      if (!current()) return "superseded";
+      fileRef.current = null;
+      setStatus("idle");
+      setMissing(0);
       return "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
@@ -251,15 +260,15 @@ export function useShareFlow(): UseShareFlow {
         // tap can hand it over. Not a failure the translator should see.
         return "retry";
       }
+      // A newer run owns the flow: don't touch its state and don't let the caller
+      // act on this stale settle.
+      if (!current()) return "superseded";
       if (outcome === "failed") console.error("Sharing failed", cause);
-      // Dismissed or a real failure: end the flow — but, as above, only for the
-      // run that still owns the File.
-      if (current()) {
-        fileRef.current = null;
-        setStatus("idle");
-        setMissing(0);
-        if (outcome === "failed") setError("failed");
-      }
+      // Dismissed or a real failure: end the flow for the run that still owns it.
+      fileRef.current = null;
+      setStatus("idle");
+      setMissing(0);
+      if (outcome === "failed") setError("failed");
       return outcome;
     } finally {
       sendingRef.current = false;

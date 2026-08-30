@@ -56,11 +56,11 @@ export function useBookShare(): UseBookShare {
         // cancelled during the gather. `isCurrent` distinguishes them: still live
         // means genuinely nothing to share.
         if (result === null) return isCurrent() ? "nothing" : null;
-        // Copy into a plain ArrayBuffer-backed view (see use-chapter-share):
-        // fflate types `zipSync` as `Uint8Array<ArrayBufferLike>`, which `File`
-        // rejects for the same SharedArrayBuffer reason `encodeMp3`'s output does.
-        const bytes = new Uint8Array(result.zip);
-        const file = new File([bytes], zipFilename, {
+        // No copy: `result.zip` is `zipSync`'s own `Uint8Array<ArrayBuffer>`,
+        // which `File` accepts directly (unlike `encodeMp3`'s ArrayBufferLike
+        // output). Copying a whole book archive here was needless peak memory on
+        // the low-end phones fflate was chosen for (George R-B7-book P3).
+        const file = new File([result.zip], zipFilename, {
           type: "application/zip",
         });
         return { file, missing: result.missing };
