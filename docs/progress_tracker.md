@@ -7,6 +7,79 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-30 — B7 Share Book built, dual-reviewed to Frank-clean, merged to develop
+
+**Branch:** `feat/b7-book-export` → **`develop`** (merged, deleted). **PR:**
+[#114](https://github.com/sethstoll3/tc-mobile/pull/114) B7 Share Book
+(squash `342e3db`). **Filed:** [#115](https://github.com/sethstoll3/tc-mobile/issues/115),
+[#116](https://github.com/sethstoll3/tc-mobile/issues/116); note added to
+[#34](https://github.com/sethstoll3/tc-mobile/issues/34). **Production `main`
+untouched** (`3464a30`); **`staging`** still v0.1.7 (`6790a59`).
+
+### Shipped
+
+- **B7 Share Book (#114, #33/#18).** A book → one **zip of per-chapter MP3s**
+  to the OS share sheet — the sibling of Share Chapter, the second half of #18's
+  export path. `lib/export/book.ts` `exportBookZip` composes `exportChapterMp3`
+  over `resolveBookChapters` and archives with `fflate` `zipSync` (level 0 —
+  MP3 is already compressed). DOM-free, Node-tested, mutation-proven. Adds
+  `fflate ^0.8.3`.
+- **The two-gesture flow is now shared, not duplicated.** Extracted
+  `hooks/share-flow.ts` `useShareFlow` (the iOS user-activation contract, the
+  run-generation token, both re-entry guards) from `use-chapter-share`, whose
+  public API is unchanged (segments-screen untouched); `use-book-share` is the
+  parallel wrapper. `classifyShareError` moved with it (test →
+  `tests/share-flow.test.ts`).
+- **Books screen:** a per-book `≡` menu beside the `+` (after it, so add-chapter
+  stays the row's first `.control` for the focus hand-off); one share flow for
+  the screen; shelf goes inert behind the menu. Book share strings.
+
+### The review — 2 rounds, both reviewers each round
+
+Full triage on #114 (both rounds, head SHAs stamped).
+
+- **Round 1** (both at `50f56d6`): both **REQUEST_CHANGES** → **3 P2s, all
+  fixed + mutation-proven:** (a) duplicate chapter `number` collided in the zip
+  and silently dropped a chapter's audio → `uniqueEntryName` disambiguates,
+  lossless; (b) a dangling chapter record fell out of the `missing` count →
+  `getChaptersOfBook` reshaped to `resolveBookChapters` returning
+  `{ chapters, missing }` (mirrors `resolveChapterClipIds`); (c) a stale
+  `send()` returned `sent`/`dismissed` and the Books caller reset on it,
+  dropping a newer book's zip → new `superseded` outcome. Plus a P3 (dropped two
+  needless full-archive copies via `Uint8Array<ArrayBuffer>`).
+- **Round 2** (at `af5dae0`): **Frank APPROVE.** George REQUEST_CHANGES, no P1,
+  2 P2 + 3 P3. One P3 fixed (`7dfb0e1`: the cancel test now bites the
+  between-chapters guard, not just iteration 0). The **two P2s accepted as
+  residuals by the DRI:** the send-race is unreachable on the modal iOS/Android
+  share sheets that are the only target platforms (desktop-only); the zip peak
+  memory (~Σ MP3s ×2 on a long book) is B8-shaped — fflate can't fix it
+  main-thread — deferred to **#34**.
+- **Merge:** Frank clean + CI green (Build, Code Quality, Secret Scan) + the two
+  George residuals explicitly DRI-accepted → admin squash-merge to `develop`
+  (`342e3db`). develop-integration lane, not the prod gate.
+
+### Blockers / needs a human
+
+- **On-device iOS + Android** for Share Book: the whole `navigator.share`/zip
+  path is device-only, including `navigator.canShare({ files: [zip] })` for
+  `application/zip` (George's one unverifiable residual). Owed with the rest of
+  the v0.1.x device pass.
+- **Local `develop` in the main checkout is behind** `342e3db` — `git pull`.
+
+### Next steps
+
+1. **Promote `develop` → `staging`** (Share Book onto the testers' link; likely
+   a `chore(release)` version bump as #113 did for v0.1.7).
+2. **On-device pass** on staging, then the `staging → main` production PR for
+   v0.1.7 if clean.
+3. **Rest of B7:** the **Template Library** (the remaining half of #33).
+4. **Recorder UI lane** and **live-waveform-during-recording** lane.
+5. Deferred from this review: **#115** (Q6 folders/manifest, Pending Tim),
+   **#116** (segment-grain `missing`), **#34** (B8: encode off-thread + stream
+   the book zip).
+
+---
+
 ## 2026-08-28 (night) — B7 Share Chapter reworked to clean, merged, promoted to staging v0.1.7
 
 **Branch:** `feat/b7-chapter-export` → **`develop`** (merged, deleted). **PRs:**
