@@ -76,8 +76,10 @@ export interface UseAudioSession {
   readLevel: () => number;
   /**
    * The live-waveform scope for the current take (#120), or `null` when nothing
-   * is capturing. A PULL like `readLevel`: the scope drawer polls it on its own
-   * frame clock, so nothing above this layer re-renders per frame.
+   * is capturing OR the tap could not be wired (a `meterFailed` take records but
+   * produces no scope — the sheet keeps the static waveform up in that case). A
+   * PULL like `readLevel`: the scope drawer polls it on its own frame clock, so
+   * nothing above this layer re-renders per frame.
    */
   readScope: () => CaptureScope | null;
   /** The VU tap could not be wired for the current take; the meter shows

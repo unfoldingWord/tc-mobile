@@ -88,9 +88,14 @@ export function LiveScope({
 
     let raf = 0;
     const tick = () => {
+      const scope = readScopeRef.current();
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (w > 0 && h > 0) {
+      // A null scope is the tap-failed / teardown transient — the tap is nulled
+      // a frame before the state leaves "recording". Leave the last painted
+      // frame rather than clearing to blank: a freeze, not a flash (George R1).
+      // So draw only when there IS a scope and the canvas is laid out.
+      if (scope && w > 0 && h > 0) {
         // Size the backing store only when it actually changed (a resize),
         // never every frame — reassigning `canvas.width` clears AND reallocates
         // it, the #102 backing-store cost.
@@ -103,26 +108,25 @@ export function LiveScope({
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
 
-        const scope = readScopeRef.current();
-        if (scope) {
-          const buckets = scope.min.length;
-          const mid = h / 2;
-          // Bar geometry matches the `Waveform` view loop, so the head line and
-          // the bars share one coordinate model. Span is never zero (head > 0).
-          const barW = Math.max(1, (w / buckets) * headFraction - 1);
-          ctx.fillStyle = stroke;
-          // Paint only the real trailing columns; the leading `buckets - count`
-          // are the not-yet pad (silence-valued, must not draw).
-          for (let i = buckets - scope.count; i < buckets; i++) {
-            const x = ((i / buckets - win.startFraction) / span) * w;
-            const top = mid - (scope.max[i] ?? 0) * mid;
-            const bottom = mid - (scope.min[i] ?? 0) * mid;
-            ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
-          }
-          // The record head, over the audio, in the record colour.
-          ctx.fillStyle = live;
-          ctx.fillRect(Math.round(win.centerFraction * w) - 1, 0, 2, h);
+        const buckets = scope.min.length;
+        const mid = h / 2;
+        // Bar width from the CLAMPED window span — the same `w/buckets/span - 1`
+        // the `Waveform` view loop uses, so the bars and the head share one
+        // coordinate model even after `captureWindow` clamps the head. Span is
+        // never zero (head > 0), so no divide-by-zero guard.
+        const barW = Math.max(1, w / buckets / span - 1);
+        ctx.fillStyle = stroke;
+        // Paint only the real trailing columns; the leading `buckets - count`
+        // are the not-yet pad (silence-valued, must not draw).
+        for (let i = buckets - scope.count; i < buckets; i++) {
+          const x = ((i / buckets - win.startFraction) / span) * w;
+          const top = mid - (scope.max[i] ?? 0) * mid;
+          const bottom = mid - (scope.min[i] ?? 0) * mid;
+          ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
         }
+        // The record head, over the audio, in the record colour.
+        ctx.fillStyle = live;
+        ctx.fillRect(Math.round(win.centerFraction * w) - 1, 0, 2, h);
       }
       raf = requestAnimationFrame(tick);
     };

@@ -744,23 +744,30 @@ export function Recorder({
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                {recording || paused ? (
-                  // While capturing, a dedicated live scope replaces the static
-                  // waveform: it grows from the head and scrolls R→L (#120).
-                  // `active={recording}` freezes it on pause (the mic still
-                  // emits frames, R-B6). Its own draw path sidesteps Waveform's
-                  // `!recorded` gate, which would blank a first take.
+                {(recording || paused) && !audio.meterFailed ? (
+                  // Capturing with a working tap: a dedicated live scope replaces
+                  // the static waveform — it grows from the head and scrolls R→L
+                  // (#120). `active={recording}` freezes it on pause (the mic
+                  // still emits frames, R-B6). Its own draw path sidesteps
+                  // Waveform's `!recorded` gate, which would blank a first take.
                   <LiveScope
                     readScope={audio.readScope}
                     active={recording}
+                    headFraction={CENTER_FRACTION}
                     height={200}
                     label={strings.liveWaveform}
                   />
                 ) : (
+                  // Idle / edit / playback — AND the tap-failed capture fallback:
+                  // `readScope` is null there, so keep Waveform with `capturing`
+                  // so the #110 record centerline stays up over the existing
+                  // audio (or the dotted first-take rule), not a blank stage
+                  // (George R1). The VU strip already signals the tap failure.
                   <Waveform
                     peaks={editor.peaks}
                     height={200}
                     recorded={hasAudio}
+                    capturing={recording || paused}
                     playhead={playhead}
                     view={waveView}
                   />
