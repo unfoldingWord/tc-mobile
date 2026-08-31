@@ -27,7 +27,10 @@ export interface UseAudioSession {
    */
   readonly playingBuffer: boolean;
   /**
-   * Milliseconds into the sounding take, for the scrub dot / playhead. Zero
+   * Milliseconds into the sounding take, for the Segments-row scrub dot. PUSHED
+   * on a ~60 ms interval, so it re-renders every consumer — earned for the
+   * moving dot on a `playingId` take, but not for the recorder's buffer playback
+   * behind the inert list, which PULLS `readPlaybackElapsed` instead (#102). Zero
    * whenever nothing is playing.
    */
   readonly playbackElapsedMs: number;
@@ -56,6 +59,15 @@ export interface UseAudioSession {
   playBuffer: (samples: Int16Array, offsetSeconds?: number) => void;
   /** Stop buffer playback if it is the one sounding. A no-op otherwise. */
   stopBuffer: () => void;
+  /**
+   * The sounding position in milliseconds, PULLED (D-LEVEL-PULL, like
+   * `readLevel`). The recorder's buffer-playback playhead polls this on its own
+   * clock so buffer playback no longer lifts into App state — `playbackElapsedMs`
+   * is pushed only for the Segments-row scrub dot (a `playingId` take), whose
+   * moving dot earns the re-render; the recorder's inert-list neighbour did not
+   * (#102). 0 whenever nothing is playing.
+   */
+  readPlaybackElapsed: () => number;
   startRecording: () => void;
   /** Pause the in-progress recording without ending the take. */
   pauseRecording: () => void;
@@ -340,18 +352,31 @@ export function useAudioSession(): UseAudioSession {
     [claimFloor, session, setPlayingBuffer, stopBuffer]
   );
 
-  // Advance the scrub position while a take or the buffer is sounding. The
-  // handle's own `elapsed()` is the source of truth (it clamps to the clip
-  // duration), polled rather than integrated so a pause or an end never leaves
-  // the dot drifting.
+  // The buffer-playback position, PULLED on the caller's own clock. The handle's
+  // `elapsed()` is the source of truth (it clamps to the clip duration), so a
+  // pause or an end reads a settled value rather than a drifting integration. 0
+  // between plays — the handle is cleared whenever playback ends (`setPlaying`,
+  // `setPlayingBuffer`). Stable identity ([] deps): the recorder's playhead
+  // effect depends on it, so it must not churn per render (#102).
+  const readPlaybackElapsed = useCallback((): number => {
+    const handle = playbackHandleRef.current;
+    return handle ? handle.elapsed() * 1000 : 0;
+  }, []);
+
+  // Advance the Segments-row scrub dot while a LIST take is sounding. Gated on
+  // `playingId` only — buffer playback (the recorder) reads `readPlaybackElapsed`
+  // on its own clock, so a preview no longer pushes App state ~16×/s and
+  // re-renders the inert Segments list behind the sheet (#102). The handle's own
+  // `elapsed()` is the source of truth, polled rather than integrated so a pause
+  // or an end never leaves the dot drifting.
   useEffect(() => {
-    if (playingId === null && !playingBuffer) return;
+    if (playingId === null) return;
     const id = window.setInterval(() => {
       const handle = playbackHandleRef.current;
       if (handle) setPlaybackElapsedMs(handle.elapsed() * 1000);
     }, 60);
     return () => clearInterval(id);
-  }, [playingId, playingBuffer]);
+  }, [playingId]);
 
   const startRecording = useCallback(() => {
     // A device that cannot record never takes the floor. `start()` only sets a
@@ -460,6 +485,7 @@ export function useAudioSession(): UseAudioSession {
     playTake,
     playBuffer,
     stopBuffer,
+    readPlaybackElapsed,
     startRecording,
     pauseRecording,
     resumeRecording,
