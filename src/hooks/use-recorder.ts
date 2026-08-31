@@ -690,7 +690,17 @@ export function useRecorder(): UseRecorder {
     if (blob.size === 0) return null;
     try {
       const samples = await decodeToCanonical(blob);
-      if (generation !== generationRef.current) return null;
+      // Re-check ownership AND paused-state after the decode, not just generation:
+      // `resume()`/`stop()` do not bump `generationRef`, so a Resume or Back landing
+      // DURING the decode must still resolve null — the documented contract a future
+      // hook caller relies on, not only the component's epoch (Frank R8).
+      if (
+        generation !== generationRef.current ||
+        recorderRef.current !== recorder ||
+        recorder.state !== "paused"
+      ) {
+        return null;
+      }
       // Zero samples is nothing to preview — same class as an undecodable blob.
       return samples.length > 0 ? samples : null;
     } catch {

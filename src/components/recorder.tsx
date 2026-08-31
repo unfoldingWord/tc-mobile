@@ -383,9 +383,12 @@ export function Recorder({
   // unmounts for the preview, so discarding the preview on Back or a #59
   // interruption would blank the stage for the whole commit — the "looks
   // discarded" class the `isClosing` LiveScope clause exists to prevent (George R3
-  // #1). The ≡ menu, Back (`close`), and the paused-exit effect use this; it does
-  // not stop playback, so callers pair it with `stopBuffer()`. A `"decoding"`
-  // state resets to `"none"` (the decode is gone); a `"failed"` one stays.
+  // #1). The ≡ menu and Back (`close`) use this; it does not stop playback, so they
+  // pair it with `stopBuffer()`. A `"decoding"` state resets to `"none"` (the
+  // decode is gone); a `"failed"` one stays. The paused-exit effect does its own
+  // lighter subset (epoch + guard + `stopBuffer`, no state reset) to stay out of
+  // set-state-in-effect; its leftover `previewState` is inert (`playDisabled` gates
+  // it only while paused).
   const abortPreview = useCallback(() => {
     previewGenRef.current++;
     previewDecodeRef.current = false;
