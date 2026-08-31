@@ -489,11 +489,20 @@ export function Recorder({
       return;
     }
     const gen = previewGenRef.current;
+    const previous = previewPromiseRef.current;
     previewDecodeRef.current = true;
     setPreviewState("decoding");
-    // Held so close() can await this decode before starting stop()'s (George R4).
+    // Held so close() can await this decode before starting stop()'s (George R4),
+    // and CHAINED behind any prior one so two decodeToCanonical passes never
+    // allocate together (George R5 #1): a Play→Resume→Play→Back loop leaves the
+    // first decode still running (resume does not abort it), and replacing the
+    // promise would let close() await only the latest.
     previewPromiseRef.current = (async () => {
       try {
+        // Wait out a prior preview decode's WORK; its RESULT is dropped by the
+        // epoch. One full PCM buffer exists at a time, not two.
+        if (previous) await previous;
+        if (gen !== previewGenRef.current) return;
         const pcm = await audio.previewCapture();
         // A resume/close/re-record/menu/interruption during the decode bumped the
         // epoch: this take is no longer the one being previewed. Drop the result
@@ -678,6 +687,14 @@ export function Recorder({
         // the epoch, so the preview drops its result; this only serialises the
         // work. Awaiting a settled or null promise is instant.
         await previewPromiseRef.current;
+        // Then DROP the prepared preview's PCM, keeping only its peaks for the
+        // stage: Waveform reads `peaks`, not the buffer, and the overlay is
+        // inactive while closing — so holding the full ~5.3 MB/min Int16Array
+        // across stop()'s decode and mergeTake would peak a third copy for nothing
+        // (George R5 #2). `previewShown` still draws the peaks, so no blank.
+        setPreview((p) =>
+          p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
+        );
         const result = await audio.stopRecording();
         if (result.samples && result.samples.length > 0) {
           // The Finished mark rides the take (applied atomically in addTake, on
