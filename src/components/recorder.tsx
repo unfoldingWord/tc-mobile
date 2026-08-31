@@ -7,6 +7,7 @@ import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
+import { LiveScope } from "./live-scope";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -743,14 +744,27 @@ export function Recorder({
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                <Waveform
-                  peaks={editor.peaks}
-                  height={200}
-                  recorded={hasAudio}
-                  capturing={recording || paused}
-                  playhead={playhead}
-                  view={waveView}
-                />
+                {recording || paused ? (
+                  // While capturing, a dedicated live scope replaces the static
+                  // waveform: it grows from the head and scrolls R→L (#120).
+                  // `active={recording}` freezes it on pause (the mic still
+                  // emits frames, R-B6). Its own draw path sidesteps Waveform's
+                  // `!recorded` gate, which would blank a first take.
+                  <LiveScope
+                    readScope={audio.readScope}
+                    active={recording}
+                    height={200}
+                    label={strings.liveWaveform}
+                  />
+                ) : (
+                  <Waveform
+                    peaks={editor.peaks}
+                    height={200}
+                    recorded={hasAudio}
+                    playhead={playhead}
+                    view={waveView}
+                  />
+                )}
                 {mode === "edit" &&
                   editor.selectionActive &&
                   editor.selection && (

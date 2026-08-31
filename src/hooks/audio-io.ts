@@ -119,6 +119,16 @@ export interface LevelTap {
    */
   read: () => number;
   /**
+   * The analyser's latest time-domain frame (the same reused buffer `read()`
+   * measures its RMS from), or `null` once the tap is disconnected. The
+   * live-waveform scope reduces this to one column per animation frame (#120),
+   * while `read()` stays the VU meter's RMS pull. Returns the REUSED buffer, so
+   * copy what you need synchronously (as `reduceFrame` does) — the next call
+   * overwrites it. Reading the frame here rather than opening a second tap keeps
+   * the scope and the meter on ONE analyser (iOS caps `AudioContext`s).
+   */
+  readFrame: () => Float32Array | null;
+  /**
    * Disconnect the graph so `read()` returns 0, but LEAVE the cloned capture
    * tracks live. Safe to call inside the MediaRecorder flush window (between
    * `stop()` and `onstop`): stopping any capture track there can truncate the
@@ -231,6 +241,11 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       if (disconnected) return 0;
       graph.getFloatTimeDomainData(frame);
       return rmsLevel(frame);
+    },
+    readFrame: () => {
+      if (disconnected) return null;
+      graph.getFloatTimeDomainData(frame);
+      return frame;
     },
     disconnect: disconnectGraph,
     close: () => {

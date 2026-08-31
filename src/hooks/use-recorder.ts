@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  type CaptureScope,
+  createCapturePeaks,
+} from "@/lib/audio/capture-peaks";
+
+import {
   createLevelTap,
   decodeToCanonical,
   isRecordingSupported,
@@ -8,6 +13,14 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+
+/**
+ * Columns the live-waveform ring holds while recording (#120). One column is
+ * pushed per animation frame, so at ~60 fps this is roughly `SCOPE_CAPACITY/60`
+ * seconds of visible history. 180 ≈ 3 s beside the head — a provisional default
+ * to tune on the device pass alongside `headFraction` (Tim's UX call).
+ */
+const SCOPE_CAPACITY = 180;
 
 export type RecorderState =
   "idle" | "requesting" | "recording" | "paused" | "processing";
@@ -90,6 +103,13 @@ export interface UseRecorder {
    * superseded analyser.
    */
   readLevel: () => number;
+  /**
+   * The live-waveform scope for the current take (#120), or `null` when nothing
+   * is capturing or the tap could not be wired. A PULL like `readLevel`: the
+   * scope drawer polls it on its own frame clock. Folds the latest analyser
+   * frame in as one column per call and returns the ring's `CaptureScope`.
+   */
+  readScope: () => CaptureScope | null;
   /**
    * The level tap could not be wired for the current take (a quirky Web Audio
    * implementation). Recording is unaffected; the meter should show unavailable
@@ -175,8 +195,31 @@ export function useRecorder(): UseRecorder {
     tapRef.current = null;
   }, []);
 
+  /**
+   * The live-waveform ring for the current take (#120). One column per frame is
+   * folded in by `readScope`; reset at each idle→recording edge in `start`. A
+   * stable instance across renders — reusing its buffers is the whole point
+   * (#102), so it is never re-created on render.
+   */
+  const scopeRef = useRef(createCapturePeaks(SCOPE_CAPACITY));
+
   /** The current capture level for the VU meter, 0 when nothing is capturing. */
   const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
+
+  /**
+   * The live-waveform scope for the current take, or `null` when nothing is
+   * capturing (or the tap could not be wired). A PULL like `readLevel`
+   * (D-LEVEL-PULL): the scope drawer polls it on its own animation clock, so the
+   * recorder never re-renders per frame. Each call folds the latest analyser
+   * frame in as one column and returns the ring; the drawer gates its loop on
+   * `recording`, so a paused take stops pushing and the scope freezes (R-B6).
+   */
+  const readScope = useCallback((): CaptureScope | null => {
+    const frame = tapRef.current?.readFrame();
+    if (!frame) return null;
+    scopeRef.current.push(frame);
+    return scopeRef.current.toScope();
+  }, []);
 
   const releaseStream = useCallback(() => {
     closeTap();
@@ -327,6 +370,9 @@ export function useRecorder(): UseRecorder {
       });
 
       recorder.start(250);
+      // A new take starts from an empty live-waveform scope (#120) — the ring
+      // must not carry the previous take's tail into this one.
+      scopeRef.current.reset();
       // Open the VU tap on the live stream. Non-fatal: a device with a quirky
       // Web Audio implementation should still record even if the meter cannot
       // be wired, so a failure here is logged and the recorder runs meterless.
@@ -566,6 +612,7 @@ export function useRecorder(): UseRecorder {
     stop,
     cancel,
     readLevel,
+    readScope,
     meterFailed,
   };
 }
