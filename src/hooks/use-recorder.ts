@@ -94,6 +94,24 @@ export interface UseRecorder {
    * state — see `StopResult`.
    */
   stop: () => Promise<StopResult>;
+  /**
+   * Decode the take captured SO FAR to canonical PCM for an in-sheet preview,
+   * WITHOUT ending the take (#101). Meant for a paused take — the caller enables
+   * Play while paused and previews what was recorded before committing on Back.
+   *
+   * Returns null, never throws, when there is nothing to preview or the take
+   * cannot be decoded mid-capture: `pause()` does not finalise the container, and
+   * iOS writes the moov atom only on `stop()`, so a paused fMP4 may not decode on
+   * that platform. The caller degrades to a disabled Play rather than claiming a
+   * preview it cannot produce — the flow is correct on every device, and whether
+   * a given device can decode a paused take is answered by the on-device pass.
+   *
+   * Resolves null if the take is no longer this paused recorder by the time the
+   * flush settles — a cancel/leave, a newer recording, a Resume, or a Back (whose
+   * `stop()` owns the chunks then). So it never previews post-resume audio as "the
+   * take so far", and never decodes in parallel with `stop()`'s own decode.
+   */
+  previewCapture: () => Promise<Int16Array | null>;
   cancel: () => void;
   /**
    * The live capture level for the VU meter, in the raw amplitude domain (RMS of
@@ -623,6 +641,77 @@ export function useRecorder(): UseRecorder {
     }
   }, [abandonStream, clearTick]);
 
+  const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return null;
+    // Unlock Web Audio in the SAME gesture turn as the Play tap that reaches this
+    // synchronously, BEFORE the awaits below: a pause that spanned an iOS
+    // interruption or backgrounding leaves the shared context suspended, and iOS
+    // will not un-suspend it once the activation is spent — so a preview decoded
+    // first, then played, would be silent. Fire-and-forget, like the record and
+    // playback paths (#101 / George R1 P3).
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
+    // Snapshot before the awaits, exactly as `stop()` does: the audio belongs to
+    // this invocation, so a cancel()/leave() reassigning `chunksRef` mid-decode
+    // cannot divert it. A superseded generation returns null (silent), never a
+    // preview a newer recording would own.
+    const generation = generationRef.current;
+    const chunks = chunksRef.current;
+    // Flush any slice MediaRecorder is still buffering, so the preview includes
+    // the audio right up to the pause. `requestData` is valid while paused and
+    // fires `dataavailable` synchronously-ish; a macrotask lets it land. Some
+    // implementations reject it outside "recording" — then we preview the chunks
+    // already in hand, which is only the last sub-250 ms slice short.
+    try {
+      recorder.requestData();
+    } catch {
+      // requestData unsupported in this state — decode what already arrived.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Only decode a take that is STILL this recorder and STILL paused. A Back
+    // (which runs stop()) or a Resume during the flush wait means stop() or a new
+    // span owns the chunks now — decoding them here would run a second
+    // decodeToCanonical + PCM allocation in parallel with stop()'s, doubling the
+    // main-thread cost and memory on the low-end device the save path guards
+    // (George R3 #2). This closes the pre-decode window; a decode already in
+    // flight cannot be aborted (decodeAudioData has no cancel), but the caller's
+    // epoch drops its result.
+    if (
+      generation !== generationRef.current ||
+      recorderRef.current !== recorder ||
+      recorder.state !== "paused"
+    ) {
+      return null;
+    }
+    if (chunks.length === 0) return null;
+    const blob = new Blob(chunks, { type: recorder.mimeType });
+    if (blob.size === 0) return null;
+    try {
+      const samples = await decodeToCanonical(blob);
+      // Re-check ownership AND paused-state after the decode, not just generation:
+      // `resume()`/`stop()` do not bump `generationRef`, so a Resume or Back landing
+      // DURING the decode must still resolve null — the documented contract a future
+      // hook caller relies on, not only the component's epoch (Frank R8).
+      if (
+        generation !== generationRef.current ||
+        recorderRef.current !== recorder ||
+        recorder.state !== "paused"
+      ) {
+        return null;
+      }
+      // Zero samples is nothing to preview — same class as an undecodable blob.
+      return samples.length > 0 ? samples : null;
+    } catch {
+      // An undecodable partial container (device-dependent, chiefly iOS fMP4
+      // before its moov atom). Not this hook's error state: the caller degrades
+      // Play to disabled. Logged, not surfaced — console is the diagnostic here.
+      console.error("Could not decode the take for preview");
+      return null;
+    }
+  }, []);
+
   const cancel = useCallback(() => {
     generationRef.current++;
     clearTick();
@@ -653,6 +742,7 @@ export function useRecorder(): UseRecorder {
     pause,
     resume,
     stop,
+    previewCapture,
     cancel,
     readLevel,
     readScope,

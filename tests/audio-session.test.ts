@@ -217,3 +217,56 @@ describe("createAudioSession", () => {
     expect(session.live).toBeNull();
   });
 });
+
+/**
+ * The paused-take preview (#101, approach B). The HOOK does the release and the
+ * reclaim — `playBuffer(..., { preemptPausedMic: true })` calls `stopAll()` to
+ * drop the paused mic's claim, and `resumeRecording` calls `claim("mic")` to take
+ * it back. What the arbiter must make sound is the SEQUENCE those calls form:
+ * a preview can claim the floor once the mic's claim is dropped, and reclaiming
+ * the mic stops a still-sounding preview rather than leaving it orphaned with no
+ * control (a resume that left the preview playing would be the R-B6 hole again).
+ * That is the arbiter half, asserted here; the hook half is on-device only.
+ */
+describe("createAudioSession — paused-take preview floor sequence (#101)", () => {
+  it("lets a preview claim the floor once the paused mic's claim is dropped", () => {
+    const session = createAudioSession();
+    // A paused take: the mic holds the floor, and a plain preview is refused.
+    session.claim("mic");
+    expect(session.claim("take")).toBeNull();
+
+    // The hook drops the mic's claim (stopAll — nothing to stop, the mic never
+    // settled a handle), and now the preview is admitted.
+    session.stopAll();
+    const preview = session.claim("take");
+    expect(preview).not.toBeNull();
+    expect(session.live).toBe("take");
+  });
+
+  it("stops a sounding preview when the mic is reclaimed on resume", () => {
+    const session = createAudioSession();
+    session.claim("mic");
+    session.stopAll();
+    const token = session.claim("take") as number;
+    const preview = handle();
+    session.settle(token, preview);
+
+    // Resume: the hook reclaims the mic. The still-sounding preview is stopped by
+    // the claim, not left orphaned, and the mic holds the floor again.
+    const reclaimed = session.claim("mic");
+    expect(reclaimed).not.toBeNull();
+    expect(preview.stops).toBe(1);
+    expect(session.live).toBe("mic");
+    expect(session.isCurrent(token)).toBe(false);
+  });
+
+  it("never refuses the mic reclaim, even mid-preview", () => {
+    const session = createAudioSession();
+    session.claim("mic");
+    session.stopAll();
+    session.claim("take");
+    // `resumeRecording` depends on this always returning a token to store in
+    // `micTokenRef`; a null would strand the resumed take with no floor claim.
+    expect(session.claim("mic")).not.toBeNull();
+  });
+});

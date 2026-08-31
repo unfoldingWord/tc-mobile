@@ -7,6 +7,83 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-31 — Live waveform during recording (#120): pure slice + browser lane, both merged, staging v0.1.9
+
+**Branches:** `feat/live-waveform-capture` → **`develop`** (#121, merged, deleted);
+`feat/live-waveform-wiring` → **`develop`** (#123, merged, deleted); release/promote
+branches for v0.1.8 (#122) and v0.1.9 (#124/#125). **Filed:** [#120](https://github.com/sethstoll3/tc-mobile/issues/120)
+(the live-waveform tracking issue). **On `develop`** (`1219921`), **`staging`**
+promoted to **v0.1.9** (`62afa75`) — the first on-device-testable build of the
+feature. **Production `main` untouched** (`3464a30`).
+
+### Shipped — the live waveform, built in two lanes
+
+The recorder now shows the waveform **growing as you speak** on a first take —
+Seth's recorded build-decision from 2026-08-28. Split into a pure slice and a
+browser lane so the testable math lands separately from the device-gated wiring.
+
+- **#121 — pure `lib/audio` slice** (squash `2e128e6`). `reduceFrame` (frame →
+  one min/max column) + `createCapturePeaks` (a fixed-capacity ring, newest at
+  the head, zero-padded front, reused output buffers — the #102 no-realloc
+  rule) returning a `CaptureScope { min, max, count }`; `captureWindow(headFraction)`
+  in `viewport.ts` for the R→L capture geometry; `WaveformWindow` unified into
+  `viewport.ts`. 30 tests, **every guard mutation-proven** (13 mutations).
+- **#123 — browser + device lane** (squash `eb5f75b`). `LevelTap.readFrame()`
+  exposes the analyser frame (one tap, shared with the VU meter — no 2nd
+  AudioContext, iOS cap); `use-recorder` owns the ring and a `readScope()` pull
+  gated on `recordingRef` (written synchronously at every transition); a
+  dedicated pull-model `LiveScope` canvas (VuMeter's pattern) that owns its rAF,
+  skips the pad via `scope.count`, freezes on pause/close, and repaints on
+  resize via a `ResizeObserver`. First-take only (`!hasAudio`); a punch-in keeps
+  the static Waveform + #110 centerline.
+
+### Ultracode + the review loops
+
+- **Two workflows on #121:** a 6-agent scout over candidate build-lanes (picked
+  the pure slice as the cleanest onion split), then a 4-agent adversarial review
+  (found a NaN-frame inversion, a NaN-capacity ring, a NaN window, and three
+  unpinned invariants — all folded in with tests).
+- **#121 review — 3 Frank+George rounds.** R1 over-claimed drop-in docblocks +
+  an `Infinity` RangeError; R2 non-finite edges + a structural `toScope`/`CaptureScope`
+  recantation; R3 (split): George APPROVE, **Frank P1 "ships unwired code."** DRI
+  (Seth) accepted the pure-slice split as a recorded residual (`@pivotpending`
+  is the repo's sanctioned deferred-export marker) → admin squash-merge.
+- **#123 review — 5 rounds, a converging chain.** Frank APPROVE/APPROVE/RC(perf
+  bug)/RC/APPROVE; George walked the take lifecycle one state deeper each round
+  (meter-fail → processing → pause-seam sync → F8 close → interruption freeze),
+  every finding a real defect in the prior round's fix, **no P1 any round**. At
+  the round-4 cap the DRI authorized a confirming R5; R5's new iOS-interruption
+  P2 was fixed and the device-owed residuals DRI-accepted → merge (option B).
+
+### Promotions
+
+- **#122** develop → staging at **v0.1.8** — the pure slice, **no version bump**
+  (unwired, nothing testable; the functions tree-shake out of the bundle).
+- **#124/#125** — v0.1.9 bump + develop → staging. This one **is** on-device
+  testable, so it got a build stamp for the testers.
+
+### Blockers / needs a human — the on-device pass
+
+- **The whole live-waveform lane is browser-only and UNVERIFIED.** A clean
+  5-round review is not a working waveform on a phone. Owed on **iOS + Android**
+  (Android never run) on staging v0.1.9: first-take scroll, pause freeze (R-B6),
+  F8-close freeze, tap-failed Waveform fallback, background-mid-take interruption
+  freeze, rotate-while-paused rescale. **The T2 gate before `staging → main`.**
+- **`headFraction` is Tim's UX call** (0.5 centerline vs right-edge full-width) —
+  built to 0.5, best decided looking at the real thing on device.
+
+### Next steps
+
+1. **On-device pass on staging v0.1.9** — the live-waveform checks above, plus
+   the carried v0.1.8 debt. Then the `staging → main` production PR when clean.
+2. **#120 deferred follow-ups:** the rAF-rate ring window (`SCOPE_CAPACITY`
+   assumes ~60fps — tune off wall-clock), the punch-in/append live-columns
+   overlay, and `headFraction`.
+3. **Rest of B7:** the Template Library (the remaining half of #33) — needs a
+   ux-then-ui gate + Tim's Q2/Bible-template call first.
+
+---
+
 ## 2026-08-30 — B7 Share Book built, dual-reviewed to Frank-clean, merged to develop
 
 **Branch:** `feat/b7-book-export` → **`develop`** (merged, deleted). **PR:**
