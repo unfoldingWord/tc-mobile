@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
-import { playheadViewportX } from "@/lib/audio/viewport";
+import { playheadViewportX, type WaveformWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
-import type { Peaks, WaveformWindow } from "@/types/audio";
+import type { Peaks } from "@/types/audio";
 
 interface WaveformProps {
   /** Precomputed peaks, or `null` for a segment with no recording. */

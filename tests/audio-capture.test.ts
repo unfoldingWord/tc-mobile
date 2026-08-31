@@ -56,10 +56,9 @@ describe("reduceFrame", () => {
   });
 
   it("ignores a lone NaN among finite samples and keeps min <= max", () => {
-    // The hand-rolled `<`/`>` loop skips NaN (every comparison is false), so the
-    // finite extremes stand. Rewriting it as `Math.min(lo, v)` / `Math.max(hi,
-    // v)` — the tempting "cleanup" — would propagate NaN into both, which this
-    // pins against.
+    // `!Number.isFinite(v)` skips the NaN, so the finite extremes stand.
+    // Dropping that skip for `Math.min(lo, v)` / `Math.max(hi, v)` — the
+    // tempting "cleanup" — would propagate NaN into both, which this pins.
     const c = reduceFrame(Float32Array.from([0.5, Number.NaN, -0.3]));
     expect(c.min).toBeCloseTo(-0.3, 6);
     expect(c.max).toBeCloseTo(0.5, 6);
@@ -67,12 +66,44 @@ describe("reduceFrame", () => {
   });
 
   it("is a silent column for an all-NaN frame, not an inverted {1, -1}", () => {
-    // No finite sample moves the sentinels, so without the `lo === Infinity`
-    // guard the clamp maps Infinity → 1 and -Infinity → -1: an inverted min >
-    // max column. The guard returns the silent column instead (as computePeaks
-    // does for an empty bucket).
+    // No finite sample moves the extremes; the sawFinite guard returns the
+    // silent column instead of an inverted min > max (as computePeaks does for
+    // an empty bucket).
     const c = reduceFrame(Float32Array.from([Number.NaN, Number.NaN]));
     expect(c).toEqual({ min: 0, max: 0 });
+  });
+
+  it("ignores ±Infinity — a frame of them is silent, not full-scale", () => {
+    // -Infinity passes `v < lo` and would drag the column to {-1,-1};
+    // +Infinity passes `v > hi`. Skipping every non-finite sample makes a frame
+    // with no finite value silent, either sign (Frank R2).
+    expect(reduceFrame(Float32Array.from([Number.NEGATIVE_INFINITY]))).toEqual({
+      min: 0,
+      max: 0,
+    });
+    expect(reduceFrame(Float32Array.from([Number.POSITIVE_INFINITY]))).toEqual({
+      min: 0,
+      max: 0,
+    });
+    expect(
+      reduceFrame(
+        Float32Array.from([Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])
+      )
+    ).toEqual({ min: 0, max: 0 });
+  });
+
+  it("keeps the finite extremes when ±Infinity is mixed with real samples", () => {
+    const c = reduceFrame(
+      Float32Array.from([
+        0.4,
+        Number.POSITIVE_INFINITY,
+        -0.2,
+        Number.NEGATIVE_INFINITY,
+      ])
+    );
+    expect(c.min).toBeCloseTo(-0.2, 6);
+    expect(c.max).toBeCloseTo(0.4, 6);
+    expect(c.min).toBeLessThanOrEqual(c.max);
   });
 });
 
@@ -80,7 +111,7 @@ describe("createCapturePeaks — ring behaviour", () => {
   it("floors capacity to at least 1 (a zero-column ring has nothing to draw)", () => {
     const ring = createCapturePeaks(0);
     expect(ring.capacity).toBe(1);
-    expect(ring.toPeaks().min.length).toBe(1);
+    expect(ring.toScope().min.length).toBe(1);
   });
 
   it("floors a non-finite capacity (NaN, ±Infinity) to 1, and never throws", () => {
@@ -95,17 +126,17 @@ describe("createCapturePeaks — ring behaviour", () => {
     ]) {
       const ring = createCapturePeaks(cap);
       expect(ring.capacity).toBe(1);
-      expect(ring.toPeaks().min.length).toBe(1);
+      expect(ring.toScope().min.length).toBe(1);
       ring.push(col(0, 0.5));
-      expect(ring.toPeaks().max[0]).toBeCloseTo(0.5, 6);
+      expect(ring.toScope().max[0]).toBeCloseTo(0.5, 6);
     }
   });
 
   it("renders exactly `capacity` columns regardless of how many were pushed", () => {
     const ring = createCapturePeaks(4);
     ring.push(col(-0.1, 0.1));
-    expect(ring.toPeaks().max.length).toBe(4);
-    expect(ring.toPeaks().min.length).toBe(4);
+    expect(ring.toScope().max.length).toBe(4);
+    expect(ring.toScope().min.length).toBe(4);
   });
 
   it("places the newest column at the last index (the record head, on the right)", () => {
@@ -113,8 +144,8 @@ describe("createCapturePeaks — ring behaviour", () => {
     ring.push(col(0, 0.5));
     // One column, filled=1: it must land at index capacity-1, not index 0.
     // If push wrote in forward order instead, this would be at max[0].
-    expect(ring.toPeaks().max[2]).toBeCloseTo(0.5, 6);
-    expect(ring.toPeaks().max[0]).toBe(0);
+    expect(ring.toScope().max[2]).toBeCloseTo(0.5, 6);
+    expect(ring.toScope().max[0]).toBe(0);
   });
 
   it("orders columns oldest-left to newest-right", () => {
@@ -123,7 +154,7 @@ describe("createCapturePeaks — ring behaviour", () => {
     ring.push(col(0, 0.2));
     ring.push(col(0, 0.3));
     // Full ring, newest (0.3) at the head, oldest (0.1) leftmost.
-    expect(Array.from(ring.toPeaks().max)).toEqual([
+    expect(Array.from(ring.toScope().max)).toEqual([
       expect.closeTo(0.1, 6),
       expect.closeTo(0.2, 6),
       expect.closeTo(0.3, 6),
@@ -136,12 +167,12 @@ describe("createCapturePeaks — ring behaviour", () => {
     ring.push(col(0, 0.2));
     // count=2 < capacity=3: newest at the head, one real column left of it, the
     // far-left a zero the audio has not yet grown into — NOT a stretched fill.
-    expect(Array.from(ring.toPeaks().max)).toEqual([
+    expect(Array.from(ring.toScope().max)).toEqual([
       0,
       expect.closeTo(0.1, 6),
       expect.closeTo(0.2, 6),
     ]);
-    expect(ring.count).toBe(2);
+    expect(ring.toScope().count).toBe(2);
   });
 
   it("evicts the oldest column once full (the R→L scroll)", () => {
@@ -150,12 +181,12 @@ describe("createCapturePeaks — ring behaviour", () => {
     ring.push(col(0, 0.2));
     ring.push(col(0, 0.3));
     ring.push(col(0, 0.4)); // evicts 0.1
-    expect(Array.from(ring.toPeaks().max)).toEqual([
+    expect(Array.from(ring.toScope().max)).toEqual([
       expect.closeTo(0.2, 6),
       expect.closeTo(0.3, 6),
       expect.closeTo(0.4, 6),
     ]);
-    expect(ring.count).toBe(3); // saturates, does not run past capacity
+    expect(ring.toScope().count).toBe(3); // saturates, does not run past capacity
   });
 
   it("keeps evicting correctly across a full wrap of the ring", () => {
@@ -165,7 +196,7 @@ describe("createCapturePeaks — ring behaviour", () => {
     const ring = createCapturePeaks(3);
     for (let i = 1; i <= 7; i++) ring.push(col(0, i / 10));
     // Last three pushed were 0.5, 0.6, 0.7.
-    expect(Array.from(ring.toPeaks().max)).toEqual([
+    expect(Array.from(ring.toScope().max)).toEqual([
       expect.closeTo(0.5, 6),
       expect.closeTo(0.6, 6),
       expect.closeTo(0.7, 6),
@@ -177,19 +208,19 @@ describe("createCapturePeaks — ring behaviour", () => {
     ring.push(col(-0.9, 0.9));
     ring.push(col(-0.8, 0.8));
     ring.reset();
-    expect(ring.count).toBe(0);
-    expect(Array.from(ring.toPeaks().max)).toEqual([0, 0, 0]);
-    expect(Array.from(ring.toPeaks().min)).toEqual([0, 0, 0]);
+    expect(ring.toScope().count).toBe(0);
+    expect(Array.from(ring.toScope().max)).toEqual([0, 0, 0]);
+    expect(Array.from(ring.toScope().min)).toEqual([0, 0, 0]);
     // And it accumulates cleanly again after reset.
     ring.push(col(0, 0.5));
-    expect(ring.toPeaks().max[2]).toBeCloseTo(0.5, 6);
+    expect(ring.toScope().max[2]).toBeCloseTo(0.5, 6);
   });
 
   it("carries both min and max through the ring (not just max)", () => {
     const ring = createCapturePeaks(2);
     ring.push(col(-0.3, 0.2));
     ring.push(col(-0.6, 0.4));
-    const peaks = ring.toPeaks();
+    const peaks = ring.toScope();
     expect(Array.from(peaks.min)).toEqual([
       expect.closeTo(-0.3, 6),
       expect.closeTo(-0.6, 6),
@@ -200,10 +231,17 @@ describe("createCapturePeaks — ring behaviour", () => {
     ]);
   });
 
-  it("reports samplesPerBucket 0 — a live column is a frame, not a sample span", () => {
+  it("carries `count` on the scope, and no `samplesPerBucket` (not a Peaks)", () => {
     const ring = createCapturePeaks(4);
     ring.push(col(0, 0.5));
-    expect(ring.toPeaks().samplesPerBucket).toBe(0);
+    ring.push(col(0, 0.6));
+    const scope = ring.toScope();
+    // `count` rides with the render data — the drawer's pad boundary — instead
+    // of dying at the boundary the way a bare Peaks would (George R2).
+    expect(scope.count).toBe(2);
+    // A CaptureScope is deliberately NOT a Peaks: no samplesPerBucket, so it
+    // cannot be dropped into Waveform's `peaks` prop by a silent type match.
+    expect("samplesPerBucket" in scope).toBe(false);
   });
 
   it("snapshots the frame's values at push, not the caller's reused buffer", () => {
@@ -218,27 +256,27 @@ describe("createCapturePeaks — ring behaviour", () => {
     frame[0] = 0.9;
     frame[2] = -0.9;
     ring.push(frame);
-    const p = ring.toPeaks();
+    const p = ring.toScope();
     // The first column keeps the values it was pushed with, not the mutated ones.
     expect(p.max[1]).toBeCloseTo(0.5, 6);
     expect(p.min[1]).toBeCloseTo(-0.5, 6);
     expect(p.max[2]).toBeCloseTo(0.9, 6);
   });
 
-  it("reuses the output buffers and overwrites them on the next toPeaks (#102)", () => {
+  it("reuses the output buffers and overwrites them on the next toScope (#102)", () => {
     // The instinctive 'aliasing safety' fix — allocate a fresh Float32Array per
-    // toPeaks — silently reintroduces the per-frame reallocation #102 forbids.
+    // toScope — silently reintroduces the per-frame reallocation #102 forbids.
     // Value-equality alone can't see it; instance identity can.
     const ring = createCapturePeaks(3);
     ring.push(col(0, 0.1));
-    const a = ring.toPeaks();
-    const b = ring.toPeaks();
+    const a = ring.toScope();
+    const b = ring.toScope();
     expect(b.min).toBe(a.min); // same instance, not a fresh allocation
     expect(b.max).toBe(a.max);
-    // A push alone does not touch the returned buffers; the NEXT toPeaks does.
+    // A push alone does not touch the returned buffers; the NEXT toScope does.
     ring.push(col(0, 0.9));
     expect(a.max[2]).toBeCloseTo(0.1, 6);
-    ring.toPeaks();
+    ring.toScope();
     expect(a.max[2]).toBeCloseTo(0.9, 6);
   });
 });
@@ -296,16 +334,21 @@ describe("captureWindow — the R→L capture geometry", () => {
     expect(captureWindow(0.5).centerFraction).toBe(0.5);
   });
 
-  it("guards a head at 0 against a divide-by-zero endFraction", () => {
-    const win = captureWindow(0);
-    expect(Number.isFinite(win.endFraction)).toBe(true);
-  });
-
-  it("guards a NaN or negative head to a finite window, not NaN", () => {
-    // `Math.max(EPSILON, Math.min(1, NaN))` is NaN — the naive clamp lets NaN
-    // through, and a NaN window renders the live scope silently blank. The
-    // `!(head > 0)` form (meter.ts' guard) rejects NaN and negatives alike.
-    for (const bad of [Number.NaN, -0.5, -1]) {
+  it("clamps any non-finite, zero, or underflowing head to a finite window", () => {
+    // Every degenerate input must yield a finite endFraction, or the scope
+    // renders silently blank. NaN/±Infinity/0/negatives are rejected by the
+    // isFinite-and-positive guard; a positive underflow (MIN_VALUE, whose
+    // reciprocal is Infinity) is caught by the `Math.max(EPSILON, …)` floor
+    // (Frank R1 + R2).
+    for (const bad of [
+      Number.NaN,
+      -0.5,
+      -1,
+      0,
+      Number.MIN_VALUE,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
       const win = captureWindow(bad);
       expect(Number.isFinite(win.endFraction)).toBe(true);
       expect(Number.isFinite(win.centerFraction)).toBe(true);

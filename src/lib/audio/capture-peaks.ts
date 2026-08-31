@@ -24,12 +24,32 @@
  * `computePeaks` pass, which sees every sample.
  */
 
-import type { Peaks } from "@/types/audio";
-
 /** One waveform column: the frame's extremes, normalised to [-1, 1]. */
 export interface CaptureColumn {
   readonly min: number;
   readonly max: number;
+}
+
+/**
+ * A live-scope snapshot: `capacity` min/max columns, oldest-left to
+ * newest-right (newest at the last index, the record head), plus `count` — how
+ * many trailing columns are real. The leading `capacity - count` are the
+ * not-yet pad.
+ *
+ * Deliberately NOT a `Peaks`: a live scope carries `count` (the drawer skips
+ * the pad with it) and no `samplesPerBucket` (a column is a frame, not a sample
+ * span), so it cannot be dropped into `Waveform`'s `peaks` prop by accident —
+ * the boundary is explicit, not a silent type match (George R2).
+ *
+ * @pivotpending #120's live-scope drawer is the reader. Unlike the two capture
+ * functions (which the tests import, so knip sees them used), this type is only
+ * reachable through `toScope()`'s return — genuinely knip-dead until then — so
+ * the tag suppresses that as intended, not just documents it.
+ */
+export interface CaptureScope {
+  readonly min: Float32Array;
+  readonly max: Float32Array;
+  readonly count: number;
 }
 
 /**
@@ -41,29 +61,34 @@ export interface CaptureColumn {
  * drawn from absolute values loses the asymmetry that makes speech legible,
  * the same reason `computePeaks` keeps min and max (peaks.ts).
  *
- * A frame with no finite sample is a silent column, `{ min: 0, max: 0 }` —
- * never the `±Infinity` sentinel of an unbounded reduce, mirroring
- * `computePeaks`' empty-bucket handling. That covers both an empty frame and an
- * all-NaN one (NaN fails every comparison, so the sentinels survive the loop).
- * Finite values are clamped into [-1, 1]: the analyser can momentarily hand
- * back a sample a hair outside the range, and `Peaks` promises [-1, 1] to
- * whatever draws it. A lone NaN among finite samples is simply ignored, leaving
- * the real extremes — so `min <= max` always holds.
+ * Non-finite samples are ignored — NaN and ±Infinity alike (an analyser can
+ * momentarily emit either). A frame with NO finite sample is the silent column
+ * `{ min: 0, max: 0 }`, never an inverted or full-scale one — an empty frame is
+ * that case too, mirroring `computePeaks`' empty-bucket handling. Finite values
+ * are clamped into [-1, 1]: the analyser can also hand back a value a hair
+ * outside the range, and the column promises [-1, 1] to whatever draws it.
+ * Because only finite samples move the extremes, `min <= max` always holds.
  */
 export function reduceFrame(frame: Float32Array): CaptureColumn {
   let lo = Infinity;
   let hi = -Infinity;
+  let sawFinite = false;
   for (let i = 0; i < frame.length; i++) {
     const v = frame[i]!;
+    // Skip every non-finite sample. NaN fails the comparisons on its own, but
+    // -Infinity would pass `v < lo` and drag the column to a full-scale-negative
+    // {-1,-1}, and +Infinity would pass `v > hi` — only finite samples define
+    // the shape (Frank R2).
+    if (!Number.isFinite(v)) continue;
+    sawFinite = true;
     if (v < lo) lo = v;
     if (v > hi) hi = v;
   }
 
-  // No finite sample moved the sentinels (empty frame, or all-NaN). Return the
-  // silent column rather than letting the clamp map Infinity → 1 and -Infinity
-  // → -1, which would be an inverted `min > max` column the canvas draws
-  // upside-down. This is the guard `computePeaks` uses for the same shape.
-  if (lo === Infinity) return { min: 0, max: 0 };
+  // No finite sample at all (empty frame, or every sample non-finite): the
+  // silent column, never an inverted or full-scale one — the shape
+  // `computePeaks` guards with its empty-bucket check.
+  if (!sawFinite) return { min: 0, max: 0 };
 
   return {
     min: lo < -1 ? -1 : lo > 1 ? 1 : lo,
@@ -74,36 +99,34 @@ export function reduceFrame(frame: Float32Array): CaptureColumn {
 /**
  * A fixed-capacity ring of the most-recent capture columns.
  *
- * `push` folds a frame in; `toPeaks` renders the ring to a `Peaks` the canvas
- * draws, ordered oldest-left to newest-right with the newest column at the last
+ * `push` folds a frame in; `toScope` renders the ring to a `CaptureScope` the
+ * drawer paints, oldest-left to newest-right with the newest column at the last
  * index (the record head). While fewer than `capacity` columns have arrived the
- * front is zero-valued and `count` is short of `capacity` — the real columns
- * keep fixed spacing beside the head rather than stretching to fill. A `{0,0}`
- * slot is silence to a canvas, not blank, so the drawer skips the first
- * `capacity - count` slots via `count` (see `createCapturePeaks`).
+ * leading slots are zero-valued and `scope.count` is short of `capacity` — the
+ * real columns keep fixed spacing beside the head rather than stretching to
+ * fill. A `{0,0}` slot is silence to a canvas, not blank, so the drawer skips
+ * the first `capacity - count` slots via `count` (see `createCapturePeaks`).
  */
 export interface CapturePeaks {
   /** Fold one time-domain frame in as the newest column, evicting the oldest. */
   push(frame: Float32Array): void;
   /**
-   * The current ring as a `Peaks` of length `capacity`, newest at the last
-   * index, front zero-padded until full.
+   * The current ring as a `CaptureScope` of `capacity` columns, newest at the
+   * last index, the leading `capacity - count` zero-valued pad.
    *
-   * The returned arrays are one internal pair **reused on every call** — the
-   * next `toPeaks()` overwrites them in place (a `push` alone does not; it only
+   * The `min`/`max` arrays are one internal pair **reused on every call** — the
+   * next `toScope()` overwrites them in place (a `push` alone does not; it only
    * writes the ring). Draw from them synchronously and never retain a returned
-   * `Peaks` across a later `toPeaks()`, exactly as `audio-io.ts` reuses its
+   * scope across a later `toScope()`, exactly as `audio-io.ts` reuses its
    * analyser `frame`. This is deliberate: allocating two
    * `Float32Array(capacity)` per animation frame is the per-tick reallocation
    * #102 calls out, so the live path must not.
    */
-  toPeaks(): Peaks;
+  toScope(): CaptureScope;
   /** Drop all accumulated columns — a new take starts from an empty scope. */
   reset(): void;
   /** Columns the ring holds (`length / zoom` has no meaning here). */
   readonly capacity: number;
-  /** Live columns pushed so far, saturating at `capacity`. */
-  readonly count: number;
 }
 
 /**
@@ -162,9 +185,6 @@ export function createCapturePeaks(capacity: number): CapturePeaks {
 
   return {
     capacity: size,
-    get count() {
-      return filled;
-    },
 
     push(frame: Float32Array) {
       const col = reduceFrame(frame);
@@ -174,7 +194,7 @@ export function createCapturePeaks(capacity: number): CapturePeaks {
       if (filled < size) filled += 1;
     },
 
-    toPeaks(): Peaks {
+    toScope(): CaptureScope {
       // Walk back from the newest column, placing it at the last output index
       // and older columns leftward, so the head sits on the right. The unfilled
       // front stays zero-valued; `count` (= `filled`) is what tells the drawer
@@ -192,14 +212,11 @@ export function createCapturePeaks(capacity: number): CapturePeaks {
           outMax[outIndex] = 0;
         }
       }
-      // samplesPerBucket is meaningless for a live scope (a column is a frame,
-      // not a fixed sample span); 0 says "not sample-addressable", matching how
-      // `computePeaks` reports 0 for an empty buffer.
-      return { min: outMin, max: outMax, samplesPerBucket: 0 };
+      return { min: outMin, max: outMax, count: filled };
     },
 
     reset() {
-      // Only the counters need clearing: `toPeaks` zero-pads everything past
+      // Only the counters need clearing: `toScope` zero-pads everything past
       // `filled`, so stale ring values are never read after a reset.
       head = 0;
       filled = 0;
