@@ -15,9 +15,12 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
+import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { computePeaks } from "@/lib/audio/peaks";
 import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
 import { formatDuration } from "@/lib/utils";
+import type { Peaks } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -33,6 +36,9 @@ const CENTER_FRACTION = 0.5;
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
 const ZOOM_QUARTER = 4;
+
+/** Peak resolution for the paused-take preview (#101), matched to the editor's. */
+const PREVIEW_PEAK_BUCKETS = 400;
 
 interface RecorderProps {
   segmentId: SegmentId;
@@ -170,6 +176,25 @@ export function Recorder({
   // tap would start a capture that the closing `leave()` then discards (a take
   // lost with no recovery screen).
   const [isClosing, setIsClosing] = useState(false);
+  /**
+   * The in-sheet preview of the paused take-so-far (#101): the decoded capture
+   * spliced into `working` by `mergeTake` at the same `insertionOffset` `close()`
+   * commits — so the preview is byte-for-byte what Back will save — plus its
+   * peaks for the stage. Prepared on the first Play while paused and reused across
+   * replays. Invalidated by any transport tap (`onRecordButton`) since a resume
+   * may add audio; only ever consumed while `paused` (`previewPlaying` below), so
+   * a stale object left after resume is inert until then. `previewState` is
+   * `"decoding"` while a decode is in flight and `"failed"` when this device could
+   * not decode the paused container (iOS writes the moov atom only on stop) — Play
+   * then degrades to disabled with a Notice rather than a false or silent preview.
+   */
+  const [preview, setPreview] = useState<{
+    buffer: Int16Array;
+    peaks: Peaks | null;
+  } | null>(null);
+  const [previewState, setPreviewState] = useState<
+    "none" | "decoding" | "failed"
+  >("none");
 
   // The edit-aware length: the working buffer, not the loaded clip, is the
   // pan/zoom domain and the append offset — a cut shortens it, a paste grows it.
@@ -217,11 +242,29 @@ export function Recorder({
   const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
-  // The playing buffer's duration (#89), for the playhead overlay's position
-  // fraction. The overlay (#102) PULLS `audio.readPlaybackElapsed` on its own
-  // rAF and moves a DOM line, so buffer playback re-renders nothing — not this
-  // sheet, and not App and the inert Segments list behind it.
-  const workingDurationMs = (length / CANONICAL_SAMPLE_RATE) * 1000;
+  // The preview that is actually SOUNDING, or null. Only meaningful while paused
+  // (#101) — a stale object left after a resume is inert until the next pause
+  // re-decodes it — and only while its buffer plays. A single narrowed value so
+  // the stage reads `.buffer`/`.peaks` without a null assertion.
+  const previewPlaying = paused && audio.playingBuffer ? preview : null;
+
+  // The sounding buffer's duration, for the playhead overlay's position fraction
+  // (#102). The denominator is the buffer actually sounding: the preview (longer
+  // than `working`, #101) while previewing, else `working`. The overlay PULLS
+  // `audio.readPlaybackElapsed` on its own rAF and moves a DOM line, so buffer
+  // playback re-renders nothing — not this sheet, nor the inert list behind it.
+  const soundingLength = previewPlaying ? previewPlaying.buffer.length : length;
+  const soundingDurationMs = (soundingLength / CANONICAL_SAMPLE_RATE) * 1000;
+
+  // Play previews a stored/edited take at idle, and the paused take-so-far while
+  // paused (#101). Disabled: mid-decode; after a decode this device could not do
+  // (`failed`, degraded with the Notice below); during the close commit; and,
+  // when not paused, while actively recording or with nothing to play.
+  const playDisabled =
+    busy ||
+    isClosing ||
+    previewState === "decoding" ||
+    (paused ? previewState === "failed" : recording || !hasAudio);
 
   // While the buffer plays, show the WHOLE working buffer so the sweeping
   // playhead is always on screen (George R1). The pan/zoom window exists to
@@ -297,6 +340,12 @@ export function Recorder({
 
   const onRecordButton = useCallback(() => {
     if (closing.current || !view) return;
+    // Any transport action invalidates a prepared preview (#101): a resume may
+    // append audio the preview would not include, and a new record replaces the
+    // take. It is re-decoded fresh on the next Play while paused. (Pausing has no
+    // preview yet, so this is a no-op there.)
+    setPreview(null);
+    setPreviewState("none");
     if (recording) {
       audio.pauseRecording();
     } else if (paused) {
@@ -326,9 +375,47 @@ export function Recorder({
   // floor as `playTake`, so `startRecording()` stops it for free (no hand-stop
   // in `onRecordButton`, F3).
   const onPlayButton = useCallback(() => {
-    if (audio.playingBuffer) audio.stopBuffer();
-    else audio.playBuffer(editor.working);
-  }, [audio, editor]);
+    if (audio.playingBuffer) {
+      audio.stopBuffer();
+      return;
+    }
+    // Idle: preview the stored/edited working buffer, as before (#89). The
+    // playhead overlay (#102) positions itself off `readPlaybackElapsed`, so no
+    // seed is needed on the play edge.
+    if (!paused) {
+      audio.playBuffer(editor.working);
+      return;
+    }
+    // Paused: preview the take captured SO FAR without committing it (#101).
+    // Replay a prepared preview immediately; otherwise decode the paused capture
+    // and splice it into `working` exactly as `close()` will — `mergeTake` at the
+    // same `insertionOffset` — so what plays is byte-for-byte what Back saves. A
+    // decode this device cannot do resolves null and degrades Play to disabled
+    // with a Notice, never a false or silent preview. `preemptPausedMic` lets the
+    // preview take the floor from the paused mic (approach B, #101).
+    if (previewState === "decoding") return;
+    if (preview) {
+      audio.playBuffer(preview.buffer, 0, { preemptPausedMic: true });
+      return;
+    }
+    setPreviewState("decoding");
+    void (async () => {
+      const pcm = await audio.previewCapture();
+      if (pcm === null) {
+        setPreviewState("failed");
+        return;
+      }
+      const buffer = mergeTake(editor.working, pcm, insertionOffset.current);
+      const peaks =
+        buffer.length > 0 ? computePeaks(buffer, PREVIEW_PEAK_BUCKETS) : null;
+      setPreview({ buffer, peaks });
+      setPreviewState("none");
+      // A resume/close during the decode makes this a no-op: `playBuffer` only
+      // preempts a recorder that is still `paused` (the hook's own guard), so a
+      // resumed take refuses the "take" claim and nothing sounds.
+      audio.playBuffer(buffer, 0, { preemptPausedMic: true });
+    })();
+  }, [audio, editor, paused, preview, previewState]);
 
   // Enter edit mode from the record menu. Play is a record-only control, so any
   // live buffer playback is stopped first — else it would orphan itself with no
@@ -727,6 +814,15 @@ export function Recorder({
                 <Notice>{strings.eraseFailed}</Notice>
               </div>
             )}
+            {paused && previewState === "failed" && (
+              // This device could not decode the paused take for a preview (#101,
+              // chiefly iOS before the take is committed on Back). Play is
+              // disabled alongside; the take itself is unaffected — Back commits
+              // it and it plays from the Segments list.
+              <div className="px-[12px] pt-[8px]">
+                <Notice>{strings.previewUnavailable}</Notice>
+              </div>
+            )}
             <div className="recorder-stage flex-1">
               <div
                 ref={stageRef}
@@ -738,7 +834,8 @@ export function Recorder({
               >
                 {(recording || paused || state === "processing" || isClosing) &&
                 !audio.meterFailed &&
-                !hasAudio ? (
+                !hasAudio &&
+                !previewPlaying ? (
                   // A FIRST take with a working tap: the dedicated live scope
                   // grows from the head and scrolls R→L (#120), sidestepping
                   // Waveform's `!recorded` dotted rule. It stays mounted for the
@@ -766,9 +863,13 @@ export function Recorder({
                   // centerline over the existing audio (or the dotted first-take
                   // rule when the tap failed), not a blank stage (George R1/R2).
                   <Waveform
-                    peaks={editor.peaks}
+                    // The paused-take preview draws its own peaks over the whole
+                    // sounding buffer (#101); everything else shows the working
+                    // buffer's. `recorded` is true whenever there is a waveform to
+                    // mark — stored audio, or a preview of a first take.
+                    peaks={previewPlaying ? previewPlaying.peaks : editor.peaks}
                     height={200}
-                    recorded={hasAudio}
+                    recorded={hasAudio || previewPlaying !== null}
                     capturing={recording || paused}
                     playing={audio.playingBuffer}
                     view={waveView}
@@ -782,7 +883,7 @@ export function Recorder({
                 <PlayheadOverlay
                   readElapsedMs={audio.readPlaybackElapsed}
                   active={audio.playingBuffer}
-                  durationMs={workingDurationMs}
+                  durationMs={soundingDurationMs}
                   startFraction={waveView.startFraction}
                   endFraction={waveView.endFraction}
                 />
@@ -908,7 +1009,7 @@ export function Recorder({
                       : strings.playRecording
                   }
                   variant="play"
-                  disabled={takeActive || busy || !hasAudio}
+                  disabled={playDisabled}
                   onClick={onPlayButton}
                 />
               </div>

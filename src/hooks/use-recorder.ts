@@ -94,6 +94,22 @@ export interface UseRecorder {
    * state — see `StopResult`.
    */
   stop: () => Promise<StopResult>;
+  /**
+   * Decode the take captured SO FAR to canonical PCM for an in-sheet preview,
+   * WITHOUT ending the take (#101). Meant for a paused take — the caller enables
+   * Play while paused and previews what was recorded before committing on Back.
+   *
+   * Returns null, never throws, when there is nothing to preview or the take
+   * cannot be decoded mid-capture: `pause()` does not finalise the container, and
+   * iOS writes the moov atom only on `stop()`, so a paused fMP4 may not decode on
+   * that platform. The caller degrades to a disabled Play rather than claiming a
+   * preview it cannot produce — the flow is correct on every device, and whether
+   * a given device can decode a paused take is answered by the on-device pass.
+   *
+   * Generation-guarded like `stop()`: a cancel/leave or a newer recording landing
+   * during the decode makes this resolve null, so a superseded preview is silent.
+   */
+  previewCapture: () => Promise<Int16Array | null>;
   cancel: () => void;
   /**
    * The live capture level for the VU meter, in the raw amplitude domain (RMS of
@@ -623,6 +639,44 @@ export function useRecorder(): UseRecorder {
     }
   }, [abandonStream, clearTick]);
 
+  const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return null;
+    // Snapshot before the awaits, exactly as `stop()` does: the audio belongs to
+    // this invocation, so a cancel()/leave() reassigning `chunksRef` mid-decode
+    // cannot divert it. A superseded generation returns null (silent), never a
+    // preview a newer recording would own.
+    const generation = generationRef.current;
+    const chunks = chunksRef.current;
+    // Flush any slice MediaRecorder is still buffering, so the preview includes
+    // the audio right up to the pause. `requestData` is valid while paused and
+    // fires `dataavailable` synchronously-ish; a macrotask lets it land. Some
+    // implementations reject it outside "recording" — then we preview the chunks
+    // already in hand, which is only the last sub-250 ms slice short.
+    try {
+      recorder.requestData();
+    } catch {
+      // requestData unsupported in this state — decode what already arrived.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (generation !== generationRef.current) return null;
+    if (chunks.length === 0) return null;
+    const blob = new Blob(chunks, { type: recorder.mimeType });
+    if (blob.size === 0) return null;
+    try {
+      const samples = await decodeToCanonical(blob);
+      if (generation !== generationRef.current) return null;
+      // Zero samples is nothing to preview — same class as an undecodable blob.
+      return samples.length > 0 ? samples : null;
+    } catch {
+      // An undecodable partial container (device-dependent, chiefly iOS fMP4
+      // before its moov atom). Not this hook's error state: the caller degrades
+      // Play to disabled. Logged, not surfaced — console is the diagnostic here.
+      console.error("Could not decode the take for preview");
+      return null;
+    }
+  }, []);
+
   const cancel = useCallback(() => {
     generationRef.current++;
     clearTick();
@@ -653,6 +707,7 @@ export function useRecorder(): UseRecorder {
     pause,
     resume,
     stop,
+    previewCapture,
     cancel,
     readLevel,
     readScope,
