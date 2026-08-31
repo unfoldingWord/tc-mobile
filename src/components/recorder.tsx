@@ -744,18 +744,23 @@ export function Recorder({
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                {(recording || paused || state === "processing") &&
+                {(recording || paused || state === "processing" || isClosing) &&
                 !audio.meterFailed &&
                 !hasAudio ? (
                   // A FIRST take with a working tap: the dedicated live scope
                   // grows from the head and scrolls R→L (#120), sidestepping
-                  // Waveform's `!recorded` dotted rule. It stays mounted through
-                  // `processing` (the F8 close / #59 flush window) so the take
-                  // does not snap back to the empty rule mid-commit and read as
-                  // discarded (George R2); `active` goes false there and on
-                  // pause, freezing the last frame (R-B6). A punch-in/append
-                  // (`hasAudio`) keeps Waveform instead, so the existing clip and
-                  // the #110 insert centerline stay visible.
+                  // Waveform's `!recorded` dotted rule. It stays mounted for the
+                  // WHOLE take-in-flight window — recording, paused, processing,
+                  // AND the F8 close (`isClosing`, the stop→decode→save wait,
+                  // where `stop()` has already flipped state to idle but the PCM
+                  // is not in `working` yet, so `hasAudio` is still false). That
+                  // whole predicate is `takeActive && state !== "requesting"`:
+                  // without `isClosing` the frozen take snapped back to the empty
+                  // dotted rule for the multi-MB IndexedDB write and read as
+                  // discarded (George R2/R4). `active` goes false off "recording"
+                  // (pause/processing/close), freezing the last frame (R-B6). A
+                  // punch-in/append (`hasAudio`) keeps Waveform instead, so the
+                  // existing clip and the #110 insert centerline stay visible.
                   <LiveScope
                     readScope={audio.readScope}
                     active={recording}

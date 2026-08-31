@@ -65,15 +65,17 @@ export function LiveScope({
   useEffect(() => {
     readScopeRef.current = readScope;
   }, [readScope]);
+  // The last scope painted, so a resize while FROZEN (paused / processing /
+  // close) can repaint at the new size. Its arrays are the ring's reused pair —
+  // safe to re-read only while no push is happening, which is exactly the
+  // inactive window this ref is read in.
+  const lastScopeRef = useRef<CaptureScope | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    // Inactive: leave the canvas as it is — frozen on the last painted frame —
-    // and run no loop. A paused take keeps its waveform; it does not scroll.
-    if (!active) return;
 
     // Geometry and colours are read once per effect, not per frame: the window
     // is a pure function of headFraction, and the CSS tokens do not change mid
@@ -84,55 +86,76 @@ export function LiveScope({
     const styles = getComputedStyle(canvas);
     const stroke = styles.getPropertyValue("--s-voice").trim() || "#e6a444";
     const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
-    const dpr = window.devicePixelRatio || 1;
 
-    let raf = 0;
-    const tick = () => {
-      const scope = readScopeRef.current();
+    // Paint one scope at the canvas's CURRENT css size. Sizing the backing store
+    // only on an actual change is the #102 cost avoidance; doing it here (not
+    // once per effect) is also what lets a resize while frozen repaint correctly.
+    const paint = (scope: CaptureScope | null) => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      // A null scope is the tap-failed / teardown transient — the tap is nulled
-      // a frame before the state leaves "recording". Leave the last painted
-      // frame rather than clearing to blank: a freeze, not a flash (George R1).
-      // So draw only when there IS a scope and the canvas is laid out.
-      if (scope && w > 0 && h > 0) {
-        // Size the backing store only when it actually changed (a resize),
-        // never every frame — reassigning `canvas.width` clears AND reallocates
-        // it, the #102 backing-store cost.
-        const pxW = Math.floor(w * dpr);
-        const pxH = Math.floor(h * dpr);
-        if (canvas.width !== pxW || canvas.height !== pxH) {
-          canvas.width = pxW;
-          canvas.height = pxH;
-        }
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, w, h);
-
-        const buckets = scope.min.length;
-        const mid = h / 2;
-        // Bar width from the CLAMPED window span — the same `w/buckets/span - 1`
-        // the `Waveform` view loop uses, so the bars and the head share one
-        // coordinate model even after `captureWindow` clamps the head. Span is
-        // never zero (head > 0), so no divide-by-zero guard.
-        const barW = Math.max(1, w / buckets / span - 1);
-        ctx.fillStyle = stroke;
-        // Paint only the real trailing columns; the leading `buckets - count`
-        // are the not-yet pad (silence-valued, must not draw).
-        for (let i = buckets - scope.count; i < buckets; i++) {
-          const x = ((i / buckets - win.startFraction) / span) * w;
-          const top = mid - (scope.max[i] ?? 0) * mid;
-          const bottom = mid - (scope.min[i] ?? 0) * mid;
-          ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
-        }
-        // The record head, over the audio, in the record colour.
-        ctx.fillStyle = live;
-        ctx.fillRect(Math.round(win.centerFraction * w) - 1, 0, 2, h);
+      if (!scope || w <= 0 || h <= 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      const pxW = Math.floor(w * dpr);
+      const pxH = Math.floor(h * dpr);
+      if (canvas.width !== pxW || canvas.height !== pxH) {
+        canvas.width = pxW;
+        canvas.height = pxH;
       }
-      raf = requestAnimationFrame(tick);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      const buckets = scope.min.length;
+      const mid = h / 2;
+      // Bar width from the CLAMPED window span — the same `w/buckets/span - 1`
+      // the `Waveform` view loop uses, so the bars and the head share one
+      // coordinate model even after `captureWindow` clamps the head. Span is
+      // never zero (head > 0), so no divide-by-zero guard.
+      const barW = Math.max(1, w / buckets / span - 1);
+      ctx.fillStyle = stroke;
+      // Paint only the real trailing columns; the leading `buckets - count` are
+      // the not-yet pad (silence-valued, must not draw).
+      for (let i = buckets - scope.count; i < buckets; i++) {
+        const x = ((i / buckets - win.startFraction) / span) * w;
+        const top = mid - (scope.max[i] ?? 0) * mid;
+        const bottom = mid - (scope.min[i] ?? 0) * mid;
+        ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
+      }
+      // The record head, over the audio, in the record colour.
+      ctx.fillStyle = live;
+      ctx.fillRect(Math.round(win.centerFraction * w) - 1, 0, 2, h);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [active, headFraction]);
+
+    // A resize while FROZEN (a rotate mid-pause, or a `height` change) must
+    // repaint the last frame at the new size: the active loop resizes per frame,
+    // but while inactive nothing else would, so CSS would stretch the stale
+    // backing store (Frank R4). While active, the loop owns the repaint.
+    const observer = new ResizeObserver(() => {
+      if (!active) paint(lastScopeRef.current);
+    });
+    observer.observe(canvas);
+
+    let raf = 0;
+    if (active) {
+      const tick = () => {
+        const scope = readScopeRef.current();
+        // A null scope is the tap-failed / teardown transient — the tap is
+        // nulled a frame before the state leaves "recording". Leave the last
+        // painted frame rather than clearing to blank: a freeze, not a flash
+        // (George R1). On a real scope, remember it for a later resize-repaint.
+        if (scope) {
+          lastScopeRef.current = scope;
+          paint(scope);
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }
+
+    return () => {
+      observer.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [active, headFraction, height]);
 
   return (
     <canvas
