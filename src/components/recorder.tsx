@@ -5,6 +5,7 @@ import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { PlayheadOverlay } from "./playhead-overlay";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
@@ -216,39 +217,11 @@ export function Recorder({
   const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
-  // The buffer-playback position, PULLED on this sheet's own ~60 ms clock (the
-  // same cadence the session used to push at). Buffer playback thus re-renders
-  // only the recorder — the one component that draws the playhead — not App and
-  // the inert Segments list behind the sheet (#102). Gated on `playingBuffer`;
-  // read once on the play edge so the first frame is not a stale position.
-  const [bufferElapsedMs, setBufferElapsedMs] = useState(0);
-  const readPlaybackElapsed = audio.readPlaybackElapsed;
-  useEffect(() => {
-    if (!audio.playingBuffer) return;
-    // The interval is the only writer here — the play edge seeds 0 in
-    // `onPlayButton`, so the first frame never shows the prior play's tail and
-    // this effect needs no set-state in its body.
-    const id = window.setInterval(
-      () => setBufferElapsedMs(readPlaybackElapsed()),
-      60
-    );
-    return () => clearInterval(id);
-  }, [audio.playingBuffer, readPlaybackElapsed]);
-
-  // The record-mode playback playhead (#89), as a fraction of the WHOLE working
-  // buffer — the same clip-fraction domain `Waveform`'s `view` bars are drawn
-  // through, so `playheadViewportX` lands it over the sample it marks. Null
-  // whenever the buffer is not sounding; guarded on a non-zero duration so an
-  // empty buffer never divides to NaN (Play is disabled there anyway).
+  // The playing buffer's duration (#89), for the playhead overlay's position
+  // fraction. The overlay (#102) PULLS `audio.readPlaybackElapsed` on its own
+  // rAF and moves a DOM line, so buffer playback re-renders nothing — not this
+  // sheet, and not App and the inert Segments list behind it.
   const workingDurationMs = (length / CANONICAL_SAMPLE_RATE) * 1000;
-  const playhead =
-    audio.playingBuffer && workingDurationMs > 0
-      ? // Clamp to [0,1]: `elapsed()` clamps to the AudioBuffer duration and
-        // `workingDurationMs` is derived from the same sample count, but a float
-        // overshoot > 1 would make `playheadViewportX` skip the final tick
-        // (George R5). Elapsed is never negative, so the floor is belt-only.
-        Math.min(1, Math.max(0, bufferElapsedMs / workingDurationMs))
-      : null;
 
   // While the buffer plays, show the WHOLE working buffer so the sweeping
   // playhead is always on screen (George R1). The pan/zoom window exists to
@@ -354,13 +327,7 @@ export function Recorder({
   // in `onRecordButton`, F3).
   const onPlayButton = useCallback(() => {
     if (audio.playingBuffer) audio.stopBuffer();
-    else {
-      // Seed the playhead at 0 on the play edge, so the sheet-local clock (#102)
-      // opens at the clip start rather than holding a prior play's final frame
-      // for the first ~60 ms before its interval ticks.
-      setBufferElapsedMs(0);
-      audio.playBuffer(editor.working);
-    }
+    else audio.playBuffer(editor.working);
   }, [audio, editor]);
 
   // Enter edit mode from the record menu. Play is a record-only control, so any
@@ -803,10 +770,22 @@ export function Recorder({
                     height={200}
                     recorded={hasAudio}
                     capturing={recording || paused}
-                    playhead={playhead}
+                    playing={audio.playingBuffer}
                     view={waveView}
                   />
                 )}
+                {/* The playback playhead, a pull-model DOM overlay (#102): it
+                    polls `readPlaybackElapsed` on its own rAF and moves a line,
+                    so buffer playback re-renders neither this sheet nor the
+                    inert list behind it. Mounted always; it hides itself when
+                    nothing is sounding. */}
+                <PlayheadOverlay
+                  readElapsedMs={audio.readPlaybackElapsed}
+                  active={audio.playingBuffer}
+                  durationMs={workingDurationMs}
+                  startFraction={waveView.startFraction}
+                  endFraction={waveView.endFraction}
+                />
                 {mode === "edit" &&
                   editor.selectionActive &&
                   editor.selection && (

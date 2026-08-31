@@ -28,10 +28,11 @@ export interface UseAudioSession {
   readonly playingBuffer: boolean;
   /**
    * Milliseconds into the sounding take, for the Segments-row scrub dot. PUSHED
-   * on a ~60 ms interval, so it re-renders every consumer — earned for the
-   * moving dot on a `playingId` take, but not for the recorder's buffer playback
-   * behind the inert list, which PULLS `readPlaybackElapsed` instead (#102). Zero
-   * whenever nothing is playing.
+   * on a ~60 ms interval that runs ONLY while a list take plays (`playingId !==
+   * null`), because the moving dot earns the re-render. It does NOT advance for
+   * recorder buffer playback — that reads `readPlaybackElapsed` on its own rAF
+   * (#102) — so read it only on the `playingId` path; it stays at its last reset
+   * (0) throughout a buffer preview.
    */
   readonly playbackElapsedMs: number;
   readonly recorderState: RecorderState;
@@ -318,8 +319,10 @@ export function useAudioSession(): UseAudioSession {
       });
 
       // Optimistic, so the control responds to the tap rather than to the graph.
+      // No `playbackElapsedMs` seed on the buffer path: the recorder's playhead
+      // PULLS `readPlaybackElapsed` on its own rAF (#102), so pushing here would
+      // only re-render App and the inert list for a value nothing reads.
       setPlayingBuffer(true);
-      setPlaybackElapsedMs(offsetSeconds * 1000);
 
       void (async () => {
         try {

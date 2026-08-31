@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { playheadViewportX, type WaveformWindow } from "@/lib/audio/viewport";
+import { type WaveformWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 
@@ -8,8 +8,14 @@ interface WaveformProps {
   /** Precomputed peaks, or `null` for a segment with no recording. */
   peaks: Peaks | null;
   height?: number;
-  /** Playback position as a fraction of the clip, or null when not playing. */
-  playhead?: number | null;
+  /**
+   * The recorder's buffer is sounding. The playhead itself is a DOM overlay now
+   * (`PlayheadOverlay`, #102), not a bar in this canvas — this flag only tells
+   * the canvas to SUPPRESS its record centerline during playback, where a
+   * mid-clip red (insert-here) marker the disabled Record cannot act on would
+   * mislead (George R2). Recorder-only; a row never sets it.
+   */
+  playing?: boolean;
   recorded?: boolean;
   className?: string;
   /**
@@ -50,7 +56,7 @@ interface WaveformProps {
 export function Waveform({
   peaks,
   height = 26,
-  playhead = null,
+  playing = false,
   recorded = true,
   className,
   view = null,
@@ -84,18 +90,17 @@ export function Waveform({
       styles.getPropertyValue("--s-voice").trim() ||
       "#e6a444";
     const faint = styles.getPropertyValue("--s-ink-faint").trim() || "#5f6b7a";
-    const ink = styles.getPropertyValue("--s-ink").trim() || "#e7ecf3";
     const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
     const mid = h / 2;
 
     // The fixed centerline (recorder mode): drawn last so it sits over the
     // audio, and in the record colour because it is where recording starts.
-    // Suppressed while a playhead is present: during playback the recorder swaps
-    // to a whole-clip view where the centerline would fall mid-clip and read as a
+    // Suppressed while the buffer plays: during playback the recorder swaps to a
+    // whole-clip view where the centerline would fall mid-clip and read as a
     // (red, insert-here) marker the disabled Record cannot act on — the sweeping
-    // playhead is the only position cue that means anything then (George R2).
+    // playhead overlay is the only position cue that means anything then (George R2).
     const drawCenterline = () => {
-      if (!view || playhead !== null) return;
+      if (!view || playing) return;
       // Only when a waveform exists (`recorded`) or one is being made
       // (`capturing`); an idle never-recorded segment shows the dotted rule with
       // no red line (Tim's build feedback).
@@ -131,21 +136,8 @@ export function Waveform({
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
       drawCenterline();
-      // Playback playhead: the clip-fraction position mapped through the same
-      // window as the bars. Off-screen (in the blank head/tail) ⇒ skip, rather
-      // than pin it to an edge. Drawn in `ink` so it reads over both the audio
-      // and the record-coloured centerline.
-      if (playhead !== null) {
-        const px = playheadViewportX(
-          playhead,
-          view.startFraction,
-          view.endFraction
-        );
-        if (px >= 0 && px <= 1) {
-          ctx.fillStyle = ink;
-          ctx.fillRect(Math.min(w - 2, px * w), 0, 2, h);
-        }
-      }
+      // The playback playhead is a DOM overlay now (`PlayheadOverlay`, #102), not
+      // a bar here — so this draw effect no longer re-runs per position tick.
       return;
     }
 
@@ -156,15 +148,10 @@ export function Waveform({
       const bottom = mid - (peaks.min[i] ?? 0) * mid;
       ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
     }
-
-    if (playhead !== null) {
-      ctx.fillStyle = ink;
-      ctx.fillRect(Math.min(w - 2, playhead * w), 0, 2, h);
-    }
     // `finished` is in the deps for its side effect only: it changes with the
     // `.row--finished` class, so listing it re-runs this draw (which re-reads
     // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
-  }, [peaks, playhead, recorded, height, view, finished, capturing]);
+  }, [peaks, playing, recorded, height, view, finished, capturing]);
 
   return (
     <canvas
