@@ -7,6 +7,86 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-08-31 (evening) — Recorder preview (#101) + pull-model playhead (#102): merged to develop, promoted to staging v0.1.10
+
+**Branches:** `perf/recorder-playhead-pull` → **`develop`** (#127, merged, deleted);
+`feat/recorder-preview` → **`develop`** (#128, merged, deleted); `release/v0.1.10`
+→ develop (#131). **`develop`** (`de86a99`), **`staging`** promoted to **v0.1.10**
+(`6050d81`, #132) — the first on-device-testable build of the recorder preview.
+**Production `main` untouched** (`3464a30`). **Filed:** [#129](https://github.com/sethstoll3/tc-mobile/issues/129),
+[#130](https://github.com/sethstoll3/tc-mobile/issues/130).
+
+### Shipped
+
+- **#102 — pull-model playhead overlay** (squash `3e41f8f`). Buffer playback no
+  longer re-renders the inert Segments list (~16×/s) or reallocates the waveform
+  canvas per frame: a dedicated `PlayheadOverlay` owns its rAF, PULLS
+  `readPlaybackElapsed` (a `null` hide-sentinel), and moves a DOM line — the
+  `VuMeter`/`LiveScope` pattern. `Waveform` lost its canvas playhead (gained a
+  `playing` flag for centerline suppression). **Dual-review: 3 rounds**, both clean
+  at `5f2201c`.
+- **#101 — preview an uncommitted paused take** (squash `bcda499`). Play while
+  paused decodes the take-so-far (`previewCapture`), splices it with `mergeTake`
+  where Back will commit, and plays it — decode degrades to a disabled Play +
+  Notice rather than a false preview. **Approach B** floor arbitration (release a
+  paused mic's floor claim for the preview, reclaim on resume) extracted to a pure,
+  **mutation-proven** `lib/audio/floor-transitions.ts`; `session.ts` untouched.
+- **SOD + a staging QA-board artifact** at the start of the session.
+
+### The #101 review — 10 rounds, a converging chain, both reviewers each round
+
+A genuinely intricate T2 capture-pipeline feature. Severity fell **P1 → P2 → P3**;
+Frank (codex) and George (grok) alternated on the residual edges each round. The
+real defects George's deep-tree lens caught: the decode/resume/Back races (a stale
+`playBuffer` closure preempting a live mic, R1 P1), a whole class of adjacent
+cancel-surfaces (menu, close-state, double-tap, #59 interruption), the memory/OOM
+class (parallel decodes + kept PCM through commit, R5 P1 — closed at the root by
+chaining decodes and dropping the PCM before commit), the iOS silent-preview on an
+interrupted-context-during-decode (R9), and a hook-contract gap (R8). **One P1 was
+self-inflicted** (R7): an R4 `await` I added to serialise the preview decode with
+`stop()` broke `stop()`'s pagehide capture-steal — a guaranteed take-loss on
+lock/background between Back and decode-settle. George caught it; reverting the
+await restored the invariant, and the memory serialisation it bought was re-accepted
+as the device-gated R4 residual (a lost take never justifies a memory win). DRI
+authorised looping past the round-4 cap three times; R10 both-clean at `f2746e3`.
+Full 10-round triage on #128.
+
+### Promotion
+
+- **#131** v0.1.10 release bump → develop. **#132** develop → staging (merge
+  commit). Cloudflare Workers Builds auto-deploys `tc-mobile-staging`.
+
+### Blockers / needs a human — the on-device pass
+
+- **The whole recorder preview/playhead path is browser-only and UNVERIFIED on a
+  phone.** A 10-round clean review is not a working preview on a device. Owed on
+  **iOS + Android** on staging v0.1.10: preview sounds a paused take + playhead
+  sweeps + the inert list stays still; the **graceful-degradation** branch (a device
+  that can't decode a paused container → Play disabled + Notice, take still saves on
+  Back — expected on iOS fMP4); the interrupted-context silent-preview fix; the #59
+  interruption; multi-minute-take memory; the device-gated R4 parallel-decode
+  residual. **The T2 gate before `staging → main`.**
+
+### Follow-ups / parked
+
+- **#129** — latent paused-mic floor left empty after a preview ends (unreachable
+  today). **#130** — two R10 P3 nits (one-frame LiveScope blank on first-take
+  Resume; a `console.error` missing its `cause`).
+- **Parked from the batch** (asked to "work 101 and any others we can parallel"):
+  **#75/#39/#97** (recorder-UI, entangled with the recorder surface or Tim-UX-gated)
+  and **#103** (latent, near-untestable standalone). **Blocked by the repo's own
+  rules:** **#68** (don't-fix-before-dedup), **#76** (device-gated).
+
+### Next steps
+
+1. **On-device pass on staging v0.1.10** — the checks above, then the `staging →
+main` production PR when clean.
+2. **Rest of B7** — the Template Library (other half of #33), needs a `ux-then-ui`
+   gate + Tim's Q2/Bible-template call.
+3. **#130 / #129** when next touching the preview stage / floor.
+
+---
+
 ## 2026-08-31 — Live waveform during recording (#120): pure slice + browser lane, both merged, staging v0.1.9
 
 **Branches:** `feat/live-waveform-capture` → **`develop`** (#121, merged, deleted);
