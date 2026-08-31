@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  audioContextNeedsResume,
   playSamples,
   resumeAudioContext,
   type PlaybackHandle,
@@ -11,6 +12,7 @@ import {
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
+import { preemptPausedMic, reclaimMic } from "@/lib/audio/floor-transitions";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
@@ -53,11 +55,22 @@ export interface UseAudioSession {
    */
   playTake: (row: SegmentRow, offsetSeconds?: number) => void;
   /**
-   * Play a raw in-memory PCM buffer — the recorder's edited working buffer —
-   * optionally from a scrub offset (seconds), with no IndexedDB load. Tapping
-   * while it is already sounding stops it.
+   * Play a raw in-memory PCM buffer — the recorder's edited working buffer, or a
+   * preview of a paused take (#101) — optionally from a scrub offset (seconds),
+   * with no IndexedDB load. Tapping while it is already sounding stops it.
+   *
+   * `preemptPausedMic` (approach B, #101): when a take is PAUSED the mic holds
+   * the floor, so a plain `claim("take")` is refused. With this set, and ONLY
+   * when the recorder is genuinely paused, the mic's floor CLAIM is released
+   * first (the recorder stays paused-alive — no capturing mic is abandoned), so
+   * the preview can sound; `resumeRecording` reclaims the mic. Never preempts a
+   * LIVE recording — the recorder-state guard makes that a no-op.
    */
-  playBuffer: (samples: Int16Array, offsetSeconds?: number) => void;
+  playBuffer: (
+    samples: Int16Array,
+    offsetSeconds?: number,
+    opts?: { preemptPausedMic?: boolean }
+  ) => void;
   /** Stop buffer playback if it is the one sounding. A no-op otherwise. */
   stopBuffer: () => void;
   /**
@@ -73,6 +86,14 @@ export interface UseAudioSession {
    * `playingBuffer` does). 0 only in the brief window before the handle settles.
    */
   readPlaybackElapsed: () => number | null;
+  /**
+   * Whether the shared audio context needs a user gesture to be audible now. The
+   * recorder gates its auto-play of a decoded preview on this (#101): the decode
+   * runs outside the Play tap's gesture, so an iOS context interrupted during it
+   * would sound the preview silently — better to leave it prepared and let the
+   * next tap replay it in-gesture.
+   */
+  audioNeedsGesture: () => boolean;
   startRecording: () => void;
   /** Pause the in-progress recording without ending the take. */
   pauseRecording: () => void;
@@ -83,6 +104,13 @@ export interface UseAudioSession {
    * nothing (`StopResult`). Never rejects.
    */
   stopRecording: () => Promise<StopResult>;
+  /**
+   * Decode the paused take's captured audio to canonical PCM for an in-sheet
+   * preview (#101), or null when it cannot be produced on this device. Pass the
+   * result through `mergeTake`/`playBuffer(..., { preemptPausedMic: true })` to
+   * hear it; a null degrades Play to disabled. See `UseRecorder.previewCapture`.
+   */
+  previewCapture: () => Promise<Int16Array | null>;
   /** End every sound this screen owns, synchronously. Call on every navigation. */
   leave: () => void;
   /**
@@ -129,6 +157,7 @@ export function useAudioSession(): UseAudioSession {
     pause: pauseCapture,
     resume: resumeCapture,
     stop: endRecording,
+    previewCapture,
     cancel: cancelRecording,
     state: recorderState,
     error: recorderError,
@@ -143,6 +172,17 @@ export function useAudioSession(): UseAudioSession {
   const [playingBuffer, setPlayingBufferState] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
+
+  // The live recorder state, mirrored so `playBuffer`'s preempt guard reads WHAT
+  // IS TRUE NOW, not what a render closure captured. A preview's decode (#101)
+  // resolves after an `await`; if the translator resumed meanwhile, the stale
+  // closure would still read "paused" and preempt a now-LIVE mic (George #101 R1
+  // P1). The effect lag is one commit — far inside the decode's own latency — and
+  // the same mirror pattern `useRecorder`'s `recordingRef` uses.
+  const recorderStateRef = useRef(recorderState);
+  useEffect(() => {
+    recorderStateRef.current = recorderState;
+  }, [recorderState]);
 
   // Mirrored in a ref because it is read from inside a tap handler to decide
   // whether the tap means "start" or "stop". A second tap can land before React
@@ -297,7 +337,11 @@ export function useAudioSession(): UseAudioSession {
   }, [session, setPlayingBuffer]);
 
   const playBuffer = useCallback(
-    (samples: Int16Array, offsetSeconds = 0) => {
+    (
+      samples: Int16Array,
+      offsetSeconds = 0,
+      opts?: { preemptPausedMic?: boolean }
+    ) => {
       if (playingBufferRef.current) {
         stopBuffer();
         return;
@@ -309,6 +353,24 @@ export function useAudioSession(): UseAudioSession {
       // disables Play on an empty buffer, so this mirrors playTake's bail as
       // defence (George R5).
       if (samples.length === 0) return;
+
+      // Approach B (#101): a preview of a PAUSED take must sound while the mic
+      // holds the floor. Release the mic's floor CLAIM first so the `claim("take")`
+      // below is not refused — `stopAll` clears the claim without stopping the
+      // microphone (its `liveHandle` is null while it holds the floor), and the
+      // recorder stays paused-alive, so nothing capturing is abandoned. Gated on
+      // `recorderState === "paused"` HERE, not on the caller: a preempt against a
+      // LIVE recording would strand a hot mic with no floor holder, so it is
+      // structurally impossible rather than caller discipline. `resumeRecording`
+      // reclaims the mic. The old mic token is now stale; null it so a later
+      // superseded stop cannot match it.
+      if (opts?.preemptPausedMic) {
+        micTokenRef.current = preemptPausedMic(
+          session,
+          recorderStateRef.current === "paused",
+          micTokenRef.current
+        );
+      }
 
       const token = claimFloor("take");
       // Refused: the microphone holds the floor. The recorder disables Play
@@ -415,11 +477,32 @@ export function useAudioSession(): UseAudioSession {
       });
   }, [beginRecording, claimFloor, session, supported]);
 
-  // Pause/resume keep the same take and the same floor: the microphone still
-  // owns the floor while paused, so there is no claim to release or reclaim
-  // here — only the capture is suspended.
+  // Pause keeps the same take and the same floor: the microphone still owns the
+  // floor while paused, so there is nothing to release here — only the capture is
+  // suspended.
   const pauseRecording = useCallback(() => pauseCapture(), [pauseCapture]);
-  const resumeRecording = useCallback(() => resumeCapture(), [resumeCapture]);
+  // Resume must RECLAIM the floor, because a preview (#101, approach B) may have
+  // released the mic's claim to sound the paused take — so the floor is then held
+  // by that "take", or by nothing once the preview ended. `claim("mic")` stops a
+  // still-sounding preview (resuming ends it) and restores the invariant that a
+  // capturing mic holds the floor; it is never refused, so `micTokenRef` takes
+  // the fresh token a later stop must match. When no preview ran the mic still
+  // holds the floor and this is skipped — a plain pause→resume is unchanged.
+  const resumeRecording = useCallback(() => {
+    // Write the state ref eagerly (not only via its effect mirror), so a preview
+    // decode resolving in this same turn cannot read a stale "paused" and preempt
+    // the now-live mic (George #101 R2 P3-5).
+    recorderStateRef.current = "recording";
+    const reclaim = reclaimMic(session, micTokenRef.current);
+    micTokenRef.current = reclaim.token;
+    // The reclaim's `claim("mic")` stopped a still-sounding preview handle; clear
+    // the React flag it left behind (a plain pause→resume reclaimed nothing).
+    if (reclaim.reclaimed) setPlayingBuffer(false);
+    // A failed preview left a playback Notice ("Could not play this recording.");
+    // clear it so it does not survive over the resumed take (George R2 P3-6).
+    setPlaybackError(null);
+    resumeCapture();
+  }, [resumeCapture, session, setPlayingBuffer]);
 
   const stopRecording = useCallback(async (): Promise<StopResult> => {
     // Snapshot BEFORE the await. `startRecording` writes every new claim into
@@ -499,10 +582,12 @@ export function useAudioSession(): UseAudioSession {
     playBuffer,
     stopBuffer,
     readPlaybackElapsed,
+    audioNeedsGesture: audioContextNeedsResume,
     startRecording,
     pauseRecording,
     resumeRecording,
     stopRecording,
+    previewCapture,
     leave,
     readLevel,
     readScope,
