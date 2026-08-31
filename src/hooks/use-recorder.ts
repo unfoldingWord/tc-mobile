@@ -106,8 +106,10 @@ export interface UseRecorder {
    * preview it cannot produce — the flow is correct on every device, and whether
    * a given device can decode a paused take is answered by the on-device pass.
    *
-   * Generation-guarded like `stop()`: a cancel/leave or a newer recording landing
-   * during the decode makes this resolve null, so a superseded preview is silent.
+   * Resolves null if the take is no longer this paused recorder by the time the
+   * flush settles — a cancel/leave, a newer recording, a Resume, or a Back (whose
+   * `stop()` owns the chunks then). So it never previews post-resume audio as "the
+   * take so far", and never decodes in parallel with `stop()`'s own decode.
    */
   previewCapture: () => Promise<Int16Array | null>;
   cancel: () => void;
@@ -668,7 +670,21 @@ export function useRecorder(): UseRecorder {
       // requestData unsupported in this state — decode what already arrived.
     }
     await new Promise((resolve) => setTimeout(resolve, 0));
-    if (generation !== generationRef.current) return null;
+    // Only decode a take that is STILL this recorder and STILL paused. A Back
+    // (which runs stop()) or a Resume during the flush wait means stop() or a new
+    // span owns the chunks now — decoding them here would run a second
+    // decodeToCanonical + PCM allocation in parallel with stop()'s, doubling the
+    // main-thread cost and memory on the low-end device the save path guards
+    // (George R3 #2). This closes the pre-decode window; a decode already in
+    // flight cannot be aborted (decodeAudioData has no cancel), but the caller's
+    // epoch drops its result.
+    if (
+      generation !== generationRef.current ||
+      recorderRef.current !== recorder ||
+      recorder.state !== "paused"
+    ) {
+      return null;
+    }
     if (chunks.length === 0) return null;
     const blob = new Blob(chunks, { type: recorder.mimeType });
     if (blob.size === 0) return null;

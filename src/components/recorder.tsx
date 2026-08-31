@@ -262,15 +262,15 @@ export function Recorder({
   const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
-  // The preview that is actually SOUNDING, or null. Only meaningful while paused
-  // (#101) — a stale object left after a resume is inert until the next pause
-  // re-decodes it. Keyed on `preview` being PREPARED, not on playback: once the
-  // first paused Play decodes, the stage stays on this preview's Waveform for the
-  // rest of the pause — a first take's `LiveScope` would otherwise unmount for the
-  // preview and REMOUNT BLANK when playback stops (its ring reads null while
-  // paused), a blank canvas until Resume (George R1 P4). A single narrowed value
-  // so the stage reads `.buffer`/`.peaks` without a null assertion.
-  const previewShown = paused ? preview : null;
+  // The prepared preview, shown on the stage whenever the take is NOT recording —
+  // paused, and on through processing/closing while it commits. Keyed on
+  // `!recording` rather than `paused` so a first take's `LiveScope`, which
+  // unmounts for the preview, does not REMOUNT BLANK on Back or a #59 interruption
+  // for the whole stop→decode→save (George R1 P4 / R3 #1); `recording` returns to
+  // LiveScope on a resume. A resume/re-record discards the preview
+  // (`cancelPreview`), so a stale one never lingers. A single narrowed value so
+  // the stage reads `.buffer`/`.peaks` without a null assertion.
+  const previewShown = recording ? null : preview;
 
   // The sounding buffer's duration, for the playhead overlay's position fraction
   // (#102). The denominator is the buffer shown: the preview (longer than
@@ -366,12 +366,23 @@ export function Recorder({
 
   const onPointerUp = useCallback(() => setDragging(false), []);
 
-  // Invalidate the preview (#101): bump the epoch so an in-flight decode drops its
-  // result instead of playing it, drop the synchronous decode guard, and clear the
-  // prepared preview + its state. The single canceller every exit from the
-  // sounding-paused state routes through — a transport tap, the ≡ menu (which
-  // inerts the transport), and Back. Does NOT stop playback; callers pair it with
-  // `stopBuffer()` where a buffer may be sounding.
+  // Abort an in-flight decode and drop the synchronous guard, but KEEP a prepared
+  // preview on the stage (#101). A first take's `LiveScope` remounts blank once it
+  // unmounts for the preview, so discarding the preview on Back or a #59
+  // interruption would blank the stage for the whole commit — the "looks
+  // discarded" class the `isClosing` LiveScope clause exists to prevent (George R3
+  // #1). The ≡ menu, Back (`close`), and the paused-exit effect use this; it does
+  // not stop playback, so callers pair it with `stopBuffer()`. A `"decoding"`
+  // state resets to `"none"` (the decode is gone); a `"failed"` one stays.
+  const abortPreview = useCallback(() => {
+    previewGenRef.current++;
+    previewDecodeRef.current = false;
+    setPreviewState((s) => (s === "decoding" ? "none" : s));
+  }, []);
+
+  // Discard the preview outright — abort the decode AND drop the prepared buffer
+  // and state. Only a resume or a new record uses this: the take GROWS, so the
+  // next Play must re-decode rather than replay stale audio.
   const cancelPreview = useCallback(() => {
     previewGenRef.current++;
     previewDecodeRef.current = false;
@@ -527,14 +538,15 @@ export function Recorder({
   // Erase), and opening it inerts the sheet — so Play, the only stop control,
   // goes unreachable, and Erase locks a confirm behind that scrim (George R5).
   // Stopping here closes that whole class at the boundary, like entering edit.
-  // `cancelPreview` extends it to an in-flight decode: without it, a decode that
+  // `abortPreview` extends it to an in-flight decode: without it, a decode that
   // resolves while the menu is up would start the preview behind the inert scrim
-  // with no reachable stop (George R2 #1).
+  // with no reachable stop (George R2 #1). It keeps a prepared preview so the
+  // stage does not blank behind the menu and Play can replay it on close.
   const openMenu = useCallback(() => {
     audio.stopBuffer();
-    cancelPreview();
+    abortPreview();
     setMenuOpen(true);
-  }, [audio, cancelPreview]);
+  }, [audio, abortPreview]);
 
   // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
   // row share this. Close any open selection AND reset zoom to whole: record
@@ -617,13 +629,14 @@ export function Recorder({
     if (closing.current) return;
     closing.current = true;
     setIsClosing(true);
-    // Cancel any in-flight preview decode (#101): a decode resolving during the
+    // Abort any in-flight preview decode (#101): a decode resolving during the
     // commit below must drop its result rather than start playback over the save,
     // and `previewState` must not stick on "decoding" — a failed commit reopens
     // the sheet at idle, where a stuck "decoding" would disable Play forever
-    // (Frank+George R1 P2 / R2 #2). `stopBuffer` below silences one already
-    // sounding.
-    cancelPreview();
+    // (Frank+George R1 P2 / R2 #2). KEEP the prepared preview: it stays on the
+    // stage through the stop→decode→save wait so a first take does not blank
+    // (R3 #1). `stopBuffer` below silences one already sounding.
+    abortPreview();
     // Silence buffer playback now, not at the eventual unmount `leave()`: the
     // async commit below can run a save while a long buffer keeps sounding, and
     // Play goes `disabled` on `isClosing` so nothing on screen can stop it
@@ -766,7 +779,7 @@ export function Recorder({
     onExit,
     finishedIntent,
     setFinished,
-    cancelPreview,
+    abortPreview,
   ]);
 
   // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
@@ -1095,11 +1108,19 @@ export function Recorder({
                         : strings.record
                   }
                   variant="record"
-                  // Disabled while the buffer plays: the visible whole-clip view
-                  // no longer shows the insert centerline, so a record started
-                  // here would splice at the hidden append offset the translator
-                  // cannot see (George R2). Stop playback (tap Play) first.
-                  disabled={busy || isClosing || !view || audio.playingBuffer}
+                  // Disabled while the buffer plays ONLY when idle: the visible
+                  // whole-clip view hides the insert centerline, so a new record
+                  // would splice at an offset the translator cannot see (George
+                  // R2). While PAUSED the button is Resume, whose offset is already
+                  // locked — resuming stops a sounding preview and continues the
+                  // take, so it must stay enabled (George R3 #4). Stop playback
+                  // (tap Play) first only in the idle case.
+                  disabled={
+                    busy ||
+                    isClosing ||
+                    !view ||
+                    (audio.playingBuffer && !paused)
+                  }
                   onClick={onRecordButton}
                 />
                 <Control

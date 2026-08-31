@@ -94,7 +94,7 @@ export const strings = {
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
   previewUnavailable:
-    "Can't preview yet on this device. Tap Back to save, then play it.",
+    "Can't preview this yet. Tap Back to save it, then play it.",
 
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
