@@ -35,6 +35,25 @@ export interface WaveformViewport {
 }
 
 /**
+ * A clip-fraction window: which slice of a clip is drawn and where the fixed
+ * line sits across it — the `view` the canvas `Waveform` renders through. The
+ * fractions are of the whole clip and may fall outside `[0,1]`: that overhang
+ * is the blank the audio pans over (the B4 pan window) or grows into (the
+ * live-capture scope, #120). View geometry, so it lives here beside
+ * `WaveformViewport` (the sample-space model) rather than in the clip/PCM
+ * domain types — one owner shared by the pan path, `captureWindow`, and the
+ * component's `view` prop, so the three cannot drift apart.
+ */
+export interface WaveformWindow {
+  /** Clip fraction at the viewport's left edge (may be < 0). */
+  readonly startFraction: number;
+  /** Clip fraction at the viewport's right edge (may be > 1). */
+  readonly endFraction: number;
+  /** Where the fixed line is drawn, as a fraction of viewport width. */
+  readonly centerFraction: number;
+}
+
+/**
  * The visible sample window for a given pan, zoom, and centerline position.
  *
  * `zoom` is "how many times the clip is wider than the viewport": 1 fits the
@@ -110,6 +129,48 @@ export function panAfterCut(pan: number, range: SampleRange): number {
   const hi = Math.max(range.start, range.end);
   const removedBeforePan = Math.min(hi, pan) - Math.min(lo, pan);
   return pan - removedBeforePan;
+}
+
+/**
+ * The view window for the live capture scope: the ring's clip-fractions [0,1]
+ * mapped onto screen [0, headFraction], so the newest column sits toward the
+ * head and history runs left, with the head's right left blank.
+ *
+ * Live capture is a THIRD view mode, distinct from the B4 pan window: there the
+ * audio pans under a fixed line; here it grows from the head and streams
+ * right-to-left (#120). Solving `(1 - start)/span = headFraction` with
+ * `start = 0` gives `endFraction = 1 / headFraction`. This is the pure geometry
+ * ONLY. The browser lane owns how the columns are actually drawn through it —
+ * the exact bar placement, and whether it reuses the `view` draw path or a
+ * dedicated one — because that path maps a column at `i / capacity`, so the
+ * newest bar butts up just short of the head rather than landing dead on it:
+ * fine for a scope, but a claim to pin against a real drawer, not here (#120,
+ * George R1).
+ *
+ * `headFraction` is where the record head sits across the width. **Which value
+ * ships is a deferred UX call (Tim, #120):** the B4 `CENTER_FRACTION` (0.5,
+ * history fills the left half) or the right edge (1, a full-width scope). This
+ * function serves either — at 1 the span is 1 and the scope spans the whole
+ * width. A non-positive or non-finite head (0, negative, NaN) has no room to
+ * its left and would divide by zero, so it clamps up to `EPSILON` — the same
+ * `!(x > 0)` guard `meter.ts` uses, which also rejects NaN.
+ *
+ * @pivotpending #120 uses this geometry in a dedicated pull-model live-scope
+ * drawer — NOT as `Waveform`'s `view`/`peaks` prop (see `createCapturePeaks`
+ * for why the existing canvas cannot draw the live ring). It has no production
+ * caller until then; test-imported, so knip does not fail on it — the tag emits
+ * an "Unused tag" hint and stands as the honest marker (Frank R1).
+ */
+export function captureWindow(headFraction: number): WaveformWindow {
+  // Clamp into [EPSILON, 1]. `Number.isFinite(x) && x > 0` rejects NaN,
+  // ±Infinity, 0 and negatives (all → EPSILON); the `Math.max(EPSILON, …)` also
+  // catches a positive underflow like `Number.MIN_VALUE`, whose reciprocal is
+  // Infinity and would leave `endFraction` non-finite (Frank R2).
+  const head =
+    Number.isFinite(headFraction) && headFraction > 0
+      ? Math.max(Number.EPSILON, Math.min(1, headFraction))
+      : Number.EPSILON;
+  return { startFraction: 0, endFraction: 1 / head, centerFraction: head };
 }
 
 /**
