@@ -182,7 +182,7 @@ export function Recorder({
    * commits — so the preview is byte-for-byte what Back will save — plus its
    * peaks for the stage. Prepared on the first Play while paused and reused across
    * replays. Invalidated by any transport tap (`onRecordButton`) since a resume
-   * may add audio; only ever consumed while `paused` (`previewPlaying` below), so
+   * may add audio; only ever consumed while `paused` (`previewShown` below), so
    * a stale object left after resume is inert until then. `previewState` is
    * `"decoding"` while a decode is in flight and `"failed"` when this device could
    * not decode the paused container (iOS writes the moov atom only on stop) — Play
@@ -195,6 +195,17 @@ export function Recorder({
   const [previewState, setPreviewState] = useState<
     "none" | "decoding" | "failed"
   >("none");
+  /**
+   * The preview request epoch (#101). A first paused Play decodes asynchronously
+   * (`previewCapture` + `mergeTake`); this is bumped by every transport tap
+   * (`onRecordButton`) and by `close()`, and the decode IIFE captures it at the
+   * start and bails if it changed. Without it a resume/Back landing mid-decode
+   * would let the stale promise repopulate the preview and play it — into a
+   * now-live take (the Frank+George R1 finding: a resumed mic with no floor
+   * holder, the preview bleeding into the recording). `previewCapture`'s own
+   * generation does not move on resume, so the guard must live here.
+   */
+  const previewGenRef = useRef(0);
 
   // The edit-aware length: the working buffer, not the loaded clip, is the
   // pan/zoom domain and the append offset — a cut shortens it, a paste grows it.
@@ -244,16 +255,20 @@ export function Recorder({
 
   // The preview that is actually SOUNDING, or null. Only meaningful while paused
   // (#101) — a stale object left after a resume is inert until the next pause
-  // re-decodes it — and only while its buffer plays. A single narrowed value so
-  // the stage reads `.buffer`/`.peaks` without a null assertion.
-  const previewPlaying = paused && audio.playingBuffer ? preview : null;
+  // re-decodes it. Keyed on `preview` being PREPARED, not on playback: once the
+  // first paused Play decodes, the stage stays on this preview's Waveform for the
+  // rest of the pause — a first take's `LiveScope` would otherwise unmount for the
+  // preview and REMOUNT BLANK when playback stops (its ring reads null while
+  // paused), a blank canvas until Resume (George R1 P4). A single narrowed value
+  // so the stage reads `.buffer`/`.peaks` without a null assertion.
+  const previewShown = paused ? preview : null;
 
   // The sounding buffer's duration, for the playhead overlay's position fraction
-  // (#102). The denominator is the buffer actually sounding: the preview (longer
-  // than `working`, #101) while previewing, else `working`. The overlay PULLS
+  // (#102). The denominator is the buffer shown: the preview (longer than
+  // `working`, #101) while a preview is up, else `working`. The overlay PULLS
   // `audio.readPlaybackElapsed` on its own rAF and moves a DOM line, so buffer
   // playback re-renders nothing — not this sheet, nor the inert list behind it.
-  const soundingLength = previewPlaying ? previewPlaying.buffer.length : length;
+  const soundingLength = previewShown ? previewShown.buffer.length : length;
   const soundingDurationMs = (soundingLength / CANONICAL_SAMPLE_RATE) * 1000;
 
   // Play previews a stored/edited take at idle, and the paused take-so-far while
@@ -266,15 +281,15 @@ export function Recorder({
     previewState === "decoding" ||
     (paused ? previewState === "failed" : recording || !hasAudio);
 
-  // While the buffer plays, show the WHOLE working buffer so the sweeping
-  // playhead is always on screen (George R1). The pan/zoom window exists to
-  // choose an insert point for a record, not to watch playback travel — resting
-  // at the append-ready end it hides the first half of the clip from a playhead
-  // that starts at 0. Playback overrides it with a full-clip view; the record
-  // window returns the moment playback stops.
+  // Show the WHOLE buffer while a preview is up or a buffer plays, so the
+  // sweeping playhead is always on screen and the preview's own peaks are not
+  // sliced by a pan window measured against `working` (George R1). The pan/zoom
+  // window exists to choose an insert point for a record, not to watch playback
+  // travel; the record window returns when the preview clears on Resume.
+  const wholeView = previewShown !== null || audio.playingBuffer;
   const waveView = {
-    startFraction: audio.playingBuffer ? 0 : hasAudio ? win.start / length : 0,
-    endFraction: audio.playingBuffer ? 1 : hasAudio ? win.end / length : 1,
+    startFraction: wholeView ? 0 : hasAudio ? win.start / length : 0,
+    endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
     centerFraction: CENTER_FRACTION,
   };
 
@@ -342,8 +357,10 @@ export function Recorder({
     if (closing.current || !view) return;
     // Any transport action invalidates a prepared preview (#101): a resume may
     // append audio the preview would not include, and a new record replaces the
-    // take. It is re-decoded fresh on the next Play while paused. (Pausing has no
-    // preview yet, so this is a no-op there.)
+    // take. Bump the epoch so an in-flight decode drops its result instead of
+    // playing it into the resumed take, and clear any prepared one. Re-decoded
+    // fresh on the next Play while paused. (Pausing has no preview yet, no-op.)
+    previewGenRef.current++;
     setPreview(null);
     setPreviewState("none");
     if (recording) {
@@ -398,22 +415,37 @@ export function Recorder({
       audio.playBuffer(preview.buffer, 0, { preemptPausedMic: true });
       return;
     }
+    const gen = previewGenRef.current;
     setPreviewState("decoding");
     void (async () => {
-      const pcm = await audio.previewCapture();
-      if (pcm === null) {
-        setPreviewState("failed");
-        return;
+      try {
+        const pcm = await audio.previewCapture();
+        // A resume/close/re-record during the decode bumped the epoch: this take
+        // is no longer the one being previewed. Drop the result silently — writing
+        // `preview`/`playBuffer` now would play stale audio into a live take
+        // (Frank+George R1).
+        if (gen !== previewGenRef.current) return;
+        if (pcm === null) {
+          setPreviewState("failed");
+          return;
+        }
+        const buffer = mergeTake(editor.working, pcm, insertionOffset.current);
+        const peaks =
+          buffer.length > 0 ? computePeaks(buffer, PREVIEW_PEAK_BUCKETS) : null;
+        // Re-check after the synchronous splice/peaks, which are not instant on a
+        // long take: a transport tap can land in that window too.
+        if (gen !== previewGenRef.current) return;
+        setPreview({ buffer, peaks });
+        setPreviewState("none");
+        audio.playBuffer(buffer, 0, { preemptPausedMic: true });
+      } catch (cause) {
+        // mergeTake/computePeaks allocate the full result and can throw on a
+        // low-memory device (the OOM class the save path already guards). Surface
+        // it as a failed preview rather than leaving Play stuck on "decoding"
+        // (George R1 P5); only when this epoch still owns the state.
+        console.error("Could not prepare the take preview", cause);
+        if (gen === previewGenRef.current) setPreviewState("failed");
       }
-      const buffer = mergeTake(editor.working, pcm, insertionOffset.current);
-      const peaks =
-        buffer.length > 0 ? computePeaks(buffer, PREVIEW_PEAK_BUCKETS) : null;
-      setPreview({ buffer, peaks });
-      setPreviewState("none");
-      // A resume/close during the decode makes this a no-op: `playBuffer` only
-      // preempts a recorder that is still `paused` (the hook's own guard), so a
-      // resumed take refuses the "take" claim and nothing sounds.
-      audio.playBuffer(buffer, 0, { preemptPausedMic: true });
     })();
   }, [audio, editor, paused, preview, previewState]);
 
@@ -527,6 +559,11 @@ export function Recorder({
     if (closing.current) return;
     closing.current = true;
     setIsClosing(true);
+    // Cancel any in-flight preview decode (#101): bump the epoch so a decode that
+    // resolves during the commit below drops its result instead of starting
+    // playback over the save (Frank+George R1 P2). `stopBuffer` below silences one
+    // already sounding.
+    previewGenRef.current++;
     // Silence buffer playback now, not at the eventual unmount `leave()`: the
     // async commit below can run a save while a long buffer keeps sounding, and
     // Play goes `disabled` on `isClosing` so nothing on screen can stop it
@@ -835,7 +872,7 @@ export function Recorder({
                 {(recording || paused || state === "processing" || isClosing) &&
                 !audio.meterFailed &&
                 !hasAudio &&
-                !previewPlaying ? (
+                !previewShown ? (
                   // A FIRST take with a working tap: the dedicated live scope
                   // grows from the head and scrolls R→L (#120), sidestepping
                   // Waveform's `!recorded` dotted rule. It stays mounted for the
@@ -864,14 +901,17 @@ export function Recorder({
                   // rule when the tap failed), not a blank stage (George R1/R2).
                   <Waveform
                     // The paused-take preview draws its own peaks over the whole
-                    // sounding buffer (#101); everything else shows the working
-                    // buffer's. `recorded` is true whenever there is a waveform to
-                    // mark — stored audio, or a preview of a first take.
-                    peaks={previewPlaying ? previewPlaying.peaks : editor.peaks}
+                    // buffer (#101); everything else shows the working buffer's.
+                    // `recorded` is true whenever there is a waveform to mark —
+                    // stored audio, or a prepared preview of a first take. The
+                    // centerline is suppressed whenever a preview is shown or a
+                    // buffer plays (`wholeView`), where a mid-clip red marker over
+                    // a whole-clip view would mislead (George R2).
+                    peaks={previewShown ? previewShown.peaks : editor.peaks}
                     height={200}
-                    recorded={hasAudio || previewPlaying !== null}
+                    recorded={hasAudio || previewShown !== null}
                     capturing={recording || paused}
-                    playing={audio.playingBuffer}
+                    playing={wholeView}
                     view={waveView}
                   />
                 )}

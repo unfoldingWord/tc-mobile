@@ -642,6 +642,15 @@ export function useRecorder(): UseRecorder {
   const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === "inactive") return null;
+    // Unlock Web Audio in the SAME gesture turn as the Play tap that reaches this
+    // synchronously, BEFORE the awaits below: a pause that spanned an iOS
+    // interruption or backgrounding leaves the shared context suspended, and iOS
+    // will not un-suspend it once the activation is spent — so a preview decoded
+    // first, then played, would be silent. Fire-and-forget, like the record and
+    // playback paths (#101 / George R1 P3).
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
     // Snapshot before the awaits, exactly as `stop()` does: the audio belongs to
     // this invocation, so a cancel()/leave() reassigning `chunksRef` mid-decode
     // cannot divert it. A superseded generation returns null (silent), never a

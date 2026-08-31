@@ -163,6 +163,17 @@ export function useAudioSession(): UseAudioSession {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
 
+  // The live recorder state, mirrored so `playBuffer`'s preempt guard reads WHAT
+  // IS TRUE NOW, not what a render closure captured. A preview's decode (#101)
+  // resolves after an `await`; if the translator resumed meanwhile, the stale
+  // closure would still read "paused" and preempt a now-LIVE mic (George #101 R1
+  // P1). The effect lag is one commit — far inside the decode's own latency — and
+  // the same mirror pattern `useRecorder`'s `recordingRef` uses.
+  const recorderStateRef = useRef(recorderState);
+  useEffect(() => {
+    recorderStateRef.current = recorderState;
+  }, [recorderState]);
+
   // Mirrored in a ref because it is read from inside a tap handler to decide
   // whether the tap means "start" or "stop". A second tap can land before React
   // has re-rendered, and the render closure would answer for the previous frame
@@ -346,7 +357,7 @@ export function useAudioSession(): UseAudioSession {
       if (
         opts?.preemptPausedMic &&
         session.live === "mic" &&
-        recorderState === "paused"
+        recorderStateRef.current === "paused"
       ) {
         micTokenRef.current = null;
         session.stopAll();
@@ -398,7 +409,7 @@ export function useAudioSession(): UseAudioSession {
         }
       })();
     },
-    [claimFloor, session, setPlayingBuffer, stopBuffer, recorderState]
+    [claimFloor, session, setPlayingBuffer, stopBuffer]
   );
 
   // The buffer-playback position, PULLED on the caller's own clock. The handle's
