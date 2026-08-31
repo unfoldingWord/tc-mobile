@@ -110,6 +110,17 @@ export async function resumeAudioContext(): Promise<void> {
   if (contextNeedsResume(ctx.state)) await ctx.resume();
 }
 
+/**
+ * Whether the shared context needs a user gesture to be audible RIGHT NOW. The
+ * recorder checks this before auto-playing a preview it decoded outside the tap
+ * (#101): a context left `"interrupted"` by a route change or backgrounding
+ * during the decode would sound that preview silently (George R9). Reads the live
+ * state, so it must be called at the decision point, not cached.
+ */
+export function audioContextNeedsResume(): boolean {
+  return contextNeedsResume(getAudioContext().state);
+}
+
 /** A live level tap on a capture stream, for the recorder's VU meter. */
 export interface LevelTap {
   /**

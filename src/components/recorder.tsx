@@ -466,6 +466,10 @@ export function Recorder({
   // floor as `playTake`, so `startRecording()` stops it for free (no hand-stop
   // in `onRecordButton`, F3).
   const onPlayButton = useCallback(() => {
+    // Guard the close window like `onRecordButton` does: Play is enabled while
+    // paused now (#101), so a tap racing `close()` before `isClosing` disables the
+    // button would otherwise start a preview over the commit (George R9 P3-4).
+    if (closing.current) return;
     if (audio.playingBuffer) {
       audio.stopBuffer();
       return;
@@ -496,11 +500,11 @@ export function Recorder({
     const previous = previewPromiseRef.current;
     previewDecodeRef.current = true;
     setPreviewState("decoding");
-    // Held so close() can await this decode before starting stop()'s (George R4),
-    // and CHAINED behind any prior one so two decodeToCanonical passes never
-    // allocate together (George R5 #1): a Play→Resume→Play→Back loop leaves the
-    // first decode still running (resume does not abort it), and replacing the
-    // promise would let close() await only the latest.
+    // CHAINED behind any prior decode so two decodeToCanonical passes never
+    // allocate together (George R5 #1): a Play→Resume→Play loop leaves the first
+    // decode still running (resume does not abort it), and replacing the promise
+    // would drop that serialisation. `close()` deliberately does NOT await this —
+    // that delayed stop()'s pagehide-safe capture-steal (George R7 P1).
     previewPromiseRef.current = (async () => {
       try {
         // Wait out a prior preview decode's WORK; its RESULT is dropped by the
@@ -525,7 +529,15 @@ export function Recorder({
         if (gen !== previewGenRef.current) return;
         setPreview({ buffer, peaks });
         setPreviewState("none");
-        audio.playBuffer(buffer, 0, { preemptPausedMic: true });
+        // Auto-play only if the context is audible NOW. This runs after the decode
+        // await, OUTSIDE the Play tap's gesture, so an iOS context left
+        // "interrupted" by a route change/Siri/background DURING the decode would
+        // sound a silent preview that looks like it is playing (George R9). When it
+        // needs a gesture, leave the prepared preview on stage (Play stays enabled,
+        // the waveform shows) so the next tap replays it in-gesture and sounds.
+        if (!audio.audioNeedsGesture()) {
+          audio.playBuffer(buffer, 0, { preemptPausedMic: true });
+        }
       } catch (cause) {
         // mergeTake/computePeaks allocate the full result and can throw on a
         // low-memory device (the OOM class the save path already guards). Surface

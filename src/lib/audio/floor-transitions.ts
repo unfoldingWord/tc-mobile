@@ -38,7 +38,7 @@ export function preemptPausedMic(
 }
 
 /** The outcome of a mic reclaim: the token to store, and whether a reclaim ran. */
-export interface ReclaimResult {
+interface ReclaimResult {
   /** The mic token to hold after the reclaim — a fresh claim, or the current one. */
   readonly token: number | null;
   /**

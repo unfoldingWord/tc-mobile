@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  audioContextNeedsResume,
   playSamples,
   resumeAudioContext,
   type PlaybackHandle,
@@ -85,6 +86,14 @@ export interface UseAudioSession {
    * `playingBuffer` does). 0 only in the brief window before the handle settles.
    */
   readPlaybackElapsed: () => number | null;
+  /**
+   * Whether the shared audio context needs a user gesture to be audible now. The
+   * recorder gates its auto-play of a decoded preview on this (#101): the decode
+   * runs outside the Play tap's gesture, so an iOS context interrupted during it
+   * would sound the preview silently — better to leave it prepared and let the
+   * next tap replay it in-gesture.
+   */
+  audioNeedsGesture: () => boolean;
   startRecording: () => void;
   /** Pause the in-progress recording without ending the take. */
   pauseRecording: () => void;
@@ -573,6 +582,7 @@ export function useAudioSession(): UseAudioSession {
     playBuffer,
     stopBuffer,
     readPlaybackElapsed,
+    audioNeedsGesture: audioContextNeedsResume,
     startRecording,
     pauseRecording,
     resumeRecording,
