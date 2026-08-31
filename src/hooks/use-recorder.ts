@@ -202,19 +202,31 @@ export function useRecorder(): UseRecorder {
    * (#102), so it is never re-created on render.
    */
   const scopeRef = useRef(createCapturePeaks(SCOPE_CAPACITY));
+  // Mirrors `state === "recording"` so `readScope` can read it without sitting
+  // in a dependency array. The ring must advance only on a recorded frame — not
+  // a paused one (the mic still feeds the analyser) or one mid-teardown.
+  const recordingRef = useRef(false);
+  useEffect(() => {
+    recordingRef.current = state === "recording";
+  }, [state]);
 
   /** The current capture level for the VU meter, 0 when nothing is capturing. */
   const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
 
   /**
-   * The live-waveform scope for the current take, or `null` when nothing is
-   * capturing (or the tap could not be wired). A PULL like `readLevel`
-   * (D-LEVEL-PULL): the scope drawer polls it on its own animation clock, so the
-   * recorder never re-renders per frame. Each call folds the latest analyser
-   * frame in as one column and returns the ring; the drawer gates its loop on
-   * `recording`, so a paused take stops pushing and the scope freezes (R-B6).
+   * The live-waveform scope for the current take, or `null` when not recording
+   * (idle/paused/processing) or the tap could not be wired. A PULL like
+   * `readLevel` (D-LEVEL-PULL): the scope drawer polls it on its own animation
+   * clock, so the recorder never re-renders per frame. Each call while recording
+   * folds the latest analyser frame in as one column and returns the ring.
    */
   const readScope = useCallback((): CaptureScope | null => {
+    // Advance the ring only while actually recording. The drawer already gates
+    // its loop on `recording`; gating the PUSH here too makes "one column per
+    // recorded frame" an enforced invariant, not caller discipline, so a paused
+    // take or a future second consumer cannot scroll or double-fold it (George
+    // R2).
+    if (!recordingRef.current) return null;
     const frame = tapRef.current?.readFrame();
     if (!frame) return null;
     scopeRef.current.push(frame);

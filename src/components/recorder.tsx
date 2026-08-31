@@ -744,12 +744,18 @@ export function Recorder({
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                {(recording || paused) && !audio.meterFailed ? (
-                  // Capturing with a working tap: a dedicated live scope replaces
-                  // the static waveform — it grows from the head and scrolls R→L
-                  // (#120). `active={recording}` freezes it on pause (the mic
-                  // still emits frames, R-B6). Its own draw path sidesteps
-                  // Waveform's `!recorded` gate, which would blank a first take.
+                {(recording || paused || state === "processing") &&
+                !audio.meterFailed &&
+                !hasAudio ? (
+                  // A FIRST take with a working tap: the dedicated live scope
+                  // grows from the head and scrolls R→L (#120), sidestepping
+                  // Waveform's `!recorded` dotted rule. It stays mounted through
+                  // `processing` (the F8 close / #59 flush window) so the take
+                  // does not snap back to the empty rule mid-commit and read as
+                  // discarded (George R2); `active` goes false there and on
+                  // pause, freezing the last frame (R-B6). A punch-in/append
+                  // (`hasAudio`) keeps Waveform instead, so the existing clip and
+                  // the #110 insert centerline stay visible.
                   <LiveScope
                     readScope={audio.readScope}
                     active={recording}
@@ -758,11 +764,10 @@ export function Recorder({
                     label={strings.liveWaveform}
                   />
                 ) : (
-                  // Idle / edit / playback — AND the tap-failed capture fallback:
-                  // `readScope` is null there, so keep Waveform with `capturing`
-                  // so the #110 record centerline stays up over the existing
-                  // audio (or the dotted first-take rule), not a blank stage
-                  // (George R1). The VU strip already signals the tap failure.
+                  // Idle / edit / playback, a punch-in/append capture, and the
+                  // tap-failed fallback: `capturing` keeps the #110 record
+                  // centerline over the existing audio (or the dotted first-take
+                  // rule when the tap failed), not a blank stage (George R1/R2).
                   <Waveform
                     peaks={editor.peaks}
                     height={200}
