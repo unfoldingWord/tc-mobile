@@ -11,6 +11,7 @@ import {
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
+import { preemptPausedMic, reclaimMic } from "@/lib/audio/floor-transitions";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
@@ -354,13 +355,12 @@ export function useAudioSession(): UseAudioSession {
       // structurally impossible rather than caller discipline. `resumeRecording`
       // reclaims the mic. The old mic token is now stale; null it so a later
       // superseded stop cannot match it.
-      if (
-        opts?.preemptPausedMic &&
-        session.live === "mic" &&
-        recorderStateRef.current === "paused"
-      ) {
-        micTokenRef.current = null;
-        session.stopAll();
+      if (opts?.preemptPausedMic) {
+        micTokenRef.current = preemptPausedMic(
+          session,
+          recorderStateRef.current === "paused",
+          micTokenRef.current
+        );
       }
 
       const token = claimFloor("take");
@@ -484,10 +484,11 @@ export function useAudioSession(): UseAudioSession {
     // decode resolving in this same turn cannot read a stale "paused" and preempt
     // the now-live mic (George #101 R2 P3-5).
     recorderStateRef.current = "recording";
-    if (session.live !== "mic") {
-      micTokenRef.current = session.claim("mic");
-      setPlayingBuffer(false);
-    }
+    const reclaim = reclaimMic(session, micTokenRef.current);
+    micTokenRef.current = reclaim.token;
+    // The reclaim's `claim("mic")` stopped a still-sounding preview handle; clear
+    // the React flag it left behind (a plain pause→resume reclaimed nothing).
+    if (reclaim.reclaimed) setPlayingBuffer(false);
     // A failed preview left a playback Notice ("Could not play this recording.");
     // clear it so it does not survive over the resumed take (George R2 P3-6).
     setPlaybackError(null);
