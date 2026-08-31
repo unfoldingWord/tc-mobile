@@ -5,6 +5,7 @@ import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { PlayheadOverlay } from "./playhead-overlay";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
@@ -216,20 +217,11 @@ export function Recorder({
   const pan = Math.min(panState ?? length, length);
   const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
-  // The record-mode playback playhead (#89), as a fraction of the WHOLE working
-  // buffer — the same clip-fraction domain `Waveform`'s `view` bars are drawn
-  // through, so `playheadViewportX` lands it over the sample it marks. Null
-  // whenever the buffer is not sounding; guarded on a non-zero duration so an
-  // empty buffer never divides to NaN (Play is disabled there anyway).
+  // The playing buffer's duration (#89), for the playhead overlay's position
+  // fraction. The overlay (#102) PULLS `audio.readPlaybackElapsed` on its own
+  // rAF and moves a DOM line, so buffer playback re-renders nothing — not this
+  // sheet, and not App and the inert Segments list behind it.
   const workingDurationMs = (length / CANONICAL_SAMPLE_RATE) * 1000;
-  const playhead =
-    audio.playingBuffer && workingDurationMs > 0
-      ? // Clamp to [0,1]: `elapsed()` clamps to the AudioBuffer duration and
-        // `workingDurationMs` is derived from the same sample count, but a float
-        // overshoot > 1 would make `playheadViewportX` skip the final tick
-        // (George R5). Elapsed is never negative, so the floor is belt-only.
-        Math.min(1, Math.max(0, audio.playbackElapsedMs / workingDurationMs))
-      : null;
 
   // While the buffer plays, show the WHOLE working buffer so the sweeping
   // playhead is always on screen (George R1). The pan/zoom window exists to
@@ -778,10 +770,22 @@ export function Recorder({
                     height={200}
                     recorded={hasAudio}
                     capturing={recording || paused}
-                    playhead={playhead}
+                    playing={audio.playingBuffer}
                     view={waveView}
                   />
                 )}
+                {/* The playback playhead, a pull-model DOM overlay (#102): it
+                    polls `readPlaybackElapsed` on its own rAF and moves a line,
+                    so buffer playback re-renders neither this sheet nor the
+                    inert list behind it. Mounted always; it hides itself when
+                    nothing is sounding. */}
+                <PlayheadOverlay
+                  readElapsedMs={audio.readPlaybackElapsed}
+                  active={audio.playingBuffer}
+                  durationMs={workingDurationMs}
+                  startFraction={waveView.startFraction}
+                  endFraction={waveView.endFraction}
+                />
                 {mode === "edit" &&
                   editor.selectionActive &&
                   editor.selection && (
