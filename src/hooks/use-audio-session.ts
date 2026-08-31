@@ -480,10 +480,17 @@ export function useAudioSession(): UseAudioSession {
   // the fresh token a later stop must match. When no preview ran the mic still
   // holds the floor and this is skipped — a plain pause→resume is unchanged.
   const resumeRecording = useCallback(() => {
+    // Write the state ref eagerly (not only via its effect mirror), so a preview
+    // decode resolving in this same turn cannot read a stale "paused" and preempt
+    // the now-live mic (George #101 R2 P3-5).
+    recorderStateRef.current = "recording";
     if (session.live !== "mic") {
       micTokenRef.current = session.claim("mic");
       setPlayingBuffer(false);
     }
+    // A failed preview left a playback Notice ("Could not play this recording.");
+    // clear it so it does not survive over the resumed take (George R2 P3-6).
+    setPlaybackError(null);
     resumeCapture();
   }, [resumeCapture, session, setPlayingBuffer]);
 
