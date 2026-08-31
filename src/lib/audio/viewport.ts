@@ -155,11 +155,9 @@ export function panAfterCut(pan: number, range: SampleRange): number {
  * its left and would divide by zero, so it clamps up to `EPSILON` — the same
  * `!(x > 0)` guard `meter.ts` uses, which also rejects NaN.
  *
- * @pivotpending #120 uses this geometry in a dedicated pull-model live-scope
- * drawer — NOT as `Waveform`'s `view`/`peaks` prop (see `createCapturePeaks`
- * for why the existing canvas cannot draw the live ring). It has no production
- * caller until then; test-imported, so knip does not fail on it — the tag emits
- * an "Unused tag" hint and stands as the honest marker (Frank R1).
+ * `LiveScope` draws through this in a dedicated pull-model loop — NOT as
+ * `Waveform`'s `view`/`peaks` prop, which the existing canvas cannot use for
+ * the live ring (#120).
  */
 export function captureWindow(headFraction: number): WaveformWindow {
   // Clamp into [EPSILON, 1]. `Number.isFinite(x) && x > 0` rejects NaN,

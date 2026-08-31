@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  type CapturePeaks,
+  type CaptureScope,
+  createCapturePeaks,
+} from "@/lib/audio/capture-peaks";
+
+import {
   createLevelTap,
   decodeToCanonical,
   isRecordingSupported,
@@ -8,6 +14,14 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+
+/**
+ * Columns the live-waveform ring holds while recording (#120). One column is
+ * pushed per animation frame, so at ~60 fps this is roughly `SCOPE_CAPACITY/60`
+ * seconds of visible history. 180 ≈ 3 s beside the head — a provisional default
+ * to tune on the device pass alongside `headFraction` (Tim's UX call).
+ */
+const SCOPE_CAPACITY = 180;
 
 export type RecorderState =
   "idle" | "requesting" | "recording" | "paused" | "processing";
@@ -90,6 +104,13 @@ export interface UseRecorder {
    * superseded analyser.
    */
   readLevel: () => number;
+  /**
+   * The live-waveform scope for the current take (#120), or `null` when nothing
+   * is capturing or the tap could not be wired. A PULL like `readLevel`: the
+   * scope drawer polls it on its own frame clock. Folds the latest analyser
+   * frame in as one column per call and returns the ring's `CaptureScope`.
+   */
+  readScope: () => CaptureScope | null;
   /**
    * The level tap could not be wired for the current take (a quirky Web Audio
    * implementation). Recording is unaffected; the meter should show unavailable
@@ -175,8 +196,55 @@ export function useRecorder(): UseRecorder {
     tapRef.current = null;
   }, []);
 
+  /**
+   * The live-waveform ring for the current take (#120). One column per frame is
+   * folded in by `readScope`; reset at each idle→recording edge in `start`.
+   * Created ONCE, behind a null guard, and reused — reusing its buffers is the
+   * whole point (#102). `useRef`'s argument is evaluated on EVERY render, so
+   * `createCapturePeaks` (four `Float32Array`s) must not sit in the `useRef`
+   * call: the 100 ms timer would re-allocate a ring ~10×/s through a take, all
+   * discarded (Frank R3).
+   */
+  const scopeRef = useRef<CapturePeaks | null>(null);
+  if (scopeRef.current === null) {
+    scopeRef.current = createCapturePeaks(SCOPE_CAPACITY);
+  }
+  // Whether a recorded frame is live, for `readScope` to gate the ring push
+  // without sitting in a dependency array. Written SYNCHRONOUSLY at each
+  // transition (start/resume → true; pause/stop/cancel/interrupt → false), in
+  // the same turn as the tap/recorder change — the same way `tapRef` is cut at
+  // `stop()`. A `useEffect` mirror lags a commit, and `pause()` leaves the
+  // analyser live (R-B6), so a queued rAF `tick` between `pause()` and the
+  // effect would push a post-pause room-tone column into the frozen freeze
+  // (George R3). The effect is a backstop for any path the writes miss.
+  const recordingRef = useRef(false);
+  useEffect(() => {
+    recordingRef.current = state === "recording";
+  }, [state]);
+
   /** The current capture level for the VU meter, 0 when nothing is capturing. */
   const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
+
+  /**
+   * The live-waveform scope for the current take, or `null` when not recording
+   * (idle/paused/processing) or the tap could not be wired. A PULL like
+   * `readLevel` (D-LEVEL-PULL): the scope drawer polls it on its own animation
+   * clock, so the recorder never re-renders per frame. Each call while recording
+   * folds the latest analyser frame in as one column and returns the ring.
+   */
+  const readScope = useCallback((): CaptureScope | null => {
+    // Advance the ring only while actually recording. The drawer already gates
+    // its loop on `recording`; gating the PUSH here too makes "one column per
+    // recorded frame" an enforced invariant, not caller discipline, so a paused
+    // take or a future second consumer cannot scroll or double-fold it (George
+    // R2/R3).
+    const ring = scopeRef.current;
+    if (!recordingRef.current || !ring) return null;
+    const frame = tapRef.current?.readFrame();
+    if (!frame) return null;
+    ring.push(frame);
+    return ring.toScope();
+  }, []);
 
   const releaseStream = useCallback(() => {
     closeTap();
@@ -303,6 +371,9 @@ export function useRecorder(): UseRecorder {
         // tracks are stopped depends on the recorder state below, exactly as for
         // the original tracks.
         tapRef.current?.disconnect();
+        // Cut the live-scope push synchronously, like the tap above — a queued
+        // rAF must not fold a post-interrupt column into the frozen freeze (R3).
+        recordingRef.current = false;
         setState("processing");
         // Release the mic the moment the recorder has actually ended. On the
         // `error` path the track can still be live — a hot mic on a frozen sheet
@@ -327,6 +398,9 @@ export function useRecorder(): UseRecorder {
       });
 
       recorder.start(250);
+      // A new take starts from an empty live-waveform scope (#120) — the ring
+      // must not carry the previous take's tail into this one.
+      scopeRef.current?.reset();
       // Open the VU tap on the live stream. Non-fatal: a device with a quirky
       // Web Audio implementation should still record even if the meter cannot
       // be wired, so a failure here is logged and the recorder runs meterless.
@@ -341,6 +415,8 @@ export function useRecorder(): UseRecorder {
       startedAtRef.current = performance.now();
       baseElapsedRef.current = 0;
       setElapsedMs(0);
+      // The ring may advance from the next rAF on — set before the state edge.
+      recordingRef.current = true;
       setState("recording");
 
       startTick();
@@ -372,6 +448,10 @@ export function useRecorder(): UseRecorder {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state !== "recording") return;
     recorder.pause();
+    // Freeze the live scope the instant capture pauses: the analyser stays live
+    // (R-B6), so without this a queued rAF would fold a room-tone column into
+    // the freeze before the state effect catches up (George R3).
+    recordingRef.current = false;
     baseElapsedRef.current += performance.now() - startedAtRef.current;
     clearTick();
     setElapsedMs(baseElapsedRef.current);
@@ -392,6 +472,9 @@ export function useRecorder(): UseRecorder {
       console.error("Could not resume the audio context", cause);
     });
     recorder.resume();
+    // Re-arm the live-scope push as capture resumes (the ring persists — the
+    // scope continues from where it froze, no `reset`).
+    recordingRef.current = true;
     startedAtRef.current = performance.now();
     setState("recording");
     startTick();
@@ -441,6 +524,9 @@ export function useRecorder(): UseRecorder {
     // `stream`, this stop owns it; cancel() finds the ref already null.
     streamRef.current = null;
     clearTick();
+    // The tap is already nulled above, so `readScope` returns null regardless;
+    // clearing the flag too keeps the invariant explicit at every stop path.
+    recordingRef.current = false;
     setState("processing");
 
     let blob: Blob;
@@ -540,6 +626,9 @@ export function useRecorder(): UseRecorder {
   const cancel = useCallback(() => {
     generationRef.current++;
     clearTick();
+    // Stop the live-scope push before the stream is torn down (releaseStream
+    // nulls the tap too, but keep the flag consistent with the other exits).
+    recordingRef.current = false;
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== "inactive") recorder.stop();
     releaseStream();
@@ -566,6 +655,7 @@ export function useRecorder(): UseRecorder {
     stop,
     cancel,
     readLevel,
+    readScope,
     meterFailed,
   };
 }

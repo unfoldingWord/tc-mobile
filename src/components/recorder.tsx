@@ -7,6 +7,7 @@ import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
+import { LiveScope } from "./live-scope";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -743,14 +744,44 @@ export function Recorder({
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                <Waveform
-                  peaks={editor.peaks}
-                  height={200}
-                  recorded={hasAudio}
-                  capturing={recording || paused}
-                  playhead={playhead}
-                  view={waveView}
-                />
+                {(recording || paused || state === "processing" || isClosing) &&
+                !audio.meterFailed &&
+                !hasAudio ? (
+                  // A FIRST take with a working tap: the dedicated live scope
+                  // grows from the head and scrolls R→L (#120), sidestepping
+                  // Waveform's `!recorded` dotted rule. It stays mounted for the
+                  // WHOLE take-in-flight window — recording, paused, processing,
+                  // AND the F8 close (`isClosing`, the stop→decode→save wait,
+                  // where `stop()` has already flipped state to idle but the PCM
+                  // is not in `working` yet, so `hasAudio` is still false). That
+                  // whole predicate is `takeActive && state !== "requesting"`:
+                  // without `isClosing` the frozen take snapped back to the empty
+                  // dotted rule for the multi-MB IndexedDB write and read as
+                  // discarded (George R2/R4). `active` goes false off "recording"
+                  // (pause/processing/close), freezing the last frame (R-B6). A
+                  // punch-in/append (`hasAudio`) keeps Waveform instead, so the
+                  // existing clip and the #110 insert centerline stay visible.
+                  <LiveScope
+                    readScope={audio.readScope}
+                    active={recording}
+                    headFraction={CENTER_FRACTION}
+                    height={200}
+                    label={strings.liveWaveform}
+                  />
+                ) : (
+                  // Idle / edit / playback, a punch-in/append capture, and the
+                  // tap-failed fallback: `capturing` keeps the #110 record
+                  // centerline over the existing audio (or the dotted first-take
+                  // rule when the tap failed), not a blank stage (George R1/R2).
+                  <Waveform
+                    peaks={editor.peaks}
+                    height={200}
+                    recorded={hasAudio}
+                    capturing={recording || paused}
+                    playhead={playhead}
+                    view={waveView}
+                  />
+                )}
                 {mode === "edit" &&
                   editor.selectionActive &&
                   editor.selection && (
