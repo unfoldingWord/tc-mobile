@@ -218,11 +218,12 @@ export function Recorder({
    */
   const previewDecodeRef = useRef(false);
   /**
-   * The in-flight preview decode promise, held so `close()` can AWAIT it before it
-   * starts `stop()`'s own decode (#101 / George R4). `decodeToCanonical` cannot be
-   * aborted once running; serialising the two decodes keeps a multi-minute take
-   * from peaking two full PCM buffers at once (the OOM class the save path guards).
-   * Null when no decode is in flight; awaiting a settled promise is instant.
+   * The most recent preview decode promise, so the NEXT paused Play chains behind
+   * it (#101 / George R5 #1): a Play→Resume→Play loop leaves the first
+   * `decodeToCanonical` running (resume cannot abort it), and chaining keeps the
+   * two from allocating a full PCM buffer at once. `close()` deliberately does NOT
+   * await this — that would delay `stop()`'s pagehide-safe capture-steal (George R7
+   * P1). Null when none is in flight.
    */
   const previewPromiseRef = useRef<Promise<void> | null>(null);
 
@@ -681,17 +682,21 @@ export function Recorder({
       // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
       const attemptedCapture = recording || paused || state === "processing";
       if (attemptedCapture) {
-        // Let any in-flight preview decode finish before stop() starts its own, so
-        // two decodeToCanonical passes never peak two full PCM buffers together on
-        // a multi-minute take (George R4 #2). abortPreview() above already bumped
-        // the epoch, so the preview drops its result; this only serialises the
-        // work. Awaiting a settled or null promise is instant.
-        await previewPromiseRef.current;
-        // Then DROP the prepared preview's PCM, keeping only its peaks for the
-        // stage: Waveform reads `peaks`, not the buffer, and the overlay is
-        // inactive while closing — so holding the full ~5.3 MB/min Int16Array
-        // across stop()'s decode and mergeTake would peak a third copy for nothing
-        // (George R5 #2). `previewShown` still draws the peaks, so no blank.
+        // Do NOT await the in-flight preview decode here. `stop()` steals the
+        // chunks/stream/recorder into locals BEFORE its first await, which is what
+        // lets a `pagehide`/`leave()` during the flush cancel the mic without
+        // destroying a confirmed take. Delaying `stopRecording()` behind the
+        // preview promise re-opened that window: a lock/background between Back and
+        // the decode settling would `cancel()` the refs, and the late `stop()`
+        // would return no-samples-no-error and drop the take (George R7 P1). The
+        // epoch already discards the preview result, and `decodeToCanonical` cannot
+        // be aborted, so the await only bought a memory serialisation — a Back
+        // landing mid-preview-decode can peak the preview's and stop()'s decodes
+        // together (the R4 #2 residual, device-gated), which never justifies losing
+        // a take. DROP the prepared preview's PCM first, keeping only its peaks:
+        // Waveform reads `peaks`, the overlay is inactive while closing, so holding
+        // the ~5.3 MB/min Int16Array across stop()'s decode + mergeTake buys nothing
+        // (George R5 #2); `previewShown` still draws the peaks, so no blank.
         setPreview((p) =>
           p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
         );
