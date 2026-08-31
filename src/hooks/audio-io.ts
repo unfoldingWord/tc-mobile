@@ -243,7 +243,14 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       return rmsLevel(frame);
     },
     readFrame: () => {
-      if (disconnected) return null;
+      // An interrupted/suspended context (iOS backgrounding or a call — #76,
+      // the same state #107 resumes) makes the analyser read all-zeros with no
+      // error, and nothing resumes it mid-take. Return null rather than a silent
+      // frame so the live scope freezes its last frame instead of scrolling the
+      // shown speech off into a flat line a non-reader takes for a dead mic
+      // (George R5). NOT an all-zero-frame check — that would freeze on real
+      // silence too.
+      if (disconnected || contextNeedsResume(ctx.state)) return null;
       graph.getFloatTimeDomainData(frame);
       return frame;
     },
