@@ -94,6 +94,9 @@ export const strings = {
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
 
+  // ── Live waveform (#120) ─────────────────────────────────────────────────
+  liveWaveform: "Live recording waveform",
+
   // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",

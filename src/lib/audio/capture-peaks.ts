@@ -39,12 +39,8 @@ export interface CaptureColumn {
  * Deliberately NOT a `Peaks`: a live scope carries `count` (the drawer skips
  * the pad with it) and no `samplesPerBucket` (a column is a frame, not a sample
  * span), so it cannot be dropped into `Waveform`'s `peaks` prop by accident —
- * the boundary is explicit, not a silent type match (George R2).
- *
- * @pivotpending #120's live-scope drawer is the reader. Unlike the two capture
- * functions (which the tests import, so knip sees them used), this type is only
- * reachable through `toScope()`'s return — genuinely knip-dead until then — so
- * the tag suppresses that as intended, not just documents it.
+ * the boundary is explicit, not a silent type match (George R2). `LiveScope`
+ * reads it and `use-recorder`'s `readScope` produces it.
  */
 export interface CaptureScope {
   readonly min: Float32Array;
@@ -134,32 +130,10 @@ export interface CapturePeaks {
  *
  * `capacity` is floored to at least 1 (a ring of zero columns has nothing to
  * draw and would divide by zero downstream), mirroring `computePeaks`' bucket
- * floor. The visible time span is `capacity / framesPerSecond`; picking
- * `capacity` and the sampling cadence is the browser lane's call (#120), not
- * this module's — it only promises the ring behaves for whatever size it is
- * given.
- *
- * No production caller yet — this is the pure slice of #120; the browser lane
- * owns the rendering integration, and it is NOT the "drop `toPeaks()` onto the
- * existing `Waveform`" an earlier draft of this comment implied (George R1).
- * That lane must:
- *   - extend the existing `LevelTap` to expose the time-domain frame — its
- *     `read()` reduces to RMS and discards the frame — rather than open a
- *     second `AudioContext`/analyser, which iOS caps (audio-io.ts, AGENTS.md);
- *   - skip the zero-padded prefix using `count`: a `{0,0}` slot is SILENCE to
- *     the canvas (`Math.max(1.5, 0)` still ticks a bar), not blank, so a drawer
- *     that paints every bucket renders the unfilled head as amber silence;
- *   - draw pull-model, not `setState(toPeaks())` per frame — that re-renders the
- *     recorder sheet at frame rate and reassigns the canvas backing store, the
- *     D-LEVEL-PULL / #102 trap `VuMeter` exists to avoid;
- *   - gate on `recording`, not `paused` — a paused mic still emits frames
- *     (`VuMeter` keys `active={recording}`, R-B6).
- * That contract is tracked on #120.
- *
- * @pivotpending #120 wires this into the recorder. knip does not flag it (the
- * capture tests import it), so this tag emits an "Unused tag" hint rather than
- * suppressing a failure — it stays as the honest marker the no-sprawl rule asks
- * for (Frank R1), naming the batch that consumes it.
+ * floor. The visible time span is `capacity / framesPerSecond`; `use-recorder`
+ * picks `capacity` (`SCOPE_CAPACITY`) and pulls the ring once per animation
+ * frame, and `LiveScope` draws the result through `captureWindow` — a
+ * pull-model drawer, so the recorder never re-renders per frame (#120).
  */
 export function createCapturePeaks(capacity: number): CapturePeaks {
   // Floor to at least 1. A non-finite capacity must short-circuit BEFORE the

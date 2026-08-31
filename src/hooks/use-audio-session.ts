@@ -10,6 +10,7 @@ import {
   type RecorderState,
   type StopResult,
 } from "./use-recorder";
+import type { CaptureScope } from "@/lib/audio/capture-peaks";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
@@ -73,6 +74,14 @@ export interface UseAudioSession {
    * above this layer re-renders per frame. 0 whenever nothing is capturing.
    */
   readLevel: () => number;
+  /**
+   * The live-waveform scope for the current take (#120), or `null` when nothing
+   * is capturing OR the tap could not be wired (a `meterFailed` take records but
+   * produces no scope — the sheet keeps the static waveform up in that case). A
+   * PULL like `readLevel`: the scope drawer polls it on its own frame clock, so
+   * nothing above this layer re-renders per frame.
+   */
+  readScope: () => CaptureScope | null;
   /** The VU tap could not be wired for the current take; the meter shows
    *  unavailable rather than a resting-empty strip. Recording is unaffected. */
   meterFailed: boolean;
@@ -109,6 +118,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    readScope,
     meterFailed,
   } = recorder;
 
@@ -456,6 +466,7 @@ export function useAudioSession(): UseAudioSession {
     stopRecording,
     leave,
     readLevel,
+    readScope,
     meterFailed,
   };
 }
