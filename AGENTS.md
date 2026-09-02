@@ -417,13 +417,21 @@ Scripture Burrito and the event journal to **Benjamin Wright**, OBS content and
 audio to **Rich Mahn**, Shema Studio to **Han Chung** (via Birch, who is already
 helping him add OBS support).
 
-**The repository is deliberately personal and private** —
-`sethstoll3/tc-mobile`, not `unfoldingWord/tc-mobile`. Per
-`dev-practices/new-project-checklist.md`, creating an org repo requires
-tech-lead approval and a recorded DRI, and neither exists yet. A private
-personal repo sidesteps that gate honestly rather than pre-empting it.
+**The repository lives at `unfoldingWord/tc-mobile`, private,** since Seth
+transferred it from `sethstoll3/tc-mobile` on 2026-09-02. GitHub redirects the
+old name, so existing clones keep working — but repoint them
+(`git remote set-url origin https://github.com/unfoldingWord/tc-mobile.git`)
+and use `--repo unfoldingWord/tc-mobile` with `gh` rather than relying on the
+redirect. Issue and PR numbers carried over unchanged.
 
-**Moving it into the org later is the plan, and it is a real transfer** — the
-Cloudflare account is already unfoldingWord, so deployment does not change, but
-the repo secrets, the Actions history and any issue references do. Get the
-approval and the DRI recorded first.
+**The transfer broke Cloudflare Workers Builds** (#143): the connection was
+bound to the repo under its old owner, and the first promotion after the move
+(#142, staging v0.1.11) merged green on GitHub without ever deploying. Until
+both Workers are re-linked to the org repo, **a merged promotion PR is not a
+deployed build** — confirm the served bundle's version string on the staging
+URL, not the merge. The AGENTS.md rule that the Cloudflare account is
+unfoldingWord was already true; only the GitHub side moved.
+
+Other contributors now push here (Jesse Griffin, `jag3773`, from 2026-09-02),
+which is what the version/milestone scheme above and the reviewer/author split
+in the review section exist for.
