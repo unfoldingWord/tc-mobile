@@ -51,6 +51,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
       onClose={handleClose}
       title={viewing ? viewing.label : strings.aboutTitle}
       focusKey={viewing?.href ?? "list"}
+      closeLabel={viewing ? strings.aboutBack : undefined}
     >
       {viewing ? (
         <LicenseTextView text={viewing} />

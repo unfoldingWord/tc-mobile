@@ -40,6 +40,13 @@ interface MenuProps {
    * (the default) and focus lands once per open, as before.
    */
   focusKey?: string | number;
+  /**
+   * The header control's label and spoken name. Defaults to "Close menu"; a
+   * caller whose `onClose` does something other than close — the About panel's
+   * pops an in-drawer text back to its list (#36) — passes the matching verb so
+   * the control does not say "Close" while it goes back.
+   */
+  closeLabel?: string;
 }
 
 /**
@@ -55,6 +62,7 @@ export function Menu({
   title = strings.menuTitle,
   children,
   focusKey,
+  closeLabel = strings.menuClose,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // The header (title + Close). Held so the open-edge focus can skip past it to
@@ -151,7 +159,7 @@ export function Menu({
           <span className="t-title">{title}</span>
           <Control
             icon="back"
-            label={strings.menuClose}
+            label={closeLabel}
             variant="quiet"
             onClick={onClose}
           />

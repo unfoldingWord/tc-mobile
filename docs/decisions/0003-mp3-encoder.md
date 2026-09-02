@@ -63,11 +63,12 @@ obligations are actually met, so they are listed here rather than assumed.
    reader to discover it from a lockfile.
 
 Items 3 and 5 are done (#36): the MIT / LGPL-3.0 / GPL-3.0 licence texts and the
-lamejs attribution ship under `public/licenses/` (precached for offline) and are
-reachable in-app at **Menu → About & licenses** (`src/components/about-panel.tsx`,
-data in `src/components/licenses.ts`); `README.md` and `package.json` state the
-MIT-with-an-LGPL-3.0-encoder position in the open. The in-app surface has not yet
-been eyeballed on a device.
+attribution of every bundled component — the seven runtime dependencies and
+Workbox — ship under `public/licenses/` (precached for offline) and are reachable
+in-app at **Menu → About & licenses** (`src/components/about-panel.tsx`, data in
+`src/components/licenses.ts`). `package.json` declares the project's own licence
+(`"license": "MIT"`) and `README.md` states the full MIT-with-an-LGPL-3.0-encoder
+position in prose. The in-app surface has not yet been eyeballed on a device.
 
 ### What this closes
 

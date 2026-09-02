@@ -16,15 +16,20 @@
  * the linked texts actually ship.
  */
 
-/** A bundled runtime dependency and the licence it is offered under. */
-export interface ThirdPartyLicense {
+/** A bundled component and the licence it is offered under. */
+interface ThirdPartyLicense {
   readonly name: string;
   readonly version: string;
   readonly spdx: string;
   readonly copyright: string;
-  readonly homepage: string;
   /** What it does here, in plain terms. Only the ones worth naming carry it. */
   readonly role?: string;
+  /**
+   * The installed package the version is pinned to, when it differs from
+   * `name` — Workbox is shown by its family name but resolves to `workbox-build`
+   * in `node_modules`. Defaults to `name`.
+   */
+  readonly pinPackage?: string;
   /** A note the licence makes worth surfacing — the LGPL relink right. */
   readonly note?: string;
   /** An upstream the licence asks be acknowledged (LAME, for lamejs). */
@@ -40,10 +45,13 @@ export interface ThirdPartyLicense {
 }
 
 /**
- * The bundled runtime dependencies (`package.json` `dependencies`). lamejs is
- * first and carries the copyleft note; the rest are permissive (MIT/ISC) and
- * their verbatim notices ride in `THIRD-PARTY-NOTICES.txt`. Versions are the
- * installed ones — the test keeps the set complete and pins lamejs.
+ * Everything bundled into the app: the `package.json` runtime dependencies plus
+ * Workbox, which vite-plugin-pwa injects into the service worker at build time
+ * (it emits `dist/workbox-*.js` with no notice of its own, so the notice has to
+ * ride here). lamejs is first and carries the copyleft note; the rest are
+ * permissive (MIT/ISC) and their verbatim notices ride in
+ * `THIRD-PARTY-NOTICES.txt`. Versions are the installed ones — the test pins
+ * every entry and keeps the dependency set complete.
  */
 export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   {
@@ -52,7 +60,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "LGPL-3.0",
     role: "MP3 encoder",
     copyright: "© Alex Zhukov — a fork of lamejs, based on LAME",
-    homepage: "https://github.com/shijinyu/lamejs",
     note: "The only copyleft component. It sits behind one module (encodeMp3, run in a Web Worker), so you may replace it with your own build of lamejs under the LGPL.",
     acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
     noticeMarker: "LAME",
@@ -62,7 +69,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "19.2.8",
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
-    homepage: "https://react.dev",
     noticeMarker: "Meta Platforms",
   },
   {
@@ -70,7 +76,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "19.2.8",
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
-    homepage: "https://react.dev",
     noticeMarker: "Meta Platforms",
   },
   {
@@ -78,7 +83,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "8.0.3",
     spdx: "ISC",
     copyright: "© 2016 Jake Archibald",
-    homepage: "https://github.com/jakearchibald/idb",
     noticeMarker: "Jake Archibald",
   },
   {
@@ -86,7 +90,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "2.1.1",
     spdx: "MIT",
     copyright: "© Luke Edwards",
-    homepage: "https://github.com/lukeed/clsx",
     noticeMarker: "Luke Edwards",
   },
   {
@@ -94,7 +97,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "3.6.0",
     spdx: "MIT",
     copyright: "© 2021 Dany Castillo",
-    homepage: "https://github.com/dcastil/tailwind-merge",
     noticeMarker: "Dany Castillo",
   },
   {
@@ -102,8 +104,16 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "0.8.3",
     spdx: "MIT",
     copyright: "© 2026 Arjun Barrett",
-    homepage: "https://github.com/101arrowz/fflate",
     noticeMarker: "Arjun Barrett",
+  },
+  {
+    name: "workbox",
+    version: "7.4.1",
+    spdx: "MIT",
+    role: "service worker, built by vite-plugin-pwa",
+    copyright: "© Google LLC",
+    pinPackage: "workbox-build",
+    noticeMarker: "Google",
   },
 ];
 

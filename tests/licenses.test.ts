@@ -59,9 +59,10 @@ describe("third-party licence disclosure", () => {
   });
 
   it.each(thirdPartyLicenses)("pins $name to the installed version", (lib) => {
-    // A drift here means a bundled dependency was bumped but the notice and
-    // the panel still advertise the old version (George G6).
-    expect(lib.version).toBe(installedVersion(lib.name));
+    // A drift here means a bundled component was bumped but the notice and the
+    // panel still advertise the old version (George G6). Workbox shows its
+    // family name but resolves to `workbox-build` in node_modules.
+    expect(lib.version).toBe(installedVersion(lib.pinPackage ?? lib.name));
   });
 });
 

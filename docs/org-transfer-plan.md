@@ -107,8 +107,9 @@ None of these block the move; siblings mostly lack them too.
 - **D5c — Name the technical lead** in `AGENTS.md` (feeds D1).
 - CODEOWNERS / PR / issue templates: **above** org norm (no sibling has them).
   Skip unless wanted.
-- **lamejs LGPL attribution (#36)** — the one open licensing item; unrelated to
-  the org move but should close before a public release.
+- **lamejs LGPL attribution (#36)** — done in PR #144 (pending merge): every
+  bundled component's licence and notice ship reachable in-app under **Menu →
+  About & licenses**. Unrelated to the org move; closes before a public release.
 
 ## Already done (don't redo)
 

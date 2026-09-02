@@ -210,8 +210,9 @@ single module boundary (`encodeMp3`, run in a Web Worker), so it can be replaced
 under the LGPL relink right.
 
 Every bundled open-source component is disclosed **inside the app**, reachable
-on the phone under **Menu → About & licenses**: each dependency with its licence
-and copyright, and the verbatim licence texts (MIT, the collected third-party
-notices, GNU LGPL v3, GNU GPL v3) read in-drawer. The texts also ship (and
-precache for offline) under [`public/licenses/`](public/licenses/), so a
-translator in the field is not sent to `node_modules` to find them (#36).
+on the phone under **Menu → About & licenses**: each runtime dependency and
+Workbox (which builds the service worker) with its licence and copyright, and
+the verbatim licence texts (MIT, the collected third-party notices, GNU LGPL v3,
+GNU GPL v3) read in-drawer. The texts also ship (and precache for offline) under
+[`public/licenses/`](public/licenses/), so a translator in the field is not sent
+to `node_modules` to find them (#36).
