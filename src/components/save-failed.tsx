@@ -2,7 +2,11 @@ import { useState } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
-import { recoveryHint, recoveryTitle } from "./recovery-copy";
+import {
+  recoveryAttempts,
+  recoverySafetyLine,
+  recoveryTitle,
+} from "./recovery-copy";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 
 interface SaveFailedProps {
@@ -51,10 +55,12 @@ export function SaveFailed({
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
 
-  // The guidance under Retry, never an instruction to leave the app: a failed
-  // save is RAM-only (the commit is one transaction, #38), so sending the
-  // translator off to free space would risk the OS discarding the only copy.
-  const hint = saving ? null : recoveryHint({ kind, editOnly, attempts });
+  // Shown on every failed save, never an instruction to leave the app: a failed
+  // save is RAM-only (the commit is one transaction, #38) whatever the cause, so
+  // sending the translator off to free space would risk the OS discarding the
+  // only copy. The attempt count is a fainter extra line beside it, not instead.
+  const safetyLine = saving ? null : recoverySafetyLine(editOnly);
+  const attemptsLine = saving ? null : recoveryAttempts(kind, attempts);
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
@@ -104,9 +110,15 @@ export function SaveFailed({
             onClick={onRetry}
           />
 
-          {hint && (
+          {safetyLine && (
+            <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
+              {safetyLine}
+            </p>
+          )}
+
+          {attemptsLine && (
             <p className="text-[12px]" style={{ color: "var(--s-ink-faint)" }}>
-              {hint}
+              {attemptsLine}
             </p>
           )}
 

@@ -69,8 +69,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // whole flattened buffer) without a copy.
       const merged = mergeTake(take.existing, take.recorded, take.offset);
       // Clip and take in ONE transaction (`saveTake`): a failure on either rolls
-      // back both, so a quota-failed save leaves no orphaned clip eating the
-      // space the recovery screen tells the translator to free (#38). The
+      // back both, so a quota-failed save leaves no orphaned clip consuming the
+      // space the phone has just run out of (#38). The
       // Finished mark rides the take, applied atomically here — so a retry
       // re-applies it, and it can never be clobbered by the same write's
       // demote-to-draft the way a separate write after it would be.
