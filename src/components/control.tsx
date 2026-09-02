@@ -77,16 +77,27 @@ export function Control({
       <Icon name={icon} size={size} />
     </button>
   );
-  if (!shownHint?.icon) return button;
-  // The badge is decorative for AT — the reason is already in the name — and a
-  // SIBLING of the button, so the dimming that marks the control inert does not
-  // also dim the mark explaining it.
+  // The wrapper is keyed on whether this control CAN carry a hint (the prop was
+  // passed at all), never on whether it currently does. Switching the rendered
+  // root between <button> and <span> as a row gains a badge would remount the
+  // button and DESTROY it while focused — and with the sheet and list both
+  // `inert` and the menu's focus grab bound to `[open]`, focus would land
+  // nowhere behind the scrim. Reachable: ≡ open mid-take, a #59 interruption
+  // flips `busy`, and the focused Mark row gains its badge (George, round 3).
+  // With a stable root, gaining a badge adds an inner sibling and mutates
+  // attributes on the same button.
+  if (hint === undefined) return button;
   return (
     <span className="control-hinted">
       {button}
-      <span className="control-hint" aria-hidden="true">
-        <Icon name={shownHint.icon} size={12} />
-      </span>
+      {/* Decorative for AT — the reason is already in the accessible name — and
+          a SIBLING of the button, so the dimming that marks the control inert
+          does not also dim the mark explaining it. */}
+      {shownHint?.icon ? (
+        <span className="control-hint" aria-hidden="true">
+          <Icon name={shownHint.icon} size={12} />
+        </span>
+      ) : null}
     </span>
   );
 }

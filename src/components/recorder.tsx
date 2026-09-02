@@ -884,9 +884,11 @@ export function Recorder({
   // `reason !== null`, so the cue that explains a grey row and the gate that
   // greys it are one derivation, not two switches. `!idleEditable` is exactly
   // `!view || takeActive`, spelled out here as the two inputs.
+  const starting = state === "requesting";
   const editReason = editRowReason({
     hasView: view !== null,
     takeActive,
+    starting,
     denied,
     hasAudio,
     canPaste: editor.canPaste,
@@ -894,6 +896,7 @@ export function Recorder({
   const eraseReason = eraseRowReason({
     hasView: view !== null,
     takeActive,
+    starting,
     hasClip: view?.hasClip ?? false,
   });
 
@@ -924,6 +927,7 @@ export function Recorder({
   const markReason = markRowReason({
     hasView: view !== null,
     takeCommitting: isClosing || busy,
+    starting,
     canFinish: finishedState !== "disabled",
   });
 
@@ -1059,6 +1063,7 @@ export function Recorder({
                   // existing clip and the #110 insert centerline stay visible.
                   <LiveScope
                     readScope={audio.readScope}
+                    peekScope={audio.peekScope}
                     active={recording}
                     headFraction={CENTER_FRACTION}
                     height={200}

@@ -24,6 +24,7 @@ import { strings } from "@/components/strings";
 const editOpen = {
   hasView: true,
   takeActive: false,
+  starting: false,
   denied: false,
   hasAudio: true,
   canPaste: false,
@@ -65,6 +66,7 @@ describe("editRowReason — reproduces the shipped gate", () => {
       editRowReason({
         hasView: true,
         takeActive: true,
+        starting: false,
         denied: true,
         hasAudio: false,
         canPaste: false,
@@ -79,7 +81,12 @@ describe("editRowReason — reproduces the shipped gate", () => {
   });
 });
 
-const eraseOpen = { hasView: true, takeActive: false, hasClip: true };
+const eraseOpen = {
+  hasView: true,
+  takeActive: false,
+  starting: false,
+  hasClip: true,
+};
 
 describe("eraseRowReason — reproduces the shipped gate", () => {
   it("is enabled at idle with a stored clip", () => {
@@ -180,7 +187,12 @@ describe("rowHint — which reasons carry a cue", () => {
 });
 
 describe("markRowReason — the third row in the same menu (round 3)", () => {
-  const markOpen = { hasView: true, takeCommitting: false, canFinish: true };
+  const markOpen = {
+    hasView: true,
+    takeCommitting: false,
+    starting: false,
+    canFinish: true,
+  };
 
   it("is enabled once a take will exist on close", () => {
     expect(markRowReason(markOpen)).toBeNull();
@@ -207,7 +219,49 @@ describe("markRowReason — the third row in the same menu (round 3)", () => {
 
   it("the commit window outranks the never-recorded reason", () => {
     expect(
-      markRowReason({ hasView: true, takeCommitting: true, canFinish: false })
+      markRowReason({
+        hasView: true,
+        takeCommitting: true,
+        starting: false,
+        canFinish: false,
+      })
     ).toBe("uncommitted-take");
+  });
+});
+
+/**
+ * The `requesting` race (round 3): Record tapped, ≡ opened before
+ * `getUserMedia` resolves. No audio exists yet, so the uncommitted-take words
+ * ("…to save the recording") would promise a save that cannot happen — and
+ * `close()` does not treat `requesting` as an attempted capture, so following
+ * them abandons the in-flight start. Every row that can be seen in that window
+ * must say something else.
+ */
+describe("the starting race — all three rows, distinct words", () => {
+  it("outranks the uncommitted-take reason on every row", () => {
+    expect(
+      editRowReason({ ...editOpen, takeActive: true, starting: true })
+    ).toBe("starting");
+    expect(
+      eraseRowReason({ ...eraseOpen, takeActive: true, starting: true })
+    ).toBe("starting");
+    expect(
+      markRowReason({
+        hasView: true,
+        takeCommitting: true,
+        starting: true,
+        canFinish: true,
+      })
+    ).toBe("starting");
+  });
+
+  it("says something other than the save-the-recording copy", () => {
+    const starting = rowHint("starting");
+    expect(starting).toEqual({ icon: "alert", label: strings.micStarting });
+    expect(starting?.label).not.toBe(strings.blockedByTake);
+    // The whole point: it must not send anyone to a control that would abandon
+    // the in-flight start, so it names no control at all.
+    expect(starting?.label).not.toContain(strings.closeRecorder);
+    expect(starting?.label).not.toContain(strings.menuClose);
   });
 });

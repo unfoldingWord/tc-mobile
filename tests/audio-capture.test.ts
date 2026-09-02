@@ -363,3 +363,37 @@ describe("captureWindow — the R→L capture geometry", () => {
     });
   });
 });
+
+/**
+ * The property `use-recorder`'s `peekScope` is built on, and the reason the two
+ * pulls must never be interchanged: `toScope()` RENDERS the ring, `push()`
+ * advances it. `LiveScope`'s activation paint used the advancing pull, so every
+ * pause→resume edge folded an extra column and the waveform ran ahead of real
+ * time (George, #139 round 3). If `toScope` ever gained a side effect, the peek
+ * would silently reintroduce that bug — so it is pinned here.
+ */
+describe("toScope does not advance the ring (the peek contract)", () => {
+  it("repeated reads return the same columns and the same count", () => {
+    const ring = createCapturePeaks(4);
+    ring.push(Float32Array.from([0.5, -0.25]));
+    ring.push(Float32Array.from([0.75, -0.5]));
+
+    const first = ring.toScope();
+    // The min/max arrays are one reused pair, so snapshot by value.
+    const count = first.count;
+    const min = Array.from(first.min);
+    const max = Array.from(first.max);
+
+    for (let i = 0; i < 5; i++) {
+      const again = ring.toScope();
+      expect(again.count).toBe(count);
+      expect(Array.from(again.min)).toEqual(min);
+      expect(Array.from(again.max)).toEqual(max);
+    }
+
+    // A real push still moves it — proving the assertion above is not vacuous.
+    ring.push(Float32Array.from([-1, 1]));
+    const moved = ring.toScope();
+    expect(Array.from(moved.max)).not.toEqual(max);
+  });
+});

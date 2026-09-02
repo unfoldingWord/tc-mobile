@@ -13,6 +13,12 @@ interface LiveScopeProps {
    */
   readScope: () => CaptureScope | null;
   /**
+   * The ring as it stands, WITHOUT advancing it. Used for the activation/remount
+   * paint only; the animation loop uses `readScope`, which folds a column in.
+   * Passing `readScope` here would double-count a column per active edge.
+   */
+  peekScope: () => CaptureScope | null;
+  /**
    * Whether capture is live. While true the loop pulls and paints; while false
    * the loop stops and the canvas is left FROZEN on its last frame — a paused
    * take must not keep scrolling (a paused mic still emits frames, R-B6), and
@@ -52,6 +58,7 @@ interface LiveScopeProps {
  */
 export function LiveScope({
   readScope,
+  peekScope,
   active,
   headFraction = 0.5,
   height = 200,
@@ -65,6 +72,12 @@ export function LiveScope({
   useEffect(() => {
     readScopeRef.current = readScope;
   }, [readScope]);
+  // Same latching for the peek — a fresh identity per render must not restart
+  // the loop, and the layout effect below reads it through this ref.
+  const peekScopeRef = useRef(peekScope);
+  useEffect(() => {
+    peekScopeRef.current = peekScope;
+  }, [peekScope]);
   // The last scope painted, so a resize while FROZEN (paused / processing /
   // close) can repaint at the new size. Its arrays are the ring's reused pair —
   // safe to re-read only while no push is happening, which is exactly the
@@ -146,11 +159,15 @@ export function LiveScope({
       // the first rAF. A first-take Resume after a preview REMOUNTS this canvas
       // (the preview unmounted it), and without this the stage showed a blank
       // frame while the ring — which `resume()` does not reset — waited to be
-      // drawn (#130). `resume()` sets the recording flag synchronously before
-      // React commits, so the reader already returns the ring here; a null (tap
-      // not wired) leaves the canvas as it was, the same as the loop below.
-      // Read ONCE: every `readScope()` folds a column into the ring.
-      const first = readScopeRef.current();
+      // drawn (#130).
+      //
+      // This MUST be the non-mutating peek. `readScope` advances the ring, and
+      // this effect re-runs on every `active` edge, so using it here folded an
+      // extra column into every pause→resume cycle — the waveform ran ahead of
+      // real time, ~5% of the window after ten cycles (George, round 3). The peek
+      // also draws when the tap is refusing frames, which is exactly the frozen
+      // ring this paint exists to show.
+      const first = peekScopeRef.current();
       if (first) {
         lastScopeRef.current = first;
         paint(first);

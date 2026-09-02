@@ -110,6 +110,10 @@ export const strings = {
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
+  // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
+  // resolves. No audio exists yet, so this must NOT promise a save — and must
+  // not send anyone to a control that would abandon the in-flight start.
+  micStarting: "The microphone is still starting.",
   nothingRecorded: "Nothing recorded yet.",
   nothingStored: "Nothing saved to erase.",
 

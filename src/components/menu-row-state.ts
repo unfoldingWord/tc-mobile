@@ -22,7 +22,12 @@ import { strings } from "./strings";
  * every other reason because it is the one the translator can act on from here.
  */
 export type RowReason =
-  "uncommitted-take" | "denied" | "no-segment" | "no-audio" | "no-clip";
+  | "uncommitted-take"
+  | "starting"
+  | "denied"
+  | "no-segment"
+  | "no-audio"
+  | "no-clip";
 
 interface EditRowInputs {
   /** A segment is loaded (`view !== null`). */
@@ -33,6 +38,12 @@ interface EditRowInputs {
    * is strictly idle (Model A: edits, then a record commits on close).
    */
   readonly takeActive: boolean;
+  /**
+   * The mic is being REQUESTED — `getUserMedia` has not resolved, so no audio
+   * exists yet. A subset of `takeActive`, split out because the uncommitted-take
+   * words ("…to save the recording") promise a save that cannot happen here.
+   */
+  readonly starting: boolean;
   /** The permission panel owns the body — entering edit there strands the toolbar. */
   readonly denied: boolean;
   /** The working buffer has samples to edit. */
@@ -51,6 +62,7 @@ interface EditRowInputs {
  * `idleEditable = hasView && !takeActive`.
  */
 export function editRowReason(i: EditRowInputs): RowReason | null {
+  if (i.starting) return "starting";
   if (i.takeActive) return "uncommitted-take";
   if (!i.hasView) return "no-segment";
   if (i.denied) return "denied";
@@ -61,6 +73,8 @@ export function editRowReason(i: EditRowInputs): RowReason | null {
 interface EraseRowInputs {
   readonly hasView: boolean;
   readonly takeActive: boolean;
+  /** The mic is being requested — see `EditRowInputs.starting`. */
+  readonly starting: boolean;
   /** A stored clip exists — a first, uncommitted recording has nothing on disk. */
   readonly hasClip: boolean;
 }
@@ -71,6 +85,7 @@ interface EraseRowInputs {
  * live capture is nonsensical (George R-B6), so the take wins here too.
  */
 export function eraseRowReason(i: EraseRowInputs): RowReason | null {
+  if (i.starting) return "starting";
   if (i.takeActive) return "uncommitted-take";
   if (!i.hasView || !i.hasClip) return "no-clip";
   return null;
@@ -106,6 +121,13 @@ export interface RowHint {
  * `aria-disabled` (focusable, announced, inert to activation) rather than natively
  * disabled, which is what puts the reason in reach of keyboard and switch users.
  *
+ * `"starting"` is split from `"uncommitted-take"` because the words differ, not
+ * the gate: while `getUserMedia` is still resolving there is no audio yet, so
+ * "…to save the recording" would promise a save that cannot happen — and `close()`
+ * does not treat `requesting` as an attempted capture, so a translator who
+ * followed it would abandon the in-flight start (George, round 3). Reachable as a
+ * short race: tap Record, then ≡ before the mic resolves.
+ *
  * `denied` and `no-segment` carry nothing because the menu opener is itself
  * disabled in both states (`recorder.tsx`, `disabled={!view || isClosing ||
  * denied}`), so no row is ever seen under them.
@@ -114,6 +136,8 @@ export function rowHint(reason: RowReason | null): RowHint | null {
   switch (reason) {
     case "uncommitted-take":
       return { icon: "alert", label: strings.blockedByTake };
+    case "starting":
+      return { icon: "alert", label: strings.micStarting };
     case "no-audio":
       return { icon: "alert", label: strings.nothingRecorded };
     case "no-clip":
@@ -134,6 +158,8 @@ interface MarkRowInputs {
    * `addTake` (the record-and-mark-done-in-one-sheet flow, G8/G10).
    */
   readonly takeCommitting: boolean;
+  /** The mic is being requested — see `EditRowInputs.starting`. */
+  readonly starting: boolean;
   /** A finished mark can stick — false on a segment that has never been recorded. */
   readonly canFinish: boolean;
 }
@@ -148,6 +174,7 @@ interface MarkRowInputs {
  * "one derivation" #135 claimed did not actually cover the menu (George, round 2).
  */
 export function markRowReason(i: MarkRowInputs): RowReason | null {
+  if (i.starting) return "starting";
   if (i.takeCommitting) return "uncommitted-take";
   if (!i.hasView || !i.canFinish) return "no-audio";
   return null;
