@@ -209,8 +209,9 @@ keep it** ([ADR 0003](docs/decisions/0003-mp3-encoder.md)). lamejs sits behind a
 single module boundary (`encodeMp3`, run in a Web Worker), so it can be replaced
 under the LGPL relink right.
 
-The licence texts (MIT, GNU LGPL v3, GNU GPL v3) and the third-party attribution
-ship **inside the app** — reachable on the phone under **Menu → About &
-licenses**, and served (and precached for offline) from
-[`public/licenses/`](public/licenses/) — so a translator in the field is not
-sent to `node_modules` to find them (#36).
+Every bundled open-source component is disclosed **inside the app**, reachable
+on the phone under **Menu → About & licenses**: each dependency with its licence
+and copyright, and the verbatim licence texts (MIT, the collected third-party
+notices, GNU LGPL v3, GNU GPL v3) read in-drawer. The texts also ship (and
+precache for offline) under [`public/licenses/`](public/licenses/), so a
+translator in the field is not sent to `node_modules` to find them (#36).

@@ -45,6 +45,11 @@ export default defineConfig({
         // 598 thumbnails push the precache past the 2 MiB default.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: "index.html",
+        // The licence texts (#36) are real files, not app routes: keep the SPA
+        // navigate-fallback from answering a `/licenses/*.txt` miss with the app
+        // shell instead of the licence (George G1). The About panel reads them
+        // by fetch, not navigation, so this only hardens the edge.
+        navigateFallbackDenylist: [/\.txt$/],
         cleanupOutdatedCaches: true,
       },
       manifest: {

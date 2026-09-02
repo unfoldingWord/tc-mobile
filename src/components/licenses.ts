@@ -1,67 +1,114 @@
 /**
- * The app's own licence and every third-party licence it must disclose.
+ * Every open-source component the app bundles, and every licence it must
+ * disclose.
  *
- * lamejs is LGPL-3.0 in an otherwise-MIT app (ADR 0003). The LGPL obligations
- * (#36) require the licence text and attribution to be reachable by someone
- * holding the phone — not only in `node_modules`. `AboutPanel` renders this
- * table; the verbatim licence texts ship under `public/licenses/` (served by
- * the deploy and precached by the service worker, so they resolve offline in
- * the field) and are linked by `files`.
+ * The app is MIT, with one copyleft dependency — the `@breezystack/lamejs` MP3
+ * encoder (LGPL-3.0, ADR 0003). The LGPL and the MIT/ISC clauses of the other
+ * bundled runtime dependencies all require their licence text and copyright to
+ * travel with the distribution; #36 makes that reachable by someone holding the
+ * phone rather than only in `node_modules`. `AboutPanel` renders this table and
+ * reads the linked texts in-drawer; the verbatim texts ship under
+ * `public/licenses/` (served and precached, so they resolve offline).
  *
  * One table so the notice cannot silently drift from what is installed:
- * `tests/licenses.test.ts` pins the lamejs entry to the resolved dependency's
- * version and asserts every `href` under `/licenses/` maps to a file that
- * actually ships in `public/`.
+ * `tests/licenses.test.ts` asserts every `dependencies` entry is disclosed
+ * here, pins the copyleft lamejs entry to the resolved dependency, and asserts
+ * the linked texts actually ship.
  */
 
-/** A licence document that ships under `public/licenses/`, reachable at `href`. */
-interface LicenseFile {
-  readonly label: string;
-  readonly href: string;
-}
-
-/** A bundled open-source dependency and the licence it is offered under. */
+/** A bundled runtime dependency and the licence it is offered under. */
 export interface ThirdPartyLicense {
   readonly name: string;
   readonly version: string;
-  /** What it does here, in plain terms. */
-  readonly role: string;
   readonly spdx: string;
   readonly copyright: string;
   readonly homepage: string;
-  /** The one thing the LGPL relink right needs the reader to know. */
-  readonly note: string;
-  readonly files: readonly LicenseFile[];
+  /** What it does here, in plain terms. Only the ones worth naming carry it. */
+  readonly role?: string;
+  /** A note the licence makes worth surfacing — the LGPL relink right. */
+  readonly note?: string;
+  /** An upstream the licence asks be acknowledged (LAME, for lamejs). */
+  readonly acknowledges?: { readonly label: string; readonly href: string };
 }
 
-/** The project's own licence. */
-export const appLicense = {
-  name: "translationCore Mobile",
-  holder: "unfoldingWord",
-  spdx: "MIT",
-  file: { label: "MIT licence", href: "/licenses/MIT.txt" },
-} as const;
-
 /**
- * Third-party code shipped in the bundle. Only `@breezystack/lamejs` carries a
- * copyleft licence; it is the whole reason this surface exists. Its `version`
- * is pinned here and checked against the installed package by the test, so an
- * upgrade that changes the attribution can't pass silently.
+ * The bundled runtime dependencies (`package.json` `dependencies`). lamejs is
+ * first and carries the copyleft note; the rest are permissive (MIT/ISC) and
+ * their verbatim notices ride in `THIRD-PARTY-NOTICES.txt`. Versions are the
+ * installed ones — the test keeps the set complete and pins lamejs.
  */
 export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   {
     name: "@breezystack/lamejs",
     version: "1.2.7",
-    role: "MP3 encoder",
     spdx: "LGPL-3.0",
+    role: "MP3 encoder",
     copyright: "© Alex Zhukov — a fork of lamejs, based on LAME",
     homepage: "https://github.com/shijinyu/lamejs",
     note: "The only copyleft component. It sits behind one module (encodeMp3, run in a Web Worker), so you may replace it with your own build of lamejs under the LGPL.",
-    files: [
-      { label: "GNU LGPL v3", href: "/licenses/GNU-LGPL-3.0.txt" },
-      { label: "GNU GPL v3", href: "/licenses/GNU-GPL-3.0.txt" },
-    ],
+    acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
   },
+  {
+    name: "react",
+    version: "19.2.8",
+    spdx: "MIT",
+    copyright: "© Meta Platforms, Inc. and affiliates",
+    homepage: "https://react.dev",
+  },
+  {
+    name: "react-dom",
+    version: "19.2.8",
+    spdx: "MIT",
+    copyright: "© Meta Platforms, Inc. and affiliates",
+    homepage: "https://react.dev",
+  },
+  {
+    name: "idb",
+    version: "8.0.3",
+    spdx: "ISC",
+    copyright: "© 2016 Jake Archibald",
+    homepage: "https://github.com/jakearchibald/idb",
+  },
+  {
+    name: "clsx",
+    version: "2.1.1",
+    spdx: "MIT",
+    copyright: "© Luke Edwards",
+    homepage: "https://github.com/lukeed/clsx",
+  },
+  {
+    name: "tailwind-merge",
+    version: "3.6.0",
+    spdx: "MIT",
+    copyright: "© 2021 Dany Castillo",
+    homepage: "https://github.com/dcastil/tailwind-merge",
+  },
+  {
+    name: "fflate",
+    version: "0.8.3",
+    spdx: "MIT",
+    copyright: "© 2026 Arjun Barrett",
+    homepage: "https://github.com/101arrowz/fflate",
+  },
+];
+
+/** A verbatim licence text shipped under `public/licenses/`, read in-drawer. */
+export interface LicenseText {
+  readonly label: string;
+  readonly href: string;
+}
+
+/**
+ * The licence texts that ship with the app, in reading order: the app's own
+ * MIT, the collected third-party notices (every permissive dependency's
+ * verbatim licence and copyright), and the two GNU texts lamejs's LGPL-3.0
+ * requires (LGPL v3 incorporates the GPL by reference, so both ship).
+ */
+export const licenseTexts: readonly LicenseText[] = [
+  { label: "This app — MIT licence", href: "/licenses/MIT.txt" },
+  { label: "Third-party notices", href: "/licenses/THIRD-PARTY-NOTICES.txt" },
+  { label: "GNU LGPL v3 — lamejs", href: "/licenses/GNU-LGPL-3.0.txt" },
+  { label: "GNU GPL v3 — lamejs", href: "/licenses/GNU-GPL-3.0.txt" },
 ];
 
 /** A piece of bundled content and the terms it is offered under. */

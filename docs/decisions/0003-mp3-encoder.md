@@ -43,14 +43,14 @@ obligations are actually met, so they are listed here rather than assumed.
 
 ### What we owe, concretely
 
-1. **Keep the encoder behind a replaceable boundary.** **Not yet true.**
-   `src/lib/audio/mp3.ts:21` imports `Mp3Encoder` statically; there is no
-   dynamic `import()` of lamejs anywhere in `src/`. **#34** moves the encoder
-   into a Web Worker, which is a _stronger_ boundary than a dynamic import would
-   be — so the licensing position improves as a side effect of that performance
-   work. Until #34 lands, this obligation is outstanding, not met. (Not "D3":
-   D3 is transcode-on-Finished, which is what makes #34 a blocker rather than a
-   nicety. They are different tickets.)
+1. **Keep the encoder behind a replaceable boundary.** **Done (#34).**
+   `src/lib/audio/mp3.ts` (the static `Mp3Encoder` import) is now imported only
+   by `src/hooks/mp3.worker.ts`, so Vite bundles lamejs into its own
+   `mp3.worker-*.js` chunk and it is absent from the main bundle — a _stronger_
+   boundary than a dynamic `import()` would be. #34 moved the encoder into that
+   Web Worker as a side effect of the threading work, so the licensing position
+   improved with it. (Not "D3": D3 is transcode-on-Finished, which is what made
+   #34 a blocker rather than a nicety. They are different tickets.)
 2. **Keep one module interface in front of it.** `encodeMp3` is the only entry
    point, so a user exercising their LGPL right to relink has exactly one thing
    to replace. Do not scatter lamejs calls.

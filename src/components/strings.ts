@@ -159,10 +159,16 @@ export const strings = {
     "A free and open-source app. Everything you record stays on this phone.",
   aboutAppLicense: "This app is offered under the MIT licence.",
   aboutThirdParty: "Open-source components",
+  aboutTexts: "Licence texts",
   aboutContent: "Bundled content",
-  // Spoken labels for the licence-text and project links, which show terse
-  // visible text (a licence short-name, a package name).
-  aboutReadLicense: (name: string): string => `Read the ${name} licence text`,
+  // The licence texts open in-drawer (no new tab), so their controls are
+  // buttons: this is the spoken action, and the two states while it loads.
+  aboutReadText: (name: string): string => `Read ${name}`,
+  aboutBack: "Back to the list",
+  aboutTextLoading: "Loading the licence text.",
+  aboutTextFailed: "Could not load the licence text.",
+  // Spoken labels for the off-phone links (a project page, a CC deed), which
+  // show terse visible text (a package name, a licence short-name).
   aboutVisitSource: (name: string): string => `Open the ${name} project page`,
   aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
 } as const;

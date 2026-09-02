@@ -9,8 +9,10 @@
  *
  * NOTE ON LICENSING: lamejs is LGPL-3.0 while this repo is MIT. Bundling it
  * is the usual LGPL-in-a-JS-bundle grey area. **Settled 2026-08-23: keep
- * lamejs** — ADR 0003, docs/decisions/0003-mp3-encoder.md. What remains is the
- * notice and attribution work (#36), not a product call. Do not re-open it.
+ * lamejs** — ADR 0003, docs/decisions/0003-mp3-encoder.md. This module is
+ * imported only by `hooks/mp3.worker.ts`, so lamejs lands in that worker chunk
+ * alone — the replaceable boundary the LGPL wants (ADR 0003 item 1). The notice
+ * and attribution obligation is met by #36. Do not re-open the keep decision.
  *
  * NOTE ON THREADING: encoding a long chapter is CPU-bound and will jank the
  * UI if called on the main thread. `onProgress` exists so a caller can drive
