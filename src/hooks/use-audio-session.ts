@@ -399,6 +399,21 @@ export function useAudioSession(): UseAudioSession {
               if (!session.isCurrent(token)) return;
               session.release(token);
               setPlayingBuffer(false);
+              // A preview of a PAUSED take borrowed the mic's floor (approach
+              // B, above). When it ends on its own, hand the floor back to the
+              // still paused-alive mic — the same reclaim `resumeRecording`
+              // does — so "a paused mic holds the floor" is an invariant rather
+              // than something only Resume/Back restore. Without this a later
+              // `claim("take")` that did not pass `preemptPausedMic` would be
+              // admitted under an open paused mic, and Resume would then stop
+              // it mid-sound (#129). Replay is unaffected: `playBuffer(..., {
+              // preemptPausedMic: true })` handles `live === "mic"`.
+              if (recorderStateRef.current === "paused") {
+                micTokenRef.current = reclaimMic(
+                  session,
+                  micTokenRef.current
+                ).token;
+              }
             },
           });
           // A `false` here means the handle was built for a claim that has since

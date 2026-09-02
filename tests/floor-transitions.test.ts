@@ -84,3 +84,27 @@ describe("reclaimMic", () => {
     expect(session.live).toBe("mic");
   });
 });
+
+describe("an ended preview hands the floor back to the paused mic (#129)", () => {
+  it("reclaimMic after the preview's release puts the mic back on the floor", () => {
+    const session = createAudioSession();
+    session.claim("mic"); // a paused take holds the floor
+    const micToken = preemptPausedMic(session, true, 1); // preview preempts it
+    const token = session.claim("take") as number;
+    session.settle(token, handle());
+
+    // The preview ends on its own: `onEnded` releases the take's claim...
+    session.release(token);
+    expect(session.live).toBeNull(); // ...and nothing holds the floor — the gap #129 names
+
+    // ...so the hook must reclaim for the still paused-alive mic, exactly as
+    // `resumeRecording` does. Otherwise a later `claim("take")` without the
+    // preempt would sound under an open paused mic.
+    const reclaim = reclaimMic(session, micToken);
+
+    expect(reclaim.reclaimed).toBe(true);
+    expect(reclaim.token).not.toBeNull();
+    expect(session.live).toBe("mic");
+    expect(session.claim("take")).toBeNull(); // a plain take is refused again
+  });
+});
