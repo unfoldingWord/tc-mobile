@@ -13,6 +13,7 @@ import {
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
+import { fitToFrames } from "@/lib/audio/edit";
 import { preemptPausedMic, reclaimMic } from "@/lib/audio/floor-transitions";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
@@ -304,7 +305,10 @@ export function useAudioSession(): UseAudioSession {
           const samples =
             audio.clip.encoding === "pcm"
               ? audio.clip.samples
-              : await decodeMp3ToCanonical(audio.clip.mp3);
+              : fitToFrames(
+                  await decodeMp3ToCanonical(audio.clip.mp3),
+                  audio.clip.meta.frameCount
+                );
           if (!session.isCurrent(token)) return;
 
           const handle = await playSamples(samples, {

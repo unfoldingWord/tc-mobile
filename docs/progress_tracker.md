@@ -69,9 +69,22 @@ of a LAME MP3 (and on an `"interrupted"` iOS context), encode time of a real
 chapter on a low-end phone, the first-launch sweep over a device full of
 finished segments, battery/heat. Still no phone has run B7 share either.
 
+### Review round 1 (Seth's session, both reviewers @ `d00b4c5`)
+
+Frank 1 × P2, George 2 × P2 + 3 × P3, no P1. Fixed in the round-2 commit:
+**F1/G3** every MP3 decode now fitted to the recorded `frameCount` via a pure
+`fitToFrames` (recorder edit buffer, playback, export — the recorder path would
+have made the decoder's padding permanent and compounding); **G1** one
+app-wide encoder lane (`withEncoder`), the sweep takes it before loading a clip,
+a share holds it for its whole build; **G2** the main-thread fallback dropped —
+its static import kept lamejs in the app bundle (0 `Mp3Encoder` in the index
+chunk now, 1 in the worker chunk, checked in `dist/`); **G4** the `clipData`
+comment. **G5** DEFERRED to #137 (UX call, intersects #106/#135).
+
 ### Next steps
 
-1. Frank + George rounds on the PR; triage comment per round.
+1. Round 2: Frank + George re-run at the new head (the DRI's session runs them;
+   no codex/grok in the build session); triage comment per round.
 2. On-device pass (iOS + Android) on staging after promotion — the list above,
    plus the B7 share checks already owed.
 3. Rest of B7 — Template Library (Tim's Q2 call).

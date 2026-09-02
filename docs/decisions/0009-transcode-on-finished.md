@@ -29,19 +29,30 @@ every segment takes. #34 named three things this batch had to settle:
 spawns one worker per encode, transfers the PCM buffer in (moved, not copied),
 transfers the MP3 out, and **terminates the worker on every exit** — so a
 cancelled share (`AbortSignal`) really stops mid-encode instead of finishing for
-nobody. Where `Worker` does not exist the encode runs inline, the pre-B8
-behaviour.
+nobody. There is **no inline fallback**: an earlier draft fell back to the
+main-thread encoder where `Worker` was absent, and that one static import kept
+lamejs in the app bundle (and duplicated it into the worker chunk) — round-1
+George G2, verified against `dist/`. Every target phone has `Worker`; where it
+is missing the encode rejects with a clear error.
+
+**One encoder lane.** Every encode-bearing job — a Finished transcode, a Share
+Chapter, a Share Book — runs through `withEncoder`, which serialises them
+app-wide. The sweep takes the lane before it loads a clip and a share holds it
+for its whole build, so a segment's PCM in one worker never coexists with a
+chapter's PCM in another (round-1 George G1). Peak is one job's audio.
 
 `lib/` never sees a worker. The export and transcode paths take an
 `AudioCodec` — `encodeMp3` and `decodeMp3` as two async functions — and the hook
-layer fills it in (`createAudioCodec`). Tests fill it with the synchronous
+layer fills it in (`withEncoder`). Tests fill it with the synchronous
 encoder wrapped in a promise and a fake decoder, which is what keeps the whole
 gather → encode and encode → commit path unit-tested in Node.
 
-This is also ADR 0003's outstanding obligation 1: Vite emits the worker and its
-lamejs import as their **own chunk** (`dist/assets/mp3.worker-*.js`, ~170 kB),
-so the LGPL encoder now sits behind one message interface rather than inside the
-app bundle. The notice and attribution work stays #36.
+This is also ADR 0003's outstanding obligation 1: with the fallback gone, Vite
+emits the worker and its lamejs import as their **own chunk**
+(`dist/assets/mp3.worker-*.js`, ~170 kB) and the app bundle carries no
+`Mp3Encoder` — checked by grepping `dist/` at the PR's round-2 head, not
+assumed. The LGPL encoder sits behind one message interface. The notice and
+attribution work stays #36.
 
 ### 2. The commit is one strict-durability transaction that re-checks the world
 
@@ -83,9 +94,13 @@ clip's `generation`**; the next Finished transcodes again and increments it.
 
 `ClipMeta.generation` = lossy encode passes the audio has been through: 0 fresh,
 1 transcoded once, 2 decoded-edited-transcoded, and so on. An erase resets it.
-Nothing reads it yet. It exists so the Q5 call — disallow, warn, or leave it —
-can be made later on evidence from real devices rather than argued in the
-abstract.
+The inheritance rule is "a replacement take carries the prior clip's count",
+which is exact while every save over an existing take is a merge into the
+decoded buffer — the only way the recorder saves today. If a "replace the whole
+take" gesture ever exists, that gesture must stamp 0, or fresh microphone audio
+would be counted as lossy (noted by Seth in round 1). Nothing reads it yet. It
+exists so the Q5 call — disallow, warn, or leave it — can be made later on
+evidence from real devices rather than argued in the abstract.
 
 ### Schema — v4, append-only
 
@@ -98,9 +113,13 @@ recordings come through.
 `peaks` are the Segments-row waveform (`ROW_PEAK_BUCKETS`), taken from the PCM
 just before it is dropped and stored on the MP3 clip, so listing a chapter never
 decodes audio. `frameCount`/`durationMs` stay the original PCM's: an MP3 decode
-is not sample-exact (LAME padding; decoders differ on trimming it), so the
-chapter export fits a decoded segment to its recorded length — trims a long
-decode, pads a short one — rather than let the phone's decoder move the timing.
+is not sample-exact (LAME padding; decoders differ on trimming it — Chromium
+returned 133,632 frames for 132,300), so **every** consumer of a decode fits it
+to the recorded length with `fitToFrames` (`lib/audio/edit.ts`): the chapter
+export, playback, and the recorder's edit buffer. The last matters most — the
+save stamps the buffer's length as the new `frameCount`, so an unfitted decode
+would make the padding permanent and grow it on every finish → edit cycle
+(round-1 Frank F1 / George G3).
 
 ### Also in this batch — the Share Book archive is streamed
 

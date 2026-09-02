@@ -84,7 +84,11 @@ export interface TcMobileDb extends DBSchema {
   };
   takes: { key: TakeId; value: Take; indexes: { segmentId: SegmentId } };
   clipMeta: { key: ClipId; value: ClipMeta };
-  /** Raw mono 16-bit PCM, stored as an ArrayBuffer keyed by ClipId. */
+  /**
+   * The clip's bytes as an ArrayBuffer keyed by ClipId: raw mono 16-bit PCM
+   * while the segment is being worked on, the MP3 once it is Finished (B8/D3).
+   * `clipMeta.encoding` says which; read them through `clipFromRecord`.
+   */
   clipData: { key: ClipId; value: ArrayBuffer };
 }
 

@@ -18,7 +18,7 @@
  * ordering and gap are asserted directly on samples, without decoding an MP3.
  */
 
-import { silence } from "@/lib/audio/edit";
+import { fitToFrames, silence } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { resolveChapterClipIds } from "@/lib/storage/books";
 import { getClip, getClipMeta } from "@/lib/storage/clips";
@@ -46,31 +46,6 @@ interface ChapterExport {
   readonly mp3: Uint8Array<ArrayBuffer>;
   readonly segments: number;
   readonly missing: number;
-}
-
-/**
- * Copy `decoded` into `out` at `at`, fitted to exactly `frames` — the frame
- * count the clip's metadata promised and the buffer was sized by.
- *
- * An MP3 decode does not come back sample-exact: the encoder pads the head and
- * tail of the stream (LAME's ~1.1k-sample delay plus a final part-frame), and
- * whether a decoder trims that padding again depends on whether it honours the
- * LAME info tag — Safari and Chrome do, others may not. So a decoded finished
- * segment can run a few dozen milliseconds long, or short. The slot is the
- * duration the translator recorded; a longer decode is trimmed to it, a shorter
- * one is padded with silence, so neither the chapter's timing nor the buffer
- * bounds move with the decoder the phone happens to have.
- */
-function fitInto(
-  out: Int16Array,
-  at: number,
-  decoded: Int16Array,
-  frames: number
-): void {
-  const copy = Math.min(frames, decoded.length);
-  out.set(decoded.subarray(0, copy), at);
-  // The buffer is zero-filled at allocation, so a short decode's tail is
-  // already silence; nothing to write for the padding.
 }
 
 /**
@@ -141,7 +116,9 @@ export async function gatherChapterPcm(
       out.set(gap, written);
       written += gap.length;
     }
-    fitInto(out, written, decoded, frames);
+    // Fitted to the recorded length (see `fitToFrames`): a decoder that keeps
+    // LAME's padding must not spill into the next slot or off the buffer's end.
+    out.set(fitToFrames(decoded, frames), written);
     written += frames;
     segments++;
   }

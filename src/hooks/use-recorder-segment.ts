@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { decodeMp3ToCanonical } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { fitToFrames } from "@/lib/audio/edit";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   getBook,
@@ -78,12 +79,18 @@ export function useRecorderSegment(segmentId: SegmentId) {
         const clip = audio.kind === "resolved" ? audio.clip : null;
         // The editor works on PCM: a finished segment's MP3 is decoded here,
         // before the sheet has anything to record into.
+        // Fitted to the clip's recorded length: `saveTake` stamps the buffer's
+        // length as the new `frameCount`, so an unfitted decode would make the
+        // decoder's padding permanent and grow on every finish → edit cycle.
         const samples =
           clip === null
             ? null
             : clip.encoding === "pcm"
               ? clip.samples
-              : await decodeMp3ToCanonical(clip.mp3);
+              : fitToFrames(
+                  await decodeMp3ToCanonical(clip.mp3),
+                  clip.meta.frameCount
+                );
         if (cancelled) return;
         setView({
           bookName: book?.name ?? "",

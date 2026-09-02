@@ -20,7 +20,9 @@
  * the guarantee has to hold across all of them (`audio-io.ts` holds its shared
  * `AudioContext` the same way).
  *
- * Memory: one segment's PCM at a time. Peaks are computed before the encode
+ * Memory: one segment's PCM at a time, and never alongside a share's — every
+ * encode in the app goes through `withEncoder`'s single lane, and the sweep
+ * takes the lane before it loads a clip. Peaks are computed before the encode
  * because the encode CONSUMES the buffer (transferred to the worker).
  *
  * A failed segment is logged and left as PCM — no state is lost, the list keeps
@@ -28,7 +30,7 @@
  * from where they stand nothing has changed, and there is no action to offer.
  */
 
-import { encodeMp3OffThread } from "./mp3-codec";
+import { withEncoder } from "./mp3-codec";
 import { computePeaks } from "@/lib/audio/peaks";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
@@ -72,20 +74,27 @@ async function sweepOnce(): Promise<void> {
   }
   for (const { segmentId, clipId } of owed) {
     try {
-      const audio = await loadSegmentClip(segmentId);
-      // Changed since the list was taken (erased, re-recorded, already MP3):
-      // not this clip's job any more; the commit would call it stale anyway.
-      if (
-        audio.kind !== "resolved" ||
-        audio.clip.encoding !== "pcm" ||
-        audio.clip.meta.id !== clipId
-      )
-        continue;
-      const { samples } = audio.clip;
-      // Before the encode: it transfers `samples` away.
-      const peaks = computePeaks(samples, ROW_PEAK_BUCKETS);
-      const mp3 = await encodeMp3OffThread(samples);
-      await commitTranscode(segmentId, clipId, mp3, peaks);
+      // Inside the encoder lane from the LOAD onward, not just the encode: the
+      // PCM is read only once the lane is ours, so a share holding the lane
+      // never coexists with a segment's PCM waiting here (round-1 George G1).
+      // One segment per turn on the lane, so a share queued between two
+      // segments gets in between them.
+      await withEncoder(undefined, async (codec) => {
+        const audio = await loadSegmentClip(segmentId);
+        // Changed since the list was taken (erased, re-recorded, already MP3):
+        // not this clip's job any more; the commit would call it stale anyway.
+        if (
+          audio.kind !== "resolved" ||
+          audio.clip.encoding !== "pcm" ||
+          audio.clip.meta.id !== clipId
+        )
+          return;
+        const { samples } = audio.clip;
+        // Before the encode: it transfers `samples` away.
+        const peaks = computePeaks(samples, ROW_PEAK_BUCKETS);
+        const mp3 = await codec.encodeMp3(samples);
+        await commitTranscode(segmentId, clipId, mp3, peaks);
+      });
     } catch (cause) {
       console.error(
         "Transcoding a finished segment failed; its PCM is kept",
