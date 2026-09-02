@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { createAudioCodec } from "./mp3-codec";
 import {
   type ShareError,
   type ShareOutcome,
@@ -39,7 +40,8 @@ export interface UseBookShare {
  * Share a book as one zip of per-chapter MP3s to the OS share sheet (B7, A4). A
  * thin wrapper over {@link useShareFlow}: tap 1 builds the zip into a File, and
  * the shared flow owns the two-gesture state machine and the `navigator.share`
- * handoff.
+ * handoff. Each chapter encodes in the worker through the browser codec (B8),
+ * and the flow's abort signal reaches it.
  */
 export function useBookShare(): UseBookShare {
   const { status, error, missing, prepare: run, send, reset } = useShareFlow();
@@ -50,17 +52,22 @@ export function useBookShare(): UseBookShare {
       zipFilename: string,
       nameChapter: (chapterNumber: number) => string
     ): Promise<void> =>
-      run(async (isCurrent) => {
-        const result = await exportBookZip(bookId, nameChapter, {}, isCurrent);
+      run(async (isCurrent, signal) => {
+        const result = await exportBookZip(
+          bookId,
+          nameChapter,
+          createAudioCodec(signal),
+          isCurrent
+        );
         // exportBookZip returns null for a book with no audio AND for a run
         // cancelled during the gather. `isCurrent` distinguishes them: still live
         // means genuinely nothing to share.
         if (result === null) return isCurrent() ? "nothing" : null;
-        // No copy: `result.zip` is `zipSync`'s own `Uint8Array<ArrayBuffer>`,
-        // which `File` accepts directly (unlike `encodeMp3`'s ArrayBufferLike
-        // output). Copying a whole book archive here was needless peak memory on
-        // the low-end phones fflate was chosen for (George R-B7-book P3).
-        const file = new File([result.zip], zipFilename, {
+        // The archive arrives as fflate's stream chunks and goes to `File` as
+        // parts — the browser assembles the Blob, so no archive-sized buffer is
+        // ever allocated here (B8; the ~2x peak George flagged on #114). The
+        // spread copies the list of references, not the bytes.
+        const file = new File([...result.chunks], zipFilename, {
           type: "application/zip",
         });
         return { file, missing: result.missing };

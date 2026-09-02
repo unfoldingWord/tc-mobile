@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { decodeMp3ToCanonical } from "./audio-io";
+import { requestTranscodeSweep } from "./finish-transcode";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   getBook,
@@ -45,6 +47,14 @@ export interface RecorderSegmentView {
  * dangling take opens as an empty segment (record-only), never a waveform over
  * audio the database cannot produce — the same F3 rule the row uses.
  *
+ * A finished segment's clip is MP3 (B8/D3) and is decoded here, once, at mount:
+ * editing after Finished is allowed (Q5's default — a translator who cannot fix
+ * a mistake after marking a segment done will stop marking segments done), at
+ * the cost of one lossy generation, which the save carries on the clip. A decode
+ * that fails lands in `error` with `view` null, and the sheet's controls stay
+ * disabled on a null view — so an MP3 this device cannot decode is never
+ * recorded over.
+ *
  * `setFinished` writes one segment's finished flag through to the store
  * (`setSegmentFinished` enforces the never-finish-empty invariant) and patches
  * the local flag. The recorder no longer calls it on every checkbox tap: the
@@ -66,16 +76,24 @@ export function useRecorderSegment(segmentId: SegmentId) {
         const book = chapter ? await getBook(chapter.bookId) : undefined;
         const audio = await loadSegmentClip(segmentId);
         const clip = audio.kind === "resolved" ? audio.clip : null;
+        // The editor works on PCM: a finished segment's MP3 is decoded here,
+        // before the sheet has anything to record into.
+        const samples =
+          clip === null
+            ? null
+            : clip.encoding === "pcm"
+              ? clip.samples
+              : await decodeMp3ToCanonical(clip.mp3);
         if (cancelled) return;
         setView({
           bookName: book?.name ?? "",
           chapterNumber: chapter?.number ?? 0,
           ordinal: segment.index,
           finished: isFinished(segment.status),
-          hasClip: clip !== null,
-          peaks: clip ? computePeaks(clip.samples, PEAK_BUCKETS) : null,
-          lengthSamples: clip?.samples.length ?? 0,
-          samples: clip?.samples ?? null,
+          hasClip: samples !== null,
+          peaks: samples ? computePeaks(samples, PEAK_BUCKETS) : null,
+          lengthSamples: samples?.length ?? 0,
+          samples,
         });
         setError(null);
       } catch (cause) {
@@ -95,6 +113,8 @@ export function useRecorderSegment(segmentId: SegmentId) {
       // the caller's handler rather than swallowed.
       await setSegmentFinished(segmentId, finished);
       setView((v) => (v ? { ...v, finished } : v));
+      // Finished is a state transition (D3): the PCM is now owed an MP3.
+      if (finished) void requestTranscodeSweep();
     },
     [segmentId]
   );

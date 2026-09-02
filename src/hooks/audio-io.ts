@@ -288,6 +288,24 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
   return toCanonical(decoded);
 }
 
+/**
+ * Decode a stored MP3 clip (a finished segment's audio, B8/D3) back to canonical
+ * PCM, for playback, export, or editing. The same `decodeAudioData` path a
+ * captured take goes through — the browser's decoder is the only MP3 decoder
+ * the app has (lamejs encodes only), which is why `lib/` takes decoding as an
+ * injected function rather than doing it.
+ *
+ * Not sample-exact: LAME pads the stream and decoders differ on trimming that
+ * padding back out, so the result can run a few dozen milliseconds long or
+ * short of the clip's `frameCount`. Consumers that care (the chapter export)
+ * fit it to the recorded length; playback and editing take it as it comes.
+ */
+export async function decodeMp3ToCanonical(
+  mp3: Uint8Array<ArrayBuffer>
+): Promise<Int16Array> {
+  return decodeToCanonical(new Blob([mp3], { type: "audio/mpeg" }));
+}
+
 async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
   const alreadyCanonical =
     buffer.sampleRate === CANONICAL_SAMPLE_RATE &&

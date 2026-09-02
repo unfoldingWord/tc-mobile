@@ -30,6 +30,15 @@
  *
  * `DB_VERSION` must never be reset to 1: dev devices hold v2, and IndexedDB
  * refuses to open at a lower version than the one on disk.
+ *
+ * ── v4 (B8, D3): clip encoding — append-only, as promised ──
+ *
+ * `ClipMeta` gained `encoding`, `generation`, `byteLength` and `peaks` so a
+ * finished segment's audio can be stored as MP3 with the PCM dropped. The v4
+ * step is a BACKFILL, not a recreate: every existing `clipMeta` row is stamped
+ * as the PCM it already is. No store is dropped, no bytes are touched, and a
+ * v3 device's recordings come through intact — which `tests/db-migration.test.ts`
+ * asserts alongside the v2→v3 wipe it also pins.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -48,7 +57,18 @@ import type {
 import type { ClipMeta } from "@/types/audio";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
+
+/**
+ * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
+ * backfill reads it; the typed store below already speaks the v4 shape, so the
+ * rows are read back through this narrower type to be stamped.
+ */
+type ClipMetaV3 = Pick<
+  ClipMeta,
+  "id" | "sampleRate" | "frameCount" | "durationMs" | "createdAt"
+> &
+  Partial<ClipMeta>;
 
 export interface TcMobileDb extends DBSchema {
   books: { key: BookId; value: Book };
@@ -72,7 +92,7 @@ let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
   dbPromise ??= openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion) {
+    async upgrade(db, oldVersion, _newVersion, tx) {
       // One-time destructive recreate to the pivot schema (v3). See the header
       // for why append-only is waived here. Gated on `oldVersion < 3` so this
       // runs on a fresh install (0) and on the v2 dev schema, but a future
@@ -99,6 +119,34 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
 
         db.createObjectStore("clipMeta", { keyPath: "id" });
         db.createObjectStore("clipData");
+      }
+
+      // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
+      // rows and the audio behind them are kept. On a fresh install, or straight
+      // after the v3 recreate above, the store is empty and this loops zero
+      // times. Awaiting IDB requests inside the upgrade transaction is idb's
+      // documented pattern: the transaction stays alive across them.
+      if (oldVersion < 4) {
+        const store = tx.objectStore("clipMeta");
+        let cursor = await store.openCursor();
+        while (cursor) {
+          const legacy = cursor.value as ClipMetaV3;
+          if (legacy.encoding === undefined) {
+            const stamped: ClipMeta = {
+              id: legacy.id,
+              sampleRate: legacy.sampleRate,
+              frameCount: legacy.frameCount,
+              durationMs: legacy.durationMs,
+              createdAt: legacy.createdAt,
+              encoding: "pcm",
+              generation: 0,
+              byteLength: legacy.frameCount * 2,
+              peaks: null,
+            };
+            await cursor.update(stamped);
+          }
+          cursor = await cursor.continue();
+        }
       }
     },
   });

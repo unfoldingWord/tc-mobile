@@ -12,6 +12,7 @@ import {
   succeedSave,
   type PendingTake,
 } from "@/lib/takes/pending-take";
+import { requestTranscodeSweep } from "./finish-transcode";
 import { saveFailureKind } from "./save-failure";
 import type { SegmentId } from "@/types/domain";
 
@@ -89,6 +90,10 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // slot is empty and the reload has not been asked for — the reload is
       // how the just-recorded row stops reading as never-recorded.
       onSavedRef.current?.();
+      // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
+      // Asked for AFTER the commit and the reload, never on the failure path —
+      // the sweep only ever reads what is durably on disk.
+      if (take.finished) void requestTranscodeSweep();
       return true;
     } catch (cause) {
       console.error("Saving a take failed", cause);

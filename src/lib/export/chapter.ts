@@ -4,9 +4,15 @@
  * The "recordings can leave the phone" path (#18 / B7 Share Chapter, A4). It
  * composes existing pieces: the ordered clip walk (`resolveChapterClipIds`), the
  * canonical-PCM join (`concat`, with a `silence` gap so segments don't run
- * together) and the encoder (`encodeMp3`). Deliberately free of the browser —
- * the `Blob` + `navigator.share` handoff is a thin hook layer on top — so the
- * whole gather-and-encode path is unit-tested in Node.
+ * together) and the codec. Deliberately free of the browser — the `Blob` +
+ * `navigator.share` handoff is a thin hook layer on top — so the whole
+ * gather-and-encode path is unit-tested in Node.
+ *
+ * The codec is INJECTED (`AudioCodec`, B8). Encoding runs in a Web Worker and
+ * decoding — a finished segment's audio is stored as MP3 (D3) — uses the
+ * browser's decoder; both live in `hooks/`. Tests hand in the synchronous
+ * encoder wrapped in a promise and a fake decoder, and the gather still asserts
+ * order, gaps and fitting directly on samples.
  *
  * `gatherChapterPcm` is split out from `exportChapterMp3` so the concatenation,
  * ordering and gap are asserted directly on samples, without decoding an MP3.
@@ -14,9 +20,9 @@
 
 import { silence } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { encodeMp3, type EncodeMp3Options } from "@/lib/audio/mp3";
 import { resolveChapterClipIds } from "@/lib/storage/books";
 import { getClip, getClipMeta } from "@/lib/storage/clips";
+import type { AudioCodec } from "@/types/audio";
 import type { ChapterId, ClipId } from "@/types/domain";
 
 /**
@@ -37,9 +43,34 @@ interface ChapterPcm {
 
 interface ChapterExport {
   /** The encoded MP3 bytes, ready to wrap in a Blob for the share sheet. */
-  readonly mp3: Uint8Array;
+  readonly mp3: Uint8Array<ArrayBuffer>;
   readonly segments: number;
   readonly missing: number;
+}
+
+/**
+ * Copy `decoded` into `out` at `at`, fitted to exactly `frames` — the frame
+ * count the clip's metadata promised and the buffer was sized by.
+ *
+ * An MP3 decode does not come back sample-exact: the encoder pads the head and
+ * tail of the stream (LAME's ~1.1k-sample delay plus a final part-frame), and
+ * whether a decoder trims that padding again depends on whether it honours the
+ * LAME info tag — Safari and Chrome do, others may not. So a decoded finished
+ * segment can run a few dozen milliseconds long, or short. The slot is the
+ * duration the translator recorded; a longer decode is trimmed to it, a shorter
+ * one is padded with silence, so neither the chapter's timing nor the buffer
+ * bounds move with the decoder the phone happens to have.
+ */
+function fitInto(
+  out: Int16Array,
+  at: number,
+  decoded: Int16Array,
+  frames: number
+): void {
+  const copy = Math.min(frames, decoded.length);
+  out.set(decoded.subarray(0, copy), at);
+  // The buffer is zero-filled at allocation, so a short decode's tail is
+  // already silence; nothing to write for the padding.
 }
 
 /**
@@ -48,10 +79,12 @@ interface ChapterExport {
  *
  * `resolveChapterClipIds` already drops segments with no resolvable audio (and
  * reports how many); a clip deleted between that walk and the read here is
- * skipped too, rather than crashing a share.
+ * skipped too, rather than crashing a share. A finished segment's MP3 is
+ * decoded through `codec.decodeMp3` and fitted to its original frame count.
  */
 export async function gatherChapterPcm(
-  chapterId: ChapterId
+  chapterId: ChapterId,
+  codec: Pick<AudioCodec, "decodeMp3">
 ): Promise<ChapterPcm> {
   const { clipIds, missing } = await resolveChapterClipIds(chapterId);
   let missingAudio = missing;
@@ -65,8 +98,10 @@ export async function gatherChapterPcm(
   // Pass 1 — size from metadata. `resolveChapterClipIds` resolves through the
   // same metadata, so a meta absent here is the "halves apart" / erased-since
   // case and counts as no audio, exactly as the read below does (Frank F3).
+  // `frameCount` is the ORIGINAL PCM length whatever the clip's encoding, so an
+  // MP3 clip sizes its slot the same way a PCM one does.
   const gapFrames = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
-  const present: ClipId[] = [];
+  const present: Array<{ clipId: ClipId; frames: number }> = [];
   let capacity = 0;
   for (const clipId of clipIds) {
     const meta = await getClipMeta(clipId);
@@ -76,7 +111,7 @@ export async function gatherChapterPcm(
     }
     if (present.length > 0) capacity += gapFrames;
     capacity += meta.frameCount;
-    present.push(clipId);
+    present.push({ clipId, frames: meta.frameCount });
   }
   if (present.length === 0)
     return { samples: new Int16Array(0), segments: 0, missing: missingAudio };
@@ -84,13 +119,21 @@ export async function gatherChapterPcm(
   // Pass 2 — fill the one buffer. A clip erased in the window between the two
   // passes returns nothing from `getClip`: skip and count it, and trim the
   // returned view to what was actually written rather than leave a silent hole.
+  // An MP3 clip is decoded here, one at a time, so at most one decoded segment
+  // is alive alongside the output buffer.
   const gap = silence(gapFrames);
   const out = new Int16Array(capacity);
   let written = 0;
   let segments = 0;
-  for (const clipId of present) {
+  for (const { clipId, frames } of present) {
     const clip = await getClip(clipId);
-    if (!clip || clip.samples.length === 0) {
+    if (!clip) {
+      missingAudio++;
+      continue;
+    }
+    const decoded =
+      clip.encoding === "pcm" ? clip.samples : await codec.decodeMp3(clip.mp3);
+    if (decoded.length === 0) {
       missingAudio++;
       continue;
     }
@@ -98,8 +141,8 @@ export async function gatherChapterPcm(
       out.set(gap, written);
       written += gap.length;
     }
-    out.set(clip.samples, written);
-    written += clip.samples.length;
+    fitInto(out, written, decoded, frames);
+    written += frames;
     segments++;
   }
 
@@ -110,19 +153,21 @@ export async function gatherChapterPcm(
  * Encode a chapter's recorded segments, in order, as one MP3. Returns `null`
  * when the chapter has no resolvable audio — there is nothing to share.
  *
- * `shouldEncode` is checked after the gather and before the encode: the gather
- * awaits per clip (cancellable), but `encodeMp3` is one synchronous main-thread
- * pass with no abort until B8 (#34) moves it to a worker. A caller that was
- * cancelled during the gather returns `false` to skip that blocking pass rather
- * than freeze the UI for a share the user already dismissed (George R-B7).
+ * `shouldEncode` is checked after the gather and before the encode. The encode
+ * now runs off-thread and is abortable through the codec the hook built, but the
+ * check still earns its place: a caller cancelled during the gather skips
+ * spinning up a worker for a share the user already dismissed.
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
-  options: EncodeMp3Options = {},
+  codec: AudioCodec,
   shouldEncode?: () => boolean
 ): Promise<ChapterExport | null> {
-  const { samples, segments, missing } = await gatherChapterPcm(chapterId);
+  const { samples, segments, missing } = await gatherChapterPcm(
+    chapterId,
+    codec
+  );
   if (segments === 0) return null;
   if (shouldEncode && !shouldEncode()) return null;
-  return { mp3: encodeMp3(samples, options), segments, missing };
+  return { mp3: await codec.encodeMp3(samples), segments, missing };
 }

@@ -56,14 +56,18 @@ interface PreparedShare {
 
 /**
  * Build the File to share. Receives `isCurrent`, which goes false when the run is
- * superseded (menu close, `reset`, or unmount): a builder that awaits MUST thread
- * it through to the underlying export so a cancel skips the blocking encode
- * rather than freeze the UI for a share already dismissed. Resolve to the built
- * File + missing count; `"nothing"` when there is no audio to share; `null` when
- * the run was cancelled part-way (`isCurrent()` went false).
+ * superseded (menu close, `reset`, or unmount), and `signal`, which aborts at the
+ * same moment. A builder that awaits MUST thread both through to the underlying
+ * export: `isCurrent` skips starting an encode for a share already dismissed,
+ * and `signal` (B8) terminates one already running in the worker. Resolve to
+ * the built File + missing count; `"nothing"` when there is no audio to share;
+ * `null` when the run was cancelled part-way (`isCurrent()` went false). An
+ * abort may also surface as a rejection — the flow ignores it once the run is
+ * stale.
  */
 type BuildShareFile = (
-  isCurrent: () => boolean
+  isCurrent: () => boolean,
+  signal: AbortSignal
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
@@ -115,10 +119,9 @@ export interface UseShareFlow {
 
 /**
  * The generic two-gesture share state machine. See the file header for why one
- * gesture cannot work. The encode runs on the main thread for now — B8 (#34)
- * moves it to a Web Worker, at which point `preparing` can carry a real progress
- * bar. Until then a long share briefly janks during `preparing`; it is a busy
- * state, not a meter, because a synchronous encode cannot repaint mid-loop.
+ * gesture cannot work. The encode runs in a Web Worker (B8, #34), so `preparing`
+ * no longer janks the screen and a cancel (menu close, Back) actually stops it;
+ * it is still a busy state rather than a meter — nothing reports progress yet.
  */
 export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
@@ -143,10 +146,15 @@ export function useShareFlow(): UseShareFlow {
   // and drop the armed File out from under the first. Mirrors `use-erase-segment`'s
   // double-tap guard, which exists for exactly this reason.
   const sendingRef = useRef(false);
+  // The in-flight prepare's abort handle (B8). Bumping the run token makes a
+  // late result ignored; aborting is what stops the worker from finishing an
+  // encode nobody will read. Both happen together in `reset` and on unmount.
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(
     () => () => {
       runIdRef.current += 1;
+      abortRef.current?.abort();
     },
     []
   );
@@ -168,18 +176,20 @@ export function useShareFlow(): UseShareFlow {
     // and every resumption below bails when its captured id is stale.
     const runId = (runIdRef.current += 1);
     const current = () => runId === runIdRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setError(null);
     setMissing(0);
     setStatus("preparing");
-    // Yield once so `preparing` paints before the synchronous encode blocks the
-    // main thread (the gather awaits also yield, but a tiny share can return
-    // before the browser paints).
+    // Yield once so `preparing` paints before the gather starts (its awaits
+    // also yield, but a tiny share can return before the browser paints).
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
-      // `build` threads `current` through to the export so a cancel during the
-      // gather skips the blocking encode. It returns "nothing" for a genuinely
-      // empty share and null when it was cancelled mid-build.
-      const prepared = await build(current);
+      // `build` threads `current` and the signal through to the export so a
+      // cancel during the gather skips the encode and a cancel during the encode
+      // stops the worker. It returns "nothing" for a genuinely empty share and
+      // null when it was cancelled mid-build.
+      const prepared = await build(current, controller.signal);
       if (!current()) return;
       // "nothing" (no audio) and null (cancelled, but not yet observed as such)
       // both settle back to idle; only "nothing" is a reason to surface. A null
@@ -205,6 +215,8 @@ export function useShareFlow(): UseShareFlow {
       setMissing(prepared.missing);
       setStatus("ready");
     } catch (cause) {
+      // A stale run's rejection — including the AbortError its own cancel
+      // produced — is not this screen's news.
       if (!current()) return;
       console.error("Preparing the share failed", cause);
       setError("failed");
@@ -213,7 +225,10 @@ export function useShareFlow(): UseShareFlow {
       // Only clear the guard for the run that still owns it. A stale run whose
       // token was bumped by `reset` must NOT release a newer run's guard, or a
       // further tap would start a third full encode over the same source.
-      if (current()) preparingRef.current = false;
+      if (current()) {
+        preparingRef.current = false;
+        if (abortRef.current === controller) abortRef.current = null;
+      }
     }
   }, []);
 
@@ -277,8 +292,11 @@ export function useShareFlow(): UseShareFlow {
 
   const reset = useCallback(() => {
     // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
-    // a File behind the now-closed menu.
+    // a File behind the now-closed menu, and abort so one mid-encode stops the
+    // worker rather than finishing for nobody.
     runIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
     fileRef.current = null;
     preparingRef.current = false;
     setStatus("idle");

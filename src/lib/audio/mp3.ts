@@ -42,7 +42,7 @@ export interface EncodeMp3Options {
 export function encodeMp3(
   samples: Int16Array,
   options: EncodeMp3Options = {}
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const sampleRate = options.sampleRate ?? CANONICAL_SAMPLE_RATE;
   const bitrateKbps = options.bitrateKbps ?? DEFAULT_BITRATE_KBPS;
   const encoder = new Mp3Encoder(CANONICAL_CHANNELS, sampleRate, bitrateKbps);

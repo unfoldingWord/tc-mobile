@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { requestTranscodeSweep } from "./finish-transcode";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   addSegment as addSegmentToChapter,
@@ -10,11 +11,22 @@ import {
   setSegmentFinished,
 } from "@/lib/storage/books";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
+import type { Clip, Peaks } from "@/types/audio";
 import type { ChapterId, Segment, SegmentId } from "@/types/domain";
-import type { SegmentRow } from "@/types/view";
+import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
 
-/** Waveform resolution for a row; peaks are computed once here, not per frame. */
-const PEAK_BUCKETS = 120;
+/**
+ * A row's waveform. A PCM clip's peaks are computed from its samples here, once
+ * per load; a finished segment's clip is MP3 (B8/D3) and carries the peaks the
+ * transcode took from the PCM it dropped, so listing a chapter never decodes.
+ * An MP3 clip with no stored peaks is not written by anything, but if one is
+ * ever read the row draws flat rather than decoding a chapter on the list.
+ */
+function rowPeaks(clip: Clip): Peaks | null {
+  return clip.encoding === "pcm"
+    ? computePeaks(clip.samples, ROW_PEAK_BUCKETS)
+    : clip.meta.peaks;
+}
 
 /**
  * Build one segment's row: its state, and — only if it has playable audio — its
@@ -35,7 +47,7 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
     hasClip: clip !== null,
     finished: isFinished(segment.status),
     clipId: clip?.meta.id ?? null,
-    peaks: clip ? computePeaks(clip.samples, PEAK_BUCKETS) : null,
+    peaks: clip ? rowPeaks(clip) : null,
     durationMs: clip?.meta.durationMs ?? null,
   };
 }
@@ -164,6 +176,10 @@ export function useChapterSegments(chapterId: ChapterId) {
           rs.map((r) => (r.segmentId === segmentId ? { ...r, finished } : r))
         );
         setError(null);
+        // Finished is a state transition (D3): the segment's PCM is now owed an
+        // MP3. Background work — the row does not wait on it, and its peaks and
+        // duration do not change when it lands.
+        if (finished) void requestTranscodeSweep();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
       }

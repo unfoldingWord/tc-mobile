@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   audioContextNeedsResume,
+  decodeMp3ToCanonical,
   playSamples,
   resumeAudioContext,
   type PlaybackHandle,
@@ -297,7 +298,16 @@ export function useAudioSession(): UseAudioSession {
             return;
           }
 
-          const handle = await playSamples(audio.clip.samples, {
+          // A finished segment's clip is MP3 (B8/D3): decode it first. Then the
+          // same supersession check as after the read — the decode is a real
+          // await, and another tap may have taken the floor during it.
+          const samples =
+            audio.clip.encoding === "pcm"
+              ? audio.clip.samples
+              : await decodeMp3ToCanonical(audio.clip.mp3);
+          if (!session.isCurrent(token)) return;
+
+          const handle = await playSamples(samples, {
             offsetSeconds,
             isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
