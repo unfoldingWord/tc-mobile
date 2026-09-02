@@ -9,6 +9,7 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
+import { editRowReason, eraseRowReason, rowHint } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -874,6 +875,23 @@ export function Recorder({
   const denied =
     !audio.supported || (micError && !hasAudio && !editor.hasEdits);
 
+  // The ≡-menu rows' disabled REASONS (#135). Each row's `disabled` is
+  // `reason !== null`, so the cue that explains a grey row and the gate that
+  // greys it are one derivation, not two switches. `!idleEditable` is exactly
+  // `!view || takeActive`, spelled out here as the two inputs.
+  const editReason = editRowReason({
+    hasView: view !== null,
+    takeActive,
+    denied,
+    hasAudio,
+    canPaste: editor.canPaste,
+  });
+  const eraseReason = eraseRowReason({
+    hasView: view !== null,
+    takeActive,
+    hasClip: view?.hasClip ?? false,
+  });
+
   // Enabled once a take WILL exist on close, not only when one already does.
   // `takeActive` covers the FIRST take — recording/closing before any clip
   // exists — so the day-1 path can record and mark done in one sheet (G8); the
@@ -1281,9 +1299,11 @@ export function Recorder({
               // Never while `denied`: the permission panel owns the body, and
               // entering edit there strands the edit toolbar over a Retry that
               // starts the mic (George R3, with onRetryRecord as the other half).
-              disabled={
-                !idleEditable || denied || (!hasAudio && !editor.canPaste)
-              }
+              // The gate lives in `editRowReason` so the grey row can say WHY
+              // (#135): a take in flight shows the Back badge — Back is what
+              // lifts it — and the reason joins the row's accessible name.
+              disabled={editReason !== null}
+              hint={rowHint(editReason)}
               onClick={onEnterEdit}
             />
             <Control
@@ -1332,8 +1352,10 @@ export function Recorder({
               // recording has nothing on disk yet) AND only at idle: erasing the
               // stored take out from under a live capture is nonsensical, and the
               // menu opener is reachable mid-take for the VU toggle, so this
-              // entry must refuse there itself (George R-B6).
-              disabled={!idleEditable || !view?.hasClip}
+              // entry must refuse there itself (George R-B6). Gate + reason from
+              // `eraseRowReason` (#135).
+              disabled={eraseReason !== null}
+              hint={rowHint(eraseReason)}
               onClick={() => {
                 setMenuOpen(false);
                 setConfirmOpen(true);
@@ -1354,7 +1376,8 @@ export function Recorder({
               variant="quiet"
               // Kept reachable from edit mode too — erasing is a segment-level op
               // useful in either mode. Same idle + has-stored-clip guard.
-              disabled={!idleEditable || !view?.hasClip}
+              disabled={eraseReason !== null}
+              hint={rowHint(eraseReason)}
               onClick={() => {
                 setMenuOpen(false);
                 setConfirmOpen(true);

@@ -96,6 +96,14 @@ export const strings = {
   previewUnavailable:
     "Can't preview this yet. Tap Back to save it, then play it.",
 
+  // ── Disabled-row reasons (#135) ──────────────────────────────────────────
+  // Appended to a disabled ≡-menu row's accessible name so the grey carries its
+  // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
+  // hand. Short and literal, like `previewUnavailable`.
+  blockedByTake: "Tap Back to save the recording first.",
+  nothingRecorded: "Nothing recorded yet.",
+  nothingStored: "Nothing saved to erase.",
+
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
 
