@@ -4,6 +4,7 @@ import {
   clampRange,
   concat,
   cut,
+  fitToFrames,
   insertAt,
   mergeTake,
   replaceRange,
@@ -165,5 +166,40 @@ describe("silence", () => {
     const s = silence(5);
     expect(s.length).toBe(5);
     expect(Array.from(s).every((v) => v === 0)).toBe(true);
+  });
+});
+
+/**
+ * B8: every consumer of an MP3 decode fits it to the clip's recorded
+ * `frameCount` (round-1 Frank F1 / George G3). A decoder that keeps LAME's
+ * padding hands back ~1.1k extra samples; one that trims aggressively could hand
+ * back fewer. Neither may change a segment's length.
+ */
+describe("fitToFrames", () => {
+  const seq = (n: number) => Int16Array.from({ length: n }, (_, i) => i + 1);
+
+  it("returns the same buffer when the length already matches", () => {
+    const s = seq(5);
+    expect(fitToFrames(s, 5)).toBe(s);
+  });
+
+  it("trims a longer decode to the first `frames` samples", () => {
+    const fitted = fitToFrames(seq(1152 + 5), 5);
+    expect(Array.from(fitted)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("pads a shorter decode with silence to `frames`", () => {
+    const fitted = fitToFrames(seq(3), 5);
+    expect(Array.from(fitted)).toEqual([1, 2, 3, 0, 0]);
+  });
+
+  it("fits to zero frames", () => {
+    expect(fitToFrames(seq(3), 0).length).toBe(0);
+  });
+
+  it("rejects a non-integer or negative frame count", () => {
+    expect(() => fitToFrames(seq(3), -1)).toThrow(RangeError);
+    expect(() => fitToFrames(seq(3), 2.5)).toThrow(RangeError);
+    expect(() => fitToFrames(seq(3), Number.NaN)).toThrow(RangeError);
   });
 });
