@@ -26,6 +26,12 @@
     --c-control-xl: 68px;
 
     --c-row-radius: var(--p-radius-lg);
+    /* The disabled-row hint badge (#135). Declared here, in the permitted :root
+       wiring block, so the component rule below reads a layer-2/3 token rather
+       than a layer-1 primitive directly (Frank, round 1; the file header's rule,
+       tracked repo-wide as #146). */
+    --c-hint-size: 18px;
+    --c-hint-radius: var(--p-radius-full);
     --c-tile-sm: 48px;
     --c-tile-lg: 56px;
 
@@ -88,7 +94,10 @@
     outline: var(--c-focus-ring);
     outline-offset: var(--c-focus-offset);
   }
-  .control:disabled {
+  /* `aria-disabled` rows are inert but focusable (#135) — every rule that paints
+     "inert" must match BOTH spellings, or a hinted row would look live. */
+  .control:disabled,
+  .control[aria-disabled="true"] {
     cursor: default;
     transform: none;
     /* No hover punch on an inert control: the base .control:hover brightness
@@ -98,14 +107,16 @@
   /* Monochrome quiet glyphs (select/undo/cut): saturate() barely moves an
      already-grey glyph, so dim to read as inactive. Precedent: the row
      ordinal's disabled:opacity-50. */
-  .control--quiet:disabled {
+  .control--quiet:disabled,
+  .control--quiet[aria-disabled="true"] {
     opacity: 0.4;
   }
   /* A disabled quiet control must not pick up the hover surface/ink — on a
      client with sticky :hover after a tap (iOS Safari), a dead tap would leave
      the disabled Cut/Select/Undo looking live (George R2 P3). Higher specificity
      than .control--quiet:hover, so it wins regardless of source order. */
-  .control--quiet:disabled:hover {
+  .control--quiet:disabled:hover,
+  .control--quiet[aria-disabled="true"]:hover {
     background: transparent;
     color: var(--s-ink-muted);
   }
@@ -115,7 +126,10 @@
      reads grey-inert instead. */
   .control--record:disabled,
   .control--play:disabled,
-  .control--primary:disabled {
+  .control--primary:disabled,
+  .control--record[aria-disabled="true"],
+  .control--play[aria-disabled="true"],
+  .control--primary[aria-disabled="true"] {
     filter: saturate(0.12);
     opacity: 0.55;
   }
@@ -145,6 +159,31 @@
     width: var(--c-control-xl);
     height: var(--c-control-xl);
   }
+  /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
+     the button so the badge escapes the inert control's opacity — the mark must
+     read at full ink while the control it explains is dimmed. `alert`, a state
+     mark: it says "blocked, look here" and names no control, which is all a glyph
+     can honestly do inside an overlay that inerts the sheet behind it. */
+  .control-hinted {
+    position: relative;
+    display: inline-grid;
+    width: fit-content;
+  }
+  .control-hint {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    display: grid;
+    place-items: center;
+    width: var(--c-hint-size);
+    height: var(--c-hint-size);
+    border-radius: var(--c-hint-radius);
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border: 1px solid var(--s-edge);
+    pointer-events: none;
+  }
+
   /* --- rows ------------------------------------------------------------- */
   .row {
     display: flex;

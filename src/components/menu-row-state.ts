@@ -13,6 +13,7 @@
  * gates these reproduce, in plain Node.
  */
 
+import type { IconName } from "./icon";
 import { strings } from "./strings";
 
 /**
@@ -75,24 +76,35 @@ export function eraseRowReason(i: EraseRowInputs): RowReason | null {
   return null;
 }
 
-/** A disabled row's cue: the reason, spoken as part of the row's name. */
+/** A disabled row's cue: a visible state mark, and the reason in words. */
 export interface RowHint {
+  /**
+   * A small badge on the row. `"alert"` — a STATE mark meaning "blocked, look
+   * here" — never a glyph that names a control (see {@link rowHint}).
+   */
+  readonly icon?: IconName;
   /** Appended to the row's accessible name while disabled. */
   readonly label: string;
 }
 
 /**
- * Which reasons get a cue, and the words each one says.
+ * Which reasons get a cue, what it shows, and what it says.
  *
- * **No glyph, deliberately.** The first cut badged the uncommitted-take row with
- * the Back glyph, meaning the sheet's own commit control. It cannot: these rows
- * are only ever seen inside the ≡ menu, and while that menu is open the sheet is
- * `inert` (`recorder.tsx`), so the header Back is untappable. The one live
- * back-chevron in that overlay is the menu's own Close (`menu.tsx`), which just
- * dismisses — so the badge marked the DISMISS control as the way out, the
- * inverse of state-in-place, and worst for the non-reader it was for (George, #139
- * round 1). The reason is spoken instead, and names the two steps in the order the
- * overlay allows them.
+ * **The glyph is `alert`, and the reason it is not a control glyph is the whole
+ * history of this cue.** Round 1 badged the uncommitted-take row with `back`,
+ * meaning the sheet's own commit control — which cannot be tapped, because the ≡
+ * menu inerts the sheet while it is open, leaving the menu's own Close as the one
+ * live back-chevron. The badge therefore marked the DISMISS control as the way
+ * out. Round 2 then found that dropping the glyph entirely left the cue in the
+ * accessible name only: invisible to the sighted tester who reported #135, and
+ * skipped by Tab because the row was natively `disabled`.
+ *
+ * So the badge is back, as a STATE mark rather than a direction: `alert` says
+ * "blocked, look here" and names no control, which is the one thing a glyph in
+ * this overlay can honestly do. The words carry the way out, using the controls'
+ * real accessible names. `Control` renders the badge and makes hinted rows
+ * `aria-disabled` (focusable, announced, inert to activation) rather than natively
+ * disabled, which is what puts the reason in reach of keyboard and switch users.
  *
  * `denied` and `no-segment` carry nothing because the menu opener is itself
  * disabled in both states (`recorder.tsx`, `disabled={!view || isClosing ||
@@ -101,14 +113,42 @@ export interface RowHint {
 export function rowHint(reason: RowReason | null): RowHint | null {
   switch (reason) {
     case "uncommitted-take":
-      return { label: strings.blockedByTake };
+      return { icon: "alert", label: strings.blockedByTake };
     case "no-audio":
-      return { label: strings.nothingRecorded };
+      return { icon: "alert", label: strings.nothingRecorded };
     case "no-clip":
-      return { label: strings.nothingStored };
+      return { icon: "alert", label: strings.nothingStored };
     case "denied":
     case "no-segment":
     case null:
       return null;
   }
+}
+
+interface MarkRowInputs {
+  readonly hasView: boolean;
+  /**
+   * The take is COMMITTING — the close window or a requesting/processing state.
+   * Deliberately narrower than the Edit/Erase rows' `takeActive`: Mark finished
+   * stays live while recording or paused, because the mark rides the take through
+   * `addTake` (the record-and-mark-done-in-one-sheet flow, G8/G10).
+   */
+  readonly takeCommitting: boolean;
+  /** A finished mark can stick — false on a segment that has never been recorded. */
+  readonly canFinish: boolean;
+}
+
+/**
+ * The "Mark finished" row. Null when enabled. Reproduces
+ * `finishedState === "disabled" || isClosing || busy`, with `canFinish` the
+ * negation of that first term.
+ *
+ * Added in round 3: this row was the third boolean in the same menu, and it greyed
+ * with no reason while Edit and Erase beside it explained themselves — so the
+ * "one derivation" #135 claimed did not actually cover the menu (George, round 2).
+ */
+export function markRowReason(i: MarkRowInputs): RowReason | null {
+  if (i.takeCommitting) return "uncommitted-take";
+  if (!i.hasView || !i.canFinish) return "no-audio";
+  return null;
 }

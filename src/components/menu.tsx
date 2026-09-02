@@ -81,7 +81,16 @@ export function Menu({
     const focusables = Array.from(
       panel.querySelectorAll<HTMLElement>(FOCUSABLE)
     );
+    // Hinted rows are `aria-disabled`, not natively disabled (#135), so they now
+    // MATCH `FOCUSABLE` and hold their place in the Tab order — which is the
+    // point: that is how a keyboard or switch user hears the reason. They are
+    // still the wrong place to LAND on open, so the open-edge focus skips them
+    // and falls back only if the menu holds nothing actionable.
+    const actionable = focusables.filter(
+      (el) => el.getAttribute("aria-disabled") !== "true"
+    );
     const target =
+      actionable.find((el) => !headerRef.current?.contains(el)) ??
       focusables.find((el) => !headerRef.current?.contains(el)) ??
       focusables[0];
     target?.focus();

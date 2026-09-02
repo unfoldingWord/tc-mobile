@@ -9,7 +9,12 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
-import { editRowReason, eraseRowReason, rowHint } from "./menu-row-state";
+import {
+  editRowReason,
+  eraseRowReason,
+  markRowReason,
+  rowHint,
+} from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -913,6 +918,15 @@ export function Recorder({
         ? "finished"
         : "empty";
 
+  // The Mark-finished row's reason (#135 round 3). Narrower than the Edit/Erase
+  // gate on purpose: Mark stays live while recording or paused, because the mark
+  // rides the take through `addTake` (G8/G10) — only the commit window freezes it.
+  const markReason = markRowReason({
+    hasView: view !== null,
+    takeCommitting: isClosing || busy,
+    canFinish: finishedState !== "disabled",
+  });
+
   return (
     <div className="recorder-scrim" role="dialog" aria-modal="true">
       {/* `inert` the sheet while the menu is open. Nested aria-modal dialogs do
@@ -1331,7 +1345,10 @@ export function Recorder({
               // Record is (G10), plus the never-recorded `finishedState ===
               // "disabled"` the Checkbox encoded via `state`.
               className={finishedState === "finished" ? "is-done" : undefined}
-              disabled={finishedState === "disabled" || isClosing || busy}
+              // Gate + reason from `markRowReason` (#135 round 3): this row greyed
+              // silently while Edit and Erase beside it explained themselves.
+              disabled={markReason !== null}
+              hint={rowHint(markReason)}
               onClick={onToggleFinished}
             />
             <Control

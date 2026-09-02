@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 import { Icon, type IconName } from "./icon";
-import type { RowHint } from "./menu-row-state";
 
 type ControlVariant = "default" | "record" | "play" | "quiet" | "primary";
 
@@ -22,12 +21,20 @@ interface ControlProps {
    */
   autoFocus?: boolean;
   /**
-   * WHY the control is disabled, when it is (#135). Read only while `disabled`,
-   * and appended to the accessible name, so the reason travels with the control
-   * rather than in a message bubble. Callers derive it from the same predicate
-   * that sets `disabled` (`menu-row-state.ts`).
+   * WHY the control is disabled, when it is (#135). Read only while `disabled`.
+   *
+   * Passing a hint changes HOW the control is made inert: it goes
+   * `aria-disabled` rather than natively `disabled`, so it stays focusable and
+   * its name — which carries the reason — is announced to keyboard and switch
+   * users, while activation is blocked in the handler. A natively disabled
+   * button is skipped by Tab entirely, which put the reason out of reach of
+   * exactly the users who most needed it (Frank + George, round 2).
+   *
+   * Structurally typed, not imported from the ≡-menu module: this is the generic
+   * control, used at eight unrelated call sites, and it should not depend on a
+   * recorder-row type (George, round 2). `RowHint` is assignable to it.
    */
-  hint?: RowHint | null;
+  hint?: { readonly icon?: IconName; readonly label: string } | null;
 }
 
 const VARIANT_CLASS: Record<ControlVariant, string> = {
@@ -51,11 +58,17 @@ export function Control({
 }: ControlProps) {
   const shownHint = disabled && hint ? hint : null;
   const name = shownHint ? `${label}. ${shownHint.label}` : label;
-  return (
+  // A hinted control is inert via `aria-disabled` so it keeps its place in the
+  // tab order and speaks its reason; everything else keeps the native attribute.
+  const softDisabled = Boolean(disabled && hint);
+  const button = (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
+      // The activation guard that makes `aria-disabled` honest. Without it the
+      // row would be focusable AND clickable — worse than either state alone.
+      onClick={softDisabled ? undefined : onClick}
+      disabled={disabled && !softDisabled}
+      aria-disabled={softDisabled || undefined}
       autoFocus={autoFocus}
       aria-label={name}
       title={name}
@@ -63,5 +76,17 @@ export function Control({
     >
       <Icon name={icon} size={size} />
     </button>
+  );
+  if (!shownHint?.icon) return button;
+  // The badge is decorative for AT — the reason is already in the name — and a
+  // SIBLING of the button, so the dimming that marks the control inert does not
+  // also dim the mark explaining it.
+  return (
+    <span className="control-hinted">
+      {button}
+      <span className="control-hint" aria-hidden="true">
+        <Icon name={shownHint.icon} size={12} />
+      </span>
+    </span>
   );
 }

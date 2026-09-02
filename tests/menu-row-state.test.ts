@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   editRowReason,
   eraseRowReason,
+  markRowReason,
   rowHint,
 } from "@/components/menu-row-state";
 import { strings } from "@/components/strings";
@@ -110,30 +111,50 @@ describe("rowHint — which reasons carry a cue", () => {
     return label as string;
   };
 
-  // No reason carries a glyph. The uncommitted-take row is only ever seen
-  // inside the ≡ menu, where the sheet is inert and the sole live back-chevron
-  // is the menu's own Close — so a Back badge marked the DISMISS control as the
-  // way out (George, round 1). The words carry it instead, and must name closing
-  // the menu BEFORE Back, which is the only order the overlay allows.
   it("an uncommitted take speaks both steps, in the order the overlay allows", () => {
     expect(rowHint("uncommitted-take")).toEqual({
+      icon: "alert",
       label: spoken(strings.blockedByTake),
     });
-    const said = strings.blockedByTake.toLowerCase();
-    expect(said).toContain("menu");
-    expect(said.indexOf("menu")).toBeLessThan(said.indexOf("back"));
+    // While the ≡ menu is open the sheet is inert, so the menu must be closed
+    // BEFORE the sheet's own control is reachable. Order is the whole content of
+    // this cue; a string naming them the other way round is wrong, not just
+    // clumsy (George, round 1).
+    const said = strings.blockedByTake;
+    expect(said.indexOf(strings.menuClose)).toBeGreaterThanOrEqual(0);
+    expect(said.indexOf(strings.menuClose)).toBeLessThan(
+      said.indexOf(strings.closeRecorder)
+    );
+  });
+
+  // Every control a hint tells the translator to use must EXIST under that name.
+  // An earlier draft said "tap Back"; nothing in the product is named Back — the
+  // two chevrons are "Close menu" and "Close recorder" — so a screen-reader user
+  // hunting for it found nothing (George, round 2). Both strings that name a
+  // control are checked here, so a rename of either control fails the suite
+  // instead of silently orphaning the words.
+  it("hint copy names controls that actually exist", () => {
+    for (const copy of [strings.blockedByTake, strings.previewUnavailable]) {
+      expect(copy).toContain(strings.closeRecorder);
+      expect(copy.toLowerCase()).not.toMatch(/\btap back\b/);
+    }
   });
 
   it("an empty segment speaks its reason", () => {
     expect(rowHint("no-audio")).toEqual({
+      icon: "alert",
       label: spoken(strings.nothingRecorded),
     });
     expect(rowHint("no-clip")).toEqual({
+      icon: "alert",
       label: spoken(strings.nothingStored),
     });
   });
 
-  it("no reason carries a glyph — RowHint is words only", () => {
+  // The glyph must be a STATE mark, never a control glyph. Round 1 shipped
+  // `back`, which named a control the overlay makes untappable and pointed at the
+  // menu's dismiss instead. `alert` says "blocked, look here" and names nothing.
+  it("every visible cue uses the alert state mark, never a control glyph", () => {
     const reasons = [
       "uncommitted-take",
       "denied",
@@ -143,11 +164,8 @@ describe("rowHint — which reasons carry a cue", () => {
     ] as const;
     for (const r of reasons) {
       const hint = rowHint(r);
-      // `denied`/`no-segment` return null (no cue at all); the rest must be a
-      // label and nothing else. Asserting the exact key set is what fails if a
-      // glyph is ever reintroduced here.
       if (hint === null) continue;
-      expect(Object.keys(hint)).toEqual(["label"]);
+      expect(hint.icon).toBe("alert");
     }
   });
 
@@ -158,5 +176,38 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an enabled row has no hint", () => {
     expect(rowHint(null)).toBeNull();
+  });
+});
+
+describe("markRowReason — the third row in the same menu (round 3)", () => {
+  const markOpen = { hasView: true, takeCommitting: false, canFinish: true };
+
+  it("is enabled once a take will exist on close", () => {
+    expect(markRowReason(markOpen)).toBeNull();
+  });
+
+  // The gate that separates this row from Edit/Erase: Mark rides the take
+  // through `addTake`, so it stays live while recording or paused — only the
+  // commit window (isClosing / requesting / processing) freezes it. A copy of
+  // the Edit row's `takeActive` here would break record-and-mark-in-one-sheet.
+  it("stays enabled through a live or paused take — only the commit window freezes it", () => {
+    expect(markRowReason({ ...markOpen, takeCommitting: false })).toBeNull();
+    expect(markRowReason({ ...markOpen, takeCommitting: true })).toBe(
+      "uncommitted-take"
+    );
+  });
+
+  it("is disabled on a segment that has never been recorded", () => {
+    expect(markRowReason({ ...markOpen, canFinish: false })).toBe("no-audio");
+  });
+
+  it("is disabled with no segment loaded", () => {
+    expect(markRowReason({ ...markOpen, hasView: false })).toBe("no-audio");
+  });
+
+  it("the commit window outranks the never-recorded reason", () => {
+    expect(
+      markRowReason({ hasView: true, takeCommitting: true, canFinish: false })
+    ).toBe("uncommitted-take");
   });
 });

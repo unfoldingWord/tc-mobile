@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
@@ -71,7 +71,13 @@ export function LiveScope({
   // inactive window this ref is read in.
   const lastScopeRef = useRef<CaptureScope | null>(null);
 
-  useEffect(() => {
+  // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
+  // the browser paints the freshly-mounted canvas. A remount happens on a
+  // first-take Resume after a preview, and in `useEffect` the synchronous paint
+  // still ran after the browser had already shown one blank frame — shorter than
+  // the rAF wait #130 filed, but the same class (George, round 2). The rAF loop
+  // registered here is unaffected by the earlier timing; it is scheduled, not run.
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -136,13 +142,14 @@ export function LiveScope({
 
     let raf = 0;
     if (active) {
-      // Paint the ring's current state NOW, before the first rAF. A first-take
-      // Resume after a preview REMOUNTS this canvas (the preview unmounted it),
-      // and waiting for the first animation frame left one commit of blank stage
-      // before the ring — which `resume()` does not reset — repainted (#130).
-      // `resume()` sets the recording flag synchronously before React commits,
-      // so the reader already returns the ring here; a null (tap not wired) just
-      // leaves the canvas as it was, the same as the loop below.
+      // Paint the ring's current state NOW, before the browser paints and before
+      // the first rAF. A first-take Resume after a preview REMOUNTS this canvas
+      // (the preview unmounted it), and without this the stage showed a blank
+      // frame while the ring — which `resume()` does not reset — waited to be
+      // drawn (#130). `resume()` sets the recording flag synchronously before
+      // React commits, so the reader already returns the ring here; a null (tap
+      // not wired) leaves the canvas as it was, the same as the loop below.
+      // Read ONCE: every `readScope()` folds a column into the ring.
       const first = readScopeRef.current();
       if (first) {
         lastScopeRef.current = first;
