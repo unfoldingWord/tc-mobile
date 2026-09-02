@@ -110,20 +110,45 @@ describe("rowHint — which reasons carry a cue", () => {
     return label as string;
   };
 
-  it("an uncommitted take points at Back, with the reason spoken", () => {
+  // No reason carries a glyph. The uncommitted-take row is only ever seen
+  // inside the ≡ menu, where the sheet is inert and the sole live back-chevron
+  // is the menu's own Close — so a Back badge marked the DISMISS control as the
+  // way out (George, round 1). The words carry it instead, and must name closing
+  // the menu BEFORE Back, which is the only order the overlay allows.
+  it("an uncommitted take speaks both steps, in the order the overlay allows", () => {
     expect(rowHint("uncommitted-take")).toEqual({
-      icon: "back",
       label: spoken(strings.blockedByTake),
     });
+    const said = strings.blockedByTake.toLowerCase();
+    expect(said).toContain("menu");
+    expect(said.indexOf("menu")).toBeLessThan(said.indexOf("back"));
   });
 
-  it("an empty segment speaks its reason but shows no glyph", () => {
+  it("an empty segment speaks its reason", () => {
     expect(rowHint("no-audio")).toEqual({
       label: spoken(strings.nothingRecorded),
     });
     expect(rowHint("no-clip")).toEqual({
       label: spoken(strings.nothingStored),
     });
+  });
+
+  it("no reason carries a glyph — RowHint is words only", () => {
+    const reasons = [
+      "uncommitted-take",
+      "denied",
+      "no-segment",
+      "no-audio",
+      "no-clip",
+    ] as const;
+    for (const r of reasons) {
+      const hint = rowHint(r);
+      // `denied`/`no-segment` return null (no cue at all); the rest must be a
+      // label and nothing else. Asserting the exact key set is what fails if a
+      // glyph is ever reintroduced here.
+      if (hint === null) continue;
+      expect(Object.keys(hint)).toEqual(["label"]);
+    }
   });
 
   it("denied and no-segment carry nothing — the row is unreachable there", () => {

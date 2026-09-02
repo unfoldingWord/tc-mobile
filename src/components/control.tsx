@@ -22,12 +22,10 @@ interface ControlProps {
    */
   autoFocus?: boolean;
   /**
-   * WHY the control is disabled, when it is (#135). Read only while `disabled`:
-   * the reason is appended to the accessible name, and `hint.icon`, when set,
-   * paints a small badge beside the glyph — state-in-place, not a toast. The
-   * badge is a SIBLING of the button, not a child, so the disabled button's
-   * dimming does not dim the one thing that explains it. Callers derive it from
-   * the same predicate that sets `disabled` (`menu-row-state.ts`).
+   * WHY the control is disabled, when it is (#135). Read only while `disabled`,
+   * and appended to the accessible name, so the reason travels with the control
+   * rather than in a message bubble. Callers derive it from the same predicate
+   * that sets `disabled` (`menu-row-state.ts`).
    */
   hint?: RowHint | null;
 }
@@ -53,7 +51,7 @@ export function Control({
 }: ControlProps) {
   const shownHint = disabled && hint ? hint : null;
   const name = shownHint ? `${label}. ${shownHint.label}` : label;
-  const button = (
+  return (
     <button
       type="button"
       onClick={onClick}
@@ -65,15 +63,5 @@ export function Control({
     >
       <Icon name={icon} size={size} />
     </button>
-  );
-  if (!shownHint?.icon) return button;
-  // The badge is decorative for AT — the reason is already in the name.
-  return (
-    <span className="control-hinted">
-      {button}
-      <span className="control-hint" aria-hidden="true">
-        <Icon name={shownHint.icon} size={12} />
-      </span>
-    </span>
   );
 }

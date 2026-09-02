@@ -13,7 +13,6 @@
  * gates these reproduce, in plain Node.
  */
 
-import type { IconName } from "./icon";
 import { strings } from "./strings";
 
 /**
@@ -76,28 +75,33 @@ export function eraseRowReason(i: EraseRowInputs): RowReason | null {
   return null;
 }
 
-/** A disabled row's cue: the spoken reason, and a glyph when one earns it. */
+/** A disabled row's cue: the reason, spoken as part of the row's name. */
 export interface RowHint {
-  /** A small badge glyph on the row — only where it points at the way out. */
-  readonly icon?: IconName;
   /** Appended to the row's accessible name while disabled. */
   readonly label: string;
 }
 
 /**
- * Which reasons get a cue. An uncommitted take shows the Back glyph — the row
- * is grey BECAUSE Back has not been tapped, and that glyph is already the sheet's
- * own commit control, so it points at the way out without a word. An empty
- * segment speaks its reason to a screen reader but shows no glyph: a grey Edit
- * over nothing is legible on its own, and a mark there would add weight for no
- * information. `denied` and `no-segment` carry nothing because the menu opener is
- * itself disabled in both states (`recorder.tsx`, `disabled={!view || isClosing
- * || denied}`), so no row is ever seen under them.
+ * Which reasons get a cue, and the words each one says.
+ *
+ * **No glyph, deliberately.** The first cut badged the uncommitted-take row with
+ * the Back glyph, meaning the sheet's own commit control. It cannot: these rows
+ * are only ever seen inside the ≡ menu, and while that menu is open the sheet is
+ * `inert` (`recorder.tsx`), so the header Back is untappable. The one live
+ * back-chevron in that overlay is the menu's own Close (`menu.tsx`), which just
+ * dismisses — so the badge marked the DISMISS control as the way out, the
+ * inverse of state-in-place, and worst for the non-reader it was for (George, #139
+ * round 1). The reason is spoken instead, and names the two steps in the order the
+ * overlay allows them.
+ *
+ * `denied` and `no-segment` carry nothing because the menu opener is itself
+ * disabled in both states (`recorder.tsx`, `disabled={!view || isClosing ||
+ * denied}`), so no row is ever seen under them.
  */
 export function rowHint(reason: RowReason | null): RowHint | null {
   switch (reason) {
     case "uncommitted-take":
-      return { icon: "back", label: strings.blockedByTake };
+      return { label: strings.blockedByTake };
     case "no-audio":
       return { label: strings.nothingRecorded };
     case "no-clip":

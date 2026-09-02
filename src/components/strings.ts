@@ -100,7 +100,9 @@ export const strings = {
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
   // hand. Short and literal, like `previewUnavailable`.
-  blockedByTake: "Tap Back to save the recording first.",
+  // Names both steps in the order the overlay allows: while this menu is open the
+  // recorder sheet is inert, so Back is not reachable until the menu closes.
+  blockedByTake: "Close this menu, then tap Back to save the recording.",
   nothingRecorded: "Nothing recorded yet.",
   nothingStored: "Nothing saved to erase.",
 
