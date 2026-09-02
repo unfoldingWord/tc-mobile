@@ -62,7 +62,12 @@ obligations are actually met, so they are listed here rather than assumed.
    that the project is MIT with an LGPL-3.0 encoder, rather than leaving a
    reader to discover it from a lockfile.
 
-Items 3 and 5 are not done yet — tracked in #36.
+Items 3 and 5 are done (#36): the MIT / LGPL-3.0 / GPL-3.0 licence texts and the
+lamejs attribution ship under `public/licenses/` (precached for offline) and are
+reachable in-app at **Menu → About & licenses** (`src/components/about-panel.tsx`,
+data in `src/components/licenses.ts`); `README.md` and `package.json` state the
+MIT-with-an-LGPL-3.0-encoder position in the open. The in-app surface has not yet
+been eyeballed on a device.
 
 ### What this closes
 

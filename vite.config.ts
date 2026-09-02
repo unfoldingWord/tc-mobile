@@ -39,7 +39,9 @@ export default defineConfig({
         // get precached (598 files, 2.5 MB): a facilitator installs this over
         // wifi and then goes to the field, so waiting for a story to be
         // browsed once before its pictures cache would strand them.
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2,jpg}"],
+        // `txt` precaches the licence texts under `public/licenses/` (#36) so
+        // the LGPL notice resolves offline in the field, same as the app shell.
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,jpg,txt}"],
         // 598 thumbnails push the precache past the 2 MiB default.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: "index.html",

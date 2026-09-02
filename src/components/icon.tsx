@@ -33,7 +33,8 @@ export type IconName =
   | "redo"
   | "eye"
   | "eye-off"
-  | "share";
+  | "share"
+  | "info";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -357,6 +358,28 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </>
+  ),
+  // Info: a circled "i". The global menu's About & licenses entry (#36) — the
+  // one place a text surface is right, so it takes the conventional glyph.
+  info: (
+    <>
+      <circle
+        cx="11"
+        cy="11"
+        r="7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <circle cx="11" cy="7.3" r="1.05" fill="currentColor" />
+      <path
+        d="M11 10.2v5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
       />
     </>
   ),

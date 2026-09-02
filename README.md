@@ -203,6 +203,14 @@ Vite + PWA + IndexedDB — on low-end Android inside uW.
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE). One LGPL-3.0 dependency, lamejs: **settled
-2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md). The
-notice and attribution obligations that come with keeping it are #36.
+This project is **MIT** (see [`LICENSE`](LICENSE)) with **one LGPL-3.0
+dependency, the `@breezystack/lamejs` MP3 encoder** — **settled 2026-08-23,
+keep it** ([ADR 0003](docs/decisions/0003-mp3-encoder.md)). lamejs sits behind a
+single module boundary (`encodeMp3`, run in a Web Worker), so it can be replaced
+under the LGPL relink right.
+
+The licence texts (MIT, GNU LGPL v3, GNU GPL v3) and the third-party attribution
+ship **inside the app** — reachable on the phone under **Menu → About &
+licenses**, and served (and precached for offline) from
+[`public/licenses/`](public/licenses/) — so a translator in the field is not
+sent to `node_modules` to find them (#36).

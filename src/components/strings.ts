@@ -147,4 +147,22 @@ export const strings = {
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
   shareBookFilename: (book: string): string => `${book}.zip`,
+
+  // ── About & licenses (#36) ───────────────────────────────────────────────
+  // The global-menu entry, and the panel it opens. lamejs is LGPL-3.0 (ADR
+  // 0003); this surface is what makes its notice and licence text reachable on
+  // the phone. A text screen by necessity — a legal notice has no wordless
+  // form — so every link carries a full spoken label.
+  aboutOpen: "About and licenses",
+  aboutTitle: "About & licenses",
+  aboutBlurb:
+    "A free and open-source app. Everything you record stays on this phone.",
+  aboutAppLicense: "This app is offered under the MIT licence.",
+  aboutThirdParty: "Open-source components",
+  aboutContent: "Bundled content",
+  // Spoken labels for the licence-text and project links, which show terse
+  // visible text (a licence short-name, a package name).
+  aboutReadLicense: (name: string): string => `Read the ${name} licence text`,
+  aboutVisitSource: (name: string): string => `Open the ${name} project page`,
+  aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
 } as const;
