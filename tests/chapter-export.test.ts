@@ -22,7 +22,7 @@ import { newClipId } from "@/lib/storage/clips";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { clearAllStores, testCodec } from "./support";
+import { clearAllStores, noTrimDecode, ramp, testCodec } from "./support";
 
 const samples = (n: number, value: number): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -53,6 +53,21 @@ async function chapterWith(
         CANONICAL_SAMPLE_RATE
       );
     }
+  }
+  return { chapterId: chapter.id, segmentIds };
+}
+
+/** A chapter whose segments hold exactly these sample buffers, in order. */
+async function chapterWithSamples(
+  buffers: Int16Array[]
+): Promise<{ chapterId: ChapterId; segmentIds: SegmentId[] }> {
+  const book = await createBook("b");
+  const chapter = await addChapter(book.id);
+  const segmentIds: SegmentId[] = [];
+  for (const buffer of buffers) {
+    const seg = await addSegment(chapter.id);
+    segmentIds.push(seg.id);
+    await saveTake(seg.id, newClipId(), buffer, CANONICAL_SAMPLE_RATE);
   }
   return { chapterId: chapter.id, segmentIds };
 }
@@ -89,7 +104,7 @@ describe("gatherChapterPcm", () => {
       samples: pcm,
       segments,
       missing,
-    } = await gatherChapterPcm(chapterId, testCodec());
+    } = (await gatherChapterPcm(chapterId, testCodec()))!;
 
     expect(segments).toBe(2);
     expect(missing).toBe(0);
@@ -113,7 +128,7 @@ describe("gatherChapterPcm", () => {
       samples: pcm,
       segments,
       missing,
-    } = await gatherChapterPcm(chapterId, testCodec());
+    } = (await gatherChapterPcm(chapterId, testCodec()))!;
 
     expect(segments).toBe(2);
     expect(missing).toBe(1);
@@ -124,10 +139,10 @@ describe("gatherChapterPcm", () => {
 
   it("adds no leading or trailing gap around a single segment", async () => {
     const { chapterId } = await chapterWith([{ n: 100, v: 100 }]);
-    const { samples: pcm, segments } = await gatherChapterPcm(
+    const { samples: pcm, segments } = (await gatherChapterPcm(
       chapterId,
       testCodec()
-    );
+    ))!;
 
     expect(segments).toBe(1);
     expect(pcm.length).toBe(100);
@@ -141,7 +156,7 @@ describe("gatherChapterPcm", () => {
       samples: pcm,
       segments,
       missing,
-    } = await gatherChapterPcm(chapterId, testCodec());
+    } = (await gatherChapterPcm(chapterId, testCodec()))!;
 
     expect(segments).toBe(0);
     expect(missing).toBe(2);
@@ -172,7 +187,7 @@ describe("gatherChapterPcm", () => {
       samples: pcm,
       segments,
       missing,
-    } = await gatherChapterPcm(chapterId, testCodec());
+    } = (await gatherChapterPcm(chapterId, testCodec()))!;
 
     expect(segments).toBe(1); // only the first segment survived the read
     expect(missing).toBe(1); // the erased one — silently 0 before the fix
@@ -181,26 +196,32 @@ describe("gatherChapterPcm", () => {
   });
 
   /**
-   * B8/D3: a finished segment's clip is MP3. The gather must decode it through
-   * the injected codec and put the result in the slot its ORIGINAL frame count
-   * reserved — an MP3 decode is not sample-exact (encoder padding, and whether
-   * the decoder trims it), so a long decode is trimmed and a short one padded.
+   * B8/D3: a finished segment's clip is MP3. The gather decodes it through the
+   * injected codec and puts the RECORDING — not the decode — in the slot its
+   * original frame count reserved. The decoder is modelled as the one Chromium
+   * has (`noTrimDecode`: priming, recording, padding), and every fixture is a
+   * ramp so a fit that kept the wrong end is caught (round-2 Frank P1).
    */
   describe("with a finished (MP3) segment", () => {
-    it("decodes the MP3 through the codec into its original-length slot", async () => {
-      const { chapterId, segmentIds } = await chapterWith([
-        { n: 100, v: 100 },
-        { n: 200, v: 200 },
+    /** A chapter [PCM 100][MP3 200] with distinct ramps; the MP3's bytes. */
+    async function pcmThenMp3() {
+      const first = ramp(100, 100);
+      const second = ramp(200, 5000);
+      const { chapterId, segmentIds } = await chapterWithSamples([
+        first,
+        second,
       ]);
-      const mp3 = await transcoded(segmentIds[1]!, samples(200, 200));
-      // A decoder that comes back sample-exact.
-      const codec = testCodec(async () => samples(200, 200));
+      const mp3 = await transcoded(segmentIds[1]!, second);
+      return { chapterId, first, second, mp3 };
+    }
 
-      const {
-        samples: pcm,
-        segments,
-        missing,
-      } = await gatherChapterPcm(chapterId, codec);
+    it("aligns the decode so the recording, not the priming, lands in the slot", async () => {
+      const { chapterId, first, second, mp3 } = await pcmThenMp3();
+      const codec = testCodec(async (bytes) => noTrimDecode(second, bytes));
+
+      const gathered = await gatherChapterPcm(chapterId, codec);
+      expect(gathered).not.toBeNull();
+      const { samples: pcm, segments, missing } = gathered!;
 
       expect(codec.decodeMp3).toHaveBeenCalledTimes(1);
       // Fed the stored MP3 bytes, not something re-read or re-encoded.
@@ -210,92 +231,59 @@ describe("gatherChapterPcm", () => {
       expect(segments).toBe(2);
       expect(missing).toBe(0);
       expect(pcm.length).toBe(100 + GAP + 200);
-      expect(pcm[100 + GAP]).toBe(200);
-      expect(pcm[pcm.length - 1]).toBe(200);
+      expect(Array.from(pcm.subarray(0, 100))).toEqual(Array.from(first));
+      // The MP3 segment's slot holds exactly the recording: first sample to
+      // last, no leading priming, no trailing padding, nothing spilled.
+      expect(Array.from(pcm.subarray(100 + GAP))).toEqual(Array.from(second));
     });
 
-    it("trims a decode that runs LONGER than the recorded length", async () => {
-      // A decoder that does not strip the encoder padding hands back ~1.1k
-      // extra samples. The slot is the recorded length; the tail is dropped, and
-      // the segment after it starts exactly where the metadata says.
-      const { chapterId, segmentIds } = await chapterWith([
-        { n: 200, v: 200 },
-        { n: 100, v: 100 },
-      ]);
-      await transcoded(segmentIds[0]!, samples(200, 200));
-      const codec = testCodec(async () => samples(200 + 1152, 200));
-
-      const { samples: pcm, segments } = await gatherChapterPcm(
-        chapterId,
-        codec
-      );
-
-      expect(segments).toBe(2);
-      expect(pcm.length).toBe(200 + GAP + 100); // not 200 + 1152 + …
-      expect(pcm[199]).toBe(200);
-      expect(pcm[200]).toBe(0); // the gap starts on time
-      expect(pcm[200 + GAP]).toBe(100);
+    it("keeps the LAST recorded samples of a finished segment (round 2's defect)", async () => {
+      // Round 1 kept the decode's first `frameCount` samples: the slot ended
+      // 1105 samples early, with the recording's tail cut off.
+      const { chapterId, second } = await pcmThenMp3();
+      const codec = testCodec(async (bytes) => noTrimDecode(second, bytes));
+      const { samples: pcm } = (await gatherChapterPcm(chapterId, codec))!;
+      expect(pcm[pcm.length - 1]).toBe(second[second.length - 1]);
+      expect(pcm[100 + GAP]).toBe(second[0]);
     });
 
-    it("trims a long decode on the LAST segment, where there is no room to spill", async () => {
-      // With a segment after it, an over-long decode that spilled into the gap
-      // would be overwritten by the gap and go unnoticed. Last in the chapter,
-      // the buffer ends where the recorded length ends: a decode written
-      // unfitted would run off the end of it.
-      const { chapterId, segmentIds } = await chapterWith([
-        { n: 100, v: 100 },
-        { n: 200, v: 200 },
-      ]);
-      await transcoded(segmentIds[1]!, samples(200, 200));
-      const codec = testCodec(async () => samples(200 + 1152, 200));
-
-      const { samples: pcm, segments } = await gatherChapterPcm(
-        chapterId,
-        codec
-      );
-
-      expect(segments).toBe(2);
-      expect(pcm.length).toBe(100 + GAP + 200);
-      expect(pcm[pcm.length - 1]).toBe(200);
+    it("takes a sample-exact decode as it is", async () => {
+      const { chapterId, second } = await pcmThenMp3();
+      const codec = testCodec(async () => new Int16Array(second));
+      const { samples: pcm } = (await gatherChapterPcm(chapterId, codec))!;
+      expect(Array.from(pcm.subarray(100 + GAP))).toEqual(Array.from(second));
     });
 
     it("pads a decode that comes back SHORTER with silence to the recorded length", async () => {
-      const { chapterId, segmentIds } = await chapterWith([
-        { n: 200, v: 200 },
-        { n: 100, v: 100 },
-      ]);
-      await transcoded(segmentIds[0]!, samples(200, 200));
-      const codec = testCodec(async () => samples(150, 200));
-
-      const { samples: pcm, segments } = await gatherChapterPcm(
+      const { chapterId, second } = await pcmThenMp3();
+      const codec = testCodec(async () => second.subarray(0, 150));
+      const { samples: pcm, segments } = (await gatherChapterPcm(
         chapterId,
         codec
-      );
+      ))!;
 
       expect(segments).toBe(2);
-      expect(pcm.length).toBe(200 + GAP + 100);
-      expect(pcm[149]).toBe(200);
-      expect(pcm[150]).toBe(0); // padded, not garbage and not the next segment
-      expect(pcm[199]).toBe(0);
-      expect(pcm[200 + GAP]).toBe(100);
+      expect(pcm.length).toBe(100 + GAP + 200);
+      expect(Array.from(pcm.subarray(100 + GAP, 100 + GAP + 150))).toEqual(
+        Array.from(second.subarray(0, 150))
+      );
+      expect(Array.from(pcm.subarray(100 + GAP + 150))).toEqual(
+        new Array<number>(50).fill(0)
+      );
     });
 
     it("counts a decode that yields nothing as missing", async () => {
       // A decoder that produces no samples for a clip is the same to the share
       // as a clip that is not there: skipped and admitted to, never a silent
       // hole the count does not mention.
-      const { chapterId, segmentIds } = await chapterWith([
-        { n: 100, v: 100 },
-        { n: 200, v: 200 },
-      ]);
-      await transcoded(segmentIds[1]!, samples(200, 200));
+      const { chapterId } = await pcmThenMp3();
       const codec = testCodec(async () => new Int16Array(0));
 
       const {
         samples: pcm,
         segments,
         missing,
-      } = await gatherChapterPcm(chapterId, codec);
+      } = (await gatherChapterPcm(chapterId, codec))!;
 
       expect(segments).toBe(1);
       expect(missing).toBe(1);
@@ -310,6 +298,41 @@ describe("gatherChapterPcm", () => {
       const codec = testCodec();
       await gatherChapterPcm(chapterId, codec);
       expect(codec.decodeMp3).not.toHaveBeenCalled();
+    });
+
+    it("stops before the next decode once cancelled mid-gather", async () => {
+      // Two finished segments. The gather holds the encoder lane through every
+      // decode, so a share dismissed after the first decode must not pay for
+      // the second (round-2 George P2). Flip the seam the moment decode 1 runs.
+      const a = ramp(200, 100);
+      const b = ramp(200, 5000);
+      const { chapterId, segmentIds } = await chapterWithSamples([a, b]);
+      await transcoded(segmentIds[0]!, a);
+      await transcoded(segmentIds[1]!, b);
+      let decodes = 0;
+      const codec = testCodec(async (bytes) => {
+        decodes++;
+        return noTrimDecode(decodes === 1 ? a : b, bytes);
+      });
+
+      const result = await gatherChapterPcm(
+        chapterId,
+        codec,
+        () => decodes < 1
+      );
+
+      expect(result).toBeNull();
+      expect(codec.decodeMp3).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops before the first clip read when cancelled up front", async () => {
+      const { chapterId } = await pcmThenMp3();
+      const codec = testCodec();
+      const spy = vi.spyOn(clips, "getClip");
+      expect(await gatherChapterPcm(chapterId, codec, () => false)).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+      expect(codec.decodeMp3).not.toHaveBeenCalled();
+      spy.mockRestore();
     });
   });
 });

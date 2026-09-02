@@ -10,22 +10,44 @@ import {
   isFinished,
   setSegmentFinished,
 } from "@/lib/storage/books";
-import { loadSegmentClip } from "@/lib/storage/segment-audio";
-import type { Clip, Peaks } from "@/types/audio";
-import type { ChapterId, Segment, SegmentId } from "@/types/domain";
+import {
+  loadSegmentClip,
+  resolveSegmentAudio,
+} from "@/lib/storage/segment-audio";
+import type { Peaks } from "@/types/audio";
+import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
 
 /**
- * A row's waveform. A PCM clip's peaks are computed from its samples here, once
- * per load; a finished segment's clip is MP3 (B8/D3) and carries the peaks the
- * transcode took from the PCM it dropped, so listing a chapter never decodes.
- * An MP3 clip with no stored peaks is not written by anything, but if one is
- * ever read the row draws flat rather than decoding a chapter on the list.
+ * A row's waveform, or `null` when the segment has no playable audio.
+ *
+ * Metadata first: a finished segment's clip is MP3 (B8/D3) and carries the
+ * peaks the transcode took from the PCM it dropped, so its row is drawn from
+ * `meta.peaks` and its bytes are never read — listing a chapter neither decodes
+ * nor loads MP3s it would only discard (round-2 George P3). A PCM clip's peaks
+ * are computed from its samples, so only then are the bytes loaded. An MP3 clip
+ * with no stored peaks is not written by anything, but if one is ever read the
+ * row draws flat rather than decoding on the list.
+ *
+ * `hasClip` follows the metadata walk resolving — both halves of the clip
+ * present — the same F3 rule as before; the second read for a PCM clip can
+ * still miss (erased in between), and that reads as not recorded.
  */
-function rowPeaks(clip: Clip): Peaks | null {
-  return clip.encoding === "pcm"
-    ? computePeaks(clip.samples, ROW_PEAK_BUCKETS)
-    : clip.meta.peaks;
+async function rowAudio(
+  segmentId: SegmentId
+): Promise<{ clipId: ClipId; durationMs: number; peaks: Peaks | null } | null> {
+  const audio = await resolveSegmentAudio(segmentId);
+  if (audio.kind !== "resolved") return null;
+  const meta = audio.clip;
+  if (meta.encoding === "mp3")
+    return { clipId: meta.id, durationMs: meta.durationMs, peaks: meta.peaks };
+  const full = await loadSegmentClip(segmentId);
+  if (full.kind !== "resolved" || full.clip.encoding !== "pcm") return null;
+  return {
+    clipId: meta.id,
+    durationMs: meta.durationMs,
+    peaks: computePeaks(full.clip.samples, ROW_PEAK_BUCKETS),
+  };
 }
 
 /**
@@ -39,16 +61,15 @@ function rowPeaks(clip: Clip): Peaks | null {
  * never amber bars over audio the database cannot produce.
  */
 async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
-  const audio = await loadSegmentClip(segment.id);
-  const clip = audio.kind === "resolved" ? audio.clip : null;
+  const audio = await rowAudio(segment.id);
   return {
     segmentId: segment.id,
     ordinal: segment.index,
-    hasClip: clip !== null,
+    hasClip: audio !== null,
     finished: isFinished(segment.status),
-    clipId: clip?.meta.id ?? null,
-    peaks: clip ? rowPeaks(clip) : null,
-    durationMs: clip?.meta.durationMs ?? null,
+    clipId: audio?.clipId ?? null,
+    peaks: audio?.peaks ?? null,
+    durationMs: audio?.durationMs ?? null,
   };
 }
 

@@ -18,7 +18,8 @@
  * ordering and gap are asserted directly on samples, without decoding an MP3.
  */
 
-import { fitToFrames, silence } from "@/lib/audio/edit";
+import { silence } from "@/lib/audio/edit";
+import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { resolveChapterClipIds } from "@/lib/storage/books";
 import { getClip, getClipMeta } from "@/lib/storage/clips";
@@ -55,12 +56,21 @@ interface ChapterExport {
  * `resolveChapterClipIds` already drops segments with no resolvable audio (and
  * reports how many); a clip deleted between that walk and the read here is
  * skipped too, rather than crashing a share. A finished segment's MP3 is
- * decoded through `codec.decodeMp3` and fitted to its original frame count.
+ * decoded through `codec.decodeMp3` and aligned to its recording with
+ * `fitMp3Decode`.
+ *
+ * `shouldContinue` is checked before every clip read and decode. The gather
+ * used to be cheap reads; with finished segments it is one `decodeAudioData`
+ * per MP3 clip, and the caller holds the app's single encoder lane for the
+ * whole build — so a share the translator has already dismissed must let go
+ * at the next clip, not after the last decode (round-2 George P2). Returns
+ * `null` when cancelled; the partial buffer is dropped.
  */
 export async function gatherChapterPcm(
   chapterId: ChapterId,
-  codec: Pick<AudioCodec, "decodeMp3">
-): Promise<ChapterPcm> {
+  codec: Pick<AudioCodec, "decodeMp3">,
+  shouldContinue?: () => boolean
+): Promise<ChapterPcm | null> {
   const { clipIds, missing } = await resolveChapterClipIds(chapterId);
   let missingAudio = missing;
 
@@ -101,14 +111,27 @@ export async function gatherChapterPcm(
   let written = 0;
   let segments = 0;
   for (const { clipId, frames } of present) {
+    if (shouldContinue && !shouldContinue()) return null;
     const clip = await getClip(clipId);
     if (!clip) {
       missingAudio++;
       continue;
     }
-    const decoded =
-      clip.encoding === "pcm" ? clip.samples : await codec.decodeMp3(clip.mp3);
-    if (decoded.length === 0) {
+    let fitted: Int16Array;
+    if (clip.encoding === "pcm") {
+      fitted = clip.samples;
+    } else {
+      const decoded = await codec.decodeMp3(clip.mp3);
+      if (decoded.length === 0) {
+        missingAudio++;
+        continue;
+      }
+      // Aligned to the recording (see `fitMp3Decode`): the decode carries the
+      // encoder's priming at its head and granule padding at its tail, and
+      // neither may land in the chapter or push the next segment off its slot.
+      fitted = fitMp3Decode(decoded, clip.mp3, frames);
+    }
+    if (fitted.length === 0) {
       missingAudio++;
       continue;
     }
@@ -116,9 +139,7 @@ export async function gatherChapterPcm(
       out.set(gap, written);
       written += gap.length;
     }
-    // Fitted to the recorded length (see `fitToFrames`): a decoder that keeps
-    // LAME's padding must not spill into the next slot or off the buffer's end.
-    out.set(fitToFrames(decoded, frames), written);
+    out.set(fitted, written);
     written += frames;
     segments++;
   }
@@ -130,20 +151,18 @@ export async function gatherChapterPcm(
  * Encode a chapter's recorded segments, in order, as one MP3. Returns `null`
  * when the chapter has no resolvable audio — there is nothing to share.
  *
- * `shouldEncode` is checked after the gather and before the encode. The encode
- * now runs off-thread and is abortable through the codec the hook built, but the
- * check still earns its place: a caller cancelled during the gather skips
- * spinning up a worker for a share the user already dismissed.
+ * `shouldEncode` is threaded into the gather (checked before every clip read
+ * and decode) and checked again before the encode, so a share the translator
+ * has dismissed stops at the next clip and never spins up a worker.
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
   codec: AudioCodec,
   shouldEncode?: () => boolean
 ): Promise<ChapterExport | null> {
-  const { samples, segments, missing } = await gatherChapterPcm(
-    chapterId,
-    codec
-  );
+  const gathered = await gatherChapterPcm(chapterId, codec, shouldEncode);
+  if (gathered === null) return null;
+  const { samples, segments, missing } = gathered;
   if (segments === 0) return null;
   if (shouldEncode && !shouldEncode()) return null;
   return { mp3: await codec.encodeMp3(samples), segments, missing };

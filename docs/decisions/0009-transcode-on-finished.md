@@ -112,14 +112,23 @@ recordings come through.
 
 `peaks` are the Segments-row waveform (`ROW_PEAK_BUCKETS`), taken from the PCM
 just before it is dropped and stored on the MP3 clip, so listing a chapter never
-decodes audio. `frameCount`/`durationMs` stay the original PCM's: an MP3 decode
-is not sample-exact (LAME padding; decoders differ on trimming it — Chromium
-returned 133,632 frames for 132,300), so **every** consumer of a decode fits it
-to the recorded length with `fitToFrames` (`lib/audio/edit.ts`): the chapter
-export, playback, and the recorder's edit buffer. The last matters most — the
-save stamps the buffer's length as the new `frameCount`, so an unfitted decode
-would make the padding permanent and grow it on every finish → edit cycle
-(round-1 Frank F1 / George G3).
+decodes audio — nor even loads an MP3 row's bytes (the row reads metadata only).
+
+`frameCount`/`durationMs` stay the original PCM's, and **a decode is not the
+clip**. Measured in Chromium with impulses at known positions, for five input
+lengths: the recording starts **1105 samples** into the decode (LAME's 576 of
+encoder priming plus the 529-sample decoder delay), the decode is exactly the
+stream's granule count × 1152 long, and the rest is tail padding. lamejs writes
+no Xing/LAME info tag, so no decoder can trim that by tag. Every consumer of a
+decode — the chapter export, playback, the recorder's edit buffer — therefore
+goes through `fitMp3Decode` (`lib/audio/mp3-align.ts`), which counts the
+stream's own granules from its headers, reads the decoder's behaviour off the
+decode's length (trimmed nothing / trimmed its own delay / sample-exact), skips
+the priming it finds, and fits the tail to `frameCount`. Round 1's fit kept the
+decode's first `frameCount` samples instead: playback started ~25 ms late and
+an edit → save of a finished segment deleted its last ~25 ms of speech, per
+cycle (round-2 Frank P1 / George P2). The tests model the Chromium decoder on
+ramp fixtures, never constants, so a fit that keeps the wrong end fails.
 
 ### Also in this batch — the Share Book archive is streamed
 

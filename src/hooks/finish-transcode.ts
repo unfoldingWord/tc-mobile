@@ -60,6 +60,11 @@ export function requestTranscodeSweep(): Promise<void> {
     } while (requestedDuringRun);
   })().finally(() => {
     running = null;
+    // A request that landed between the loop's last check and here set the
+    // flag while `running` was still non-null, so it joined nothing: start the
+    // pass it asked for (round-2 George P3). Not awaited — the caller who asked
+    // has moved on; the sweep is background work either way.
+    if (requestedDuringRun) void requestTranscodeSweep();
   });
   return running;
 }

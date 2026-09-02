@@ -1,6 +1,11 @@
 import { vi } from "vitest";
 
 import { encodeMp3 } from "@/lib/audio/mp3";
+import {
+  MP3_GRANULE,
+  MP3_TOTAL_DELAY,
+  mp3GranuleCount,
+} from "@/lib/audio/mp3-align";
 import { closeDb, getDb } from "@/lib/storage/db";
 import type { AudioCodec, Clip } from "@/types/audio";
 
@@ -50,4 +55,28 @@ export async function clearAllStores(): Promise<void> {
   const stores = Array.from(db.objectStoreNames);
   const tx = db.transaction(stores, "readwrite");
   await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
+}
+
+/**
+ * A ramp of `n` samples, 1..n scaled into the Int16 range, offset by `base`.
+ * Never constant, so a fit that keeps the wrong end of a buffer is caught —
+ * the fixture shape round 2 of PR #136 asked for.
+ */
+export function ramp(n: number, base = 0): Int16Array {
+  const out = new Int16Array(n);
+  for (let i = 0; i < n; i++) out[i] = base + 1 + (i % 30_000);
+  return out;
+}
+
+/**
+ * What a decoder that returns every granule hands back for `mp3`, the encode
+ * of `pcm`: 1105 samples of priming, the recording, then granule padding to the
+ * stream's emitted length. The two facts this models — head offset and total
+ * length — were measured in Chromium (`decodeAudioData`) for five input
+ * lengths; this is that decoder, minus the codec noise.
+ */
+export function noTrimDecode(pcm: Int16Array, mp3: Uint8Array): Int16Array {
+  const out = new Int16Array(mp3GranuleCount(mp3) * MP3_GRANULE);
+  out.set(pcm, MP3_TOTAL_DELAY);
+  return out;
 }

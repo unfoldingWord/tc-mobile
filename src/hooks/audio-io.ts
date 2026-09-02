@@ -295,10 +295,12 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
  * the app has (lamejs encodes only), which is why `lib/` takes decoding as an
  * injected function rather than doing it.
  *
- * Not sample-exact: LAME pads the stream and decoders differ on trimming that
- * padding back out, so the result can run a few dozen milliseconds long or
- * short of the clip's `frameCount`. Consumers that care (the chapter export)
- * fit it to the recorded length; playback and editing take it as it comes.
+ * NOT the clip as recorded: the decode carries the encoder's priming at its
+ * head (1105 samples on a decoder that trims nothing — measured in Chromium)
+ * and granule padding at its tail. EVERY consumer must pass the result through
+ * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
+ * `frameCount` — the chapter export, playback and the recorder's edit buffer
+ * all do — or the recording plays late and, once saved, loses its last ~25 ms.
  */
 export async function decodeMp3ToCanonical(
   mp3: Uint8Array<ArrayBuffer>

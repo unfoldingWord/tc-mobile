@@ -81,10 +81,25 @@ its static import kept lamejs in the app bundle (0 `Mp3Encoder` in the index
 chunk now, 1 in the worker chunk, checked in `dist/`); **G4** the `clipData`
 comment. **G5** DEFERRED to #137 (UX call, intersects #106/#135).
 
+### Review round 2 (Seth's session, both reviewers @ `1924507f`) — chain shape
+
+Frank **P1** ↔ George P2: round 1's `fitToFrames` trimmed the TAIL, but the
+decode's excess is at the HEAD (LAME priming 576 + decoder delay 529 = 1105;
+no info tag from lamejs), so an edit → save of a finished segment deleted its
+last ~25 ms of speech. Seth reproduced the granule arithmetic in Node; I then
+**measured it in Chromium** with impulses at known positions, five input
+lengths: head offset 1105 every time, decode = granules × 1152. Fix:
+`lib/audio/mp3-align.ts` — `mp3GranuleCount` walks the stream's own headers,
+`fitMp3Decode` reads the decoder's behaviour off the decode length and skips
+the priming, all three consumers use it, ramp fixtures + a modelled no-trim
+decoder in the tests. Also **P2** cancel threaded into the gather (a dismissed
+share lets go of the encoder lane at the next clip), **P3**s: sweep re-request
+race, MP3 rows read metadata only, `decodeMp3ToCanonical` docblock.
+
 ### Next steps
 
-1. Round 2: Frank + George re-run at the new head (the DRI's session runs them;
-   no codex/grok in the build session); triage comment per round.
+1. Round 3: Frank + George re-run at the round-3 head (the DRI's session runs
+   them; no codex/grok in the build session); triage comment per round.
 2. On-device pass (iOS + Android) on staging after promotion — the list above,
    plus the B7 share checks already owed.
 3. Rest of B7 — Template Library (Tim's Q2 call).
