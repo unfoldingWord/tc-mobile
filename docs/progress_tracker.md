@@ -96,10 +96,21 @@ decoder in the tests. Also **P2** cancel threaded into the gather (a dismissed
 share lets go of the encoder lane at the next clip), **P3**s: sweep re-request
 race, MP3 rows read metadata only, `decodeMp3ToCanonical` docblock.
 
+### Review round 3 (Seth's session, both reviewers @ `5a42b6ba8`) — chain
+
+Frank **APPROVE** (1 × P3: the sweep promise resolved before the follow-up pass
+it promised — now chained into the returned promise). George REQUEST_CHANGES
+(1 × P2: the row loader's two reads straddle the sweep's commit, so a clip read
+as PCM then MP3 came back `null` and a finished segment drew as never-recorded
+until the next reload — fixed by judging the second read on what it returns;
+`rowAudio` exported and pinned by `tests/row-audio.test.ts`, mutation dies).
+Round 4 is the cap.
+
 ### Next steps
 
-1. Round 3: Frank + George re-run at the round-3 head (the DRI's session runs
-   them; no codex/grok in the build session); triage comment per round.
+1. Round 4: Frank + George re-run at the round-4 head (the DRI's session runs
+   them; no codex/grok in the build session). If anything is open after it,
+   that is an escalation to Seth per AGENTS.md, not a stop.
 2. On-device pass (iOS + Android) on staging after promotion — the list above,
    plus the B7 share checks already owed.
 3. Rest of B7 — Template Library (Tim's Q2 call).

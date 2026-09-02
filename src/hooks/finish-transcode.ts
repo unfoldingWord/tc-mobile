@@ -53,20 +53,26 @@ export function requestTranscodeSweep(): Promise<void> {
     requestedDuringRun = true;
     return running;
   }
-  running = (async () => {
-    do {
-      requestedDuringRun = false;
-      await sweepOnce();
-    } while (requestedDuringRun);
-  })().finally(() => {
-    running = null;
-    // A request that landed between the loop's last check and here set the
-    // flag while `running` was still non-null, so it joined nothing: start the
-    // pass it asked for (round-2 George P3). Not awaited — the caller who asked
-    // has moved on; the sweep is background work either way.
-    if (requestedDuringRun) void requestTranscodeSweep();
-  });
+  running = runSweeps()
+    .finally(() => {
+      running = null;
+    })
+    // A request that landed between the loop's last check and the `finally`
+    // set the flag while `running` was still non-null, so it joined THIS
+    // promise. Chain the pass it asked for into it, so the promise every joiner
+    // holds really does resolve only once their request is covered (round-2
+    // George P3, round-3 Frank P3). A request that lands after `running` was
+    // cleared starts its own run instead, and resets the flag as it begins.
+    .then(() => (requestedDuringRun ? requestTranscodeSweep() : undefined));
   return running;
+}
+
+/** Sweep, and sweep again for every request that arrived while sweeping. */
+async function runSweeps(): Promise<void> {
+  do {
+    requestedDuringRun = false;
+    await sweepOnce();
+  } while (requestedDuringRun);
 }
 
 async function sweepOnce(): Promise<void> {

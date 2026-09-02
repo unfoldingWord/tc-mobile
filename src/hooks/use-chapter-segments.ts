@@ -14,7 +14,7 @@ import {
   loadSegmentClip,
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
-import type { Peaks } from "@/types/audio";
+import type { ClipMeta, Peaks } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
 
@@ -29,25 +29,39 @@ import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
  * with no stored peaks is not written by anything, but if one is ever read the
  * row draws flat rather than decoding on the list.
  *
- * `hasClip` follows the metadata walk resolving — both halves of the clip
- * present — the same F3 rule as before; the second read for a PCM clip can
- * still miss (erased in between), and that reads as not recorded.
+ * `hasClip` follows the walk resolving — both halves of the clip present — the
+ * same F3 rule as before. The two reads are two transactions, and the transcode
+ * sweep writes between them: a clip read as PCM first can come back as MP3 from
+ * the second read (a take saved with the Finished mark fires `reload()` and the
+ * sweep in the same tick). That is a resolved clip, not a missing one, so the
+ * second read is judged on what it actually returns — MP3 draws from its stored
+ * peaks exactly as the first branch does — and only a genuinely unresolved walk
+ * reads as not recorded (round-3 George P2).
+ *
+ * Exported for the Node test that pins that interleaving; the screen reaches it
+ * only through `useChapterSegments`.
  */
-async function rowAudio(
+export async function rowAudio(
   segmentId: SegmentId
 ): Promise<{ clipId: ClipId; durationMs: number; peaks: Peaks | null } | null> {
   const audio = await resolveSegmentAudio(segmentId);
   if (audio.kind !== "resolved") return null;
   const meta = audio.clip;
-  if (meta.encoding === "mp3")
-    return { clipId: meta.id, durationMs: meta.durationMs, peaks: meta.peaks };
+  if (meta.encoding === "mp3") return fromMeta(meta);
   const full = await loadSegmentClip(segmentId);
-  if (full.kind !== "resolved" || full.clip.encoding !== "pcm") return null;
+  if (full.kind !== "resolved") return null;
+  const clip = full.clip;
+  if (clip.encoding === "mp3") return fromMeta(clip.meta);
   return {
-    clipId: meta.id,
-    durationMs: meta.durationMs,
-    peaks: computePeaks(full.clip.samples, ROW_PEAK_BUCKETS),
+    clipId: clip.meta.id,
+    durationMs: clip.meta.durationMs,
+    peaks: computePeaks(clip.samples, ROW_PEAK_BUCKETS),
   };
+}
+
+/** An MP3 clip's row, from metadata alone: the peaks stored at transcode. */
+function fromMeta(meta: ClipMeta) {
+  return { clipId: meta.id, durationMs: meta.durationMs, peaks: meta.peaks };
 }
 
 /**
