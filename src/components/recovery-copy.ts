@@ -44,15 +44,17 @@ export function recoveryTitle(
  * the don't-close warning applies to all of them — hence no `kind` parameter.
  *
  * Worded for what is actually RAM-only. On the record path `saveTake` rolls back
- * on failure, so a splice into a segment that already has audio leaves the prior
- * take on disk — only what was just recorded is unsaved. "what you just recorded"
- * is true whether the segment was empty or not; the edit path's subject is the
- * edited buffer, whose prior stored take likewise survives.
+ * on failure, so the prior take (if any) survives on disk — but what does not is
+ * more than the new fragment: under Model A the working buffer being saved also
+ * carries any in-session cut/paste edits, and `discardSave` drops the whole
+ * recipe. "your unsaved work" covers both the new recording and those edits
+ * (George G5), where "what you just recorded" was silent about the cuts. The edit
+ * path's subject is the edited buffer, whose prior stored take likewise survives.
  */
 export function recoverySafetyLine(editOnly: boolean): string {
   return editOnly
     ? "This screen has the only copy of your changes. Don't close the app."
-    : "This screen has the only copy of what you just recorded. Don't close the app.";
+    : "This screen has the only copy of your unsaved work. Don't close the app.";
 }
 
 /**

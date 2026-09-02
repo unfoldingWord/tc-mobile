@@ -44,14 +44,16 @@ describe("recoverySafetyLine", () => {
     }
   });
 
-  it("words the warning for what is actually RAM-only (George G1)", () => {
-    // A record-path splice into a segment with an existing take leaves the prior
-    // take on disk (saveTake rolls back on failure); only the newly recorded
-    // audio is unsaved. The line must not claim the whole recording is at risk.
-    expect(recoverySafetyLine(false)).toContain("what you just recorded");
+  it("words the warning for everything RAM-only, not just the new fragment (George G1, G5)", () => {
+    // A record-path save rolls back on failure, so the prior take survives on
+    // disk — but the working buffer being saved can also carry in-session cuts
+    // (Model A), which Discard drops. "your unsaved work" covers the new
+    // recording AND those edits; it must not narrow to just the recording.
+    expect(recoverySafetyLine(false)).toContain("unsaved work");
     expect(recoverySafetyLine(false)).not.toContain(
       "only copy of this recording"
     );
+    expect(recoverySafetyLine(false)).not.toContain("what you just recorded");
     // The edit path's subject is the edited buffer.
     expect(recoverySafetyLine(true)).toContain("changes");
   });
