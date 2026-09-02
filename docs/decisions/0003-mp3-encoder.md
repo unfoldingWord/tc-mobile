@@ -52,7 +52,7 @@ obligations are actually met, so they are listed here rather than assumed.
    improved with it. (Not "D3": D3 is transcode-on-Finished, which is what made
    #34 a blocker rather than a nicety. They are different tickets.)
 2. **Keep one module interface in front of it.** `encodeMp3` is the only entry
-   point, so a user exercising their LGPL right to relink has exactly one thing
+   point, so an LGPL relink has exactly one unit — the `mp3.worker-*.js` chunk —
    to replace. Do not scatter lamejs calls.
 3. **Ship the licence text and attribution** with the app, reachable by someone
    holding the phone — not only in `node_modules`.
@@ -69,6 +69,18 @@ in-app at **Menu → About & licenses** (`src/components/about-panel.tsx`, data 
 `src/components/licenses.ts`). `package.json` declares the project's own licence
 (`"license": "MIT"`) and `README.md` states the full MIT-with-an-LGPL-3.0-encoder
 position in prose. The in-app surface has not yet been eyeballed on a device.
+
+**Still open — the LGPL §4(d) relink mechanism.** The boundary (items 1–2) is
+clean, but the LGPL also requires that a recipient be _able_ to relink: §4(d)
+wants either the Corresponding Source in a relinkable form (§4(d)(0)) or a
+shared-library mechanism (§4(d)(1)). Today the repo is private, the worker chunk
+is a hashed minified asset, and no rebuild/relink instructions ship, so no
+recipient could act on the right. Which option this project relies on — most
+likely §4(d)(0) by construction once the repository is made public (the org
+transfer, `docs/org-transfer-plan.md`), recorded here with build instructions —
+is a DRI call (Seth with Tim), tracked as the remaining part of #36. The in-app
+copy, README and this ADR therefore describe the boundary, not an exercisable
+mechanism, until that lands.
 
 ### What this closes
 

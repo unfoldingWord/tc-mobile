@@ -47,8 +47,9 @@ interface ThirdPartyLicense {
 /**
  * Everything bundled into the app: the `package.json` runtime dependencies plus
  * Workbox, which vite-plugin-pwa injects into the service worker at build time
- * (it emits `dist/workbox-*.js` with no notice of its own, so the notice has to
- * ride here). lamejs is first and carries the copyleft note; the rest are
+ * (it emits `dist/workbox-*.js`, whose header varies by build, so its notice is
+ * disclosed here to travel regardless). lamejs is first and carries the copyleft
+ * note; the rest are
  * permissive (MIT/ISC) and their verbatim notices ride in
  * `THIRD-PARTY-NOTICES.txt`. Versions are the installed ones — the test pins
  * every entry and keeps the dependency set complete.
@@ -60,7 +61,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "LGPL-3.0",
     role: "MP3 encoder",
     copyright: "© Alex Zhukov — a fork of lamejs, based on LAME",
-    note: "The only copyleft component. It sits behind one module (encodeMp3, run in a Web Worker), so you may replace it with your own build of lamejs under the LGPL.",
+    note: "The only copyleft component. It is isolated in a single Web Worker chunk (encodeMp3), which is the one unit its LGPL licence concerns.",
     acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
     noticeMarker: "LAME",
   },

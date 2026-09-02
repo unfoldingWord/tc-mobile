@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   contentAttribution,
@@ -7,6 +7,7 @@ import {
   type LicenseText,
 } from "./licenses";
 import { Menu } from "./menu";
+import { Notice } from "./notice";
 import { strings } from "./strings";
 
 interface AboutPanelProps {
@@ -73,7 +74,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
                 type="button"
                 onClick={() => setViewing(text)}
                 aria-label={strings.aboutReadText(text.label)}
-                className="w-fit border-0 bg-transparent p-0 text-left text-[13px] underline"
+                className="flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
                 style={{ color: "var(--s-ink)" }}
               >
                 {text.label}
@@ -134,14 +135,18 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
 }
 
 /**
- * A verbatim licence text, read inside the drawer. The `<pre>` is always
- * rendered and focusable (`tabIndex={0}`), so the Menu's `focusKey` refocus
- * lands on it and it is the one thing to read/scroll here; the file is precached
- * so the fetch resolves offline. Back is the Menu header, not a control here.
+ * A verbatim licence text, read inside the drawer. Loading and failure go
+ * through `Notice` (the established status/alert channel — George G1), so they
+ * are announced; the `<pre>` renders the body only, and carries no `aria-label`
+ * so AT reads the text rather than the panel title again. It fills the panel and
+ * is the one scroll container (`flex-1`), focusable so the Menu's `focusKey`
+ * refocus lands on it. The file is precached, so the fetch resolves offline.
+ * Back is the Menu header, not a control here.
  */
 function LicenseTextView({ text }: { text: LicenseText }) {
   const [body, setBody] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -162,18 +167,23 @@ function LicenseTextView({ text }: { text: LicenseText }) {
     };
   }, [text.href]);
 
+  // Land focus on the body once it arrives: while it loads a Notice shows (not
+  // focusable), so the Menu's focusKey lands on the header Back until then.
+  useEffect(() => {
+    if (body !== null) preRef.current?.focus();
+  }, [body]);
+
+  if (failed) return <Notice>{strings.aboutTextFailed}</Notice>;
+  if (body === null)
+    return <Notice tone="busy">{strings.aboutTextLoading}</Notice>;
   return (
     <pre
+      ref={preRef}
       tabIndex={0}
-      aria-label={text.label}
-      className="max-h-[70vh] overflow-auto text-[11px] leading-normal whitespace-pre-wrap"
-      style={{ color: "var(--s-ink-muted)" }}
+      className="min-h-0 flex-1 overflow-auto text-[13px] leading-normal whitespace-pre-wrap"
+      style={{ color: "var(--s-ink)" }}
     >
-      {failed
-        ? strings.aboutTextFailed
-        : body === null
-          ? strings.aboutTextLoading
-          : body}
+      {body}
     </pre>
   );
 }
