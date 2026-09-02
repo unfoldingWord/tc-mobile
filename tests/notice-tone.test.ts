@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NOTICE_TONES, noticePresentation } from "@/components/notice-tone";
+import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
 
 /**
  * #112 — `Notice` has to say three different things with three different marks.
@@ -15,10 +15,28 @@ import { NOTICE_TONES, noticePresentation } from "@/components/notice-tone";
  * review surface. What is pinned is the tone → presentation table itself.
  */
 
+// Enumerated here rather than exported from the module: production has no use
+// for a tone list (the exhaustive `switch` already makes the table total), and a
+// src export kept alive only by a test import is invisible to knip.
+const TONES: readonly NoticeTone[] = ["alert", "busy", "info"];
+
 describe("noticePresentation", () => {
   it("gives every tone its own glyph", () => {
-    const icons = NOTICE_TONES.map((tone) => noticePresentation(tone).icon);
-    expect(new Set(icons).size).toBe(NOTICE_TONES.length);
+    const icons = TONES.map((tone) => noticePresentation(tone).icon);
+    expect(new Set(icons).size).toBe(TONES.length);
+  });
+
+  it("gives every tone its own glyph colour", () => {
+    // The glyph carries the meaning for a non-reader, so shape and colour must
+    // both separate the three (George G3).
+    const colours = TONES.map((tone) => noticePresentation(tone).glyph);
+    expect(new Set(colours).size).toBe(TONES.length);
+  });
+
+  it("only a failure paints the glyph in the failure colour", () => {
+    expect(noticePresentation("alert").glyph).toBe("var(--s-live)");
+    expect(noticePresentation("busy").glyph).toBe("var(--s-ink-muted)");
+    expect(noticePresentation("info").glyph).toBe("var(--s-warn)");
   });
 
   it("only a failure interrupts (role=alert); busy and info wait their turn", () => {

@@ -21,26 +21,48 @@ import type { IconName } from "./icon";
  */
 export type NoticeTone = "alert" | "busy" | "info";
 
-/** Every tone, for a test to sweep. */
-export const NOTICE_TONES: readonly NoticeTone[] = ["alert", "busy", "info"];
-
 export interface NoticePresentation {
   /** A failure interrupts; everything else waits its turn. */
   readonly role: "alert" | "status";
   readonly icon: IconName;
-  /** Wears the failure colour (`--s-live`) on the edge and the glyph. */
+  /** Wears the failure colour on the edge. */
   readonly failure: boolean;
   /** Text in the muted ink — a wait, not news. */
   readonly muted: boolean;
+  /**
+   * The glyph's semantic colour token. In the table, not the JSX, because for a
+   * translator who cannot read the colour is the second half of what tells the
+   * three marks apart — so it is pinned with the glyph rather than left where no
+   * test can see it (George G3).
+   */
+  readonly glyph: string;
 }
 
 export function noticePresentation(tone: NoticeTone): NoticePresentation {
   switch (tone) {
     case "alert":
-      return { role: "alert", icon: "alert", failure: true, muted: false };
+      return {
+        role: "alert",
+        icon: "alert",
+        failure: true,
+        muted: false,
+        glyph: "var(--s-live)",
+      };
     case "busy":
-      return { role: "status", icon: "retry", failure: false, muted: true };
+      return {
+        role: "status",
+        icon: "retry",
+        failure: false,
+        muted: true,
+        glyph: "var(--s-ink-muted)",
+      };
     case "info":
-      return { role: "status", icon: "info", failure: false, muted: false };
+      return {
+        role: "status",
+        icon: "info",
+        failure: false,
+        muted: false,
+        glyph: "var(--s-warn)",
+      };
   }
 }

@@ -31,15 +31,7 @@ interface NoticeProps {
  * not been answered yet, so it is kept short and literal rather than invented.
  */
 export function Notice({ tone = "alert", children }: NoticeProps) {
-  const { role, icon, failure, muted } = noticePresentation(tone);
-  // The heads-up glyph takes the warn colour: not the failure red, and not the
-  // muted ink a wait wears, so the three marks stay apart in colour as well as
-  // shape for a reader who cannot parse the sentence.
-  const glyphColor = failure
-    ? "var(--s-live)"
-    : muted
-      ? "var(--s-ink-muted)"
-      : "var(--s-warn)";
+  const { role, icon, failure, muted, glyph } = noticePresentation(tone);
   return (
     <div
       role={role}
@@ -50,7 +42,7 @@ export function Notice({ tone = "alert", children }: NoticeProps) {
         color: muted ? "var(--s-ink-muted)" : "var(--s-ink)",
       }}
     >
-      <span className="shrink-0" style={{ color: glyphColor }}>
+      <span className="shrink-0" style={{ color: glyph }}>
         <Icon name={icon} size={20} />
       </span>
       {children}
