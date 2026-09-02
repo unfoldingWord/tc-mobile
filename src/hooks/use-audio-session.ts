@@ -12,7 +12,11 @@ import {
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
-import { preemptPausedMic, reclaimMic } from "@/lib/audio/floor-transitions";
+import {
+  preemptPausedMic,
+  reclaimAfterPreview,
+  reclaimMic,
+} from "@/lib/audio/floor-transitions";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
@@ -334,6 +338,31 @@ export function useAudioSession(): UseAudioSession {
     if (!playingBufferRef.current) return;
     if (session.live === "take") session.stopAll();
     setPlayingBuffer(false);
+    // A user stop is the OTHER way a preview ends, and the commoner one: Play
+    // again, the ≡ menu, Back. `playSamples` sets `stopped` before `source.stop()`
+    // (`audio-io.ts`), so `onEnded` never fires on this path — reclaiming only
+    // there left the paused mic with no floor after every hand-stopped preview
+    // (George G1). Same gate, same helper.
+    //
+    // KNOWN RESIDUAL, traced (George G1's ordering question). `Recorder` calls
+    // this from an effect on every leave from `paused`, and a child's effect runs
+    // before the parent's — so on a #59 interruption (paused → processing, no
+    // transport handler) `recorderStateRef` still reads "paused" here and this
+    // reclaims for a microphone that has already stopped. The ref cannot be made
+    // fresher: writing it during render is what `react-hooks` forbids, and
+    // `resumeRecording`'s eager write already covers the resume edge. The claim
+    // that leaves behind is bounded and inert: EVERY route out of `processing`
+    // clears it — `endRecording` (use-recorder.ts, all three `setState("idle")`
+    // exits) runs under `stopRecording`, whose `finally` stops the floor when its
+    // token is current, and `cancel()` is reached only through `leave()`, which
+    // nulls the token and calls `stopAll()`. In between, `processing` is `busy`,
+    // so Play is disabled, and the Segments list is `inert` behind the sheet —
+    // nothing can be refused the floor while the phantom claim exists.
+    micTokenRef.current = reclaimAfterPreview(
+      session,
+      recorderStateRef.current === "paused",
+      micTokenRef.current
+    );
   }, [session, setPlayingBuffer]);
 
   const playBuffer = useCallback(
@@ -408,12 +437,11 @@ export function useAudioSession(): UseAudioSession {
               // admitted under an open paused mic, and Resume would then stop
               // it mid-sound (#129). Replay is unaffected: `playBuffer(..., {
               // preemptPausedMic: true })` handles `live === "mic"`.
-              if (recorderStateRef.current === "paused") {
-                micTokenRef.current = reclaimMic(
-                  session,
-                  micTokenRef.current
-                ).token;
-              }
+              micTokenRef.current = reclaimAfterPreview(
+                session,
+                recorderStateRef.current === "paused",
+                micTokenRef.current
+              );
             },
           });
           // A `false` here means the handle was built for a claim that has since
@@ -429,6 +457,13 @@ export function useAudioSession(): UseAudioSession {
             session.release(token);
             setPlayingBuffer(false);
             setPlaybackError("Could not play this recording.");
+            // The third exit from a preview: it never sounded at all. Leaving the
+            // floor empty here is the same #129 gap as the other two (George G1).
+            micTokenRef.current = reclaimAfterPreview(
+              session,
+              recorderStateRef.current === "paused",
+              micTokenRef.current
+            );
           }
         }
       })();
