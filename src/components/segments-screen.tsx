@@ -125,6 +125,13 @@ export const SegmentsScreen = forwardRef<
       // R-B6). Only our own target: another row's playback is not ours to stop,
       // and only one thing sounds at a time, so `leave()` here ends exactly it.
       if (audio.playingId === eraseTarget) audio.leave();
+      // The recorder's in-memory buffer is the other thing that can sound. It is
+      // unreachable from here today (the list is `inert` while the sheet is
+      // open, and `openRecorder` calls `leave()` first), but if that coupling
+      // ever loosens a sounding buffer would outlive `clearSegmentTake` with no
+      // pause control — the same R-B6 hole. `stopBuffer`, not `leave()`: a
+      // recording in progress is never ours to cancel from a list erase (#103).
+      else if (audio.playingBuffer) audio.stopBuffer();
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
