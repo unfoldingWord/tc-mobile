@@ -243,6 +243,33 @@ Work is cut from `develop` and merged back by PR. Promotion is `develop` ->
 `staging` -> `main`, each by PR. **The `staging` -> `main` PR is the production
 gate.**
 
+### Versions and milestones
+
+`package.json`'s `version` is the build number, and it moves in exactly one
+place. Decided 2026-09-02, when the repo stopped being solo.
+
+- **A feature or fix PR never touches the version.** With several contributors
+  and three to six PRs a day, a bump in every PR is a guaranteed conflict on
+  `package.json` and records nothing the merge commit does not.
+- **One `chore(release): vX.Y.Z` PR per `develop -> staging` promotion bumps
+  the patch** — daily, whenever there is something to promote. Its body lists
+  the PRs it carries (#131 is the shape). Patch numbers are not capped;
+  `0.1.30` is fine.
+- **The minor is the milestone.** Every GitHub milestone is named for the
+  version its `staging -> main` promotion ships. That PR bumps the minor and
+  tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
+  production hotfix between milestones is a patch on the shipped minor.
+
+  | Milestone                            | Due        | Ships                                       |
+  | ------------------------------------ | ---------- | ------------------------------------------- |
+  | `v0.2.0 — Sept: production gate`     | 2026-09-30 | the first `staging -> main` since the pivot |
+  | `v0.3.0 — Oct: East Africa training` | 2026-10-09 | what facilitators run at the training       |
+  | `v1.0.0 — Post-training`             | —          | the first field-validated release           |
+
+- **Every open issue carries a milestone.** File new issues into one. A
+  milestone closes when its promotion PR merges, and anything still open in it
+  moves to the next one explicitly, never silently.
+
 ### Cloudflare Workers Builds owns deployment
 
 There are no deploy workflows in `.github/`. Deleting them removed a real
