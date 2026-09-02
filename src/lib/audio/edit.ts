@@ -121,3 +121,29 @@ export function concat(buffers: readonly Int16Array[]): Int16Array {
 export function silence(frames: number): Int16Array {
   return new Int16Array(Math.max(0, Math.round(frames)));
 }
+
+/**
+ * Fit `samples` to exactly `frames`: trim a longer buffer to a view of its first
+ * `frames`, pad a shorter one with silence, return the same buffer when the
+ * length already matches.
+ *
+ * Exists for MP3 decodes (B8). A decoded finished segment is not sample-exact —
+ * LAME pads the head and tail of the stream (~1.1k samples), and whether the
+ * decoder trims that back out depends on whether it honours the LAME info tag
+ * (Chromium did not, in the B8 browser run: 133,632 frames back for 132,300).
+ * The clip's `frameCount` is the length the translator recorded, and every
+ * consumer of a decode — export, playback, the recorder's edit buffer — fits to
+ * it here, so the phone's decoder cannot move a segment's duration, and an
+ * edit → Finished → edit cycle cannot grow the audio by a padding each time
+ * (round-1 Frank F1 / George G3).
+ */
+export function fitToFrames(samples: Int16Array, frames: number): Int16Array {
+  if (!Number.isInteger(frames) || frames < 0) {
+    throw new RangeError(`Cannot fit audio to ${frames} frames`);
+  }
+  if (samples.length === frames) return samples;
+  if (samples.length > frames) return samples.subarray(0, frames);
+  const out = new Int16Array(frames);
+  out.set(samples);
+  return out;
+}

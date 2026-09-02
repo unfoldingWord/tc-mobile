@@ -29,6 +29,16 @@ export interface BookCard {
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────
 
+/**
+ * Waveform resolution of a Segments row, in min/max buckets.
+ *
+ * Shared between the row loader (which computes peaks from a PCM clip) and the
+ * Finished transcode (which computes them from the PCM it is about to drop and
+ * stores them on the MP3 clip, B8) — so a finished row draws from stored peaks
+ * at exactly the resolution a PCM row is drawn at, and the two never diverge.
+ */
+export const ROW_PEAK_BUCKETS = 120;
+
 export interface SegmentRow {
   readonly segmentId: SegmentId;
   /** = `Segment.index`, the wordless identifier and the export position. */
