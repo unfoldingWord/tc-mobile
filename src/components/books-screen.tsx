@@ -266,7 +266,8 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           <Notice tone="busy">{strings.shareBookPreparing}</Notice>
         )}
         {bookShare.status === "ready" && bookShare.missing > 0 && (
-          <Notice tone="busy">
+          // A heads-up once the zip is armed, not a wait (#112).
+          <Notice tone="info">
             {strings.shareBookMissing(bookShare.missing)}
           </Notice>
         )}

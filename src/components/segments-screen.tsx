@@ -362,13 +362,14 @@ export const SegmentsScreen = forwardRef<
           />
         )}
         {/* Feedback rides inside the panel because the flow keeps the menu open:
-            the busy state while encoding, a gap warning once armed, and any error
-            code mapped above. */}
+            the busy state while encoding, a gap warning once armed (`info`, not
+            `busy` — the chapter is ready, this is a heads-up about what it lacks,
+            #112), and any error code mapped above. */}
         {share.status === "preparing" && (
           <Notice tone="busy">{strings.sharePreparing}</Notice>
         )}
         {share.status === "ready" && share.missing > 0 && (
-          <Notice tone="busy">{strings.shareMissing(share.missing)}</Notice>
+          <Notice tone="info">{strings.shareMissing(share.missing)}</Notice>
         )}
         {shareErrorText && <Notice>{shareErrorText}</Notice>}
       </Menu>
