@@ -136,6 +136,18 @@ export function LiveScope({
 
     let raf = 0;
     if (active) {
+      // Paint the ring's current state NOW, before the first rAF. A first-take
+      // Resume after a preview REMOUNTS this canvas (the preview unmounted it),
+      // and waiting for the first animation frame left one commit of blank stage
+      // before the ring — which `resume()` does not reset — repainted (#130).
+      // `resume()` sets the recording flag synchronously before React commits,
+      // so the reader already returns the ring here; a null (tap not wired) just
+      // leaves the canvas as it was, the same as the loop below.
+      const first = readScopeRef.current();
+      if (first) {
+        lastScopeRef.current = first;
+        paint(first);
+      }
       const tick = () => {
         const scope = readScopeRef.current();
         // A null scope is the tap-failed / teardown transient — the tap is

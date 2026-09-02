@@ -703,11 +703,13 @@ export function useRecorder(): UseRecorder {
       }
       // Zero samples is nothing to preview — same class as an undecodable blob.
       return samples.length > 0 ? samples : null;
-    } catch {
+    } catch (cause: unknown) {
       // An undecodable partial container (device-dependent, chiefly iOS fMP4
       // before its moov atom). Not this hook's error state: the caller degrades
-      // Play to disabled. Logged, not surfaced — console is the diagnostic here.
-      console.error("Could not decode the take for preview");
+      // Play to disabled. Logged, not surfaced — console is the diagnostic here,
+      // and the `cause` is what tells "this device can't preview" from a real
+      // decoder bug in the field (#130).
+      console.error("Could not decode the take for preview", cause);
       return null;
     }
   }, []);
