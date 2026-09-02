@@ -575,6 +575,11 @@ export function Recorder({
   // capture (George R3). Any path that starts the mic belongs in record mode.
   const onRetryRecord = useCallback(() => {
     setMode("record");
+    // Drop any latched `menuOpen`. The menu is already HIDDEN while `denied`
+    // (`menuShown`), but the raw flag survives, so a Retry that succeeds would
+    // otherwise pop the drawer back up over a live recorder — a menu the
+    // translator never re-opened (George, round 4).
+    setMenuOpen(false);
     audio.startRecording();
   }, [audio]);
 
@@ -924,6 +929,17 @@ export function Recorder({
   // The Mark-finished row's reason (#135 round 3). Narrower than the Edit/Erase
   // gate on purpose: Mark stays live while recording or paused, because the mark
   // rides the take through `addTake` (G8/G10) — only the commit window freezes it.
+  // The ≡ menu is NEVER up while the permission panel owns the body. The opener
+  // is disabled on `denied`, but that only blocks OPENING: `denied` can turn on
+  // while the menu is already up — Record, ≡, then `getUserMedia` rejects — and
+  // nothing dismissed it. That left the panel (and its Retry) inert behind the
+  // scrim, with Edit greyed and no reason and Mark naming the wrong blocker, on
+  // exactly the screen #135 exists to fix (George, round 4). Deriving the menu's
+  // open state kills the frame rather than reacting a frame later, and the effect
+  // `onRetryRecord` drops the latch, so a Retry that succeeds cannot resurrect a
+  // drawer the translator never re-opened.
+  const menuShown = menuOpen && !denied;
+
   const markReason = markRowReason({
     hasView: view !== null,
     takeCommitting: isClosing || busy,
@@ -941,7 +957,7 @@ export function Recorder({
       <div
         ref={sheetRef}
         className="recorder-sheet mx-auto max-w-md"
-        inert={menuOpen || confirmOpen || undefined}
+        inert={menuShown || confirmOpen || undefined}
       >
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
@@ -1301,7 +1317,7 @@ export function Recorder({
         )}
       </div>
       <Menu
-        open={menuOpen}
+        open={menuShown}
         onClose={() => setMenuOpen(false)}
         title={strings.recorderMenuTitle}
       >

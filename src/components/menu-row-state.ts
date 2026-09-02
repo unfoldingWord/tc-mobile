@@ -128,9 +128,18 @@ export interface RowHint {
  * followed it would abandon the in-flight start (George, round 3). Reachable as a
  * short race: tap Record, then ≡ before the mic resolves.
  *
- * `denied` and `no-segment` carry nothing because the menu opener is itself
- * disabled in both states (`recorder.tsx`, `disabled={!view || isClosing ||
- * denied}`), so no row is ever seen under them.
+ * `denied` and `no-segment` carry no cue, on two DIFFERENT grounds — the earlier
+ * "the opener is disabled, so no row is ever seen" covered both and was false for
+ * `denied`, because a disabled opener only blocks OPENING and `denied` can turn on
+ * while the menu is already up (George, round 4):
+ *
+ * - `denied` — the ≡ menu is now DISMISSED the moment `denied` turns on
+ *   (`recorder.tsx`'s `menuShown`), so these rows genuinely cannot be seen under
+ *   it. The permission panel is the reason, stated in full where the translator
+ *   is looking; a badge on a hidden row would be a second, weaker copy of it.
+ * - `no-segment` — `view` is set when the sheet mounts and never returns to null
+ *   while it is open, so this is unreachable rather than dismissed. It exists to
+ *   make the function total.
  */
 export function rowHint(reason: RowReason | null): RowHint | null {
   switch (reason) {

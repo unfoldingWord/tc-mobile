@@ -176,7 +176,13 @@ describe("rowHint — which reasons carry a cue", () => {
     }
   });
 
-  it("denied and no-segment carry nothing — the row is unreachable there", () => {
+  // Neither reason gets a cue, but NOT for one shared reason — the previous
+  // version of this test asserted "the row is unreachable there" for both, which
+  // was false for `denied`: a disabled opener blocks opening, and `denied` can
+  // turn on while the menu is ALREADY up (George, round 4). `recorder.tsx` now
+  // dismisses the menu on that edge, which is what makes the claim true; here we
+  // pin only what this module owns — that neither carries a cue.
+  it("denied and no-segment carry no cue", () => {
     expect(rowHint("denied")).toBeNull();
     expect(rowHint("no-segment")).toBeNull();
   });
