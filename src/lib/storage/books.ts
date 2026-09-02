@@ -333,6 +333,24 @@ async function writeTakeInTx(
 }
 
 /**
+ * The generation of the clip behind a segment's current take, or 0 when there is
+ * none (never recorded, or a dangling take/clip — an edit of audio the database
+ * could not produce is not a lossy pass over anything). Read on the caller's
+ * transaction so `saveTake` stamps its new clip from the same state it replaces.
+ */
+async function priorClipGeneration(
+  tx: TakeTx,
+  segmentId: SegmentId
+): Promise<number> {
+  const segment = await tx.objectStore("segments").get(segmentId);
+  if (!segment?.activeTakeId) return 0;
+  const take = await tx.objectStore("takes").get(segment.activeTakeId);
+  if (!take) return 0;
+  const meta = await tx.objectStore("clipMeta").get(take.clipId);
+  return meta?.generation ?? 0;
+}
+
+/**
  * Point a segment at an already-stored clip as its active take.
  *
  * Assumes the clip is on disk (its caller `putClip`s first). For the record/edit
@@ -379,13 +397,24 @@ export async function saveTake(
 ): Promise<Take> {
   const now = opts.now ?? Date.now();
   // Built before the transaction opens, so a 0-frame clip is rejected without
-  // ever starting a write.
-  const meta = buildClipMeta(clipId, samples, sampleRate, now);
+  // ever starting a write. The generation is stamped below, inside the
+  // transaction, once the prior clip has been read.
+  const base = buildClipMeta(clipId, samples, sampleRate, now);
   const bytes = new Int16Array(samples);
 
   const db = await getDb();
   const tx = openTakeTx(db);
   try {
+    // The lossy-pass count carries over from the clip this take REPLACES (B8,
+    // Q5). The only way a segment has a prior take at save time is that the
+    // recorder opened it and edited or inserted into its audio — and if that
+    // audio was an MP3 (a finished segment being fixed), the buffer being saved
+    // was decoded from it and has been through that many lossy passes already.
+    // An erase clears the take first, so a genuinely fresh recording starts at
+    // 0. Read inside the transaction so the count and the take it describes
+    // come from the same state.
+    const generation = await priorClipGeneration(tx, segmentId);
+    const meta = { ...base, generation };
     await tx.objectStore("clipMeta").put(meta);
     await tx.objectStore("clipData").put(bytes.buffer, clipId);
     const take = await writeTakeInTx(tx, segmentId, clipId, meta.durationMs, {

@@ -7,6 +7,117 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-09-02 — B8 (#34): MP3 on Finished + the encoder off the main thread — PR open
+
+**Branch:** `claude/next-batch-issues-ns640m` → **`develop`** (draft PR, awaiting
+Frank + George). **`develop`** unchanged (`196d55c`), **`staging`** at v0.1.10,
+**`main`** untouched. **Decision record:** ADR 0009
+(`docs/decisions/0009-transcode-on-finished.md`).
+
+### Why this batch
+
+The last unbuilt pivot batch, unblocked since B1 (schema) and Q3 (lamejs stays),
+with Q5 carrying a recorded default; the storage half of #12 that "must resolve
+before October"; and the three #34 comments (B7 R2 residuals) all point at the
+same root cause — a synchronous main-thread `encodeMp3`.
+
+### Built
+
+- **`AudioCodec` seam** (`types/audio.ts`): `lib/` takes encode + decode as two
+  async functions. `lib/export/chapter.ts` / `book.ts` and the new
+  `lib/storage/transcode.ts` are pure and Node-tested against
+  `tests/support.ts`'s codec (the real sync encoder + a fake decoder).
+- **Web Worker encoder** (`hooks/mp3.worker.ts`, `hooks/mp3-codec.ts`): one
+  worker per encode, PCM transferred in, MP3 transferred out, terminated on every
+  exit — an `AbortSignal` really stops it. `useShareFlow` now aborts the encode on
+  menu close / unmount. Vite emits the worker + lamejs as its own chunk (ADR
+  0003 obligation 1 met).
+- **Transcode on Finished (D3)**: `ClipMeta` gains `encoding | generation |
+byteLength | peaks`; **schema v4, append-only backfill** (v3 rows stamped
+  PCM/0, nothing dropped). `commitTranscode` is ONE strict-durability
+  transaction that re-checks finished/take/clip/PCM inside it and writes
+  nothing when `stale`. Triggered by an idempotent, serialised **sweep**
+  (`hooks/finish-transcode.ts`) from every Finished transition and once at App
+  mount, so a mid-encode page discard loses nothing.
+- **Q5 default built**: a finished (MP3) segment opens in the recorder via
+  `decodeMp3ToCanonical`; the save inherits the prior clip's `generation`.
+  Play/export decode MP3 clips too; the export fits a decode to the recorded
+  length (LAME padding). Rows draw finished segments from peaks stored at
+  transcode time — listing never decodes.
+- **Share Book archive streamed** (fflate `Zip`, chunks → `File` parts): the
+  ~2× archive peak George flagged on #114 is gone from app code.
+
+### Verified — exactly this
+
+- **Node (`npm run verify` green):** 309 tests (+23). **17 mutations, all
+  killed** (list in the PR body) — two survived the first pass and each got the
+  test that reaches its guard directly.
+- **Chromium on this workstation (Playwright, fake mic; NOT a phone):** worker
+  encode of 3 s in ~0.3 s, input buffer detached, `AbortError` on abort;
+  `decodeAudioData` round trip came back **1332 frames long** (LAME padding —
+  the fit-to-length case, live). App flow: record → Back → row plays → Mark
+  finished → sweep landed `encoding: mp3, generation 1`, **179,926 → 16,718
+  bytes**, peaks stored → finished row plays → recorder reopens on the MP3
+  segment with Record enabled in 56 ms (same as a PCM control) →
+  `exportChapterMp3` over the MP3 + PCM chapter, real codec. Zero console
+  errors.
+
+### NOT verified — owed at the T2 gate
+
+iOS Safari and Android Chrome: the module-worker round-trip, `decodeAudioData`
+of a LAME MP3 (and on an `"interrupted"` iOS context), encode time of a real
+chapter on a low-end phone, the first-launch sweep over a device full of
+finished segments, battery/heat. Still no phone has run B7 share either.
+
+### Review round 1 (Seth's session, both reviewers @ `d00b4c5`)
+
+Frank 1 × P2, George 2 × P2 + 3 × P3, no P1. Fixed in the round-2 commit:
+**F1/G3** every MP3 decode now fitted to the recorded `frameCount` via a pure
+`fitToFrames` (recorder edit buffer, playback, export — the recorder path would
+have made the decoder's padding permanent and compounding); **G1** one
+app-wide encoder lane (`withEncoder`), the sweep takes it before loading a clip,
+a share holds it for its whole build; **G2** the main-thread fallback dropped —
+its static import kept lamejs in the app bundle (0 `Mp3Encoder` in the index
+chunk now, 1 in the worker chunk, checked in `dist/`); **G4** the `clipData`
+comment. **G5** DEFERRED to #137 (UX call, intersects #106/#135).
+
+### Review round 2 (Seth's session, both reviewers @ `1924507f`) — chain shape
+
+Frank **P1** ↔ George P2: round 1's `fitToFrames` trimmed the TAIL, but the
+decode's excess is at the HEAD (LAME priming 576 + decoder delay 529 = 1105;
+no info tag from lamejs), so an edit → save of a finished segment deleted its
+last ~25 ms of speech. Seth reproduced the granule arithmetic in Node; I then
+**measured it in Chromium** with impulses at known positions, five input
+lengths: head offset 1105 every time, decode = granules × 1152. Fix:
+`lib/audio/mp3-align.ts` — `mp3GranuleCount` walks the stream's own headers,
+`fitMp3Decode` reads the decoder's behaviour off the decode length and skips
+the priming, all three consumers use it, ramp fixtures + a modelled no-trim
+decoder in the tests. Also **P2** cancel threaded into the gather (a dismissed
+share lets go of the encoder lane at the next clip), **P3**s: sweep re-request
+race, MP3 rows read metadata only, `decodeMp3ToCanonical` docblock.
+
+### Review round 3 (Seth's session, both reviewers @ `5a42b6ba8`) — chain
+
+Frank **APPROVE** (1 × P3: the sweep promise resolved before the follow-up pass
+it promised — now chained into the returned promise). George REQUEST_CHANGES
+(1 × P2: the row loader's two reads straddle the sweep's commit, so a clip read
+as PCM then MP3 came back `null` and a finished segment drew as never-recorded
+until the next reload — fixed by judging the second read on what it returns;
+`rowAudio` exported and pinned by `tests/row-audio.test.ts`, mutation dies).
+Round 4 is the cap.
+
+### Next steps
+
+1. Round 4: Frank + George re-run at the round-4 head (the DRI's session runs
+   them; no codex/grok in the build session). If anything is open after it,
+   that is an escalation to Seth per AGENTS.md, not a stop.
+2. On-device pass (iOS + Android) on staging after promotion — the list above,
+   plus the B7 share checks already owed.
+3. Rest of B7 — Template Library (Tim's Q2 call).
+4. Q5: leave open; `generation` now records the evidence to decide it.
+
+---
+
 ## 2026-08-31 (evening) — Recorder preview (#101) + pull-model playhead (#102): merged to develop, promoted to staging v0.1.10
 
 **Branches:** `perf/recorder-playhead-pull` → **`develop`** (#127, merged, deleted);

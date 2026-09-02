@@ -8,6 +8,7 @@ import {
   SegmentsScreen,
   type SegmentsScreenHandle,
 } from "@/components/segments-screen";
+import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useSaveTake } from "@/hooks/use-save-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
@@ -49,6 +50,15 @@ export function App() {
 
   const audio = useAudioSession();
   const { leave } = audio;
+
+  // Transcode on Finished (B8, D3) is a background sweep. Each Finished
+  // transition asks for one; this catch-all at launch covers anything left over
+  // — a sweep the page was discarded in the middle of, or every finished
+  // segment on a device that just upgraded to the v4 schema. Idempotent, so
+  // asking here costs nothing when there is nothing owed.
+  useEffect(() => {
+    void requestTranscodeSweep();
+  }, []);
   const {
     pendingTake,
     saveRecording,

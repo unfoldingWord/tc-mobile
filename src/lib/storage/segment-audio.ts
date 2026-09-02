@@ -17,6 +17,7 @@
  * about a dangling take is a product question that has not been answered yet.
  */
 
+import { clipFromRecord } from "./clips";
 import { getDb } from "./db";
 import type { Clip, ClipMeta } from "@/types/audio";
 import type { Segment, SegmentId, Take, TakeId } from "@/types/domain";
@@ -118,7 +119,7 @@ async function walk<C>(
     return { kind: "clip-missing", segment, take };
   }
   const clip = (
-    withSamples ? { meta, samples: new Int16Array(data as ArrayBuffer) } : meta
+    withSamples ? clipFromRecord(meta, data as ArrayBuffer) : meta
   ) as C;
   return { kind: "resolved", segment, take, clip };
 }
@@ -135,11 +136,13 @@ export async function resolveSegmentAudio(
 }
 
 /**
- * Resolve a segment to its active take's audio, samples included.
+ * Resolve a segment to its active take's audio, bytes included.
  *
- * `getClip` requires both the metadata and the sample rows, so a clip whose
- * two halves have come apart reports `clip-missing` here rather than
- * resolving to a clip with no audio in it.
+ * `getClip` requires both the metadata and the data rows, so a clip whose two
+ * halves have come apart reports `clip-missing` here rather than resolving to a
+ * clip with no audio in it. The `Clip` is discriminated on its encoding: a
+ * finished segment's audio is MP3 (D3), and the caller decodes it at the browser
+ * boundary before it can play or edit it.
  */
 export async function loadSegmentClip(
   segmentId: SegmentId

@@ -36,6 +36,7 @@ import {
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { RecordingStatus } from "@/types/domain";
+import { samplesOf } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -84,8 +85,21 @@ describe("clip storage", () => {
     await putClip(id, original, CANONICAL_SAMPLE_RATE);
 
     const loaded = await getClip(id);
-    expect(loaded).toBeDefined();
-    expect(Array.from(loaded!.samples)).toEqual(Array.from(original));
+    expect(loaded?.encoding).toBe("pcm");
+    expect(Array.from(samplesOf(loaded))).toEqual(Array.from(original));
+  });
+
+  it("stamps a fresh clip as generation-0 PCM with its byte size", async () => {
+    // B8: every clip written through the record/edit path is PCM straight off
+    // the microphone. `encoding`/`generation` are what the transcode sweep and
+    // the readers key on, `byteLength` what storage pressure is summed from.
+    const id = newClipId();
+    await putClip(id, samples(150), CANONICAL_SAMPLE_RATE);
+    const meta = await getClipMeta(id);
+    expect(meta?.encoding).toBe("pcm");
+    expect(meta?.generation).toBe(0);
+    expect(meta?.byteLength).toBe(300);
+    expect(meta?.peaks).toBeNull();
   });
 
   it("derives duration from the frame count", async () => {
@@ -102,8 +116,7 @@ describe("clip storage", () => {
     const backing = samples(10_000);
     const id = newClipId();
     await putClip(id, backing.subarray(0, 100), CANONICAL_SAMPLE_RATE);
-    const loaded = await getClip(id);
-    expect(loaded?.samples.length).toBe(100);
+    expect(samplesOf(await getClip(id)).length).toBe(100);
   });
 
   it("makes a deleted clip unreadable", async () => {
@@ -578,8 +591,7 @@ describe("atomic take save (saveTake)", () => {
       backing.subarray(0, 100),
       CANONICAL_SAMPLE_RATE
     );
-    const loaded = await getClip(clipId);
-    expect(loaded?.samples.length).toBe(100);
+    expect(samplesOf(await getClip(clipId)).length).toBe(100);
   });
 
   it("leaves NO orphaned clip when the take write fails (#38 atomicity)", async () => {
@@ -659,7 +671,7 @@ describe("segment audio resolution", () => {
     const full = await loadSegmentClip(segmentId);
     expect(full.kind).toBe("resolved");
     if (full.kind !== "resolved") return;
-    expect(full.clip.samples.length).toBe(150);
+    expect(samplesOf(full.clip).length).toBe(150);
     expect(danglingReason(full)).toBeNull();
   });
 

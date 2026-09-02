@@ -56,8 +56,101 @@ async function openLegacyV2() {
   });
 }
 
+/**
+ * Stand up the PIVOT schema exactly as v3 shipped it (B1), with a `clipMeta` row
+ * in its v3 shape — no `encoding`, `generation`, `byteLength` or `peaks`. This is
+ * what a dev device that recorded on v0.1.x holds when B8's v4 opens it.
+ */
+async function openLegacyV3() {
+  return openDB(DB_NAME, 3, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
+
+describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
+  it("keeps every v3 row and stamps each clip as generation-0 PCM", async () => {
+    const v3 = await openLegacyV3();
+    await v3.put("books", {
+      id: "b1",
+      name: "Book 001",
+      languageCode: null,
+      chapterIds: [],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    await v3.put("clipMeta", {
+      id: "c1",
+      sampleRate: 44100,
+      frameCount: 10,
+      durationMs: 1,
+      createdAt: 7,
+    });
+    const pcm = Int16Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    await v3.put("clipData", pcm.buffer, "c1");
+    v3.close();
+
+    const v4 = await getDb();
+    expect(v4.version).toBe(4);
+
+    // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
+    // onward. A v3 device's recordings come through.
+    expect((await v4.get("books", "b1" as never))?.name).toBe("Book 001");
+    const data = await v4.get("clipData", "c1" as never);
+    expect(Array.from(new Int16Array(data!))).toEqual(Array.from(pcm));
+
+    // The row is stamped as the PCM it already was, its v3 fields untouched.
+    const meta = await v4.get("clipMeta", "c1" as never);
+    expect(meta).toEqual({
+      id: "c1",
+      sampleRate: 44100,
+      frameCount: 10,
+      durationMs: 1,
+      createdAt: 7,
+      encoding: "pcm",
+      generation: 0,
+      byteLength: 20,
+      peaks: null,
+    });
+  });
+
+  it("leaves a clip that already carries an encoding alone", async () => {
+    // The backfill keys on the field being ABSENT, so re-running it (or a row
+    // written by a newer build before an older one reopened the database) is
+    // not re-stamped back to PCM/0.
+    const v3 = await openLegacyV3();
+    await v3.put("clipMeta", {
+      id: "c2",
+      sampleRate: 44100,
+      frameCount: 10,
+      durationMs: 1,
+      createdAt: 0,
+      encoding: "mp3",
+      generation: 2,
+      byteLength: 5,
+      peaks: null,
+    });
+    v3.close();
+
+    const v4 = await getDb();
+    const meta = await v4.get("clipMeta", "c2" as never);
+    expect(meta?.encoding).toBe("mp3");
+    expect(meta?.generation).toBe(2);
+    expect(meta?.byteLength).toBe(5);
+  });
+});
 
 describe("v2 → v3 destructive recreate", () => {
   it("recreates the pivot schema and drops the pre-pivot stores + data", async () => {
@@ -88,7 +181,8 @@ describe("v2 → v3 destructive recreate", () => {
     });
     v2.close();
 
-    // Reopen through the app's getDb — this triggers the v3 upgrade.
+    // Reopen through the app's getDb — this triggers the v3 recreate (and the
+    // v4 backfill after it, over stores the recreate has just emptied).
     const v3 = await getDb();
     const stores = Array.from(v3.objectStoreNames);
 

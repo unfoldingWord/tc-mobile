@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { requestTranscodeSweep } from "./finish-transcode";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   addSegment as addSegmentToChapter,
@@ -9,12 +10,59 @@ import {
   isFinished,
   setSegmentFinished,
 } from "@/lib/storage/books";
-import { loadSegmentClip } from "@/lib/storage/segment-audio";
-import type { ChapterId, Segment, SegmentId } from "@/types/domain";
-import type { SegmentRow } from "@/types/view";
+import {
+  loadSegmentClip,
+  resolveSegmentAudio,
+} from "@/lib/storage/segment-audio";
+import type { ClipMeta, Peaks } from "@/types/audio";
+import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
+import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
 
-/** Waveform resolution for a row; peaks are computed once here, not per frame. */
-const PEAK_BUCKETS = 120;
+/**
+ * A row's waveform, or `null` when the segment has no playable audio.
+ *
+ * Metadata first: a finished segment's clip is MP3 (B8/D3) and carries the
+ * peaks the transcode took from the PCM it dropped, so its row is drawn from
+ * `meta.peaks` and its bytes are never read — listing a chapter neither decodes
+ * nor loads MP3s it would only discard (round-2 George P3). A PCM clip's peaks
+ * are computed from its samples, so only then are the bytes loaded. An MP3 clip
+ * with no stored peaks is not written by anything, but if one is ever read the
+ * row draws flat rather than decoding on the list.
+ *
+ * `hasClip` follows the walk resolving — both halves of the clip present — the
+ * same F3 rule as before. The two reads are two transactions, and the transcode
+ * sweep writes between them: a clip read as PCM first can come back as MP3 from
+ * the second read (a take saved with the Finished mark fires `reload()` and the
+ * sweep in the same tick). That is a resolved clip, not a missing one, so the
+ * second read is judged on what it actually returns — MP3 draws from its stored
+ * peaks exactly as the first branch does — and only a genuinely unresolved walk
+ * reads as not recorded (round-3 George P2).
+ *
+ * Exported for the Node test that pins that interleaving; the screen reaches it
+ * only through `useChapterSegments`.
+ */
+export async function rowAudio(
+  segmentId: SegmentId
+): Promise<{ clipId: ClipId; durationMs: number; peaks: Peaks | null } | null> {
+  const audio = await resolveSegmentAudio(segmentId);
+  if (audio.kind !== "resolved") return null;
+  const meta = audio.clip;
+  if (meta.encoding === "mp3") return fromMeta(meta);
+  const full = await loadSegmentClip(segmentId);
+  if (full.kind !== "resolved") return null;
+  const clip = full.clip;
+  if (clip.encoding === "mp3") return fromMeta(clip.meta);
+  return {
+    clipId: clip.meta.id,
+    durationMs: clip.meta.durationMs,
+    peaks: computePeaks(clip.samples, ROW_PEAK_BUCKETS),
+  };
+}
+
+/** An MP3 clip's row, from metadata alone: the peaks stored at transcode. */
+function fromMeta(meta: ClipMeta) {
+  return { clipId: meta.id, durationMs: meta.durationMs, peaks: meta.peaks };
+}
 
 /**
  * Build one segment's row: its state, and — only if it has playable audio — its
@@ -27,16 +75,15 @@ const PEAK_BUCKETS = 120;
  * never amber bars over audio the database cannot produce.
  */
 async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
-  const audio = await loadSegmentClip(segment.id);
-  const clip = audio.kind === "resolved" ? audio.clip : null;
+  const audio = await rowAudio(segment.id);
   return {
     segmentId: segment.id,
     ordinal: segment.index,
-    hasClip: clip !== null,
+    hasClip: audio !== null,
     finished: isFinished(segment.status),
-    clipId: clip?.meta.id ?? null,
-    peaks: clip ? computePeaks(clip.samples, PEAK_BUCKETS) : null,
-    durationMs: clip?.meta.durationMs ?? null,
+    clipId: audio?.clipId ?? null,
+    peaks: audio?.peaks ?? null,
+    durationMs: audio?.durationMs ?? null,
   };
 }
 
@@ -164,6 +211,10 @@ export function useChapterSegments(chapterId: ChapterId) {
           rs.map((r) => (r.segmentId === segmentId ? { ...r, finished } : r))
         );
         setError(null);
+        // Finished is a state transition (D3): the segment's PCM is now owed an
+        // MP3. Background work — the row does not wait on it, and its peaks and
+        // duration do not change when it lands.
+        if (finished) void requestTranscodeSweep();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
       }

@@ -29,10 +29,12 @@ pre-pivot UI is **replaced, not evolved**.
 [#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
 and the work is nine batches, B0–B8 (#26–#34).
 
-**B0–B4 have landed; B5–B8 have not.** `Section` is gone from the model — a
-`Segment` hangs off a `Chapter` directly and is the unit of work — and the three
-pivot screens (Books, Segments, Recorder) exist; `Project` is now `Book`. What
-B0 (#26) removed is still **gone** — the timing seam, the
+**B0–B6 and B8 have landed, and B7's Share half; B7's Template Library has
+not.** `Section` is gone from the model — a `Segment` hangs off a `Chapter`
+directly and is the unit of work — and the three pivot screens (Books, Segments,
+Recorder) exist; `Project` is now `Book`. Share Chapter / Share Book (B7) and
+transcode-on-Finished with the encoder in a Web Worker (B8, ADR 0009) are in.
+What B0 (#26) removed is still **gone** — the timing seam, the
 reference-audio/narration path, and the OBS media cache's accessor code
 (`hooks/obs-media.ts`, `lib/storage/media.ts`). Parts of the file below still
 describe pre-pivot scaffolding (the OBS section browser, the old `use-chapter`
@@ -40,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                          |
-| ------- | -------------------------------------------------------- |
-| Runtime | Node 22.12+ (knip's floor)                               |
-| Build   | Vite 7, `@vitejs/plugin-react`                           |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons          |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)             |
-| Storage | IndexedDB via `idb` 8                                    |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 |
-| Tests   | Vitest 3, `fake-indexeddb`                               |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3  |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4             |
+|         |                                                                            |
+| ------- | -------------------------------------------------------------------------- |
+| Runtime | Node 22.12+ (knip's floor)                                                 |
+| Build   | Vite 7, `@vitejs/plugin-react`                                             |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
+| Storage | IndexedDB via `idb` 8                                                      |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
+| Tests   | Vitest 3, `fake-indexeddb`                                                 |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
 
 ## Commands
 
@@ -121,9 +123,14 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   on iOS. Still **iOS Safari only; Android has never been run**, so #59 and #58
   (pagehide) remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
-- **There is no export path at all** — `encodeMp3` exists in `lib/audio/mp3.ts`
-  with no call site outside tests, and nothing calls `navigator.share`. Do not
-  list the share sheet as an untested surface; it is an absent one (#18).
+- **The export path exists (B7) and the encoder runs in a Web Worker (B8).**
+  Share Chapter / Share Book, the worker round-trip (`hooks/mp3.worker.ts`,
+  `hooks/mp3-codec.ts`), `decodeAudioData` of a stored MP3, and the
+  transcode-on-Finished sweep are browser-boundary code: the gather → encode and
+  encode → commit paths are unit-tested in Node through the injected
+  `AudioCodec`, but the worker, the share sheet and the decode are verified only
+  in a browser or on a device. **Neither has been run on a phone as of
+  2026-09-02.**
 - `fake-indexeddb` backs the storage tests. Reset between cases by **clearing
   every object store**, not by `deleteDatabase`: deletion blocks indefinitely
   while any connection is open, and a harness that resolves on `onblocked`
@@ -348,14 +355,15 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 ## Known open items
 
-1. **MP3 encoding runs on the main thread** and will jank on a long chapter.
-   Move it to a Web Worker — ADR 0003.
-2. **PCM storage is ~5.3 MB/minute.** All 50 OBS stories is roughly 660 MB.
-   **Partly decided.** D3 took one of ADR 0002's three mitigations — PCM while
-   a segment is being edited, transcode to MP3 and drop the PCM on Finished,
-   ~660 MB to ~66 MB. The other two are still open: 22 050 Hz for speech, and
-   `navigator.storage.persist()`. #12 stays open on those. **Resolve before
-   October.**
+1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker
+   per encode, terminated on abort. What remains from ADR 0003 is the notice and
+   attribution work, #36. Not yet run on a phone.
+2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
+   built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
+   MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
+   OBS stories once finished. The other two ADR 0002 mitigations are still open:
+   22 050 Hz for speech, and `navigator.storage.persist()`. #12 stays open on
+   those. **Resolve before October.**
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
