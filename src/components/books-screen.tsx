@@ -254,13 +254,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         />
       </Menu>
 
-      <Menu
-        open={aboutOpen}
-        onClose={() => setAboutOpen(false)}
-        title={strings.aboutTitle}
-      >
-        <AboutPanel />
-      </Menu>
+      <AboutPanel open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
           the same spot — "Share book" encodes + zips (tap 1), then a primary

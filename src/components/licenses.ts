@@ -29,6 +29,14 @@ export interface ThirdPartyLicense {
   readonly note?: string;
   /** An upstream the licence asks be acknowledged (LAME, for lamejs). */
   readonly acknowledges?: { readonly label: string; readonly href: string };
+  /**
+   * A distinctive substring that must appear in this package's section of
+   * THIRD-PARTY-NOTICES.txt — the copyright holder as the bundled LICENSE
+   * writes it (lamejs's LAME notice carries no copyright line, so "LAME").
+   * `tests/licenses.test.ts` asserts it per section, so dropping one package's
+   * copyright from the notices file fails that package alone (Frank F1, r2).
+   */
+  readonly noticeMarker: string;
 }
 
 /**
@@ -47,6 +55,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     homepage: "https://github.com/shijinyu/lamejs",
     note: "The only copyleft component. It sits behind one module (encodeMp3, run in a Web Worker), so you may replace it with your own build of lamejs under the LGPL.",
     acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
+    noticeMarker: "LAME",
   },
   {
     name: "react",
@@ -54,6 +63,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
     homepage: "https://react.dev",
+    noticeMarker: "Meta Platforms",
   },
   {
     name: "react-dom",
@@ -61,6 +71,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
     homepage: "https://react.dev",
+    noticeMarker: "Meta Platforms",
   },
   {
     name: "idb",
@@ -68,6 +79,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "ISC",
     copyright: "© 2016 Jake Archibald",
     homepage: "https://github.com/jakearchibald/idb",
+    noticeMarker: "Jake Archibald",
   },
   {
     name: "clsx",
@@ -75,6 +87,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "MIT",
     copyright: "© Luke Edwards",
     homepage: "https://github.com/lukeed/clsx",
+    noticeMarker: "Luke Edwards",
   },
   {
     name: "tailwind-merge",
@@ -82,6 +95,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "MIT",
     copyright: "© 2021 Dany Castillo",
     homepage: "https://github.com/dcastil/tailwind-merge",
+    noticeMarker: "Dany Castillo",
   },
   {
     name: "fflate",
@@ -89,6 +103,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "MIT",
     copyright: "© 2026 Arjun Barrett",
     homepage: "https://github.com/101arrowz/fflate",
+    noticeMarker: "Arjun Barrett",
   },
 ];
 

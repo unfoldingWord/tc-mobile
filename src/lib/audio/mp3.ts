@@ -14,10 +14,10 @@
  * alone — the replaceable boundary the LGPL wants (ADR 0003 item 1). The notice
  * and attribution obligation is met by #36. Do not re-open the keep decision.
  *
- * NOTE ON THREADING: encoding a long chapter is CPU-bound and will jank the
- * UI if called on the main thread. `onProgress` exists so a caller can drive
- * a progress indicator, but the intended home for this function is a Web
- * Worker. See docs/decisions/0003-mp3-encoder.md.
+ * NOTE ON THREADING: encoding a long chapter is CPU-bound and would jank the
+ * UI on the main thread, so this runs in a Web Worker — `hooks/mp3.worker.ts`
+ * is its only importer (#34). `onProgress` still exists for a progress
+ * indicator. See docs/decisions/0003-mp3-encoder.md.
  */
 
 import { Mp3Encoder } from "@breezystack/lamejs";

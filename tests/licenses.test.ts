@@ -3,11 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  licenseTexts,
-  thirdPartyLicenses,
-  type ThirdPartyLicense,
-} from "@/components/licenses";
+import { licenseTexts, thirdPartyLicenses } from "@/components/licenses";
 
 /**
  * The LGPL and MIT/ISC obligations (#36) are met only if the disclosure is
@@ -15,10 +11,10 @@ import {
  * These guard all three against drift:
  *
  * - every bundled runtime dependency is disclosed (a new `dependencies` entry
- *   with no notice fails here — Frank F1),
- * - the copyleft lamejs entry matches the installed dependency, and
- * - every shipped licence text exists, is non-empty, and the collected
- *   third-party notices name every dependency and carry a copyright line.
+ *   with no notice fails here — Frank F1, round 1),
+ * - every disclosed version matches the installed package (George G6), and
+ * - every shipped licence text exists and is non-empty, and each dependency's
+ *   own copyright travels in its section of the notices file (Frank F1, r2).
  *
  * Plain Node: `licenses.ts` is pure data with no DOM import.
  */
@@ -30,13 +26,20 @@ function read(href: string): string {
   return readFileSync(path.join(PUBLIC_DIR, href.replace(/^\//, "")), "utf8");
 }
 
+function installedVersion(name: string): string {
+  return (
+    JSON.parse(
+      readFileSync(
+        path.join(REPO_ROOT, "node_modules", name, "package.json"),
+        "utf8"
+      )
+    ) as { version: string }
+  ).version;
+}
+
 const pkg = JSON.parse(
   readFileSync(path.join(REPO_ROOT, "package.json"), "utf8")
 ) as { dependencies: Record<string, string> };
-
-const lamejs = thirdPartyLicenses.find(
-  (l) => l.name === "@breezystack/lamejs"
-) as ThirdPartyLicense;
 
 describe("third-party licence disclosure", () => {
   it("discloses every bundled runtime dependency", () => {
@@ -48,20 +51,17 @@ describe("third-party licence disclosure", () => {
     }
   });
 
-  it("discloses lamejs as LGPL-3.0", () => {
-    expect(lamejs).toBeDefined();
-    expect(lamejs.spdx).toBe("LGPL-3.0");
+  it("discloses lamejs as the copyleft LGPL-3.0 dependency", () => {
+    const lamejs = thirdPartyLicenses.find(
+      (l) => l.name === "@breezystack/lamejs"
+    );
+    expect(lamejs?.spdx).toBe("LGPL-3.0");
   });
 
-  it("pins the disclosed lamejs version to the installed dependency", () => {
-    const installed = JSON.parse(
-      readFileSync(
-        path.join(REPO_ROOT, "node_modules/@breezystack/lamejs/package.json"),
-        "utf8"
-      )
-    ) as { version: string };
-    // A drift here means the bundled encoder changed but the notice did not.
-    expect(lamejs.version).toBe(installed.version);
+  it.each(thirdPartyLicenses)("pins $name to the installed version", (lib) => {
+    // A drift here means a bundled dependency was bumped but the notice and
+    // the panel still advertise the old version (George G6).
+    expect(lib.version).toBe(installedVersion(lib.name));
   });
 });
 
@@ -89,15 +89,26 @@ describe("bundled licence texts", () => {
     );
   });
 
-  it("collects a notice for every disclosed dependency", () => {
-    const notices = read("/licenses/THIRD-PARTY-NOTICES.txt");
-    for (const lib of thirdPartyLicenses) {
-      expect(notices, `${lib.name} missing from THIRD-PARTY-NOTICES`).toContain(
-        lib.name
+  it.each(thirdPartyLicenses)(
+    "carries $name's own notice in its section",
+    (lib) => {
+      // Split the notices file into per-package sections (separated by a rule
+      // of `=`), find this package's section, and assert its marker is IN that
+      // section — so dropping one package's copyright fails that package alone,
+      // which a single global /Copyright/ match did not (Frank F1, round 2).
+      const sections = read("/licenses/THIRD-PARTY-NOTICES.txt").split(
+        /\n=+\n/
       );
+      // Match the unique section header (`name version`), not a bare name — the
+      // file's preamble also mentions lamejs by name.
+      const section = sections.find((s) =>
+        s.includes(`${lib.name} ${lib.version}`)
+      );
+      expect(
+        section,
+        `${lib.name} has no section in the notices`
+      ).toBeDefined();
+      expect(section).toContain(lib.noticeMarker);
     }
-    // The permissive licences require the copyright line to travel; the file
-    // must actually carry them, not just the package names.
-    expect(notices).toMatch(/Copyright/i);
-  });
+  );
 });

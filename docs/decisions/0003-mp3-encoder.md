@@ -74,23 +74,19 @@ been eyeballed on a device.
 Known open item 3 in `AGENTS.md`, and issue #14. It also unblocks #34, which
 could not settle while the encoder's presence on a required path was in doubt.
 
-## Open flag — threading
+## Resolved — threading and the encoder chunk (#34)
 
-`encodeMp3` is CPU-bound and currently runs on the main thread, which will jank
-the UI on a long chapter. `onProgress` exists so a caller can show progress,
-but **the encoder belongs in a Web Worker.**
+`encodeMp3` is CPU-bound and would jank the UI on a long chapter if it ran on
+the main thread. This stopped being a performance nicety on 2026-08-23: decision
+D3 transcodes to MP3 when a translator marks a segment Finished, putting the
+encoder on a user-visible path on every segment rather than behind an export
+button — a blocker, tracked in #34.
 
-This stopped being a performance nicety on 2026-08-23. Decision D3 transcodes to
-MP3 when a translator marks a segment Finished, which puts the encoder on a
-user-visible path on every segment rather than behind an export button. It is now
-a blocker, tracked in #34.
-
-**There is no encoder chunk.** Measured at `761b3c2`: the production build
-emits exactly two JS assets — `index-*.js` at 465,785 bytes and the OBS
-catalogue at 200,804 — and neither contains `Mp3Encoder`. lamejs is a static
-import in `src/lib/audio/mp3.ts:21`, and because `encodeMp3` has no caller
-outside its own test it is tree-shaken out of the bundle entirely. So the
-splitting, the 169 kB chunk and the service-worker precache described here
-before were all describing a build that does not exist. When #18 wires an
-export path lamejs enters the main graph; #34's worker is what puts it behind
-a real boundary.
+**#34 landed.** `encodeMp3` (`src/lib/audio/mp3.ts`) is now imported only by
+`src/hooks/mp3.worker.ts`, so Vite emits it — and its static lamejs import — as
+a separate `mp3.worker-*.js` chunk (measured ~169 kB), absent from the main
+bundle and precached by the service worker. That is both the off-main-thread
+home this flag asked for and the replaceable LGPL boundary of item 1: the one
+thing a relinker replaces is that worker chunk. (The earlier note that "there is
+no encoder chunk", measured at `761b3c2` when `encodeMp3` had no caller and was
+tree-shaken out, no longer holds — the transcode path is now a real caller.)

@@ -164,7 +164,6 @@ export const strings = {
   // The licence texts open in-drawer (no new tab), so their controls are
   // buttons: this is the spoken action, and the two states while it loads.
   aboutReadText: (name: string): string => `Read ${name}`,
-  aboutBack: "Back to the list",
   aboutTextLoading: "Loading the licence text.",
   aboutTextFailed: "Could not load the licence text.",
   // Spoken labels for the off-phone links (a project page, a CC deed), which

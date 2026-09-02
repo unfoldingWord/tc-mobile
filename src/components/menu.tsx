@@ -27,27 +27,34 @@ interface MenuProps {
    */
   title?: string;
   /**
-   * The menu's contents. Empty on the global menu this lane: Template Library is
-   * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
-   * opens, traps focus, and closes — not a stub, because the mechanism is exactly
-   * what that batch mounts into.
+   * The menu's contents. The global menu opened from the hamburger holds the
+   * About & licenses entry (#36); the recorder and the share flows open the same
+   * surface with their own entries. Template Library is still B7 (#33).
    */
   children?: React.ReactNode;
+  /**
+   * Re-land the open-edge focus whenever this changes, not only when the menu
+   * opens. A menu whose body swaps in place while it stays open — the About
+   * panel popping between its list and an in-drawer licence text (#36) — would
+   * otherwise orphan focus on the node that just unmounted. Leave it undefined
+   * (the default) and focus lands once per open, as before.
+   */
+  focusKey?: string | number;
 }
 
 /**
- * The global menu, opened from the hamburger.
+ * The global menu, opened from the hamburger — and the reusable modal surface
+ * the recorder and the share flows reuse.
  *
- * This lane ships the surface, not entries: a scrim, a focus trap, close on
- * Escape or a scrim tap, and a heading a screen reader announces. That is the
- * reusable mechanism B6 and B7 both fill, so it earns its place now even while
- * it holds nothing.
+ * It ships the mechanism: a scrim, a focus trap, close on Escape or a scrim tap,
+ * and a heading a screen reader announces. Callers fill it with entries.
  */
 export function Menu({
   open,
   onClose,
   title = strings.menuTitle,
   children,
+  focusKey,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // The header (title + Close). Held so the open-edge focus can skip past it to
@@ -74,6 +81,9 @@ export function Menu({
   // focus on its dismiss control invites an immediate close, and a one-action
   // menu (Share chapter, B7) makes that the wrong first target (George R-B7).
   // Fall back to the panel's first focusable, which is Close on an empty menu.
+  //
+  // Re-runs on `focusKey` too, so a body that swaps while the menu stays open
+  // (the About list ⇄ a licence text, #36) re-lands focus on the new content.
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
@@ -85,7 +95,7 @@ export function Menu({
       focusables.find((el) => !headerRef.current?.contains(el)) ??
       focusables[0];
     target?.focus();
-  }, [open]);
+  }, [open, focusKey]);
 
   // The focus trap + Escape, bound once per open; reads `onClose` via the ref.
   useEffect(() => {
