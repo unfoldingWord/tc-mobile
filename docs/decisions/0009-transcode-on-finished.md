@@ -190,8 +190,12 @@ message handler is stateless (a fresh `encodeMp3` per message), and
 `withEncoder` serialises every encode onto one lane, so the shared worker never
 carries two jobs at once. **Abort still stops the in-flight encode now** — only
 `terminate()` can — so an abort drops the worker and immediately **re-warms** a
-fresh one, so a cancelled share (share-sheet close/unmount aborts the signal)
-does not end the protection at the first cancel (round-1 R2). A worker that dies
+fresh one (round-1 R2). The re-warm rebuilds from the hashed chunk URL, so it
+restores the warm worker only while that chunk is still fetchable: a cancel after
+a service-worker update has purged the chunk still degrades to the next encode's
+failure. Closing that post-purge-abort window fully means snapshotting the worker
+to a purge-immune source (`?worker&url` → `blob:`), which is browser-only to
+verify and is tracked in **#192**. A worker that dies
 on its own — a script-load failure, which `new Worker` reports asynchronously as
 an `error` event, or a crash between encodes — is caught by a **durable `error`
 listener** attached at construction that drops the dead handle, so the next

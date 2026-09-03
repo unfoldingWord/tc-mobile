@@ -126,9 +126,12 @@ function untilSettled(
  * would `postMessage` into a worker that never answers and wedge the lane for the
  * life of the page (round-1 R1). An abort must stop the in-flight encode NOW,
  * which only `terminate()` can do, so it drops the worker and immediately
- * re-warms a fresh one, so a cancelled share does not end the #182 protection
- * (round-1 R2). The URL is re-fetched only on a drop-and-rebuild, never on the
- * common reuse path.
+ * re-warms a fresh one (round-1 R2). The common reuse path fetches nothing. A
+ * drop-and-rebuild — after an abort, or a crash — DOES re-fetch the hashed URL,
+ * so it restores the warm worker only while that chunk is still fetchable; a
+ * rebuild after a service-worker update has purged the chunk fails to the
+ * durable listener and surfaces on the next encode. Closing that post-purge
+ * window fully needs the worker snapshotted to a purge-immune source (#192).
  */
 let sharedWorker: Worker | null = null;
 
