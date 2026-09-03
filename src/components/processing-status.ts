@@ -35,7 +35,9 @@ export function recorderStatusKind(
   // "interrupted", whatever `state` reads at the instant of the render.
   if (isClosing) return "saving";
   // `processing` with no close in flight is reachable only through the #59
-  // interruption path — the frozen take waiting on a Back that saves it.
+  // interruption path — the frozen take waiting to be closed, which saves it.
+  // This is NOT an error state: the recording is safe, so its Notice is neutral
+  // (`busy` now, #140's `info` on rebase), never the red `alert`.
   if (state === "processing") return "interrupted";
   return null;
 }
