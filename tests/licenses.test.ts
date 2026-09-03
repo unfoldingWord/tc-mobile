@@ -16,6 +16,11 @@ import { licenseTexts, thirdPartyLicenses } from "@/components/licenses";
  * - every shipped licence text exists and is non-empty, and each dependency's
  *   own copyright travels in its section of the notices file (Frank F1, r2).
  *
+ * A final block pins the *reachability* wiring the disk checks miss — the
+ * precache glob, the navigate-fallback denylist, the panel mount, and the lamejs
+ * row's relink affordances — since a complete disclosure that no one can reach
+ * on the phone does not meet #36.
+ *
  * Plain Node: `licenses.ts` is pure data with no DOM import.
  */
 
@@ -129,4 +134,52 @@ describe("bundled licence texts", () => {
       expect(section).toContain(lib.noticeMarker);
     }
   );
+});
+
+/**
+ * The disclosure being complete on disk does not make it *reachable* in the
+ * shipped app. These are the cheap Node pins the disk checks miss: nothing above
+ * fails if the panel is unmounted, the precache glob loses `txt` (so the field
+ * fetch 404s offline), the navigate-fallback stops sparing `.txt`, or the lamejs
+ * row loses the relink affordances. They read the wiring files as text — no
+ * renderer — and assert the properties #36 exists to guarantee. The rendered
+ * behaviour (focus, the failed-fetch Notice) still needs a browser and is not
+ * claimed here.
+ */
+function readSource(rel: string): string {
+  return readFileSync(path.join(REPO_ROOT, rel), "utf8");
+}
+
+describe("reachability wiring (#36)", () => {
+  it("precaches the licence texts and spares them from the SPA fallback", () => {
+    const vite = readSource("vite.config.ts");
+    const globLine = vite.split("\n").find((l) => l.includes("globPatterns"));
+    expect(globLine, "no globPatterns in vite.config.ts").toBeDefined();
+    // `txt` in the precache glob is what makes `public/licenses/*.txt` resolve
+    // offline; dropping it 404s the notice in the field.
+    expect(globLine).toContain("txt");
+    // And the navigate-fallback must not answer a `.txt` miss with the app shell
+    // (George G1) — the denylist still has to match `.txt`.
+    expect(vite).toContain("navigateFallbackDenylist");
+    expect(vite).toMatch(/navigateFallbackDenylist:\s*\[[^\]]*\\\.txt/);
+  });
+
+  it("mounts the About panel from the global menu", () => {
+    const screen = readSource("src/components/books-screen.tsx");
+    // The only route to the whole surface: the menu entry (labelled
+    // `strings.aboutOpen`) and the panel it opens. Unmount either and the disk
+    // disclosure is unreachable on the phone.
+    expect(screen).toContain("AboutPanel");
+    expect(screen).toContain("strings.aboutOpen");
+  });
+
+  it("keeps the lamejs row's relink affordances (the note and the source link)", () => {
+    const lamejs = thirdPartyLicenses.find(
+      (l) => l.name === "@breezystack/lamejs"
+    );
+    // The boundary note and the library's own source are what an LGPL relinker
+    // is owed on the row itself, not just in the licence text.
+    expect(lamejs?.note, "lamejs lost its boundary note").toBeTruthy();
+    expect(lamejs?.source?.href, "lamejs lost its source link").toBeTruthy();
+  });
 });

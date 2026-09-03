@@ -158,6 +158,14 @@ export const strings = {
   aboutBlurb:
     "A free and open-source app. Everything you record stays on this phone.",
   aboutAppLicense: "This app is offered under the MIT licence.",
+  // The LGPL/GPL written offer, on the shipped copy itself. The README carries
+  // it too, but the installed PWA does not ship `*.md`, so without this line a
+  // recipient of the Combined Work has the notice and the licence texts but no
+  // offer of the app's own corresponding source (ADR 0003 §4(d)(0), which the
+  // DRI allowed the shipped copy to state). No "repository is public" claim and
+  // no relink how-to — the ADR forbids both here.
+  aboutSourceOffer:
+    "The source code for this app is available on request from unfoldingWord.",
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
   aboutContent: "Bundled content",

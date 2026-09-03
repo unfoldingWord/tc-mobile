@@ -63,6 +63,10 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
         >
           <p style={{ color: "var(--s-ink-muted)" }}>{strings.aboutBlurb}</p>
           <p>{strings.aboutAppLicense}</p>
+          {/* The LGPL/GPL written offer for the app's own corresponding source,
+              on the shipped copy — the README that also carries it is not in the
+              installed PWA (Cloudflare excludes `*.md`). ADR 0003 §4(d)(0). */}
+          <p>{strings.aboutSourceOffer}</p>
 
           {/* Licence texts first: the open-edge focus lands on an in-app button,
               never on an off-phone link (George G2). */}
