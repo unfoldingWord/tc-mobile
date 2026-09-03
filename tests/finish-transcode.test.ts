@@ -116,7 +116,15 @@ let encodeMp3: ReturnType<typeof vi.fn>;
 let laneHeld = false;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // resetAllMocks, not clearAllMocks: clear wipes recorded calls but keeps each
+  // mock's IMPLEMENTATION, so a per-case `commitTranscode.mockImplementation`
+  // (the COMMIT-failure case) would leak into the next case — the lane case ran
+  // with a live commit rejection it was not named for. reset drops the
+  // implementation too; the four seams below are re-stubbed right after, and
+  // `commitTranscode` falls back to a bare mock (await undefined) per case
+  // (round-3 maintainer probe / R2). This keeps each mutation killing only the
+  // case it is named for.
+  vi.resetAllMocks();
   laneHeld = false;
   encodeMp3 = vi.fn(async (samples: Int16Array) => {
     const marker = samples[0] ?? 0;
@@ -467,6 +475,31 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
     expect(listPcmFinishedSegments).toHaveBeenCalledTimes(1);
 
     await requestTranscodeSweep();
+    expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears the sweep lock even when a pass throws uncaught, so the next request still runs", async () => {
+    // The list-read catch covers a REJECTED list; the per-segment catch covers a
+    // segment's failure. Neither covers an uncaught throw from the loop itself —
+    // e.g. the list resolving to a non-iterable — which propagates out of
+    // `sweepOnce`. `running` must still clear, because it lives in `runSweeps`'s
+    // `finally`; `if (running)` is truthy for a settled — even rejected — promise,
+    // so a clear that a throw skips (e.g. `running = null` written AFTER the loop
+    // instead of in the `finally`) wedges every later `void requestTranscodeSweep()`
+    // onto the dead promise and Finished PCM never transcodes again this process
+    // (round-3 George P3 / M13).
+    vi.mocked(listPcmFinishedSegments)
+      .mockResolvedValueOnce(
+        null as unknown as Awaited<ReturnType<typeof listPcmFinishedSegments>>
+      )
+      .mockResolvedValue([]);
+
+    // First pass throws out of the `for...of` (null is not iterable), uncaught
+    // inside `sweepOnce`, so the sweep rejects.
+    await expect(requestTranscodeSweep()).rejects.toBeInstanceOf(TypeError);
+
+    // The lock cleared: a fresh request starts a NEW run and lists again.
+    await expect(requestTranscodeSweep()).resolves.toBeUndefined();
     expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
   });
 });

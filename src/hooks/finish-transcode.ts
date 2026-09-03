@@ -67,7 +67,12 @@ export function requestTranscodeSweep(): Promise<void> {
  * and the loop makes one more pass) or after the clear (it starts a fresh run).
  * There is no in-between window a joiner can fall into and be dropped — which is
  * exactly what the earlier `.finally(…).then(…)` chain existed to paper over
- * (round-2/round-3 George/Frank P3; folded per round-2 George on #185).
+ * (that chain was the B8 PR's coalescing residual; folded per #185 round-2 George).
+ *
+ * The clear lives in `finally`, not after the loop, on purpose: an uncaught throw
+ * out of `sweepOnce` must still release the lock. `if (running)` is truthy for a
+ * settled — even rejected — promise, so a clear a throw could skip would wedge
+ * every later sweep onto the dead promise (#185 round-3 George P3).
  */
 async function runSweeps(): Promise<void> {
   try {
