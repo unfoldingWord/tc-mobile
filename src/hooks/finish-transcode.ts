@@ -53,26 +53,31 @@ export function requestTranscodeSweep(): Promise<void> {
     requestedDuringRun = true;
     return running;
   }
-  running = runSweeps()
-    .finally(() => {
-      running = null;
-    })
-    // A request that landed between the loop's last check and the `finally`
-    // set the flag while `running` was still non-null, so it joined THIS
-    // promise. Chain the pass it asked for into it, so the promise every joiner
-    // holds really does resolve only once their request is covered (round-2
-    // George P3, round-3 Frank P3). A request that lands after `running` was
-    // cleared starts its own run instead, and resets the flag as it begins.
-    .then(() => (requestedDuringRun ? requestTranscodeSweep() : undefined));
+  running = runSweeps();
   return running;
 }
 
-/** Sweep, and sweep again for every request that arrived while sweeping. */
+/**
+ * Sweep, and sweep again for every request that arrived while sweeping.
+ *
+ * `running` is cleared in the `finally`, in the SAME synchronous step that ends
+ * the `do/while` — there is no `await` between the loop's last check of the flag
+ * and the clear. So a request either lands during a `sweepOnce` (the flag is set
+ * while `running` is still non-null, `requestTranscodeSweep` joins this promise,
+ * and the loop makes one more pass) or after the clear (it starts a fresh run).
+ * There is no in-between window a joiner can fall into and be dropped — which is
+ * exactly what the earlier `.finally(…).then(…)` chain existed to paper over
+ * (round-2/round-3 George/Frank P3; folded per round-2 George on #185).
+ */
 async function runSweeps(): Promise<void> {
-  do {
-    requestedDuringRun = false;
-    await sweepOnce();
-  } while (requestedDuringRun);
+  try {
+    do {
+      requestedDuringRun = false;
+      await sweepOnce();
+    } while (requestedDuringRun);
+  } finally {
+    running = null;
+  }
 }
 
 async function sweepOnce(): Promise<void> {

@@ -331,6 +331,50 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
     }
   });
 
+  it("isolates a failure at the COMMIT and never rejects", async () => {
+    // The whole lane turn is load → peaks → encode → commit, and the commit is
+    // the last thing inside it. A per-segment catch that covers the load and the
+    // encode but somehow not the commit (M12: narrow the try, or move the commit
+    // out of the turn) would let s1's rejected commit reject `runSweeps` — an
+    // unhandled rejection at the `void requestTranscodeSweep()` call sites, with
+    // s2 never swept. The commit is where audio is dropped, so its failure is the
+    // one that most must stay isolated.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.mocked(listPcmFinishedSegments).mockResolvedValue([
+        { segmentId: sid("s1"), clipId: cid("c1") },
+        { segmentId: sid("s2"), clipId: cid("c2") },
+      ]);
+      vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) =>
+        segmentId === sid("s1")
+          ? resolvedPcm(cid("c1"), Int16Array.of(1))
+          : resolvedPcm(cid("c2"), Int16Array.of(2))
+      );
+      vi.mocked(commitTranscode).mockImplementation(async (segmentId) => {
+        if (segmentId === sid("s1")) throw new Error("commit failed"); // s1 only
+        return "committed";
+      });
+
+      // It must NOT reject — the promise every caller drops on the floor.
+      await expect(requestTranscodeSweep()).resolves.toBeUndefined();
+
+      // Both encodes ran (s1 reached its commit before failing); s2's commit
+      // still landed, and s1's failure was logged, not thrown.
+      expect(encodeMp3).toHaveBeenCalledTimes(2);
+      expect(commitTranscode).toHaveBeenCalledTimes(2);
+      expect(commitTranscode).toHaveBeenNthCalledWith(
+        2,
+        sid("s2"),
+        cid("c2"),
+        expect.any(Uint8Array),
+        expect.anything()
+      );
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("logs and resolves without throwing when the list read fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
