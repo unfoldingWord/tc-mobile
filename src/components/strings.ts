@@ -66,6 +66,12 @@ export const strings = {
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
+  // The `processing` window's status (#39). "saving": Back was tapped and the
+  // take is committing. "interrupted": the mic was lost mid-take (#59) and the
+  // frozen take is held in memory until Back saves it — so the copy points at
+  // Back, mirroring `previewUnavailable`.
+  recorderSaving: "Saving…",
+  recorderInterrupted: "Recording finished. Tap Back to save it.",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but

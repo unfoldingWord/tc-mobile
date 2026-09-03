@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
+import { processingStatusKind } from "./processing-status";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
@@ -1188,6 +1189,31 @@ export function Recorder({
                   </span>
                 </div>
               )}
+              {state === "processing" &&
+                (() => {
+                  // #39: `processing` used to draw no status at all — a frozen
+                  // waveform with no dot, no timer, nothing saying work was in
+                  // flight. The exit (header Back) was always there; the status
+                  // was not. Both ways in get one now. `"saving"` is
+                  // in-progress (Back tapped, committing), so `aria-busy`.
+                  // `"interrupted"` is a settled take waiting on Back (#59), so
+                  // it announces once and points at that exit.
+                  const kind = processingStatusKind(isClosing);
+                  const saving = kind === "saving";
+                  return (
+                    <div
+                      className="recorder-status flex items-center gap-[8px]"
+                      role="status"
+                      aria-busy={saving || undefined}
+                    >
+                      <span>
+                        {saving
+                          ? strings.recorderSaving
+                          : strings.recorderInterrupted}
+                      </span>
+                    </div>
+                  );
+                })()}
             </div>
 
             {mode === "record" && vuVisible && (
