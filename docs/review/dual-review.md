@@ -135,10 +135,10 @@ new instances of the same defect class) mean the fix approach is wrong and
 another round will not help. The round number cannot tell those apart. A person
 reading the last round's findings can, so the decision is theirs.
 
-## Traps, each of which cost a dead run on bt-servant-admin-portal
+## Traps, each of which cost a dead run
 
-These are not theoretical. They were paid for across 13 review rounds there and
-are handled in the scripts.
+These are not theoretical. They were paid for across many review rounds on an
+earlier project and are handled in the scripts.
 
 ### Codex (Frank)
 
@@ -184,9 +184,10 @@ stop fixing case by case and open a follow-up issue for a systematic pass.
 
 ### Why both, always
 
-On bt-servant-admin-portal, Codex posted clean four times where Grok found a
-real authorization gap in untouched code. **The asymmetry is the point — never
-run one as a fallback for the other.**
+The two lenses have already diverged in practice: the diff-local pass has come
+back clean where the deep-tree pass found a real authorization gap in untouched
+code. **The asymmetry is the point — never run one as a fallback for the
+other.**
 
 ## Guard design notes
 
@@ -203,18 +204,16 @@ Two guards exist, and both were wrong on the first attempt:
 
 ## Provenance
 
-The George preamble is reproduced from the prompts bt-servant-admin-portal
-actually used, recovered from the local Grok session store. Frank's was not
-recoverable from the Codex session store, so it is reconstructed from the lens
-description inside George's prompt ("Reviewer A covers the diff-local lens; do
-not spend your effort on style or diff-local nits") and adapted to this repo.
-Treat Frank's as a faithful reconstruction rather than a verbatim copy.
+The George preamble carries over the prompt an earlier project used. Frank's was
+reconstructed from the lens description inside George's prompt ("Reviewer A
+covers the diff-local lens; do not spend your effort on style or diff-local
+nits") and adapted to this repo. Treat Frank's as a faithful reconstruction
+rather than an exact copy.
 
 ## A known review-noise item
 
 Each agent reads its **own** instruction file — Claude reads `CLAUDE.md`, Codex
-reads `AGENTS.md`. In bt-servant-admin-portal those files name different commit
-authors, and Frank has flagged the mismatch on review. Declining, with an
-explicit reference to the instruction file the authoring agent follows, is the
-correct response. This repo's `CLAUDE.md` simply defers to `AGENTS.md`, so the
-conflict should not arise here.
+reads `AGENTS.md`. Where those two files disagree, Frank flags the mismatch on
+review. Declining, with an explicit reference to the instruction file the
+authoring agent follows, is the correct response. This repo's `CLAUDE.md` simply
+defers to `AGENTS.md`, so the conflict should not arise here.

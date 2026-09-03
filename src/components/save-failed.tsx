@@ -2,6 +2,11 @@ import { useState } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
+import {
+  recoveryAttempts,
+  recoverySafetyLine,
+  recoveryTitle,
+} from "./recovery-copy";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 
 interface SaveFailedProps {
@@ -19,18 +24,6 @@ interface SaveFailedProps {
   attempts: number;
   onRetry: () => void;
   onDiscard: () => void;
-}
-
-/**
- * The headline. `quota` is the same either way — the phone is full whether the
- * held work is a recording or an edit — but the `unknown` line names what could
- * not be saved so the two paths read honestly.
- */
-function failureTitle(kind: SaveFailureKind, editOnly: boolean): string {
-  if (kind === "quota") return "No room left on this phone.";
-  return editOnly
-    ? "Your changes could not be saved."
-    : "This recording could not be saved.";
 }
 
 /**
@@ -62,6 +55,13 @@ export function SaveFailed({
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
 
+  // Shown on every failed save, never an instruction to leave the app: a failed
+  // save is RAM-only (the commit is one transaction, #38) whatever the cause, so
+  // sending the translator off to free space would risk the OS discarding the
+  // only copy. The attempt count is a fainter extra line beside it, not instead.
+  const safetyLine = saving ? null : recoverySafetyLine(editOnly);
+  const attemptsLine = saving ? null : recoveryAttempts(kind, attempts);
+
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
   // recording is untouched — discarding drops only the edit.
@@ -92,7 +92,7 @@ export function SaveFailed({
       </span>
 
       <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {saving ? "Saving" : failureTitle(kind ?? "unknown", editOnly)}
+        {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
       <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
@@ -110,11 +110,15 @@ export function SaveFailed({
             onClick={onRetry}
           />
 
-          {attempts > 1 && (
+          {safetyLine && (
+            <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
+              {safetyLine}
+            </p>
+          )}
+
+          {attemptsLine && (
             <p className="text-[12px]" style={{ color: "var(--s-ink-faint)" }}>
-              {kind === "quota"
-                ? "Free some space on the phone, then try again."
-                : `Attempts: ${attempts}`}
+              {attemptsLine}
             </p>
           )}
 

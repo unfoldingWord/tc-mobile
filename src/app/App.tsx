@@ -9,6 +9,7 @@ import {
   type SegmentsScreenHandle,
 } from "@/components/segments-screen";
 import { requestTranscodeSweep } from "@/hooks/finish-transcode";
+import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useSaveTake } from "@/hooks/use-save-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
@@ -57,6 +58,10 @@ export function App() {
   // segment on a device that just upgraded to the v4 schema. Idempotent, so
   // asking here costs nothing when there is nothing owed.
   useEffect(() => {
+    // Keep the encoder worker warm from launch, while this build's precache
+    // still holds its chunk — so a Finished transcode or a Share after a
+    // service-worker update does not depend on a purged chunk URL (#182).
+    warmEncoder();
     void requestTranscodeSweep();
   }, []);
   const {

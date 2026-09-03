@@ -5,6 +5,118 @@ carry several sessions, so entries are titled by date plus a session marker
 (e.g. "(evening)"). The historical "Day N" labels below predate this convention
 and do not imply one entry per day.
 
+Entries refer to "the pivot": the redesign of 22 Aug 2026, when the product
+mockups arrived about an hour after work started and the initial scaffold was
+replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
+
+---
+
+## 2026-09-02 (day) — B8 merged + staging v0.1.11; the repo moves to the org; a contributor's first four PRs through the dual review
+
+**Branches:** `claude/next-batch-issues-ns640m` → **`develop`** (#136, squash `485aacf`, the contributor's
+B8); `release/v0.1.11` → develop (#141, `b746516`); develop → **`staging`** (#142, merge
+`a180ee6`, **v0.1.11**). **Production `main` untouched** (`3464a30`). Open: **#138**
+(docs, versioning + repo-move), **#139 #140 #144 #145** (the contributor's, review lanes below).
+**Filed:** #134, #135, #143 (closed), #146 (the maintainer); #137, #147 (the contributor).
+
+### The repo moved, and it broke the deploy
+
+The maintainer transferred the repo from a personal account to **`unfoldingWord/tc-mobile`**. GitHub redirects
+the old name; `gh` resolves to the org. **Cloudflare Workers Builds did not survive the
+transfer:** the v0.1.11 staging merge went green on GitHub and never deployed — no
+`Workers Builds` check on `a180ee6` where Monday's `6050d81` had one, and the staging URL
+kept serving v0.1.10 for twenty minutes. The maintainer re-linked both Workers in the dashboard;
+staging served v0.1.11 within ten minutes (`index-Crr9nweP.js`, worker chunk reachable).
+**#143** records it. Lesson, now in AGENTS.md via #138: **a merged promotion PR is not a
+deployed build — confirm the served bundle's version string.** The re-linked app posts
+preview-bot comments on PRs and a `Workers Build` check on later pushes.
+
+### Contributors, versions, milestones
+
+- **A second contributor is building.** First PR #136 (B8) at 09:05 local; four more by
+  evening. The review process split for the first time: **the maintainer's session runs
+  Frank + George and posts each round's statements with per-finding CONFIRMED/REFUTED
+  verification; the PR author posts FIXED/REFUTED/DEFERRED and merges.** Rounds 2–4 of the later PRs ran as **parallel subagents, one
+  worktree per PR**, since each review diffs against develop independently.
+- **Versioning rule (the maintainer, #138):** feature/fix PRs never touch `version`; one
+  `chore(release)` PR per develop → staging promotion bumps the patch; **the minor is the
+  milestone**, bumped and tagged by the `staging → main` promotion PR.
+- **Milestones created**, all 35 open issues assigned: `v0.2.0 — Sept: production gate`
+  (due 09-30), `v0.3.0 — Oct: training` (due 10-09), `v1.0.0 — Post-training`.
+  Every new issue gets one.
+- **Cleanup:** 9 merged remote branches and 24 stale local branches deleted; local
+  `staging` fast-forwarded. Remaining remotes: the three mainline branches, #138's, and
+  the contributor's four PR branches.
+
+### #136 — B8, four rounds, both clean, merged, promoted
+
+Frank + George both clean at `3df181860` after a **chain** of four rounds. The catch worth
+keeping, round 2, both lenses independently: **an MP3 decode carries 1,105 samples of
+encoder+decoder delay at the HEAD** (lamejs writes no Xing/LAME tag; reproduced in Node:
+116 granules × 1,152 = 133,632 for 132,300 in, exactly Chromium's number), so the round-1
+"fit to `frameCount`" that trimmed the _tail_ was deleting the last 25 ms of speech on
+every edit-save of a finished segment. The PR author measured with impulse round-trips on
+Chromium before the T1 gate let the fix (`fitMp3Decode`, granule count read off the
+stream) through. Also caught: sweep + share running two LAME workers at once (now one
+encoder lane), lamejs duplicated into the app bundle by the inline fallback (gone; app
+chunk has zero lamejs markers), a rowAudio TOCTOU with the transcode sweep. **Nothing in
+B8 has run on a phone**; the iOS/Android impulse round-trip is the T2 gate before
+`staging → main`, alongside #106 and the first-launch sweep.
+
+### The requirements owner's staging report → #134 / #135
+
+The requirements owner, on v0.1.10: the editorial controls were no longer visible and the
+edit icon was grayed out. Not a regression — the record/edit split approved on #89. The real finding: Edit is
+idle-only and a take commits only on Back, so **Edit is unreachable in the same sheet
+session as a take** (#134, needs the requirements owner's call on record-then-edit-in-one-sitting), and a
+disabled row carried no reason (#135, fixed by the contributor's #139).
+
+### The contributor's lanes at EOD
+
+| PR                                               | Closes         | Rounds      | State @ EOD                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------ | -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **#145** recovery screen copy (#38 half)         | —              | 3, chain    | **clean** @ `9f4b99249` — merge is the PR author's, after #139/#140                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **#140** Notice `info` tone (#112) + #129/#103   | #112 #129 #103 | 3           | **clean** @ `afa445e97` (1 P3 → #147) — merge is the PR author's, after #139                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **#139** disabled-row reasons (#135) + #130 nits | #135 #130      | **4 = cap** | Frank clean; **1 George P2 open** (menu stays open over the permission panel when the mic fails mid-request). Rounds 1→3 a chain, 3→4 siblings of a now-exhausted state class. The PR author pushed the fix (`2a036b47e`); **round 5 is the maintainer's call, not decided today.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **#144** LGPL notice + About panel (#36)         | #36            | **4 = cap** | **Not clean, siblings.** Frank **P1**: the panel/README/ADR assert an exercisable LGPL §4(d) relink right, but the repo is private and the bundle hard-references the hashed worker chunk — a licensing position for the maintainer and the requirements owner, not a patch. George 2 × P2 (`aria-label` on the `<pre>` masks loading/failed states; 13 px buttons under the 40 px floor + 11 px body with `user-scalable=no`), 2 × P3. The duplicate `info` icon is still there (TS1117 on rebase after #140). **Recommendation posted: no straight round 5** — the PR author fixes the P2s + `info` in one commit; the maintainer and the requirements owner decide the §4(d) claim and record it in ADR 0003; then one confirming round if the maintainer authorises. |
+
+Lane order for the contributor's merges: **#139 → #140 → #145 → #144**. #140 and #144 both add an
+`info` icon to `icon.tsx` (duplicate key → TS1117) and #139/#144 share `strings.ts`, so
+#144 lands last, rebased, re-reviewed.
+
+### Process notes worth keeping
+
+- **Reviewer/author split works** but needs the triage comment to carry verification state
+  per finding, not just dispositions; the author's dispositions comments then quote commits.
+- **Never run a mutation probe while George is running** — George reads the disk. One
+  agent did (5 s, restored); that George run was discarded and re-run solo, disclosed on
+  #144. Probe only after both reports are in.
+- **A push mid-round voids the round.** #140's head moved during round 2; the agent killed
+  the run and re-ran at the new head rather than post stale verdicts.
+- **The cap is a decision point, not a stop.** #139 and #144 both hit it; the shape
+  analysis (chain vs siblings, and whether the sibling class is finite) is what the maintainer
+  needs to decide a fifth round.
+- **#146:** `3-components.css`'s header forbids layer-1 primitives in component rules; 42
+  existing rules use them. Reconcile the header with the file rather than fight every PR.
+
+### Blockers / needs a human
+
+- **The maintainer:** round 5 on #139 (recommended: yes, ~5-line fix already pushed, class
+  exhausted) and #144 (see state above); merge #138 (docs, reviewer exemption proposed);
+  `git remote set-url origin https://github.com/unfoldingWord/tc-mobile.git` in the main
+  checkout; `npm ci` there (its node_modules predate fflate).
+- **The requirements owner:** #134 (record-then-edit-in-one-sitting), the #89 D1/D2 confirms, Q2 (Template
+  Library), and the on-device pass on **staging v0.1.11** (B8 + everything since v0.1.5).
+- **The contributor:** merge #140 and #145 (mark ready first), rebase #144 after #139/#140.
+
+### Next steps
+
+1. The maintainer's round-5 decisions; then the contributor merges in lane order; promote develop → staging
+   as v0.1.12 once the four lanes land (one `chore(release)` PR).
+2. On-device pass on staging (iOS + Android): B8 impulse round-trip, #106, first-launch
+   sweep, B7 share, recorder preview — the `staging → main` gate for v0.2.0.
+3. B7 Template Library (#33): `ux-then-ui` pass, then the requirements owner's Q2 call.
+
 ---
 
 ## 2026-09-02 — B8 (#34): MP3 on Finished + the encoder off the main thread — PR open
@@ -31,7 +143,10 @@ same root cause — a synchronous main-thread `encodeMp3`.
   worker per encode, PCM transferred in, MP3 transferred out, terminated on every
   exit — an `AbortSignal` really stops it. `useShareFlow` now aborts the encode on
   menu close / unmount. Vite emits the worker + lamejs as its own chunk (ADR
-  0003 obligation 1 met).
+  0003 obligation 1 met). _(Corrected #182, 2026-09-03: the worker is now kept
+  warm and reused across encodes — terminated on abort or error, re-warmed on
+  abort and rebuilt on the next encode after an error, not per encode. See ADR
+  0009 Amendments.)_
 - **Transcode on Finished (D3)**: `ClipMeta` gains `encoding | generation |
 byteLength | peaks`; **schema v4, append-only backfill** (v3 rows stamped
   PCM/0, nothing dropped). `commitTranscode` is ONE strict-durability
@@ -69,7 +184,7 @@ of a LAME MP3 (and on an `"interrupted"` iOS context), encode time of a real
 chapter on a low-end phone, the first-launch sweep over a device full of
 finished segments, battery/heat. Still no phone has run B7 share either.
 
-### Review round 1 (Seth's session, both reviewers @ `d00b4c5`)
+### Review round 1 (the maintainer's session, both reviewers @ `d00b4c5`)
 
 Frank 1 × P2, George 2 × P2 + 3 × P3, no P1. Fixed in the round-2 commit:
 **F1/G3** every MP3 decode now fitted to the recorded `frameCount` via a pure
@@ -81,12 +196,12 @@ its static import kept lamejs in the app bundle (0 `Mp3Encoder` in the index
 chunk now, 1 in the worker chunk, checked in `dist/`); **G4** the `clipData`
 comment. **G5** DEFERRED to #137 (UX call, intersects #106/#135).
 
-### Review round 2 (Seth's session, both reviewers @ `1924507f`) — chain shape
+### Review round 2 (the maintainer's session, both reviewers @ `1924507f`) — chain shape
 
 Frank **P1** ↔ George P2: round 1's `fitToFrames` trimmed the TAIL, but the
 decode's excess is at the HEAD (LAME priming 576 + decoder delay 529 = 1105;
 no info tag from lamejs), so an edit → save of a finished segment deleted its
-last ~25 ms of speech. Seth reproduced the granule arithmetic in Node; I then
+last ~25 ms of speech. The maintainer reproduced the granule arithmetic in Node; I then
 **measured it in Chromium** with impulses at known positions, five input
 lengths: head offset 1105 every time, decode = granules × 1152. Fix:
 `lib/audio/mp3-align.ts` — `mp3GranuleCount` walks the stream's own headers,
@@ -96,7 +211,7 @@ decoder in the tests. Also **P2** cancel threaded into the gather (a dismissed
 share lets go of the encoder lane at the next clip), **P3**s: sweep re-request
 race, MP3 rows read metadata only, `decodeMp3ToCanonical` docblock.
 
-### Review round 3 (Seth's session, both reviewers @ `5a42b6ba8`) — chain
+### Review round 3 (the maintainer's session, both reviewers @ `5a42b6ba8`) — chain
 
 Frank **APPROVE** (1 × P3: the sweep promise resolved before the follow-up pass
 it promised — now chained into the returned promise). George REQUEST_CHANGES
@@ -110,10 +225,10 @@ Round 4 is the cap.
 
 1. Round 4: Frank + George re-run at the round-4 head (the DRI's session runs
    them; no codex/grok in the build session). If anything is open after it,
-   that is an escalation to Seth per AGENTS.md, not a stop.
+   that is an escalation to the maintainer per AGENTS.md, not a stop.
 2. On-device pass (iOS + Android) on staging after promotion — the list above,
    plus the B7 share checks already owed.
-3. Rest of B7 — Template Library (Tim's Q2 call).
+3. Rest of B7 — Template Library (the requirements owner's Q2 call).
 4. Q5: leave open; `generation` now records the evidence to decide it.
 
 ---
@@ -124,8 +239,8 @@ Round 4 is the cap.
 `feat/recorder-preview` → **`develop`** (#128, merged, deleted); `release/v0.1.10`
 → develop (#131). **`develop`** (`de86a99`), **`staging`** promoted to **v0.1.10**
 (`6050d81`, #132) — the first on-device-testable build of the recorder preview.
-**Production `main` untouched** (`3464a30`). **Filed:** [#129](https://github.com/sethstoll3/tc-mobile/issues/129),
-[#130](https://github.com/sethstoll3/tc-mobile/issues/130).
+**Production `main` untouched** (`3464a30`). **Filed:** [#129](https://github.com/unfoldingWord/tc-mobile/issues/129),
+[#130](https://github.com/unfoldingWord/tc-mobile/issues/130).
 
 ### Shipped
 
@@ -184,7 +299,7 @@ Full 10-round triage on #128.
   today). **#130** — two R10 P3 nits (one-frame LiveScope blank on first-take
   Resume; a `console.error` missing its `cause`).
 - **Parked from the batch** (asked to "work 101 and any others we can parallel"):
-  **#75/#39/#97** (recorder-UI, entangled with the recorder surface or Tim-UX-gated)
+  **#75/#39/#97** (recorder-UI, entangled with the recorder surface or gated on a requirements-owner UX call)
   and **#103** (latent, near-untestable standalone). **Blocked by the repo's own
   rules:** **#68** (don't-fix-before-dedup), **#76** (device-gated).
 
@@ -193,7 +308,7 @@ Full 10-round triage on #128.
 1. **On-device pass on staging v0.1.10** — the checks above, then the `staging →
 main` production PR when clean.
 2. **Rest of B7** — the Template Library (other half of #33), needs a `ux-then-ui`
-   gate + Tim's Q2/Bible-template call.
+   gate + the requirements owner's Q2/Bible-template call.
 3. **#130 / #129** when next touching the preview stage / floor.
 
 ---
@@ -202,7 +317,7 @@ main` production PR when clean.
 
 **Branches:** `feat/live-waveform-capture` → **`develop`** (#121, merged, deleted);
 `feat/live-waveform-wiring` → **`develop`** (#123, merged, deleted); release/promote
-branches for v0.1.8 (#122) and v0.1.9 (#124/#125). **Filed:** [#120](https://github.com/sethstoll3/tc-mobile/issues/120)
+branches for v0.1.8 (#122) and v0.1.9 (#124/#125). **Filed:** [#120](https://github.com/unfoldingWord/tc-mobile/issues/120)
 (the live-waveform tracking issue). **On `develop`** (`1219921`), **`staging`**
 promoted to **v0.1.9** (`62afa75`) — the first on-device-testable build of the
 feature. **Production `main` untouched** (`3464a30`).
@@ -210,7 +325,7 @@ feature. **Production `main` untouched** (`3464a30`).
 ### Shipped — the live waveform, built in two lanes
 
 The recorder now shows the waveform **growing as you speak** on a first take —
-Seth's recorded build-decision from 2026-08-28. Split into a pure slice and a
+the maintainer's recorded build-decision from 2026-08-28. Split into a pure slice and a
 browser lane so the testable math lands separately from the device-gated wiring.
 
 - **#121 — pure `lib/audio` slice** (squash `2e128e6`). `reduceFrame` (frame →
@@ -236,8 +351,8 @@ browser lane so the testable math lands separately from the device-gated wiring.
   unpinned invariants — all folded in with tests).
 - **#121 review — 3 Frank+George rounds.** R1 over-claimed drop-in docblocks +
   an `Infinity` RangeError; R2 non-finite edges + a structural `toScope`/`CaptureScope`
-  recantation; R3 (split): George APPROVE, **Frank P1 "ships unwired code."** DRI
-  (Seth) accepted the pure-slice split as a recorded residual (`@pivotpending`
+  recantation; R3 (split): George APPROVE, **Frank P1 "ships unwired code."** The DRI
+  accepted the pure-slice split as a recorded residual (`@pivotpending`
   is the repo's sanctioned deferred-export marker) → admin squash-merge.
 - **#123 review — 5 rounds, a converging chain.** Frank APPROVE/APPROVE/RC(perf
   bug)/RC/APPROVE; George walked the take lifecycle one state deeper each round
@@ -260,7 +375,7 @@ browser lane so the testable math lands separately from the device-gated wiring.
   (Android never run) on staging v0.1.9: first-take scroll, pause freeze (R-B6),
   F8-close freeze, tap-failed Waveform fallback, background-mid-take interruption
   freeze, rotate-while-paused rescale. **The T2 gate before `staging → main`.**
-- **`headFraction` is Tim's UX call** (0.5 centerline vs right-edge full-width) —
+- **`headFraction` is the requirements owner's UX call** (0.5 centerline vs right-edge full-width) —
   built to 0.5, best decided looking at the real thing on device.
 
 ### Next steps
@@ -271,17 +386,17 @@ browser lane so the testable math lands separately from the device-gated wiring.
    assumes ~60fps — tune off wall-clock), the punch-in/append live-columns
    overlay, and `headFraction`.
 3. **Rest of B7:** the Template Library (the remaining half of #33) — needs a
-   ux-then-ui gate + Tim's Q2/Bible-template call first.
+   ux-then-ui gate + the requirements owner's Q2/Bible-template call first.
 
 ---
 
 ## 2026-08-30 — B7 Share Book built, dual-reviewed to Frank-clean, merged to develop
 
 **Branch:** `feat/b7-book-export` → **`develop`** (merged, deleted). **PR:**
-[#114](https://github.com/sethstoll3/tc-mobile/pull/114) B7 Share Book
-(squash `342e3db`). **Filed:** [#115](https://github.com/sethstoll3/tc-mobile/issues/115),
-[#116](https://github.com/sethstoll3/tc-mobile/issues/116); note added to
-[#34](https://github.com/sethstoll3/tc-mobile/issues/34). **Production `main`
+[#114](https://github.com/unfoldingWord/tc-mobile/pull/114) B7 Share Book
+(squash `342e3db`). **Filed:** [#115](https://github.com/unfoldingWord/tc-mobile/issues/115),
+[#116](https://github.com/unfoldingWord/tc-mobile/issues/116); note added to
+[#34](https://github.com/unfoldingWord/tc-mobile/issues/34). **Production `main`
 untouched** (`3464a30`); **`staging`** still v0.1.7 (`6790a59`).
 
 ### Shipped
@@ -342,7 +457,7 @@ Full triage on #114 (both rounds, head SHAs stamped).
    v0.1.7 if clean.
 3. **Rest of B7:** the **Template Library** (the remaining half of #33).
 4. **Recorder UI lane** and **live-waveform-during-recording** lane.
-5. Deferred from this review: **#115** (Q6 folders/manifest, Pending Tim),
+5. Deferred from this review: **#115** (Q6 folders/manifest, pending the requirements owner),
    **#116** (segment-grain `missing`), **#34** (B8: encode off-thread + stream
    the book zip).
 
@@ -351,9 +466,9 @@ Full triage on #114 (both rounds, head SHAs stamped).
 ## 2026-08-28 (night) — B7 Share Chapter reworked to clean, merged, promoted to staging v0.1.7
 
 **Branch:** `feat/b7-chapter-export` → **`develop`** (merged, deleted). **PRs:**
-[#111](https://github.com/sethstoll3/tc-mobile/pull/111) B7 Share Chapter
-(squash `9adf9fc`), [#113](https://github.com/sethstoll3/tc-mobile/pull/113)
-develop→staging promotion. **Filed:** [#112](https://github.com/sethstoll3/tc-mobile/issues/112).
+[#111](https://github.com/unfoldingWord/tc-mobile/pull/111) B7 Share Chapter
+(squash `9adf9fc`), [#113](https://github.com/unfoldingWord/tc-mobile/pull/113)
+develop→staging promotion. **Filed:** [#112](https://github.com/unfoldingWord/tc-mobile/issues/112).
 **Released:** **v0.1.7** on staging, **deploy verified live** (bundle embeds `0.1.7`).
 **Production `main` untouched** (`3464a30`).
 
@@ -368,7 +483,7 @@ develop→staging promotion. **Filed:** [#112](https://github.com/sethstoll3/tc-
   node-tested, mutation-proven.
 - **Promotion to staging v0.1.7** carries the day's four fixes: #107
   (interrupted-context playback), #109 (atomic take save), #110 (recorder
-  centerline), #111 (Share Chapter). Sent Seth the on-device test list.
+  centerline), #111 (Share Chapter). Sent the maintainer the on-device test list.
 
 ### The review — 4 rounds after the rework, a converging chain
 
@@ -388,7 +503,7 @@ concurrency P2s across rounds 2–5, **every one fixed** (full triage on #111):
   generation-guarded the `fileRef` null-clears; neutral `shareMissing` copy.
 
 **Root cause of the residual class = the synchronous main-thread `encodeMp3`**
-(George's own read). Merged on Frank-approve + Seth's explicit acceptance of
+(George's own read). Merged on Frank-approve + the DRI's explicit acceptance of
 George's residual (he had not re-reviewed the final `d8b4d54`), this being the
 develop integration branch, not the prod gate. The real abort/non-block is **B8
 (#34)** — commented there to reinforce it before October.
@@ -404,7 +519,7 @@ new SHA. The lesson: never touch the tree while George is reading it.
 - **On-device iOS + Android** for v0.1.7 is owed before `staging → main`: #107
   (audible after an interruption), #109 (#38 failure path), #110 (centerline),
   and #111 (Share Chapter end-to-end — especially the WhatsApp/Signal file-drop
-  check). **Android still never run.** Test list sent to Seth.
+  check). **Android still never run.** Test list sent to the maintainer.
 - **#112** — Notice has no "info" tone (the Share gap-warning nit), deferred.
 - **#34 (B8)** — move `encodeMp3` off the main thread; reinforced by this review.
 
@@ -419,21 +534,21 @@ new SHA. The lesson: never touch the tree while George is reading it.
 
 ---
 
-## 2026-08-28 (late) — Tim's v0.1.6 feedback: three fixes merged; B7 Share Chapter built (rework)
+## 2026-08-28 (late) — The requirements owner's v0.1.6 feedback: three fixes merged; B7 Share Chapter built (rework)
 
 **Branches:** `fix/audio-context-interrupted-recovery`, `fix/atomic-take-save`,
 `fix/recorder-ui-clear-items` → **`develop`** (all merged); `feat/b7-chapter-export`
-(open, rework). **PRs merged:** [#107](https://github.com/sethstoll3/tc-mobile/pull/107)
-(`dd949e4`), [#109](https://github.com/sethstoll3/tc-mobile/pull/109) (`3fa8a95`),
-[#110](https://github.com/sethstoll3/tc-mobile/pull/110) (`dae17f9`) · **PR open:**
-[#111](https://github.com/sethstoll3/tc-mobile/pull/111) (B7 Share Chapter,
+(open, rework). **PRs merged:** [#107](https://github.com/unfoldingWord/tc-mobile/pull/107)
+(`dd949e4`), [#109](https://github.com/unfoldingWord/tc-mobile/pull/109) (`3fa8a95`),
+[#110](https://github.com/unfoldingWord/tc-mobile/pull/110) (`dae17f9`) · **PR open:**
+[#111](https://github.com/unfoldingWord/tc-mobile/pull/111) (B7 Share Chapter,
 REQUEST_CHANGES) · **Closed:** #6 (moot), #104 (via #107) · **Filed:** #106, #108 ·
 **Production `main` untouched** (`3464a30`). **Merge permission granted** — develop
 lanes now merge autonomously on clean-and-green (prod still doubly gated).
 
 ### Merged to develop (each: build → Frank+George dual review → merge)
 
-- **#107 — silent-playback fix (Tim's iPhone 13 mini / iOS 26.6).** Root cause:
+- **#107 — silent-playback fix (reproduced on an iPhone 13 mini / iOS 26.6).** Root cause:
   `resumeAudioContext` only resumed `"suspended"`, not WebKit's `"interrupted"`
   state (iOS enters it on a call / background / route change). An interrupted
   context plays every later `playSamples` source **silently, no error, for the
@@ -450,8 +565,8 @@ lanes now merge autonomously on clean-and-green (prod still doubly gated).
   Gotcha: a THROWN mid-tx error doesn't roll IndexedDB back (auto-commits) — must
   `tx.abort()` + consume the abort's `done` rejection. Mutation-proven. 2 rounds.
   #38 stays open for residual (b)/(c).
-- **#110 — red centerline only when `recorded || capturing`** (Tim's "only when a
-  waveform exists"). The `capturing` half keeps it during a first take. T3 canvas,
+- **#110 — red centerline only when `recorded || capturing`** (the requirements owner's ask: only when a
+  waveform exists). The `capturing` half keeps it during a first take. T3 canvas,
   device-owed. 1 clean round.
 
 ### B7 started — Share Chapter built, in a rework (PR #111, NOT merged)
@@ -469,15 +584,15 @@ lanes now merge autonomously on clean-and-green (prod still doubly gated).
   unmount-cancel, P2) + surface `missing` (P3). Full triage on #111. The Node-tested
   export core stands.
 
-### Tim's feedback — findings + a stale-build discovery
+### The requirements owner's feedback — findings + a stale-build discovery
 
-- **Tim's screenshots are v0.1.3, not v0.1.6** (image footer stamps `v0.1.3`; the
+- **The requirements owner's screenshots are v0.1.3, not v0.1.6** (image footer stamps `v0.1.3`; the
   recorder shots show the record button alone with the old unified toolbar — no
-  Play-beside-Record, no record/edit split). His PWA is cached on the old build, so
+  Play-beside-Record, no record/edit split). Their PWA is cached on the old build, so
   **"this screen wants a play button right of record" is already shipped in #89**.
-  **Action: get Tim to hard-refresh the staging link** before more recorder feedback.
-- **Seth's build decisions (this session):** build recorder #2/#3 (edit pencil onto
-  the toolbar; Cut off the centerline) with my placement, flagged for Tim; **build
+  **Action: have the requirements owner hard-refresh the staging link** before more recorder feedback.
+- **The maintainer's build decisions (this session):** build recorder #2/#3 (edit pencil onto
+  the toolbar; Cut off the centerline) with my placement, flagged for the requirements owner; **build
   the live-waveform-during-recording feature** (grows from the playhead, scrolls
   R→L) as its own lane; **build landscape full-width**; export gap stays 0.5s;
   Template Library deferred (Share first).
@@ -488,26 +603,26 @@ lanes now merge autonomously on clean-and-green (prod still doubly gated).
   audible after an interruption — #106), #109 (#38 failure path), #110 (centerline),
   plus the carried v0.1.5/v0.1.6 debt. Android still never run.
 - **#111 rework** (two-gesture share) before Share Chapter can merge.
-- Tim still owes the #89 D1/D2 confirms (Finished-in-menu, the "Editing" pill).
+- The requirements owner still owes the #89 D1/D2 confirms (Finished-in-menu, the "Editing" pill).
 
 ### Next steps
 
 1. **#111 rework** — two-gesture Share (prepare on tap 1, `navigator.share`
    synchronously on tap 2), lifecycle wiring, surface `missing`; re-review → merge.
 2. **Recorder UI lane** — edit pencil onto the toolbar (#2) + Cut off the centerline
-   (#3) + landscape full-width, flagged for Tim.
+   (#3) + landscape full-width, flagged for the requirements owner.
 3. **Live-waveform-during-recording** lane (the big recorder feature).
 4. **Share Book** (zip of chapter MP3s, adds `fflate`); then Template Library.
 5. Promote `develop → staging` (bump version) so the three merged fixes reach a
-   device; send Tim the refreshed link.
+   device; send the requirements owner the refreshed link.
 
 ---
 
 ## 2026-08-28 (night) — #89 recorder Play button + record/edit mode split → staging v0.1.6
 
 **Branch:** `feat/recorder-play-mode-split` → **`develop`** → **`staging`** ·
-**PRs merged:** [#100](https://github.com/sethstoll3/tc-mobile/pull/100) (#89,
-squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
+**PRs merged:** [#100](https://github.com/unfoldingWord/tc-mobile/pull/100) (#89,
+squash, `ac06a15`), [#105](https://github.com/unfoldingWord/tc-mobile/pull/105)
 (promotion, merge, `e333fee`) · **Filed:** #101, #102, #103, #104 · **On
 `staging` serving `v0.1.6`** (`index-CkbJkhCs.js`, bundle grep-verified live) ·
 **Production `main` untouched** at `3464a30`.
@@ -517,7 +632,7 @@ squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
 - **#89 built and merged** — the recorder splits into a **record mode** (a
   centered Record + Play hero pair, `≡` menu top-right) and an **edit mode** (the
   `[zoom][select][undo][redo][≡]` toolbar + selection/paste/cut behind the menu,
-  an "Editing" pill), per Tim's approved 2026-08-27 wireframe.
+  an "Editing" pill), per the wireframe the requirements owner approved on 2026-08-27.
 - **Play plays the in-memory working buffer** via a new `playBuffer`/`stopBuffer`
   seam on `useAudioSession` — reuses `playSamples` + the single-owner floor,
   skips the disk load `playTake` does, so the stored recording + unsaved edits
@@ -527,7 +642,7 @@ squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
 - **Waveform playhead** with the clip-fraction→viewport-x mapping extracted to a
   pure, **red-first-tested** `lib/audio/viewport.ts` helper (the one unit-testable
   slice; the rest is browser-only).
-- **Finished moved into the `≡` menu** (D1, reversible — flagged for Tim), keying
+- **Finished moved into the `≡` menu** (D1, reversible — flagged for the requirements owner), keying
   green/label on the resolved `finishedState`. **`Checkbox` component deleted**
   (recorder was its only consumer). The mic permission panel now keys on the
   recorder's **own** error, so a failed Play can't raise it.
@@ -551,7 +666,7 @@ squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
   APPROVE at R3 and R5; his R4 test-coverage P2 was refuted (the arbitration is
   fully covered in `session.ts`; the hook glue is the project's no-renderer
   on-device surface). A triage with dispositions + head SHA every round.
-- **Round cap + DRI calls.** Hit the round-4 cap; DRI (Seth) authorized a
+- **Round cap + DRI calls.** Hit the round-4 cap; the DRI authorized a
   confirming round 5, then **merge-on-green** after R5 closed the class. Squash
   merge on green (feature→develop convention).
 
@@ -561,7 +676,7 @@ squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
   browser-only: Play sounds the buffer, the playhead sweeps, Play dims while
   recording, the mode split, Finished-from-menu still marks/rides the take. Joins
   the existing `v0.1.5` device debt.
-- **Tim owes two confirms on #89** (both reversible, built to a default): D1
+- **The requirements owner owes two confirms on #89** (both reversible, built to a default): D1
   (Finished in the menu vs deleted from the recorder) and D2 (the "Editing" pill
   as the non-reader edit affordance vs more, → #91).
 - **Unchanged:** Capacitor go/no-go on the WKWebView audio spike (#86); org move
@@ -584,7 +699,7 @@ squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
    checks (Play sounds the buffer, playhead sweeps, Play dims while recording,
    the mode split, Finished-from-menu, playback stops at every boundary) plus the
    carried `v0.1.5` checks. The gate before `staging → main`.
-2. **Tim answers the two #89 confirms** (D1 Finished-in-menu, D2 the pill).
+2. **The requirements owner answers the two #89 confirms** (D1 Finished-in-menu, D2 the pill).
 3. **B7 (#33)** — Template Library + Share, the October spine (subsumes #18
    export, most of #20). The next build lane. Competing priority: close the
    Android interruption/pagehide gap (#59/#58) and #38/#39 (save-death, processing
@@ -596,9 +711,9 @@ squash, `ac06a15`), [#105](https://github.com/sethstoll3/tc-mobile/pull/105)
 
 **Branches:** `fix/ui-p3-a11y-copy` → `develop` (#96), `fix/timer-pad-minutes` →
 `develop` (#98), then `develop` → **`staging`** (#99) · **PRs merged:**
-[#96](https://github.com/sethstoll3/tc-mobile/pull/96),
-[#98](https://github.com/sethstoll3/tc-mobile/pull/98),
-[#99](https://github.com/sethstoll3/tc-mobile/pull/99) (promotion) · **Closed:**
+[#96](https://github.com/unfoldingWord/tc-mobile/pull/96),
+[#98](https://github.com/unfoldingWord/tc-mobile/pull/98),
+[#99](https://github.com/unfoldingWord/tc-mobile/pull/99) (promotion) · **Closed:**
 #67, #73, #77, #94 · **Filed:** #97 · **On `staging` serving `v0.1.5`** (`3cdd700`,
 deploy triggered — verify bundle once live) · **Production untouched**
 (`main` at `3464a30`).
@@ -617,7 +732,7 @@ deploy triggered — verify bundle once live) · **Production untouched**
 - **#98 — #94 timer width.** `formatDuration` now zero-pads minutes, so the live
   recorder clock holds five glyphs across the `9:59 → 10:00` rollover
   (`tabular-nums` fixes glyph width, not string length). Format is now `00:05` —
-  **flagged for Tim** as the visible change. New `tests/utils.test.ts`
+  **flagged for the requirements owner** as the visible change. New `tests/utils.test.ts`
   (`formatDuration` had no coverage); the cases assert width stability, the exact
   regression.
 - **Promoted `develop` → `staging`, bumped to `v0.1.5`** (build-stamp convention)
@@ -625,9 +740,7 @@ deploy triggered — verify bundle once live) · **Production untouched**
 - **#89 Gate 1 (ux-then-ui) — recorder record/edit split.** A0 diagnosis
   (record competes with six editing controls on open), two-mode job list, ten
   states, the A3 cut (record mode stops asking for the editing toolbar). Product
-  surface on the locked system, so identity/swap-test skipped. Artifact:
-  <https://claude.ai/code/artifact/a4dbf740-5ebe-4fd9-98b9-d64b787d5b77>. Recorded
-  on #89. **Gate 1 is a stop** — two questions owed from Tim before Gate 2.
+  surface on the locked system, so identity/swap-test skipped. Recorded on #89. **Gate 1 is a stop** — two questions owed from the requirements owner before Gate 2.
 
 ### The review catch worth keeping
 
@@ -646,8 +759,8 @@ deploy triggered — verify bundle once live) · **Production untouched**
 
 ### Process notes
 
-- **gh-writes + merge policy set (Seth):** run `gh` writes directly (comments,
-  labels, issue-close); **check with Seth before merging any PR**; prod
+- **gh-writes + merge policy set (the DRI):** run `gh` writes directly (comments,
+  labels, issue-close); **check with the DRI before merging any PR**; prod
   (`staging → main`) is doubly gated — explicit go **and** the on-device pass.
   Tonight's develop-lane merges ran on a standing merge-on-clean-and-green
   authorization. Memory updated.
@@ -664,7 +777,7 @@ deploy triggered — verify bundle once live) · **Production untouched**
   change is browser-only (focus/inert/copy, live timer width) and unverified by
   CI: SaveFailed edit-vs-record copy, Books inert + focus behind the menu,
   EraseConfirm focus-on-disable, the timer holding width past `10:00`.
-- **#89 waits on Tim** — Q1: edit-mode entry/exit affordance and the non-reader
+- **#89 waits on the requirements owner** — Q1: edit-mode entry/exit affordance and the non-reader
   "you are now editing" legibility (adjacent to #91); Q2: confirm Finished stays a
   top-corner checkbox and does not join the centered Record+Play pair. Gate 2
   (composition) cannot start until these land.
@@ -673,7 +786,7 @@ deploy triggered — verify bundle once live) · **Production untouched**
 
 ### Next steps
 
-1. **Tim answers the two #89 Gate-1 questions**, then Gate 2 (composition) → build
+1. **The requirements owner answers the two #89 Gate-1 questions**, then Gate 2 (composition) → build
    the record/edit split (absorbs #75 and #97).
 2. **On-device pass on staging `v0.1.5`** — the browser-only changes above; then
    `staging → main` once it and #92's pass both hold.
@@ -684,30 +797,30 @@ deploy triggered — verify bundle once live) · **Production untouched**
 
 ## 2026-08-28 — Audit lane #1: invite empty states + tabular numeric roles (#88, #90)
 
-**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) → **`staging`** (`f93ffa5`) · **PRs merged:** [#92](https://github.com/sethstoll3/tc-mobile/pull/92) (lane), [#95](https://github.com/sethstoll3/tc-mobile/pull/95) (promotion) · **Closed:** #88, #90 · **Filed:** #93, #94 · **On `staging` serving `v0.1.4`** (bundle grep-verified) · **Production untouched** (`main` at `3464a30`).
+**Branch:** `fix/ui-tabular-empty-states` → **`develop`** (`633525f`) → **`staging`** (`f93ffa5`) · **PRs merged:** [#92](https://github.com/unfoldingWord/tc-mobile/pull/92) (lane), [#95](https://github.com/unfoldingWord/tc-mobile/pull/95) (promotion) · **Closed:** #88, #90 · **Filed:** #93, #94 · **On `staging` serving `v0.1.4`** (bundle grep-verified) · **Production untouched** (`main` at `3464a30`).
 
 ### Completed
 
-- **#90 — invite empty states (Books + Segments).** Reframed the two "nothing here" notes into the ui-craft §21 invite shape: confident headline, one teaching line (vocabulary + "stays on this phone"), and a single **present primary CTA** that reuses the real create handlers (`onNewBook`/`onAppend`). New shared `EmptyState` component. The header create `+` now **hides while the invite is up**, so there is one create action — visually and to a screen reader. Strings are the shape only; exact words are Tim's, in `strings.ts`.
+- **#90 — invite empty states (Books + Segments).** Reframed the two "nothing here" notes into the ui-craft §21 invite shape: confident headline, one teaching line (vocabulary + "stays on this phone"), and a single **present primary CTA** that reuses the real create handlers (`onNewBook`/`onAppend`). New shared `EmptyState` component. The header create `+` now **hides while the invite is up**, so there is one create action — visually and to a screen reader. Strings are the shape only; exact words are the requirements owner's, in `strings.ts`.
 - **#88 — tabular figures on the numeric type roles**, reframed and shipped as **regression-hardening, not a jitter fix.** The digits never jittered: `.app-shell` sets `font-variant-numeric: tabular-nums` (inherited), and every call site is in-shell. Declared it directly on `.t-count` / `.t-timer` / `.t-ordinal` so a future portaled surface can't regress to proportional.
-- **Built direct (not a workflow) on purpose** — a two-line CSS change + copy/one element is below the bar for fan-out, and the one real risk (CSS/focus on device) is exactly what no subagent can verify. Recorded the call with Seth.
+- **Built direct (not a workflow) on purpose** — a two-line CSS change + copy/one element is below the bar for fan-out, and the one real risk (CSS/focus on device) is exactly what no subagent can verify. Recorded the call with the DRI.
 
 ### Four dual-review rounds (Frank codex / George grok) — a converging chain
 
 - **R1:** Frank APPROVE; George P2 = two equal primary CTAs on the empty shelf → hid the corner `+`.
 - **R2:** George P2 = hiding it stranded focus (Back became first tab stop, an Enter from leaving the chapter) → focus handoff to the new row.
 - **R3:** George P2 = the hidden corner exposed that `loadFailed` conflated a failed _read_ with a failed _create_, so a create failure tore down the invite → **root-fixed** by latching `loaded` in `useBooks`/`useChapterSegments` (`loadFailed = error && !loaded`, `showEmpty = loaded && empty`). Plus the R3 focus target hit the row's first `<button>` (Books' toggle) → now targets `button.control` / `.row-open` explicitly.
-- **Frank APPROVE every round; no P1 any round.** Merged at the **round-4 cap on a recorded DRI override** (Seth's O2), rationale enumerated on #92. Triage posted every round with dispositions + head SHA.
-- **Process note:** the `gh pr comment`/`merge`/`issue close` writes were blocked by the auto-mode classifier; Seth ran them by hand via `!`. The override executed by the DRI is arguably the more correct form.
+- **Frank APPROVE every round; no P1 any round.** Merged at the **round-4 cap on a recorded DRI override** (the DRI's O2), rationale enumerated on #92. Triage posted every round with dispositions + head SHA.
+- **Process note:** the `gh pr comment`/`merge`/`issue close` writes were blocked by the auto-mode classifier; the DRI ran them by hand via `!`. The override executed by the DRI is arguably the more correct form.
 
 ### Deferred / accepted residuals (tracked)
 
 - **#93** — empty-CTA focus/first-run cluster: the Books reload-window double-tap (race-safe, no data loss; clean fix is optimistic insert in `use-books` — a `creating` busy-latch tripped the react-compiler no-setState-in-effect rule, not suppressed), and the first-run AT autofocus order. Adjacent to #73/#77.
-- **#94** — `formatDuration` grows the clock a digit at the 10:00 rollover (tabular figures don't fix a length change). Fix is `padStart` (visible `00:05`, Tim's call) or a `ch` width reserve.
+- **#94** — `formatDuration` grows the clock a digit at the 10:00 rollover (tabular figures don't fix a length change). Fix is `padStart` (visible `00:05`, the requirements owner's call) or a `ch` width reserve.
 
-### On-device pass — PASSED (2026-08-28, Seth, iPhone 16 / iOS 27 beta 7 / Safari, staging `v0.1.4`)
+### On-device pass — PASSED (2026-08-28, a tester's iPhone 16 / iOS 27 beta 7 / Safari, staging `v0.1.4`)
 
-The lane's owed browser-only checks were verified on device by Seth: empty Books/Segments render one centered CTA (no corner `+`, **E1**); the invite CTA creates and, on VoiceOver, focus lands on the new row's control rather than Back (**E5** — the least code-provable one); the recording timer holds digit width while counting (**T1**). This **clears the `staging → main` gate for #92's changes.** Still **iOS Safari only on a pre-release build** (iOS 27 beta 7); Android never run.
+The lane's owed browser-only checks were verified on device by the maintainer: empty Books/Segments render one centered CTA (no corner `+`, **E1**); the invite CTA creates and, on VoiceOver, focus lands on the new row's control rather than Back (**E5** — the least code-provable one); the recording timer holds digit width while counting (**T1**). This **clears the `staging → main` gate for #92's changes.** Still **iOS Safari only on a pre-release build** (iOS 27 beta 7); Android never run.
 
 ### Blockers / needs a human (unchanged)
 
@@ -718,52 +831,51 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 1. **Fast lane:** the #67/#73/#75/#77 P3 batch — today's exact shape, low-risk, one `fix(ui)` PR.
 2. **Big lane:** **B7 (#33)** Template Library + Share — the October spine (subsumes #18 export, most of #20); the right ux-then-ui Gate-1 + ultracode candidate.
 3. **#89** recorder record/edit split (ultracode candidate), then **#91**. **B8 (#34)** after B7.
-4. Send Tim the staging link for wider testing once the on-device pass clears.
+4. Send the requirements owner the staging link for wider testing once the on-device pass clears.
 
 ---
 
-## 2026-08-27 (late) — UI audit (ux-then-ui + ui-craft), updated mockups, Tim sign-off
+## 2026-08-27 (late) — UI audit (ux-then-ui + ui-craft), updated mockups, requirements-owner sign-off
 
-**Branch:** `develop` (no code shipped — a design/planning session) · **Filed:** #88–#91 · **Artifacts:** [updated mockups](https://claude.ai/code/artifact/9edaa5d6-22cb-4d0c-9f15-c82441f93d10) · **No commits** beyond this tracker entry.
+**Branch:** `develop` (no code shipped — a design/planning session) · **Filed:** #88–#91 · **Artifacts:** updated mockups (off-repo) · **No commits** beyond this tracker entry.
 
 ### What happened
 
 - **Ran ux-then-ui + ui-craft over the three pivot screens** (Books, Segments, Recorder). These are _product_ surfaces, so identity/swap-test don't apply; the value was A0/A1/A2/A3 + the applicable ui-craft rows, audited **read-only against the code** (rendered visuals/motion/interactive-states are `n/t` — they belong to the on-device pass).
-- **Verdict: no major failure.** The screens genuinely fit their audience (a non-reading field translator): text-free-leaning, glyph+colour carry state, errors route to a Notice channel not the console, state-in-place over toasts. Gate 1 already ran on Tim's mockups. So this was **polish + two questions for Tim, not a rework** — and the strong states/error-channel/microcopy were explicitly flagged "don't churn."
+- **Verdict: no major failure.** The screens genuinely fit their audience (a non-reading field translator): text-free-leaning, glyph+colour carry state, errors route to a Notice channel not the console, state-in-place over toasts. Gate 1 already ran on the product mockups. So this was **polish + two questions for the requirements owner, not a rework** — and the strong states/error-channel/microcopy were explicitly flagged "don't churn."
 - **Findings → four issues:** #88 (F1 — `.t-timer`/`.t-count` lack `tabular-nums`, so the live clock jitters; confirmed in code), #89 (F2 — split the recorder into a calm record mode and a deliberate edit mode; absorbs F4, the signature-screen character point), #90 (F3 — warmer empty states with a present primary CTA), #91 (F5 — non-reader affordance for the abstract editing controls; forward-looking, the `strings.ts` aria-label routing is its attach point).
 - **Built the updated-mockups artifact** — all three screens (+ empty state, + edit mode) in the app's **real dark tokens**, no new colours.
-- **Tim approved the whole direction** ("absolutely gorgeous… let's go with those") and added the missing **Play button**: record + play centered as a pair, record the hero, play a step smaller to its right and dimmed while recording, the `≡` menu moved top-right. This resolves the old "recorder has no Play control" thread. #89 un-gated (`needs-decision` removed); mockup updated.
+- **The requirements owner approved the whole direction** and added the missing **Play button**: record + play centered as a pair, record the hero, play a step smaller to its right and dimmed while recording, the `≡` menu moved top-right. This resolves the old "recorder has no Play control" thread. #89 un-gated (`needs-decision` removed); mockup updated.
 
 ### Blockers / needs a human (unchanged from the prior session)
 
-- **On-device pass on `v0.1.3`** remains the gate before `staging → main` and before Tim's wider-testing link.
+- **On-device pass on `v0.1.3`** remains the gate before `staging → main` and before the wider-testing link.
 - **The Capacitor go/no-go still hinges on the WKWebView audio spike** (#86).
 
 ### Next steps
 
-1. **#88 + #90** — small `fix(ui)` lane, both Tim-approved and build-ready (F1 is a two-line CSS fix; F3 is copy + one CTA element).
+1. **#88 + #90** — small `fix(ui)` lane, both approved by the requirements owner and build-ready (F1 is a two-line CSS fix; F3 is copy + one CTA element).
 2. **#89** — build the record/edit split via a quick **ux-then-ui Gate-1** (job list + record/edit states) to pin behaviour, then implement to the approved mockup.
 3. **#91** after #89 (the mode split shrinks its exposure). Then out through `develop → staging` as usual.
 
 ---
 
-## 2026-08-27 (evening) — Tim's v0.1.2 UI review shipped to staging (v0.1.3); packaging + org-transfer research
+## 2026-08-27 (evening) — The requirements owner's v0.1.2 UI review shipped to staging (v0.1.3); packaging + org-transfer research
 
-**Branch:** `feat/tim-v012-ui-review` → `develop` → **`staging`** · **PRs merged:** [#85](https://github.com/sethstoll3/tc-mobile/pull/85) (UI review), [#87](https://github.com/sethstoll3/tc-mobile/pull/87) (promotion) · **On `staging`** (`1730a07`), deployed and **verified serving `v0.1.3`** · **Closed:** #79–#84 (UI review), #86 (counter-case) · **Filed:** #79–#84, #86 · **Production untouched** (`main` at `3464a30`).
+**Branch:** the v0.1.2 UI-review lane → `develop` → **`staging`** · **PRs merged:** [#85](https://github.com/unfoldingWord/tc-mobile/pull/85) (UI review), [#87](https://github.com/unfoldingWord/tc-mobile/pull/87) (promotion) · **On `staging`** (`1730a07`), deployed and **verified serving `v0.1.3`** · **Closed:** #79–#84 (UI review), #86 (counter-case) · **Filed:** #79–#84, #86 · **Production untouched** (`main` at `3464a30`).
 
 ### Completed
 
-- **Tim's v0.1.2 UI review built and shipped** (#79–#84, PR #85). From Tim's annotated review of the live v0.1.2 staging build (`A06`): the Segments-row rework — the actionable checkbox replaced by a **non-interactive green check-circle**, the whole left zone opens the editor, the row `⋮` menu now **Edit / Finished / Delete**, and a finished segment tints **green** (new `--s-done` semantic token) while in-progress stays amber; plus recorder fixes — centerline **0.66 → 0.5** (centered), disabled controls made legibly inactive, Cut stacks under the canvas. **The finished-invariant is now structural** (Finished lives only in the recorded-row menu, so a never-recorded segment cannot be marked finished).
+- **The requirements owner's v0.1.2 UI review built and shipped** (#79–#84, PR #85). From the requirements owner's annotated review of the live v0.1.2 staging build (`A06`): the Segments-row rework — the actionable checkbox replaced by a **non-interactive green check-circle**, the whole left zone opens the editor, the row `⋮` menu now **Edit / Finished / Delete**, and a finished segment tints **green** (new `--s-done` semantic token) while in-progress stays amber; plus recorder fixes — centerline **0.66 → 0.5** (centered), disabled controls made legibly inactive, Cut stacks under the canvas. **The finished-invariant is now structural** (Finished lives only in the recorded-row menu, so a never-recorded segment cannot be marked finished).
 - **Built via an ultracode workflow** — a design pass on the coupled row rework + 2 disjoint file-cluster build lanes (Segments-row / recorder) + integrate. Then **4 dual-review rounds** (Frank/George); merged at the round cap on a **recorded DRI override** (Frank APPROVE since R3; George's findings all fixed + enumerated, no P1 any round).
 - **Promoted `develop` → `staging`, bumped to `v0.1.3`** (build-stamp convention) so the iOS pass can name the build. Auto-deployed by Cloudflare Workers Builds and **verified live** at the staging URL.
-- **Tim's F1 reply captured and built** — the checkbox was "too easy to trigger" (reads as select-all-to-delete); it becomes a green-circle **status indicator**, tapping the left zone opens the editor, marking finished moves to the menu.
+- **The requirements owner's F1 reply captured and built** — the checkbox was "too easy to trigger" (reads as select-all-to-delete); it becomes a green-circle **status indicator**, tapping the left zone opens the editor, marking finished moves to the menu.
 
 ### Research deliverables (for the go/no-go and the org move)
 
-- **Native packaging recommendation** — `docs/research/native-packaging.md` + [artifact](https://claude.ai/code/artifact/957762b8-be38-4b83-9d7d-629f174360de). **Capacitor** (wrap the PWA): ~92% of `src` reuses untouched, ~8% boundary rework. Storage durability is the field data-loss reason to leave the bare PWA. Tim resolved: store accounts already live, no native-widget requirement.
-- **Anti-Capacitor counter-case** (#86) appended to the same doc + artifact — the steelman: the field-critical 8% (background audio, durable storage) is exactly what Capacitor doesn't solve for free. **The whole decision hinges on one experiment: the WKWebView background-audio spike** — run it before the go/no-go.
-- **Org-transfer plan** — `docs/org-transfer-plan.md`. Moving `sethstoll3/tc-mobile` → `unfoldingWord`. tC Mobile already exceeds its uW siblings on LICENSE/SECURITY/CONTRIBUTING/CI; the move gates on **one human approval** (tech-lead + recorded DRI + public/private) and two deliberate deviations to keep-and-record (Workers Builds deploy, the develop/staging/main branch model). A GitHub _transfer_ preserves issues/PRs/history.
-- **Product-name suggestions** — [artifact](https://claude.ai/code/artifact/47f4b11d-fc75-4d7b-be7b-fc2b459e1d32). Rooted in the estate + first-users' languages: **Sauti** (Swahili "voice", lead), **Neno** ("word"), **Rhema** (Greek "spoken word"); the `.bible` TLD route (uW owns `churchbased.bible`). Availability unverified (no DNS in the research env).
+- **Native packaging recommendation** — `docs/research/native-packaging.md`. **Capacitor** (wrap the PWA): ~92% of `src` reuses untouched, ~8% boundary rework. Storage durability is the field data-loss reason to leave the bare PWA. The requirements owner resolved: no native-widget requirement.
+- **Anti-Capacitor counter-case** (#86) appended to the same doc — the steelman: the field-critical 8% (background audio, durable storage) is exactly what Capacitor doesn't solve for free. **The whole decision hinges on one experiment: the WKWebView background-audio spike** — run it before the go/no-go.
+- **Org-transfer plan** — `docs/org-transfer-plan.md`. Moving the repo from a personal account into `unfoldingWord`. tC Mobile already carries LICENSE/SECURITY/CONTRIBUTING/CI; the move gates on **one human approval** (tech-lead + recorded DRI + public/private) and two deliberate deviations to keep-and-record (Workers Builds deploy, the develop/staging/main branch model). A GitHub _transfer_ preserves issues/PRs/history.
 
 ### Lesson worth keeping
 
@@ -771,13 +883,13 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 
 ### Blockers / needs a human
 
-- **On-device pass on `v0.1.3` is the gate** before `staging → main` and before Tim's wider-testing link goes out. All the UI review changes are **CSS/layout — browser-only, unverified by CI**: green hue + waveform actually repainting on toggle, left-zone tap opens editor, record/play alignment, centered line + Cut-under-canvas, disabled legibility, completed-chapter counter green.
+- **On-device pass on `v0.1.3` is the gate** before `staging → main` and before the wider-testing link goes out. All the UI review changes are **CSS/layout — browser-only, unverified by CI**: green hue + waveform actually repainting on toggle, left-zone tap opens editor, record/play alignment, centered line + Cut-under-canvas, disabled legibility, completed-chapter counter green.
 - **The Capacitor go/no-go hinges on the audio spike** (#86) — put the current recorder in a Capacitor WebView on a real iPhone + Android and test background capture + interruption. Decides days-vs-weeks and whether Capacitor is even right.
-- **Org move (D1)** needs a uW human to approve name + ownership and record the DRI/tech-lead; route via Birch.
+- **Org move (D1)** needs a uW human to approve name + ownership and record the DRI/tech-lead; route via the project manager.
 
 ### Next steps
 
-1. **On-device pass on staging (`v0.1.3`)** — the open gate. Then send Tim the staging link for wider testing (his weekend ask), and `staging → main` when ready.
+1. **On-device pass on staging (`v0.1.3`)** — the open gate. Then send the requirements owner the staging link for wider testing, and `staging → main` when ready.
 2. **Run the WKWebView audio spike** — the single input that settles the Capacitor go/no-go.
 3. **B7 (#33)** — Template Library + Share; the next build lane (subsumes #18 export, most of #20).
 4. Carry the counter-case doc (`develop` is 1 commit ahead of `staging`) on the next promotion.
@@ -786,7 +898,7 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 
 ## 2026-08-27 — Day 9: B6 (VU meter, recorder menu, erase segment) — shipped to staging, v0.1.2
 
-**Branch:** `feat/b6-vu-erase` → `develop` → **`staging`** · **PRs merged:** [#74](https://github.com/sethstoll3/tc-mobile/pull/74) (B6), [#78](https://github.com/sethstoll3/tc-mobile/pull/78) (promotion) · **On `staging`** (`27a8ba3`), deployed and serving `v0.1.2` (bundle verified: VU meter, erase confirm, meter-unavailable hatch all present) · **Closed:** #32, and #8/#37/#40/#41 (pre-pivot dead wood) · **Filed:** #73, #75, #76, #77 · **Production untouched** (`main` at `3464a30`).
+**Branch:** `feat/b6-vu-erase` → `develop` → **`staging`** · **PRs merged:** [#74](https://github.com/unfoldingWord/tc-mobile/pull/74) (B6), [#78](https://github.com/unfoldingWord/tc-mobile/pull/78) (promotion) · **On `staging`** (`27a8ba3`), deployed and serving `v0.1.2` (bundle verified: VU meter, erase confirm, meter-unavailable hatch all present) · **Closed:** #32, and #8/#37/#40/#41 (pre-pivot dead wood) · **Filed:** #73, #75, #76, #77 · **Production untouched** (`main` at `3464a30`).
 
 ### Completed
 
@@ -797,7 +909,7 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 ### Six dual-review rounds (Frank codex / George grok)
 
 - Erase/menu/confirm **converged by round 2.** **Rounds 3–5 were one chain on the VU tap lifecycle** — it entangles with the recorder's stop/cancel/pagehide/interruption flush machinery, and each round found an adjacent invariant miss (menu z-index regression from the round-2 portal; interruption teardown; the confirm busy-latch window). **Root fix (R5):** the tap now obeys the SAME ownership/generation discipline as `streamRef` — `stop()` steals it into a local and nulls `tapRef`, so a concurrent `cancel()`/`pagehide` during the flush can't stop THIS take's clone mid-`dataavailable` (WebKit truncation). iOS graph: `stream.clone()` + `analyser → gain(0) → destination`.
-- **R6: Frank APPROVE; George one residual P2** (#76) + 3 P3 (#77). **Merged on a recorded DRI override** (Seth's call) — George's P2 is a device-behaviour question routed to the iOS pass, not a blind unverifiable fix. Every round triaged on #74 with dispositions + head SHA.
+- **R6: Frank APPROVE; George one residual P2** (#76) + 3 P3 (#77). **Merged on a recorded DRI override** (the DRI's call) — George's P2 is a device-behaviour question routed to the iOS pass, not a blind unverifiable fix. Every round triaged on #74 with dispositions + head SHA.
 - **Process trap hit:** editing the tree during George's round-4 run corrupted it (George reads files from disk) — cost a wasted round. Don't touch the worktree while George runs.
 
 ### Blockers / needs a human
@@ -811,13 +923,13 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 1. **iOS on-device pass on staging** (`v0.1.2`) — the open T1/T2 gate; #76 first, then the standing checks. Android too.
 2. **B7 (#33)** — Template Library (OBS + Bible book) and Share Chapter/Book. Subsumes #18 (export) and most of #20 (non-OBS path).
 3. **B8 (#34)** — MP3 on Finished + encoder off the main thread (T1).
-4. Deferred nits: #73, #75, #77. Resolve **#12** with Tim before October. Then `staging → main` once B6 is device-verified.
+4. Deferred nits: #73, #75, #77. Resolve **#12** with the requirements owner before October. Then `staging → main` once B6 is device-verified.
 
 ---
 
 ## 2026-08-26 — Day 8: B5 waveform editing, two recorder P3s, build stamp, staging deploy
 
-**Branch:** `develop` · **PRs merged:** [#64](https://github.com/sethstoll3/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/sethstoll3/tc-mobile/pull/65) (B5), [#70](https://github.com/sethstoll3/tc-mobile/pull/70) (build stamp), promotions [#69](https://github.com/sethstoll3/tc-mobile/pull/69)/[#71](https://github.com/sethstoll3/tc-mobile/pull/71) (develop→staging) · **On `staging`** (`c75cf01`), deployed and serving `v0.1.1 · c75cf01` · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
+**Branch:** `develop` · **PRs merged:** [#64](https://github.com/unfoldingWord/tc-mobile/pull/64) (#60/#61), [#65](https://github.com/unfoldingWord/tc-mobile/pull/65) (B5), [#70](https://github.com/unfoldingWord/tc-mobile/pull/70) (build stamp), promotions [#69](https://github.com/unfoldingWord/tc-mobile/pull/69)/[#71](https://github.com/unfoldingWord/tc-mobile/pull/71) (develop→staging) · **On `staging`** (`c75cf01`), deployed and serving `v0.1.1 · c75cf01` · **Closed:** #60, #61, #31, #66 · **Open/new:** #67, #68
 
 ### Completed
 
@@ -904,7 +1016,7 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 
 ## 2026-08-25 — Day 7: the pivot foundation (B1–B4), built and hardened under review
 
-**Branch:** `feat/pivot-b1-b4` → `develop` → **`staging`** · **PRs:** [#57](https://github.com/sethstoll3/tc-mobile/pull/57) (B1–B4), [#62](https://github.com/sethstoll3/tc-mobile/pull/62) (#59 fix), [#63](https://github.com/sethstoll3/tc-mobile/pull/63) (promotion) all merged · **On staging** (`c7ef2af`) and device-smoked on iOS · **Open:** #59/#58 (Android), #60/#61 (P3)
+**Branch:** `feat/pivot-b1-b4` → `develop` → **`staging`** · **PRs:** [#57](https://github.com/unfoldingWord/tc-mobile/pull/57) (B1–B4), [#62](https://github.com/unfoldingWord/tc-mobile/pull/62) (#59 fix), [#63](https://github.com/unfoldingWord/tc-mobile/pull/63) (promotion) all merged · **On staging** (`c7ef2af`) and device-smoked on iOS · **Open:** #59/#58 (Android), #60/#61 (P3)
 
 ### Completed
 
@@ -959,7 +1071,7 @@ The lane's owed browser-only checks were verified on device by Seth: empty Books
 - **Promoted `develop` → `staging`** (#63, `c7ef2af`) — B0 + B1–B4 + the #59 fix,
   auto-deployed to `tc-mobile-staging`.
 - **On-device (iPhone / Safari, staging):** record+playback work; backgrounding
-  mid-take keeps recording; **an incoming call mid-take (via Google Voice)
+  mid-take keeps recording; **an incoming call mid-take
   stopped capture but saved the partial take as a playable segment — #59
   confirmed on iOS.** Logged in AGENTS.md (`2937311`).
 
@@ -1177,8 +1289,8 @@ slash in #49.
   collapses the upgrade-path test gap to a much smaller ask and takes the
   half-migrated-crash path off the table. True exactly once, because the app has
   never shipped.
-- **Tim: the recorder sheet has no Play control** — his own drawing, and his own
-  correction. The centerline annotation already says playback happens there, so
+- **The requirements owner: the recorder sheet has no Play control** — the mockups'
+  own omission, and the requirements owner's own correction. The centerline annotation already says playback happens there, so
   the behaviour was specified and only the control was never drawn. Placement is
   on #30 with the two questions that settle it.
 
@@ -1329,15 +1441,14 @@ terminates, which is how several waits here appeared to hang.
 
 ### Completed
 
-- **#23 merged** (`0d9ee9d`) — Tim's five notebook photographs archived, the gap
+- **#23 merged** (`0d9ee9d`) — the product mockups (22 Aug 2026) archived, the gap
   analysis, and **ADR 0004's broad half rejected**: one generic
   `Book → Chapter → Segment (→ Take)` taxonomy, no pluggable division scheme.
   Docs-only, merged on green, with the reviewer exemption recorded on the PR
   rather than skipped silently.
 - **Gate 1 of `ux-then-ui` run against the mockups and passed.** Three screens —
-  Books, Segments, Recorder — as jobs and states, deliberately unstyled.
-  Artifact: <https://claude.ai/code/artifact/2b4625a5-1a8c-4ad0-badd-5f045e2c0630>
-- **The plan became the plan of record** (#35). It had been written before Tim's
+  Books, Segments, Recorder — as jobs and states, deliberately unstyled. Off-repo artifact.
+- **The plan became the plan of record** (#35). It had been written before the requirements owner's
   answers landed and still listed as open five questions that A1–A5 and ADR 0004
   had already settled, under a numbering that collided with the gap analysis's
   own. One list now, and every batch points at an issue.
@@ -1349,7 +1460,7 @@ terminates, which is how several waits here appeared to hang.
   the LGPL obligations. Dispositions posted on ten existing issues; **#11 closed**
   as superseded, **#14 and #15 closed** as answered.
 - **The mockups read directly, and the transcription corrected.** It claimed the
-  drawings carry no colour beyond the VU meter. They do: play is green, record is
+  mockups carry no colour beyond the VU meter. They do: play is green, record is
   red, the selection and paste arrow are blue — which agrees with the token
   system's existing amber-for-voice, red-for-live split.
 
@@ -1363,7 +1474,7 @@ first guess at its contents.
 G5 went **against the recommendation**, and the plan records the disagreement
 rather than absorbing it. It commits two batches to work worth naming now: Erase
 Segment gains a second entry point that must share one implementation and one
-confirmation with B6, and Share Segment is a scope Tim did not ask for — A4
+confirmation with B6, and Share Segment is a scope the requirements owner did not ask for — A4
 specifies chapter and book only.
 
 **Q3 (was Q4): keep lamejs.** MIT repo, one LGPL-3.0 dependency. ADR 0003 now
@@ -1380,7 +1491,7 @@ hardening into a decision nobody took.
 
 ### Findings worth keeping
 
-- **More than half the controls Tim drew are software convention**, not
+- **More than half the controls in the mockups are software convention**, not
   hardware-derived. Only play/pause/record, the waveform and the VU meter's
   colour ramp are genuinely script-independent. `ui-patterns.md` already records
   the harder version: no product in the reference sweep achieves a text-free path.
@@ -1410,7 +1521,7 @@ hardening into a decision nobody took.
 
 ---
 
-## 2026-08-22 — Day 2: review rounds, the family survey, and Tim's mockups
+## 2026-08-22 — Day 2: review rounds, the family survey, and the product mockups
 
 **Branches:** four lanes in worktrees · **PRs:** #21 #22 #23 · **Issues:** +7, −1
 
@@ -1429,10 +1540,10 @@ hardening into a decision nobody took.
   missed — one of them a defect in the previous commit's own fix.
 - **tC family survey** — read the source of seven tC-adjacent systems. Headline:
   none of them is an audio app, not one handles two people editing the same
-  thing, and the ecosystem's auth is worse than none. Published as an artifact.
+  thing. Published as an artifact.
 - **Four false claims corrected in canonical docs** (#22) — ADR 0007's "no OBS
   audio on DCS" (98 entries / 92 languages exist), prior-art's over-claim about
-  tcorePSA's journal (no fold, no merge, no licence), AGENTS.md naming
+  a uW Scripture Burrito prototype's journal (no fold, no merge, no licence), AGENTS.md naming
   `lucide-react` as the icon library when nothing imports it, and the tracker's
   own claim that nothing had run on hardware.
 - **`knip` on the merge gate** and an **Engineering bar** section in AGENTS.md.
@@ -1441,8 +1552,8 @@ hardening into a decision nobody took.
 - **Review round cap set at 4**, with an ask-the-DRI rule rather than an
   automatic stop. The docs had invoked "the round cap" in four places without
   ever defining a number.
-- **Tim's mockups received, archived and analysed** (#23), and **all five
-  blocking questions answered** by Tim the same evening.
+- **The product mockups received, archived and analysed** (#23), and **all five
+  blocking questions answered** by the requirements owner the same evening.
 - **ADR 0004's broad half rejected** — one generic taxonomy, no pluggable
   division scheme. Open since 19 Aug. `8fd883d`
 
@@ -1451,8 +1562,8 @@ hardening into a decision nobody took.
 D1 Takes stay in the schema, hidden · D2 undo is an operation log, not buffer
 copies · D3 transcode to MP3 on "Finished" (660 MB → ~66 MB) · D4 MicroSD via
 the share sheet only · D5 reference audio leaves Phase 1 · D6 artwork becomes an
-optional per-segment illustration. Full reasoning in
-`docs/design/mockups-gap-analysis.md`.
+optional per-segment illustration. Full reasoning was in the mockup gap analysis
+(removed before the public release).
 
 _Narrowed 2026-08-24:_ that table's D3 cell says "closes the storage strategy
 in #12." It closes one of ADR 0002's three mitigations — PCM while editing,
@@ -1473,18 +1584,20 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
 
 ### Blockers / needs a human
 
-- **#24 (new)** — a Book can be exported but not saved or restored. Needs Tim to
+- **#24 (new)** — a Book can be exported but not saved or restored. Needs the requirements owner to
   say whether a device is expected to survive the training holding the only copy
   of a translation.
 - **#14** — lamejs LGPL-3.0. Open-sourcing the repo resolves the hard part;
   notice obligations remain and want a licensing sign-off before October.
   _Superseded 2026-08-23: keep lamejs, settled (ADR 0003). #14 is closed and
-  the notice work is #36 — do not re-ask Tim._
-- **Uncommitted parallel work** — `docs/design/pivot-plan.md`,
-  `docs/spec-transcription-p3-p4.md` and `docs/mockups/` exist untracked in the
-  `fix/…` worktree, written before Tim's answers arrived. They are complementary
-  to `mockups-gap-analysis.md` rather than redundant — the plan and the
-  transcription have no equivalent — but the mockup images are duplicated.
+  the notice work is #36 — do not re-ask the requirements owner._
+- **Uncommitted parallel work** — `docs/design/pivot-plan.md`, the mockup
+  transcription (removed before the public release) and a second copy of the
+  mockup images exist untracked in the `fix/…` worktree, written before the
+  requirements owner's answers arrived. They are complementary to the mockup gap
+  analysis (also removed before the public release) rather than redundant — the
+  plan and the transcription have no equivalent — but the mockup images are
+  duplicated.
   **Reconcile before either is committed.**
 
 ### Next steps
@@ -1499,7 +1612,7 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
 
 ## 2026-08-22 — Day 1: scaffold to reviewed prototype
 
-**Branch:** `develop` · **Commits:** 18 · **Repo created:** `sethstoll3/tc-mobile` (private)
+**Branch:** `develop` · **Commits:** 18 · **Repo created:** private, on a personal account (transferred to `unfoldingWord/tc-mobile` on 2026-09-02)
 
 ### Completed
 
@@ -1539,8 +1652,8 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
 ### Blockers / needs a human
 
 - **#12** PCM storage strategy — must resolve before the October training.
-- **#13** No OBS timing data exists anywhere; blocks record-along. Ask Tim and
-  Benjamin Wright.
+- **#13** No OBS timing data exists anywhere; blocks record-along. Ask the requirements owner
+  and the Scripture Burrito maintainer at uW.
 - **#14** lamejs LGPL-3.0 in an MIT repo.
 - **#15** Are OBS-derived recordings CC BY-SA? Affects export and the data model.
 - **`CLOUDFLARE_API_TOKEN`** is deliberately _not_ a GitHub secret — Actions no
@@ -1553,13 +1666,13 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
 
 MediaRecorder and `decodeAudioData` can only be verified on-device.
 
-**Updated 2026-08-22, narrowed and then answered 2026-08-24:** Seth and Tim
-had both run the staging deploy and reported it functional, but **no device, OS
+**Updated 2026-08-22, narrowed and then answered 2026-08-24:** the maintainer and the
+requirements owner had both run the staging deploy and reported it functional, but **no device, OS
 or browser was recorded**, and a staging URL runs in a desktop browser as
 readily as on a phone — so that did not establish MediaRecorder had been
 exercised on a phone at all.
 
-**It has now. Seth, 2026-08-24, iPhone / iOS 27 beta 6 / Safari:** a recording
+**It has now. 2026-08-24, a tester's iPhone / iOS 27 beta 6 / Safari:** a recording
 was started, Safari was backgrounded and the phone locked, and **capture
 continued through both** — the audio from that period was present in the take.
 That is worth flagging as surprising: WebKit has historically suspended media
@@ -1594,7 +1707,7 @@ untested — it does not exist.
 2. PR to `develop`, run both reviewers, loop to clean or capped-and-escalated.
 3. **The remaining device check**, which is specific rather than general: the
    happy path (record, play back, short takes) has been smoked on staging by
-   Seth and Tim. What is still unverified is the interruption path — background
+   the maintainer and the requirements owner. What is still unverified is the interruption path — background
    the app immediately after tapping Stop on a _long_ take and confirm the
    recording still lands — and the save-failure path, which needs a device
    with no room left.

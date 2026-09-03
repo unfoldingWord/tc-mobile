@@ -1,9 +1,9 @@
 # 0009 — Transcode on Finished: MP3 replaces PCM, editing after Finished re-decodes
 
-**Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** Seth Stoll
+**Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** the maintainer · **Amended:** 2026-09-03 (#182) — see [Amendments](#amendments)
 
 Implements decision **D3** (2026-08-23) and builds against the recorded
-**Q5** default (Seth, on #34, 2026-08-23). Q5 itself stays open in the
+**Q5** default (the DRI, on #34, 2026-08-23). Q5 itself stays open in the
 register in `docs/design/pivot-plan.md`: a default built against is not an
 answer, and the generation count below is what keeps the evidence to answer it.
 
@@ -98,8 +98,8 @@ The inheritance rule is "a replacement take carries the prior clip's count",
 which is exact while every save over an existing take is a merge into the
 decoded buffer — the only way the recorder saves today. If a "replace the whole
 take" gesture ever exists, that gesture must stamp 0, or fresh microphone audio
-would be counted as lossy (noted by Seth in round 1). Nothing reads it yet. It
-exists so the Q5 call — disallow, warn, or leave it — can be made later on
+would be counted as lossy (noted by the DRI in round 1). Nothing reads it yet.
+It exists so the Q5 call — disallow, warn, or leave it — can be made later on
 evidence from real devices rather than argued in the abstract.
 
 ### Schema — v4, append-only
@@ -169,3 +169,57 @@ worker-backed `zip` would move it, and was not needed to remove the 2×).
 - Every reader of a clip now branches on its encoding. `Clip` is a discriminated
   union, so the compiler enumerates them; `danglingReason` and the F3 rule are
   unchanged — an MP3 clip resolves exactly as a PCM one does.
+
+## Amendments
+
+### 2026-09-03 (#182) — one warm worker, reused, instead of one per encode
+
+Decision §1 above said `mp3-codec.ts` "spawns one worker per encode … and
+**terminates the worker on every exit**." That made every encode re-fetch the
+hashed worker chunk by URL, and with the PWA on `autoUpdate` +
+`cleanupOutdatedCaches` a service-worker update purges that chunk out from under
+the still-open page — so the next Finished transcode or Share failed silently
+once a second build had shipped (#182).
+
+**Amended:** `mp3-codec.ts` now keeps **one** worker warm for the page's
+lifetime — `warmEncoder()`, called from the app shell (`App.tsx`) at launch
+while the running build's precache still holds the chunk — and reuses it for
+every encode; a live worker holds its code and never re-fetches. The reuse is
+sound only because the two properties §1 already relies on hold: the worker's
+message handler is stateless (a fresh `encodeMp3` per message), and
+`withEncoder` serialises every encode onto one lane, so the shared worker never
+carries two jobs at once. **Abort still stops the in-flight encode now** — only
+`terminate()` can — so an abort drops the worker and immediately **re-warms** a
+fresh one (round-1 R2). The re-warm rebuilds from the hashed chunk URL, so it
+restores the warm worker only while that chunk is still fetchable: a cancel after
+a service-worker update has purged the chunk still degrades to the next encode's
+failure. Closing that post-purge-abort window fully means snapshotting the worker
+to a purge-immune source (`?worker&url` → `blob:`), which is browser-only to
+verify and is tracked in **#192**. A worker that dies
+on its own — a script-load failure, which `new Worker` reports asynchronously as
+an `error` event, or a crash between encodes — is caught by a **durable `error`
+listener** attached at construction that drops the dead handle, so the next
+encode rebuilds rather than posting into a worker that never answers and wedging
+the lane for the page's life (round-1 R1). So "terminates on every exit" is
+superseded by "terminates on abort or a worker error; on abort it re-warms,
+otherwise it is kept warm and reused."
+
+**Why #166 matters more, not less.** A warm worker that _hangs_ — answers
+neither a message nor an `error` — blocks every later encode until the page is
+reloaded, for the life of the page, where one-per-encode contained a hang to the
+single job that hung. The durable listener above closes the _dies-loudly_ case
+(an `error` fires); a silent hang is only closable by #166's timeout, so this
+amendment raises that deadline's priority.
+
+The new lifetime is unit-tested in Node with a stubbed `globalThis.Worker`
+(`tests/mp3-codec.test.ts`): reuse across encodes, drop-and-re-warm on abort,
+drop-on-error, and the R1 case (a warm worker that errors before the first
+encode is not reused as a hung handle). Mutation-proven specifically for the
+DURABLE-LISTENER guard: removing `encoderWorker`'s `addEventListener("error")`
+kills the idle-death and busy-death cases. The stub dispatches its error to the
+durable listener before the per-job `onerror`, matching a real `Worker`'s
+listener order (round-2 F1); the interaction of `terminate()` with event
+dispatch is spec-derived, not device-verified. Still browser-boundary and
+unverified on a device: the purge → cache-miss interaction itself needs a device
+with two deployed builds. The "What is verified" section above is otherwise
+unchanged by this amendment.

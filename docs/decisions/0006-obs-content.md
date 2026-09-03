@@ -138,7 +138,7 @@ share-alike applies to the OBS content, not to this repository's source.
 
 ### The licensing consequence — settled, and not yet implemented
 
-The OBS licence states, verbatim:
+The OBS licence states:
 
 > "if you modify a copy or **translate this work**, thereby creating a
 > derivative work, you must remove the unfoldingWord® trademark… You must also
@@ -148,8 +148,9 @@ The OBS licence states, verbatim:
 plainly, that means every recording a translator makes against bundled OBS
 content is CC BY-SA, and must not carry the unfoldingWord trademark.
 
-That reading was put to Tim and **confirmed on 2026-08-23** (#15 closed). It
-is a licensing position taken on behalf of the church networks who use this
+That reading was **confirmed by the requirements owner on 2026-08-23** (#15
+closed). It is a licensing position taken on behalf of the church networks who
+use this
 app, so it was never engineering's call to make quietly — but it has now been
 made, and it does not need re-asking.
 

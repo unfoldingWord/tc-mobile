@@ -133,6 +133,12 @@ export interface UseAudioSession {
    * nothing above this layer re-renders per frame.
    */
   readScope: () => CaptureScope | null;
+  /**
+   * The capture ring as it stands, WITHOUT advancing it — for a paint that is
+   * not the animation tick (a drawer's activation/remount edge). See
+   * `use-recorder`'s implementation for why the two must not be interchanged.
+   */
+  peekScope: () => CaptureScope | null;
   /** The VU tap could not be wired for the current take; the meter shows
    *  unavailable rather than a resting-empty strip. Recording is unaffected. */
   meterFailed: boolean;
@@ -171,6 +177,7 @@ export function useAudioSession(): UseAudioSession {
     supported,
     readLevel,
     readScope,
+    peekScope,
     meterFailed,
   } = recorder;
 
@@ -656,6 +663,7 @@ export function useAudioSession(): UseAudioSession {
     leave,
     readLevel,
     readScope,
+    peekScope,
     meterFailed,
   };
 }
