@@ -48,11 +48,15 @@ class FakeWorker {
   emitDone(mp3: ArrayBuffer): void {
     this.onmessage?.({ data: { kind: "done", mp3 } });
   }
-  /** The worker errors — a load failure or a crash. Fires both handler kinds. */
+  /** The worker errors — a load failure or a crash. Fires both handler kinds.
+   *  Real order (round-2 F1): the durable `addEventListener("error")` runs
+   *  BEFORE the per-job `onerror =`, because an event-handler IDL attribute
+   *  takes its listener-list position from its first assignment, and the durable
+   *  one is registered at construction while `onerror` is assigned later. */
   emitError(error: Error): void {
     const event: ErrorEventish = { error, message: error.message };
-    this.onerror?.(event);
     for (const fn of [...this.errorListeners]) fn(event);
+    this.onerror?.(event);
   }
 }
 

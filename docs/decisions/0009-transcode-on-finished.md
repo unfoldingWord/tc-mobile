@@ -214,7 +214,12 @@ amendment raises that deadline's priority.
 The new lifetime is unit-tested in Node with a stubbed `globalThis.Worker`
 (`tests/mp3-codec.test.ts`): reuse across encodes, drop-and-re-warm on abort,
 drop-on-error, and the R1 case (a warm worker that errors before the first
-encode is not reused as a hung handle) proven red-first by mutation. Still
-browser-boundary and unverified on a device: the purge → cache-miss interaction
-itself needs a device with two deployed builds. The "What is verified" section
-above is otherwise unchanged by this amendment.
+encode is not reused as a hung handle). Mutation-proven specifically for the
+DURABLE-LISTENER guard: removing `encoderWorker`'s `addEventListener("error")`
+kills the idle-death and busy-death cases. The stub dispatches its error to the
+durable listener before the per-job `onerror`, matching a real `Worker`'s
+listener order (round-2 F1); the interaction of `terminate()` with event
+dispatch is spec-derived, not device-verified. Still browser-boundary and
+unverified on a device: the purge → cache-miss interaction itself needs a device
+with two deployed builds. The "What is verified" section above is otherwise
+unchanged by this amendment.

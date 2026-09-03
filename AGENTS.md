@@ -384,7 +384,8 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,
    warmed at launch and reused across encodes (#182, ADR 0009 amended),
-   terminated on abort or a worker error and re-warmed. What remains from ADR
+   terminated on abort or a worker error — re-warmed on abort, rebuilt on the
+   next encode after an error. What remains from ADR
    0003 is the notice and attribution work, #36. Not yet run on a phone.
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
