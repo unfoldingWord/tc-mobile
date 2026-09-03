@@ -2,16 +2,18 @@
 
 **Status:** recommendation + argued counter-case (#86), for the go/no-go
 decision. Not yet decided.
-**Date:** 2026-08-27 · **Author:** Seth (with Claude) · **For:** Tim, go/no-go
-**Requested by:** Tim, 2026-08-27 call — "one code base that compiles into
-Android and iPhone."
+**Date:** 2026-08-27 · **Author:** the DRI (with Claude) · **For:** the
+requirements owner, go/no-go
+**Requested by:** the requirements owner, 2026-08-27: one codebase that compiles
+to Android and iPhone.
 
 ## The question
 
 tC Mobile today is a Progressive Web App: React + TypeScript, built with Vite,
 served from Cloudflare Workers, running in the phone's browser. It installs to
-the home screen and records offline. The question Tim asked is how to get from
-there to something we can put in the App Store and Play Store — one codebase,
+the home screen and records offline. The question the requirements owner asked
+is how to get from there to something we can put in the App Store and Play
+Store — one codebase,
 both platforms — without throwing away what is already built.
 
 The short answer: **wrap the existing app with Capacitor.** It keeps
@@ -63,8 +65,8 @@ primitives. The pure logic (the audio core, the storage logic) ports directly;
 the UI does not. It discards the design work and cannot land production-ready by
 end of September.
 
-**Path C (Flutter)** is a full rewrite in Dart. Zero reuse, and against Tim's
-"TypeScript-ish" steer. Off the table.
+**Path C (Flutter)** is a full rewrite in Dart. Zero reuse, and against the
+requirements owner's steer toward TypeScript. Off the table.
 
 ## How much is reusable
 
@@ -96,7 +98,7 @@ native build for free.
 
 ## Cost and the one real risk
 
-Effort ranges below are estimates, not measured, and assume the current team.
+Effort ranges below are estimates, not measured.
 
 - **Shell, build, and CI signing:** ~2–4 days.
 - **Background / interruption audio in the native WebView — the swing factor.**
@@ -108,13 +110,12 @@ Effort ranges below are estimates, not measured, and assume the current team.
 - **Storage durability** (native backing, or `navigator.storage.persist()`):
   ~days.
 - **Share / export:** overlaps the planned B7 work, not additional.
-- **Store review:** calendar time, little engineering. **Enrollment is
-  already done** — active Apple App Store and Google Play accounts exist, so
-  only app review remains.
+- **Store review:** calendar time, little engineering.
 
 The reason Capacitor is the _only_ option that fits October is timing: the UI is
-still being tuned this week from Tim's review. A rewrite cannot absorb a moving
-UI and still ship a production build by the last week of September. Capacitor
+still being tuned this week from the requirements owner's review. A rewrite
+cannot absorb a moving UI and still ship a production build by the last week of
+September. Capacitor
 lets the UI keep moving right up to the deadline, because the UI is the same web
 app either way.
 
@@ -130,12 +131,10 @@ app either way.
 3. **If go:** take Path A. Keep the codebase, add the native shell, swap the
    ~8% boundary, wire durable storage first (it is the field data-loss risk).
 
-## Resolved with Tim (2026-08-27)
+## Resolved with the requirements owner (2026-08-27)
 
-- **Store distribution is the intent, and enrollment is not a blocker** — active
-  Apple App Store and Google Play accounts already exist. This confirms the move
-  past Path 0 to a real native build, and takes account setup off the critical
-  path.
+- **Store distribution is the intent.** This confirms the move past Path 0 to a
+  real native build.
 - **No native UI widgets required for now.** This removes the only argument that
   would have favoured Path B (React Native) over A — the case for Capacitor is
   now unqualified.
@@ -188,8 +187,8 @@ phone.
 whose plugins can lag OS releases, get abandoned, or need forking; every
 native capability crosses a JS↔native seam that is harder to debug than either
 side alone; and a Capacitor major-version upgrade is its own migration each
-time iOS/Android shift under it. This is recurring maintenance for a
-skeleton team (Tim's own framing) that has no slack.
+time iOS/Android shift under it. This is recurring maintenance the team would
+carry indefinitely.
 
 **C6 — The UX ceiling, for users who read least.** A WebView can feel subtly
 non-native — scroll physics, keyboard, gestures, haptics, back-button. For a

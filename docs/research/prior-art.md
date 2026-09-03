@@ -2,7 +2,7 @@
 
 > Compiled 2026-08-22 for the tC Mobile inception. Every claim below was
 > checked against a fetched page, a file read via the GitHub API, or strings
-> extracted from a downloaded binary. Confidence is marked per finding.
+> visible in a shipped app package. Confidence is marked per finding.
 
 ## 1. Shema Studio
 
@@ -10,10 +10,9 @@
 and `shema_studio` returns nothing; shema.studio's homepage, /about, /download,
 /support and /privacy contain zero links to GitHub or any source host.
 
-**Action required:** Tim asked us to "look at the source code for Shema Studio."
-That cannot be done from public sources. Someone needs to ask **Han Chung**
-(the author) for a repo invite. Everything below was recovered by unzipping the
-shipped Android APK.
+**Action required:** reading Shema Studio's source cannot be done from public
+sources. Someone needs to ask the Shema Studio developer for a repo invite.
+Everything below is observed from the shipped Android APK.
 
 - **What it is:** Flutter app (Android/iOS/Windows/macOS), free, v1.0.14 Aug
   2026, package `studio.shema.app`. Philosophy "LOMO" — Local, Oral, Mobile,
@@ -56,8 +55,8 @@ surfacing automatically in the recorder.
 ### Interop
 
 Real importers for **APM** (Audio Project Manager), **BTT Writer**, AVTT, USFM.
-**No Scripture Burrito importer or exporter anywhere in the binary** — grepped,
-zero "burrito" strings.
+**No Scripture Burrito importer or exporter is visible in the shipped app** —
+no "burrito" strings.
 
 `.shema` bundle = a signed zip with `manifest.json`, in seven typed varieties
 (Refine / Comments / Recording Text / Resources / Contribute / Full Sync /
@@ -70,7 +69,7 @@ trust-circle pairing — no passwords, no typing, works for non-literate users.
 | --------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Passage + pluggable division scheme           | **Yes — highest value** | One model serves OBS frames and Bible pericopes                                                                             |
 | Section markers inside the audio (WAV cues)   | Yes                     | Self-describing takes                                                                                                       |
-| Re-record one section, rest untouched         | Yes                     | This is Tim's "the work happens here"                                                                                       |
+| Re-record one section, rest untouched         | Yes                     | This is the unit of work the mockups centre on                                                                              |
 | Pinned reference, section-by-section stepping | Yes                     | Cheap, large UX win in a workshop                                                                                           |
 | Separate purpose/status enums                 | Yes                     | Phase-2 progress + versioning without redesign                                                                              |
 | Typed bundle purposes                         | Phase 2                 | Avoids "one blob for everything"                                                                                            |
@@ -103,7 +102,7 @@ waveform is live amplitude metering from expo-av, not decoded PCM peaks.
 - **Not otherwise.** Path-as-schema is a dead end once takes and reordering
   exist. Roughly 10% of v1 scope.
 
-## 3. `deferredreward/tcorePSA` — Benjamin Wright
+## 3. A uW Scripture Burrito prototype
 
 Confidence HIGH — source read directly. **Not an audio app** — it is tN/tW
 _checking_ on a phone. It matters because it is the closest existing proof that
@@ -113,7 +112,7 @@ this exact stack works inside uW:
   explicitly "for snappy startup on older Android phones." Eight prod deps.
 - **Full Scripture Burrito zip round-trip in the browser**, regenerating
   `metadata.json` with md5/size/scope — and **preserving byte-for-byte every
-  file the PWA doesn't model.** That rule is worth copying verbatim.
+  file the PWA doesn't model.** That rule is worth copying exactly.
 - **An event journal _draft_** — HLC timestamps, a random per-install actor id
   in IndexedDB, md5-of-payload event ids, and `base` chaining that makes forks
   **detectable, not resolvable**. Corrected 2026-08-22 after reading
@@ -125,7 +124,8 @@ this exact stack works inside uW:
   versioning solution. It also carries **no license**, so its code is not
   legally reusable in this MIT repo — read it for design, do not copy it.
 
-**Talk to Benjamin before writing any burrito emit code.**
+**Talk to the Scripture Burrito maintainer at uW before writing any burrito emit
+code.**
 
 ## 4. Scripture Burrito — the audio answer
 
@@ -185,15 +185,16 @@ re-recording. It competes only on "offline oral capture on a phone," not on
 "audio notebook and **editor**." Its local-SQLite-plus-sync idea assumes
 eventual connectivity and a server, which contradicts tC Mobile's standalone
 constraint — Shema's bundles are the better fit, along with tC4's
-`BURRITO-SPEC.md` §8. **Not tcorePSA's journal:** §3 above establishes that it
-is a design draft with one operation, no export, no fold, no merge and no
+`BURRITO-SPEC.md` §8. **Not the prototype's journal:** §3 above establishes
+that it is a design draft with one operation, no export, no fold, no merge and
+no
 licence, so it is something to read rather than something to adopt.
 
 ## Open follow-ups
 
-1. **Get a Shema Studio source invite from Han Chung** — Tim's request cannot
-   otherwise be fulfilled.
-2. **Talk to Benjamin Wright** before writing burrito emit code; he has already
-   solved it in-browser.
+1. **Get a Shema Studio source invite from its developer** — the source is not
+   public, so the comparison above rests on the shipped app.
+2. **Talk to the Scripture Burrito maintainer at uW** before writing burrito
+   emit code; the prototype in §3 already round-trips a burrito in the browser.
 3. **Decide whether OBS audio needs a custom `x-` flavor** — the standard does
    not cover it.

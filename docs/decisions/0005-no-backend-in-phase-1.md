@@ -16,10 +16,10 @@ device.
 
 ## Rationale
 
-Every backend dependency is a thing that can be unavailable in a field setting
-in East Africa, which is precisely where this has to work. A static deployment
-is also the fastest route to the thing Tim actually asked for: an HTTPS URL he
-can open on a phone.
+Every backend dependency is a thing that can be unavailable in a field setting,
+which is precisely where this has to work. A static deployment is also the
+fastest route to the thing the requirements owner actually asked for: an HTTPS
+URL that opens on a phone.
 
 ## Consequences
 
@@ -33,6 +33,7 @@ can open on a phone.
   `navigator.share` or writes a file today.
 - Phase 2 sync (versioning, republishing, comments) will need this decision
   revisited. Worth reading first: Shema's typed `.shema` bundles, tC4's
-  `BURRITO-SPEC.md` §8, and tcorePSA's HLC event journal _draft_ — read-only,
+  `BURRITO-SPEC.md` §8, and the uW Scripture Burrito prototype's HLC event
+  journal _draft_ — read-only,
   and not reusable: one operation, no export, no fold, no merge, no licence
   (docs/research/prior-art.md §1, §3).
