@@ -47,9 +47,9 @@ export interface RecorderSegmentView {
  * The React-free core of {@link useRecorderSegment}, extracted so the walk, the
  * decode alignment and the empty/PCM branches are covered in Node against
  * fake-indexeddb — the same split `performErase` uses (this repo has no
- * jsdom/renderer). The MP3 decode itself is the one browser-only step and is
- * exercised on-device; the PCM and empty paths — the ones a translator hits
- * every session — are node-tested.
+ * jsdom/renderer). The MP3 decode itself is the one browser-only step — it can
+ * only run on a device and has not been exercised on one at this head; the PCM
+ * and empty paths — the ones a translator hits every session — are node-tested.
  *
  * `hasClip` follows `loadSegmentClip` resolving, not `activeTakeId`, so a
  * dangling take opens as an empty segment (record-only), never a waveform over
@@ -133,26 +133,12 @@ export function useRecorderSegment(segmentId: SegmentId) {
     let cancelled = false;
     void (async () => {
       try {
-        // A retry (`attempt > 0`) runs from the translator's "Try again" tap,
-        // which is a user gesture — the one moment iOS honours a resume of an
-        // "interrupted" AudioContext (#106). The most likely decode failure
-        // (#137) is exactly that transient interruption (a call, Siri, a route
-        // change), not a corrupt clip, so un-interrupt the context before the
-        // decode and the sheet recovers instead of staying blank for the life
-        // of the page. Best-effort: a rejected resume (WebKit can reject an
-        // interrupted → resume race) or an absent Web Audio must not fail the
-        // load — the PCM and empty paths need no context, and even a decode may
-        // still succeed — so it is logged and the re-read runs regardless.
-        if (attempt > 0) {
-          try {
-            await resumeAudioContext();
-          } catch (cause) {
-            console.error(
-              "Could not resume the AudioContext before retry",
-              cause
-            );
-          }
-        }
+        // The `attempt` bump re-runs this after a retry. The context resume is
+        // NOT here: iOS spends a tap's user activation on the first `await`, so
+        // the resume must fire synchronously inside the `retry` handler, not one
+        // React commit later from this effect (session.ts, use-recorder.ts and
+        // use-audio-session.ts all fire it fire-and-forget in the gesture for
+        // exactly this reason). Here we only re-read/re-decode.
         const next = await loadRecorderSegmentView(segmentId);
         if (cancelled) return;
         setView(next);
@@ -178,6 +164,17 @@ export function useRecorderSegment(segmentId: SegmentId) {
   // it) so the panel stays put and shows `retrying` in place; the recording is
   // untouched by a failed open, so this only ever re-reads and re-decodes.
   const retry = useCallback(() => {
+    // Un-interrupt Web Audio in THIS gesture turn, before any await and before
+    // the state bump commits — the "Try again" tap is the one moment iOS honours
+    // a resume of an "interrupted" context (#106), and that is the most likely
+    // decode failure (#137: a call, Siri, a route change), not a corrupt clip.
+    // Fire-and-forget, matching every other gesture path in the tree: a rejected
+    // or ineffective resume (an interrupted→resume race, or absent Web Audio)
+    // must not gate the re-read, which PCM and empty segments need no context
+    // for and even a decode may still complete without.
+    void resumeAudioContext().catch((cause) => {
+      console.error("Could not resume the AudioContext before retry", cause);
+    });
     setRetrying(true);
     setAttempt((n) => n + 1);
   }, []);

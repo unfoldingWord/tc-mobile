@@ -26,8 +26,9 @@ import type { SegmentId } from "@/types/domain";
  * empty and PCM paths a translator hits every session, and the throw a missing
  * segment produces (which the hook maps to `error` and the recovery panel).
  *
- * The MP3 decode branch runs the browser's `decodeAudioData` and is verified
- * on-device only — like the rest of the audio boundary.
+ * The MP3 decode branch runs the browser's `decodeAudioData`, so it can only be
+ * exercised on a device — like the rest of the audio boundary, and not yet run
+ * on one at this head.
  */
 
 const samples = (n: number, value = 1000): Int16Array =>
