@@ -18,7 +18,8 @@
  * live in `hooks/` and `components/`, and neither may import from `app/`
  * (the onion rule, enforced in `eslint.config.mjs`). It touches no browser API
  * of its own — the `window` listeners that feed it are registered in
- * `src/app/main.tsx`, which is the only file that owns page-level wiring.
+ * `src/app/install-failure-listeners.ts`, the entry's first import, which is
+ * where page-level wiring belongs.
  */
 
 /**
@@ -38,6 +39,16 @@ export interface FailureReport {
    */
   readonly context: string;
   readonly cause: unknown;
+  /**
+   * React's own component tree for a render throw, as `componentDidCatch`
+   * receives it.
+   *
+   * Present only on the boundary's reports — a `window` listener has no such
+   * thing to give — and never rendered. In a production build the cause's own
+   * stack is minified, and this is the half that says which component threw, so
+   * dropping it costs the maintainer the one fact the log exists to carry.
+   */
+  readonly componentStack?: string;
 }
 
 type FailureListener = (report: FailureReport) => void;
@@ -96,20 +107,39 @@ export function subscribeToFailures(listener: FailureListener): () => void {
  * that one does. Identity is the only test used, and only for objects — two
  * separate rejections that both carry the string `"failed"` are two failures
  * and are logged twice.
+ *
+ * One consequence of collapsing by identity, stated rather than guarded: if the
+ * same object ever did reach both feeds, the report kept is the FIRST to
+ * arrive, so a `window` report that beat the boundary would keep the version
+ * without a `componentStack`. Nothing observed does this — the boundary is what
+ * React calls for a caught render throw — and a second flag to cover an
+ * unobserved ordering is more machinery than the fact is worth today.
  */
-export function reportFailure(cause: unknown, context: string): void {
+export function reportFailure(
+  cause: unknown,
+  context: string,
+  componentStack?: string
+): void {
   const isObject =
     cause !== null &&
     (typeof cause === "object" || typeof cause === "function");
   if (isObject && cause === lastCause) return;
   lastCause = isObject ? cause : null;
 
-  console.error(`[${context}]`, cause);
+  // Appended as a third argument rather than folded into the message, so the
+  // cause stays the second argument every reader (and every existing case)
+  // expects, and a report with no tree keeps exactly the two it had.
+  if (componentStack === undefined) console.error(`[${context}]`, cause);
+  else console.error(`[${context}]`, cause, componentStack);
 
   const listener = sink;
   if (!listener) return;
   try {
-    listener({ context, cause });
+    listener(
+      componentStack === undefined
+        ? { context, cause }
+        : { context, cause, componentStack }
+    );
   } catch (sinkFailure) {
     // Logged directly rather than through `reportFailure`, which would recurse
     // straight back into the sink that just threw.

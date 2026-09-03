@@ -151,6 +151,17 @@ export const strings = {
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
   // nothing more: the cause goes to the failure sink for a maintainer to read,
-  // never to a translator. The action is the control's own `tryAgain` label.
+  // never to a translator. It is also the screen's accessible name.
   appFailed: "Something went wrong.",
+  // The one action, named for what it actually does. NOT `tryAgain`: on the
+  // Books shelf that label means "run the load that just failed again", and
+  // here the button reloads the document — the app starts over from disk, and
+  // anything that lived only in memory is already gone. A screen reader speaks
+  // the label and nothing else, so the two must not share one.
+  appReload: "Restart the app",
+  // Said once, under the mark: what the button is about to do. No cause text —
+  // a stack-shaped string in a language the reader may not speak is worse than
+  // the glyph alone.
+  appReloadTeach:
+    "The app will start again. Everything you saved is still on this phone.",
 } as const;

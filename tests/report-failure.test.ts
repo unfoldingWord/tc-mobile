@@ -64,6 +64,24 @@ describe("reportFailure", () => {
     expect(seen).toEqual([{ context: "render", cause }]);
   });
 
+  it("carries a component stack when one is given, and only then", () => {
+    const seen: FailureReport[] = [];
+    subscribe((report) => seen.push(report));
+
+    // The boundary's third argument (#167 review). It has to reach the log as
+    // its own argument — the cause must stay the second one — and the report
+    // must not grow an empty field when there is no tree to carry.
+    const withTree = new Error("threw in render");
+    const componentStack = "\n    in Recorder\n    in App";
+    reportFailure(withTree, "render", componentStack);
+    reportFailure(new Error("nothing caught this"), "unhandled-rejection");
+
+    expect(logged[0]).toEqual(["[render]", withTree, componentStack]);
+    expect(logged[1]).toHaveLength(2);
+    expect(seen[0]?.componentStack).toBe(componentStack);
+    expect(seen[1]).not.toHaveProperty("componentStack");
+  });
+
   it("stops delivering after the subscription is dropped", () => {
     const seen: FailureReport[] = [];
     const off = subscribe((report) => seen.push(report));
