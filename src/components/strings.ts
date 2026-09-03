@@ -67,6 +67,18 @@ export const strings = {
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
 
+  // ── Recorder load failure (#137) ──────────────────────────────────────────
+  // A finished segment's stored MP3 could not be decoded when the sheet opened
+  // — most often a transient iOS "interrupted" AudioContext (#106), not a
+  // corrupt clip. The sheet is a full panel, not a blank: the recording is
+  // untouched, "Try again" resumes the context and re-decodes, and Back returns
+  // to the Segments list, where the row's Erase (which does not decode) works.
+  loadFailedTitle: "This recording could not be opened",
+  loadFailedBody:
+    "Your recording is safe. Try again, or go back to erase it from the list.",
+  loadRetry: "Try again",
+  loadBack: "Go back",
+
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
   // the action is stop (D4), so the label says "Stop playing".

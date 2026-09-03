@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { decodeMp3ToCanonical } from "./audio-io";
+import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { computePeaks } from "@/lib/audio/peaks";
@@ -54,7 +54,9 @@ export interface RecorderSegmentView {
  * the cost of one lossy generation, which the save carries on the clip. A decode
  * that fails lands in `error` with `view` null, and the sheet's controls stay
  * disabled on a null view — so an MP3 this device cannot decode is never
- * recorded over.
+ * recorded over. `retry` re-runs the load (resuming the AudioContext first, on
+ * the user gesture) so the common transient failure — an "interrupted" iOS
+ * context, #106 — recovers in place rather than the sheet staying blank (#137).
  *
  * `setFinished` writes one segment's finished flag through to the store
  * (`setSegmentFinished` enforces the never-finish-empty invariant) and patches
@@ -63,57 +65,95 @@ export interface RecorderSegmentView {
  * through `addTake` instead — so this write is the caller's, on close, for the
  * no-new-take path. The Segments screen reloads on close and reflects it then.
  */
+/**
+ * Load one segment into a recorder view, or throw. The React-free core of
+ * {@link useRecorderSegment}, extracted so the walk, the decode alignment and
+ * the empty/PCM branches are covered in Node against fake-indexeddb — the same
+ * split `performErase` uses (this repo has no jsdom/renderer). The MP3 decode
+ * itself is the one browser-only step and is exercised on-device, but the PCM
+ * and empty paths — the ones a translator hits every session — are node-tested.
+ */
+export async function loadRecorderSegmentView(
+  segmentId: SegmentId
+): Promise<RecorderSegmentView> {
+  const segment = await getSegment(segmentId);
+  if (!segment) throw new Error(`No such segment: ${segmentId}`);
+  const chapter = await getChapter(segment.chapterId);
+  const book = chapter ? await getBook(chapter.bookId) : undefined;
+  const audio = await loadSegmentClip(segmentId);
+  const clip = audio.kind === "resolved" ? audio.clip : null;
+  // The editor works on PCM: a finished segment's MP3 is decoded here, before
+  // the sheet has anything to record into.
+  // Aligned to the recording with `fitMp3Decode`: `saveTake` stamps the
+  // buffer's length as the new `frameCount`, so the buffer must be exactly the
+  // recorded samples — no priming at the head (which would shift and, trimmed
+  // at the tail, delete speech), no padding at the tail.
+  const samples =
+    clip === null
+      ? null
+      : clip.encoding === "pcm"
+        ? clip.samples
+        : fitMp3Decode(
+            await decodeMp3ToCanonical(clip.mp3),
+            clip.mp3,
+            clip.meta.frameCount
+          );
+  return {
+    bookName: book?.name ?? "",
+    chapterNumber: chapter?.number ?? 0,
+    ordinal: segment.index,
+    finished: isFinished(segment.status),
+    hasClip: samples !== null,
+    peaks: samples ? computePeaks(samples, PEAK_BUCKETS) : null,
+    lengthSamples: samples?.length ?? 0,
+    samples,
+  };
+}
+
 export function useRecorderSegment(segmentId: SegmentId) {
   const [view, setView] = useState<RecorderSegmentView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by `retry`. The sheet is keyed on `segmentId` (App remounts it per
+  // open), so a new segment resets this to 0 through the remount, not here.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const segment = await getSegment(segmentId);
-        if (!segment) throw new Error(`No such segment: ${segmentId}`);
-        const chapter = await getChapter(segment.chapterId);
-        const book = chapter ? await getBook(chapter.bookId) : undefined;
-        const audio = await loadSegmentClip(segmentId);
-        const clip = audio.kind === "resolved" ? audio.clip : null;
-        // The editor works on PCM: a finished segment's MP3 is decoded here,
-        // before the sheet has anything to record into.
-        // Aligned to the recording with `fitMp3Decode`: `saveTake` stamps the
-        // buffer's length as the new `frameCount`, so the buffer must be exactly
-        // the recorded samples — no priming at the head (which would shift and,
-        // trimmed at the tail, delete speech), no padding at the tail.
-        const samples =
-          clip === null
-            ? null
-            : clip.encoding === "pcm"
-              ? clip.samples
-              : fitMp3Decode(
-                  await decodeMp3ToCanonical(clip.mp3),
-                  clip.mp3,
-                  clip.meta.frameCount
-                );
+        // A retry (`attempt > 0`) runs from the translator's "Try again" tap,
+        // which is a user gesture — the one moment iOS honours a resume of an
+        // "interrupted" AudioContext (#106). The most likely decode failure
+        // (#137) is exactly that transient interruption (a call, Siri, a route
+        // change), not a corrupt clip, so un-interrupt the context before the
+        // decode and the sheet recovers instead of staying blank for the life
+        // of the page. Harmless on the PCM/empty paths, which never decode.
+        if (attempt > 0) await resumeAudioContext();
+        const next = await loadRecorderSegmentView(segmentId);
         if (cancelled) return;
-        setView({
-          bookName: book?.name ?? "",
-          chapterNumber: chapter?.number ?? 0,
-          ordinal: segment.index,
-          finished: isFinished(segment.status),
-          hasClip: samples !== null,
-          peaks: samples ? computePeaks(samples, PEAK_BUCKETS) : null,
-          lengthSamples: samples?.length ?? 0,
-          samples,
-        });
+        setView(next);
         setError(null);
       } catch (cause) {
         if (cancelled) return;
+        // The message drives `error` (the panel branch); the cause itself
+        // reaches the log sink, since the panel shows translator copy, not a
+        // decoder string.
+        console.error("Could not open the segment for recording", cause);
+        setView(null);
         setError(cause instanceof Error ? cause.message : String(cause));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [segmentId]);
+  }, [segmentId, attempt]);
+
+  // Re-run the load. The recording is untouched by a failed open, so this only
+  // ever re-reads and re-decodes — never risks the stored audio.
+  const retry = useCallback(() => {
+    setError(null);
+    setAttempt((n) => n + 1);
+  }, []);
 
   const setFinished = useCallback(
     async (finished: boolean): Promise<void> => {
@@ -128,5 +168,5 @@ export function useRecorderSegment(segmentId: SegmentId) {
     [segmentId]
   );
 
-  return { view, error, setFinished };
+  return { view, error, retry, setFinished };
 }

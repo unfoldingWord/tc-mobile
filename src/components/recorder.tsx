@@ -113,7 +113,12 @@ export function Recorder({
   onClipboardChange,
   onExit,
 }: RecorderProps) {
-  const { view, error: loadError, setFinished } = useRecorderSegment(segmentId);
+  const {
+    view,
+    error: loadError,
+    retry: retryLoad,
+    setFinished,
+  } = useRecorderSegment(segmentId);
 
   // The waveform-editing session (B5): a working buffer over the loaded clip,
   // an in-memory undo log, and the shared clipboard. `view.samples` is the base;
@@ -969,9 +974,15 @@ export function Recorder({
             onBack={close}
           />
         ) : loadError ? (
-          <div className="flex-1 p-[12px]">
-            <Notice>{loadError}</Notice>
-          </div>
+          // A load/decode failure (chiefly a finished segment's MP3 on an iOS
+          // context left "interrupted", #106) used to render a bare Notice over
+          // a null view — the ≡ opener is disabled on `!view`, so in-sheet Erase
+          // was unreachable and nothing said the recording was safe (#137). This
+          // full panel gives the state-in-place the bar asks for: a recovery tap
+          // (resume + re-decode), an exit (Back, to the row's Erase), and copy
+          // that the audio is untouched. The raw `loadError` is kept for the log,
+          // not shown — it is a decoder message, not translator-facing.
+          <LoadErrorPanel onRetry={retryLoad} onBack={close} />
         ) : (
           <>
             {stopError && (
@@ -1406,6 +1417,51 @@ function PermissionPanel({
       <Control
         icon="back"
         label={strings.micBack}
+        variant="quiet"
+        onClick={onBack}
+      />
+    </div>
+  );
+}
+
+/**
+ * The segment could not be opened — a load walk or, far more often, a finished
+ * segment's MP3 decode that failed (an iOS AudioContext left "interrupted",
+ * #106). Same full-panel shape as `PermissionPanel`, and for the same reason:
+ * a disabled control with no reason beside it is a tap that does nothing, and
+ * the ≡ opener is disabled on a null view so in-sheet Erase is out of reach
+ * (#137). Try again resumes the context and re-decodes on this user gesture;
+ * Back returns to the Segments list, where the row's Erase does not decode and
+ * still works. The recording is never touched by a failed open, so the copy
+ * says so.
+ */
+function LoadErrorPanel({
+  onRetry,
+  onBack,
+}: {
+  onRetry: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center">
+      <span style={{ color: "var(--s-live)" }}>
+        <Icon name="alert" size={52} />
+      </span>
+      <p className="t-title" style={{ color: "var(--s-ink)" }}>
+        {strings.loadFailedTitle}
+      </p>
+      <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
+      <Control
+        icon="retry"
+        label={strings.loadRetry}
+        variant="primary"
+        size={30}
+        autoFocus
+        onClick={onRetry}
+      />
+      <Control
+        icon="back"
+        label={strings.loadBack}
         variant="quiet"
         onClick={onBack}
       />
