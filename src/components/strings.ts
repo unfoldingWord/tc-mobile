@@ -93,8 +93,29 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
+  // Same rule as `blockedByTake`: name the control, do not invent "Back".
   previewUnavailable:
-    "Can't preview this yet. Tap Back to save it, then play it.",
+    'Can\'t preview this yet. Use "Close recorder" to save it, then play it.',
+
+  // ── Disabled-row reasons (#135) ──────────────────────────────────────────
+  // Appended to a disabled ≡-menu row's accessible name so the grey carries its
+  // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
+  // hand. Short and literal, like `previewUnavailable`.
+  // Names both steps in the order the overlay allows — while this menu is open
+  // the recorder sheet is inert, so the sheet's control is out of reach until the
+  // menu closes — and names them by the accessible names those two controls
+  // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
+  // Back", which matches NO control in the product: a screen-reader user hunting
+  // for "Back" finds nothing, and the one live chevron dismisses the menu
+  // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
+  blockedByTake:
+    'Use "Close menu", then "Close recorder", to save the recording.',
+  // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
+  // resolves. No audio exists yet, so this must NOT promise a save — and must
+  // not send anyone to a control that would abandon the in-flight start.
+  micStarting: "The microphone is still starting.",
+  nothingRecorded: "Nothing recorded yet.",
+  nothingStored: "Nothing saved to erase.",
 
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
