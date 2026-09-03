@@ -6,9 +6,16 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
+import { recorderStatusKind } from "./processing-status";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
+import {
+  editRowReason,
+  eraseRowReason,
+  markRowReason,
+  rowHint,
+} from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -575,6 +582,11 @@ export function Recorder({
   // capture (George R3). Any path that starts the mic belongs in record mode.
   const onRetryRecord = useCallback(() => {
     setMode("record");
+    // Drop any latched `menuOpen`. The menu is already HIDDEN while `denied`
+    // (`menuShown`), but the raw flag survives, so a Retry that succeeds would
+    // otherwise pop the drawer back up over a live recorder — a menu the
+    // translator never re-opened (George, round 4).
+    setMenuOpen(false);
     audio.startRecording();
   }, [audio]);
 
@@ -685,8 +697,12 @@ export function Recorder({
     // Silence buffer playback now, not at the eventual unmount `leave()`: the
     // async commit below can run a save while a long buffer keeps sounding, and
     // Play goes `disabled` on `isClosing` so nothing on screen can stop it
-    // (George R1). `stopBuffer` only releases its own "take" floor — never a
-    // capture, so it is safe ahead of the `stopRecording` commit path.
+    // (George R1). `stopBuffer` releases its own "take" floor and, when the
+    // recorder is paused, hands the floor back to the still-open mic
+    // (`reclaimAfterPreview`, #129) — it never ENDS a capture, which is the
+    // property that makes it safe ahead of the `stopRecording` commit path:
+    // `claim("mic")` moves the floor, it does not touch the MediaRecorder, and
+    // `stopRecording`'s `finally` stops whichever claim is current (George G4).
     audio.stopBuffer();
     void (async () => {
       // Commit on close (F8): if the mic is live or paused, stop it, then
@@ -880,6 +896,26 @@ export function Recorder({
   const denied =
     !audio.supported || (micError && !hasAudio && !editor.hasEdits);
 
+  // The ≡-menu rows' disabled REASONS (#135). Each row's `disabled` is
+  // `reason !== null`, so the cue that explains a grey row and the gate that
+  // greys it are one derivation, not two switches. `!idleEditable` is exactly
+  // `!view || takeActive`, spelled out here as the two inputs.
+  const starting = state === "requesting";
+  const editReason = editRowReason({
+    hasView: view !== null,
+    takeActive,
+    starting,
+    denied,
+    hasAudio,
+    canPaste: editor.canPaste,
+  });
+  const eraseReason = eraseRowReason({
+    hasView: view !== null,
+    takeActive,
+    starting,
+    hasClip: view?.hasClip ?? false,
+  });
+
   // Enabled once a take WILL exist on close, not only when one already does.
   // `takeActive` covers the FIRST take — recording/closing before any clip
   // exists — so the day-1 path can record and mark done in one sheet (G8); the
@@ -901,6 +937,27 @@ export function Recorder({
         ? "finished"
         : "empty";
 
+  // The Mark-finished row's reason (#135 round 3). Narrower than the Edit/Erase
+  // gate on purpose: Mark stays live while recording or paused, because the mark
+  // rides the take through `addTake` (G8/G10) — only the commit window freezes it.
+  // The ≡ menu is NEVER up while the permission panel owns the body. The opener
+  // is disabled on `denied`, but that only blocks OPENING: `denied` can turn on
+  // while the menu is already up — Record, ≡, then `getUserMedia` rejects — and
+  // nothing dismissed it. That left the panel (and its Retry) inert behind the
+  // scrim, with Edit greyed and no reason and Mark naming the wrong blocker, on
+  // exactly the screen #135 exists to fix (George, round 4). Deriving the menu's
+  // open state kills the frame rather than reacting a frame later, and the effect
+  // `onRetryRecord` drops the latch, so a Retry that succeeds cannot resurrect a
+  // drawer the translator never re-opened.
+  const menuShown = menuOpen && !denied;
+
+  const markReason = markRowReason({
+    hasView: view !== null,
+    takeCommitting: isClosing || busy,
+    starting,
+    canFinish: finishedState !== "disabled",
+  });
+
   return (
     <div className="recorder-scrim" role="dialog" aria-modal="true">
       {/* `inert` the sheet while the menu is open. Nested aria-modal dialogs do
@@ -911,7 +968,7 @@ export function Recorder({
       <div
         ref={sheetRef}
         className="recorder-sheet mx-auto max-w-md"
-        inert={menuOpen || confirmOpen || undefined}
+        inert={menuShown || confirmOpen || undefined}
       >
         <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
           <Control
@@ -1020,6 +1077,34 @@ export function Recorder({
                 <Notice>{strings.previewUnavailable}</Notice>
               </div>
             )}
+            {(() => {
+              // #39: the commit window used to draw no status — no dot, no
+              // timer, no copy — so the stop → decode → save wait (and a #59
+              // interruption's frozen take) read as a dead app. The exit (header
+              // Back) was always there; the status was the missing half. The
+              // gate spans `isClosing`, not just `processing`, because state
+              // flips to idle mid-save (Frank/George R1); it lives in the pure
+              // `recorderStatusKind` so the predicate is tested, not just the
+              // wording. As a `Notice` each carries the glyph a non-reader needs
+              // and its own `role`, so there is no hand-rolled `aria-busy` to
+              // leave stuck; the tone each takes is documented at its branch below.
+              const status = recorderStatusKind(state, isClosing);
+              if (!status) return null;
+              return (
+                <div className="px-[12px] pt-[8px]">
+                  {status === "saving" ? (
+                    <Notice tone="busy">{strings.recorderSaving}</Notice>
+                  ) : (
+                    // `info` (#140/#112): a heads-up about something already done
+                    // — full ink, its own glyph, `role="status"`. NOT `alert`
+                    // (nothing failed; the recording is safe) and NOT `busy` (it
+                    // is not a wait — the take is finished, waiting only on the
+                    // Close it names). Exactly the tone `info` was added for.
+                    <Notice tone="info">{strings.recorderInterrupted}</Notice>
+                  )}
+                </div>
+              );
+            })()}
             <div className="recorder-stage flex-1">
               <div
                 ref={stageRef}
@@ -1049,6 +1134,7 @@ export function Recorder({
                   // existing clip and the #110 insert centerline stay visible.
                   <LiveScope
                     readScope={audio.readScope}
+                    peekScope={audio.peekScope}
                     active={recording}
                     headFraction={CENTER_FRACTION}
                     height={200}
@@ -1286,7 +1372,7 @@ export function Recorder({
         )}
       </div>
       <Menu
-        open={menuOpen}
+        open={menuShown}
         onClose={() => setMenuOpen(false)}
         title={strings.recorderMenuTitle}
       >
@@ -1303,9 +1389,12 @@ export function Recorder({
               // Never while `denied`: the permission panel owns the body, and
               // entering edit there strands the edit toolbar over a Retry that
               // starts the mic (George R3, with onRetryRecord as the other half).
-              disabled={
-                !idleEditable || denied || (!hasAudio && !editor.canPaste)
-              }
+              // The gate lives in `editRowReason` so the grey row can say WHY
+              // (#135): a take in flight shows the `alert` badge — a state mark
+              // that names no control — and the reason joins the row's
+              // accessible name.
+              disabled={editReason !== null}
+              hint={rowHint(editReason)}
               onClick={onEnterEdit}
             />
             <Control
@@ -1333,7 +1422,10 @@ export function Recorder({
               // Record is (G10), plus the never-recorded `finishedState ===
               // "disabled"` the Checkbox encoded via `state`.
               className={finishedState === "finished" ? "is-done" : undefined}
-              disabled={finishedState === "disabled" || isClosing || busy}
+              // Gate + reason from `markRowReason` (#135 round 3): this row greyed
+              // silently while Edit and Erase beside it explained themselves.
+              disabled={markReason !== null}
+              hint={rowHint(markReason)}
               onClick={onToggleFinished}
             />
             <Control
@@ -1354,8 +1446,10 @@ export function Recorder({
               // recording has nothing on disk yet) AND only at idle: erasing the
               // stored take out from under a live capture is nonsensical, and the
               // menu opener is reachable mid-take for the VU toggle, so this
-              // entry must refuse there itself (George R-B6).
-              disabled={!idleEditable || !view?.hasClip}
+              // entry must refuse there itself (George R-B6). Gate + reason from
+              // `eraseRowReason` (#135).
+              disabled={eraseReason !== null}
+              hint={rowHint(eraseReason)}
               onClick={() => {
                 setMenuOpen(false);
                 setConfirmOpen(true);
@@ -1376,7 +1470,8 @@ export function Recorder({
               variant="quiet"
               // Kept reachable from edit mode too — erasing is a segment-level op
               // useful in either mode. Same idle + has-stored-clip guard.
-              disabled={!idleEditable || !view?.hasClip}
+              disabled={eraseReason !== null}
+              hint={rowHint(eraseReason)}
               onClick={() => {
                 setMenuOpen(false);
                 setConfirmOpen(true);

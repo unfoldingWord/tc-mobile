@@ -129,6 +129,8 @@ export interface UseRecorder {
    * frame in as one column per call and returns the ring's `CaptureScope`.
    */
   readScope: () => CaptureScope | null;
+  /** The ring as it stands, without advancing it. See the implementation. */
+  peekScope: () => CaptureScope | null;
   /**
    * The level tap could not be wired for the current take (a quirky Web Audio
    * implementation). Recording is unaffected; the meter should show unavailable
@@ -250,6 +252,26 @@ export function useRecorder(): UseRecorder {
    * clock, so the recorder never re-renders per frame. Each call while recording
    * folds the latest analyser frame in as one column and returns the ring.
    */
+  /**
+   * The ring as it stands, WITHOUT folding a frame in — the non-mutating twin of
+   * {@link readScope}, for a drawer that needs to paint what is already there.
+   *
+   * `readScope` is a pull that ADVANCES the ring ("one column per recorded
+   * frame" is its enforced invariant), so it is wrong for any paint that is not
+   * itself the animation tick. `LiveScope`'s activation paint called it on every
+   * `active` edge, which folded an extra column per pause→resume cycle and ran
+   * the waveform ahead of real time (George, #139 round 3).
+   *
+   * Deliberately NOT gated on `recordingRef`: a paused or remounted scope must
+   * be able to draw its frozen ring, which is the other half of that bug — when
+   * `readFrame()` refuses (a suspended context) `readScope` returns null and the
+   * freeze could not be painted at all.
+   */
+  const peekScope = useCallback(
+    (): CaptureScope | null => scopeRef.current?.toScope() ?? null,
+    []
+  );
+
   const readScope = useCallback((): CaptureScope | null => {
     // Advance the ring only while actually recording. The drawer already gates
     // its loop on `recording`; gating the PUSH here too makes "one column per
@@ -703,11 +725,13 @@ export function useRecorder(): UseRecorder {
       }
       // Zero samples is nothing to preview — same class as an undecodable blob.
       return samples.length > 0 ? samples : null;
-    } catch {
+    } catch (cause: unknown) {
       // An undecodable partial container (device-dependent, chiefly iOS fMP4
       // before its moov atom). Not this hook's error state: the caller degrades
-      // Play to disabled. Logged, not surfaced — console is the diagnostic here.
-      console.error("Could not decode the take for preview");
+      // Play to disabled. Logged, not surfaced — console is the diagnostic here,
+      // and the `cause` is what tells "this device can't preview" from a real
+      // decoder bug in the field (#130).
+      console.error("Could not decode the take for preview", cause);
       return null;
     }
   }, []);
@@ -746,6 +770,7 @@ export function useRecorder(): UseRecorder {
     cancel,
     readLevel,
     readScope,
+    peekScope,
     meterFailed,
   };
 }

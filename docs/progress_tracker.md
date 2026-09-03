@@ -143,7 +143,10 @@ same root cause — a synchronous main-thread `encodeMp3`.
   worker per encode, PCM transferred in, MP3 transferred out, terminated on every
   exit — an `AbortSignal` really stops it. `useShareFlow` now aborts the encode on
   menu close / unmount. Vite emits the worker + lamejs as its own chunk (ADR
-  0003 obligation 1 met).
+  0003 obligation 1 met). _(Corrected #182, 2026-09-03: the worker is now kept
+  warm and reused across encodes — terminated on abort or error, re-warmed on
+  abort and rebuilt on the next encode after an error, not per encode. See ADR
+  0009 Amendments.)_
 - **Transcode on Finished (D3)**: `ClipMeta` gains `encoding | generation |
 byteLength | peaks`; **schema v4, append-only backfill** (v3 rows stamped
   PCM/0, nothing dropped). `commitTranscode` is ONE strict-durability

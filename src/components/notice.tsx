@@ -1,16 +1,15 @@
 import { Icon } from "./icon";
+import { noticePresentation, type NoticeTone } from "./notice-tone";
 
 interface NoticeProps {
   /**
-   * What kind of thing is being said.
-   *
-   * `alert` is a failure: red, an alert glyph, and announced immediately.
-   * `busy` is work in progress the translator has to wait for — the same one
-   * line in the same place, but neutral and announced politely, because a
-   * status that shouts in the colour of failure teaches people to ignore the
-   * colour.
+   * What kind of thing is being said. See `notice-tone.ts` for the three: a
+   * failure (`alert`), a wait (`busy`), and a heads-up about something already
+   * done (`info`, #112). The status tones are the same one line in the same
+   * place as the failure, but neutral and announced politely, because a status
+   * that shouts in the colour of failure teaches people to ignore the colour.
    */
-  tone?: "alert" | "busy";
+  tone?: NoticeTone;
   children: React.ReactNode;
 }
 
@@ -32,23 +31,19 @@ interface NoticeProps {
  * not been answered yet, so it is kept short and literal rather than invented.
  */
 export function Notice({ tone = "alert", children }: NoticeProps) {
-  const alert = tone === "alert";
+  const { role, icon, failure, muted, glyph } = noticePresentation(tone);
   return (
     <div
-      // A failure interrupts; a status waits its turn.
-      role={alert ? "alert" : "status"}
+      role={role}
       className="flex items-center gap-[10px] rounded-[10px] p-[12px] text-[13px]"
       style={{
         background: "var(--s-surface)",
-        border: `1px solid ${alert ? "var(--s-live)" : "var(--s-edge)"}`,
-        color: alert ? "var(--s-ink)" : "var(--s-ink-muted)",
+        border: `1px solid ${failure ? "var(--s-live)" : "var(--s-edge)"}`,
+        color: muted ? "var(--s-ink-muted)" : "var(--s-ink)",
       }}
     >
-      <span
-        className="shrink-0"
-        style={{ color: alert ? "var(--s-live)" : "var(--s-ink-muted)" }}
-      >
-        <Icon name={alert ? "alert" : "retry"} size={20} />
+      <span className="shrink-0" style={{ color: glyph }}>
+        <Icon name={icon} size={20} />
       </span>
       {children}
     </div>

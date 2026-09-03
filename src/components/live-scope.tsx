@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,12 @@ interface LiveScopeProps {
    * `readLevel`). Each read folds one column in and returns the ring.
    */
   readScope: () => CaptureScope | null;
+  /**
+   * The ring as it stands, WITHOUT advancing it. Used for the activation/remount
+   * paint only; the animation loop uses `readScope`, which folds a column in.
+   * Passing `readScope` here would double-count a column per active edge.
+   */
+  peekScope: () => CaptureScope | null;
   /**
    * Whether capture is live. While true the loop pulls and paints; while false
    * the loop stops and the canvas is left FROZEN on its last frame — a paused
@@ -52,6 +58,7 @@ interface LiveScopeProps {
  */
 export function LiveScope({
   readScope,
+  peekScope,
   active,
   headFraction = 0.5,
   height = 200,
@@ -65,13 +72,25 @@ export function LiveScope({
   useEffect(() => {
     readScopeRef.current = readScope;
   }, [readScope]);
+  // Same latching for the peek — a fresh identity per render must not restart
+  // the loop, and the layout effect below reads it through this ref.
+  const peekScopeRef = useRef(peekScope);
+  useEffect(() => {
+    peekScopeRef.current = peekScope;
+  }, [peekScope]);
   // The last scope painted, so a resize while FROZEN (paused / processing /
   // close) can repaint at the new size. Its arrays are the ring's reused pair —
   // safe to re-read only while no push is happening, which is exactly the
   // inactive window this ref is read in.
   const lastScopeRef = useRef<CaptureScope | null>(null);
 
-  useEffect(() => {
+  // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
+  // the browser paints the freshly-mounted canvas. A remount happens on a
+  // first-take Resume after a preview, and in `useEffect` the synchronous paint
+  // still ran after the browser had already shown one blank frame — shorter than
+  // the rAF wait #130 filed, but the same class (George, round 2). The rAF loop
+  // registered here is unaffected by the earlier timing; it is scheduled, not run.
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -136,6 +155,23 @@ export function LiveScope({
 
     let raf = 0;
     if (active) {
+      // Paint the ring's current state NOW, before the browser paints and before
+      // the first rAF. A first-take Resume after a preview REMOUNTS this canvas
+      // (the preview unmounted it), and without this the stage showed a blank
+      // frame while the ring — which `resume()` does not reset — waited to be
+      // drawn (#130).
+      //
+      // This MUST be the non-mutating peek. `readScope` advances the ring, and
+      // this effect re-runs on every `active` edge, so using it here folded an
+      // extra column into every pause→resume cycle — the waveform ran ahead of
+      // real time, ~5% of the window after ten cycles (George, round 3). The peek
+      // also draws when the tap is refusing frames, which is exactly the frozen
+      // ring this paint exists to show.
+      const first = peekScopeRef.current();
+      if (first) {
+        lastScopeRef.current = first;
+        paint(first);
+      }
       const tick = () => {
         const scope = readScopeRef.current();
         // A null scope is the tap-failed / teardown transient — the tap is
