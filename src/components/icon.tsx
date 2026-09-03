@@ -18,6 +18,7 @@ export type IconName =
   | "next"
   | "trash"
   | "alert"
+  | "info"
   | "retry"
   | "menu"
   | "edit"
@@ -33,8 +34,7 @@ export type IconName =
   | "redo"
   | "eye"
   | "eye-off"
-  | "share"
-  | "info";
+  | "share";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -116,6 +116,29 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinecap="round"
       />
       <circle cx="11" cy="15.4" r="1.05" fill="currentColor" />
+    </>
+  ),
+  // A heads-up (#112): a ring with an i. Deliberately neither the alert
+  // triangle nor the retry arc, so a non-reader tells "left out" from "failed"
+  // and from "wait" by shape alone.
+  info: (
+    <>
+      <circle
+        cx="11"
+        cy="11"
+        r="7.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M11 10.2v4.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="11" cy="7.4" r="1.05" fill="currentColor" />
     </>
   ),
   retry: (
@@ -358,28 +381,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-    </>
-  ),
-  // Info: a circled "i". The global menu's About & licenses entry (#36) — the
-  // one place a text surface is right, so it takes the conventional glyph.
-  info: (
-    <>
-      <circle
-        cx="11"
-        cy="11"
-        r="7.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-      />
-      <circle cx="11" cy="7.3" r="1.05" fill="currentColor" />
-      <path
-        d="M11 10.2v5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
       />
     </>
   ),

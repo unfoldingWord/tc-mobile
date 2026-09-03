@@ -12,9 +12,12 @@
  * bundles this file and its lamejs import as their own chunk, so the LGPL
  * encoder sits behind one message interface rather than inside the app bundle.
  *
- * The protocol is one request, one response, then the worker is discarded —
- * no queue, no reuse, no progress stream (nothing consumes one yet; when the
- * share panel grows a real meter, add it then). The PCM arrives as a transferred
+ * The protocol is one request, one response — no queue, no progress stream
+ * (nothing consumes one yet; when the share panel grows a real meter, add it
+ * then). `hooks/mp3-codec.ts` keeps ONE worker warm and reuses it across
+ * encodes, serialised so only one request is ever in flight (#182); this handler
+ * holds no state between messages — every value is built inside the callback —
+ * which is what makes that reuse safe. The PCM arrives as a transferred
  * `ArrayBuffer` (moved, not copied) and the MP3 goes back the same way, so a
  * chapter's audio is never held twice across the two threads.
  */
