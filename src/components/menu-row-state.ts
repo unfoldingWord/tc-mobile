@@ -2,7 +2,7 @@
  * Why a recorder ≡-menu row is disabled — derived, never hand-maintained (#135).
  *
  * The Edit and Erase rows are gated on recorder state, and a grey row with no
- * reason read as a broken control to the requirements owner (Tim, 2026-09-02,
+ * reason read as a broken control to the requirements owner (2026-09-02,
  * staging v0.1.10). AGENTS.md's bar is state-in-place: the control itself shows
  * the condition. For that cue to be trustworthy it must come from the SAME
  * predicates that disable the row, so each row's `disabled` is now
@@ -18,8 +18,9 @@ import { strings } from "./strings";
 
 /**
  * The reasons, most actionable first. `"uncommitted-take"` is the #134 case — a
- * take is live, paused or committing, and Back is what lifts it — and outranks
- * every other reason because it is the one the translator can act on from here.
+ * take is live, paused or committing, and closing the recorder is what lifts it
+ * — and outranks every other reason because it is the one the translator can act
+ * on from here. Nothing in this product is named "Back"; see {@link rowHint}.
  */
 export type RowReason =
   | "uncommitted-take"

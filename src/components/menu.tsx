@@ -5,14 +5,20 @@ import { Control } from "./control";
 import { strings } from "./strings";
 
 /**
- * Focusable controls inside the panel — disabled ones excluded on purpose.
+ * Focusable controls inside the panel — NATIVELY disabled ones excluded on
+ * purpose; `aria-disabled` ones deliberately kept.
  *
- * A disabled button can never be `document.activeElement`, so it must be skipped
- * for BOTH the initial focus (landing on it focuses nothing, stranding the user
- * behind the scrim) and the Tab-wrap boundary (a disabled `last` never turns the
- * wrap). The recorder menu's Redo and Erase are disabled at idle/no-clip while
- * the VU toggle stays live, which is exactly when a single shared selector
- * matters. Mirrors EraseConfirm.
+ * A natively disabled button can never be `document.activeElement`, so it must
+ * be skipped for BOTH the initial focus (landing on it focuses nothing,
+ * stranding the user behind the scrim) and the Tab-wrap boundary (a disabled
+ * `last` never turns the wrap). The recorder menu's Redo and Erase are disabled
+ * at idle/no-clip while the VU toggle stays live, which is exactly when a single
+ * shared selector matters. Mirrors EraseConfirm.
+ *
+ * A row carrying a hint (#135) is `aria-disabled` instead, and so MATCHES this
+ * selector by design: it is focusable, announces its reason, and holds its place
+ * in the Tab order. Only the open-edge landing filters those out — see the
+ * `actionable` list below, which is the other half of this rule.
  */
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
