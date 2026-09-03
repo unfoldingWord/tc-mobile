@@ -7,6 +7,115 @@ and do not imply one entry per day.
 
 ---
 
+## 2026-09-02 (day) — B8 merged + staging v0.1.11; the repo moves to the org; Jesse's first four PRs through the dual review
+
+**Branches:** `claude/next-batch-issues-ns640m` → **`develop`** (#136, squash `485aacf`, Jesse's
+B8); `release/v0.1.11` → develop (#141, `b746516`); develop → **`staging`** (#142, merge
+`a180ee6`, **v0.1.11**). **Production `main` untouched** (`3464a30`). Open: **#138**
+(docs, versioning + repo-move), **#139 #140 #144 #145** (Jesse, review lanes below).
+**Filed:** #134, #135, #143 (closed), #146 (Seth); #137, #147 (Jesse).
+
+### The repo moved, and it broke the deploy
+
+Seth transferred `sethstoll3/tc-mobile` → **`unfoldingWord/tc-mobile`**. GitHub redirects
+the old name; `gh` resolves to the org. **Cloudflare Workers Builds did not survive the
+transfer:** the v0.1.11 staging merge went green on GitHub and never deployed — no
+`Workers Builds` check on `a180ee6` where Monday's `6050d81` had one, and the staging URL
+kept serving v0.1.10 for twenty minutes. Seth re-linked both Workers in the dashboard;
+staging served v0.1.11 within ten minutes (`index-Crr9nweP.js`, worker chunk reachable).
+**#143** records it. Lesson, now in AGENTS.md via #138: **a merged promotion PR is not a
+deployed build — confirm the served bundle's version string.** The re-linked app posts
+preview-bot comments on PRs and a `Workers Build` check on later pushes.
+
+### Contributors, versions, milestones
+
+- **Jesse Griffin (`jag3773`) is building.** First PR #136 (B8) at 09:05 local; four more by
+  evening. The review process split for the first time: **Seth's session runs Frank +
+  George and posts each round's statements with per-finding CONFIRMED/REFUTED
+  verification; Jesse posts FIXED/REFUTED/DEFERRED and merges** ("jag will do the fixes",
+  "merge is with Jesse"). Rounds 2–4 of the later PRs ran as **parallel subagents, one
+  worktree per PR**, since each review diffs against develop independently.
+- **Versioning rule (Seth, #138):** feature/fix PRs never touch `version`; one
+  `chore(release)` PR per develop → staging promotion bumps the patch; **the minor is the
+  milestone**, bumped and tagged by the `staging → main` promotion PR.
+- **Milestones created**, all 35 open issues assigned: `v0.2.0 — Sept: production gate`
+  (due 09-30), `v0.3.0 — Oct: East Africa training` (due 10-09), `v1.0.0 — Post-training`.
+  Every new issue gets one.
+- **Cleanup:** 9 merged remote branches and 24 stale local branches deleted; local
+  `staging` fast-forwarded. Remaining remotes: the three mainline branches, #138's, and
+  Jesse's four PR branches.
+
+### #136 — B8, four rounds, both clean, merged, promoted
+
+Frank + George both clean at `3df181860` after a **chain** of four rounds. The catch worth
+keeping, round 2, both lenses independently: **an MP3 decode carries 1,105 samples of
+encoder+decoder delay at the HEAD** (lamejs writes no Xing/LAME tag; reproduced in Node:
+116 granules × 1,152 = 133,632 for 132,300 in, exactly Chromium's number), so the round-1
+"fit to `frameCount`" that trimmed the _tail_ was deleting the last 25 ms of speech on
+every edit-save of a finished segment. Jesse measured with impulse round-trips on
+Chromium before the T1 gate let the fix (`fitMp3Decode`, granule count read off the
+stream) through. Also caught: sweep + share running two LAME workers at once (now one
+encoder lane), lamejs duplicated into the app bundle by the inline fallback (gone; app
+chunk has zero lamejs markers), a rowAudio TOCTOU with the transcode sweep. **Nothing in
+B8 has run on a phone**; the iOS/Android impulse round-trip is the T2 gate before
+`staging → main`, alongside #106 and the first-launch sweep.
+
+### Tim's staging report → #134 / #135
+
+Tim (v0.1.10): "editorial controls are no longer visible … the edit icon is grayed out".
+Not a regression — the record/edit split Tim approved on #89. The real finding: Edit is
+idle-only and a take commits only on Back, so **Edit is unreachable in the same sheet
+session as a take** (#134, needs Tim's call on record-then-edit-in-one-sitting), and a
+disabled row carried no reason (#135, fixed by Jesse's #139).
+
+### Jesse's lanes at EOD
+
+| PR                                               | Closes         | Rounds      | State @ EOD                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------ | -------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#145** recovery screen copy (#38 half)         | —              | 3, chain    | **clean** @ `9f4b99249` — merge is Jesse's, after #139/#140                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **#140** Notice `info` tone (#112) + #129/#103   | #112 #129 #103 | 3           | **clean** @ `afa445e97` (1 P3 → #147) — merge is Jesse's, after #139                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **#139** disabled-row reasons (#135) + #130 nits | #135 #130      | **4 = cap** | Frank clean; **1 George P2 open** (menu stays open over the permission panel when the mic fails mid-request). Rounds 1→3 a chain, 3→4 siblings of a now-exhausted state class. Jesse pushed the fix (`2a036b47e`); **round 5 is Seth's call, not decided today.**                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **#144** LGPL notice + About panel (#36)         | #36            | **4 = cap** | **Not clean, siblings.** Frank **P1**: the panel/README/ADR assert an exercisable LGPL §4(d) relink right, but the repo is private and the bundle hard-references the hashed worker chunk — a licensing position for Seth + Tim, not a patch. George 2 × P2 (`aria-label` on the `<pre>` masks loading/failed states; 13 px buttons under the 40 px floor + 11 px body with `user-scalable=no`), 2 × P3. The duplicate `info` icon is still there (TS1117 on rebase after #140). **Recommendation posted: no straight round 5** — Jesse fixes the P2s + `info` in one commit; Seth/Tim decide the §4(d) claim and record it in ADR 0003; then one confirming round if Seth authorises. |
+
+Lane order for Jesse's merges: **#139 → #140 → #145 → #144**. #140 and #144 both add an
+`info` icon to `icon.tsx` (duplicate key → TS1117) and #139/#144 share `strings.ts`, so
+#144 lands last, rebased, re-reviewed.
+
+### Process notes worth keeping
+
+- **Reviewer/author split works** but needs the triage comment to carry verification state
+  per finding, not just dispositions; Jesse's dispositions comments then quote commits.
+- **Never run a mutation probe while George is running** — George reads the disk. One
+  agent did (5 s, restored); that George run was discarded and re-run solo, disclosed on
+  #144. Probe only after both reports are in.
+- **A push mid-round voids the round.** #140's head moved during round 2; the agent killed
+  the run and re-ran at the new head rather than post stale verdicts.
+- **The cap is a decision point, not a stop.** #139 and #144 both hit it; the shape
+  analysis (chain vs siblings, and whether the sibling class is finite) is what Seth
+  needs to decide a fifth round.
+- **#146:** `3-components.css`'s header forbids layer-1 primitives in component rules; 42
+  existing rules use them. Reconcile the header with the file rather than fight every PR.
+
+### Blockers / needs a human
+
+- **Seth:** round 5 on #139 (recommended: yes, ~5-line fix already pushed, class
+  exhausted) and #144 (see state above); merge #138 (docs, reviewer exemption proposed);
+  `git remote set-url origin https://github.com/unfoldingWord/tc-mobile.git` in the main
+  checkout; `npm ci` there (its node_modules predate fflate).
+- **Tim:** #134 (record-then-edit-in-one-sitting), the #89 D1/D2 confirms, Q2 (Template
+  Library), and the on-device pass on **staging v0.1.11** (B8 + everything since v0.1.5).
+- **Jesse:** merge #140 and #145 (mark ready first), rebase #144 after #139/#140.
+
+### Next steps
+
+1. Seth's round-5 decisions; then Jesse merges in lane order; promote develop → staging
+   as v0.1.12 once the four lanes land (one `chore(release)` PR).
+2. On-device pass on staging (iOS + Android): B8 impulse round-trip, #106, first-launch
+   sweep, B7 share, recorder preview — the `staging → main` gate for v0.2.0.
+3. B7 Template Library (#33): `ux-then-ui` pass, then Tim's Q2 call.
+
+---
+
 ## 2026-09-02 — B8 (#34): MP3 on Finished + the encoder off the main thread — PR open
 
 **Branch:** `claude/next-batch-issues-ns640m` → **`develop`** (draft PR, awaiting
