@@ -188,17 +188,29 @@ every encode; a live worker holds its code and never re-fetches. The reuse is
 sound only because the two properties §1 already relies on hold: the worker's
 message handler is stateless (a fresh `encodeMp3` per message), and
 `withEncoder` serialises every encode onto one lane, so the shared worker never
-carries two jobs at once. **Abort is unchanged in effect** — it must still stop
-the in-flight encode _now_, which only `terminate()` can do, so an abort (or a
-worker `onerror`) drops the worker and the next encode makes a fresh one. So
-"terminates on every exit" is superseded by "terminates on abort or error, and
-is otherwise kept warm and reused."
+carries two jobs at once. **Abort still stops the in-flight encode now** — only
+`terminate()` can — so an abort drops the worker and immediately **re-warms** a
+fresh one, so a cancelled share (share-sheet close/unmount aborts the signal)
+does not end the protection at the first cancel (round-1 R2). A worker that dies
+on its own — a script-load failure, which `new Worker` reports asynchronously as
+an `error` event, or a crash between encodes — is caught by a **durable `error`
+listener** attached at construction that drops the dead handle, so the next
+encode rebuilds rather than posting into a worker that never answers and wedging
+the lane for the page's life (round-1 R1). So "terminates on every exit" is
+superseded by "terminates on abort or a worker error; on abort it re-warms,
+otherwise it is kept warm and reused."
 
-**Why #166 matters more, not less.** A warm worker that _hangs_ blocks every
-later encode until the page is reloaded, for the life of the page — where
-one-per-encode contained a hang to the single job that hung. The encoder lane
-still has no timeout (#166); this amendment raises that deadline's priority.
+**Why #166 matters more, not less.** A warm worker that _hangs_ — answers
+neither a message nor an `error` — blocks every later encode until the page is
+reloaded, for the life of the page, where one-per-encode contained a hang to the
+single job that hung. The durable listener above closes the _dies-loudly_ case
+(an `error` fires); a silent hang is only closable by #166's timeout, so this
+amendment raises that deadline's priority.
 
-Still browser-boundary and unverified on a device: the purge → cache-miss
-interaction and the warm reuse both need a device with two deployed builds. The
-"What is verified" section above is unchanged by this amendment.
+The new lifetime is unit-tested in Node with a stubbed `globalThis.Worker`
+(`tests/mp3-codec.test.ts`): reuse across encodes, drop-and-re-warm on abort,
+drop-on-error, and the R1 case (a warm worker that errors before the first
+encode is not reused as a hung handle) proven red-first by mutation. Still
+browser-boundary and unverified on a device: the purge → cache-miss interaction
+itself needs a device with two deployed builds. The "What is verified" section
+above is otherwise unchanged by this amendment.
