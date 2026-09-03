@@ -58,7 +58,11 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
         <LicenseTextView text={viewing} />
       ) : (
         <div
-          className="flex min-w-0 flex-col gap-[14px] text-[13px] leading-relaxed"
+          // The list is the scroll container, not `.menu-panel` — same
+          // `min-h-0 flex-1 overflow-auto` contract the licence-text `<pre>`
+          // takes — so on a short phone the panel's header Back stays put
+          // instead of scrolling off with the content (#36 G1).
+          className="flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-auto text-[13px] leading-relaxed"
           style={{ color: "var(--s-ink)" }}
         >
           <p style={{ color: "var(--s-ink-muted)" }}>{strings.aboutBlurb}</p>
@@ -216,9 +220,11 @@ function ExternalLink({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={label}
-      // 40px min touch target (the component-layer floor; the page disables
-      // pinch-zoom) — the sibling of the round-4 button fix, on the anchors.
-      className="inline-flex min-h-[40px] w-fit items-center underline"
+      // 40px min touch target on BOTH axes (the component-layer floor; the page
+      // disables pinch-zoom) — the sibling of the round-4 button fix, on the
+      // anchors. `min-w` floors the short "LAME" credit; `w-fit` keeps the
+      // longer labels from stretching, and the wide ones no-op the floor (#36 F1).
+      className="inline-flex min-h-[40px] w-fit min-w-[40px] items-center underline"
       style={{ color: "var(--s-ink)" }}
     >
       {children}

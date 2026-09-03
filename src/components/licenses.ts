@@ -31,9 +31,9 @@ interface ThirdPartyLicense {
    * in `node_modules`. Defaults to `name`.
    */
   readonly pinPackage?: string;
-  /** A note the licence makes worth surfacing — the LGPL relink right. */
+  /** A note the licence makes worth surfacing — e.g. the LGPL source offer. */
   readonly note?: string;
-  /** The component's own source — what an LGPL relinker needs (lamejs). */
+  /** The component's own source, where the licence points recipients (lamejs). */
   readonly source?: { readonly label: string; readonly href: string };
   /** An upstream the licence asks be acknowledged (LAME, for lamejs). */
   readonly acknowledges?: { readonly label: string; readonly href: string };

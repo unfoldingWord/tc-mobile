@@ -66,6 +66,14 @@ export const strings = {
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
+  // The recorder's commit-window status (#39). "saving": a take is committing
+  // (stop → decode → the IndexedDB write, spanned by `isClosing`, not just the
+  // `processing` state). "interrupted": the mic was lost mid-take (#59) and the
+  // frozen take is held in memory until the recorder is closed — so the copy
+  // names the real control, "Close recorder" (nothing is named "Back"), the
+  // same wording #139 rewrites `previewUnavailable` to.
+  recorderSaving: "Saving…",
+  recorderInterrupted: 'Recording finished. Use "Close recorder" to save it.',
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
