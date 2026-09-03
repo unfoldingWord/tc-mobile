@@ -77,10 +77,14 @@ export function Control({
       // `busy` control (work in flight, #137) and a hinted `aria-disabled` one
       // (#135) each stay focusable but must not fire. Without this an
       // aria-disabled row would be focusable AND clickable — worse than either
-      // state alone. Native `disabled` stays reserved for the hard-disabled,
-      // non-hinted case; `busy` never sets it, so the button keeps focus.
+      // state alone.
       onClick={busy || softDisabled ? undefined : onClick}
-      disabled={disabled && !softDisabled}
+      // `busy` never sets the native attribute even when `disabled` is also
+      // true — a busy control must keep focus (an AT/switch user stranded behind
+      // the scrim otherwise). Native `disabled` is only for the hard-disabled,
+      // non-hinted, non-busy case (#137 F1: the busy × disabled cell is
+      // unreachable today, but the prop's whole point is this guarantee).
+      disabled={Boolean(disabled && !softDisabled && !busy)}
       aria-disabled={softDisabled || undefined}
       aria-busy={busy || undefined}
       autoFocus={autoFocus}

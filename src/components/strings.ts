@@ -86,9 +86,10 @@ export const strings = {
     "Your recording is safe. Try again, or go back to erase it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
-  // Shown in place of the two controls while a "Try again" is in flight, so the
-  // tap has visible feedback (a slow decode is not instant) and the panel does
-  // not flicker to the disabled sheet and back.
+  // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
+  // again" is in flight, so the tap has visible feedback (a slow decode is not
+  // instant) and the panel does not flicker to the disabled sheet and back.
+  // Try again relabels and goes busy in place rather than unmounting (#137 G2).
   loadRetrying: "Opening your recording…",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
