@@ -690,8 +690,12 @@ export function Recorder({
     // Silence buffer playback now, not at the eventual unmount `leave()`: the
     // async commit below can run a save while a long buffer keeps sounding, and
     // Play goes `disabled` on `isClosing` so nothing on screen can stop it
-    // (George R1). `stopBuffer` only releases its own "take" floor — never a
-    // capture, so it is safe ahead of the `stopRecording` commit path.
+    // (George R1). `stopBuffer` releases its own "take" floor and, when the
+    // recorder is paused, hands the floor back to the still-open mic
+    // (`reclaimAfterPreview`, #129) — it never ENDS a capture, which is the
+    // property that makes it safe ahead of the `stopRecording` commit path:
+    // `claim("mic")` moves the floor, it does not touch the MediaRecorder, and
+    // `stopRecording`'s `finally` stops whichever claim is current (George G4).
     audio.stopBuffer();
     void (async () => {
       // Commit on close (F8): if the mic is live or paused, stop it, then

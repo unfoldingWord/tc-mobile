@@ -125,6 +125,13 @@ export const SegmentsScreen = forwardRef<
       // R-B6). Only our own target: another row's playback is not ours to stop,
       // and only one thing sounds at a time, so `leave()` here ends exactly it.
       if (audio.playingId === eraseTarget) audio.leave();
+      // The recorder's in-memory buffer is the other thing that can sound. It is
+      // unreachable from here today (the list is `inert` while the sheet is
+      // open, and `openRecorder` calls `leave()` first), but if that coupling
+      // ever loosens a sounding buffer would outlive `clearSegmentTake` with no
+      // pause control — the same R-B6 hole. `stopBuffer`, not `leave()`: a
+      // recording in progress is never ours to cancel from a list erase (#103).
+      else if (audio.playingBuffer) audio.stopBuffer();
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
@@ -362,13 +369,14 @@ export const SegmentsScreen = forwardRef<
           />
         )}
         {/* Feedback rides inside the panel because the flow keeps the menu open:
-            the busy state while encoding, a gap warning once armed, and any error
-            code mapped above. */}
+            the busy state while encoding, a gap warning once armed (`info`, not
+            `busy` — the chapter is ready, this is a heads-up about what it lacks,
+            #112), and any error code mapped above. */}
         {share.status === "preparing" && (
           <Notice tone="busy">{strings.sharePreparing}</Notice>
         )}
         {share.status === "ready" && share.missing > 0 && (
-          <Notice tone="busy">{strings.shareMissing(share.missing)}</Notice>
+          <Notice tone="info">{strings.shareMissing(share.missing)}</Notice>
         )}
         {shareErrorText && <Notice>{shareErrorText}</Notice>}
       </Menu>
