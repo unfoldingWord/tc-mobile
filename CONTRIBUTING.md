@@ -136,8 +136,8 @@ The full version, with the incident behind each rule, is in
 - **Never claim verification you did not perform.** No comment, docblock or PR
   body says tested, verified or checked on-device unless it was. **Android and
   iOS are separate claims** — name the platform, the OS version and the build.
-- **Idempotent writes.** Get-or-create in one transaction, content-addressed
-  clips, append-only migrations.
+- **Idempotent writes.** Get-or-create in one transaction, clips never deleted
+  while another segment still references them, append-only migrations.
 - **Errors have a channel before they have copy.** An unhandled rejection
   reaches an error boundary and one sink; `console.error` is not a channel on a
   phone in a village. Prefer state-in-place over a message bubble.
