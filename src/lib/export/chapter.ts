@@ -131,7 +131,13 @@ export async function gatherChapterPcm(
       // neither may land in the chapter or push the next segment off its slot.
       fitted = fitMp3Decode(decoded, clip.mp3, frames);
     }
-    if (fitted.length === 0) {
+    // The slot was sized from `getClipMeta` in pass 1; these samples came from
+    // `getClip` in pass 2, a separate transaction. A clip rewritten in that
+    // window does not fit: longer overruns `out` (a RangeError that kills the
+    // whole share), shorter leaves the tail of the slot unwritten while
+    // `written` advances by the reserved count. Skip it and count it missing,
+    // exactly as an erased clip (S-10, #163).
+    if (fitted.length !== frames) {
       missingAudio++;
       continue;
     }

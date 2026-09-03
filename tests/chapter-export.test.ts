@@ -196,6 +196,57 @@ describe("gatherChapterPcm", () => {
   });
 
   /**
+   * S-10 (#163). The slot is sized from `getClipMeta` in pass 1 and filled from
+   * `getClip` in pass 2, in separate transactions. A clip rewritten between the
+   * two comes back at a length its slot was not sized for: LONGER overruns the
+   * output buffer — a `RangeError` out of `out.set` that kills the whole share —
+   * and SHORTER leaves the tail of the slot unwritten while `written` advances
+   * by the reserved count, a silent hole the missing count never mentions.
+   * Neither is worth losing the share: skip the clip and count it missing,
+   * exactly as an erased one.
+   */
+  async function withSecondClipResized(
+    length: number
+  ): Promise<ReturnType<typeof gatherChapterPcm>> {
+    const { chapterId } = await chapterWith([
+      { n: 100, v: 100 },
+      { n: 100, v: 200 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let call = 0;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      const clip = await real(id);
+      if (++call !== 2 || clip?.encoding !== "pcm") return clip;
+      return { ...clip, samples: samples(length, 300) };
+    });
+    try {
+      return await gatherChapterPcm(chapterId, testCodec());
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("skips a clip whose data is longer than its metadata claimed", async () => {
+    const gathered = await withSecondClipResized(200);
+    expect(gathered).not.toBeNull();
+    const { samples: pcm, segments, missing } = gathered!;
+
+    expect(segments).toBe(1);
+    expect(missing).toBe(1);
+    expect(pcm.length).toBe(100); // one segment, no gap, no overrun
+  });
+
+  it("skips a clip whose data is shorter than its metadata claimed", async () => {
+    const gathered = await withSecondClipResized(40);
+    expect(gathered).not.toBeNull();
+    const { samples: pcm, segments, missing } = gathered!;
+
+    expect(segments).toBe(1);
+    expect(missing).toBe(1);
+    expect(pcm.length).toBe(100); // no half-filled slot left behind
+  });
+
+  /**
    * B8/D3: a finished segment's clip is MP3. The gather decodes it through the
    * injected codec and puts the RECORDING — not the decode — in the slot its
    * original frame count reserved. The decoder is modelled as the one Chromium
