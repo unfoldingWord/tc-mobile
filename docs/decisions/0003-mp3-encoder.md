@@ -70,17 +70,19 @@ in-app at **Menu → About & licenses** (`src/components/about-panel.tsx`, data 
 (`"license": "MIT"`) and `README.md` states the full MIT-with-an-LGPL-3.0-encoder
 position in prose. The in-app surface has not yet been eyeballed on a device.
 
-**Still open — the LGPL §4(d) relink mechanism.** The boundary (items 1–2) is
-clean, but the LGPL also requires that a recipient be _able_ to relink: §4(d)
-wants either the Corresponding Source in a relinkable form (§4(d)(0)) or a
-shared-library mechanism (§4(d)(1)). Today the repo is private, the worker chunk
-is a hashed minified asset, and no rebuild/relink instructions ship, so no
-recipient could act on the right. Which option this project relies on — most
-likely §4(d)(0) by construction once the repository is made public (the org
-transfer, `docs/org-transfer-plan.md`), recorded here with build instructions —
-is a DRI call (Seth with Tim), tracked as the remaining part of #36. The in-app
-copy, README and this ADR therefore describe the boundary, not an exercisable
-mechanism, until that lands.
+**LGPL §4(d) — decided 2026-09-03 (Seth): §4(d)(0), the Corresponding Source is
+the repository.** The boundary (items 1–2) is clean; the LGPL also requires that
+a recipient be _able_ to relink, which §4(d)(0) satisfies by providing the
+Corresponding Application Code in a form that permits recombination with a
+modified library. tC Mobile relies on **§4(d)(0)**: the Corresponding Source is
+`unfoldingWord/tc-mobile` itself, and the plan of record is to make the
+repository public before the v0.2.0 `staging → main` promotion (org-transfer plan
+D2 — uW's default is public — pending Tim's confirmation and the pre-publication
+content/history review now running). **Until the repository is public, §4(d)(0)
+is met by supplying the source on request from unfoldingWord.** The in-app copy
+and README describe the boundary and may state that the corresponding source is
+available from unfoldingWord; they must not claim the repository is public until
+it is, and carry no exercisable-relink language. #36 tracks the publication step.
 
 ### What this closes
 

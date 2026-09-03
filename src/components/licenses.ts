@@ -61,7 +61,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "LGPL-3.0",
     role: "MP3 encoder",
     copyright: "© Alex Zhukov — a fork of lamejs, based on LAME",
-    note: "The only copyleft component. It is isolated in a single Web Worker chunk (encodeMp3), which is the one unit its LGPL licence concerns.",
+    note: "The only copyleft component, isolated in a single Web Worker chunk (encodeMp3) — the one unit its LGPL licence concerns. Its source is available from unfoldingWord.",
     acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
     noticeMarker: "LAME",
   },

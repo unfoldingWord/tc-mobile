@@ -207,9 +207,9 @@ This project is **MIT** (see [`LICENSE`](LICENSE)) with **one LGPL-3.0
 dependency, the `@breezystack/lamejs` MP3 encoder** — **settled 2026-08-23,
 keep it** ([ADR 0003](docs/decisions/0003-mp3-encoder.md)). lamejs is isolated
 behind a single module boundary (`encodeMp3`, in a Web Worker chunk) — the one
-unit an LGPL relink concerns. Providing the Corresponding Source that lets a
-recipient exercise that relink right (LGPL §4(d)) is still open — see ADR 0003
-and #36.
+unit an LGPL relink concerns. The project relies on LGPL §4(d)(0): the
+Corresponding Source is this repository, available from unfoldingWord (ADR 0003,
+#36).
 
 Every bundled open-source component is disclosed **inside the app**, reachable
 on the phone under **Menu → About & licenses**: each runtime dependency and
