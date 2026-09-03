@@ -968,24 +968,30 @@ export function Recorder({
           )}
         </header>
 
-        {denied ? (
-          <PermissionPanel
-            message={audio.error}
-            onRetry={onRetryRecord}
-            onBack={close}
-          />
-        ) : loadError ? (
-          // A load/decode failure (chiefly a finished segment's MP3 on an iOS
-          // context left "interrupted", #106) used to render a bare Notice over
-          // a null view — the ≡ opener is disabled on `!view`, so in-sheet Erase
-          // was unreachable and nothing said the recording was safe (#137). This
-          // full panel gives the state-in-place the bar asks for: a recovery tap
-          // (resume + re-decode), an exit (Back, to the row's Erase), and copy
-          // that the audio is untouched. The raw `loadError` is kept for the log,
-          // not shown — it is a decoder message, not translator-facing.
+        {loadError ? (
+          // A load/decode failure (chiefly a finished segment's MP3 on a context
+          // left "interrupted", #106) used to render a bare Notice over a null
+          // view — the ≡ opener is disabled on `!view`, so in-sheet Erase was
+          // unreachable and nothing said the recording was safe (#137). This full
+          // panel gives the state-in-place the bar asks for: a recovery tap
+          // (resume + re-read), an exit (Back, to the row's Erase), and copy that
+          // the audio is untouched. The raw `loadError` is kept for the log, not
+          // shown — it is a decoder message, not translator-facing.
+          // Checked BEFORE `denied`: a device with no MediaRecorder (`!supported`)
+          // is `denied`, but its PermissionPanel Retry only re-arms the mic
+          // (`startRecording`), which cannot re-read a clip — so a decode failure
+          // there must reach this panel, whose Retry re-decodes (George R1 P3).
+          // The two never co-occur otherwise: opening the sheet clears any mic
+          // error, so `micError` and `loadError` cannot both be set.
           <LoadErrorPanel
             retrying={loadRetrying}
             onRetry={retryLoad}
+            onBack={close}
+          />
+        ) : denied ? (
+          <PermissionPanel
+            message={audio.error}
+            onRetry={onRetryRecord}
             onBack={close}
           />
         ) : (
@@ -1438,10 +1444,12 @@ function PermissionPanel({
  * (#137). Try again resumes the context and re-decodes on this user gesture;
  * Back returns to the Segments list, where the row's Erase does not decode and
  * still works. The recording is never touched by a failed open, so the copy
- * says so. While a retry is in flight (`retrying`) the panel stays mounted and
- * swaps its two controls for a busy Notice — the tap has visible feedback (a
- * long-segment decode is not instant) and the sheet never flickers to the
- * disabled `!view` body and back.
+ * says so. While a retry is in flight (`retrying`) only Try again is swapped for
+ * a busy Notice — the tap has visible feedback (a long-segment decode is not
+ * instant) and the sheet never flickers to the disabled `!view` body. Back stays
+ * mounted throughout: it is the panel's own named exit, and a retry decode
+ * cannot be aborted, so hiding it would leave the whole retry window with no
+ * labelled way out and drop focus with the removed control (George R1 P2).
  */
 function LoadErrorPanel({
   retrying,
@@ -1464,23 +1472,21 @@ function LoadErrorPanel({
       {retrying ? (
         <Notice tone="busy">{strings.loadRetrying}</Notice>
       ) : (
-        <>
-          <Control
-            icon="retry"
-            label={strings.loadRetry}
-            variant="primary"
-            size={30}
-            autoFocus
-            onClick={onRetry}
-          />
-          <Control
-            icon="back"
-            label={strings.loadBack}
-            variant="quiet"
-            onClick={onBack}
-          />
-        </>
+        <Control
+          icon="retry"
+          label={strings.loadRetry}
+          variant="primary"
+          size={30}
+          autoFocus
+          onClick={onRetry}
+        />
       )}
+      <Control
+        icon="back"
+        label={strings.loadBack}
+        variant="quiet"
+        onClick={onBack}
+      />
     </div>
   );
 }

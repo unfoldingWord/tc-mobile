@@ -166,12 +166,15 @@ export function useRecorderSegment(segmentId: SegmentId) {
   const retry = useCallback(() => {
     // Un-interrupt Web Audio in THIS gesture turn, before any await and before
     // the state bump commits — the "Try again" tap is the one moment iOS honours
-    // a resume of an "interrupted" context (#106), and that is the most likely
-    // decode failure (#137: a call, Siri, a route change), not a corrupt clip.
-    // Fire-and-forget, matching every other gesture path in the tree: a rejected
-    // or ineffective resume (an interrupted→resume race, or absent Web Audio)
-    // must not gate the re-read, which PCM and empty segments need no context
-    // for and even a decode may still complete without.
+    // a resume of an "interrupted" context (#106), and the decode runs through
+    // that same shared context. Whether an interrupted context actually makes
+    // `decodeAudioData` throw is unconfirmed (audio-io documents that state as
+    // silent playback, not rejection), so this is a plausible remedy for a
+    // transient-interruption open failure, not a proven one — on-device work,
+    // still owed. Fire-and-forget, matching every other gesture path in the tree:
+    // a rejected or ineffective resume (an interrupted→resume race, or absent
+    // Web Audio) must not gate the re-read, which PCM and empty segments need no
+    // context for and even a decode may still complete without.
     void resumeAudioContext().catch((cause) => {
       console.error("Could not resume the AudioContext before retry", cause);
     });
