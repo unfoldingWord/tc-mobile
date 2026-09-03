@@ -1335,8 +1335,9 @@ export function Recorder({
               // entering edit there strands the edit toolbar over a Retry that
               // starts the mic (George R3, with onRetryRecord as the other half).
               // The gate lives in `editRowReason` so the grey row can say WHY
-              // (#135): a take in flight shows the Back badge — Back is what
-              // lifts it — and the reason joins the row's accessible name.
+              // (#135): a take in flight shows the `alert` badge — a state mark
+              // that names no control — and the reason joins the row's
+              // accessible name.
               disabled={editReason !== null}
               hint={rowHint(editReason)}
               onClick={onEnterEdit}

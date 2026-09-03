@@ -137,12 +137,33 @@ describe("rowHint — which reasons carry a cue", () => {
   // Every control a hint tells the translator to use must EXIST under that name.
   // An earlier draft said "tap Back"; nothing in the product is named Back — the
   // two chevrons are "Close menu" and "Close recorder" — so a screen-reader user
-  // hunting for it found nothing (George, round 2). Both strings that name a
-  // control are checked here, so a rename of either control fails the suite
-  // instead of silently orphaning the words.
+  // hunting for it found nothing (George, round 2). The two strings that must
+  // NAME the control are checked directly, so a rename of the control fails the
+  // suite instead of silently orphaning the words.
   it("hint copy names controls that actually exist", () => {
     for (const copy of [strings.blockedByTake, strings.previewUnavailable]) {
       expect(copy).toContain(strings.closeRecorder);
+    }
+  });
+
+  // The "Back" ban is a PRODUCT-WIDE rule, so it is enforced over the whole
+  // table rather than the two strings that happened to prompt it. Scanning two
+  // named entries let a sibling PR add a third that says "Tap Back" with this
+  // suite still green (QA review, `2a036b4`) — the two changes merge cleanly, so
+  // nothing else would have caught the contradiction either. Red-first: adding
+  // that string here fails this test.
+  //
+  // Limit, stated rather than implied: this scans the table's STRING entries.
+  // The few function-valued entries build their copy at call time and are not
+  // covered — widening to them means inventing arguments, which is a worse
+  // trade than saying so here.
+  it("no copy anywhere sends the translator to a control named Back", () => {
+    // Widened to `unknown` first: `strings` is a literal-typed table, so a
+    // `v is string` guard is not assignable to its own value union.
+    const values: readonly unknown[] = Object.values(strings);
+    const table = values.filter((v): v is string => typeof v === "string");
+    expect(table.length).toBeGreaterThan(0);
+    for (const copy of table) {
       expect(copy.toLowerCase()).not.toMatch(/\btap back\b/);
     }
   });

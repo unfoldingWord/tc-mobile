@@ -26,10 +26,9 @@
     --c-control-xl: 68px;
 
     --c-row-radius: var(--p-radius-lg);
-    /* The disabled-row hint badge (#135). Declared here, in the permitted :root
-       wiring block, so the component rule below reads a layer-2/3 token rather
-       than a layer-1 primitive directly (Frank, round 1; the file header's rule,
-       tracked repo-wide as #146). */
+    /* The disabled-row hint badge (#135). The badge's geometry is named once,
+       here, so `.control-hint` below and anything that has to line up with it
+       read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
     --c-tile-sm: 48px;
