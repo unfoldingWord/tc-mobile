@@ -81,16 +81,18 @@ types → lib → hooks → components → app
 Styling is layered separately, in `src/app/styles/`:
 
 ```
-1-primitives.css   raw values, no meaning        (nothing outside layer 2 may use these)
+1-primitives.css   raw values, no meaning        (colour primitives: reachable only through layer 2)
 2-semantic.css     roles + themes                (the only layer that knows about themes)
-3-components.css   component tokens and parts    (may use layer 2, never layer 1)
+3-components.css   component tokens and parts    (colour via layer 2 roles; structural primitives direct)
 ```
 
 `@layer primitives, semantic, components, utilities` fixes the cascade order
 once, so Tailwind utilities always win and a one-off utility stays a safe
-escape hatch rather than a specificity fight. Using a primitive directly in a
-component is the leak this exists to prevent — it is what makes a theme
-unswitchable later.
+escape hatch rather than a specificity fight. Using a _colour_ primitive
+directly in a component is the leak this exists to prevent — it is what makes a
+theme unswitchable later. Structural primitives (spacing, radius, type, motion)
+carry no theme meaning, so component rules read them directly; only colour,
+surface and ink must come through layer 2's roles.
 
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
