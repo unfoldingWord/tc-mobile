@@ -21,6 +21,14 @@ interface ControlProps {
    */
   autoFocus?: boolean;
   /**
+   * Work started from this control is in flight. Sets `aria-busy` and swallows
+   * further activations while true, WITHOUT unmounting or natively disabling the
+   * button — so it keeps focus. A native `disabled` (or unmounting it) drops
+   * focus, stranding an AT/switch user behind the scrim; the recovery panel's
+   * Try again is the case this exists for (#137). The caller relabels for busy.
+   */
+  busy?: boolean;
+  /**
    * WHY the control is disabled, when it is (#135). Read only while `disabled`.
    *
    * Passing a hint changes HOW the control is made inert: it goes
@@ -54,6 +62,7 @@ export function Control({
   size,
   className,
   autoFocus,
+  busy,
   hint,
 }: ControlProps) {
   const shownHint = disabled && hint ? hint : null;
@@ -64,11 +73,20 @@ export function Control({
   const button = (
     <button
       type="button"
-      // The activation guard that makes `aria-disabled` honest. Without it the
-      // row would be focusable AND clickable — worse than either state alone.
-      onClick={softDisabled ? undefined : onClick}
-      disabled={disabled && !softDisabled}
+      // The activation guard that makes both soft-disable states honest: a
+      // `busy` control (work in flight, #137) and a hinted `aria-disabled` one
+      // (#135) each stay focusable but must not fire. Without this an
+      // aria-disabled row would be focusable AND clickable — worse than either
+      // state alone.
+      onClick={busy || softDisabled ? undefined : onClick}
+      // `busy` never sets the native attribute even when `disabled` is also
+      // true — a busy control must keep focus (an AT/switch user stranded behind
+      // the scrim otherwise). Native `disabled` is only for the hard-disabled,
+      // non-hinted, non-busy case (#137 F1: the busy × disabled cell is
+      // unreachable today, but the prop's whole point is this guarantee).
+      disabled={Boolean(disabled && !softDisabled && !busy)}
       aria-disabled={softDisabled || undefined}
+      aria-busy={busy || undefined}
       autoFocus={autoFocus}
       aria-label={name}
       title={name}
