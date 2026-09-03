@@ -1063,10 +1063,9 @@ export function Recorder({
               // gate spans `isClosing`, not just `processing`, because state
               // flips to idle mid-save (Frank/George R1); it lives in the pure
               // `recorderStatusKind` so the predicate is tested, not just the
-              // wording. As a `Notice` it carries the glyph a non-reader needs
-              // (`busy` = the in-progress mark, like every other wait; the
-              // interruption uses `previewUnavailable`'s Back-pointing default)
-              // and its own `role`, so no hand-rolled `aria-busy` to leave stuck.
+              // wording. As a `Notice` each carries the glyph a non-reader needs
+              // and its own `role`, so there is no hand-rolled `aria-busy` to
+              // leave stuck; the tone each takes is documented at its branch below.
               const status = recorderStatusKind(state, isClosing);
               if (!status) return null;
               return (
