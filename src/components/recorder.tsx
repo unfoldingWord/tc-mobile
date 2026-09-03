@@ -1444,12 +1444,21 @@ function PermissionPanel({
  * (#137). Try again resumes the context and re-decodes on this user gesture;
  * Back returns to the Segments list, where the row's Erase does not decode and
  * still works. The recording is never touched by a failed open, so the copy
- * says so. While a retry is in flight (`retrying`) only Try again is swapped for
- * a busy Notice — the tap has visible feedback (a long-segment decode is not
- * instant) and the sheet never flickers to the disabled `!view` body. Back stays
- * mounted throughout: it is the panel's own named exit, and a retry decode
- * cannot be aborted, so hiding it would leave the whole retry window with no
- * labelled way out and drop focus with the removed control (George R1 P2).
+ * says so, and `role="alert"` makes AT announce that title and body when the
+ * panel mounts — not just the focused control's name (#137 round-2: the safety
+ * copy was visual-only, mirroring `SaveFailed`'s alertdialog now).
+ *
+ * Try again is never unmounted. While a retry is in flight (`retrying`) it stays
+ * in place as `aria-busy` with the busy label and swallows further taps (the
+ * `cancelled` flag drops any superseded load); a busy `Notice` sits beneath it
+ * for the sighted visible feedback (a long-segment decode is not instant). The
+ * old code swapped the whole control for the Notice, which dropped focus off the
+ * `autoFocus`ed button onto the inert background, and `autoFocus`ed it again on
+ * the failed retry's remount — stealing focus from a user who had moved to Back
+ * (#137 round-2). Keeping it mounted removes both. Back stays mounted throughout
+ * too: it is the panel's own named exit, and a retry decode cannot be aborted,
+ * so hiding it would leave the whole retry window with no labelled way out
+ * (George R1 P2).
  */
 function LoadErrorPanel({
   retrying,
@@ -1461,7 +1470,10 @@ function LoadErrorPanel({
   onBack: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center">
+    <div
+      role="alert"
+      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+    >
       <span style={{ color: "var(--s-live)" }}>
         <Icon name="alert" size={52} />
       </span>
@@ -1469,18 +1481,16 @@ function LoadErrorPanel({
         {strings.loadFailedTitle}
       </p>
       <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
-      {retrying ? (
-        <Notice tone="busy">{strings.loadRetrying}</Notice>
-      ) : (
-        <Control
-          icon="retry"
-          label={strings.loadRetry}
-          variant="primary"
-          size={30}
-          autoFocus
-          onClick={onRetry}
-        />
-      )}
+      <Control
+        icon="retry"
+        label={retrying ? strings.loadRetrying : strings.loadRetry}
+        variant="primary"
+        size={30}
+        autoFocus
+        busy={retrying}
+        onClick={onRetry}
+      />
+      {retrying ? <Notice tone="busy">{strings.loadRetrying}</Notice> : null}
       <Control
         icon="back"
         label={strings.loadBack}
