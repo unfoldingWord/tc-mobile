@@ -4,11 +4,11 @@
  * single encoder lane.
  *
  * `lib/` takes the codec as a parameter (`AudioCodec`) and never touches either
- * API; this module is where the two are filled in. Encoding spawns one worker per
- * job and terminates it when the job settles, so an abort is a real stop — the
- * encode ends mid-loop and its memory goes with the worker — rather than a
- * result nobody reads. Decoding is `decodeAudioData` behind `hooks/audio-io.ts`,
- * the single Web Audio boundary.
+ * API; this module is where the two are filled in. Encoding runs in ONE warm
+ * worker, kept alive for reuse (#182) and serialised by `withEncoder`; an abort
+ * terminates it — a real stop, the encode ends mid-loop and its memory goes with
+ * the worker — and the next encode makes a fresh one. Decoding is
+ * `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio boundary.
  *
  * ONE lane. A Finished transcode and a Share are each "one chapter or segment
  * of PCM at a time" on their own, but nothing stopped them running together —
@@ -101,7 +101,62 @@ function untilSettled(
 }
 
 /**
- * Encode canonical PCM to MP3 in a worker.
+ * The one encoder worker, created on first need and kept WARM for reuse.
+ *
+ * The old design made a worker per encode and terminated it on settle, so every
+ * encode re-fetched `mp3.worker-<hash>.js` by URL. With the PWA on `autoUpdate`
+ * + `cleanupOutdatedCaches`, a new service worker purges the old hashed chunk out
+ * from under the still-open page — so the next Finished transcode or Share failed
+ * silently once a second build had shipped (#182). A live worker holds its code
+ * for the page's lifetime and never re-fetches, so keeping one warm is the fix:
+ * `warmEncoder` constructs it at startup while the running build's precache still
+ * holds the chunk, and every encode reuses it.
+ *
+ * Reuse is safe for exactly two reasons: the worker's message handler is
+ * stateless (a fresh `encodeMp3` per message, `mp3.worker.ts`), and `withEncoder`
+ * serialises every encode onto one lane — so the shared worker is never handling
+ * two jobs, or carrying two `onmessage` handlers, at once. An abort must still
+ * stop the in-flight encode NOW, which only `terminate()` can do, so an abort (or
+ * any `onerror`) drops the worker and the next encode makes a fresh one. The URL
+ * is re-fetched only on that recreate path, not on the common one.
+ */
+let sharedWorker: Worker | null = null;
+
+function encoderWorker(): Worker {
+  // Vite resolves this to the worker's own chunk (lamejs inside it) and the
+  // PWA precache picks that chunk up with the rest of `dist/assets`.
+  sharedWorker ??= new Worker(new URL("./mp3.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  return sharedWorker;
+}
+
+/** Terminate and forget the shared worker; the next encode recreates it. */
+function dropEncoderWorker(): void {
+  sharedWorker?.terminate();
+  sharedWorker = null;
+}
+
+/**
+ * Warm the encoder worker so a later encode does not depend on a chunk URL a
+ * service-worker update may have purged (#182).
+ *
+ * Best-effort: a no-op where `Worker` is absent, and a construction failure is
+ * swallowed here — it surfaces on the first real encode through the same error
+ * path. Call it once from the app shell at startup, while the running build's
+ * precache still holds the worker chunk.
+ */
+export function warmEncoder(): void {
+  if (typeof Worker === "undefined") return;
+  try {
+    encoderWorker();
+  } catch {
+    // Warming is optional; the first encode reports any real failure.
+  }
+}
+
+/**
+ * Encode canonical PCM to MP3 in the shared worker.
  *
  * CONSUMES `samples`: its backing `ArrayBuffer` is transferred to the worker and
  * is detached (length 0) on this thread afterwards. That is the point — a
@@ -110,12 +165,12 @@ function untilSettled(
  * loaded clip after its peaks are taken. A view onto a larger buffer transfers
  * the whole buffer and the worker encodes only the view's range.
  *
- * `signal` aborts: the worker is terminated and the promise rejects with the
- * signal's reason (an `AbortError` by default). Rejects with the encoder's own
- * error if it throws inside the worker, with the load error if the worker script
- * cannot start (e.g. its chunk is not in the offline cache), and with a plain
- * error where `Worker` does not exist at all (see the header: no inline
- * fallback, on purpose).
+ * A successful encode leaves the worker alive for the next one. `signal` aborts:
+ * the worker is terminated and dropped, and the promise rejects with the signal's
+ * reason (an `AbortError` by default). Rejects with the encoder's own error if it
+ * throws inside the worker, with the load error if the worker script cannot start
+ * (e.g. its chunk is not in the offline cache), and with a plain error where
+ * `Worker` does not exist at all (see the header: no inline fallback, on purpose).
  */
 function encodeInWorker(
   samples: Int16Array,
@@ -132,31 +187,41 @@ function encodeInWorker(
       );
       return;
     }
-    // Vite resolves this to the worker's own chunk (lamejs inside it) and the
-    // PWA precache picks that chunk up with the rest of `dist/assets`.
-    const worker = new Worker(new URL("./mp3.worker.ts", import.meta.url), {
-      type: "module",
-    });
-    // Every exit path terminates the worker: a settled job has no further use
-    // for it, and an aborted one must stop encoding NOW, not at the next check.
-    const settle = () => {
+    let worker: Worker;
+    try {
+      worker = encoderWorker();
+    } catch (cause) {
+      // The chunk could not load (purged and offline, say): fail this encode and
+      // clear the slot so a later attempt is not stuck with a half-made worker.
+      dropEncoderWorker();
+      reject(cause);
+      return;
+    }
+    // Detach THIS job's handlers on settle but leave the worker alive for reuse;
+    // an abort or a worker error drops it instead (see below).
+    const release = () => {
       signal?.removeEventListener("abort", onAbort);
-      worker.terminate();
+      worker.onmessage = null;
+      worker.onerror = null;
     };
     const onAbort = () => {
-      settle();
+      // Stop the in-flight encode NOW — only terminate can — and recreate later.
+      release();
+      dropEncoderWorker();
       reject(abortReason(signal!));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
 
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
-      settle();
+      release();
       const response = event.data;
       if (response.kind === "done") resolve(new Uint8Array(response.mp3));
       else reject(new Error(`MP3 encoding failed: ${response.message}`));
     };
     worker.onerror = (event) => {
-      settle();
+      // A worker that errored may be wedged; drop it so the next encode is clean.
+      release();
+      dropEncoderWorker();
       // `ErrorEvent.error` is the thrown value when the script threw; a script
       // that failed to load has only a message (often empty), so say so.
       reject(
