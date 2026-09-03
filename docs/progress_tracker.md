@@ -11,6 +11,177 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-03 — public-readiness scrub, the design audit and its 26 issues, three lanes, six merges from the recorder queue
+
+**Branches:** eleven PRs merged to **`develop`**, which moved `b746516` → **`58457d9`**.
+**Nothing was promoted.** `staging` is still `a180ee6` (v0.1.11) and `main` still
+`3464a30`; `f28291a` is an ancestor of neither, so **both still serve the pre-scrub
+tree**, deleted material and names included. `package.json` is still `0.1.11`.
+
+| PR       | Merge SHA | What                                                       |
+| -------- | --------- | ---------------------------------------------------------- |
+| **#138** | `025ac93` | versioning + milestone scheme for a multi-contributor repo |
+| **#148** | `f4afad4` | EOD 2026-09-02                                             |
+| **#152** | `5a65e4c` | tracker scrub — names and provenance out                   |
+| **#153** | `f28291a` | docs scrub; 9 provenance files deleted                     |
+| **#183** | `1ca197a` | `CONTRIBUTING.md` — the working agreement                  |
+| **#145** | `e973d55` | recovery screen holds the only copy (#38)                  |
+| **#139** | `9196e66` | disabled ≡-menu rows carry their reason (#135, #130)       |
+| **#140** | `494ef8a` | Notice `info` tone (#112) + #129 / #103                    |
+| **#187** | `a8b576d` | one warm MP3 worker across a service-worker update (#182)  |
+| **#185** | `b7576ec` | Finished-transcode sweep tested in Node + the fold (#181)  |
+| **#154** | `58457d9` | processing state gets a status, not a silent lock (#39)    |
+
+### Public readiness — four sweeps, a history sweep, and what the decisions were
+
+Four read-only sweeps (names; redesign and strategy provenance; secrets and infra;
+GitHub issue text) plus a dedicated git-history sweep. **Zero secrets** in the tree or
+in history — `ci.yml` already runs `gitleaks detect --source .` over full history with
+`fetch-depth: 0`, so that half was covered before the sweep started. The sweep counted
+**~268 name-carrying lines across 26 tracked files**; #152 and #153 cleared the docs
+half, deleting **9** provenance files and editing **15** in place. Owner-authored GitHub
+text was scrubbed where the API allows it: **8 titles, 59 bodies, 96 comments**, the
+`pivot` label's description, 2 milestones, and `v0.3.0` retitled to `v0.3.0 — Oct:
+training`. **GitHub keeps prior revisions under "edited" and offers no API to delete
+them** — an edit hides text, it does not remove it.
+
+History, as the sweep measured it at `f28291a`: **229 commits**, names in **53 commit
+messages** and **190 blobs**, the removed material present in **222 of 229 trees**, and
+**23 PR-head commits unreachable and undeletable**. (Those figures are the sweep's; the
+ref set has moved since, so they are not re-derivable from a fresh clone tonight.)
+
+Decisions taken:
+
+- **The same repository goes public. No history rewrite** — rewriting 222 of 229 trees
+  is not paid for by what it removes, and the 23 unreachable PR heads survive it anyway.
+- **The redesign stays as a fact and is explained plainly; its provenance goes.** The
+  word "pivot" is load-bearing — the umbrella issue, the batch numbering and the
+  `@pivotpending` tag all depend on it — so it is defined once, where a public reader
+  first meets it. **Reviewer codenames stay:** Frank and George name lenses, not people.
+- **The rule is narrowed to PII of people who did not consent.** Contributors may keep
+  and sign their own names and handles. That is now `CONTRIBUTING.md`'s privacy section.
+
+**Still open before any flip:** #194 (README + source comments, `0fb955a`, ready and
+awaiting a non-author review); a part 2 for `AGENTS.md` and the org-transfer plan, which
+waits on #144 and #156; `staging` and `main` still carrying the deleted material until
+the next promotion; the requirements owner's confirmation; and the Cloudflare
+deployment-bot comments that carry the account id — **39 as of tonight**, and one more
+with every PR, so this is a recurring cost, not a one-time cleanup.
+
+### The system design audit
+
+Five read-only lenses at `f28291a`; **92 findings**. A challenge pass ran **Frank-only**
+(grok was down at the time) and changed four things: it **refuted one P1** (the silent
+second-save is unreachable), **raised A-8 to P1** — a decode failure after Stop drops the
+only blob, now **#165** — moved the coverage gap to P2, and split the recorder
+god-component finding. **Net five P1s.** The report is local-only and is not in the repo;
+its numbers are not independently checkable from the tree.
+
+Triage turned that into **26 new issues, #157–#182**, **14 evidence comments** on
+existing issues (#12, #19, #24, #33, #38, #39, #43, #58, #59, #68, #76, #108, #115,
+#146), and **3 closure proposals** — **#18, #20 and #93**, all closed by the maintainer
+at 15:44Z.
+
+### Three contributors, three lanes
+
+All **61 open issues** now carry a milestone and an assignee — no unset of either.
+Assignment splits **30 / 23 / 4** (plus 4 shared) across the maintainer, @jag3773 and
+@deferredreward.
+
+| Lane                              | Owner           |
+| --------------------------------- | --------------- |
+| Recorder and audio                | @jag3773        |
+| Storage, app shell, docs, release | the maintainer  |
+| Export, provenance, archive       | @deferredreward |
+
+@deferredreward develops on Windows, which surfaced **#189** immediately: the
+lib-boundary test compares Windows-joined paths against `tsc`'s forward-slash output, so
+**every push from Windows was blocked**. #190 is the fix, still draft.
+
+**`CONTRIBUTING.md` (#183, 224 lines) is the day-one working agreement** — lanes and the
+five shared files, author-never-reviews-own, a push voids the round, `git range-diff`
+acceptance after a conflict-free rebase, one-reviewer rounds recorded as deviations, the
+privacy rule, and a section on working with an AI agent inside one lane.
+
+### Review process — what to keep
+
+- **Two review streams ran at once for part of the day and voided rounds.** On #187 a
+  second stream's report landed against a head just before the author's round-1 fixes,
+  and a push during round 2 voided that round outright (`01c2c13` → `eb8a20d`; Frank's
+  report discarded, George's part-run killed, both re-run at the new head). The fix is a
+  **QA-complete handshake before a confirming round starts** — a lesson from this
+  session, not yet written into `CONTRIBUTING.md`.
+- **Probe the tool before recording "unavailable".** grok was unavailable mid-afternoon
+  and came back; **three separate runs found it answering after being told it was down**.
+  Two Frank-only statements (#139, #155) were completed with George gap-fills at the same
+  head rather than left standing as deviations.
+- **`scripts/review/frank.sh:29` and `george.sh:29` build the reviewer prompt in an
+  unquoted heredoc** (`<<PROMPT_EOF`, not `<<'PROMPT_EOF'`). Backticks in an inserted
+  round-context block are command-substituted away, so the steer reaches the reviewer
+  weaker than written. Recorded on **#162**.
+- **The mutation table is what makes a test-only PR reviewable.** On #185, eleven
+  mutations found **four survivors**; round 2 re-ran exactly those four. An executed
+  probe also refuted a deferral — **#193**, whose premise was that the coalescing seam
+  was untestable through the public API — and the seam was folded instead. #193 closed.
+- **Range-diff acceptance was recorded four times** — #139 (`2eff449`), #140
+  (`57f7a41`), #154 (`2af3c94`), #185 (`3f6c661`) — and saved four full rounds.
+
+### Round outcomes
+
+| PR       | Rounds                               | Outcome                                                                                                                             |
+| -------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **#139** | confirming (Frank) + George gap-fill | clean at `a2b0c98`; acceptance at `2eff449` — a comment-only delta that also removed a name from a new file                         |
+| **#187** | 3, converged                         | one **P1** both lenses found independently: a warm worker with no idle `error` listener wedges the encoder lane for the page's life |
+| **#185** | 3, converged                         | two **P2**s closed by execution, not argument                                                                                       |
+| **#154** | confirming + post-rebase confirming  | clean; two P3s filed as **#196** / **#197**                                                                                         |
+| **#144** | rebased to `7296bb0`                 | confirming round outstanding at EOD                                                                                                 |
+| **#155** | rebased to `e37ac13`                 | confirming round outstanding at EOD                                                                                                 |
+
+The maintainer's three are open and **awaiting a non-author review**: **#186**
+(`07d35ac`, strict durability, T1, red-first + mutation), **#188** (`fb984ad`, root error
+boundary and a single failure sink — six QA findings, five suggestions and one nit, all
+dispositioned) and **#194** (`0fb955a`).
+
+### Field report → #195
+
+On the deployed build **`v0.1.11 · 494ef8a`**, Chrome reports **"Microphone permission
+was denied"** after the permission is granted. That string has exactly one source: a
+`NotAllowedError` out of `getUserMedia`, mapped at `src/hooks/use-recorder.ts:473-474`.
+So the browser refused; the UI is reporting faithfully. Four hypotheses are recorded,
+all inference: a request-path regression costing the tap's user activation; per-origin
+permission on per-commit preview URLs; served headers or embedding; the denied latch not
+re-issuing. Assigned, September milestone. **Observed once, on one build, by one person;
+not reproduced.** It blocks nothing tonight and is the first thing to bisect tomorrow —
+`a180ee6` (staging, pre-#139) versus `494ef8a` splits the four hypotheses in two.
+
+### Blockers / needs a human
+
+- **The requirements owner:** confirmation that the repo goes public; whether the removed
+  design material may remain in history; **#134** (record-then-edit in one sitting);
+  **Q2 / #33** (Template Library); **#12**; **#116**; and which of **#115 / #116 / #33 /
+  #72** must leave the September gate.
+- **Android devices.** One contributor has one now; the maintainer's arrives
+  **2026-09-05**. **Three of the five audit P1s can only be closed on a device**, and
+  **Android has still never been run** — not once, on any build. iOS Safari remains the
+  only platform with any on-device evidence, and none of it covers B7 or B8.
+- **The organisation ran out of usage credits late in the day**, which stopped two review
+  agents mid-run. Not a repo condition; recorded because it cost two rounds.
+
+### Next steps
+
+1. Finish the **#144** and **#155** confirming rounds and merge the remaining lane —
+   **#144, #155, #156**.
+2. Non-author reviews for **#186**, **#188**, **#194**.
+3. **Scrub part 2** (`AGENTS.md`, the org-transfer plan) once #144 and #156 land.
+4. One `chore(release)` PR promoting `develop` → `staging` as **v0.1.12**. **That
+   promotion is also what stops staging serving the removed design material** — until it
+   lands, the public-readiness work is true of `develop` only.
+5. The on-device pass on **both** platforms as the v0.2.0 gate: B8 impulse round-trip,
+   B7 share, #106, the first-launch sweep.
+6. **Bisect #195 first** — it is cheap, and it sits on the record path.
+
+---
+
 ## 2026-09-02 (day) — B8 merged + staging v0.1.11; the repo moves to the org; a contributor's first four PRs through the dual review
 
 **Branches:** `claude/next-batch-issues-ns640m` → **`develop`** (#136, squash `485aacf`, the contributor's
