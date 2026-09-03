@@ -1073,12 +1073,12 @@ export function Recorder({
                   {status === "saving" ? (
                     <Notice tone="busy">{strings.recorderSaving}</Notice>
                   ) : (
-                    // Interim `busy` (neutral, `role="status"`), NOT the default
-                    // red `alert`: an interruption leaves the recording safe, and
-                    // a status shouting in the colour of failure teaches people to
-                    // ignore it (notice.tsx). It becomes #140's `info` tone — the
-                    // real fit for a done-heads-up — on the rebase onto #140.
-                    <Notice tone="busy">{strings.recorderInterrupted}</Notice>
+                    // `info` (#140/#112): a heads-up about something already done
+                    // — full ink, its own glyph, `role="status"`. NOT `alert`
+                    // (nothing failed; the recording is safe) and NOT `busy` (it
+                    // is not a wait — the take is finished, waiting only on the
+                    // Close it names). Exactly the tone `info` was added for.
+                    <Notice tone="info">{strings.recorderInterrupted}</Notice>
                   )}
                 </div>
               );

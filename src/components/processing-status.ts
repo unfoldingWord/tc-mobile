@@ -36,8 +36,8 @@ export function recorderStatusKind(
   if (isClosing) return "saving";
   // `processing` with no close in flight is reachable only through the #59
   // interruption path — the frozen take waiting to be closed, which saves it.
-  // This is NOT an error state: the recording is safe, so its Notice is neutral
-  // (`busy` now, #140's `info` on rebase), never the red `alert`.
+  // This is NOT an error state: the recording is safe, so its Notice takes the
+  // `info` tone (a done heads-up), never the red `alert` nor the `busy` wait.
   if (state === "processing") return "interrupted";
   return null;
 }
