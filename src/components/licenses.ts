@@ -11,9 +11,10 @@
  * `public/licenses/` (served and precached, so they resolve offline).
  *
  * One table so the notice cannot silently drift from what is installed:
- * `tests/licenses.test.ts` asserts every `dependencies` entry is disclosed
- * here, pins the copyleft lamejs entry to the resolved dependency, and asserts
- * the linked texts actually ship.
+ * `tests/licenses.test.ts` walks the `package-lock.json` non-dev runtime closure
+ * and asserts every package in it is disclosed here (so a transitive dependency
+ * cannot slip through), pins every entry's version to the resolved package, and
+ * asserts the linked texts actually ship.
  */
 
 /** A bundled component and the licence it is offered under. */
@@ -62,7 +63,9 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     version: "1.2.7",
     spdx: "LGPL-3.0",
     role: "MP3 encoder",
-    copyright: "© Alex Zhukov — a fork of lamejs, based on LAME",
+    // Attribution, not a © notice: the bundled LICENSE carries no copyright line,
+    // so this names the package author (npm `author`) and the lineage.
+    copyright: "By Alex Zhukov — a fork of lamejs, based on LAME",
     note: "The only copyleft component, isolated in a single Web Worker chunk (encodeMp3) — the one unit its LGPL licence concerns.",
     source: {
       label: "lamejs source",

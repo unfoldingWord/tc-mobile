@@ -63,9 +63,10 @@ obligations are actually met, so they are listed here rather than assumed.
    reader to discover it from a lockfile.
 
 Items 3 and 5 are done (#36): the MIT / LGPL-3.0 / GPL-3.0 licence texts and the
-attribution of every bundled component — the seven runtime dependencies and
-Workbox — ship under `public/licenses/` (precached for offline) and are reachable
-in-app at **Menu → About & licenses** (`src/components/about-panel.tsx`, data in
+attribution of every bundled component — the direct runtime dependencies, the
+transitive `scheduler`, and Workbox — ship under `public/licenses/` (precached
+for offline) and are reachable in-app at **Menu → About & licenses**
+(`src/components/about-panel.tsx`, data in
 `src/components/licenses.ts`). `package.json` declares the project's own licence
 (`"license": "MIT"`) and `README.md` states the full MIT-with-an-LGPL-3.0-encoder
 position in prose. The in-app surface has not yet been eyeballed on a device.
@@ -79,10 +80,12 @@ modified library. tC Mobile relies on **§4(d)(0)**: the Corresponding Source is
 repository public before the v0.2.0 `staging → main` promotion (org-transfer plan
 D2 — uW's default is public — pending the requirements owner's confirmation and
 the pre-publication content/history review now running). **Until the repository is public, §4(d)(0)
-is met by supplying the source on request from unfoldingWord.** The in-app copy
-and README describe the boundary and may state that the corresponding source is
-available from unfoldingWord; they must not claim the repository is public until
-it is, and carry no exercisable-relink language. #36 tracks the publication step.
+is met by supplying the source on request from unfoldingWord.** Constraints on
+the **shipped copy** (the in-app note and the README, not this ADR): they
+describe the boundary and may state that the corresponding source is available
+from unfoldingWord, but must not claim the repository is public until it is, and
+carry no exercisable-relink language. This ADR itself records the §4(d)(0)
+option in full, as the decision directs. #36 tracks the publication step.
 
 ### What this closes
 

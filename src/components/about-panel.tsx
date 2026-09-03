@@ -212,7 +212,9 @@ function ExternalLink({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={label}
-      className="w-fit underline"
+      // 40px min touch target (the component-layer floor; the page disables
+      // pinch-zoom) — the sibling of the round-4 button fix, on the anchors.
+      className="inline-flex min-h-[40px] w-fit items-center underline"
       style={{ color: "var(--s-ink)" }}
     >
       {children}
