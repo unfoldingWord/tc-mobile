@@ -34,8 +34,8 @@ Searched before designing. **No frame-level OBS timing data exists anywhere.**
 **Corrected 2026-08-22.** The first row originally read "No audio subject at
 all for OBS — only text resources." That was wrong, and wrong in the direction
 that misroutes the next reader: OBS audio _is_ on DCS, for 92 languages,
-published by Rich Mahn in late July 2026. It is discoverable through
-`media.yaml` and the catalogue's `hasAudio` filter rather than through a
+published by the OBS content owner at uW in late July 2026. It is discoverable
+through `media.yaml` and the catalogue's `hasAudio` filter rather than through a
 subject, which is how the original search missed it.
 
 **The decision below does not change.** Every other row still holds and no VTT,
@@ -47,7 +47,7 @@ Two things worth knowing before anyone spends time on this:
   languages are overwhelmingly South Asian — `OBS-TLF` alone is 59 of the 98
   entries. There is no `sw`, `am`, `om`, `ti`, `so`, `lg`, `luo`, `rw`, `ny` or
   `sn`. Multi-language narration is a real Phase-2 capability and a dead end
-  for the East Africa training.
+  for the October 2026 training.
 - **`src/hooks/obs-media.ts:16` hardcodes the English v6 chapter URL.** Verified
   2026-08-23 by fetching
   `https://git.door43.org/unfoldingWord/en_obs/raw/branch/master/media.yaml`:
@@ -106,8 +106,9 @@ timing file per story, frame-aligned reference playback becomes a registration
 here rather than a feature — and record-along is the thing that makes this app
 usable in an actual workshop.
 
-Raise with **Rich Mahn** first — he published the 92-language OBS audio in July
-2026 by running Whisper over YouTube audio to split it into stories, so the one
-answerable question is whether that segmentation kept its timecodes. Then **Tim
-Jore** for the product call and **Benjamin Wright** for the burrito timing
-shape (he has already solved burrito round-tripping in the browser).
+Raise with the OBS content owner at uW first — the 92-language OBS audio was
+published in July 2026 by running Whisper over YouTube audio to split it into
+stories, so the one answerable question is whether that segmentation kept its
+timecodes. Then the requirements owner for the product call, and the Scripture
+Burrito maintainer at uW for the burrito timing shape (burrito round-tripping in
+the browser is already solved there — `docs/research/prior-art.md` §3).

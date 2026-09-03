@@ -13,9 +13,10 @@ and hold while speaking", episode titles, timestamps, category chips.
 That matters more than any individual pattern below. Mobbin gives us solid
 precedent for **layout and affordance**, and **no precedent at all for a
 text-free primary path**. The zero-text constraint — the single hardest thing
-Tim is asking for, and the entire reason the Nukak situation triggered this
-project — is genuinely novel territory. We will be inventing it, not adapting
-it, and should budget accordingly rather than assuming a reference exists.
+the requirements owner is asking for, and the entire reason the needs of an
+oral-only people group triggered this project — is genuinely novel territory.
+We will be inventing it, not adapting it, and should budget accordingly rather
+than assuming a reference exists.
 
 ## Patterns worth taking
 
@@ -76,7 +77,7 @@ it, and should budget accordingly rather than assuming a reference exists.
    the list.
 4. **The current scaffold screen labels every icon in text.** That is
    development scaffolding, not the design — it must not survive into what
-   goes to East Africa.
+   goes to the October 2026 training.
 
 ## Still unanswered
 
@@ -84,4 +85,4 @@ it, and should budget accordingly rather than assuming a reference exists.
 - How to convey **destructive actions** (delete a take) without words.
 - Whether spoken audio prompts, recorded once by a facilitator in the local
   language, should carry the instructional load instead of icons — floated as
-  "O1" in the Zulip thread and not yet decided.
+  "O1" in internal discussion and not yet decided.
