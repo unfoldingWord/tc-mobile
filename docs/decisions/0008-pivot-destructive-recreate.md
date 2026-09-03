@@ -1,9 +1,9 @@
 # 0008 — Waive append-only for the pivot's one-time destructive recreate
 
-**Status:** Accepted · **Date:** 2026-08-25 · **DRI:** Seth Stoll
+**Status:** Accepted · **Date:** 2026-08-25 · **DRI:** the maintainer
 
 Supersedes the append-only requirement stated for B1 in
-[#27](https://github.com/sethstoll3/tc-mobile/issues/27) ("Migration is still
+[#27](https://github.com/unfoldingWord/tc-mobile/issues/27) ("Migration is still
 required and still append-only") **for the v2→v3 transition only**. Append-only
 discipline resumes from v3 onward.
 
@@ -21,7 +21,7 @@ For v2→v3 only, the upgrade is a **one-time destructive recreate**: it drops
 every existing store and rebuilds the pivot schema from scratch. No v2 data is
 migrated.
 
-This is a DRI decision (Seth, 2026-08-25), taken on the review of PR #57 where
+This is a DRI decision (2026-08-25), taken on the review of PR #57 where
 Frank raised the data loss as a P1 against #27's written stance. It is recorded
 here — not only in a `db.ts` comment — because a code comment cannot waive a
 repository rule; the authority is this decision.

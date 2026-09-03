@@ -21,14 +21,14 @@ plausible-looking wrong reference.
 
 ## Rejected: make "Section" a pluggable division scheme
 
-Tim's inception notes sketch a fixed hierarchy:
+The requirements owner's inception notes sketch a fixed hierarchy:
 
 ```
 Book → Chapter → Section → Segment → Take
 ```
 
-This repo implements that hierarchy faithfully, because it is Tim's spec and
-changing it is his call, not ours.
+This repo implements that hierarchy faithfully, because it is the requirements
+owner's spec and changing it is that owner's call, not engineering's.
 
 **However**, Shema Studio — which has already shipped essentially all of tC
 Mobile's v1 feature list — models it differently, and the difference looks
@@ -42,7 +42,7 @@ pericope" as section types. A fixed `Chapter → Section` parent-child forces
 those to be two different shapes. A division scheme layered over the book makes
 them one shape with two schemes — and maps directly onto burrito scope strings.
 
-**What we would change if Tim agrees:**
+**What we would change if the requirements owner agreed:**
 
 ```
 Project (division scheme)
@@ -53,20 +53,17 @@ Project (division scheme)
       └─ Take[]
 ```
 
-**Decided 2026-08-22 by Tim: no.** Asked directly what divides a book that is
-not OBS, he answered:
+**Decided 2026-08-22 by the requirements owner: no.** Asked directly what
+divides a book that is not OBS, the answer was that Scripture passages fit the
+Book → Chapter → Segment (→ Take) taxonomy, either tied to the biblical canon or
+as a collection of stories.
 
-> "Scripture passages will fit the B → C → S (T) taxonomy, either tied to the
-> Biblical canon, or as a collection of stories."
-
-And, on whether segments carry references at all:
-
-> "A segment is not wired to a Scripture reference or an OBS 'frame' or anything
-> else... but it can accommodate them. The structure is generic, intended to
-> shape the UI for any resource that can use the Book → Chapter → Segment
-> (→ Take) taxonomy. This is not an 'OBS recorder' or 'Scripture recorder' app.
-> It is an 'audio notebook and pencil' app that needs just enough structure to
-> be able to accommodate both OBS and Scripture."
+And, on whether segments carry references at all: a segment is not wired to a
+Scripture reference, an OBS frame or anything else, but it can accommodate them.
+The structure is generic, intended to shape the UI for any resource that can use
+the Book → Chapter → Segment (→ Take) taxonomy. This is not an "OBS recorder" or
+"Scripture recorder" app; it is an "audio notebook and pencil" app that needs
+just enough structure to accommodate both OBS and Scripture.
 
 One generic taxonomy, no second dimension. A pluggable division scheme solves a
 problem this product does not have: OBS frames and Bible pericopes are both
@@ -91,4 +88,4 @@ oversight.
 **Also settled by the same conversation:** the `Section` layer is removed
 entirely. The 19 Aug spec had `Chapter → Section → Segment`; the 22 Aug mockups
 have `Chapter → Segment`. Section was the OBS-story / pericope layer, and it
-goes with the OBS framing. See `docs/design/mockups-gap-analysis.md`.
+goes with the OBS framing. See `docs/design/pivot-plan.md`.

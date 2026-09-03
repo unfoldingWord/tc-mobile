@@ -4,8 +4,9 @@
 approved at Gate 1 the same day
 
 > **Do not build from this document.** The plan of record is
-> [`pivot-plan.md`](pivot-plan.md). Tim's mockups replaced this screen, and the
-> UI it specifies is being deleted rather than evolved (#25).
+> [`pivot-plan.md`](pivot-plan.md). The product mockups (22 Aug 2026) replaced
+> this screen, and the UI it specifies is being deleted rather than evolved
+> (#25).
 >
 > It is kept, unrewritten, as the dated record of how the screen was reasoned
 > about and what Gate 1 approved. Its reasoning is why several later decisions
@@ -71,15 +72,15 @@ Three claims verified against artifacts before designing, not taken from the bri
    English text labels and an English `<h1>`.
 3. **The spec is explicit:** "low/no text (icon driven)",
    "Section-by-section (UX), vertical scroll", "granular to section: editing,
-   re-recording" (`docs/spec-transcription.md` lines 21, 33–34).
+   re-recording" (the 19 Aug 2026 requirements notes).
 
 ### The correction the premise check produced
 
 The brief assumed OBS artwork could carry row identity. **It cannot, in Phase 1.**
-Tim's own scoping says tC Mobile "initially wants to be only a simple audio
-editor" and that "later phases may include resources and pre-structured content
-(e.g., OBS)." So Phase 1 ships a **blank** notebook: no stories, no artwork, no
-pre-made sections.
+The requirements owner's own scoping has Phase 1 as a simple audio editor only,
+with resources and pre-structured content (e.g., OBS) left to later phases. So
+Phase 1 ships a **blank** notebook: no stories, no artwork, no pre-made
+sections.
 
 That removes the one non-textual identifier we thought we had, and it changes
 the central design question of this screen.
@@ -91,9 +92,10 @@ the central design question of this screen.
 > by text, whose progress is announced in words, and whose destructive moments
 > are confirmed with a sentence.**
 
-**X, from evidence:** an oral communicator in a church network like the Nukak —
-"functionally monolingual and almost entirely oral" (Tim Jore, Zulip) — holding
-a shared Android phone in a workshop, recording their own translation.
+**X, from evidence:** an oral communicator in the church network of an oral-only
+people group — functionally monolingual and almost entirely oral, as described
+in internal discussion — holding a shared Android phone in a workshop, recording
+their own translation.
 
 **Why this failure and not another:** it is the one the whole field commits.
 All twelve reference screens reviewed on Mobbin are navigable **only by
@@ -176,7 +178,8 @@ slot was specified before we knew we would have pictures.
 translation of an OBS story is a derivative work, making it CC BY-SA: settled
 2026-08-23, #15 closed. The data model still cannot distinguish an OBS-derived
 recording from a user-authored one, and the export path carries none of it.
-That remainder is **engineering work, not a question for Tim** — see ADR 0006.
+That remainder is **engineering work, not a question for the requirements
+owner** — see ADR 0006.
 
 ## A1 — The job list
 
@@ -290,7 +293,7 @@ Deliberately left open rather than quietly resolved:
 - **How a destructive action is confirmed without words.** Real and unsolved.
 - **Whether spoken prompts, recorded once by a facilitator in the local
   language, should carry the instructional load instead of icons.** Floated as
-  "O1" in the Zulip thread; not decided; would change this screen.
+  "O1" in internal discussion; not decided; would change this screen.
 - **Bible pericopes have no non-textual identity.** OBS eventually has artwork;
   pericopes never will. Unsolved, and it does not block Phase 1.
 

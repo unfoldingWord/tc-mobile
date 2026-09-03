@@ -4,10 +4,10 @@
 superseded, 2026-08-24** ·
 **Date:** 2026-08-22, approved at Gate 2 the same day
 
-> **Read the split before you build from this.** Tim's mockups replaced this
-> screen (#25), and [`pivot-plan.md`](pivot-plan.md) is the plan of record. It
-> points here for the token work and **only** for the token work — that pointer
-> is not an endorsement of the composition below.
+> **Read the split before you build from this.** The product mockups replaced
+> this screen on 22 Aug 2026 (#25), and [`pivot-plan.md`](pivot-plan.md) is the
+> plan of record. It points here for the token work and **only** for the token
+> work — that pointer is not an endorsement of the composition below.
 >
 > The document is kept, unrewritten, as the dated record of how the visual
 > system was derived and what Gate 2 approved.
@@ -45,7 +45,6 @@ layer both survive intact, and neither has an owner.
 
 > Process: `ux-then-ui`, composed against `ui-craft`. Pass A and its Gate 1
 > approval are in [`section-screen.md`](section-screen.md).
-> **Gate 2 artifact:** <https://claude.ai/code/artifact/fd71a5a1-a3a2-40f7-ba56-11dfb7a48890>
 
 ## B1 — Identity: skipped, with the deviation stated
 
@@ -195,8 +194,9 @@ hear the story before working — but **not record-along**, because reaching fra
 length would put a plausible-looking wrong marker on scripture audio, so it is
 not done.
 
-**Worth raising with Tim and Benjamin Wright:** Scripture Burrito already
-defines exactly the format this needs — a timing file mapping VTT timecodes to
+**Worth raising with the requirements owner and the Scripture Burrito maintainer
+at uW:** Scripture Burrito already defines exactly the format this needs — a
+timing file mapping VTT timecodes to
 references (`docs/research/prior-art.md` §4). uW simply does not publish one for
 OBS audio. If one existed, frame-aligned reference playback becomes a small
 change rather than a new feature.
@@ -248,8 +248,9 @@ sentence implies we intended.
 
 Not a blocker, and not a reason to remove the digits — they help most users.
 But **the claim is "no words", not "no reading"**, and the difference should be
-stated plainly rather than quietly enjoyed. Worth a question to Tim about what
-the Nukak workshop actually observed.
+stated plainly rather than quietly enjoyed. Worth a question to the requirements
+owner about what was actually observed in the workshop with an oral-only people
+group.
 
 ### Residual 3 — the invisible text layer
 

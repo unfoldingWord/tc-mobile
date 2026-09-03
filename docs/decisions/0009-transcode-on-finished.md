@@ -1,9 +1,9 @@
 # 0009 — Transcode on Finished: MP3 replaces PCM, editing after Finished re-decodes
 
-**Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** Seth Stoll
+**Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** the maintainer
 
 Implements decision **D3** (2026-08-23) and builds against the recorded
-**Q5** default (Seth, on #34, 2026-08-23). Q5 itself stays open in the
+**Q5** default (the DRI, on #34, 2026-08-23). Q5 itself stays open in the
 register in `docs/design/pivot-plan.md`: a default built against is not an
 answer, and the generation count below is what keeps the evidence to answer it.
 
@@ -98,8 +98,8 @@ The inheritance rule is "a replacement take carries the prior clip's count",
 which is exact while every save over an existing take is a merge into the
 decoded buffer — the only way the recorder saves today. If a "replace the whole
 take" gesture ever exists, that gesture must stamp 0, or fresh microphone audio
-would be counted as lossy (noted by Seth in round 1). Nothing reads it yet. It
-exists so the Q5 call — disallow, warn, or leave it — can be made later on
+would be counted as lossy (noted by the DRI in round 1). Nothing reads it yet.
+It exists so the Q5 call — disallow, warn, or leave it — can be made later on
 evidence from real devices rather than argued in the abstract.
 
 ### Schema — v4, append-only
