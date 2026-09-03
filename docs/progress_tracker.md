@@ -1559,8 +1559,8 @@ hardening into a decision nobody took.
 D1 Takes stay in the schema, hidden · D2 undo is an operation log, not buffer
 copies · D3 transcode to MP3 on "Finished" (660 MB → ~66 MB) · D4 MicroSD via
 the share sheet only · D5 reference audio leaves Phase 1 · D6 artwork becomes an
-optional per-segment illustration. Full reasoning in
-`docs/design/mockups-gap-analysis.md`.
+optional per-segment illustration. Full reasoning was in the mockup gap analysis
+(removed before the public release).
 
 _Narrowed 2026-08-24:_ that table's D3 cell says "closes the storage strategy
 in #12." It closes one of ADR 0002's three mitigations — PCM while editing,
@@ -1588,11 +1588,13 @@ every one in the ecosystem descends from LAME or Shine, both LGPL.
   notice obligations remain and want a licensing sign-off before October.
   _Superseded 2026-08-23: keep lamejs, settled (ADR 0003). #14 is closed and
   the notice work is #36 — do not re-ask the requirements owner._
-- **Uncommitted parallel work** — `docs/design/pivot-plan.md`,
-  `docs/spec-transcription-p3-p4.md` and `docs/mockups/` exist untracked in the
-  `fix/…` worktree, written before the requirements owner's answers arrived. They are complementary
-  to `mockups-gap-analysis.md` rather than redundant — the plan and the
-  transcription have no equivalent — but the mockup images are duplicated.
+- **Uncommitted parallel work** — `docs/design/pivot-plan.md`, the mockup
+  transcription (removed before the public release) and a second copy of the
+  mockup images exist untracked in the `fix/…` worktree, written before the
+  requirements owner's answers arrived. They are complementary to the mockup gap
+  analysis (also removed before the public release) rather than redundant — the
+  plan and the transcription have no equivalent — but the mockup images are
+  duplicated.
   **Reconcile before either is committed.**
 
 ### Next steps
