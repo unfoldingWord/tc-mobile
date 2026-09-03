@@ -1,6 +1,6 @@
 # 0009 — Transcode on Finished: MP3 replaces PCM, editing after Finished re-decodes
 
-**Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** the maintainer
+**Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** the maintainer · **Amended:** 2026-09-03 (#182) — see [Amendments](#amendments)
 
 Implements decision **D3** (2026-08-23) and builds against the recorded
 **Q5** default (the DRI, on #34, 2026-08-23). Q5 itself stays open in the
@@ -169,3 +169,36 @@ worker-backed `zip` would move it, and was not needed to remove the 2×).
 - Every reader of a clip now branches on its encoding. `Clip` is a discriminated
   union, so the compiler enumerates them; `danglingReason` and the F3 rule are
   unchanged — an MP3 clip resolves exactly as a PCM one does.
+
+## Amendments
+
+### 2026-09-03 (#182) — one warm worker, reused, instead of one per encode
+
+Decision §1 above said `mp3-codec.ts` "spawns one worker per encode … and
+**terminates the worker on every exit**." That made every encode re-fetch the
+hashed worker chunk by URL, and with the PWA on `autoUpdate` +
+`cleanupOutdatedCaches` a service-worker update purges that chunk out from under
+the still-open page — so the next Finished transcode or Share failed silently
+once a second build had shipped (#182).
+
+**Amended:** `mp3-codec.ts` now keeps **one** worker warm for the page's
+lifetime — `warmEncoder()`, called from the app shell (`App.tsx`) at launch
+while the running build's precache still holds the chunk — and reuses it for
+every encode; a live worker holds its code and never re-fetches. The reuse is
+sound only because the two properties §1 already relies on hold: the worker's
+message handler is stateless (a fresh `encodeMp3` per message), and
+`withEncoder` serialises every encode onto one lane, so the shared worker never
+carries two jobs at once. **Abort is unchanged in effect** — it must still stop
+the in-flight encode _now_, which only `terminate()` can do, so an abort (or a
+worker `onerror`) drops the worker and the next encode makes a fresh one. So
+"terminates on every exit" is superseded by "terminates on abort or error, and
+is otherwise kept warm and reused."
+
+**Why #166 matters more, not less.** A warm worker that _hangs_ blocks every
+later encode until the page is reloaded, for the life of the page — where
+one-per-encode contained a hang to the single job that hung. The encoder lane
+still has no timeout (#166); this amendment raises that deadline's priority.
+
+Still browser-boundary and unverified on a device: the purge → cache-miss
+interaction and the warm reuse both need a device with two deployed builds. The
+"What is verified" section above is unchanged by this amendment.
