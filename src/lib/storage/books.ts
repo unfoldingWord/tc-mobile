@@ -44,7 +44,12 @@ const uuid = (): string => crypto.randomUUID();
 function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
     ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
-    "readwrite"
+    "readwrite",
+    // Strict durability: this transaction creates the ONLY copy of a recording,
+    // and under the browser default (relaxed on Chromium) it can report success
+    // before the bytes are flushed — so a crash or a power loss just after Stop
+    // loses the take. Same bar `commitTranscode` holds (#179, ADR 0009).
+    { durability: "strict" }
   );
 }
 
@@ -464,7 +469,9 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(
     ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
-    "readwrite"
+    "readwrite",
+    // Strict durability: this removes the only copy of a take. #179.
+    { durability: "strict" }
   );
   const segment = await tx.objectStore("segments").get(segmentId);
   if (!segment) throw new Error(`No such segment: ${segmentId}`);
