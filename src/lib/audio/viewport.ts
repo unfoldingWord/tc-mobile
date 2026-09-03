@@ -148,8 +148,9 @@ export function panAfterCut(pan: number, range: SampleRange): number {
  * George R1).
  *
  * `headFraction` is where the record head sits across the width. **Which value
- * ships is a deferred UX call (Tim, #120):** the B4 `CENTER_FRACTION` (0.5,
- * history fills the left half) or the right edge (1, a full-width scope). This
+ * ships is a deferred UX call (the requirements owner, #120):** the B4
+ * `CENTER_FRACTION` (0.5, history fills the left half) or the right edge (1, a
+ * full-width scope). This
  * function serves either — at 1 the span is 1 and the scope spans the whole
  * width. A non-positive or non-finite head (0, negative, NaN) has no room to
  * its left and would divide by zero, so it clamps up to `EPSILON` — the same
