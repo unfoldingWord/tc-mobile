@@ -147,4 +147,10 @@ export const strings = {
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
   shareBookFilename: (book: string): string => `${book}.zip`,
+
+  // ── Root error boundary (#167) ───────────────────────────────────────────
+  // The whole text layer of the crash screen. Says that something failed and
+  // nothing more: the cause goes to the failure sink for a maintainer to read,
+  // never to a translator. The action is the control's own `tryAgain` label.
+  appFailed: "Something went wrong.",
 } as const;
