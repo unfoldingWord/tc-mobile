@@ -98,6 +98,14 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
                     {lib.note}
                   </span>
                 )}
+                {lib.source && (
+                  <ExternalLink
+                    href={lib.source.href}
+                    label={strings.aboutVisitSource(lib.name)}
+                  >
+                    {lib.source.label}
+                  </ExternalLink>
+                )}
                 {lib.acknowledges && (
                   <ExternalLink
                     href={lib.acknowledges.href}

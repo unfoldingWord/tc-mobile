@@ -37,17 +37,34 @@ function installedVersion(name: string): string {
   ).version;
 }
 
-const pkg = JSON.parse(
-  readFileSync(path.join(REPO_ROOT, "package.json"), "utf8")
-) as { dependencies: Record<string, string> };
+/**
+ * Every package in the production runtime closure — the `package-lock.json`
+ * entries that are not dev-only — so a *transitive* bundled dependency (e.g.
+ * `scheduler`, pulled by react-dom) cannot slip past a top-level-only check.
+ * Workbox is injected from a build-time (dev) dependency, so it is not in this
+ * closure and is disclosed as a hand-listed exception instead.
+ */
+function runtimeClosure(): Set<string> {
+  const lock = JSON.parse(
+    readFileSync(path.join(REPO_ROOT, "package-lock.json"), "utf8")
+  ) as { packages: Record<string, { dev?: boolean; link?: boolean }> };
+  return new Set(
+    Object.entries(lock.packages)
+      .filter(
+        ([p, meta]) => p.startsWith("node_modules/") && !meta.dev && !meta.link
+      )
+      .map(([p]) => p.replace(/^.*node_modules\//, ""))
+  );
+}
 
 describe("third-party licence disclosure", () => {
-  it("discloses every bundled runtime dependency", () => {
+  it("discloses every package in the production runtime closure", () => {
     const disclosed = new Set(thirdPartyLicenses.map((l) => l.name));
-    for (const dep of Object.keys(pkg.dependencies)) {
-      expect(disclosed.has(dep), `${dep} is bundled but not disclosed`).toBe(
-        true
-      );
+    for (const dep of runtimeClosure()) {
+      expect(
+        disclosed.has(dep),
+        `${dep} is bundled (runtime closure) but not disclosed`
+      ).toBe(true);
     }
   });
 

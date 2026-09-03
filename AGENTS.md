@@ -384,8 +384,7 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker
    per encode, terminated on abort. The ADR 0003 notice and attribution work
-   (#36) now ships in-app under **Menu → About & licenses** (landed in PR #144,
-   pending merge). Not yet run on a phone.
+   (#36) ships in-app under **Menu → About & licenses**. Not yet run on a phone.
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
@@ -395,7 +394,7 @@ Full process, and the traps that make a failed run look like a clean pass, in
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003. The
    notice and attribution work (#36) is done: the licence texts and per-component
    attribution ship reachable in-app (**Menu → About & licenses**) and precached
-   under `public/licenses/` — PR #144, pending merge. Not a product call.
+   under `public/licenses/`. Not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
 5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.

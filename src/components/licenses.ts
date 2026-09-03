@@ -32,6 +32,8 @@ interface ThirdPartyLicense {
   readonly pinPackage?: string;
   /** A note the licence makes worth surfacing — the LGPL relink right. */
   readonly note?: string;
+  /** The component's own source — what an LGPL relinker needs (lamejs). */
+  readonly source?: { readonly label: string; readonly href: string };
   /** An upstream the licence asks be acknowledged (LAME, for lamejs). */
   readonly acknowledges?: { readonly label: string; readonly href: string };
   /**
@@ -61,7 +63,11 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     spdx: "LGPL-3.0",
     role: "MP3 encoder",
     copyright: "© Alex Zhukov — a fork of lamejs, based on LAME",
-    note: "The only copyleft component, isolated in a single Web Worker chunk (encodeMp3) — the one unit its LGPL licence concerns. Its source is available from unfoldingWord.",
+    note: "The only copyleft component, isolated in a single Web Worker chunk (encodeMp3) — the one unit its LGPL licence concerns.",
+    source: {
+      label: "lamejs source",
+      href: "https://github.com/shijinyu/lamejs",
+    },
     acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
     noticeMarker: "LAME",
   },
@@ -76,6 +82,14 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     name: "react-dom",
     version: "19.2.8",
     spdx: "MIT",
+    copyright: "© Meta Platforms, Inc. and affiliates",
+    noticeMarker: "Meta Platforms",
+  },
+  {
+    name: "scheduler",
+    version: "0.27.0",
+    spdx: "MIT",
+    role: "react-dom's cooperative scheduler (bundled transitively)",
     copyright: "© Meta Platforms, Inc. and affiliates",
     noticeMarker: "Meta Platforms",
   },
