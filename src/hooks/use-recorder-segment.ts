@@ -40,38 +40,27 @@ export interface RecorderSegmentView {
 }
 
 /**
- * Load one segment for the recorder sheet: its breadcrumb, its finished flag,
- * and — if it has playable audio — the peaks and sample length the pan/zoom
- * view is drawn over.
+ * Load one segment into a recorder view, or throw: its breadcrumb, its finished
+ * flag, and — if it has playable audio — the peaks and sample length the
+ * pan/zoom view is drawn over.
+ *
+ * The React-free core of {@link useRecorderSegment}, extracted so the walk, the
+ * decode alignment and the empty/PCM branches are covered in Node against
+ * fake-indexeddb — the same split `performErase` uses (this repo has no
+ * jsdom/renderer). The MP3 decode itself is the one browser-only step and is
+ * exercised on-device; the PCM and empty paths — the ones a translator hits
+ * every session — are node-tested.
  *
  * `hasClip` follows `loadSegmentClip` resolving, not `activeTakeId`, so a
  * dangling take opens as an empty segment (record-only), never a waveform over
  * audio the database cannot produce — the same F3 rule the row uses.
  *
- * A finished segment's clip is MP3 (B8/D3) and is decoded here, once, at mount:
- * editing after Finished is allowed (Q5's default — a translator who cannot fix
- * a mistake after marking a segment done will stop marking segments done), at
- * the cost of one lossy generation, which the save carries on the clip. A decode
- * that fails lands in `error` with `view` null, and the sheet's controls stay
- * disabled on a null view — so an MP3 this device cannot decode is never
- * recorded over. `retry` re-runs the load (resuming the AudioContext first, on
- * the user gesture) so the common transient failure — an "interrupted" iOS
- * context, #106 — recovers in place rather than the sheet staying blank (#137).
- *
- * `setFinished` writes one segment's finished flag through to the store
- * (`setSegmentFinished` enforces the never-finish-empty invariant) and patches
- * the local flag. The recorder no longer calls it on every checkbox tap: the
- * toggle is deferred to `close()` and, when a take commits, rides that take
- * through `addTake` instead — so this write is the caller's, on close, for the
- * no-new-take path. The Segments screen reloads on close and reflects it then.
- */
-/**
- * Load one segment into a recorder view, or throw. The React-free core of
- * {@link useRecorderSegment}, extracted so the walk, the decode alignment and
- * the empty/PCM branches are covered in Node against fake-indexeddb — the same
- * split `performErase` uses (this repo has no jsdom/renderer). The MP3 decode
- * itself is the one browser-only step and is exercised on-device, but the PCM
- * and empty paths — the ones a translator hits every session — are node-tested.
+ * A finished segment's clip is MP3 (B8/D3) and is decoded here: editing after
+ * Finished is allowed (Q5's default — a translator who cannot fix a mistake
+ * after marking a segment done will stop marking segments done), at the cost of
+ * one lossy generation, which the save carries on the clip. A decode that
+ * throws is the failure the hook turns into a recovery panel, so an MP3 this
+ * device cannot decode is never recorded over.
  */
 export async function loadRecorderSegmentView(
   segmentId: SegmentId
@@ -110,12 +99,35 @@ export async function loadRecorderSegmentView(
   };
 }
 
+/**
+ * The React glue over {@link loadRecorderSegmentView}: the loaded `view`, an
+ * `error` when the open failed, and the recovery a failure needs.
+ *
+ * A decode that throws lands in `error` with `view` null; the sheet's controls
+ * are disabled on a null view, so the recorder shows a recovery panel instead
+ * of a blank. `retry` re-runs the load — resuming the AudioContext first, on
+ * the user gesture — so the common transient failure (an "interrupted" iOS
+ * context, #106) recovers in place rather than the sheet staying blank (#137);
+ * `retrying` marks that attempt in flight so the panel can show it.
+ *
+ * `setFinished` writes one segment's finished flag through to the store
+ * (`setSegmentFinished` enforces the never-finish-empty invariant) and patches
+ * the local flag. The recorder no longer calls it on every checkbox tap: the
+ * toggle is deferred to `close()` and, when a take commits, rides that take
+ * through `addTake` instead — so this write is the caller's, on close, for the
+ * no-new-take path. The Segments screen reloads on close and reflects it then.
+ */
 export function useRecorderSegment(segmentId: SegmentId) {
   const [view, setView] = useState<RecorderSegmentView | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumped by `retry`. The sheet is keyed on `segmentId` (App remounts it per
   // open), so a new segment resets this to 0 through the remount, not here.
   const [attempt, setAttempt] = useState(0);
+  // A retry is in flight. Held so the error panel stays mounted and shows a
+  // busy state in place, rather than `retry` clearing `error` — which would
+  // unmount the panel, flash the disabled `!view` sheet, and show nothing that
+  // the tap was received until the (possibly slow) decode resolved.
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,8 +139,20 @@ export function useRecorderSegment(segmentId: SegmentId) {
         // (#137) is exactly that transient interruption (a call, Siri, a route
         // change), not a corrupt clip, so un-interrupt the context before the
         // decode and the sheet recovers instead of staying blank for the life
-        // of the page. Harmless on the PCM/empty paths, which never decode.
-        if (attempt > 0) await resumeAudioContext();
+        // of the page. Best-effort: a rejected resume (WebKit can reject an
+        // interrupted → resume race) or an absent Web Audio must not fail the
+        // load — the PCM and empty paths need no context, and even a decode may
+        // still succeed — so it is logged and the re-read runs regardless.
+        if (attempt > 0) {
+          try {
+            await resumeAudioContext();
+          } catch (cause) {
+            console.error(
+              "Could not resume the AudioContext before retry",
+              cause
+            );
+          }
+        }
         const next = await loadRecorderSegmentView(segmentId);
         if (cancelled) return;
         setView(next);
@@ -141,6 +165,8 @@ export function useRecorderSegment(segmentId: SegmentId) {
         console.error("Could not open the segment for recording", cause);
         setView(null);
         setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        if (!cancelled) setRetrying(false);
       }
     })();
     return () => {
@@ -148,10 +174,11 @@ export function useRecorderSegment(segmentId: SegmentId) {
     };
   }, [segmentId, attempt]);
 
-  // Re-run the load. The recording is untouched by a failed open, so this only
-  // ever re-reads and re-decodes — never risks the stored audio.
+  // Re-run the load. `error` is left standing (the effect's success path clears
+  // it) so the panel stays put and shows `retrying` in place; the recording is
+  // untouched by a failed open, so this only ever re-reads and re-decodes.
   const retry = useCallback(() => {
-    setError(null);
+    setRetrying(true);
     setAttempt((n) => n + 1);
   }, []);
 
@@ -168,5 +195,5 @@ export function useRecorderSegment(segmentId: SegmentId) {
     [segmentId]
   );
 
-  return { view, error, retry, setFinished };
+  return { view, error, retrying, retry, setFinished };
 }

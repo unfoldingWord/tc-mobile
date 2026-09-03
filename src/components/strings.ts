@@ -78,6 +78,10 @@ export const strings = {
     "Your recording is safe. Try again, or go back to erase it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
+  // Shown in place of the two controls while a "Try again" is in flight, so the
+  // tap has visible feedback (a slow decode is not instant) and the panel does
+  // not flicker to the disabled sheet and back.
+  loadRetrying: "Opening your recording…",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but

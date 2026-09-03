@@ -116,6 +116,7 @@ export function Recorder({
   const {
     view,
     error: loadError,
+    retrying: loadRetrying,
     retry: retryLoad,
     setFinished,
   } = useRecorderSegment(segmentId);
@@ -982,7 +983,11 @@ export function Recorder({
           // (resume + re-decode), an exit (Back, to the row's Erase), and copy
           // that the audio is untouched. The raw `loadError` is kept for the log,
           // not shown — it is a decoder message, not translator-facing.
-          <LoadErrorPanel onRetry={retryLoad} onBack={close} />
+          <LoadErrorPanel
+            retrying={loadRetrying}
+            onRetry={retryLoad}
+            onBack={close}
+          />
         ) : (
           <>
             {stopError && (
@@ -1433,12 +1438,17 @@ function PermissionPanel({
  * (#137). Try again resumes the context and re-decodes on this user gesture;
  * Back returns to the Segments list, where the row's Erase does not decode and
  * still works. The recording is never touched by a failed open, so the copy
- * says so.
+ * says so. While a retry is in flight (`retrying`) the panel stays mounted and
+ * swaps its two controls for a busy Notice — the tap has visible feedback (a
+ * long-segment decode is not instant) and the sheet never flickers to the
+ * disabled `!view` body and back.
  */
 function LoadErrorPanel({
+  retrying,
   onRetry,
   onBack,
 }: {
+  retrying: boolean;
   onRetry: () => void;
   onBack: () => void;
 }) {
@@ -1451,20 +1461,26 @@ function LoadErrorPanel({
         {strings.loadFailedTitle}
       </p>
       <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
-      <Control
-        icon="retry"
-        label={strings.loadRetry}
-        variant="primary"
-        size={30}
-        autoFocus
-        onClick={onRetry}
-      />
-      <Control
-        icon="back"
-        label={strings.loadBack}
-        variant="quiet"
-        onClick={onBack}
-      />
+      {retrying ? (
+        <Notice tone="busy">{strings.loadRetrying}</Notice>
+      ) : (
+        <>
+          <Control
+            icon="retry"
+            label={strings.loadRetry}
+            variant="primary"
+            size={30}
+            autoFocus
+            onClick={onRetry}
+          />
+          <Control
+            icon="back"
+            label={strings.loadBack}
+            variant="quiet"
+            onClick={onBack}
+          />
+        </>
+      )}
     </div>
   );
 }
