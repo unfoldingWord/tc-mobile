@@ -162,6 +162,11 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
         ? resolvedPcm(cid("c1"), s1)
         : resolvedPcm(cid("c2"), s2);
     });
+    const commitLaneStates: boolean[] = [];
+    vi.mocked(commitTranscode).mockImplementation(async () => {
+      commitLaneStates.push(laneHeld);
+      return "committed";
+    });
 
     await requestTranscodeSweep();
 
@@ -172,8 +177,12 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
       undefined,
       expect.any(Function)
     );
-    // Every load ran INSIDE the lane (round-1 G1: PCM read only once held).
+    // Every load AND every commit ran INSIDE the lane (round-1 G1 + the
+    // maintainer's R1: the lane is held from the load through the commit, so a
+    // share can never coexist with this segment's PCM, nor land its write
+    // between a segment's commit and the lane release).
     expect(loadLaneStates).toEqual([true, true]);
+    expect(commitLaneStates).toEqual([true, true]);
     // The right buffer was encoded for each segment (identity, before detach).
     expect(encodeMp3.mock.calls[0]?.[0]).toBe(s1);
     expect(encodeMp3.mock.calls[1]?.[0]).toBe(s2);
@@ -230,22 +239,32 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
     }
   });
 
-  it("skips a segment whose audio no longer resolves", async () => {
-    vi.mocked(listPcmFinishedSegments).mockResolvedValue([
-      { segmentId: sid("s1"), clipId: cid("c1") },
-    ]);
-    vi.mocked(loadSegmentClip).mockResolvedValue({
-      kind: "no-active-take",
-      segment: segment(),
-    });
+  it("skips a segment whose audio no longer resolves — a clean skip, not a caught error", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.mocked(listPcmFinishedSegments).mockResolvedValue([
+        { segmentId: sid("s1"), clipId: cid("c1") },
+      ]);
+      vi.mocked(loadSegmentClip).mockResolvedValue({
+        kind: "no-active-take",
+        segment: segment(),
+      });
 
-    await requestTranscodeSweep();
+      await requestTranscodeSweep();
 
-    expect(encodeMp3).not.toHaveBeenCalled();
-    expect(commitTranscode).not.toHaveBeenCalled();
+      expect(encodeMp3).not.toHaveBeenCalled();
+      expect(commitTranscode).not.toHaveBeenCalled();
+      // The `kind !== "resolved"` guard must SKIP it — an erased/unrecorded
+      // segment is not an error. Without that guard, `audio.clip` is undefined
+      // and the read throws into the per-segment catch, turning a normal skip
+      // into a logged failure (round-1 George G3 / M9).
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
-  it("keeps sweeping the rest when one segment fails", async () => {
+  it("keeps sweeping the rest when one segment's LOAD fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       vi.mocked(listPcmFinishedSegments).mockResolvedValue([
@@ -259,6 +278,46 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
 
       await requestTranscodeSweep();
 
+      expect(commitTranscode).toHaveBeenCalledTimes(1);
+      expect(commitTranscode).toHaveBeenCalledWith(
+        sid("s2"),
+        cid("c2"),
+        expect.any(Uint8Array),
+        expect.anything()
+      );
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("isolates a failure at the ENCODE (not only the load) and never rejects", async () => {
+    // The load succeeds for both; s1's ENCODE throws — a failure inside the lane
+    // turn, past the load. The per-segment catch must cover the whole turn
+    // (load + encode + commit), not just the load: otherwise the throw rejects
+    // `runSweeps`, and every call site is `void requestTranscodeSweep()`, so it
+    // becomes an unhandled rejection and the rest of the list goes unswept
+    // (round-1 George G2 / M8). Encode is the failure mode the worker isolates.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.mocked(listPcmFinishedSegments).mockResolvedValue([
+        { segmentId: sid("s1"), clipId: cid("c1") },
+        { segmentId: sid("s2"), clipId: cid("c2") },
+      ]);
+      vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) =>
+        segmentId === sid("s1")
+          ? resolvedPcm(cid("c1"), Int16Array.of(1))
+          : resolvedPcm(cid("c2"), Int16Array.of(2))
+      );
+      encodeMp3.mockImplementation(async (s: Int16Array) => {
+        if (s[0] === 1) throw new Error("encode failed"); // s1 only
+        return new Uint8Array([s[0] ?? 0]);
+      });
+
+      // It must NOT reject — the promise every caller drops on the floor.
+      await expect(requestTranscodeSweep()).resolves.toBeUndefined();
+
+      // s1's encode threw inside its lane turn and was isolated; s2 still landed.
       expect(commitTranscode).toHaveBeenCalledTimes(1);
       expect(commitTranscode).toHaveBeenCalledWith(
         sid("s2"),
