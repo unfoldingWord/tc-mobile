@@ -87,15 +87,6 @@ export async function performSaveTake(
     // Cleared only here, and only for this attempt. A `finally` would drop
     // the samples on the failure path, which is the one path they exist for.
     effects.update((held) => succeedSave(held, take.clipId));
-    // In the same tick as clearing the slot, so there is no frame where the
-    // slot is empty and the reload has not been asked for — the reload is
-    // how the just-recorded row stops reading as never-recorded.
-    effects.onSaved?.();
-    // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
-    // Asked for AFTER the commit and the reload, never on the failure path —
-    // the sweep only ever reads what is durably on disk.
-    if (take.finished) effects.requestSweep();
-    return true;
   } catch (cause) {
     console.error("Saving a take failed", cause);
     effects.update((held) =>
@@ -103,6 +94,58 @@ export async function performSaveTake(
     );
     return false;
   }
+  // The write has committed. Only the STORE op above is fallible-and-reportable
+  // as a save failure — once it lands, the result is success no matter what the
+  // reload does, so `onSaved` (and the sweep it unblocks) runs OUTSIDE that
+  // guard. A throwing `onSaved` (a reload that failed, say) must NOT read back
+  // as "the save failed" and offer Retry over a take already safely on disk
+  // (mirrors `performErase` in `use-erase-segment.ts`, Frank R-B6).
+  try {
+    // In the same tick as clearing the slot, so there is no frame where the
+    // slot is empty and the reload has not been asked for — the reload is
+    // how the just-recorded row stops reading as never-recorded.
+    effects.onSaved?.();
+  } catch (cause) {
+    console.error("Post-save notification failed", cause);
+  }
+  // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
+  // Asked for AFTER the commit and the reload, never on the failure path —
+  // the sweep only ever reads what is durably on disk. Also outside the guard
+  // and after `onSaved`'s own catch, so a throwing reload cannot skip it.
+  if (take.finished) effects.requestSweep();
+  return true;
+}
+
+/**
+ * Clear a segment back to never-recorded — the edit-to-empty path (B5).
+ *
+ * The clear half of the orchestration, extracted for the same reason as
+ * `performSaveTake`: so it runs in Node (`tests/use-save-take.test.ts`)
+ * against `fake-indexeddb` rather than being untested wiring inside a
+ * `useCallback`. Same shape as `performSaveTake` and `performErase`: the
+ * store op is the only fallible, reportable step, so `onSaved` runs after it
+ * commits, in its own try/catch, never folded back into the result.
+ */
+export async function performClearSegment(
+  segmentId: SegmentId,
+  effects: Pick<SaveEffects, "onSaved">
+): Promise<boolean> {
+  try {
+    await clearSegmentTake(segmentId);
+  } catch (cause) {
+    console.error("Clearing an edited-to-empty segment failed", cause);
+    return false;
+  }
+  // The clear has committed. Only the store op above is fallible-and-reportable
+  // as a clear failure — `onSaved` runs outside that guard, in its own
+  // try/catch, so a throwing reload cannot flip an already-landed clear back
+  // to "failed" (#210's shape).
+  try {
+    effects.onSaved?.();
+  } catch (cause) {
+    console.error("Post-clear notification failed", cause);
+  }
+  return true;
 }
 
 /**
@@ -278,15 +321,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       finished: boolean
     ): Promise<boolean> => {
       if (buffer.length === 0) {
-        return clearSegmentTake(segmentId)
-          .then(() => {
-            onSavedRef.current?.();
-            return true;
-          })
-          .catch((cause: unknown) => {
-            console.error("Clearing an edited-to-empty segment failed", cause);
-            return false;
-          });
+        return performClearSegment(segmentId, {
+          onSaved: () => onSavedRef.current?.(),
+        });
       }
       return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
     },

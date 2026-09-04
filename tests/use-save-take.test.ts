@@ -2,7 +2,11 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { performDiscardTake, performSaveTake } from "@/hooks/use-save-take";
+import {
+  performClearSegment,
+  performDiscardTake,
+  performSaveTake,
+} from "@/hooks/use-save-take";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
@@ -213,6 +217,48 @@ describe("performSaveTake — a commit that lands", () => {
     expect((await getSegment(segmentId))?.status).toBe("affirmed");
   });
 
+  it("still reports success and asks for the sweep when onSaved throws", async () => {
+    // #210: `onSaved` is the screen's reload of the segment list, called after
+    // the write has already committed. A throw there must not read back as a
+    // failed SAVE — the mirror of `performErase`'s `onErased` guard, which the
+    // Frank R-B6 comment there names directly. A finished take's Finished mark
+    // is already durable at this point too, so the sweep is still owed.
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake({ segmentId, clipId, finished: true });
+    const s = slot(take);
+    const onSaved = vi.fn(() => {
+      throw new Error("reload blew up");
+    });
+    const requestSweep = vi.fn();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const ok = await performSaveTake(take, {
+      update: s.update,
+      onSaved,
+      requestSweep,
+    });
+
+    expect(ok).toBe(true);
+    // The write landed: the slot is empty, not sitting in `failed` state over a
+    // clip that is already safely on disk.
+    expect(s.held()).toBeNull();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    // Still owed an MP3 — the commit and the Finished mark are already durable.
+    expect(requestSweep).toHaveBeenCalledTimes(1);
+    // The throw is reported, not swallowed — pinned so a future refactor that
+    // drops this catch (or folds it back into the write's) fails here rather
+    // than passing silently.
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Post-save notification failed",
+      expect.any(Error)
+    );
+    consoleError.mockRestore();
+  });
+
   it("empties the slot only for the attempt that actually succeeded", async () => {
     // A write resolving after its take was replaced must not clear the slot the
     // NEWER take is sitting in — that would drop a recording nobody saved.
@@ -308,6 +354,67 @@ describe("performSaveTake — a commit that fails", () => {
 
     expect(ok).toBe(false);
     expect(s.held()).toBe(newer);
+    consoleError.mockRestore();
+  });
+});
+
+describe("performClearSegment", () => {
+  it("clears the segment and reports success", async () => {
+    const segmentId = await freshSegment();
+    const onSaved = vi.fn();
+
+    const ok = await performClearSegment(segmentId, { onSaved });
+
+    expect(ok).toBe(true);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
+  });
+
+  it("still reports success when onSaved throws (a landed clear)", async () => {
+    // #230 review: the sibling of #210's shape on the clear path.
+    // `clearSegmentTake` had already committed by the time `onSaved` throws —
+    // that must not read back as "the clear failed" and re-offer a retry
+    // against a segment that is already cleared (mirrors `performSaveTake`
+    // and `performErase`'s `onErased`/Frank R-B6 guard).
+    const segmentId = await freshSegment();
+    const onSaved = vi.fn(() => {
+      throw new Error("reload blew up");
+    });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const ok = await performClearSegment(segmentId, { onSaved });
+
+    expect(ok).toBe(true);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    // The clear landed either way — confirms this isn't just returning `true`
+    // without having actually cleared anything.
+    expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Post-clear notification failed",
+      expect.any(Error)
+    );
+    consoleError.mockRestore();
+  });
+
+  it("reports failure, without touching onSaved, when the store op itself fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const onSaved = vi.fn();
+
+    const ok = await performClearSegment(newClipId() as unknown as SegmentId, {
+      onSaved,
+    });
+
+    expect(ok).toBe(false);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith(
+      "Clearing an edited-to-empty segment failed",
+      expect.any(Error)
+    );
     consoleError.mockRestore();
   });
 });
