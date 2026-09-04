@@ -8,6 +8,7 @@ import {
   addSegment,
   addTake,
   createBook,
+  saveTake,
   setSegmentFinished,
 } from "@/lib/storage/books";
 import { newClipId, putClip } from "@/lib/storage/clips";
@@ -105,6 +106,46 @@ describe("loadRecorderSegmentView", () => {
 
     expect(view.finished).toBe(true);
     expect(view.hasClip).toBe(true);
+  });
+
+  it("reports the loaded clip's lossy-pass count (A-14)", async () => {
+    // The view carries the count so the SAVE can stamp its new clip from what
+    // was actually loaded (#163): a Finished sweep landing while the sheet is
+    // open replaces this clip with an MP3 one generation higher, and a save that
+    // re-read the segment then would call this buffer lossier than it is.
+    //
+    // The state under test is a PCM clip that HAS been through a lossy pass:
+    // recorded, finished, transcoded, then re-saved as PCM by an edit — which is
+    // how a generation-1 PCM clip legitimately exists.
+    const segmentId = await freshSegment();
+    const original = newClipId();
+    const pcm = samples(500);
+    await saveTake(segmentId, original, pcm, CANONICAL_SAMPLE_RATE);
+    await setSegmentFinished(segmentId, true);
+    expect(
+      await commitTranscode(
+        segmentId,
+        original,
+        encodeMp3(pcm),
+        computePeaks(pcm, 4)
+      )
+    ).toBe("committed");
+    const edited = newClipId();
+    await saveTake(segmentId, edited, samples(600), CANONICAL_SAMPLE_RATE);
+
+    const view = await loadRecorderSegmentView(segmentId);
+
+    expect(view.hasClip).toBe(true);
+    expect(view.generation).toBe(1);
+  });
+
+  it("reports generation 0 for a segment with no audio to load", async () => {
+    // Nothing loaded is nothing decoded: a first recording into an empty
+    // segment is generation 0, which is what the save then stamps.
+    const view = await loadRecorderSegmentView(await freshSegment());
+
+    expect(view.hasClip).toBe(false);
+    expect(view.generation).toBe(0);
   });
 
   it("throws on a missing segment — the failure the hook maps to the recovery panel", async () => {

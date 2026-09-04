@@ -322,4 +322,40 @@ describe("the lossy-generation count (Q5)", () => {
     const { clipId } = await recordedSegment();
     expect((await getClipMeta(clipId))?.generation).toBe(0);
   });
+
+  it("stamps a save with the generation the recorder LOADED, not the sweep's", async () => {
+    // A-14 (#163). The recorder opens a segment and loads its PCM (generation
+    // 0), holding the samples for the whole session. The Finished sweep then
+    // commits that same clip's MP3 underneath it — same clip id, generation 1.
+    // The buffer the save is about to write was decoded from the PCM and has
+    // been through NO lossy pass, so reading the prior clip AT SAVE TIME
+    // reports 1 and stamps lossless audio as lossy. The generation the recorder
+    // loaded is carried through the save instead.
+    const { segmentId, clipId, pcm } = await recordedSegment();
+    const loaded = (await getClipMeta(clipId))?.generation;
+    expect(loaded).toBe(0);
+
+    await setSegmentFinished(segmentId, true);
+    const enc = encoded(pcm);
+    expect(await commitTranscode(segmentId, clipId, enc.mp3, enc.peaks)).toBe(
+      "committed"
+    );
+    expect((await getClipMeta(clipId))?.generation).toBe(1);
+
+    // The save the open recorder now commits, carrying what it loaded.
+    const saved = newClipId();
+    await saveTake(
+      segmentId,
+      saved,
+      samples(2500, 900),
+      CANONICAL_SAMPLE_RATE,
+      {
+        generation: loaded,
+      }
+    );
+
+    const meta = await getClipMeta(saved);
+    expect(meta?.encoding).toBe("pcm");
+    expect(meta?.generation).toBe(0);
+  });
 });

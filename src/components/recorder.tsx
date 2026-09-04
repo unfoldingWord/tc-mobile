@@ -67,7 +67,14 @@ interface RecorderProps {
     existing: Int16Array,
     recorded: Int16Array,
     insertionOffset: number,
-    finished: boolean
+    finished: boolean,
+    /**
+     * Lossy passes the audio being saved already carries — the loaded clip's
+     * `generation`. Passed from here because only the sheet knows what it
+     * loaded: by the time the save writes, the Finished sweep may have replaced
+     * that clip with an MP3 one generation higher (#163).
+     */
+    generation: number
   ) => Promise<boolean>;
   /**
    * Persist an already-flattened, edited segment buffer (B5 edit-only close —
@@ -77,7 +84,9 @@ interface RecorderProps {
   saveEditedSegment: (
     segmentId: SegmentId,
     buffer: Int16Array,
-    finished: boolean
+    finished: boolean,
+    /** Lossy passes the edited buffer carries (see `saveRecording`). */
+    generation: number
   ) => Promise<boolean>;
   /**
    * The cut/paste clipboard, held by App so it outlives this sheet (G3: reaches
@@ -761,6 +770,14 @@ export function Recorder({
       // splice base is the edited buffer, Model A) and already carries the
       // finished mark (applied atomically in `addTake`, so a separate write
       // cannot be clobbered by the same close's demote-to-draft).
+      //
+      // What the audio on its way to disk has already been through: the
+      // generation of the clip this sheet LOADED (#163). Every save below stamps
+      // its new clip with it rather than letting the store re-read the segment,
+      // which by now can be a transcoded, one-generation-lossier state. Zero
+      // when no view loaded — nothing was loaded, so nothing was decoded, and
+      // the disabled controls of a failed open leave nothing to save anyway.
+      const loadedGeneration = view?.generation ?? 0;
       const plan = planClose({
         capture,
         hasEdits: editor.hasEdits,
@@ -792,7 +809,8 @@ export function Recorder({
             editor.working,
             plan.samples,
             insertionOffset.current,
-            plan.finished
+            plan.finished,
+            loadedGeneration
           );
           dirty.current = true;
           break;
@@ -805,7 +823,8 @@ export function Recorder({
           const cleared = await saveEditedSegment(
             segmentId,
             editor.working,
-            false
+            false,
+            loadedGeneration
           );
           if (!cleared) {
             stayOpen(strings.clearFailed);
@@ -820,7 +839,12 @@ export function Recorder({
           // failure), so its boolean is deliberately not branched on here — just
           // like the record path. Like a re-record it demotes an approved segment
           // to draft unless explicitly re-marked, and the mark rides the write.
-          await saveEditedSegment(segmentId, editor.working, plan.finished);
+          await saveEditedSegment(
+            segmentId,
+            editor.working,
+            plan.finished,
+            loadedGeneration
+          );
           dirty.current = true;
           break;
         case "mark":

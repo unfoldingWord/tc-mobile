@@ -79,6 +79,19 @@ export interface PendingTake {
    * survives, so "delete this recording for good" is only true of a recording.
    */
   readonly editOnly: boolean;
+  /**
+   * Lossy encode passes the audio in this take has already survived — the
+   * `generation` of the clip the recorder LOADED and decoded from, 0 for a fresh
+   * recording into an empty segment (see `ClipMeta.generation`).
+   *
+   * Carried here rather than re-read at write time because between the load and
+   * the write the Finished sweep can replace that clip with its MP3, one
+   * generation higher: the buffer being saved was decoded from the PCM and has
+   * been through no lossy pass, and a read at write time would call it lossy
+   * (A-14, #163). Like `finished`, it also has to survive a failed attempt, so a
+   * retry stamps the same count the first attempt would have.
+   */
+  readonly generation: number;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
@@ -96,6 +109,8 @@ export interface NewTake {
   readonly finished: boolean;
   /** Whether this is an edit-only save rather than a recording (see `PendingTake`). */
   readonly editOnly: boolean;
+  /** Lossy passes the audio already carries (see `PendingTake`). */
+  readonly generation: number;
 }
 
 /**
@@ -119,6 +134,7 @@ export function startSave(
     offset: take.offset,
     finished: take.finished,
     editOnly: take.editOnly,
+    generation: take.generation,
     state: "saving",
     kind: null,
     attempts: 0,

@@ -79,6 +79,7 @@ const heldTake = (over: {
   offset?: number;
   finished?: boolean;
   editOnly?: boolean;
+  generation?: number;
 }): PendingTake =>
   startSave(null, {
     segmentId: over.segmentId,
@@ -88,6 +89,7 @@ const heldTake = (over: {
     offset: over.offset ?? 0,
     finished: over.finished ?? false,
     editOnly: over.editOnly ?? false,
+    generation: over.generation ?? 0,
   });
 
 beforeEach(async () => {
@@ -211,6 +213,31 @@ describe("performSaveTake — a commit that lands", () => {
     expect(finishedSweep).toHaveBeenCalledTimes(1);
     // And the mark rode the take rather than being a second write.
     expect((await getSegment(segmentId))?.status).toBe("affirmed");
+  });
+
+  it("stamps the clip with the generation the take carries", async () => {
+    // A-14 (#163). The lossy-pass count belongs to the audio in hand — the
+    // generation of the clip the recorder loaded and decoded from — so it rides
+    // the held take through to `saveTake` rather than being re-read from the
+    // segment at write time. Between the load and this write the Finished sweep
+    // can have replaced that clip with its MP3 (generation + 1), and a re-read
+    // would stamp this freshly-decoded-from-PCM buffer as lossy.
+    const segmentId = await freshSegment();
+    const first = newClipId();
+    await performSaveTake(
+      heldTake({ segmentId, clipId: first, generation: 2 }),
+      { update: slot().update, requestSweep: vi.fn() }
+    );
+    expect((await getClipMeta(first))?.generation).toBe(2);
+
+    // A second save over it, carrying 0: the clip on disk says 2, the audio in
+    // hand has been through no lossy pass, and what the take carries wins.
+    const second = newClipId();
+    await performSaveTake(
+      heldTake({ segmentId, clipId: second, generation: 0 }),
+      { update: slot().update, requestSweep: vi.fn() }
+    );
+    expect((await getClipMeta(second))?.generation).toBe(0);
   });
 
   it("empties the slot only for the attempt that actually succeeded", async () => {
