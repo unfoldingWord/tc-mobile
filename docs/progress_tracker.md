@@ -11,6 +11,102 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-04 — merge-train day: six code PRs + a dependabot batch to develop; two descopes; the backlog split to Jesse & Ben
+
+**Branches:** ten merges to **`develop`** (`f5519bf` → `0ba3687`). **Nothing promoted** —
+`staging` is still v0.1.12 (`afdfa6e`) and `main` is untouched (`3464a30`). This was a
+build-and-integrate day, not a promotion day.
+
+### What merged (6 code PRs + a dependabot batch)
+
+| PR | SHA | What | Closes |
+| -- | --- | ---- | ------ |
+| #186 | `f5519bf` | strict durability on the take-save + clear transactions | #179 |
+| #194 | `28795d6` | finish the public-readiness name scrub (README + src comments) | — |
+| #188 | `c0954fd` | root error boundary + single failure sink | #167 |
+| #206 | `5287616` | exclude OBS thumbnails from the precache (611→13 entries) | #177 |
+| #208 | `64789d9` | harden review scripts + CI (**descoped**) | part of #162 |
+| #209 | `72a3b6f` | IDB open handlers: blocked/terminated/downgrade/no-cache (**descoped**) | part of #170 |
+| #225 | `c744065` | dependabot npm minor/patch group (7) | — |
+| #222/#223/#224 | `488c1c9`/`1b03f2f`/`0ba3687` | actions/checkout, upload-artifact, setup-node → v7 | — |
+
+develop CI is green at `0ba3687`, verified after the action-runtime (v7) bumps actually
+executed on the post-merge push (the PR checks ran on the old base workflow, so the v7
+runtime only truly ran after merge).
+
+### Method: a maintainer merge train + parallel build lanes, both dual-reviewed
+
+Frank (codex) + George (grok) ran on every code PR. #186 (clean, mutation-proven) and #188
+(three rounds: dedup windowing → context-aware key → crash-copy/a11y) merged straight; #194
+was finished by hand after its fix agent looped. Four gate issues were then built in parallel
+(#162 → #208, #166 → #207, #177 → #206, #170 → #209) as claimed-to-Seth lanes.
+
+**grok was slow/stalling all afternoon** (~20 min per PR, three no-verdict stalls on #208). The
+handling that worked: one bounded wait, then deliver Frank + the agent's own verification with
+"George pending"; never re-arm waiters. Captured in memory.
+
+### Two descopes, and one honest correction
+
+- **#208 → #220.** Its harness-internal hardening (triage.sh pipefail, dud quarantine on every
+  failure path, line-anchored verdict) kept surfacing new *siblings* of one bash-fragility class
+  each round. Descoped to the Frank-clean half (heredoc fix + CI/dependabot/pins/gitleaks) and
+  moved the internals to **#220**. George exempted with a recorded decision (tooling failure, and
+  the kept diff was George-clean in round 1).
+- **#209 → #221.** The `blocking()`/versionchange sticky-fail was a rabbit hole (a durability
+  regression: the yield closes the only write path, and a standalone PWA has no `location.reload`).
+  Descoped to the verified handlers; multi-tab upgrade moved to **#221**.
+- **#209 correction (mine to own):** I merged #209 stating George had cleared the kept handlers.
+  That was an *extrapolation* — grok had not verdicted the descoped head. George's actual round-3
+  then flagged two **non-data-loss** P2s in the KEPT blocked-path (recovered connection discarded
+  instead of cached; `closeDb` can't close a pending blocked open). No revert; folded into #221,
+  corrected on the PR, and logged as feedback. Lesson: on a T1 PR, wait for the real verdict.
+- **#188 round cap:** at round 3/4 George APPROVE, Frank REQUEST_CHANGES on two non-live P2s
+  (a converged dedup design call + a latent #205-scoped subscriber-precedence). Accepted the design
+  decision, deferred the latent one to #205, merged per the AGENTS.md cap-escalation rule.
+
+### Issue hygiene
+
+**Closed:** #162 (shipped in #208, remainder → #220), #167 (#188), #177 (#206), #179 (#186),
+#158 (enforce by convention — branch protection unavailable on this plan).
+**Decided:** #12 → `navigator.storage.persist()` only (22,050 Hz deferred); #134 → fix for the gate.
+**Filed:** #205 (durable failure-sink destination), #219 (precache drift-guard robustness),
+#220 (review-harness internals), #221 (multi-tab version-upgrade), #233 (dev-tooling majors, post-gate).
+
+**Backlog split to the contributors** (Seth is orchestrator now): ~34 Seth-held issues divided
+Jesse/Ben by domain, gated/decision items kept on Seth. #166/#207 → Jesse; #221/#219/#12/#170-area
+→ Ben. Ben is already drafting the follow-ups (#236 targets #221, #237 targets #233).
+
+### Dependabot policy (decided)
+
+Auto-merge green minor/patch groups + green action bumps; defer failing npm majors. This batch:
+#225 + #222/#223/#224 merged; #226/#227/#228/#229 (plugin-react 6, @eslint/js 10, vitest 4, eslint 10)
+held under **#233** — three fail CI, and #229 is green but is the eslint half-pair with #227.
+
+### Tooling
+
+Zulip MCP (`zulipchat-mcp`, hosted at door43, header auth) added at **user scope** — single-user
+container, so that covers all sessions here. It needs a **CLI restart** to load (a mid-session
+`claude mcp add` writes config but the running session will not see it). Also cleaned up 9 stale
+agent worktrees (careful, non-force).
+
+### Blockers / needs a human
+
+- **Nothing promoted since v0.1.12.** The v0.2.0 **staging → main production gate** (due 2026-09-30)
+  is still pending, and **Android has still never run this app** — three design-audit P1s can only
+  close there.
+- **#207 (Jesse):** the heartbeat encoder code is pushed at `35a0532` but unverified/unreviewed (its
+  agent hit the session rate limit mid-fix). Needs verify + dual-review + merge — no new design.
+- The orchestration poll loop was running against develop; re-arm after the restart if wanted.
+
+### Next steps
+
+1. Restart the CLI so the Zulip MCP loads; read the translationCore mobile channel.
+2. Jesse: verify + review + merge #207 (heartbeat). Ben: #236 (#221), #237 (#233).
+3. When the queue has something promotable, cut a `chore(release)` patch and promote develop → staging.
+4. The v0.2.0 gate work: the Android on-device pass remains the long pole.
+
+---
+
 ## 2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the microphone report resolved outside the app
 
 **Branches:** `release/v0.1.12` → **`develop`** (#201, squash `7152289`); develop →
