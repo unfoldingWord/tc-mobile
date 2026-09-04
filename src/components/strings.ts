@@ -9,23 +9,6 @@
  * provider: parameterised labels are small pure functions, nothing more.
  */
 export const strings = {
-  // ── Failure vocabulary (#172) ────────────────────────────────────────────
-  // The only words a screen says about a caught load or write failure. A hook
-  // maps its cause to one of these keys (`failureKey` in hooks/save-failure.ts)
-  // and hands the cause itself to the failure sink; the browser's own exception
-  // text — "UnknownError: Internal error opening backing store…" — never
-  // reaches a screen. It is English, it is untranslatable, and this UI is for
-  // people who may not read.
-  //
-  // `eraseFailed` below is the fourth member of that vocabulary; it already
-  // existed for the same job and is not duplicated here.
-  loadFailed: "Could not load this. Try again.",
-  saveFailed: "Could not save that. Try again.",
-  // The same sentence the save-failure recovery screen uses for a full phone
-  // (`recoveryTitle`), so one condition reads as one condition wherever it is
-  // met. Names the condition and stops: the acting is the controls' job.
-  noRoom: "No room left on this phone.",
-
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
@@ -228,4 +211,21 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+
+  // ── Failure vocabulary (#172) ────────────────────────────────────────────
+  // The only words a screen says about a caught load or write failure. A hook
+  // maps its cause to one of these keys (`failureKey` in hooks/save-failure.ts)
+  // and hands the cause itself to the failure sink; the browser's own exception
+  // text — "UnknownError: Internal error opening backing store…" — never
+  // reaches a screen. It is English, it is untranslatable, and this UI is for
+  // people who may not read.
+  //
+  // `eraseFailed` above is the fourth member of that vocabulary; it already
+  // existed for the same job and is not duplicated here.
+  loadFailed: "Could not load this. Try again.",
+  saveFailed: "Could not save that. Try again.",
+  // The same sentence the save-failure recovery screen uses for a full phone
+  // (`recoveryTitle`), so one condition reads as one condition wherever it is
+  // met. Names the condition and stops: the acting is the controls' job.
+  noRoom: "No room left on this phone.",
 } as const;
