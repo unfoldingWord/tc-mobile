@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 // failed fetch. This is a temporary, reader-gated exception (ADR 0006,
 // 2026-09-04 amendment), NOT a permanent ban and NOT a switch to
 // runtime-caching. When a screen reads OBS frame imagery — via `thumbUrl`, a
-// hand-built /obs/thumbs/ path, or a CDN frame.image reference (the Template
+// hand-built /obs/thumbs/ path, or a `frame.image` reference (the Template
 // Library, #33, is the expected case) — `jpg` must be RESTORED to
 // `globPatterns` (and INTENDED below updated in the same change, on purpose)
 // — otherwise the tiles are precached nowhere, there is no runtimeCaching,
@@ -63,18 +63,23 @@ function tsFiles(dir: string): string[] {
 // 2. Hand-builds the `/obs/thumbs/…` path itself instead of calling
 //    `thumbUrl` — the same bundled file, reached without the symbol the old
 //    check tracked.
-// 3. Reads a frame's CDN image directly (`frame.image`, or the door43.org
-//    host the catalogue's `imageBase` points at) — the pre-pivot recording
-//    view's precedent for this (ADR 0006) shows it is a real path a screen
-//    can take instead of the offline-safe bundled thumbnail; a screen that
-//    takes it is displaying frame imagery just as much as one that calls
-//    `thumbUrl`, so it must gate the same way.
+// 3. Reads a frame's CDN image directly via `frame.image` — the pre-pivot
+//    recording view's precedent for this (ADR 0006) shows it is a real path
+//    a screen can take instead of the offline-safe bundled thumbnail; a
+//    screen that takes it is displaying frame imagery just as much as one
+//    that calls `thumbUrl`, so it must gate the same way.
+//
+// Deliberately NOT matched: the door43.org CDN host as a bare string. That
+// pattern is too wide — it fires on any comment, doc link, or unrelated
+// fetch that happens to name the host, not just a frame.image read, and a
+// false positive here fails CI with "jpg must be restored" until 2.5 MB of
+// thumbnails are added back. `frame.image` is the actual read; the host is
+// not (#232 review).
 const OBS_IMAGERY_PATTERNS = [
   /import[^;]*\bthumbUrl\b/,
   /\bthumbUrl\s*\(/,
   /\/obs\/thumbs\//,
   /\bframe\s*\.\s*image\b/,
-  /door43\.org/i,
 ];
 
 function obsThumbnailReaders(): string[] {
