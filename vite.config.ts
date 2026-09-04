@@ -34,6 +34,10 @@ export default defineConfig({
       // `dev-dist` lets us verify offline behaviour in `vite dev` instead of
       // discovering service-worker problems only after a deploy.
       devOptions: { enabled: true, type: "module" },
+      // The three home-screen icons already match `globPatterns` below (they
+      // live under `public/`), so the plugin's own manifest-icons injection
+      // would precache each one a second time under an identical URL (#161).
+      includeManifestIcons: false,
       workbox: {
         // Audio lives in IndexedDB, not the Cache API. The OBS thumbnails do
         // get precached (598 files, 2.5 MB): a facilitator installs this over

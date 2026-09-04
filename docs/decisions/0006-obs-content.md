@@ -22,8 +22,14 @@ the bet that a later phase would
 wire per-segment artwork to it (#1), but no mockup places artwork anywhere, no
 batch was scheduled to wire it, and code nothing uses is the sprawl the bar
 rejects. **What still ships is unchanged:** the 2.5 MB bundle of 128px
-thumbnails and the catalogue JSON — those are precached, not cached-on-demand,
-and B0 does not touch them. #1 is closed as moot: with no cache to wire and no
+thumbnails and the catalogue JSON — B0 does not touch either. (**Corrected,
+#161:** the thumbnails are precached; the catalogue JSON is not, and currently
+cannot be — `src/lib/obs/catalog.ts`'s two exports have no caller in `src/`, so
+the module, and the dynamic-`import()`ed JSON it would otherwise chunk apart
+from the entry bundle, is not reachable from the app at all and produces no
+build output today. Verified against a production `npm run build`'s `dist/`.
+This becomes true once B7's Template Library (#33) wires up a caller.) #1 is
+closed as moot: with no cache to wire and no
 mockup screen that needs one, there is no rework to do (the pre-pivot recording
 view keeps its CDN `<img>` until B2/B3). Per-segment artwork is greenfield if a later
 phase asks for it; the removed cache is recoverable from git. The inline
