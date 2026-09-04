@@ -9,8 +9,12 @@ import tseslint from "typescript-eslint";
  * app/        → Screens (can import from: components, hooks, lib, types)
  * components/ → UI Components (can import from: hooks, lib, types)
  * hooks/      → Browser/stateful glue (can import from: lib, types)
- * lib/        → Pure audio + storage core (can import from: types only)
+ * lib/        → Pure audio + storage core (can import from: types, data)
  * types/      → Domain types (no internal dependencies)
+ * data/       → Bundled static assets (`src/data/obs-catalog.json`), no code,
+ *               no internal dependencies. Read by `lib/obs/catalog.ts` via a
+ *               dynamic `import()` (kept out of the entry chunk); nothing else
+ *               may reach it, so `types/` is denied below.
  *
  * Rule: Never import "upward" in the hierarchy.
  *
@@ -40,6 +44,35 @@ const deny = (groups) => ({
         message,
       })),
     },
+  ],
+  // L-6 — `no-restricted-imports` only sees a static `import ... from "..."`
+  // specifier. It is silent on the same forbidden layer reached through a
+  // value instead: `await import("@/hooks/audio-io")` is an `ImportExpression`
+  // node, and `new URL("../hooks/x.ts", import.meta.url)` is a `NewExpression`
+  // — neither is an import specifier as far as the rule above is concerned.
+  // Verified with `eslint --stdin` probes at 2026-09-04: the static form
+  // above errors, both dynamic forms returned zero errors. Same layer list,
+  // same messages as `no-restricted-imports`, so the two mechanisms cannot
+  // drift apart. Matches both specifier shapes `no-restricted-imports` does —
+  // `@/hooks/x`, `../hooks/x`, `./hooks/x`, and a bare `hooks/x` — via one
+  // substring test rather than enumerating alias vs. relative forms twice.
+  "no-restricted-syntax": [
+    "error",
+    ...groups.flatMap(({ layer, message }) => {
+      // Slashes are the esquery regex-literal delimiter, so an unescaped `/`
+      // inside the pattern breaks the selector parser itself — escape both.
+      const pattern = `(^|\\/)${layer}\\/`;
+      return [
+        {
+          selector: `ImportExpression[source.value=/${pattern}/]`,
+          message: `${message} (dynamic import)`,
+        },
+        {
+          selector: `NewExpression[callee.name="URL"][arguments.0.value=/${pattern}/]`,
+          message: `${message} (new URL(...) reaching another layer)`,
+        },
+      ];
+    }),
   ],
 });
 
@@ -127,10 +160,18 @@ export default tseslint.config(
         message: "types cannot import components (onion architecture)",
       },
       { layer: "app", message: "types cannot import app (onion architecture)" },
+      {
+        layer: "data",
+        message: "types cannot import data (onion architecture)",
+      },
     ]),
   },
 
-  // lib/ — pure core. May import types only, and may touch no browser API.
+  // lib/ — pure core. May import types and data, and may touch no browser
+  // API. `data` is deliberately NOT denied here: `lib/obs/catalog.ts` reads
+  // `src/data/obs-catalog.json` via a dynamic `import()`, and that JSON is
+  // static content with no code and no DOM surface — importing it does not
+  // reintroduce anything `no-restricted-globals` below exists to keep out.
   {
     files: ["src/lib/**/*.ts"],
     rules: {
@@ -154,6 +195,33 @@ export default tseslint.config(
             "Browser APIs belong in hooks/ — hooks/audio-io.ts is the single " +
             "audio boundary. See AGENTS.md.",
         })),
+      ],
+    },
+  },
+
+  // L-6b — `types/` and `lib/` above are scoped to `*.ts`, so a file at
+  // `src/lib/audio/x.tsx` using `window` and `new AudioContext()` matched
+  // neither block and produced zero ESLint diagnostics; `tsconfig.lib.json`'s
+  // `include` was `*.ts`-only too, so it also produced zero `tsc` diagnostics
+  // for the identical file. Verified with a probe at 2026-09-04, then deleted.
+  // A React component (what `.tsx` is for) has no legitimate reason to exist
+  // in either the pure core or the domain types, so `.tsx` is forbidden
+  // outright here rather than taught which DOM globals JSX is allowed to use
+  // — the alternative of widening the two blocks above to `*.{ts,tsx}` would
+  // still need this same "no JSX here" rule on top, since `no-restricted-globals`
+  // and `deny()` say nothing about the file being a component. `tsconfig.lib.json`
+  // is widened to `*.{ts,tsx}` alongside this so `tsc` sees the file too.
+  {
+    files: ["src/lib/**/*.tsx", "src/types/**/*.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Program",
+          message:
+            "lib/ and types/ stay DOM-free and framework-free — a .tsx file " +
+            "(a React component) does not belong in either layer. See AGENTS.md.",
+        },
       ],
     },
   },

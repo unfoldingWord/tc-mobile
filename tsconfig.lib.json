@@ -30,6 +30,16 @@
    * AND type position. tests/lib-boundary.test.ts asserts both halves of that
    * sentence, so the residual cannot drift silently.
    *
+   * `include` covers `.tsx` as well as `.ts` (L-6b): before this, a file at
+   * `src/lib/audio/x.tsx` fell outside `include` entirely, so it was absent
+   * from this program and produced zero `tsc` diagnostics no matter what it
+   * referenced — the identical `.ts` file produced two. No `jsx` compiler
+   * option is set, so a `.tsx` file that actually contains JSX still fails to
+   * compile here (a second, independent signal on top of the ESLint
+   * `no-restricted-syntax` ban on `.tsx` under lib/ and types/ in
+   * eslint.config.mjs, which is the one that explains WHY). Verified with a
+   * probe at 2026-09-04 and pinned in tests/lib-boundary.test.ts.
+   *
    * Deliberately not a project reference: tsconfig.app.json already includes
    * these files, and overlapping composite inputs buy complexity for nothing
    * here. It is a separate `npm run typecheck:lib` in verify and in CI.
@@ -48,5 +58,10 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/lib/**/*.ts", "src/types/**/*.ts"]
+  "include": [
+    "src/lib/**/*.ts",
+    "src/lib/**/*.tsx",
+    "src/types/**/*.ts",
+    "src/types/**/*.tsx"
+  ]
 }
