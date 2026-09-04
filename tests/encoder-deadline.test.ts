@@ -69,11 +69,15 @@ function installFakeDocument() {
     },
   };
   (globalThis as { document?: unknown }).document = doc;
-  const resume = () => {
-    doc.hidden = false;
+  const dispatchVisibility = () => {
     for (const fn of [...(listeners["visibilitychange"] ?? [])]) fn();
   };
-  return { doc, resume };
+  /** Flip visibility AND fire the event, the normal case. */
+  const setHidden = (hidden: boolean) => {
+    doc.hidden = hidden;
+    dispatchVisibility();
+  };
+  return { doc, setHidden, dispatchVisibility };
 }
 
 /** Let `withEncoder`'s microtask chain reach the armed encode. */
@@ -143,21 +147,47 @@ describe("the encode silence deadline (#166)", () => {
   });
 
   it("does not trip across an iOS freeze/resume of a suspended worker", async () => {
-    const { doc, resume } = installFakeDocument();
+    const { setHidden } = installFakeDocument();
     const p = encode(Int16Array.of(3));
     await microtasks();
     // Guard against a wrong trip becoming an unhandled rejection mid-advance.
     void p.catch(() => {});
 
     // Freeze: the page (and its worker) is suspended, silent far past the window.
-    doc.hidden = true;
+    setHidden(true);
     await vi.advanceTimersByTimeAsync(TIMEOUT * 3);
     // A frozen page is never judged stalled.
     expect(nth(0).terminated).toBe(false);
 
     // Resume grants a fresh window; the worker soon answers.
-    resume();
+    setHidden(false);
     nth(0).emitDone(new Uint8Array([3]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+    expect(nth(0).terminated).toBe(false);
+  });
+
+  it("does not trip when the overdue timer runs BEFORE the resume handler (Frank R2 P2)", async () => {
+    const { doc, dispatchVisibility } = installFakeDocument();
+    const p = encode(Int16Array.of(7));
+    await microtasks();
+    void p.catch(() => {});
+
+    // Hide fires normally (before the freeze), latching that a freeze may span.
+    doc.hidden = true;
+    dispatchVisibility();
+
+    // The freeze then ends: the platform flips `document.hidden` back to false,
+    // but the overdue stall timer's task runs FIRST — before the queued
+    // visibilitychange handler. So fire the overdue timer (one window) while
+    // hidden is already false and the resume handler has NOT yet run.
+    doc.hidden = false;
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    // Must NOT have tripped on the stale, un-measurable silence.
+    expect(nth(0).terminated).toBe(false);
+
+    // The delayed resume handler now runs; the worker answers.
+    dispatchVisibility();
+    nth(0).emitDone(new Uint8Array([7]).buffer);
     await expect(p).resolves.toBeInstanceOf(Uint8Array);
     expect(nth(0).terminated).toBe(false);
   });

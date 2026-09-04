@@ -102,16 +102,13 @@ function pageHidden(): boolean {
 }
 
 /**
- * Call `onResume` whenever the page becomes visible again. Returns an
+ * Call `onChange` on every visibility transition (both directions). Returns an
  * unsubscribe. A no-op where `document` is absent (Node, Worker).
  */
-function subscribeResume(onResume: () => void): () => void {
+function subscribeVisibility(onChange: () => void): () => void {
   if (typeof document === "undefined") return () => {};
-  const handler = () => {
-    if (!document.hidden) onResume();
-  };
-  document.addEventListener("visibilitychange", handler);
-  return () => document.removeEventListener("visibilitychange", handler);
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
 }
 
 /** The tail of the lane: resolves when the job currently holding it is done. */
@@ -323,14 +320,28 @@ function encodeInWorker(
     // encode has run — so a page freeze, which stops the worker too, cannot make
     // a suspended encode look stalled.
     let lastMessageAt = Date.now();
+    // Set the instant the page HIDES — before any freeze can suspend JS — and
+    // cleared only when a fresh window is granted (a resume, or a heartbeat). It
+    // makes the resume safe against event ORDERING (Frank R2 P2): an overdue timer
+    // that runs on restoration BEFORE the `visibilitychange` handler would see
+    // `document.hidden` already false and a stale `lastMessageAt`, and wrongly
+    // trip. Because this latch was set at hide time, `onStall` grants a fresh
+    // window instead of trusting the un-measurable elapsed silence, whichever of
+    // the two runs first.
+    let mightHaveFrozen = false;
     let stallTimer: ReturnType<typeof setTimeout>;
     const armStall = (ms: number) => {
       stallTimer = setTimeout(onStall, ms);
     };
-    // A resumed page gets a FRESH window before it can be judged: the freeze that
-    // silenced the worker was not a stall. (visibilitychange is DOM — hooks/.)
-    const stopResume = subscribeResume(() => {
-      lastMessageAt = Date.now();
+    // Both directions: hiding arms the freeze latch (before suspension), showing
+    // grants a fresh window. (visibilitychange is DOM — hooks/.)
+    const stopVisibility = subscribeVisibility(() => {
+      if (pageHidden()) {
+        mightHaveFrozen = true;
+      } else {
+        mightHaveFrozen = false;
+        lastMessageAt = Date.now();
+      }
     });
 
     // Detach THIS job's handlers and stop its heartbeat on settle, leaving the
@@ -338,7 +349,7 @@ function encodeInWorker(
     // listener's job (see `encoderWorker`); an abort and a stall drop + re-warm.
     const release = () => {
       clearTimeout(stallTimer);
-      stopResume();
+      stopVisibility();
       signal?.removeEventListener("abort", onAbort);
       worker.onmessage = null;
       worker.onerror = null;
@@ -360,8 +371,19 @@ function encodeInWorker(
         armStall(ENCODER_SILENCE_TIMEOUT_MS);
         return;
       }
-      // Late but not yet silent enough (a heartbeat landed, or the page just
-      // resumed): re-arm for the remainder rather than trip.
+      // Resumed after a possible freeze: the elapsed silence spans a suspension
+      // we cannot measure, so grant a fresh window rather than trust it — even
+      // when this overdue timer beat the `visibilitychange` handler to the resume
+      // (Frank R2 P2). One fresh window per freeze; a worker still silent after it
+      // trips on the next pass.
+      if (mightHaveFrozen) {
+        mightHaveFrozen = false;
+        lastMessageAt = Date.now();
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // Late but not yet silent enough (a heartbeat landed just before): re-arm
+      // for the remainder rather than trip.
       const silence = Date.now() - lastMessageAt;
       if (silence < ENCODER_SILENCE_TIMEOUT_MS) {
         armStall(ENCODER_SILENCE_TIMEOUT_MS - silence);
@@ -387,9 +409,11 @@ function encodeInWorker(
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
       const response = event.data;
       // A progress heartbeat is a sign of life, not a result: reset the silence
-      // window and keep waiting for done/error.
+      // window (and clear the freeze latch — a beat means the worker is running
+      // NOW) and keep waiting for done/error.
       if (response.kind === "progress") {
         lastMessageAt = Date.now();
+        mightHaveFrozen = false;
         return;
       }
       release();
