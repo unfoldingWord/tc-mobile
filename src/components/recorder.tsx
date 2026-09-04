@@ -840,6 +840,15 @@ export function Recorder({
         case "close":
           break;
       }
+      // `dirty` can still be true here with NOTHING written — the Finished
+      // toggle sets it synchronously (see `onToggleFinished`), and a `close`
+      // plan writes nothing: a superseded capture (#211) or a toggle that
+      // landed back on the stored value. The reload App then runs is redundant,
+      // and deliberately so. Do NOT "fix" it by resetting `dirty` on this path:
+      // it would also drop the reload on the net-zero-toggle close that has
+      // always had one, and it inverts the bias `onToggleFinished` records — a
+      // redundant reload costs one peak recomputation, a missing one leaves a
+      // row asserting a state the database does not have.
       onExit(dirty.current);
     })().catch((cause: unknown) => {
       // Neither call rejects by contract; this is the last net on the one path
