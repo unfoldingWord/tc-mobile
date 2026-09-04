@@ -79,7 +79,13 @@ export async function putClip(
   const meta = buildClipMeta(id, samples, sampleRate, createdAt);
 
   const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  // Strict durability: this transaction holds the only copy of a recording, and
+  // under the browser default (relaxed on Chromium) it can report success before
+  // the bytes are flushed — so a crash or a power loss just after it returns
+  // loses them. Same bar `saveTake` and `commitTranscode` hold (#179, #163).
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite", {
+    durability: "strict",
+  });
   // Copy through a fresh ArrayBuffer: a subarray view would serialise the
   // entire backing buffer, which for a trimmed clip can be far larger than
   // the audio it represents.
@@ -110,7 +116,13 @@ export async function getClip(id: ClipId): Promise<Clip | undefined> {
 
 export async function deleteClip(id: ClipId): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  // Strict durability, for the mirror of the reason `putClip` asks for it: this
+  // removes audio, and a delete reported before it is flushed can come back
+  // after a crash — bytes the caller has already accounted for as freed
+  // (#179, #163). `getClip` above needs none: a read has nothing to flush.
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite", {
+    durability: "strict",
+  });
   await Promise.all([
     tx.objectStore("clipMeta").delete(id),
     tx.objectStore("clipData").delete(id),

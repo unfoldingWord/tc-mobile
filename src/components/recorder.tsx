@@ -26,6 +26,11 @@ import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { computePeaks } from "@/lib/audio/peaks";
 import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
+import {
+  attemptsCapture,
+  planClose,
+  type CaptureOutcome,
+} from "@/lib/takes/close-plan";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -62,7 +67,14 @@ interface RecorderProps {
     existing: Int16Array,
     recorded: Int16Array,
     insertionOffset: number,
-    finished: boolean
+    finished: boolean,
+    /**
+     * Lossy passes the audio being saved already carries — the loaded clip's
+     * `generation`. Passed from here because only the sheet knows what it
+     * loaded: by the time the save writes, the Finished sweep may have replaced
+     * that clip with an MP3 one generation higher (#163).
+     */
+    generation: number
   ) => Promise<boolean>;
   /**
    * Persist an already-flattened, edited segment buffer (B5 edit-only close —
@@ -72,7 +84,9 @@ interface RecorderProps {
   saveEditedSegment: (
     segmentId: SegmentId,
     buffer: Int16Array,
-    finished: boolean
+    finished: boolean,
+    /** Lossy passes the edited buffer carries (see `saveRecording`). */
+    generation: number
   ) => Promise<boolean>;
   /**
    * The cut/paste clipboard, held by App so it outlives this sheet (G3: reaches
@@ -705,20 +719,31 @@ export function Recorder({
     // `stopRecording`'s `finally` stops whichever claim is current (George G4).
     audio.stopBuffer();
     void (async () => {
+      /**
+       * Reopen the sheet at idle with the reason in place, rather than exiting
+       * on audio that cannot be recorded again. Shared by every stay-open exit
+       * — a stop error, a failed clear, a failed finished write. It drops the
+       * kept preview so the stage reverts to `working` rather than a whole-clip
+       * preview with no insert line (George R4 #1).
+       */
+      const stayOpen = (reason: string) => {
+        setStopError(reason);
+        cancelPreview();
+        closing.current = false;
+        setIsClosing(false);
+      };
       // Commit on close (F8): if the mic is live or paused, stop it, then
       // splice what it captured into the segment's audio. `stopRecording`
       // releases the mic and never rejects; `saveRecording` never rejects and
       // turns a failure into the recovery screen App renders.
-      let committed = false;
+      //
       // A take was in play at close (live, paused, or an interruption froze it to
       // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
-      // generation mid-flush — returning no samples and no error. B4 just closed
-      // then, original intact. B5 must keep that: the edit-only block below must
-      // NOT run on a superseded capture, or a cut-to-empty would clear the
-      // original recording (gone) with the replacement never landed and the cut
-      // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
-      const attemptedCapture = recording || paused || state === "processing";
-      if (attemptedCapture) {
+      // generation mid-flush — returning no samples and no error. `planClose`
+      // owns what that means (B4 just closed then, original intact, and B5 must
+      // not persist edits over it); `null` here is "no capture was attempted".
+      let capture: CaptureOutcome | null = null;
+      if (attemptsCapture(state)) {
         // Do NOT await the in-flight preview decode here. `stop()` steals the
         // chunks/stream/recorder into locals BEFORE its first await, which is what
         // lets a `pagehide`/`leave()` during the flush cancel the mic without
@@ -737,76 +762,78 @@ export function Recorder({
         setPreview((p) =>
           p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
         );
-        const result = await audio.stopRecording();
-        if (result.samples && result.samples.length > 0) {
-          // The Finished mark rides the take (applied atomically in addTake, on
-          // this attempt or a retry). Only an EXPLICIT mark this session marks
-          // it finished; a re-record the translator did not mark stays a
-          // demote-to-draft. The boolean saveRecording returns is deliberately
-          // not branched on here: on a failure App shows the recovery screen and
-          // the mark is preserved in the held take, so close() has nothing left
-          // to decide.
-          // The splice base is the WORKING buffer, not the loaded clip: any
-          // cut/paste this session came first (Model A) and must be part of what
-          // the recording splices into. insertionOffset was captured against the
-          // same working length.
-          await saveRecording(
-            segmentId,
-            editor.working,
-            result.samples,
-            insertionOffset.current,
-            finishedIntent === true
-          );
-          dirty.current = true;
-          committed = true;
-        } else if (result.error) {
+        capture = await audio.stopRecording();
+      }
+      // Which of the five exits this close takes is decided in one place and
+      // enumerated in `tests/close-plan.test.ts` (#180). At most ONE of these
+      // actions happens: a committed take already carries the pending edits (its
+      // splice base is the edited buffer, Model A) and already carries the
+      // finished mark (applied atomically in `addTake`, so a separate write
+      // cannot be clobbered by the same close's demote-to-draft).
+      //
+      // What the audio on its way to disk has already been through: the
+      // generation of the clip this sheet LOADED (#163). Every save below stamps
+      // its new clip with it rather than letting the store re-read the segment,
+      // which by now can be a transcoded, one-generation-lossier state. Zero
+      // when no view loaded — nothing was loaded, so nothing was decoded, and
+      // the disabled controls of a failed open leave nothing to save anyway.
+      const loadedGeneration = view?.generation ?? 0;
+      const plan = planClose({
+        capture,
+        hasEdits: editor.hasEdits,
+        workingLength: editor.workingLength,
+        finishedIntent,
+        storedFinished: view?.finished ?? null,
+      });
+      switch (plan.action) {
+        case "stay":
           // The stop yielded no usable audio AND has something to say — an empty
           // capture or a decode failure. Its cause travels WITH the result, not
           // the async `error` state a render closure here would read one frame
           // stale (the round-4 regression that reopened the permission panel).
           // Do NOT onExit: leave() would close silently on a take that cannot be
-          // recorded again. Surface it as a toolbar Notice (not the permission
-          // panel — this is not a permission miss) and re-enable so Back or
-          // Record works.
-          setStopError(result.error);
-          // Reopening idle: drop the kept preview so the stage reverts to
-          // `working` rather than a whole-clip preview with no insert line
-          // (George R4 #1).
-          cancelPreview();
-          closing.current = false;
-          setIsClosing(false);
+          // recorded again. It shows as a toolbar Notice (not the permission
+          // panel — this is not a permission miss) with Back and Record live.
+          stayOpen(plan.error);
           return;
-        }
-        // else: no samples and no error — a superseded stop (a cancel/leave
-        // landed during it). Nothing to save and nothing to say, so fall through
-        // and close, rather than dead-ending the sheet open (#59). An empty
-        // capture is NOT this branch — it returns the "No sound" error above and
-        // stays open to retry.
-      }
-      // An edit-only close (B5): cuts/pastes with no take committed. Gated on
-      // `!attemptedCapture` so a superseded capture stop (above) abandons the
-      // session like B4 — persisting or clearing there is the George-R5 loss.
-      if (!committed && !attemptedCapture && editor.hasEdits) {
-        if (editor.workingLength === 0) {
-          // Cut down to nothing clears the take (no 0-frame ghost). Unlike a
-          // non-empty save it has NO recovery slot, so a failed clear must keep
-          // the sheet open with an in-place error — closing as if the erase
-          // happened would leave the original audio on disk under a UI that says
-          // it is gone (and a clipboard copy alongside it). Same shape as the
-          // finished-flag write failure below.
+        case "save-take":
+          // The splice base is the WORKING buffer, not the loaded clip: any
+          // cut/paste this session came first (Model A) and must be part of what
+          // the recording splices into. insertionOffset was captured against the
+          // same working length. The boolean saveRecording returns is
+          // deliberately not branched on: on a failure App shows the recovery
+          // screen and the mark is preserved in the held take, so close() has
+          // nothing left to decide.
+          await saveRecording(
+            segmentId,
+            editor.working,
+            plan.samples,
+            insertionOffset.current,
+            plan.finished,
+            loadedGeneration
+          );
+          dirty.current = true;
+          break;
+        case "clear": {
+          // Unlike a non-empty save this has NO recovery slot, so a failed clear
+          // must keep the sheet open with an in-place error — closing as if the
+          // erase happened would leave the original audio on disk under a UI
+          // that says it is gone (and a clipboard copy alongside it). Same shape
+          // as the finished-flag write failure below.
           const cleared = await saveEditedSegment(
             segmentId,
             editor.working,
-            false
+            false,
+            loadedGeneration
           );
           if (!cleared) {
-            setStopError(strings.clearFailed);
-            cancelPreview();
-            closing.current = false;
-            setIsClosing(false);
+            stayOpen(strings.clearFailed);
             return;
           }
-        } else {
+          dirty.current = true;
+          break;
+        }
+        case "save-edit":
           // A non-empty edit replaces the audio through the same never-lose
           // machinery a recording uses (the owned slot → App's recovery screen on
           // failure), so its boolean is deliberately not branched on here — just
@@ -815,34 +842,25 @@ export function Recorder({
           await saveEditedSegment(
             segmentId,
             editor.working,
-            finishedIntent === true
+            plan.finished,
+            loadedGeneration
           );
-        }
-        dirty.current = true;
-        committed = true;
-      }
-      // A toggle with no new take is a direct write — there is no take to carry
-      // it. Only when the translator actually changed it from the stored value,
-      // and only when nothing was committed (a commit already carried the mark).
-      if (
-        !committed &&
-        view &&
-        finishedIntent !== null &&
-        finishedIntent !== view.finished
-      ) {
-        try {
-          await setFinished(finishedIntent);
-        } catch (cause) {
-          // The store rejects a finished mark on a segment with no take — a take
-          // deleted externally between toggle and close. Surface it (F5-#1)
-          // rather than only the console, and stay open.
-          console.error("Could not change the finished flag", cause);
-          setStopError(strings.finishedWriteFailed);
-          cancelPreview();
-          closing.current = false;
-          setIsClosing(false);
-          return;
-        }
+          dirty.current = true;
+          break;
+        case "mark":
+          try {
+            await setFinished(plan.finished);
+          } catch (cause) {
+            // The store rejects a finished mark on a segment with no take — a take
+            // deleted externally between toggle and close. Surface it (F5-#1)
+            // rather than only the console, and stay open.
+            console.error("Could not change the finished flag", cause);
+            stayOpen(strings.finishedWriteFailed);
+            return;
+          }
+          break;
+        case "close":
+          break;
       }
       onExit(dirty.current);
     })().catch((cause: unknown) => {
@@ -852,8 +870,6 @@ export function Recorder({
       onExit(dirty.current);
     });
   }, [
-    recording,
-    paused,
     state,
     view,
     audio,
