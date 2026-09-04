@@ -32,10 +32,10 @@ import { clearAllStores } from "./support";
  * Whether a given phone honours it is platform behaviour, unmeasured here.
  *
  * The assertion reads the third argument of `IDBDatabase.transaction`, because
- * neither the DOM nor fake-indexeddb exposes the durability back on the
- * transaction object. `unwrap` reaches past idb's proxy to the native database
- * the wrapper ultimately calls, so the spy sees exactly the arguments
- * `lib/storage` passed.
+ * neither `saveTake` nor `clearSegmentTake` returns its transaction — so the
+ * arguments they pass are the only seam to observe. `unwrap` reaches past idb's
+ * proxy to the native database the wrapper ultimately calls, so the spy sees
+ * exactly the arguments `lib/storage` passed.
  */
 
 /** The options bag of every transaction `run` opens, in call order. */
