@@ -19,7 +19,7 @@ import {
  * Columns the live-waveform ring holds while recording (#120). One column is
  * pushed per animation frame, so at ~60 fps this is roughly `SCOPE_CAPACITY/60`
  * seconds of visible history. 180 ≈ 3 s beside the head — a provisional default
- * to tune on the device pass alongside `headFraction` (Tim's UX call).
+ * to tune on the device pass alongside `headFraction` (the requirements owner's UX call).
  */
 const SCOPE_CAPACITY = 180;
 

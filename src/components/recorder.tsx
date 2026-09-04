@@ -27,7 +27,7 @@ import type { SegmentId } from "@/types/domain";
  * Where the fixed centerline sits across the waveform viewport (F6).
  *
  * Centered. Sitting it right-of-centre gave the recorded audio room to the
- * right to grow into on an append (mockup 3), but Tim's v0.1.2 review asked for
+ * right to grow into on an append (mockup 3), but the requirements owner's v0.1.2 review asked for
  * it centered on every screen — that overrides the append-headroom tradeoff.
  * One constant to retune.
  */

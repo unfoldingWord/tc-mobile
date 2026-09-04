@@ -22,7 +22,7 @@ interface LiveScopeProps {
   /**
    * Where the record head sits across the width (0..1]. Defaults to the recorder
    * centerline (0.5); the right-edge full-width scope (1) is the alternative.
-   * Which one ships is a deferred UX call (Tim, #120) — the geometry serves both.
+   * Which one ships is a deferred UX call (the requirements owner, #120) — the geometry serves both.
    */
   headFraction?: number;
   height?: number;
