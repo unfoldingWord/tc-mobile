@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { preemptPausedMic, reclaimMic } from "@/lib/audio/floor-transitions";
-import { createAudioSession, type Stoppable } from "@/lib/audio/session";
+import {
+  preemptPausedMic,
+  reclaimAfterPreview,
+  reclaimMic,
+} from "@/lib/audio/floor-transitions";
+import {
+  createAudioSession,
+  type AudioSession,
+  type Stoppable,
+} from "@/lib/audio/session";
 
 /**
  * The approach-B floor transitions the paused-take preview (#101) performs,
@@ -81,6 +89,62 @@ describe("reclaimMic", () => {
 
     expect(result.reclaimed).toBe(false);
     expect(result.token).toBe(micToken); // the current token stands
+    expect(session.live).toBe("mic");
+  });
+});
+
+/**
+ * #129 / George G1 — every way a preview ends must hand the floor back.
+ *
+ * This pins `reclaimAfterPreview`, the GATE the hook now delegates to at all
+ * three exits (natural end, user stop, decode failure). It does NOT pin the hook
+ * calling it: the three call sites in `use-audio-session.ts` are browser wiring
+ * and remain review + on-device surface. Round 1 flagged the earlier version of
+ * this case for claiming otherwise (Frank F1, George G2); the gate lives in lib
+ * now precisely so the decision is testable in Node.
+ */
+describe("reclaimAfterPreview", () => {
+  /** Preempt a paused mic, sound a preview, and give the floor back. */
+  function afterPreview(): { session: AudioSession; micToken: number | null } {
+    const session = createAudioSession();
+    session.claim("mic"); // a paused take holds the floor
+    const micToken = preemptPausedMic(session, true, 1); // the preview borrows it
+    const token = session.claim("take") as number;
+    session.settle(token, handle());
+    session.release(token); // the preview is over; the floor is now free
+    expect(session.live).toBeNull(); // the gap #129 names
+    return { session, micToken };
+  }
+
+  it("reclaims for a paused mic, so a preempt-less take is refused again", () => {
+    const { session, micToken } = afterPreview();
+
+    const token = reclaimAfterPreview(session, true, micToken);
+
+    expect(token).not.toBeNull();
+    expect(session.live).toBe("mic");
+    expect(session.claim("take")).toBeNull(); // the invariant is restored
+  });
+
+  it("does NOT claim a floor for a recorder that is no longer paused", () => {
+    // The stale-state hazard: a mic that has already stopped must not be handed
+    // a claim nothing will ever release.
+    const { session, micToken } = afterPreview();
+
+    const token = reclaimAfterPreview(session, false, micToken);
+
+    expect(token).toBe(micToken); // unchanged
+    expect(session.live).toBeNull(); // floor left free
+    expect(session.claim("take")).not.toBeNull(); // playback still possible
+  });
+
+  it("is a no-op when the mic never lost the floor (no preview ran)", () => {
+    const session = createAudioSession();
+    const micToken = session.claim("mic") as number;
+
+    const token = reclaimAfterPreview(session, true, micToken);
+
+    expect(token).toBe(micToken); // the current claim stands
     expect(session.live).toBe("mic");
   });
 });

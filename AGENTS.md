@@ -250,6 +250,33 @@ Work is cut from `develop` and merged back by PR. Promotion is `develop` ->
 `staging` -> `main`, each by PR. **The `staging` -> `main` PR is the production
 gate.**
 
+### Versions and milestones
+
+`package.json`'s `version` is the build number, and it moves in exactly one
+place. Decided 2026-09-02, when the repo stopped being solo.
+
+- **A feature or fix PR never touches the version.** With several contributors
+  and three to six PRs a day, a bump in every PR is a guaranteed conflict on
+  `package.json` and records nothing the merge commit does not.
+- **One `chore(release): vX.Y.Z` PR per `develop -> staging` promotion bumps
+  the patch** — daily, whenever there is something to promote. Its body lists
+  the PRs it carries (#131 is the shape). Patch numbers are not capped;
+  `0.1.30` is fine.
+- **The minor is the milestone.** Every GitHub milestone is named for the
+  version its `staging -> main` promotion ships. That PR bumps the minor and
+  tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
+  production hotfix between milestones is a patch on the shipped minor.
+
+  | Milestone                            | Due        | Ships                                       |
+  | ------------------------------------ | ---------- | ------------------------------------------- |
+  | `v0.2.0 — Sept: production gate`     | 2026-09-30 | the first `staging -> main` since the pivot |
+  | `v0.3.0 — Oct: East Africa training` | 2026-10-09 | what facilitators run at the training       |
+  | `v1.0.0 — Post-training`             | —          | the first field-validated release           |
+
+- **Every open issue carries a milestone.** File new issues into one. A
+  milestone closes when its promotion PR merges, and anything still open in it
+  moves to the next one explicitly, never silently.
+
 ### Cloudflare Workers Builds owns deployment
 
 There are no deploy workflows in `.github/`. Deleting them removed a real
@@ -355,9 +382,11 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 ## Known open items
 
-1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker
-   per encode, terminated on abort. What remains from ADR 0003 is the notice and
-   attribution work, #36. Not yet run on a phone.
+1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,
+   warmed at launch and reused across encodes (#182, ADR 0009 amended),
+   terminated on abort or a worker error — re-warmed on abort, rebuilt on the
+   next encode after an error. What remains from ADR
+   0003 is the notice and attribution work, #36. Not yet run on a phone.
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
@@ -398,13 +427,21 @@ Scripture Burrito and the event journal to **Benjamin Wright**, OBS content and
 audio to **Rich Mahn**, Shema Studio to **Han Chung** (via Birch, who is already
 helping him add OBS support).
 
-**The repository is deliberately personal and private** —
-`sethstoll3/tc-mobile`, not `unfoldingWord/tc-mobile`. Per
-`dev-practices/new-project-checklist.md`, creating an org repo requires
-tech-lead approval and a recorded DRI, and neither exists yet. A private
-personal repo sidesteps that gate honestly rather than pre-empting it.
+**The repository lives at `unfoldingWord/tc-mobile`, private,** since Seth
+transferred it from `sethstoll3/tc-mobile` on 2026-09-02. GitHub redirects the
+old name, so existing clones keep working — but repoint them
+(`git remote set-url origin https://github.com/unfoldingWord/tc-mobile.git`)
+and use `--repo unfoldingWord/tc-mobile` with `gh` rather than relying on the
+redirect. Issue and PR numbers carried over unchanged.
 
-**Moving it into the org later is the plan, and it is a real transfer** — the
-Cloudflare account is already unfoldingWord, so deployment does not change, but
-the repo secrets, the Actions history and any issue references do. Get the
-approval and the DRI recorded first.
+**The transfer broke Cloudflare Workers Builds** (#143): the connection was
+bound to the repo under its old owner, and the first promotion after the move
+(#142, staging v0.1.11) merged green on GitHub without ever deploying. Until
+both Workers are re-linked to the org repo, **a merged promotion PR is not a
+deployed build** — confirm the served bundle's version string on the staging
+URL, not the merge. The AGENTS.md rule that the Cloudflare account is
+unfoldingWord was already true; only the GitHub side moved.
+
+Other contributors now push here (Jesse Griffin, `jag3773`, from 2026-09-02),
+which is what the version/milestone scheme above and the reviewer/author split
+in the review section exist for.

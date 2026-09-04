@@ -5,8 +5,8 @@
 Please **do not** open a public issue for security vulnerabilities.
 
 Report privately to the unfoldingWord engineering team via
-<security@unfoldingword.org>, or through GitHub's private vulnerability
-reporting once this repo exists in the org.
+<security@unfoldingword.org>, or, where enabled, through GitHub's private
+vulnerability reporting on this repository.
 
 Include: what you found, how to reproduce it, and the impact you believe it
 has. We will acknowledge within a few business days.

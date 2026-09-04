@@ -16,9 +16,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   export (#18).
 - Scripture Burrito scope-string grammar (`src/lib/scripture/scope.ts`).
 - IndexedDB storage (`src/lib/storage`): clip persistence and a chapter and
-  segment repository. Its current Project → Chapter → Section → Segment → Take
-  hierarchy is pre-pivot and will not reach a release — B1 (#27) replaces it
-  with Book → Chapter → Segment, with Take hidden and 1:1.
+  segment repository. Its original Project → Chapter → Section → Segment → Take
+  hierarchy belongs to the initial scaffold, replaced on 22 Aug 2026 ("the
+  pivot", `docs/design/pivot-plan.md`), and will not reach a release — B1 (#27)
+  replaces it with Book → Chapter → Segment, with Take hidden and 1:1.
 - Browser audio boundary (`src/hooks/audio-io.ts`) handling iOS mp4/aac
   capture, shared AudioContext, and resample-to-canonical on ingest.
 - A disposable vertical-slice UI exercising record → waveform → play → cut →
@@ -28,8 +29,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scaffold day, and growing with every batch, so `npm test` is the count rather
   than this line. Browser-only paths (MediaRecorder, `decodeAudioData`) are not
   among them.
-- Docs: two spec transcriptions, prior-art research, seven ADRs, and the pivot
-  plan of record (`docs/design/pivot-plan.md`, #25).
+- Docs: prior-art research, the ADRs, and the plan of record for the 22 Aug 2026
+  replacement of the initial scaffold ("the pivot", `docs/design/pivot-plan.md`,
+  #25).
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
   metadata (230 KB) plus 128px thumbnails precached for offline first-run.
   `scripts/build-obs-catalog.mjs` rebuilds the catalogue from Door43. (B0 (#26)
