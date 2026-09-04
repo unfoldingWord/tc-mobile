@@ -34,10 +34,13 @@ george_report=".review/george-$SHA.md"
 # "## P1" heading. Pull whichever shape is present rather than assuming one.
 extract() {
   local file="$1" lens="$2"
-  [ -f "$file" ] || { echo "- _no report found for $lens_"; return; }
+  [ -f "$file" ] || { echo "- _no report found for ${lens}_"; return; }
   # awk dedupe: codex echoes its final report twice (once streamed, once as the
   # final message), so every Frank finding otherwise appears in duplicate.
-  grep -hoE '^(###[[:space:]]+[0-9]+\.[[:space:]]+.*|[0-9]+\.[[:space:]]+\*\*P[123][^*]*\*\*.*)$' "$file" \
+  # The grep is guarded with `|| true`: a CLEAN review (a verdict-only file with
+  # no finding-shaped lines) matches nothing, and under `set -o pipefail` grep's
+  # exit 1 would otherwise abort the whole script mid-comment.
+  { grep -hoE '^(###[[:space:]]+[0-9]+\.[[:space:]]+.*|[0-9]+\.[[:space:]]+\*\*P[123][^*]*\*\*.*)$' "$file" || true; } \
     | sed -E 's/^###[[:space:]]+//; s/^\*\*//; s/\*\*$//; s/[[:space:]]+$//' \
     | awk '!seen[$0]++' \
     | sed -E "s|^|- [ ] **${lens}** — |" \
@@ -51,7 +54,9 @@ extract() {
 verdict() {
   local file="$1" v
   [ -f "$file" ] || { echo "not run"; return; }
-  v="$(grep -hoE '\b(APPROVE|REQUEST_CHANGES)\b' "$file" | tail -1)"
+  # `|| true`: no verdict line means grep exits 1, which under `set -o pipefail`
+  # would abort the script before the empty->"not run" fallback below can fire.
+  v="$(grep -hoE '\b(APPROVE|REQUEST_CHANGES)\b' "$file" | tail -1 || true)"
   if [ -n "$v" ]; then echo "$v"; else echo "not run"; fi
 }
 
