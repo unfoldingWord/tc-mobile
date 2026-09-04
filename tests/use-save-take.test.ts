@@ -213,6 +213,40 @@ describe("performSaveTake — a commit that lands", () => {
     expect((await getSegment(segmentId))?.status).toBe("affirmed");
   });
 
+  it("still reports success and asks for the sweep when onSaved throws", async () => {
+    // #210: `onSaved` is the screen's reload of the segment list, called after
+    // the write has already committed. A throw there must not read back as a
+    // failed SAVE — the mirror of `performErase`'s `onErased` guard, which the
+    // Frank R-B6 comment there names directly. A finished take's Finished mark
+    // is already durable at this point too, so the sweep is still owed.
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake({ segmentId, clipId, finished: true });
+    const s = slot(take);
+    const onSaved = vi.fn(() => {
+      throw new Error("reload blew up");
+    });
+    const requestSweep = vi.fn();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const ok = await performSaveTake(take, {
+      update: s.update,
+      onSaved,
+      requestSweep,
+    });
+
+    expect(ok).toBe(true);
+    // The write landed: the slot is empty, not sitting in `failed` state over a
+    // clip that is already safely on disk.
+    expect(s.held()).toBeNull();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    // Still owed an MP3 — the commit and the Finished mark are already durable.
+    expect(requestSweep).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+
   it("empties the slot only for the attempt that actually succeeded", async () => {
     // A write resolving after its take was replaced must not clear the slot the
     // NEWER take is sitting in — that would drop a recording nobody saved.

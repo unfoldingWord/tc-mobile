@@ -87,15 +87,6 @@ export async function performSaveTake(
     // Cleared only here, and only for this attempt. A `finally` would drop
     // the samples on the failure path, which is the one path they exist for.
     effects.update((held) => succeedSave(held, take.clipId));
-    // In the same tick as clearing the slot, so there is no frame where the
-    // slot is empty and the reload has not been asked for — the reload is
-    // how the just-recorded row stops reading as never-recorded.
-    effects.onSaved?.();
-    // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
-    // Asked for AFTER the commit and the reload, never on the failure path —
-    // the sweep only ever reads what is durably on disk.
-    if (take.finished) effects.requestSweep();
-    return true;
   } catch (cause) {
     console.error("Saving a take failed", cause);
     effects.update((held) =>
@@ -103,6 +94,26 @@ export async function performSaveTake(
     );
     return false;
   }
+  // The write has committed. Only the STORE op above is fallible-and-reportable
+  // as a save failure — once it lands, the result is success no matter what the
+  // reload does, so `onSaved` (and the sweep it unblocks) runs OUTSIDE that
+  // guard. A throwing `onSaved` (a reload that failed, say) must NOT read back
+  // as "the save failed" and offer Retry over a take already safely on disk
+  // (mirrors `performErase` in `use-erase-segment.ts`, Frank R-B6).
+  try {
+    // In the same tick as clearing the slot, so there is no frame where the
+    // slot is empty and the reload has not been asked for — the reload is
+    // how the just-recorded row stops reading as never-recorded.
+    effects.onSaved?.();
+  } catch (cause) {
+    console.error("Post-save notification failed", cause);
+  }
+  // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
+  // Asked for AFTER the commit and the reload, never on the failure path —
+  // the sweep only ever reads what is durably on disk. Also outside the guard
+  // and after `onSaved`'s own catch, so a throwing reload cannot skip it.
+  if (take.finished) effects.requestSweep();
+  return true;
 }
 
 /**
