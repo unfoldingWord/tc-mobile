@@ -29,6 +29,21 @@ view keeps its CDN `<img>` until B2/B3). Per-segment artwork is greenfield if a 
 phase asks for it; the removed cache is recoverable from git. The inline
 sentences below that still describe the cache as "kept" are struck.
 
+**Amended 2026-09-04 (#177)** — a **precache exception**, not a reversal. The
+thumbnails are still **bundled** and still ship in the build; they are
+temporarily **excluded from the service-worker precache** because **no shipped
+screen reads them yet**. `thumbUrl` (`src/lib/obs/catalog.ts`) has no importer:
+the pre-pivot browse it served is gone, and the Template Library that will read
+it (#33) has not landed. Precaching 598 files / 2.5 MB that nothing draws only
+delayed offline-readiness (611 → 13 precache entries, ~80% of the bytes) and
+exposed Workbox's atomic install to a full restart on any one failed fetch.
+**The stranding rationale below is not weakened:** you cannot be stranded by a
+picture no screen shows. When a screen reads `thumbUrl` (the Template Library,
+#33), **`jpg` is restored to `workbox.globPatterns`** so the set is precached
+again exactly as this ADR requires — the fix is **reader-gated**, and is **not**
+a switch to runtime-caching, which this ADR rejected for its stranding risk.
+Guarded by `tests/precache-manifest.test.ts`. Status stays **Accepted**.
+
 ## Context
 
 Phase 1 was scoped as a blank audio notebook. That makes it hard to beta test:
@@ -79,13 +94,13 @@ list rendered tiles at 48–56px. Centre-cropped and downscaled to 128px (2x the
 largest tile), **the entire 598-frame set is 2.5 MB** — sixteen times smaller
 than the source, and small enough to simply ship.
 
-| Asset                                 | Size       | Decision                                                                                          |
-| ------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------- |
-| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                         |
-| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled and precached** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs`         |
-| Full-size artwork, 360px              | 46.8 MB    | **Removed (B0, #26).** Was fetched per story into IndexedDB; the cache is deleted, Q4 answered no |
-| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                                |
-| Story narration MP3, 32kbps           | ~1 MB each | **Removed (B0, #26).** Out of Phase 1 (D5); the fetch path is deleted                             |
+| Asset                                 | Size       | Decision                                                                                                                                                                                                                                       |
+| ------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                                                                                                                                                                      |
+| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled; precache paused (#177)** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs`. Excluded from the precache until a screen reads `thumbUrl` (#33), when `jpg` is restored to `globPatterns`. See the 2026-09-04 amendment. |
+| Full-size artwork, 360px              | 46.8 MB    | **Removed (B0, #26).** Was fetched per story into IndexedDB; the cache is deleted, Q4 answered no                                                                                                                                              |
+| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                                                                                                                                                                             |
+| Story narration MP3, 32kbps           | ~1 MB each | **Removed (B0, #26).** Out of Phase 1 (D5); the fetch path is deleted                                                                                                                                                                          |
 
 **What bundling bought, beyond offline-on-first-run:**
 
@@ -99,6 +114,8 @@ than the source, and small enough to simply ship.
    facilitator installs over wifi and then goes to the field; waiting for a
    story to be browsed once before its pictures cache would strand them. The
    thumbnails are in the service-worker precache for exactly this reason.
+   (Temporarily excepted while no screen reads them — see the 2026-09-04
+   amendment, #177; the precache returns with the reader, #33.)
 
 ~~Full-size artwork is still fetched on demand~~ **Void, 2026-08-24 (B0, #26).**
 Full-size artwork is **no longer fetched or cached**: the on-demand fetch layer

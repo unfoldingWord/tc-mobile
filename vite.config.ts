@@ -36,16 +36,20 @@ export default defineConfig({
       devOptions: { enabled: true, type: "module" },
       workbox: {
         // Audio lives in IndexedDB, not the Cache API. The OBS thumbnails
-        // (public/obs/thumbs — 598 files, 2.5 MB) are deliberately excluded
-        // from the precache: no shipped screen reads them yet (`thumbUrl` in
+        // (public/obs/thumbs — 598 files, 2.5 MB) are temporarily excluded from
+        // the precache: no shipped screen reads them yet (`thumbUrl` in
         // src/lib/obs/catalog.ts has no importer), so precaching them made a
         // first install fetch ~2.6 MB of pictures nothing draws — ~80% of the
         // bytes and 98% of the entries — and Workbox's atomic install meant a
-        // single failed fetch restarted the whole set, stranding a facilitator
-        // installing over a slow link. Dropping `jpg` removes them from the
-        // manifest; the files still ship in the bundle and can be
-        // runtime-cached once the Template Library (#33) gives them a reader.
-        // See #177. tests/precache-manifest.test.ts guards against re-adding.
+        // single failed fetch restarted the whole set. Dropping `jpg` removes
+        // them from the manifest; the files still ship in the bundle.
+        //
+        // End state (ADR 0006, 2026-09-04 amendment): when a screen reads
+        // `thumbUrl` — the Template Library, #33 — RESTORE `jpg` here so the set
+        // is precached for offline first-run again. This is a reader-gated
+        // exception, NOT a move to runtime-caching, which ADR 0006 rejected for
+        // its stranding risk. See #177; tests/precache-manifest.test.ts pins the
+        // allowlist so `jpg` (and any broader glob) cannot return unnoticed.
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         // No single precached asset exceeds the 2 MiB default (the largest is
         // the ~552 KB entry chunk); the former 4 MiB override existed only for
