@@ -16,13 +16,18 @@
  * chunk IS the MP3 buffer, not a copy — so the chunks hold the archive once, and
  * the hook hands them to `File` as parts without ever concatenating them into a
  * second buffer. Peak is one chapter's PCM, its MP3, and the archive so far.
+ *
+ * `fflate` (~91 KB) is loaded via dynamic `import()` at the point of use rather
+ * than a static import: Share Book is one of several export paths, and a
+ * translator who never taps it should not pay for the zip codec in the entry
+ * chunk (#161). `exportBookZip` was already async for the encode, so this adds
+ * no new await point for callers.
  */
 
 import { exportChapterMp3 } from "@/lib/export/chapter";
 import { resolveBookChapters } from "@/lib/storage/books";
 import type { AudioCodec } from "@/types/audio";
 import type { BookId } from "@/types/domain";
-import { Zip, ZipPassThrough } from "fflate";
 
 interface BookExport {
   /**
@@ -92,6 +97,8 @@ export async function exportBookZip(
   const { chapters, missing: danglingChapters } =
     await resolveBookChapters(bookId);
   let missing = danglingChapters;
+
+  const { Zip, ZipPassThrough } = await import("fflate");
 
   // The streaming archive. `ondata` fires synchronously from `push`/`end` for a
   // pass-through entry (nothing here is deferred to a worker), so by the time
