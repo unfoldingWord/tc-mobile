@@ -327,8 +327,10 @@ function encodeInWorker(
     // `document.hidden` already false and a stale `lastMessageAt`, and wrongly
     // trip. Because this latch was set at hide time, `onStall` grants a fresh
     // window instead of trusting the un-measurable elapsed silence, whichever of
-    // the two runs first.
-    let mightHaveFrozen = false;
+    // the two runs first. SEEDED from the current state: an encode that begins
+    // while the page is ALREADY hidden gets no hide transition, so the latch would
+    // otherwise stay false and the same resume race would trip it (Frank R2 P2 #2).
+    let mightHaveFrozen = pageHidden();
     let stallTimer: ReturnType<typeof setTimeout>;
     const armStall = (ms: number) => {
       stallTimer = setTimeout(onStall, ms);
