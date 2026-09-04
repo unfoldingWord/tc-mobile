@@ -93,8 +93,17 @@ export default tseslint.config(
   // `.lib-boundary-probe` is written by tests/lib-boundary.test.ts and removed
   // in afterAll. An interrupted run leaves it behind, and it contains
   // deliberately-invalid code — gitignored, so it must be lint-ignored too.
+  // `.react-hooks-refs-probe` is the same pattern for
+  // tests/react-hooks-refs-gate.test.ts.
   {
-    ignores: ["dist", "dev-dist", ".wrangler", "public", ".lib-boundary-probe"],
+    ignores: [
+      "dist",
+      "dev-dist",
+      ".wrangler",
+      "public",
+      ".lib-boundary-probe",
+      ".react-hooks-refs-probe",
+    ],
   },
 
   {
@@ -105,6 +114,17 @@ export default tseslint.config(
       "react-refresh": pluginReactRefresh,
     },
     rules: {
+      // #212: eslint-plugin-react-hooks 7.1.1's static analysis (which
+      // `refs` and every other rule here depend on) bails out on a hook body
+      // where a `catch (cause) { ... }` block passes a `setState` updater a
+      // closure that captures `cause` — ANYWHERE in that hook's body,
+      // silencing e.g. an unrelated render-time `ref.current = x` write
+      // earlier in the same function. Scoped to that one hook function, not
+      // the whole file. This is exactly the shape `commit` had in
+      // src/hooks/use-save-take.ts before #180 simplified it, which is how a
+      // real `react-hooks/refs` violation passed `npm run lint` there for as
+      // long as that shape stood. tests/react-hooks-refs-gate.test.ts pins
+      // both halves: a plain ref write fires, and this shape stays silent.
       ...pluginReactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": [
         "warn",

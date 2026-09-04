@@ -35,3 +35,4 @@ npm-debug.log*
 # Review reports — transient, regenerated per commit.
 .review/
 .lib-boundary-probe/
+.react-hooks-refs-probe/

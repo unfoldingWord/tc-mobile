@@ -229,6 +229,18 @@ the DOM-free pass is `verify` and CI. `scripts/**/*.mjs`
 are linted too — they matched no config block and ran with zero rules while
 fetching over the network and writing 598 files into `public/`.
 
+**`react-hooks/refs` has a named blind spot too (#212).** A closure defined
+inside a `catch (cause) { ... }` block that references `cause` — in the case
+found, a `setState` updater — anywhere in a hook's body makes
+eslint-plugin-react-hooks 7.1.1's analysis bail out on that hook, silencing
+every rule that depends on it, `refs` included, for that hook only (a second
+hook in the same file is unaffected). This is how `src/hooks/use-save-take.ts`
+carried a real render-time `ref.current = x` write clean through
+`npm run lint` until PR #180 simplified `commit` and the write started
+failing. `tests/react-hooks-refs-gate.test.ts` pins both halves: a plain ref
+write fires, and the bail-out shape stays silent — so a plugin upgrade that
+fixes it fails that test instead of the gate quietly narrowing again.
+
 **Do not ramp up before it is needed.** Every rule above pays for itself now.
 A rule that will pay off after October can wait until after October.
 
