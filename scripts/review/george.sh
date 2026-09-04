@@ -63,8 +63,12 @@ PROMPT_EOF
 # The delimiter above is QUOTED ('PROMPT_EOF'), so the prompt is captured
 # verbatim: literal backticks and $ in a steer (e.g. `settle()`, or a $VAR named
 # in a round-context block) are no longer command-substituted or expanded away.
-# The named fields are injected here by literal string replacement, which does
-# not re-evaluate the value it inserts either.
+# The named fields are injected here by literal string replacement. Bash 5.2
+# defaults `patsub_replacement` on, which makes a literal `&` in a replacement
+# value expand to the matched placeholder (a `feature/a&b` base would inject
+# `feature/a@@BASE@@b`); disable it so the value is inserted verbatim. Guarded
+# for bash < 5.2, where the option does not exist and `&` is not special.
+shopt -u patsub_replacement 2>/dev/null || true
 PROMPT="$PROMPT_TEMPLATE"
 PROMPT="${PROMPT//@@REPO_CONTEXT@@/$REPO_CONTEXT}"
 PROMPT="${PROMPT//@@BRANCH@@/$BRANCH}"
