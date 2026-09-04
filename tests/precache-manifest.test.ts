@@ -15,11 +15,14 @@ import { describe, expect, it } from "vitest";
 // pictures nothing draws, and Workbox's atomic install restarts on any one
 // failed fetch. This is a temporary, reader-gated exception (ADR 0006,
 // 2026-09-04 amendment), NOT a permanent ban and NOT a switch to
-// runtime-caching. When a screen reads `thumbUrl` (the Template Library, #33),
-// `jpg` must be RESTORED to `globPatterns` (and INTENDED below updated in the
-// same change, on purpose) — otherwise the tiles are precached nowhere, there
-// is no runtimeCaching, and a field install strands on broken images. The
-// reader-gated test below fails exactly that omission.
+// runtime-caching. When a screen reads OBS frame imagery — via `thumbUrl`, a
+// hand-built /obs/thumbs/ path, or a CDN frame.image reference (the Template
+// Library, #33, is the expected case) — `jpg` must be RESTORED to
+// `globPatterns` (and INTENDED below updated in the same change, on purpose)
+// — otherwise the tiles are precached nowhere, there is no runtimeCaching,
+// and a field install strands on broken images. The reader-gated test below
+// fails exactly that omission. #219 widened what counts as "reads" beyond the
+// `thumbUrl` identifier — see `OBS_IMAGERY_PATTERNS` below.
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG = path.join(ROOT, "vite.config.ts");
 const SRC = path.join(ROOT, "src");
@@ -50,17 +53,36 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
-// A shipped module "reads" a thumbnail when it imports or calls `thumbUrl`.
-// A bare doc-comment mention (e.g. src/types/obs.ts) is not a reader, so match
-// an import of the symbol or a call `thumbUrl(` — not the identifier alone.
-function thumbUrlReaders(): string[] {
+// A shipped module "reads" OBS frame imagery — the thing the precache
+// decision actually turns on — three ways, none of which require going
+// through the `thumbUrl` symbol (#219):
+//
+// 1. Imports or calls `thumbUrl`. A bare doc-comment mention (e.g.
+//    src/types/obs.ts) is not a reader, so this matches an import of the
+//    symbol or a call `thumbUrl(` — not the identifier alone.
+// 2. Hand-builds the `/obs/thumbs/…` path itself instead of calling
+//    `thumbUrl` — the same bundled file, reached without the symbol the old
+//    check tracked.
+// 3. Reads a frame's CDN image directly (`frame.image`, or the door43.org
+//    host the catalogue's `imageBase` points at) — the pre-pivot recording
+//    view's precedent for this (ADR 0006) shows it is a real path a screen
+//    can take instead of the offline-safe bundled thumbnail; a screen that
+//    takes it is displaying frame imagery just as much as one that calls
+//    `thumbUrl`, so it must gate the same way.
+const OBS_IMAGERY_PATTERNS = [
+  /import[^;]*\bthumbUrl\b/,
+  /\bthumbUrl\s*\(/,
+  /\/obs\/thumbs\//,
+  /\bframe\s*\.\s*image\b/,
+  /door43\.org/i,
+];
+
+function obsThumbnailReaders(): string[] {
   return tsFiles(SRC)
     .filter((file) => file !== CATALOG)
     .filter((file) => {
       const source = readFileSync(file, "utf8");
-      return (
-        /import[^;]*\bthumbUrl\b/.test(source) || /\bthumbUrl\s*\(/.test(source)
-      );
+      return OBS_IMAGERY_PATTERNS.some((pattern) => pattern.test(source));
     })
     .map((file) => path.relative(ROOT, file));
 }
@@ -76,28 +98,30 @@ describe("workbox precache globPatterns", () => {
 });
 
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
-  const readers = thumbUrlReaders();
+  const readers = obsThumbnailReaders();
   const jpgPrecached = globPatterns().some((p) => /\bjpe?g\b/i.test(p));
 
   if (readers.length === 0) {
-    it("keeps jpg out of the precache while no screen reads thumbUrl", () => {
-      // Today: no src module reads thumbUrl, so the thumbnails must not be
-      // precached (#177). Restoring jpg here without a reader would be dead
-      // precache weight.
+    it("keeps jpg out of the precache while no screen reads OBS frame imagery", () => {
+      // Today: no src module reads a thumbnail (via `thumbUrl`, a hand-built
+      // /obs/thumbs/ path, or a CDN frame.image reference), so the
+      // thumbnails must not be precached (#177). Restoring jpg here without a
+      // reader would be dead precache weight.
       expect(
         jpgPrecached,
-        "no src module reads thumbUrl, so jpg must stay out of globPatterns (#177)"
+        "no src module reads OBS frame imagery, so jpg must stay out of globPatterns (#177)"
       ).toBe(false);
     });
   } else {
-    it("restores jpg to the precache once a screen reads thumbUrl", () => {
-      // A reader landed (e.g. B7 Template Library, #33). The thumbnails now
-      // render on screen, so they must be precached again — otherwise a field
-      // install strands on broken tiles, the exact case ADR 0006 rejected
-      // runtime-caching to avoid.
+    it("restores jpg to the precache once a screen reads OBS frame imagery", () => {
+      // A reader landed (e.g. B7 Template Library, #33) — whether through
+      // `thumbUrl`, a hand-built /obs/thumbs/ path, or a CDN frame.image
+      // reference. The thumbnails now render on screen, so they must be
+      // precached again — otherwise a field install strands on broken tiles,
+      // the exact case ADR 0006 rejected runtime-caching to avoid.
       expect(
         jpgPrecached,
-        `these modules read thumbUrl, so jpg must be restored to globPatterns (and INTENDED) or field installs strand on broken tiles (ADR 0006): ${readers.join(", ")}`
+        `these modules read OBS frame imagery, so jpg must be restored to globPatterns (and INTENDED) or field installs strand on broken tiles (ADR 0006): ${readers.join(", ")}`
       ).toBe(true);
     });
   }
