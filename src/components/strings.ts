@@ -193,4 +193,22 @@ export const strings = {
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
   shareBookFilename: (book: string): string => `${book}.zip`,
+
+  // ── Root error boundary (#167) ───────────────────────────────────────────
+  // The whole text layer of the crash screen. Says that something failed and
+  // nothing more: the cause goes to the failure sink for a maintainer to read,
+  // never to a translator. It is also the screen's accessible name.
+  appFailed: "Something went wrong.",
+  // The one action, named for what it actually does. NOT `tryAgain`: on the
+  // Books shelf that label means "run the load that just failed again", and
+  // here the button reloads the document — the app starts over from disk, and
+  // anything that lived only in memory is already gone. A screen reader speaks
+  // the label and nothing else, so the two must not share one.
+  appReload: "Restart the app",
+  // Said once, under the mark: what the button is about to do. No cause text —
+  // a stack-shaped string in a language the reader may not speak is worse than
+  // the glyph alone. It does NOT claim the in-progress work survived: a render
+  // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
+  // "everything you saved is still here" line would over-promise (George, r2).
+  appReloadTeach: "The app will start again.",
 } as const;
