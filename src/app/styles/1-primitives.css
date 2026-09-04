@@ -70,8 +70,11 @@
     --p-radius-full: 999px;
 
     /* --- Type. Three sizes carry a whole screen. ---------------------------- */
-    --p-font-ui:
-      "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    /* The design brief (docs/design/section-screen-pass-b.md) names IBM Plex
+       Sans, but no @font-face or woff2 ships (#161) — adding a font binary is
+       out of scope here, so the stack starts at the system font instead of
+       naming a face that never loads. */
+    --p-font-ui: ui-sans-serif, system-ui, -apple-system, sans-serif;
     --p-text-xs: 11px;
     --p-text-sm: 12px;
     --p-text-md: 13px;
