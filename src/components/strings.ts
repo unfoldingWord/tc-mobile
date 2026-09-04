@@ -211,4 +211,15 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+
+  // ── The database is unreachable (#221) ───────────────────────────────────
+  // Two full-screen states, one in each copy of the app, when a newer copy
+  // upgrades the database. The mark on the panel carries the meaning; these
+  // lines support it, and are the whole text layer a screen reader speaks.
+  // Both offer the same exit, `appReload` above — restarting is what picks up
+  // the newer build, and on the blocked side it is what re-tries the open.
+  dbBlocked: "Another copy of this app is open.",
+  dbBlockedTeach: "Close the other one, then restart.",
+  dbOutOfDate: "This copy is out of date.",
+  dbOutOfDateTeach: "Restart to use the new version.",
 } as const;
