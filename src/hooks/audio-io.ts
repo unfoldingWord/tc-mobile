@@ -321,7 +321,10 @@ async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
   // does it in optimised native code rather than a hand-rolled JS resampler.
   const frames = Math.max(
     1,
-    Math.ceil(buffer.duration * CANONICAL_SAMPLE_RATE)
+    Math.ceil(
+      (buffer.duration * CANONICAL_SAMPLE_RATE * buffer.sampleRate) /
+        buffer.sampleRate
+    )
   );
   const offline = new OfflineAudioContext(
     CANONICAL_CHANNELS,
