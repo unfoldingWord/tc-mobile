@@ -352,6 +352,46 @@ describe("closeDb — an open that is still in flight", () => {
     // Nothing is left holding the database, so a delete is not blocked.
     await expect(deleteDb()).resolves.toBeUndefined();
   });
+
+  it("closes only what existed when it was called, not a newer connection", async () => {
+    const stale = await openLegacyV3Open();
+    await expect(getDb()).rejects.toBeInstanceOf(Error);
+
+    // The close begins while the rejected open is still queued. A read landing
+    // during that wait opens a connection of its own — one this close never saw
+    // and must not close: closing it would leave the app holding a dead handle
+    // it has no reason to expect.
+    const closing = closeDb();
+    const opening = getDb();
+    stale.close();
+    await closing;
+
+    const live = await opening;
+    await expect(
+      live.get("clipMeta", "absent" as never)
+    ).resolves.toBeUndefined();
+    await expect(getDb()).resolves.toBe(live);
+    await closeDb();
+  });
+
+  it("leaves no closed connection behind in the cache", async () => {
+    const stale = await openLegacyV3Open();
+    await expect(getDb()).rejects.toBeInstanceOf(Error);
+
+    // Nothing else asks for the database during this close, so the connection
+    // the queued open finally hands over belongs to the close — it must not be
+    // installed in the cache the close is emptying, or the next read is served
+    // a connection this call has already closed.
+    const closing = closeDb();
+    stale.close();
+    await closing;
+
+    const db = await getDb();
+    await expect(
+      db.get("clipMeta", "absent" as never)
+    ).resolves.toBeUndefined();
+    await closeDb();
+  });
 });
 
 describe("getDb — cache invalidation is identity-checked", () => {
