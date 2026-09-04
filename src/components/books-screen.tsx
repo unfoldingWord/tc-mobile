@@ -8,6 +8,7 @@ import { Notice } from "./notice";
 import { strings } from "./strings";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -46,6 +47,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
+  // Durable storage (#12). A book exists only because a write committed, so a
+  // successful shelf read that finds one is "after the first successful write"
+  // reached from the read side — the trigger the hook's docblock explains. The
+  // marker is non-null only when the browser explicitly said it has NOT
+  // promised to keep this data; unknown (no API, a rejected query) says nothing.
+  const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
@@ -203,8 +210,20 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             />
           )}
         </Notice>
+      ) : loading ? (
+        <Notice tone="busy">{strings.loadingBooks}</Notice>
       ) : (
-        loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
+        /* The storage-durability marker (#12), last in this chain because it is
+           a standing condition rather than something that just happened: an
+           acute failure and a wait both outrank it, and `Notice` is one line in
+           one place. `info` is the right tone by the notice-tone table — nothing
+           has failed (not `alert`) and there is nothing to wait for (not
+           `busy`) — so a non-reader gets the heads-up ring rather than the mark
+           that means a failure. It cannot collide with the wait above anyway:
+           the marker needs a completed read, which is when `loading` is false. */
+        storage === "not-persisted" && (
+          <Notice tone="info">{strings.storageNotPersisted}</Notice>
+        )
       )}
 
       <div className="flex-1 overflow-y-auto">
