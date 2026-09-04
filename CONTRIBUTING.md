@@ -202,6 +202,10 @@ PR is the production gate.
 - **Cloudflare Workers Builds deploys on merge** — there are no deploy
   workflows in `.github/`; only `ci.yml` lives there.
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
+  `npm run check:deploy` (or `node scripts/check-deploy.mjs <origin>`) does
+  this by fetching `/version.json` from the deployed origin — see AGENTS.md,
+  "Confirming a deploy and rolling one back", for the check and the rollback
+  path.
 
 ## Working with an AI coding agent
 

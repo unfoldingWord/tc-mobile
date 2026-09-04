@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 
@@ -22,6 +22,34 @@ const buildSha = (() => {
   }
 })();
 
+// A machine-checkable version signal alongside the human-read footer stamp
+// (`components/build-stamp.tsx`). Emitted at build time, not committed, so it
+// can never drift from the build that produced it — same inputs as the
+// footer's __APP_VERSION__/__BUILD_SHA__. It is deliberately `.json`, not one
+// of the PWA precache's globPatterns extensions, so a post-promotion check
+// fetching it always hits the deployed origin rather than a cached copy.
+function versionJsonPlugin(): Plugin {
+  return {
+    name: "version-json",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source:
+          JSON.stringify(
+            {
+              version: pkg.version,
+              sha: buildSha,
+              builtAt: new Date().toISOString(),
+            },
+            null,
+            2
+          ) + "\n",
+      });
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -29,6 +57,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    versionJsonPlugin(),
     VitePWA({
       registerType: "autoUpdate",
       // `dev-dist` lets us verify offline behaviour in `vite dev` instead of

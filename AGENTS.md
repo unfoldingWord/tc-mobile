@@ -303,6 +303,57 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions no longer deploys anything, so it needs no Cloudflare credentials. Only
 `ci.yml` remains there.
 
+### Confirming a deploy and rolling one back
+
+A merged promotion PR is not a deployed build (#143 was exactly that: green on
+GitHub, never deployed). This is the machine-checkable version signal and the
+runbook for undoing a bad one.
+
+**The version signal.** Every build emits `dist/version.json` (a small Vite
+plugin in `vite.config.ts`, `generateBundle`, reusing the same `pkg.version`
+and `buildSha` the footer build stamp uses) —
+`{ "version": "0.1.x", "sha": "<short sha>", "builtAt": "<ISO timestamp>" }`.
+It is deliberately not a build asset the PWA precaches (`.json` is outside
+`workbox.globPatterns` in `vite.config.ts`), so fetching it always reaches the
+origin, never a cached copy.
+
+After a `develop -> staging` or `staging -> main` merge, the promoter runs:
+
+```bash
+npm run check:deploy                                   # staging, this checkout's HEAD
+node scripts/check-deploy.mjs <origin> --sha=<short-sha> --version=<x.y.z>
+```
+
+It fetches `<origin>/version.json?t=<timestamp>` (the query string busts any
+intermediate cache), compares `sha` and `version` against what was expected,
+prints a pass/fail line, and exits non-zero on a mismatch or a fetch failure —
+so it can gate a promoter's next step without anyone reading a diff by eye.
+The default origin is the staging Worker; pass `main`'s URL to check a
+production promotion.
+
+**Rolling back.** Two ways to move the deployed Worker back to a prior build,
+independent of the version check above:
+
+- **Cloudflare dashboard** — the Worker's **Deployments** tab offers rolling
+  back to a previous deployment; see the Cloudflare Workers docs for the
+  current steps, which are not reproduced here to avoid drifting from what the
+  dashboard actually shows.
+- **`npx wrangler rollback`** — run against the `tc-mobile` Worker for
+  production, or `npx wrangler rollback --env staging` for
+  `tc-mobile-staging`. This targets the Worker directly, without going through
+  a build.
+
+**What rollback does not do.** Either path moves the deployed Worker only — it
+does not touch `staging` or `main`. The branch still points at the bad commit,
+so a rollback must be followed by a revert PR against the affected branch, or
+the next promotion will simply redeploy the same regression. And a PWA client
+already installed keeps running its current service worker until it next
+checks for an update (`registerType: "autoUpdate"` in `vite.config.ts` checks
+on its own schedule, not instantly) — so a rollback is not immediately visible
+on a phone that already has the app open or installed, and `check:deploy`
+confirming the origin has rolled back is not the same claim as confirming a
+given device has.
+
 ## Device testing — the HTTPS caveat
 
 `getUserMedia` requires a secure context. `localhost` qualifies;
