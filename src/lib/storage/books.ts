@@ -74,6 +74,15 @@ export function isFinished(status: RecordingStatus): boolean {
 
 // ── Books ──────────────────────────────────────────────────────────────────
 
+/**
+ * @pivotpending No caller under `src/` — the Books screen calls the hook's own
+ * `createBook` (`src/hooks/use-books.ts`), which calls `createNextBook` below,
+ * not this one. `languageCode` already has a writer here; what is missing is a
+ * caller, which is a UI question for B7's Template Library (#33), not a schema
+ * one — per the #174 v5-schema thread's proposal: "`languageCode` already has
+ * a writer, `createBook(name, languageCode)` at `books.ts:74`; what is missing
+ * is a caller, which is a UI question for #33, not a schema one."
+ */
 export async function createBook(
   name: string,
   languageCode: string | null = null,
@@ -361,6 +370,19 @@ async function priorClipGeneration(
  * Assumes the clip is on disk (its caller `putClip`s first). For the record/edit
  * commit path, prefer `saveTake`, which writes the clip in the SAME transaction
  * so a failure cannot strand an orphan.
+ *
+ * @pivotpending No caller under `src/` today — every real write goes through
+ * `saveTake`, which writes the clip and the take together. This function is
+ * what `writeTakeInTx` was factored out to share with `saveTake` in the first
+ * place, for the case where the clip is ALREADY on disk and only needs to be
+ * pointed at: exactly the shape #24's archive restore needs (a decoded MP3 from
+ * the archive is `putClip`'d once, then attached to its segment as a take
+ * without re-writing the audio), which #174 (the v5 schema) is the tracking
+ * issue for. Folding its ~9 test files' worth of seeding calls onto `saveTake`
+ * was considered and rejected as the larger, riskier change for what it buys —
+ * `saveTake` writes a fresh clip every time, so seeding through it would mean
+ * every test re-deriving PCM bytes for a clip the test already has, not
+ * reusing `writeTakeInTx`'s actual shared path the way `addTake` does.
  */
 export async function addTake(
   segmentId: SegmentId,

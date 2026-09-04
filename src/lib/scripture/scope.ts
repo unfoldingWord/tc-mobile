@@ -13,8 +13,20 @@
  * Parsing these is the difference between emitting a burrito that validates
  * and one that merely looks right, so the grammar is implemented once, here,
  * and unit-tested.
+ *
+ * This is the same grammar `SegmentRef.scope` is typed on
+ * (`src/types/domain.ts:48`) — not a Burrito *export* concern (out of Phase 1,
+ * AGENTS.md item 5), but the internal addressing a segment's optional
+ * scripture reference already uses today. `obsFrameScope`
+ * (`src/lib/obs/catalog.ts`) builds these strings for OBS; this module is
+ * where a Bible-book template (B7's Template Library, #33) would build and
+ * read the same strings for a scripture-derived segment.
  */
 
+/**
+ * @pivotpending No caller yet — see the module docblock above. B7 (#33) is
+ * the writer of `SegmentRef.scope`, which this is the parsed form of.
+ */
 export interface ParsedScope {
   readonly startChapter: number;
   /** `null` when the scope addresses whole chapters rather than verses. */
@@ -29,6 +41,8 @@ const CV = /^(\d+)(?::(\d+))?$/;
  * Parse a scope string. Returns `null` for the whole-book scope (`""`) and
  * throws on anything that is not valid grammar — a malformed scope must not
  * silently become a plausible-looking wrong reference.
+ *
+ * @pivotpending No caller yet — see the module docblock above (#33).
  */
 export function parseScope(scope: string): ParsedScope | null {
   const trimmed = scope.trim();
@@ -84,6 +98,9 @@ export function parseScope(scope: string): ParsedScope | null {
   return result;
 }
 
+/**
+ * @pivotpending No caller yet — see the module docblock above (#33).
+ */
 export function isValidScope(scope: string): boolean {
   try {
     parseScope(scope);
@@ -93,7 +110,11 @@ export function isValidScope(scope: string): boolean {
   }
 }
 
-/** Render a parsed scope back to canonical string form. */
+/**
+ * Render a parsed scope back to canonical string form.
+ *
+ * @pivotpending No caller yet — see the module docblock above (#33).
+ */
 export function formatScope(parsed: ParsedScope | null): string {
   if (parsed === null) return "";
   const { startChapter, startVerse, endChapter, endVerse } = parsed;
