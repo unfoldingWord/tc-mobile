@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 // The Workbox precache manifest is generated at build time from the
 // `workbox.globPatterns` in vite.config.ts, so what it contains cannot be
 // asserted without a full production build. This pins the one knob that
-// decides it.
+// decides it, and couples that knob to whether a screen actually reads the
+// thumbnails.
 //
 // #177 removed the OBS thumbnails (public/obs/thumbs/*.jpg — 598 files, ~80%
 // of the precache bytes) from the precache because no shipped screen reads
@@ -15,12 +16,16 @@ import { describe, expect, it } from "vitest";
 // failed fetch. This is a temporary, reader-gated exception (ADR 0006,
 // 2026-09-04 amendment), NOT a permanent ban and NOT a switch to
 // runtime-caching. When a screen reads `thumbUrl` (the Template Library, #33),
-// `jpg` is deliberately RESTORED to the allowlist below — at which point this
-// test's INTENDED constant is updated in the same change, on purpose. Until
-// then the exact-set assertion fails on any drift: re-adding `jpg`, adding
-// `obs/thumbs/*`, or broadening to `**/*` all break it.
-const CONFIG = path.resolve(import.meta.dirname, "../vite.config.ts");
-const SW = path.resolve(import.meta.dirname, "../dist/sw.js");
+// `jpg` must be RESTORED to `globPatterns` (and INTENDED below updated in the
+// same change, on purpose) — otherwise the tiles are precached nowhere, there
+// is no runtimeCaching, and a field install strands on broken images. The
+// reader-gated test below fails exactly that omission.
+const ROOT = path.resolve(import.meta.dirname, "..");
+const CONFIG = path.join(ROOT, "vite.config.ts");
+const SRC = path.join(ROOT, "src");
+// The definition site of `thumbUrl`; excluded so defining it is not read as a
+// reader of it.
+const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
 
 // The exact allowlist the app shell needs, and nothing more. `jpg` is absent
 // by #177; restoring it is a deliberate edit here plus in vite.config.ts.
@@ -35,46 +40,65 @@ function globPatterns(): string[] {
   return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
 }
 
+function tsFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...tsFiles(full));
+    else if (/\.tsx?$/.test(entry.name)) out.push(full);
+  }
+  return out;
+}
+
+// A shipped module "reads" a thumbnail when it imports or calls `thumbUrl`.
+// A bare doc-comment mention (e.g. src/types/obs.ts) is not a reader, so match
+// an import of the symbol or a call `thumbUrl(` — not the identifier alone.
+function thumbUrlReaders(): string[] {
+  return tsFiles(SRC)
+    .filter((file) => file !== CATALOG)
+    .filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return (
+        /import[^;]*\bthumbUrl\b/.test(source) || /\bthumbUrl\s*\(/.test(source)
+      );
+    })
+    .map((file) => path.relative(ROOT, file));
+}
+
 describe("workbox precache globPatterns", () => {
   it("matches the intended allowlist exactly", () => {
     // Exact-set, not a token scan: a broader glob (`**/*`) or an added
     // `obs/thumbs/*` must fail here just as re-adding `jpg` does. Changing the
-    // precached set is a deliberate act, and updating this constant is how it
-    // is recorded.
+    // precached set is a deliberate act, and updating INTENDED is how it is
+    // recorded.
     expect(globPatterns()).toEqual(INTENDED);
-  });
-
-  it("does not precache jpg while no screen reads the thumbnails (#177)", () => {
-    // Redundant with the exact-set check, kept for a pointed failure message
-    // that names the reason and the gate.
-    const jpgPrecached = globPatterns().some((p) => /\bjpe?g\b/i.test(p));
-    expect(
-      jpgPrecached,
-      "globPatterns must exclude jpg until a screen reads thumbUrl (#177/#33); restoring it is a deliberate edit to INTENDED + vite.config.ts"
-    ).toBe(false);
   });
 });
 
-// Cross-check against the built manifest when a production build is present.
-// `npm test` runs before `npm run build` in `verify`, so dist/sw.js may be
-// absent in a clean checkout or in CI; this asserts the real artifact whenever
-// it exists rather than only the config that produces it.
-describe.runIf(existsSync(SW))("built precache manifest (dist/sw.js)", () => {
-  const sw = existsSync(SW) ? readFileSync(SW, "utf8") : "";
+describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
+  const readers = thumbUrlReaders();
+  const jpgPrecached = globPatterns().some((p) => /\bjpe?g\b/i.test(p));
 
-  it("carries no obs/thumbs entries", () => {
-    const thumbs = [...sw.matchAll(/obs\/thumbs\/obs-[\d-]+\.jpg/g)];
-    expect(
-      thumbs,
-      `unexpected thumbnails in precache: ${thumbs.length}`
-    ).toHaveLength(0);
-  });
-
-  it("carries no jpg entries at all", () => {
-    const jpgs = [...sw.matchAll(/[\w/.-]+\.jpe?g/g)].map((m) => m[0]);
-    expect(
-      jpgs,
-      `unexpected jpg in precache: ${jpgs.slice(0, 3).join(", ")}`
-    ).toHaveLength(0);
-  });
+  if (readers.length === 0) {
+    it("keeps jpg out of the precache while no screen reads thumbUrl", () => {
+      // Today: no src module reads thumbUrl, so the thumbnails must not be
+      // precached (#177). Restoring jpg here without a reader would be dead
+      // precache weight.
+      expect(
+        jpgPrecached,
+        "no src module reads thumbUrl, so jpg must stay out of globPatterns (#177)"
+      ).toBe(false);
+    });
+  } else {
+    it("restores jpg to the precache once a screen reads thumbUrl", () => {
+      // A reader landed (e.g. B7 Template Library, #33). The thumbnails now
+      // render on screen, so they must be precached again — otherwise a field
+      // install strands on broken tiles, the exact case ADR 0006 rejected
+      // runtime-caching to avoid.
+      expect(
+        jpgPrecached,
+        `these modules read thumbUrl, so jpg must be restored to globPatterns (and INTENDED) or field installs strand on broken tiles (ADR 0006): ${readers.join(", ")}`
+      ).toBe(true);
+    });
+  }
 });
