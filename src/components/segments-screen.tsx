@@ -163,6 +163,18 @@ export const SegmentsScreen = forwardRef<
   // CTA is up, so there is one create action, announced once.
   const showEmpty = loaded && rows.length === 0;
 
+  // The one line the screen says about a failure, in the order it used to be
+  // resolved: the chapter's own load/write failure, then playback, then erase.
+  // The first two are keys now (#172) and are looked up here — a caught browser
+  // string never reaches this screen. `audio.error` is still a message from the
+  // audio session, which this PR leaves alone (it belongs to the recorder and
+  // audio lane); erase already showed fixed copy and now says "no room left on
+  // this phone" when that is what happened, instead of the generic line.
+  const failureText =
+    (error && strings[error]) ??
+    audio.error ??
+    (erase.error ? strings[erase.error] : null);
+
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
   // what the translator is looking at. Its error code is mapped to copy here and
@@ -283,8 +295,8 @@ export const SegmentsScreen = forwardRef<
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
-      {(error ?? audio.error ?? (erase.error ? strings.eraseFailed : null)) ? (
-        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
+      {failureText ? (
+        <Notice>{failureText}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).

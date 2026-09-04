@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import {
   addChapter as addChapterToBook,
   chapterProgress,
@@ -61,7 +63,9 @@ export function useBooks() {
   // by a failed create — so only this distinguishes "a genuinely empty shelf"
   // from "a read that never succeeded" for the caller's empty-vs-retry choice.
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A vocabulary key, never a caught message (#172): the screen looks the word
+  // up in `strings`, and the cause goes to the failure sink instead.
+  const [error, setError] = useState<FailureKey | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -74,8 +78,14 @@ export function useBooks() {
         setError(null);
         setLoaded(true);
       } catch (cause) {
+        // Reported BEFORE the cancelled check: a shelf read that failed after
+        // the screen unmounted still failed, and the sink is the maintainer's
+        // channel, not the screen's. (Two mounts that each throw their own error
+        // report twice — `reportFailure` collapses one OBJECT reaching two feeds,
+        // not two separate failures. Two logs of a real double read is honest.)
+        reportFailure(cause, "books-load");
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(failureKey(cause, "loadFailed"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -96,7 +106,10 @@ export function useBooks() {
       reload();
       return book;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      reportFailure(cause, "books-create");
+      // A write: a full phone is the likeliest cause and the one a translator
+      // can act on, so it is classified here rather than only on the take save.
+      setError(failureKey(cause, "saveFailed"));
       return null;
     }
   }, [reload]);
@@ -108,7 +121,8 @@ export function useBooks() {
         reload();
         return chapter;
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        reportFailure(cause, "books-add-chapter");
+        setError(failureKey(cause, "saveFailed"));
         return null;
       }
     },

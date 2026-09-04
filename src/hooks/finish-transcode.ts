@@ -31,6 +31,7 @@
  */
 
 import { withEncoder } from "./mp3-codec";
+import { reportFailure } from "./report-failure";
 import { computePeaks } from "@/lib/audio/peaks";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
@@ -90,7 +91,11 @@ async function sweepOnce(): Promise<void> {
   try {
     owed = await listPcmFinishedSegments();
   } catch (cause) {
-    console.error("Could not list segments awaiting transcode", cause);
+    // The sink, not the console: this failure has no screen at all (nothing has
+    // changed from where the translator stands) and `console.error` is not a
+    // channel on a phone in a village. `reportFailure` still logs — it is the
+    // one place that destination is chosen (#167, #205).
+    reportFailure(cause, "transcode-list");
     return;
   }
   for (const { segmentId, clipId } of owed) {
@@ -117,10 +122,17 @@ async function sweepOnce(): Promise<void> {
         await commitTranscode(segmentId, clipId, mp3, peaks);
       });
     } catch (cause) {
-      console.error(
-        "Transcoding a finished segment failed; its PCM is kept",
-        segmentId,
-        cause
+      // Wrapped rather than reported bare, because WHICH segment failed is the
+      // fact a maintainer needs and the sink carries only a cause and a stable
+      // context — a per-segment context string would make the log key unbounded
+      // and break the sink's same-cause-same-context collapse. The original is
+      // kept whole on `.cause`; nothing here reads its message.
+      reportFailure(
+        new Error(
+          `Transcoding finished segment ${segmentId} failed; its PCM is kept`,
+          { cause }
+        ),
+        "transcode-segment"
       );
     }
   }

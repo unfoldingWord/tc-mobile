@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
@@ -119,7 +121,12 @@ export async function loadRecorderSegmentView(
  */
 export function useRecorderSegment(segmentId: SegmentId) {
   const [view, setView] = useState<RecorderSegmentView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // A vocabulary key, never a caught message (#172). The sheet reads this as a
+  // presence — a non-null `error` raises `LoadErrorPanel`, whose copy is fixed —
+  // so nothing renders the word today; it is a key rather than a boolean so a
+  // failed open cannot regress into showing a decoder string, and so a full
+  // phone met on the read is already classified if the panel ever says which.
+  const [error, setError] = useState<FailureKey | null>(null);
   // Bumped by `retry`. The sheet is keyed on `segmentId` (App remounts it per
   // open), so a new segment resets this to 0 through the remount, not here.
   const [attempt, setAttempt] = useState(0);
@@ -144,13 +151,15 @@ export function useRecorderSegment(segmentId: SegmentId) {
         setView(next);
         setError(null);
       } catch (cause) {
+        // Reported before the cancelled check: a decode that failed after the
+        // sheet closed still failed, and this is the maintainer's only channel.
+        reportFailure(cause, "recorder-open");
         if (cancelled) return;
-        // The message drives `error` (the panel branch); the cause itself
-        // reaches the log sink, since the panel shows translator copy, not a
-        // decoder string.
-        console.error("Could not open the segment for recording", cause);
+        // The KEY drives `error` (the panel branch); the cause itself reaches
+        // the sink above, since the panel shows translator copy, not a decoder
+        // string.
         setView(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(failureKey(cause, "loadFailed"));
       } finally {
         if (!cancelled) setRetrying(false);
       }

@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
+import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { clearSegmentTake } from "@/lib/storage/books";
 import type { SegmentId } from "@/types/domain";
 
@@ -22,14 +24,19 @@ import type { SegmentId } from "@/types/domain";
  * The work lives here as a plain async function so it is exercised in Node
  * against the real store (the onion's reason for existing): the hook below is a
  * thin state wrapper over it, not a second copy of the logic. A failure is
- * caught and reported as a reason string — never swallowed, never a rejected
+ * caught and reported as a vocabulary key — never swallowed, never a rejected
  * promise a tap handler drops — and `onErased` fires only on success, so a
  * caller reloads or closes only when the row has actually changed.
+ *
+ * The KEY is what leaves this function; the cause goes to the failure sink
+ * (#172). Both callers already showed fixed copy for a failed erase, so the
+ * store's own message was never on screen — but it sat in the state one render
+ * away from being shown, and a quota rejection read as an ordinary failure.
  */
 export async function performErase(
   segmentId: SegmentId,
   onErased?: () => void
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: FailureKey }> {
   // Only the STORE op is fallible-and-reportable. Once `clearSegmentTake`
   // commits, the audio is irreversibly gone, so the result is success no matter
   // what the notification does — a throwing `onErased` (a reload that failed,
@@ -38,18 +45,18 @@ export async function performErase(
   try {
     await clearSegmentTake(segmentId);
   } catch (cause) {
-    console.error("Erasing a segment failed", cause);
-    return {
-      ok: false,
-      error: cause instanceof Error ? cause.message : String(cause),
-    };
+    reportFailure(cause, "erase-segment");
+    // A delete can still meet a full phone, so quota is classified here like
+    // every other write (#172): "no room left on this phone" is the one thing a
+    // translator can act on, and it used to read as an ordinary failure.
+    return { ok: false, error: failureKey(cause, "eraseFailed") };
   }
   // The delete has committed. A notification failure is logged, never folded
   // back into the erase result.
   try {
     onErased?.();
   } catch (cause) {
-    console.error("Post-erase notification failed", cause);
+    reportFailure(cause, "erase-notify");
   }
   return { ok: true };
 }
@@ -72,8 +79,9 @@ export interface UseEraseSegment {
   erase(segmentId: SegmentId): Promise<EraseResult>;
   /** True while an erase is in flight — the confirm/menu disables its Erase button on this. */
   erasing: boolean;
-  /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
-  error: string | null;
+  /** The word for why the last erase failed, or null — a `strings` key, never a
+   *  caught message. Set on failure, cleared when the next erase starts. */
+  error: FailureKey | null;
 }
 
 /**
@@ -86,7 +94,7 @@ export function useEraseSegment(
 ): UseEraseSegment {
   const { onErased } = options;
   const [erasing, setErasing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureKey | null>(null);
   /**
    * The live in-flight guard, readable synchronously.
    *

@@ -18,6 +18,7 @@ import {
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
+import type { FailureKey } from "@/hooks/save-failure";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -1041,6 +1042,7 @@ export function Recorder({
           // The two never co-occur otherwise: opening the sheet clears any mic
           // error, so `micError` and `loadError` cannot both be set.
           <LoadErrorPanel
+            reason={loadError}
             retrying={loadRetrying}
             onRetry={retryLoad}
             onBack={close}
@@ -1065,7 +1067,9 @@ export function Recorder({
             )}
             {erase.error && (
               <div className="px-[12px] pt-[8px]">
-                <Notice>{strings.eraseFailed}</Notice>
+                {/* The hook's key, looked up — so a full phone says so here too
+                    (#172) instead of the generic erase line. */}
+                <Notice>{strings[erase.error]}</Notice>
               </div>
             )}
             {paused && previewState === "failed" && (
@@ -1556,10 +1560,19 @@ function PermissionPanel({
  * (George R1 P2).
  */
 function LoadErrorPanel({
+  reason,
   retrying,
   onRetry,
   onBack,
 }: {
+  /**
+   * The hook's failure key for the open that failed (#172). Only `noRoom`
+   * changes anything: a full phone is a condition the translator can act on, and
+   * saying "This recording could not be opened" there names the wrong problem.
+   * Every other key keeps the generic title — which of `loadFailed` or a decoder
+   * fault it was is the maintainer's question, and that goes to the sink.
+   */
+  reason: FailureKey | null;
   retrying: boolean;
   onRetry: () => void;
   onBack: () => void;
@@ -1573,8 +1586,11 @@ function LoadErrorPanel({
         <Icon name="alert" size={52} />
       </span>
       <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.loadFailedTitle}
+        {reason === "noRoom" ? strings.noRoom : strings.loadFailedTitle}
       </p>
+      {/* The body stands either way: the recording IS safe, Try again re-reads,
+          and Back reaches the row's Erase — which on a full phone is also the
+          one thing that frees space. */}
       <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
       <Control
         icon="retry"
