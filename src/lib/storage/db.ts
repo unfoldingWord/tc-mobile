@@ -92,67 +92,154 @@ export interface TcMobileDb extends DBSchema {
   clipData: { key: ClipId; value: ArrayBuffer };
 }
 
+/**
+ * The stored database is NEWER than this build asks for — an older app opening
+ * data a newer one already wrote (the `autoUpdate` service worker can leave the
+ * two running side by side). IndexedDB refuses the open with a `VersionError`;
+ * "recovering" by deleting would destroy the newer build's recordings, so this
+ * surfaces as a deliberate, retryable failure instead. Its `message` is what the
+ * Books-screen Notice shows, so it is written for a person, not a log.
+ */
+class DatabaseDowngradeError extends Error {
+  constructor() {
+    super(
+      "This app is older than the data on this device. Update the app, then try again."
+    );
+    this.name = "DatabaseDowngradeError";
+  }
+}
+
+/**
+ * Another copy of this app holds an older connection open (a second tab, or the
+ * pre-update page still alive after an `autoUpdate` swap), so this version's
+ * upgrade cannot proceed. Without a signal, `idb`'s open pends forever and the
+ * Books screen sits on "Loading your books." with no way out. This turns that
+ * silent hang into a retryable failure: close the other copy, then try again.
+ */
+class DatabaseBlockedError extends Error {
+  constructor() {
+    super(
+      "Another copy of this app is open. Close the other tabs or windows, then try again."
+    );
+    this.name = "DatabaseBlockedError";
+  }
+}
+
+/** A `VersionError` is how IndexedDB reports a downgrade. Matched by name to
+ * avoid referencing the DOM's `DOMException` from this DOM-free layer. */
+function isVersionError(cause: unknown): boolean {
+  return (cause as { name?: string } | null)?.name === "VersionError";
+}
+
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 
-export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
-  dbPromise ??= openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
-    async upgrade(db, oldVersion, _newVersion, tx) {
-      // One-time destructive recreate to the pivot schema (v3). See the header
-      // for why append-only is waived here. Gated on `oldVersion < 3` so this
-      // runs on a fresh install (0) and on the v2 dev schema, but a future
-      // v3→v4 upgrade skips it and runs only its own additive step — the
-      // append-only discipline the header promises resumes from v3.
-      if (oldVersion < 3) {
-        // Drop everything first. On a fresh install this list is empty and the
-        // loop no-ops; on a v2 device it clears the pre-pivot tree, the empty
-        // `media` store, and any dev clips (orphans once the tree is rebuilt).
-        for (const name of Array.from(db.objectStoreNames)) {
-          db.deleteObjectStore(name);
-        }
-
-        db.createObjectStore("books", { keyPath: "id" });
-
-        const chapters = db.createObjectStore("chapters", { keyPath: "id" });
-        chapters.createIndex("bookId", "bookId");
-
-        const segments = db.createObjectStore("segments", { keyPath: "id" });
-        segments.createIndex("chapterId", "chapterId");
-
-        const takes = db.createObjectStore("takes", { keyPath: "id" });
-        takes.createIndex("segmentId", "segmentId");
-
-        db.createObjectStore("clipMeta", { keyPath: "id" });
-        db.createObjectStore("clipData");
-      }
-
-      // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
-      // rows and the audio behind them are kept. On a fresh install, or straight
-      // after the v3 recreate above, the store is empty and this loops zero
-      // times. Awaiting IDB requests inside the upgrade transaction is idb's
-      // documented pattern: the transaction stays alive across them.
-      if (oldVersion < 4) {
-        const store = tx.objectStore("clipMeta");
-        let cursor = await store.openCursor();
-        while (cursor) {
-          const legacy = cursor.value as ClipMetaV3;
-          if (legacy.encoding === undefined) {
-            const stamped: ClipMeta = {
-              id: legacy.id,
-              sampleRate: legacy.sampleRate,
-              frameCount: legacy.frameCount,
-              durationMs: legacy.durationMs,
-              createdAt: legacy.createdAt,
-              encoding: "pcm",
-              generation: 0,
-              byteLength: legacy.frameCount * 2,
-              peaks: null,
-            };
-            await cursor.update(stamped);
+/**
+ * Open the database, wiring the three lifecycle callbacks `idb` only attaches
+ * when supplied, and settling on the FIRST of {open resolves, open rejects,
+ * `blocked` fires}. `blocked` is the reason for the manual race: `idb`'s open
+ * promise never settles while an older connection blocks it, so the callback is
+ * the only signal that the open cannot proceed.
+ */
+function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
+  let settled = false;
+  return new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
+    void openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+      async upgrade(db, oldVersion, _newVersion, tx) {
+        // One-time destructive recreate to the pivot schema (v3). See the header
+        // for why append-only is waived here. Gated on `oldVersion < 3` so this
+        // runs on a fresh install (0) and on the v2 dev schema, but a future
+        // v3→v4 upgrade skips it and runs only its own additive step — the
+        // append-only discipline the header promises resumes from v3.
+        if (oldVersion < 3) {
+          // Drop everything first. On a fresh install this list is empty and the
+          // loop no-ops; on a v2 device it clears the pre-pivot tree, the empty
+          // `media` store, and any dev clips (orphans once the tree is rebuilt).
+          for (const name of Array.from(db.objectStoreNames)) {
+            db.deleteObjectStore(name);
           }
-          cursor = await cursor.continue();
+
+          db.createObjectStore("books", { keyPath: "id" });
+
+          const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+          chapters.createIndex("bookId", "bookId");
+
+          const segments = db.createObjectStore("segments", { keyPath: "id" });
+          segments.createIndex("chapterId", "chapterId");
+
+          const takes = db.createObjectStore("takes", { keyPath: "id" });
+          takes.createIndex("segmentId", "segmentId");
+
+          db.createObjectStore("clipMeta", { keyPath: "id" });
+          db.createObjectStore("clipData");
         }
+
+        // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
+        // rows and the audio behind them are kept. On a fresh install, or straight
+        // after the v3 recreate above, the store is empty and this loops zero
+        // times. Awaiting IDB requests inside the upgrade transaction is idb's
+        // documented pattern: the transaction stays alive across them.
+        if (oldVersion < 4) {
+          const store = tx.objectStore("clipMeta");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as ClipMetaV3;
+            if (legacy.encoding === undefined) {
+              const stamped: ClipMeta = {
+                id: legacy.id,
+                sampleRate: legacy.sampleRate,
+                frameCount: legacy.frameCount,
+                durationMs: legacy.durationMs,
+                createdAt: legacy.createdAt,
+                encoding: "pcm",
+                generation: 0,
+                byteLength: legacy.frameCount * 2,
+                peaks: null,
+              };
+              await cursor.update(stamped);
+            }
+            cursor = await cursor.continue();
+          }
+        }
+      },
+      blocked() {
+        if (settled) return;
+        settled = true;
+        reject(new DatabaseBlockedError());
+      },
+      terminated() {
+        // The browser abnormally closed the connection (resource pressure, a
+        // discarded tab). Drop the handle so the next getDb reopens a live one —
+        // recoverable without a page reload.
+        dbPromise = null;
+      },
+    }).then(
+      (db) => {
+        if (settled) {
+          // `blocked` already rejected this open; the connection finally came
+          // through once the other copy closed. Close it so it does not linger
+          // as an orphan holding the database open.
+          db.close();
+          return;
+        }
+        settled = true;
+        resolve(db);
+      },
+      (cause) => {
+        if (settled) return;
+        settled = true;
+        reject(cause);
       }
-    },
+    );
+  });
+}
+
+export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
+  dbPromise ??= openDatabase().catch((cause: unknown) => {
+    // Never cache a rejected open: one failed attempt must not poison every
+    // later call. Clear the handle so the next call — a Notice's Try again, or
+    // the next storage read — reopens from scratch.
+    dbPromise = null;
+    throw isVersionError(cause) ? new DatabaseDowngradeError() : cause;
   });
   return dbPromise;
 }
