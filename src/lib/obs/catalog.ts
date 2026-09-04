@@ -1,10 +1,20 @@
 /**
  * Access to the bundled OBS catalogue.
  *
- * The catalogue is ~230 KB of JSON. It is loaded via dynamic `import()` so it
- * does not sit in the entry chunk: a translator who opens their own recordings
- * should not pay for story metadata they are not using. The service worker
- * still precaches the chunk, so it is available offline on first run.
+ * The catalogue is ~230 KB of JSON, read via dynamic `import()` here so that,
+ * once something calls into this module, it lands in its own chunk rather than
+ * the entry bundle: a translator who opens their own recordings should not pay
+ * for story metadata they are not using.
+ *
+ * As of #161, that "once something calls into this module" has not happened
+ * yet — `getStory` and `listStories` are both `@pivotpending` with no caller in
+ * `src/` (only tests import this file), so today the module is not reachable
+ * from the app's entry point at all, produces no chunk, and the service worker
+ * precache manifest has no `obs-catalog` entry to speak of. This corrects an
+ * earlier claim here that the chunk was precached; verified against a
+ * production `npm run build`'s `dist/` output, not assumed. Once B7's Template
+ * Library (#33) wires up a caller, the dynamic import will start producing a
+ * real chunk and the precache claim becomes worth re-checking.
  */
 
 import type { ObsCatalog, ObsStory } from "@/types/obs";
