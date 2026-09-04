@@ -185,6 +185,33 @@ describe("getDb — this connection blocks a newer version elsewhere", () => {
     newer.close();
     await closeDb();
   });
+
+  it("stays yielded: a later getDb rejects (reload needed), never reopens at v4 to re-block", async () => {
+    const app = await getDb();
+    expect(app.version).toBe(APP_VERSION);
+
+    // Yield to a newer version opening elsewhere.
+    const openNewer = openNewerThanApp();
+    await delay(50);
+
+    // The bug this guards: getDb requests the fixed v4, so a naive reopen would
+    // re-block the very upgrade this page just yielded to — the new tab would
+    // get a retryable block for as long as the old page keeps calling getDb. So
+    // a later getDb must NOT open a connection; it rejects with a superseded
+    // (reload-needed) error, distinct from the blocked/downgrade errors.
+    const cause = await getDb().then(
+      () => "opened",
+      (e: unknown) => e
+    );
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).name).toBe("DatabaseSupersededError");
+    expect((cause as Error).message).toMatch(/reload/i);
+
+    const newer = await openNewer;
+    expect(newer.version).toBe(APP_VERSION + 1);
+    newer.close();
+    await closeDb();
+  });
 });
 
 describe("getDb — the browser terminates the connection", () => {
