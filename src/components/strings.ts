@@ -481,4 +481,15 @@ export const strings = {
   // recordings already sitting at risk.
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
+
+  // ── The database is unreachable (#221) ───────────────────────────────────
+  // Two full-screen states, one in each copy of the app, when a newer copy
+  // upgrades the database. The mark on the panel carries the meaning; these
+  // lines support it, and are the whole text layer a screen reader speaks.
+  // Both offer the same exit, `appReload` above — restarting is what picks up
+  // the newer build, and on the blocked side it is what re-tries the open.
+  dbBlocked: "Another copy of this app is open.",
+  dbBlockedTeach: "Close the other one, then restart.",
+  dbOutOfDate: "This copy is out of date.",
+  dbOutOfDateTeach: "Restart to use the new version.",
 } as const;

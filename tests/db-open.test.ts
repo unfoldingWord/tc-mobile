@@ -4,7 +4,12 @@ import { forceCloseDatabase } from "fake-indexeddb";
 import { openDB, unwrap, type IDBPDatabase } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { closeDb, getDb } from "@/lib/storage/db";
+import {
+  closeDb,
+  getDb,
+  setUpgradeCoordinator,
+  type UpgradeCoordinator,
+} from "@/lib/storage/db";
 
 // db.ts keeps DB_NAME/DB_VERSION private; a lifecycle test necessarily knows
 // the name and the version the app requests. Kept in sync by hand — there is
@@ -23,6 +28,9 @@ const APP_VERSION = 5;
  * REJECTS loudly rather than silently carrying a prior database forward.
  */
 async function wipe(): Promise<void> {
+  // The coordinator slot is module-wide, like the connection: a case that left
+  // one registered would answer the next case's versionchange.
+  setUpgradeCoordinator(null);
   await closeDb();
   await deleteDb();
 }
@@ -52,6 +60,40 @@ function delay(ms: number): Promise<void> {
  */
 function openNewerThanApp(): Promise<IDBPDatabase> {
   return openDB(DB_NAME, APP_VERSION + 1);
+}
+
+/**
+ * Register a coordinator whose calls a case can assert on, and say whether it
+ * claims to be holding unsaved work.
+ */
+function registerCoordinator(holdsUnsavedWork: boolean): {
+  [K in keyof UpgradeCoordinator]: ReturnType<typeof vi.fn>;
+} {
+  const app = {
+    holdsUnsavedWork: vi.fn(() => holdsUnsavedWork),
+    onYielded: vi.fn(),
+    onBlocked: vi.fn(),
+  };
+  setUpgradeCoordinator(app);
+  return app;
+}
+
+/**
+ * Open the database at a version ABOVE the app's, the way a newer copy of this
+ * app does after a service-worker update — and record whether it was told it
+ * was blocked, which is the event the yield exists to prevent.
+ */
+function openNewerCopy(): {
+  db: Promise<IDBPDatabase>;
+  wasBlocked: () => boolean;
+} {
+  let blocked = false;
+  const db = openDB(DB_NAME, APP_VERSION + 1, {
+    blocked() {
+      blocked = true;
+    },
+  });
+  return { db, wasBlocked: () => blocked };
 }
 
 /**
@@ -415,5 +457,110 @@ describe("getDb — cache invalidation is identity-checked", () => {
 
     await expect(getDb()).resolves.toBe(second);
     await closeDb();
+  });
+});
+
+describe("another copy of the app upgrades the database (versionchange)", () => {
+  /**
+   * Wait for the newer copy's open, but never hang the suite on it: while this
+   * copy holds its connection the open cannot finish, and "it did not finish"
+   * is exactly what one of these cases asserts.
+   */
+  function raceOpen(newer: ReturnType<typeof openNewerCopy>): Promise<string> {
+    return Promise.race<string>([
+      newer.db.then(() => "opened"),
+      delay(200).then(() => "waiting"),
+    ]);
+  }
+
+  /** Let go of this copy's connection and tidy the newer one away. */
+  async function release(
+    newer: ReturnType<typeof openNewerCopy>
+  ): Promise<void> {
+    await closeDb();
+    (await newer.db).close();
+  }
+
+  it("gives up the connection inside the handler, so the newer copy is never blocked", async () => {
+    const app = registerCoordinator(false);
+    const raw = unwrap(await getDb()) as IDBDatabase;
+
+    // A second `versionchange` listener on the same connection, registered
+    // AFTER idb registered the app's — so it runs after it, inside the same
+    // dispatch, and can see whether the connection was closed by then.
+    //
+    // This is the assertion that pins "synchronously, in the handler". The
+    // blocked event below cannot: fake-indexeddb queues its blocked check as a
+    // task, so a close deferred by a microtask would still beat it there and
+    // the case would pass while the real defect — a close that waits on a
+    // promise that may not be resolved at all — went unnoticed (#221's P2).
+    let closedBeforeTheHandlerReturned: boolean | null = null;
+    raw.addEventListener("versionchange", () => {
+      try {
+        raw.transaction("clipMeta");
+        closedBeforeTheHandlerReturned = false;
+      } catch {
+        // InvalidStateError: the connection is already closing.
+        closedBeforeTheHandlerReturned = true;
+      }
+    });
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("opened");
+      expect(closedBeforeTheHandlerReturned).toBe(true);
+      expect(newer.wasBlocked()).toBe(false);
+      expect(app.onYielded).toHaveBeenCalledTimes(1);
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("holds the connection while the app is holding unsaved work", async () => {
+    const app = registerCoordinator(true);
+    await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      // The upgrade waits. That is a wait for one person; yielding here would
+      // close the only connection that could ever store the take this copy is
+      // holding, which is a loss for another.
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.holdsUnsavedWork).toHaveBeenCalled();
+      expect(newer.wasBlocked()).toBe(true);
+      expect(app.onYielded).not.toHaveBeenCalled();
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("gives it up once the app has unregistered", async () => {
+    registerCoordinator(true);
+    await getDb();
+    // The app is gone — nothing is mounted that could be holding a recording,
+    // and refusing now would block the other copy with no screen to explain it.
+    setUpgradeCoordinator(null);
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("opened");
+      expect(newer.wasBlocked()).toBe(false);
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("tells the app when its own open is blocked by an older copy", async () => {
+    const app = registerCoordinator(false);
+    const stale = await openLegacyV3Open();
+    try {
+      await expect(getDb()).rejects.toBeInstanceOf(Error);
+      // The Books screen's own Notice is not the whole story: the app needs to
+      // know, wherever it is, that the database is unreachable and why.
+      expect(app.onBlocked).toHaveBeenCalledTimes(1);
+    } finally {
+      stale.close();
+      await closeDb();
+    }
   });
 });

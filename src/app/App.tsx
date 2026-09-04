@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
+import { DatabasePanel } from "@/components/database-panel";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
 import {
@@ -11,6 +12,7 @@ import {
 import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
+import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useSaveTake } from "@/hooks/use-save-take";
 import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
@@ -138,6 +140,21 @@ export function App() {
     // A landed save leaves the row reading as unrecorded until the screen
     // rebuilds, which is the window a second take is lost in — so reload then.
     useSaveTake({ onSaved: () => segmentsRef.current?.reload() });
+
+  // Whether giving up the database connection would strand work that exists
+  // only in memory — asked by `lib/storage` from inside a `versionchange`
+  // handler when another copy of this app wants to upgrade the database (#221).
+  //
+  // Deliberately coarse on the second half: an OPEN recorder counts, not a
+  // running capture. The sheet is where a take is recorded, edited and
+  // committed, and none of that is visible from here; refusing while it is open
+  // costs the other copy a wait, and the tighter answer would cost a recording
+  // the one time it was wrong.
+  const holdsUnsavedWork = useCallback(
+    () => pendingTake !== null || recorder !== null,
+    [pendingTake, recorder]
+  );
+  const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
 
   const openChapter = useCallback(
     (id: ChapterId) => {
@@ -314,6 +331,18 @@ export function App() {
           onRetry={retryPendingTake}
           onDiscard={discardPendingTake}
         />
+      </main>
+    );
+  }
+
+  // Behind the held take, never in front of it: this says the database cannot
+  // be reached, and a held recording is the one thing that outranks that.
+  // Reaching here means nothing is held — the guard above refuses to yield
+  // while anything is, and the blocked state waits for the same answer.
+  if (databaseStatus !== "ok") {
+    return (
+      <main className="app-shell grid h-full place-items-center">
+        <DatabasePanel status={databaseStatus} />
       </main>
     );
   }
