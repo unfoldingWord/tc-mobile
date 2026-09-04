@@ -23,9 +23,11 @@ wire per-segment artwork to it (#1), but no mockup places artwork anywhere, no
 batch was scheduled to wire it, and code nothing uses is the sprawl the bar
 rejects. **What still ships is unchanged:** the 2.5 MB bundle of 128px
 thumbnails and the catalogue JSON — ~~those are precached, not cached-on-demand~~
-**(revised 2026-09-04, #177: the catalogue JSON is still precached; the
-thumbnails' precache is paused until a screen reads them — see the amendment
-above)** — and B0 does not touch them. #1 is closed as moot: with no cache to wire and no
+**(revised 2026-09-04, #177: the catalogue JSON is precached only once a
+production module imports `catalog.ts` — today none does, so the chunk is
+tree-shaken out of the build and precached nowhere; the thumbnails' precache
+is paused until a screen reads them — see the amendment above)** — and B0
+does not touch them. #1 is closed as moot: with no cache to wire and no
 mockup screen that needs one, there is no rework to do (the pre-pivot recording
 view keeps its CDN `<img>` until B2/B3). Per-segment artwork is greenfield if a later
 phase asks for it; the removed cache is recoverable from git. The inline
