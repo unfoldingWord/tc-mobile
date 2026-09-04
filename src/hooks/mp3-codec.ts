@@ -439,7 +439,19 @@ function encodeInWorker(
       byteOffset: samples.byteOffset,
       length: samples.length,
     };
-    worker.postMessage(request, [request.buffer]);
+    try {
+      worker.postMessage(request, [request.buffer]);
+    } catch (cause) {
+      // A synchronous `postMessage` failure (a detached buffer, an
+      // InvalidStateError) rejects this promise — but the executor throw would
+      // NOT unwind the timer and listeners armed just above. Left armed, the
+      // stall timer fires ~15 s later and terminates whatever worker is current
+      // by THEN — an unrelated encode's (Frank R2 P2). Release this job first,
+      // then reject. The worker itself is left warm: the message failed, not the
+      // worker.
+      release();
+      reject(cause);
+    }
   });
 }
 

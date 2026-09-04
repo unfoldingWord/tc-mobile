@@ -23,6 +23,8 @@ class FakeWorker {
   static instances: FakeWorker[] = [];
   /** When set, `terminate()` throws — the "recovery itself fails" edge (P3b). */
   static terminateThrows = false;
+  /** When set, `postMessage()` throws synchronously (a detached buffer, say). */
+  static postMessageThrows = false;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: ((event: ErrorEventish) => void) | null = null;
   terminated = false;
@@ -41,7 +43,9 @@ class FakeWorker {
     if (type === "error")
       this.errorListeners = this.errorListeners.filter((f) => f !== fn);
   }
-  postMessage(): void {}
+  postMessage(): void {
+    if (FakeWorker.postMessageThrows) throw new Error("postMessage blew up");
+  }
   terminate(): void {
     this.terminated = true;
     if (FakeWorker.terminateThrows) throw new Error("terminate blew up");
@@ -104,6 +108,7 @@ beforeEach(async () => {
   vi.resetModules();
   FakeWorker.instances = [];
   FakeWorker.terminateThrows = false;
+  FakeWorker.postMessageThrows = false;
   globalThis.Worker = FakeWorker as unknown as typeof Worker;
   const mod = await import("@/hooks/mp3-codec");
   withEncoder = mod.withEncoder;
@@ -224,6 +229,21 @@ describe("the encode silence deadline (#166)", () => {
     await rejection;
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it("cleans up and rejects when postMessage throws — leaving no armed stall timer", async () => {
+    FakeWorker.postMessageThrows = true;
+    const p = encode(Int16Array.of(8));
+    const rejection = expect(p).rejects.toThrow("postMessage blew up");
+    await microtasks();
+    await rejection;
+
+    // The stall timer armed just before postMessage must have been cleared: if it
+    // were still live it would fire after the window and terminate whatever worker
+    // is current by then — an unrelated encode's (Frank R2 P2).
+    await vi.advanceTimersByTimeAsync(TIMEOUT * 2);
+    expect(nth(0).terminated).toBe(false);
+    expect(FakeWorker.instances).toHaveLength(1);
   });
 
   it("pins the silence timeout to a sane, device-friendly value", () => {
