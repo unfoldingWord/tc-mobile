@@ -66,6 +66,31 @@ export const strings = {
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
+  // The recorder's commit-window status (#39). "saving": a take is committing
+  // (stop → decode → the IndexedDB write, spanned by `isClosing`, not just the
+  // `processing` state). "interrupted": the mic was lost mid-take (#59) and the
+  // frozen take is held in memory until the recorder is closed — so the copy
+  // names the real control, "Close recorder" (nothing is named "Back"), the
+  // same wording #139 rewrites `previewUnavailable` to.
+  recorderSaving: "Saving…",
+  recorderInterrupted: 'Recording finished. Use "Close recorder" to save it.',
+
+  // ── Recorder load failure (#137) ──────────────────────────────────────────
+  // A finished segment's stored MP3 could not be decoded when the sheet opened
+  // — most often a transient iOS "interrupted" AudioContext (#106), not a
+  // corrupt clip. The sheet is a full panel, not a blank: the recording is
+  // untouched, "Try again" resumes the context and re-decodes, and Back returns
+  // to the Segments list, where the row's Erase (which does not decode) works.
+  loadFailedTitle: "This recording could not be opened",
+  loadFailedBody:
+    "Your recording is safe. Try again, or go back to erase it from the list.",
+  loadRetry: "Try again",
+  loadBack: "Go back",
+  // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
+  // again" is in flight, so the tap has visible feedback (a slow decode is not
+  // instant) and the panel does not flicker to the disabled sheet and back.
+  // Try again relabels and goes busy in place rather than unmounting (#137 G2).
+  loadRetrying: "Opening your recording…",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
@@ -93,8 +118,29 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
+  // Same rule as `blockedByTake`: name the control, do not invent "Back".
   previewUnavailable:
-    "Can't preview this yet. Tap Back to save it, then play it.",
+    'Can\'t preview this yet. Use "Close recorder" to save it, then play it.',
+
+  // ── Disabled-row reasons (#135) ──────────────────────────────────────────
+  // Appended to a disabled ≡-menu row's accessible name so the grey carries its
+  // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
+  // hand. Short and literal, like `previewUnavailable`.
+  // Names both steps in the order the overlay allows — while this menu is open
+  // the recorder sheet is inert, so the sheet's control is out of reach until the
+  // menu closes — and names them by the accessible names those two controls
+  // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
+  // Back", which matches NO control in the product: a screen-reader user hunting
+  // for "Back" finds nothing, and the one live chevron dismisses the menu
+  // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
+  blockedByTake:
+    'Use "Close menu", then "Close recorder", to save the recording.',
+  // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
+  // resolves. No audio exists yet, so this must NOT promise a save — and must
+  // not send anyone to a control that would abandon the in-flight start.
+  micStarting: "The microphone is still starting.",
+  nothingRecorded: "Nothing recorded yet.",
+  nothingStored: "Nothing saved to erase.",
 
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",

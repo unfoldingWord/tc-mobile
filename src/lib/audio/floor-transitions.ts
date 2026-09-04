@@ -66,3 +66,27 @@ export function reclaimMic(
   }
   return { token: micToken, reclaimed: false };
 }
+
+/**
+ * Hand the floor back to a still paused-alive mic once a preview is over —
+ * however it ended (#129, George G1).
+ *
+ * The caller has already given the preview's floor back (`release` on a natural
+ * end, `stopAll` on a user stop). What is left is the DECISION, and it lives
+ * here rather than in the hook so it is one gate with one test: reclaim only
+ * when the recorder is paused, because that is the state in which a mic is open
+ * but not capturing and the invariant "a paused mic holds the floor" applies.
+ * At idle there is no mic to hold anything, and a LIVE mic never lost the floor
+ * in the first place ({@link preemptPausedMic} refuses to preempt one).
+ *
+ * Returns the mic token to store — a fresh claim when it reclaimed, the caller's
+ * unchanged token when it did not.
+ */
+export function reclaimAfterPreview(
+  session: AudioSession,
+  recorderPaused: boolean,
+  micToken: number | null
+): number | null {
+  if (!recorderPaused) return micToken;
+  return reclaimMic(session, micToken).token;
+}
