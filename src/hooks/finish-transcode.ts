@@ -30,7 +30,7 @@
  * from where they stand nothing has changed, and there is no action to offer.
  */
 
-import { withEncoder } from "./mp3-codec";
+import { EncoderStalledError, withEncoder } from "./mp3-codec";
 import { computePeaks } from "@/lib/audio/peaks";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
@@ -117,21 +117,24 @@ async function sweepOnce(): Promise<void> {
         await commitTranscode(segmentId, clipId, mp3, peaks);
       });
     } catch (cause) {
-      // The lane can no longer wedge here: every encode is deadline-bounded
-      // (#166), so a stuck worker rejects with an `EncoderStalledError` and this
-      // catch runs instead of the sweep hanging forever. The PCM is kept and the
-      // next sweep retries.
-      //
-      // TODO(#166/#188): a device whose worker cannot run at all now fails fast
-      // but still says nothing to the translator or maintainer. Count consecutive
-      // sweep failures in the module state and surface ONE state-in-place
-      // indicator after N (the Books screen). The presentation goes through the
-      // failure sink / strings owned by #188 — wire it there, not here.
       console.error(
         "Transcoding a finished segment failed; its PCM is kept",
         segmentId,
         cause
       );
+      // A STALLED encoder is not a per-segment failure — it is the whole worker
+      // being wedged (#166), and the next segment would only re-arm the same
+      // silence deadline and stall again: N segments × the timeout, blocking
+      // every Share queued behind the lane that whole time. Stop the sweep; its
+      // PCM is kept and the next launch's sweep (or the next transition's
+      // request) retries once the page — and its worker — are healthy again.
+      // A plain per-segment error keeps the loop going to the next segment.
+      if (cause instanceof EncoderStalledError) break;
+      // TODO(#166/#188): the stall (and repeated plain failures) still say nothing
+      // to the translator or maintainer. Count consecutive sweep failures in the
+      // module state and surface ONE state-in-place indicator after N (the Books
+      // screen). Its presentation goes through the failure sink / strings owned by
+      // #188 — wire it there, not here.
     }
   }
 }
