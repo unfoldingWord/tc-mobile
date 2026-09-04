@@ -193,4 +193,15 @@ export const strings = {
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
   shareBookFilename: (book: string): string => `${book}.zip`,
+
+  // ── Storage durability (#12) ─────────────────────────────────────────────
+  // State-in-place on the Books screen: the browser has NOT promised to keep
+  // this origin's storage, so the recordings can be evicted when the device
+  // runs low on space — and there is no restore path. Shown only when
+  // `persisted()` answered false; an absent API is unknown, and unknown says
+  // nothing (`lib/storage/persistence.ts`). Says the one thing the translator
+  // can act on rather than the mechanism, and says "may" because that is all
+  // that is known: whether eviction happens on their device is not.
+  storageNotPersisted:
+    "This phone may delete your recordings if space runs low. Share them when you can.",
 } as const;
