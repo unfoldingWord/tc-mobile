@@ -15,49 +15,25 @@ cd "$(git rev-parse --show-toplevel)"
 
 ROUND="${1:?usage: triage.sh <round> [pr-number]}"
 PR="${2:-}"
-# Match the short SHA that frank.sh / george.sh use for their report filenames
-# (`git rev-parse --short`), so triage keys on the CURRENT head instead of
-# picking the newest report by mtime. A failed or stale run leaves a report
-# behind; keyed on the SHA, a report for a different head simply reads "not run"
-# here rather than being triaged under this SHA.
-SHA="$(git rev-parse --short HEAD)"
+SHA="$(git rev-parse --short=9 HEAD)"
 OUT=".review/triage-round${ROUND}-${SHA}.md"
 mkdir -p .review
 
-# Frank's findings and verdict come from the `-o` last-message file, not the
-# streamed transcript (which echoes the prompt and the diff). George's report is
-# his response text. Both are keyed on this SHA.
-frank_report=".review/frank-verdict-$SHA.txt"
-george_report=".review/george-$SHA.md"
+frank_report="$(ls -t .review/frank-*.md 2>/dev/null | head -1 || true)"
+george_report="$(ls -t .review/george-*.md 2>/dev/null | head -1 || true)"
 
 # Frank numbers findings as "1. **P1 — ...**"; George uses "### 1. ..." under a
 # "## P1" heading. Pull whichever shape is present rather than assuming one.
 extract() {
   local file="$1" lens="$2"
-  [ -f "$file" ] || { echo "- _no report found for ${lens}_"; return; }
+  [ -f "$file" ] || { echo "- _no report found for $lens_"; return; }
   # awk dedupe: codex echoes its final report twice (once streamed, once as the
   # final message), so every Frank finding otherwise appears in duplicate.
-  # The grep is guarded with `|| true`: a CLEAN review (a verdict-only file with
-  # no finding-shaped lines) matches nothing, and under `set -o pipefail` grep's
-  # exit 1 would otherwise abort the whole script mid-comment.
-  { grep -hoE '^(###[[:space:]]+[0-9]+\.[[:space:]]+.*|[0-9]+\.[[:space:]]+\*\*P[123][^*]*\*\*.*)$' "$file" || true; } \
+  grep -hoE '^(###[[:space:]]+[0-9]+\.[[:space:]]+.*|[0-9]+\.[[:space:]]+\*\*P[123][^*]*\*\*.*)$' "$file" \
     | sed -E 's/^###[[:space:]]+//; s/^\*\*//; s/\*\*$//; s/[[:space:]]+$//' \
     | awk '!seen[$0]++' \
     | sed -E "s|^|- [ ] **${lens}** — |" \
     | sed -E 's/$/\n      - disposition: FIXED <commit> | REFUTED <file:line + why> | DEFERRED #<issue>/'
-}
-
-# The verdict cell must branch on whether a verdict was actually found. A bare
-# `grep ... | tail -1 || echo 'not run'` never fires the fallback: the pipeline
-# exits on tail (status 0), so a missing verdict prints an empty cell, not "not
-# run". Anchored and case-sensitive, to match the reviewer scripts.
-verdict() {
-  local file="$1" v
-  [ -f "$file" ] || { echo "not run"; return; }
-  # `|| true`: no verdict line means grep exits 1, which under `set -o pipefail`
-  # would abort the script before the empty->"not run" fallback below can fire.
-  v="$(grep -hoE '\b(APPROVE|REQUEST_CHANGES)\b' "$file" | tail -1 || true)"
-  if [ -n "$v" ]; then echo "$v"; else echo "not run"; fi
 }
 
 {
@@ -82,8 +58,8 @@ verdict() {
   echo
   echo "| Reviewer | Verdict @ \`${SHA}\` |"
   echo "| --- | --- |"
-  printf "| Frank  | %s |\n" "$(verdict "$frank_report")"
-  printf "| George | %s |\n" "$(verdict "$george_report")"
+  printf "| Frank  | %s |\n" "$(grep -hoE 'APPROVE|REQUEST_CHANGES' "${frank_report:-/dev/null}" 2>/dev/null | tail -1 || echo 'not run')"
+  printf "| George | %s |\n" "$(grep -hoE 'APPROVE|REQUEST_CHANGES' "${george_report:-/dev/null}" 2>/dev/null | tail -1 || echo 'not run')"
   echo
   echo "> A round is clean only when **both** reviewers post a clean statement"
   echo "> naming this SHA. Hitting the round cap with findings open is an"

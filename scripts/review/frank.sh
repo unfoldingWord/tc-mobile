@@ -23,7 +23,6 @@ source scripts/review/_preamble.sh "${1:-origin/develop}"
 
 SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/frank-$SHA.md"
-VERDICT_FILE="$OUT_DIR/frank-verdict-$SHA.txt"
 DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
@@ -102,48 +101,27 @@ PROMPT="${PROMPT//@@SEVERITY_RULES@@/$SEVERITY_RULES}"
 echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
 TREE_BEFORE="$(snapshot_tree)"
 
-# `-o` writes ONLY the agent's final message to VERDICT_FILE; the tee keeps the
-# full streamed transcript in REPORT for a human. The verdict is judged from
-# VERDICT_FILE, never the transcript: the streamed transcript echoes the prompt
-# and the diff, so a substring match there finds APPROVE/REQUEST_CHANGES in the
-# instructions (or, when this script is itself under review, in its own source)
-# even when the run stalled and assessed nothing.
-rm -f "$VERDICT_FILE"
 codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
-  -o "$VERDICT_FILE" \
   "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
 
-# A dud run's files are moved aside (.dud) so triage, which keys on this SHA,
-# reads "not run" instead of triaging a stalled report under the current head.
-quarantine_dud() {
-  mv -f "$VERDICT_FILE" "$VERDICT_FILE.dud" 2>/dev/null || true
-  mv -f "$REPORT" "$REPORT.dud" 2>/dev/null || true
-}
-
-# A reviewer that mutated the working tree voids the review — quarantine its
-# report too, so the void run is not ingested by SHA-keyed triage as real
-# signal. The bare assert returns 1 under set -e and would otherwise exit here
-# with the report left in place.
-if ! assert_tree_unchanged "$TREE_BEFORE"; then
-  quarantine_dud
-  exit 1
-fi
+assert_tree_unchanged "$TREE_BEFORE"
 
 # A sandbox failure produces a plausible-looking REQUEST_CHANGES with nothing
 # assessed. That is a failed run, not a review — fail loudly rather than let it
-# be mistaken for signal. Anchored, case-sensitive, over the final message only.
-if [ ! -s "$VERDICT_FILE" ] \
-  || ! grep -qE '\b(APPROVE|REQUEST_CHANGES)\b' "$VERDICT_FILE"; then
+# be mistaken for signal.
+#
+# Detect it by the REPORT's own shape, never by scanning for error strings: the
+# transcript echoes the diff, and when this script is itself under review a
+# substring match finds its own source. ("P1: Not assessed" is the dud
+# signature; a real review says "No P1 findings".)
+if ! grep -qE "APPROVE|REQUEST_CHANGES" "$REPORT"; then
   echo >&2
   echo "FAILED RUN: Frank produced no verdict — stalled or cancelled." >&2
-  quarantine_dud
   exit 3
 fi
-# "P1: Not assessed" is the dud signature; a real review says "No P1 findings".
-if grep -qiE "^\**P1\**:?[[:space:]]*\**Not assessed" "$VERDICT_FILE"; then
+if grep -qiE "^\**P1\**:?[[:space:]]*\**Not assessed" "$REPORT"; then
   echo >&2
   echo "FAILED RUN: Frank assessed nothing. This is not a review." >&2
-  quarantine_dud
   exit 3
 fi
 

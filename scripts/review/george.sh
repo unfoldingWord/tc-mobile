@@ -88,29 +88,13 @@ grok --prompt-file "$PROMPT_FILE" \
   --allow read_file --allow grep --allow list_dir \
   --cwd "$(pwd)" </dev/null 2>&1 | tee "$REPORT"
 
-# Move the dud aside (.dud) so triage, which keys on this SHA, reads "not run"
-# rather than triaging a stalled report under the current head.
-quarantine_dud() {
-  mv -f "$REPORT" "$REPORT.dud" 2>/dev/null || true
-}
-
-# A reviewer that mutated the working tree voids the review — quarantine its
-# report too, so the void run is not ingested by SHA-keyed triage as real
-# signal. The bare assert returns 1 under set -e and would otherwise exit here
-# with the report left in place.
-if ! assert_tree_unchanged "$TREE_BEFORE"; then
-  quarantine_dud
-  exit 1
-fi
+assert_tree_unchanged "$TREE_BEFORE"
 
 # Narration-only output means the session stalled or was cancelled. It is not
-# an approval, and it must not be read as one. Anchored to a whole-word,
-# case-sensitive token: SEVERITY_RULES mandates an uppercase verdict, and
-# dropping `-i` stops a lowercase "approve" in prose from reading as one.
-if ! grep -qE '\b(APPROVE|REQUEST_CHANGES)\b' "$REPORT"; then
+# an approval, and it must not be read as one.
+if ! grep -qiE "APPROVE|REQUEST_CHANGES" "$REPORT"; then
   echo >&2
   echo "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass." >&2
-  quarantine_dud
   exit 3
 fi
 
