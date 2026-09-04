@@ -117,6 +117,38 @@ export async function performSaveTake(
 }
 
 /**
+ * Clear a segment back to never-recorded — the edit-to-empty path (B5).
+ *
+ * The clear half of the orchestration, extracted for the same reason as
+ * `performSaveTake`: so it runs in Node (`tests/use-save-take.test.ts`)
+ * against `fake-indexeddb` rather than being untested wiring inside a
+ * `useCallback`. Same shape as `performSaveTake` and `performErase`: the
+ * store op is the only fallible, reportable step, so `onSaved` runs after it
+ * commits, in its own try/catch, never folded back into the result.
+ */
+export async function performClearSegment(
+  segmentId: SegmentId,
+  effects: Pick<SaveEffects, "onSaved">
+): Promise<boolean> {
+  try {
+    await clearSegmentTake(segmentId);
+  } catch (cause) {
+    console.error("Clearing an edited-to-empty segment failed", cause);
+    return false;
+  }
+  // The clear has committed. Only the store op above is fallible-and-reportable
+  // as a clear failure — `onSaved` runs outside that guard, in its own
+  // try/catch, so a throwing reload cannot flip an already-landed clear back
+  // to "failed" (#210's shape).
+  try {
+    effects.onSaved?.();
+  } catch (cause) {
+    console.error("Post-clear notification failed", cause);
+  }
+  return true;
+}
+
+/**
  * Give up the held recording, and delete what a failed attempt left behind.
  *
  * The other half of the orchestration, extracted for the same reason:
@@ -289,30 +321,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       finished: boolean
     ): Promise<boolean> => {
       if (buffer.length === 0) {
-        // Two-arg `.then` on purpose, not `.then().catch()`: the second
-        // handler must only ever see a rejection from `clearSegmentTake`
-        // itself, never one raised by the fulfilled handler below. A chained
-        // `.catch()` would also catch a throwing `onSaved` and report the
-        // clear as failed even though it already committed (#210's shape;
-        // mirrors `performSaveTake`).
-        return clearSegmentTake(segmentId).then(
-          () => {
-            // The clear has committed. Only the store op above is
-            // fallible-and-reportable as a clear failure — `onSaved` runs
-            // outside that guard, in its own try/catch, so a throwing reload
-            // cannot flip an already-landed clear back to "failed".
-            try {
-              onSavedRef.current?.();
-            } catch (cause) {
-              console.error("Post-clear notification failed", cause);
-            }
-            return true;
-          },
-          (cause: unknown) => {
-            console.error("Clearing an edited-to-empty segment failed", cause);
-            return false;
-          }
-        );
+        return performClearSegment(segmentId, {
+          onSaved: () => onSavedRef.current?.(),
+        });
       }
       return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
     },
