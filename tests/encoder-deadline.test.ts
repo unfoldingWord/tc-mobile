@@ -197,6 +197,27 @@ describe("the encode silence deadline (#166)", () => {
     expect(nth(0).terminated).toBe(false);
   });
 
+  it("does not trip when the encode BEGINS while the page is already hidden", async () => {
+    const { doc, dispatchVisibility } = installFakeDocument();
+    // Backgrounded before the encode even starts — no hide transition will fire,
+    // so the freeze latch must seed itself from the current state.
+    doc.hidden = true;
+    const p = encode(Int16Array.of(9));
+    await microtasks();
+    void p.catch(() => {});
+
+    // Suspended past the window, then restored: the overdue timer runs with
+    // `hidden` already false and before the resume handler.
+    doc.hidden = false;
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    expect(nth(0).terminated).toBe(false);
+
+    dispatchVisibility();
+    nth(0).emitDone(new Uint8Array([9]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+    expect(nth(0).terminated).toBe(false);
+  });
+
   it("recovers a stalled worker exactly as an abort does — terminate, re-warm, reuse", async () => {
     const p = encode(Int16Array.of(4));
     await microtasks();
