@@ -19,6 +19,7 @@ export type IconName =
   | "trash"
   | "alert"
   | "info"
+  | "copies"
   | "retry"
   | "menu"
   | "edit"
@@ -139,6 +140,32 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinecap="round"
       />
       <circle cx="11" cy="7.4" r="1.05" fill="currentColor" />
+    </>
+  ),
+  // Two sheets, one behind the other (#221): "there is another copy of this app
+  // open." Neither the alert triangle nor the info ring — a translator who
+  // cannot read has to tell "close the other one" from "this failed" by shape.
+  // The one behind is drawn as its two visible edges rather than a whole
+  // rectangle, so the overlap stays legible at the 56px panel size.
+  copies: (
+    <>
+      <path
+        d="M7.4 3.4h9.4a1.8 1.8 0 0 1 1.8 1.8v9.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <rect
+        x="3.4"
+        y="7.4"
+        width="11.2"
+        height="11.2"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
     </>
   ),
   retry: (

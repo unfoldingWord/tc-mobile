@@ -155,7 +155,46 @@ let pendingOpen: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 let closeGeneration = 0;
 
 /**
- * Open the database, wiring the three lifecycle callbacks `idb` only attaches
+ * What the app registers so this layer can ask, at the one instant it matters,
+ * whether giving up the connection would cost a translator work — and can say
+ * afterwards what it did.
+ *
+ * The judgement lives in the app, not here: only the screens know whether a
+ * take is held or a recording is running. This layer knows only when the
+ * question has to be answered, which is inside a `versionchange` handler — so
+ * `holdsUnsavedWork` must answer synchronously.
+ */
+export interface UpgradeCoordinator {
+  /**
+   * True while closing the connection would strand work that exists only in
+   * memory. Called from inside the `versionchange` handler: synchronous, and
+   * cheap. If it throws, the connection is NOT given up — the throw leaves the
+   * close below unreached, which is the safe way round.
+   */
+  holdsUnsavedWork: () => boolean;
+  /** The connection has been closed for another copy's upgrade. This build
+   * cannot reopen the database (its version is now the older one), so the app
+   * has to say so and offer a restart. */
+  onYielded: () => void;
+  /** An open failed because another copy holds an older connection open. */
+  onBlocked: () => void;
+}
+
+let coordinator: UpgradeCoordinator | null = null;
+
+/**
+ * Register the app's coordinator, or `null` to unregister.
+ *
+ * With none registered the connection is given up on request: nothing is
+ * mounted that could be holding a recording, and refusing would block another
+ * copy of the app with no screen anywhere to explain why.
+ */
+export function setUpgradeCoordinator(next: UpgradeCoordinator | null): void {
+  coordinator = next;
+}
+
+/**
+ * Open the database, wiring the four lifecycle callbacks `idb` only attaches
  * when supplied, and settling on the FIRST of {open resolves, open rejects,
  * `blocked` fires}. `blocked` is the reason for the manual race: `idb`'s open
  * promise never settles while an older connection blocks it, so the callback is
@@ -163,6 +202,19 @@ let closeGeneration = 0;
  */
 function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   let settled = false;
+
+  /**
+   * The connection THIS open produced, once it has — the synchronous handle
+   * `blocking()` closes.
+   *
+   * It has to be readable without awaiting: `idb` attaches `blocking` as a
+   * `versionchange` listener, and a close deferred to a microtask lands after
+   * the handler returns, by which time the copy that wants to upgrade has
+   * already been told it is blocked (#221). `dbPromise` cannot answer
+   * synchronously; this can, and it is per-open, so a callback still attached
+   * to a superseded connection acts on that one and not on whatever is current.
+   */
+  let connection: IDBPDatabase<TcMobileDb> | null = null;
 
   // Which close this open began under. `pendingOpen` is set below without an
   // await in between, so a later `closeDb()` is guaranteed to have snapshotted
@@ -243,6 +295,36 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         if (settled) return;
         settled = true;
         reject(new DatabaseBlockedError());
+        // The rejection reaches whoever called `getDb()`; this reaches the app
+        // as a whole, which is what puts the "close the other copy" screen up
+        // wherever the person happens to be standing.
+        coordinator?.onBlocked();
+      },
+      blocking() {
+        // Another copy of the app is upgrading the database and THIS connection
+        // is what stands in its way.
+        //
+        // Everything here is synchronous on purpose. `idb` attaches this as a
+        // `versionchange` listener, so a close deferred to a microtask lands
+        // after the handler has returned — and the other copy has already been
+        // told it is blocked by then, which is the bug this shape exists to
+        // avoid (#221).
+        if (connection === null) return;
+
+        // The decision this implements: unsaved audio outranks the upgrade.
+        // Refusing leaves the other copy waiting on its blocked screen, which
+        // costs a person time; yielding closes the only connection that could
+        // ever store the take this copy is holding, which costs a translator
+        // work they cannot record again. If the guard throws, the close below
+        // is never reached — the safe way round, and deliberately not caught.
+        if (coordinator?.holdsUnsavedWork() === true) return;
+
+        invalidate();
+        connection.close();
+        // Said last, and only after the close: this build asks for a version
+        // the database no longer has, so it cannot reopen. The app's only
+        // honest exit from here is a restart.
+        coordinator?.onYielded();
       },
       terminated() {
         // The browser abnormally closed the connection (resource pressure, a
@@ -267,6 +349,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           // waiting to close what it produces, close this one rather than leave
           // it an orphan holding the database open.
           if (dbPromise === null && closeGeneration === bornAt) {
+            connection = db;
             handle = Promise.resolve(db);
             dbPromise = handle;
           } else {
@@ -275,6 +358,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           return;
         }
         settled = true;
+        connection = db;
         resolve(db);
       },
       (cause) => {
