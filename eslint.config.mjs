@@ -14,8 +14,8 @@ import tseslint from "typescript-eslint";
  *
  * Rule: Never import "upward" in the hierarchy.
  *
- * Why this matters here specifically: Tim has said the UI "needs lots of
- * changes, but I don't know what they are yet." Keeping the audio core in
+ * Why this matters here specifically: the requirements owner has said the UI
+ * needs extensive changes that are not yet specified. Keeping the audio core in
  * `lib/` — pure, DOM-free, and unit-tested — means the disposable layer
  * (components/app) can be rewritten repeatedly without endangering the
  * durable layer.
