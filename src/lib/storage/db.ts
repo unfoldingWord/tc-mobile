@@ -125,23 +125,6 @@ class DatabaseBlockedError extends Error {
   }
 }
 
-/**
- * This page instance has yielded to a newer version opening elsewhere (see
- * `blocking`) and must not reopen the database. Because `getDb` always requests
- * the fixed `DB_VERSION`, reopening would re-block at the SAME version the page
- * just yielded from — the still-alive page's next `getDb` (a launch sweep, a
- * transcode commit, any tap) would re-block the newer tab's upgrade indefinitely.
- * Only a page reload — which discards this instance and its flag — recovers.
- */
-class DatabaseSupersededError extends Error {
-  constructor() {
-    super(
-      "A newer version of this app is now active. Reload this page to continue."
-    );
-    this.name = "DatabaseSupersededError";
-  }
-}
-
 /** A `VersionError` is how IndexedDB reports a downgrade. Matched by name to
  * avoid referencing the DOM's `DOMException` from this DOM-free layer. */
 function isVersionError(cause: unknown): boolean {
@@ -149,14 +132,6 @@ function isVersionError(cause: unknown): boolean {
 }
 
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
-
-/**
- * Latched true when this page yields to a newer version (`blocking`). Once set,
- * `getDb` rejects with `DatabaseSupersededError` instead of reopening — the only
- * exit is a reload. Cleared only by `closeDb` (a full teardown: a test reset, or
- * a future "delete all data"), never on the runtime path.
- */
-let superseded = false;
 
 /**
  * Open the database, wiring the three lifecycle callbacks `idb` only attaches
@@ -231,23 +206,6 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         settled = true;
         reject(new DatabaseBlockedError());
       },
-      blocking() {
-        // A newer version is opening elsewhere and this connection is holding it
-        // back. Yield: latch `superseded` so a later getDb rejects (reload
-        // needed) rather than reopen at this same v4 and re-block the upgrade,
-        // then close and drop the handle so the newer open can proceed. `close`
-        // does not abort in-flight transactions — a committing take finishes.
-        superseded = true;
-        const pending = dbPromise;
-        dbPromise = null;
-        void pending
-          ?.then((db) => db.close())
-          .catch(() => {
-            // Best-effort close of a connection we are abandoning anyway: the open
-            // may have already rejected, or the handle already be closed. There is
-            // nothing to recover — the newer version proceeds regardless.
-          });
-      },
       terminated() {
         // The browser abnormally closed the connection (resource pressure, a
         // discarded tab). Drop the handle so the next getDb reopens a live one —
@@ -276,9 +234,6 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
 }
 
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
-  // This page yielded to a newer version. Reopening at v4 would re-block that
-  // upgrade, so fail stickily until a reload clears this instance.
-  if (superseded) return Promise.reject(new DatabaseSupersededError());
   dbPromise ??= openDatabase().catch((cause: unknown) => {
     // Never cache a rejected open: one failed attempt must not poison every
     // later call. Clear the handle so the next call — a Notice's Try again, or
@@ -297,11 +252,6 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
  * test (or a future "delete all data" action) actually remove the database.
  */
 export async function closeDb(): Promise<void> {
-  // A full teardown is a genuinely fresh start, so clear the superseded latch —
-  // unconditionally, before the early return below, since a yielded page has
-  // already nulled `dbPromise`. Runtime code never calls this, so it does not
-  // weaken the sticky-fail; it exists for tests and a future "delete all data".
-  superseded = false;
   const pending = dbPromise;
   if (!pending) return;
   dbPromise = null;
