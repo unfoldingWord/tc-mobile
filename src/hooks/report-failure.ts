@@ -28,6 +28,9 @@
  * `cause` is `unknown` on purpose. A `throw` can carry anything, a rejected
  * promise can reject with anything, and the two things this repo must never do
  * with it are assume it is an `Error` and show it to a translator.
+ *
+ * @pivotpending #205 — exported for the durable/visible sink #205 wires up;
+ * only tests consume the type today.
  */
 export interface FailureReport {
   /**
@@ -76,6 +79,9 @@ let lastCause: unknown = null;
  * `App`, and `App` is where a failed-save recording is held in RAM (#38), so
  * the safe default until the pending take can be handed off (#180 owns the slot
  * this needs) is: report it, do not tear anything down. Tracked on #167.
+ *
+ * @pivotpending #205 — the durable/visible destination for reported failures.
+ * The seam is exported and unit-tested; the production subscriber lands in #205.
  */
 export function subscribeToFailures(listener: FailureListener): () => void {
   if (sink) {
@@ -126,9 +132,28 @@ export function reportFailure(
   if (isObject && cause === lastCause) return;
   lastCause = isObject ? cause : null;
 
+  // Collapse the SAME object only within one tick, then forget it. The window
+  // exists so one thrown object reaching both feeds (boundary + `window`) in the
+  // same turn — or a StrictMode double-invoke — logs once; it must NOT swallow a
+  // genuine LATER failure that happens to reuse the object (a retried save that
+  // rejects the same sentinel twice). Clearing on a microtask keeps the
+  // synchronous collapse and reopens the channel for the next tick. Guarded by
+  // identity so a newer report that already replaced the slot is left alone.
+  if (isObject) {
+    const collapsed = cause;
+    queueMicrotask(() => {
+      if (lastCause === collapsed) lastCause = null;
+    });
+  }
+
   // Appended as a third argument rather than folded into the message, so the
   // cause stays the second argument every reader (and every existing case)
   // expects, and a report with no tree keeps exactly the two it had.
+  //
+  // `console.error` is the terminal today. It is not a channel on a phone in a
+  // village — the durable, translator-visible destination is deferred to #205,
+  // which consumes the `subscribeToFailures` seam. This PR delivers the boundary
+  // and the single funnel; #205 delivers where the funnel ends.
   if (componentStack === undefined) console.error(`[${context}]`, cause);
   else console.error(`[${context}]`, cause, componentStack);
 

@@ -126,6 +126,26 @@ describe("reportFailure", () => {
     expect(seen[0]?.context).toBe("render");
   });
 
+  it("reports the same object again in a later tick, collapsing only the synchronous pair", async () => {
+    const seen: FailureReport[] = [];
+    subscribe((report) => seen.push(report));
+
+    // One thrown object reaching both feeds in the same turn is one failure...
+    const cause = new Error("recurs");
+    reportFailure(cause, "render");
+    reportFailure(cause, "uncaught-error");
+    expect(logged).toHaveLength(1);
+    expect(seen).toHaveLength(1);
+
+    // ...but the window is one tick, not forever. A genuine LATER failure that
+    // reuses the same object — a retried save rejecting the same sentinel — must
+    // still be reported. Let the collapse window's microtask run, then repeat.
+    await Promise.resolve();
+    reportFailure(cause, "render");
+    expect(logged).toHaveLength(2);
+    expect(seen).toHaveLength(2);
+  });
+
   it("does not collapse two failures that merely look alike", () => {
     const seen: FailureReport[] = [];
     subscribe((report) => seen.push(report));

@@ -29,6 +29,16 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 window.addEventListener("error", (event) => {
+  // Chromium raises a window `error` for the benign "ResizeObserver loop
+  // completed with undelivered notifications." (and the older "ResizeObserver
+  // loop limit exceeded") — a frame-budget notice, not an exception. `LiveScope`
+  // is a live trigger: its observer calls `paint()`, which writes `canvas.width`.
+  // The notice carries no `event.error`, so its cause would be the string
+  // message, which the sink's identity dedup cannot collapse — a resize burst
+  // would spam the one channel. Drop it here, at the single listener, so any
+  // future observer is covered without rewriting the component that fired it.
+  if (/^ResizeObserver loop/.test(event.message)) return;
+
   // `error` is the thrown value when there is one; a cross-origin script error
   // arrives with `error === null` and only a message, which is still worth a
   // line in the log.
