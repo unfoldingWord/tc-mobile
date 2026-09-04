@@ -179,7 +179,8 @@ export function Recorder({
    * draft, so a mark written eagerly is clobbered by a re-record on the same
    * close — and would also hit `setSegmentFinished` before the take it needs
    * exists. The checkbox reflects this immediately; the store learns it on
-   * close, like the take itself.
+   * close, like the take itself — and does not learn it at all when that close
+   * stopped a capture that was superseded (#211).
    */
   const [finishedIntent, setFinishedIntent] = useState<boolean | null>(null);
   /**
@@ -731,8 +732,9 @@ export function Recorder({
       // A take was in play at close (live, paused, or an interruption froze it to
       // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
       // generation mid-flush — returning no samples and no error. `planClose`
-      // owns what that means (B4 just closed then, original intact, and B5 must
-      // not persist edits over it); `null` here is "no capture was attempted".
+      // owns what that means: exit with NO write at all, neither the pending
+      // edits nor the finished toggle (#211), leaving the original intact.
+      // `null` here is "no capture was attempted".
       let capture: CaptureOutcome | null = null;
       if (attemptsCapture(state)) {
         // Do NOT await the in-flight preview decode here. `stop()` steals the

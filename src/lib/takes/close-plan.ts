@@ -20,6 +20,11 @@
  * finished mark (applied atomically with the take, so a separate write cannot
  * be clobbered by the same close's demote-to-draft). So at most ONE of
  * save-take / save-edit / clear / mark ever happens.
+ *
+ * And a capture whose stop was SUPERSEDED writes nothing at all (#211): the
+ * sheet is coming down underneath a newer recording or a backgrounding, so
+ * neither the pending edits nor the finished toggle is still a statement about
+ * what should be on disk.
  */
 
 /**
@@ -131,13 +136,22 @@ export function planClose(inputs: CloseInputs): ClosePlan {
     // recorded again.
     if (capture.error !== null) return { action: "stay", error: capture.error };
     // Otherwise: no samples and no error — a superseded stop, a cancel/leave
-    // landed during it. Nothing to save and nothing to say, so fall through to
-    // the mark/close decision rather than dead-ending the sheet open (#59).
+    // landed during it. Nothing to save and nothing to say, so close: exit
+    // without a write rather than dead-ending the sheet open (#59).
     //
-    // The pending edits are deliberately NOT persisted on this path. A
+    // NOTHING is persisted on this path, the finished toggle included (#211,
+    // decided by the DRI 2026-09-04). A superseded stop means the sheet is
+    // being torn down underneath a newer recording or a backgrounding, so this
+    // session's intent has stopped being a statement about what should be on
+    // disk. The pending edits were already withheld for that reason — a
     // cut-to-empty cleared here would drop the original recording while the
     // replacement never landed and the cut audio lives only in RAM on the
-    // clipboard — unrecoverable field loss.
+    // clipboard, unrecoverable field loss — and Finished is a write of the same
+    // kind: a real transition, and the trigger for transcode-on-Finished (D3),
+    // so honouring it would start an MP3 encode of the very audio the
+    // interrupted session was midway through replacing. Same rule as the edits
+    // path, which is the point: one interrupted close, no writes.
+    return { action: "close" };
   } else if (hasEdits) {
     // An edit-only close: cuts and pastes with no capture to splice them into.
     return workingLength === 0

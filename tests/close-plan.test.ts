@@ -192,9 +192,14 @@ describe("planClose — a capture that produced nothing", () => {
     ).toBe("close");
   });
 
-  it("still writes a real finished toggle after a superseded capture", () => {
-    // Nothing committed, so the toggle has no take to ride on and is written
-    // directly — the behaviour as it stands, enumerated so it cannot drift.
+  it("writes no finished toggle after a superseded capture", () => {
+    // #211, decided by the DRI 2026-09-04 (option 1): a superseded stop writes
+    // NOTHING. It used to fall through to the mark, which was the one write
+    // that still went through on a close whose sheet is being torn down
+    // underneath a newer recording or a backgrounding — and Finished is a real
+    // transition, the trigger for transcode-on-Finished (D3), so it could start
+    // an MP3 encode of the audio the interrupted session was midway through
+    // replacing. Same rule the edits directly above already follow.
     const plan = planClose(
       idle({
         capture: supersededCapture,
@@ -202,7 +207,22 @@ describe("planClose — a capture that produced nothing", () => {
         storedFinished: false,
       })
     );
-    expect(plan).toEqual({ action: "mark", finished: true });
+    expect(plan).toEqual({ action: "close" });
+  });
+
+  it("writes no finished toggle after a superseded capture in either direction", () => {
+    // Both directions, so a guard that only catches the promote-to-finished
+    // half fails here: clearing the mark is a write too, and it demotes a
+    // segment the interrupted session never replaced.
+    expect(
+      planClose(
+        idle({
+          capture: supersededCapture,
+          finishedIntent: false,
+          storedFinished: true,
+        })
+      )
+    ).toEqual({ action: "close" });
   });
 });
 
