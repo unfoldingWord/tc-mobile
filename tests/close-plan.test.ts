@@ -52,6 +52,27 @@ const failedCapture = (
  */
 const supersededCapture: CaptureOutcome = { samples: null, error: null };
 
+/**
+ * The other shape "superseded" can arrive in: a buffer that is non-null but
+ * EMPTY, with no error.
+ *
+ * Both halves matter and they are easy to confuse. A zero-length buffer is not
+ * audio — `planClose`'s samples guard tests `length > 0` for that reason — and a
+ * null error is what makes this superseded rather than a real empty capture,
+ * which carries a reason and must keep the sheet open. Pinned as its own
+ * constant so the branch cannot be read as covering only `samples: null`.
+ *
+ * `stop()` normalises a zero-frame decode to `samples: null` today
+ * (`hooks/use-recorder.ts`, its `samples.length === 0` exit), so this is a shape
+ * the TYPE allows rather than one observed coming out of the hook. That is the
+ * point of pinning it: if that normalisation ever drifts, the plan still has to
+ * read this as superseded and not as a take.
+ */
+const supersededEmptyDecode: CaptureOutcome = {
+  samples: new Int16Array(0),
+  error: null,
+};
+
 /** No capture was attempted at all — the recorder was idle when Back was tapped. */
 const idle = (over: Partial<CloseInputs> = {}): CloseInputs => ({
   capture: null,
@@ -192,9 +213,14 @@ describe("planClose — a capture that produced nothing", () => {
     ).toBe("close");
   });
 
-  it("still writes a real finished toggle after a superseded capture", () => {
-    // Nothing committed, so the toggle has no take to ride on and is written
-    // directly — the behaviour as it stands, enumerated so it cannot drift.
+  it("writes no finished toggle after a superseded capture", () => {
+    // #211, decided by the DRI 2026-09-04 (option 1): a superseded stop writes
+    // NOTHING. It used to fall through to the mark, which was the one write
+    // that still went through on a close whose sheet is being torn down
+    // underneath a newer recording or a backgrounding — and Finished is a real
+    // transition, the trigger for transcode-on-Finished (D3), so it could start
+    // an MP3 encode of the audio the interrupted session was midway through
+    // replacing. Same rule the edits directly above already follow.
     const plan = planClose(
       idle({
         capture: supersededCapture,
@@ -202,7 +228,51 @@ describe("planClose — a capture that produced nothing", () => {
         storedFinished: false,
       })
     );
-    expect(plan).toEqual({ action: "mark", finished: true });
+    expect(plan).toEqual({ action: "close" });
+  });
+
+  it("treats an empty buffer with no error as superseded too, writing nothing", () => {
+    // The `samples: new Int16Array(0), error: null` half of the branch. It must
+    // land exactly where `samples: null` lands — not on `stay` (that is the real
+    // empty capture, which HAS a reason, pinned above) and not on `mark` or
+    // `save-edit`. Asserted with a finished toggle and with pending edits in
+    // play, so each of these dies if the branch stops covering this shape.
+    expect(planClose(idle({ capture: supersededEmptyDecode }))).toEqual({
+      action: "close",
+    });
+    expect(
+      planClose(
+        idle({
+          capture: supersededEmptyDecode,
+          finishedIntent: true,
+          storedFinished: false,
+        })
+      )
+    ).toEqual({ action: "close" });
+    expect(
+      planClose(
+        idle({
+          capture: supersededEmptyDecode,
+          hasEdits: true,
+          workingLength: 100,
+        })
+      )
+    ).toEqual({ action: "close" });
+  });
+
+  it("writes no finished toggle after a superseded capture in either direction", () => {
+    // Both directions, so a guard that only catches the promote-to-finished
+    // half fails here: clearing the mark is a write too, and it demotes a
+    // segment the interrupted session never replaced.
+    expect(
+      planClose(
+        idle({
+          capture: supersededCapture,
+          finishedIntent: false,
+          storedFinished: true,
+        })
+      )
+    ).toEqual({ action: "close" });
   });
 });
 

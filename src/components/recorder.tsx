@@ -179,7 +179,8 @@ export function Recorder({
    * draft, so a mark written eagerly is clobbered by a re-record on the same
    * close — and would also hit `setSegmentFinished` before the take it needs
    * exists. The checkbox reflects this immediately; the store learns it on
-   * close, like the take itself.
+   * close, like the take itself — and does not learn it at all when that close
+   * stopped a capture that was superseded (#211).
    */
   const [finishedIntent, setFinishedIntent] = useState<boolean | null>(null);
   /**
@@ -731,8 +732,9 @@ export function Recorder({
       // A take was in play at close (live, paused, or an interruption froze it to
       // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
       // generation mid-flush — returning no samples and no error. `planClose`
-      // owns what that means (B4 just closed then, original intact, and B5 must
-      // not persist edits over it); `null` here is "no capture was attempted".
+      // owns what that means: exit with NO write at all, neither the pending
+      // edits nor the finished toggle (#211), leaving the original intact.
+      // `null` here is "no capture was attempted".
       let capture: CaptureOutcome | null = null;
       if (attemptsCapture(state)) {
         // Do NOT await the in-flight preview decode here. `stop()` steals the
@@ -838,6 +840,15 @@ export function Recorder({
         case "close":
           break;
       }
+      // `dirty` can still be true here with NOTHING written — the Finished
+      // toggle sets it synchronously (see `onToggleFinished`), and a `close`
+      // plan writes nothing: a superseded capture (#211) or a toggle that
+      // landed back on the stored value. The reload App then runs is redundant,
+      // and deliberately so. Do NOT "fix" it by resetting `dirty` on this path:
+      // it would also drop the reload on the net-zero-toggle close that has
+      // always had one, and it inverts the bias `onToggleFinished` records — a
+      // redundant reload costs one peak recomputation, a missing one leaves a
+      // row asserting a state the database does not have.
       onExit(dirty.current);
     })().catch((cause: unknown) => {
       // Neither call rejects by contract; this is the last net on the one path
