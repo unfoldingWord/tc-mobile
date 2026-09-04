@@ -9,12 +9,16 @@
  * terminates it — a real stop, the encode ends mid-loop and its memory goes with
  * the worker — then re-warms a fresh one, and a worker that dies is dropped by a
  * durable `error` listener and rebuilt on the next encode. Every encode is also
- * BOUNDED by a deadline (`withDeadline`, #166): a worker that neither answers nor
- * errors — killed under memory pressure, a chunk that never loads — used to hold
- * the single lane forever, wedging every later Share and the Finished sweep with
- * no signal; now it is terminated and re-warmed the same way an abort is, and the
- * encode rejects with an `EncoderStalledError` so the lane is released. Decoding is
- * `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio boundary.
+ * bounded by a SILENCE deadline (#166): the worker posts a throttled progress
+ * heartbeat as it encodes, and a worker that goes quiet — no progress, no done,
+ * no error — past `ENCODER_SILENCE_TIMEOUT_MS` is judged stalled (killed under
+ * memory pressure, a chunk that never loads), then terminated and re-warmed the
+ * same way an abort is, so the encode rejects with an `EncoderStalledError` and
+ * the lane is released instead of held for the life of the page. It measures
+ * silence, NOT elapsed wall-clock, so an iOS lock/background freeze — which
+ * suspends page and worker together — cannot false-kill a suspended encode.
+ * Decoding is `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio
+ * boundary.
  *
  * ONE lane. A Finished transcode and a Share are each "one chapter or segment
  * of PCM at a time" on their own, but nothing stopped them running together —
@@ -38,7 +42,6 @@
  */
 
 import { decodeMp3ToCanonical } from "./audio-io";
-import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { AudioCodec } from "@/types/audio";
 
 /** The one message the client posts: a view onto canonical PCM, transferred. */
@@ -48,8 +51,14 @@ export interface EncodeRequest {
   readonly length: number;
 }
 
-/** The one message the worker answers with. */
+/**
+ * The messages the worker sends back. `progress` is a liveness HEARTBEAT (#166),
+ * throttled by the worker (`mp3.worker.ts`): it carries no result and the encode
+ * keeps waiting, but each one tells the client the worker is still alive so a
+ * long encode is not judged stalled. `done`/`error` settle the encode.
+ */
 export type EncodeResponse =
+  | { readonly kind: "progress"; readonly fraction: number }
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
   | { readonly kind: "error"; readonly message: string };
 
@@ -70,75 +79,39 @@ export class EncoderStalledError extends Error {
 }
 
 /**
- * A floor under any encode's deadline, so a tiny clip is never killed for a cold
- * worker start or a slow phone's first schedule of the timer.
+ * How long the worker may stay SILENT — no progress heartbeat, no done, no error
+ * — before the encode is judged stalled (#166).
+ *
+ * A heartbeat, not a wall-clock budget: `mp3.worker.ts` posts throttled progress
+ * as it encodes and each one resets this window, so a long or a slow-but-
+ * progressing encode never trips — only a worker that has stopped answering
+ * entirely does (which never returns, so any finite window catches it). Fixed,
+ * not proportional to the audio's length: once silence is what's measured, length
+ * no longer matters. Generous enough to absorb a slow device's scheduling and the
+ * worker's own progress-throttle interval.
  */
-const ENCODE_DEADLINE_FLOOR_MS = 15_000;
+export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
 
 /**
- * Deadline granted per SECOND of canonical audio, added to the floor. The encode
- * is CPU-bound but runs many times faster than real time even on a modest phone,
- * so a per-second budget of one real second is deliberately generous: it exists
- * to catch a worker that has stopped answering ENTIRELY (which never returns, so
- * any finite deadline catches it), not to police a slow-but-progressing encode.
- * Proportional so a long chapter is not killed for being long while a wedged
- * worker still is.
+ * Is the page currently hidden (locked, backgrounded)? Guarded so the encoder
+ * also runs under Node tests and inside a Worker, where `document` is absent.
+ * DOM, which is why the deadline lives in `hooks/` and never in `lib/`.
  */
-const ENCODE_DEADLINE_MS_PER_AUDIO_SECOND = 1_000;
-
-/**
- * The deadline in ms for an encode of `sampleCount` canonical samples: the floor
- * plus a term proportional to the audio's length. See the two constants above.
- */
-export function encodeDeadlineMs(sampleCount: number): number {
-  const audioSeconds = sampleCount / CANONICAL_SAMPLE_RATE;
-  return Math.ceil(
-    ENCODE_DEADLINE_FLOOR_MS +
-      audioSeconds * ENCODE_DEADLINE_MS_PER_AUDIO_SECOND
-  );
+function pageHidden(): boolean {
+  return typeof document !== "undefined" && document.hidden;
 }
 
 /**
- * Bound `work` with a deadline. Settles with `work`'s own result if it finishes
- * within `timeoutMs`; otherwise runs `onDeadline` ONCE and rejects with an
- * {@link EncoderStalledError}. The timer is cleared on either settlement, so a
- * late success never fires recovery and `onDeadline` never fires twice — and a
- * worker's OWN rejection propagates unchanged, without recovery (that path drops
- * its dead worker through the durable `error` listener already).
- *
- * Pure promise/timer plumbing — no Worker, no DOM — so the deadline itself is
- * unit-tested in Node (`tests/encoder-deadline.test.ts`). The concrete recovery
- * it drives, terminate + re-warm, is the same code the abort path runs and is
- * verified only in a browser.
+ * Call `onResume` whenever the page becomes visible again. Returns an
+ * unsubscribe. A no-op where `document` is absent (Node, Worker).
  */
-export function withDeadline<T>(
-  work: Promise<T>,
-  timeoutMs: number,
-  onDeadline: () => void
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      onDeadline();
-      reject(new EncoderStalledError(timeoutMs));
-    }, timeoutMs);
-    work.then(
-      (value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (cause: unknown) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(cause as Error);
-      }
-    );
-  });
+function subscribeResume(onResume: () => void): () => void {
+  if (typeof document === "undefined") return () => {};
+  const handler = () => {
+    if (!document.hidden) onResume();
+  };
+  document.addEventListener("visibilitychange", handler);
+  return () => document.removeEventListener("visibilitychange", handler);
 }
 
 /** The tail of the lane: resolves when the job currently holding it is done. */
@@ -166,7 +139,7 @@ export async function withEncoder<T>(
   try {
     await untilSettled(previous, signal);
     return await work({
-      encodeMp3: (samples) => encodeWithDeadline(samples, signal),
+      encodeMp3: (samples) => encodeInWorker(samples, signal),
       decodeMp3: decodeMp3ToCanonical,
     });
   } finally {
@@ -256,36 +229,15 @@ function dropEncoderWorker(): void {
 }
 
 /**
- * Terminate a wedged worker and re-establish a warm one. This is exactly the
- * abort path's recovery (`encodeInWorker`'s `onAbort`): `terminate()` is the only
- * thing that stops an in-flight encode NOW, and re-warming restores the reusable
- * handle. A deadline breach is handled the same way an abort is (#166).
+ * Terminate a wedged/aborted worker and re-establish a warm one — the recovery an
+ * abort and a stall SHARE (`encodeInWorker`). `terminate()` is the only thing
+ * that stops an in-flight encode NOW, and re-warming restores the reusable handle
+ * so the next encode does not depend on a chunk URL a service-worker update may
+ * have purged (R2). A stalled worker is recovered exactly as an abort is (#166).
  */
 function recoverEncoderWorker(): void {
   dropEncoderWorker();
   warmEncoder();
-}
-
-/**
- * Encode in the shared worker, bounded by a deadline (#166).
- *
- * Every encode the app runs reaches this through `withEncoder`'s single lane, so
- * bounding here bounds BOTH egress paths — Share and the Finished sweep. If the
- * worker neither answers nor errors within the deadline (killed under memory
- * pressure, a chunk that never loads), the worker is terminated and re-warmed and
- * the encode rejects with an {@link EncoderStalledError} — which releases the lane
- * instead of holding it for the life of the page. A normal encode, an abort, and
- * the worker's own error are unchanged.
- */
-function encodeWithDeadline(
-  samples: Int16Array,
-  signal?: AbortSignal
-): Promise<Uint8Array<ArrayBuffer>> {
-  return withDeadline(
-    encodeInWorker(samples, signal),
-    encodeDeadlineMs(samples.length),
-    recoverEncoderWorker
-  );
 }
 
 /**
@@ -327,6 +279,16 @@ export function warmEncoder(): void {
  * cannot start (e.g. its chunk is not in the offline cache), and with a plain
  * error where `Worker` does not exist at all (see the header: no inline fallback,
  * on purpose).
+ *
+ * Every encode is bounded by a SILENCE deadline (#166). The worker posts a
+ * throttled progress heartbeat while it encodes; each message — progress, done or
+ * error — resets the window. A worker silent past `ENCODER_SILENCE_TIMEOUT_MS`
+ * while the page is VISIBLE is judged stalled and torn down through the SAME
+ * teardown an abort uses (terminate + re-warm), rejecting with an
+ * {@link EncoderStalledError} so the lane is released rather than held for the life
+ * of the page. Silence rather than elapsed time is what makes an iOS lock/
+ * background freeze safe: the freeze suspends page and worker together, so the
+ * timer is not judged while `document.hidden`, and a resume grants a fresh window.
  */
 function encodeInWorker(
   samples: Int16Array,
@@ -355,28 +317,82 @@ function encodeInWorker(
       reject(cause);
       return;
     }
-    // Detach THIS job's handlers on settle, leaving the worker warm for reuse.
-    // Dropping a dead worker is the durable `error` listener's job (see
-    // `encoderWorker`); an abort drops and re-warms it (below).
+
+    // The silence heartbeat (#166). `lastMessageAt` is the last sign of life from
+    // the worker; the timer measures how long it has been quiet, NOT how long the
+    // encode has run — so a page freeze, which stops the worker too, cannot make
+    // a suspended encode look stalled.
+    let lastMessageAt = Date.now();
+    let stallTimer: ReturnType<typeof setTimeout>;
+    const armStall = (ms: number) => {
+      stallTimer = setTimeout(onStall, ms);
+    };
+    // A resumed page gets a FRESH window before it can be judged: the freeze that
+    // silenced the worker was not a stall. (visibilitychange is DOM — hooks/.)
+    const stopResume = subscribeResume(() => {
+      lastMessageAt = Date.now();
+    });
+
+    // Detach THIS job's handlers and stop its heartbeat on settle, leaving the
+    // worker warm for reuse. Dropping a dead worker is the durable `error`
+    // listener's job (see `encoderWorker`); an abort and a stall drop + re-warm.
     const release = () => {
+      clearTimeout(stallTimer);
+      stopResume();
       signal?.removeEventListener("abort", onAbort);
       worker.onmessage = null;
       worker.onerror = null;
     };
-    const onAbort = () => {
-      // Stop the in-flight encode NOW — only terminate can — then re-warm, so a
-      // cancelled share does not leave the next encode depending on a chunk URL a
-      // service-worker update may have purged (R2).
+    // An abort and a stall are the SAME recovery: stop the in-flight encode NOW
+    // (only terminate can) and re-warm. Only the rejection reason differs.
+    const teardownAndRecover = () => {
       release();
-      dropEncoderWorker();
-      warmEncoder();
+      recoverEncoderWorker();
+    };
+    const onAbort = () => {
+      teardownAndRecover();
       reject(abortReason(signal!));
     };
+    function onStall(): void {
+      // A hidden page cannot be judged — its worker is frozen too — so never trip
+      // while hidden; re-arm and wait for the resume (which resets the window).
+      if (pageHidden()) {
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // Late but not yet silent enough (a heartbeat landed, or the page just
+      // resumed): re-arm for the remainder rather than trip.
+      const silence = Date.now() - lastMessageAt;
+      if (silence < ENCODER_SILENCE_TIMEOUT_MS) {
+        armStall(ENCODER_SILENCE_TIMEOUT_MS - silence);
+        return;
+      }
+      // Silent past the window while visible: the worker has stopped. Recover it
+      // the same way an abort does, then reject. The recovery is GUARDED so a
+      // terminate that itself throws still lets us reject and release the lane —
+      // never a hung lane (P3b) — with the failure logged to a channel rather than
+      // swallowed.
+      try {
+        teardownAndRecover();
+      } catch (recoverError) {
+        console.error(
+          "Recovering the encoder after a stall failed",
+          recoverError
+        );
+      }
+      reject(new EncoderStalledError(ENCODER_SILENCE_TIMEOUT_MS));
+    }
     signal?.addEventListener("abort", onAbort, { once: true });
 
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
-      release();
       const response = event.data;
+      // A progress heartbeat is a sign of life, not a result: reset the silence
+      // window and keep waiting for done/error.
+      if (response.kind === "progress") {
+        lastMessageAt = Date.now();
+        return;
+      }
+      release();
       if (response.kind === "done") resolve(new Uint8Array(response.mp3));
       else reject(new Error(`MP3 encoding failed: ${response.message}`));
     };
@@ -391,6 +407,8 @@ function encodeInWorker(
           : new Error(event.message || "The MP3 encoder worker failed to start")
       );
     };
+
+    armStall(ENCODER_SILENCE_TIMEOUT_MS);
 
     const request: EncodeRequest = {
       buffer: samples.buffer as ArrayBuffer,

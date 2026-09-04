@@ -90,7 +90,12 @@ export type Clip =
  * — tests pass the synchronous encoder wrapped in a promise and a fake decoder.
  */
 export interface AudioCodec {
-  /** Canonical PCM → MP3 bytes. May reject with an `AbortError` when cancelled. */
+  /**
+   * Canonical PCM → MP3 bytes. May reject with an `AbortError` when cancelled, or
+   * with an `EncoderStalledError` when the worker goes silent past its deadline
+   * (#166) — the browser codec's typed signals that the encode did not produce
+   * bytes, distinct from an encoder that threw.
+   */
   readonly encodeMp3: (samples: Int16Array) => Promise<Uint8Array<ArrayBuffer>>;
   /** MP3 bytes → canonical PCM. */
   readonly decodeMp3: (mp3: Uint8Array<ArrayBuffer>) => Promise<Int16Array>;
