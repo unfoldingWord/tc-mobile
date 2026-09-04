@@ -89,6 +89,11 @@ describe("ErrorBoundary", () => {
     expect(html).toContain('aria-labelledby="app-failed-title"');
     expect(html).toContain('id="app-failed-title"');
     expect(html).toContain(strings.appFailed);
+    // The teach line describes the dialog, so a screen reader announces what the
+    // button does, not just the alert's name (George, round 3).
+    expect(html).toContain('aria-describedby="app-failed-teach"');
+    expect(html).toContain('id="app-failed-teach"');
+    expect(html).toContain(strings.appReloadTeach);
     // The 56px alert mark — what a translator who does not read actually sees,
     // and the size the other recovery screen uses.
     expect(html).toContain('width="56"');

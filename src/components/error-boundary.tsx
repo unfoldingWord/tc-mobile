@@ -16,6 +16,9 @@ interface ErrorBoundaryState {
 /** The heading that names the alert, referenced by `aria-labelledby`. */
 const TITLE_ID = "app-failed-title";
 
+/** The teach line that describes the alert, referenced by `aria-describedby`. */
+const TEACH_ID = "app-failed-teach";
+
 /**
  * Restart the app from disk. Everything saved lives in IndexedDB.
  *
@@ -106,6 +109,7 @@ export class ErrorBoundary extends Component<
           role="alertdialog"
           aria-modal="true"
           aria-labelledby={TITLE_ID}
+          aria-describedby={TEACH_ID}
           className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
         >
           <span style={{ color: "var(--s-live)" }}>
@@ -122,7 +126,11 @@ export class ErrorBoundary extends Component<
             {strings.appFailed}
           </p>
 
-          <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
+          <p
+            id={TEACH_ID}
+            className="text-[13px]"
+            style={{ color: "var(--s-ink-muted)" }}
+          >
             {strings.appReloadTeach}
           </p>
 

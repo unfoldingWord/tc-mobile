@@ -111,35 +111,53 @@ describe("reportFailure", () => {
     expect(second).toHaveLength(1);
   });
 
-  it("collapses the same cause object reported twice", () => {
+  it("collapses the same object reported twice under the SAME context", () => {
     const seen: FailureReport[] = [];
     subscribe((report) => seen.push(report));
 
-    // Two feeds reach one sink — the boundary and the `window` listeners — so
-    // the same thrown object can arrive twice. One failure, one line.
+    // One thrown object arriving twice with one context — a StrictMode
+    // double-invoke of the boundary, or one throw reaching both feeds under the
+    // same key. One failure, one line.
     const cause = new Error("thrown once");
     reportFailure(cause, "render");
-    reportFailure(cause, "uncaught-error");
+    reportFailure(cause, "render");
 
     expect(logged).toHaveLength(1);
     expect(seen).toHaveLength(1);
     expect(seen[0]?.context).toBe("render");
   });
 
-  it("reports the same object again in a later tick, collapsing only the synchronous pair", async () => {
+  it("does NOT collapse the same object under a DIFFERENT context", () => {
     const seen: FailureReport[] = [];
     subscribe((report) => seen.push(report));
 
-    // One thrown object reaching both feeds in the same turn is one failure...
+    // A shared sentinel Error reused by two unrelated operations, synchronously.
+    // Different contexts make them two distinct failures — dropping the second
+    // would silently lose one (Frank, round 2).
+    const cause = new Error("shared sentinel");
+    reportFailure(cause, "save");
+    reportFailure(cause, "export");
+
+    expect(logged).toHaveLength(2);
+    expect(seen).toHaveLength(2);
+    expect(seen.map((report) => report.context)).toEqual(["save", "export"]);
+  });
+
+  it("reports the same object again in a later tick, collapsing only the synchronous same-context pair", async () => {
+    const seen: FailureReport[] = [];
+    subscribe((report) => seen.push(report));
+
+    // Same object, same context, same turn is one failure...
     const cause = new Error("recurs");
     reportFailure(cause, "render");
-    reportFailure(cause, "uncaught-error");
+    reportFailure(cause, "render");
     expect(logged).toHaveLength(1);
     expect(seen).toHaveLength(1);
 
     // ...but the window is one tick, not forever. A genuine LATER failure that
-    // reuses the same object — a retried save rejecting the same sentinel — must
-    // still be reported. Let the collapse window's microtask run, then repeat.
+    // reuses the same object under the same context — a retried save rejecting
+    // the same sentinel — must still be reported. Let the collapse window's
+    // microtask run, then repeat.
     await Promise.resolve();
     reportFailure(cause, "render");
     expect(logged).toHaveLength(2);

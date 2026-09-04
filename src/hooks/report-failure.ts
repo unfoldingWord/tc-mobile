@@ -64,10 +64,15 @@ type FailureListener = (report: FailureReport) => void;
 let sink: FailureListener | null = null;
 
 /**
- * The last object-identity cause reported, for the double-report window below.
- * Never read as a value — only compared by reference.
+ * The last object-identity cause reported, and the context it was reported
+ * under, for the double-report window below. The cause is never read as a value
+ * — only compared by reference; the context is compared by string equality. The
+ * pair is the dedup key: one thrown object reaching both feeds under the SAME
+ * context collapses, but the SAME object surfacing under a DIFFERENT context is
+ * a distinct failure and is kept (Frank, round 2).
  */
 let lastCause: unknown = null;
+let lastContext: string | null = null;
 
 /**
  * Install the failure sink. Returns the uninstall.
@@ -104,15 +109,20 @@ export function subscribeToFailures(listener: FailureListener): () => void {
  * `componentDidCatch`, a `window` event handler, a `catch` block — so a sink
  * that could fail would turn one failure into two.
  *
- * Logs once. Consecutive reports of the SAME object are collapsed, because
- * there are two independent feeds — the boundary and the `window` listeners —
- * and one thrown object can reach both. That double arrival was NOT observed in
- * the dev-mode Chromium probe on the PR: a render throw produced exactly one
- * report there. The guard costs a reference comparison and is what keeps the
- * one log honest if a browser does raise it on both paths; it is not a claim
- * that one does. Identity is the only test used, and only for objects — two
- * separate rejections that both carry the string `"failed"` are two failures
- * and are logged twice.
+ * Logs once. Consecutive reports of the SAME object UNDER THE SAME CONTEXT are
+ * collapsed, because there are two independent feeds — the boundary and the
+ * `window` listeners — and one thrown object can reach both. That double arrival
+ * was NOT observed in the dev-mode Chromium probe on the PR: a render throw
+ * produced exactly one report there. The guard costs a reference comparison plus
+ * a string compare and is what keeps the one log honest if a browser does raise
+ * it on both paths; it is not a claim that one does. Object identity is the only
+ * test used for the cause, and only for objects — two separate rejections that
+ * both carry the string `"failed"` are two failures and are logged twice.
+ *
+ * Context is part of the key so the same object surfacing under two DIFFERENT
+ * contexts — a shared sentinel `Error` reported as `"save"` and then `"export"`
+ * — is two failures, not one swallowed (Frank, round 2). Only the true
+ * double-feed, which carries one context, collapses.
  *
  * One consequence of collapsing by identity, stated rather than guarded: if the
  * same object ever did reach both feeds, the report kept is the FIRST to
@@ -129,20 +139,26 @@ export function reportFailure(
   const isObject =
     cause !== null &&
     (typeof cause === "object" || typeof cause === "function");
-  if (isObject && cause === lastCause) return;
+  if (isObject && cause === lastCause && context === lastContext) return;
   lastCause = isObject ? cause : null;
+  lastContext = isObject ? context : null;
 
-  // Collapse the SAME object only within one tick, then forget it. The window
-  // exists so one thrown object reaching both feeds (boundary + `window`) in the
-  // same turn — or a StrictMode double-invoke — logs once; it must NOT swallow a
-  // genuine LATER failure that happens to reuse the object (a retried save that
-  // rejects the same sentinel twice). Clearing on a microtask keeps the
-  // synchronous collapse and reopens the channel for the next tick. Guarded by
-  // identity so a newer report that already replaced the slot is left alone.
+  // Collapse the SAME object under the SAME context only within one tick, then
+  // forget it. The window exists so one thrown object reaching both feeds
+  // (boundary + `window`) in the same turn — or a StrictMode double-invoke —
+  // logs once; it must NOT swallow a genuine LATER failure that happens to reuse
+  // the object (a retried save that rejects the same sentinel twice). Clearing
+  // on a microtask keeps the synchronous collapse and reopens the channel for
+  // the next tick. Guarded by the full key so a newer report that already
+  // replaced the slot is left alone.
   if (isObject) {
-    const collapsed = cause;
+    const collapsedCause = cause;
+    const collapsedContext = context;
     queueMicrotask(() => {
-      if (lastCause === collapsed) lastCause = null;
+      if (lastCause === collapsedCause && lastContext === collapsedContext) {
+        lastCause = null;
+        lastContext = null;
+      }
     });
   }
 

@@ -207,7 +207,8 @@ export const strings = {
   appReload: "Restart the app",
   // Said once, under the mark: what the button is about to do. No cause text —
   // a stack-shaped string in a language the reader may not speak is worse than
-  // the glyph alone.
-  appReloadTeach:
-    "The app will start again. Everything you saved is still on this phone.",
+  // the glyph alone. It does NOT claim the in-progress work survived: a render
+  // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
+  // "everything you saved is still here" line would over-promise (George, r2).
+  appReloadTeach: "The app will start again.",
 } as const;
