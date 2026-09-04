@@ -27,7 +27,8 @@
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "prepare": "husky",
     "knip": "knip --include dependencies,unlisted,files,exports,types",
-    "typecheck:lib": "tsc -p tsconfig.lib.json"
+    "typecheck:lib": "tsc -p tsconfig.lib.json",
+    "check:deploy": "node scripts/check-deploy.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
