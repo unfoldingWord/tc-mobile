@@ -63,14 +63,17 @@ function openNewerThanApp(): Promise<IDBPDatabase> {
 }
 
 /**
- * Register a coordinator whose calls a case can assert on, and say whether it
- * claims to be holding unsaved work.
+ * Register a coordinator whose calls a case can assert on.
+ *
+ * `holdsUnsavedWork` is a predicate rather than a boolean because WHEN it is
+ * consulted is itself under test: the app's answer changes while it is
+ * registered, every time a take is recorded or saved.
  */
-function registerCoordinator(holdsUnsavedWork: boolean): {
+function registerCoordinator(holdsUnsavedWork: () => boolean): {
   [K in keyof UpgradeCoordinator]: ReturnType<typeof vi.fn>;
 } {
   const app = {
-    holdsUnsavedWork: vi.fn(() => holdsUnsavedWork),
+    holdsUnsavedWork: vi.fn(holdsUnsavedWork),
     onYielded: vi.fn(),
     onBlocked: vi.fn(),
   };
@@ -482,7 +485,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
   }
 
   it("gives up the connection inside the handler, so the newer copy is never blocked", async () => {
-    const app = registerCoordinator(false);
+    const app = registerCoordinator(() => false);
     const raw = unwrap(await getDb()) as IDBDatabase;
 
     // A second `versionchange` listener on the same connection, registered
@@ -517,7 +520,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
   });
 
   it("holds the connection while the app is holding unsaved work", async () => {
-    const app = registerCoordinator(true);
+    const app = registerCoordinator(() => true);
     await getDb();
 
     const newer = openNewerCopy();
@@ -534,8 +537,27 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     }
   });
 
+  it("asks the guard when the upgrade arrives, not when the app registered", async () => {
+    // The app registers once, at launch, with nothing held — and then a take is
+    // recorded. A coordinator whose answer was captured at registration would
+    // still be saying "nothing held" here and would give the connection away
+    // with a take in hand, which is the loss this whole path exists to prevent.
+    let holding = false;
+    const app = registerCoordinator(() => holding);
+    await getDb();
+    holding = true;
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.onYielded).not.toHaveBeenCalled();
+    } finally {
+      await release(newer);
+    }
+  });
+
   it("gives it up once the app has unregistered", async () => {
-    registerCoordinator(true);
+    registerCoordinator(() => true);
     await getDb();
     // The app is gone — nothing is mounted that could be holding a recording,
     // and refusing now would block the other copy with no screen to explain it.
@@ -551,7 +573,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
   });
 
   it("tells the app when its own open is blocked by an older copy", async () => {
-    const app = registerCoordinator(false);
+    const app = registerCoordinator(() => false);
     const stale = await openLegacyV3Open();
     try {
       await expect(getDb()).rejects.toBeInstanceOf(Error);

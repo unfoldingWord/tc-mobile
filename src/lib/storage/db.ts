@@ -195,6 +195,14 @@ let coordinator: UpgradeCoordinator | null = null;
  * With none registered the connection is given up on request: nothing is
  * mounted that could be holding a recording, and refusing would block another
  * copy of the app with no screen anywhere to explain why.
+ *
+ * That default is only ever reached before the app has mounted or after it has
+ * unmounted, and it is on the caller to keep it that way: the registration is
+ * made ONCE and torn down only on unmount (`hooks/use-database-status.ts`).
+ * Re-registering as the app's answer changes would leave a window with no
+ * coordinator — and the window would open exactly when a take became held,
+ * which is when yielding costs the most. The registered `holdsUnsavedWork` is
+ * expected to read the current answer at call time rather than close over one.
  */
 export function setUpgradeCoordinator(next: UpgradeCoordinator | null): void {
   coordinator = next;
