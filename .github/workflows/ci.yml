@@ -1,17 +1,24 @@
 name: CI
 
 on:
+  # Push CI runs on the long-lived branches only — merges land there and get no
+  # pull_request event, so they need a push trigger. Feature branches get their
+  # CI from the pull_request trigger below; gating push on them as well would
+  # double-run every push to a branch that also has an open PR.
   push:
-    branches: ["*"]
+    branches: ["develop", "staging", "main"]
   pull_request:
-    branches: ["*"]
+    branches: ["**"]
 
 # Least privilege by default; jobs opt in to what they need.
 permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel only superseded PR runs. On the long-lived branches (develop, staging,
+  # main) every merged commit must keep its own run: two merges landing close
+  # together would otherwise leave the first commit with no completed CI.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secret-scan:
@@ -21,8 +28,12 @@ jobs:
       contents: read
     env:
       GITLEAKS_VERSION: 8.24.3
+      # sha256 of gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz, from the
+      # release's published checksums.txt. A tampered or truncated download
+      # fails the verification below instead of running an unknown binary.
+      GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -37,9 +48,11 @@ jobs:
       # every commit including the root, and needs no licence key.
       - name: Install gitleaks
         run: |
-          curl -sSL --fail \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSL --fail -o "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
           ./gitleaks version
 
       - name: Scan full history
@@ -51,9 +64,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -90,9 +103,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -124,7 +137,7 @@ jobs:
               | while read -r size file; do echo "| \`${file#dist/}\` | $size |"; done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build
           path: dist

@@ -75,6 +75,23 @@ export const strings = {
   recorderSaving: "Saving…",
   recorderInterrupted: 'Recording finished. Use "Close recorder" to save it.',
 
+  // ── Recorder load failure (#137) ──────────────────────────────────────────
+  // A finished segment's stored MP3 could not be decoded when the sheet opened
+  // — most often a transient iOS "interrupted" AudioContext (#106), not a
+  // corrupt clip. The sheet is a full panel, not a blank: the recording is
+  // untouched, "Try again" resumes the context and re-decodes, and Back returns
+  // to the Segments list, where the row's Erase (which does not decode) works.
+  loadFailedTitle: "This recording could not be opened",
+  loadFailedBody:
+    "Your recording is safe. Try again, or go back to erase it from the list.",
+  loadRetry: "Try again",
+  loadBack: "Go back",
+  // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
+  // again" is in flight, so the tap has visible feedback (a slow decode is not
+  // instant) and the panel does not flicker to the disabled sheet and back.
+  // Try again relabels and goes busy in place rather than unmounting (#137 G2).
+  loadRetrying: "Opening your recording…",
+
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
   // the action is stop (D4), so the label says "Stop playing".
@@ -210,4 +227,22 @@ export const strings = {
   // show terse visible text (a package name, a licence short-name).
   aboutVisitSource: (name: string): string => `Open the ${name} project page`,
   aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
+
+  // ── Root error boundary (#167) ───────────────────────────────────────────
+  // The whole text layer of the crash screen. Says that something failed and
+  // nothing more: the cause goes to the failure sink for a maintainer to read,
+  // never to a translator. It is also the screen's accessible name.
+  appFailed: "Something went wrong.",
+  // The one action, named for what it actually does. NOT `tryAgain`: on the
+  // Books shelf that label means "run the load that just failed again", and
+  // here the button reloads the document — the app starts over from disk, and
+  // anything that lived only in memory is already gone. A screen reader speaks
+  // the label and nothing else, so the two must not share one.
+  appReload: "Restart the app",
+  // Said once, under the mark: what the button is about to do. No cause text —
+  // a stack-shaped string in a language the reader may not speak is worse than
+  // the glyph alone. It does NOT claim the in-progress work survived: a render
+  // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
+  // "everything you saved is still here" line would over-promise (George, r2).
+  appReloadTeach: "The app will start again.",
 } as const;

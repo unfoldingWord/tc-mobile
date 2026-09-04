@@ -183,13 +183,13 @@ describe("book tree", () => {
     // Create in the OPPOSITE order to the expected sort, with explicit and
     // distinct timestamps, so an unsorted `getAll` (primary-key/uuid order)
     // fails deterministically rather than passing by luck.
-    const older = await createBook("older", "nukak", 1000);
+    const older = await createBook("older", "xx-test", 1000);
     const newer = await createBook("newer", null, 2000);
 
     const all = await listBooks();
     expect(all.map((b) => b.id)).toEqual([newer.id, older.id]);
     expect(all[0]?.chapterIds).toEqual([]);
-    expect(all[1]?.languageCode).toBe("nukak");
+    expect(all[1]?.languageCode).toBe("xx-test");
   });
 
   it("numbers chapters max+1 and parents them to the book", async () => {

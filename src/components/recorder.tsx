@@ -34,7 +34,7 @@ import type { SegmentId } from "@/types/domain";
  * Where the fixed centerline sits across the waveform viewport (F6).
  *
  * Centered. Sitting it right-of-centre gave the recorded audio room to the
- * right to grow into on an append (mockup 3), but Tim's v0.1.2 review asked for
+ * right to grow into on an append (mockup 3), but the requirements owner's v0.1.2 review asked for
  * it centered on every screen — that overrides the append-headroom tradeoff.
  * One constant to retune.
  */
@@ -120,7 +120,13 @@ export function Recorder({
   onClipboardChange,
   onExit,
 }: RecorderProps) {
-  const { view, error: loadError, setFinished } = useRecorderSegment(segmentId);
+  const {
+    view,
+    error: loadError,
+    retrying: loadRetrying,
+    retry: retryLoad,
+    setFinished,
+  } = useRecorderSegment(segmentId);
 
   // The waveform-editing session (B5): a working buffer over the loaded clip,
   // an in-memory undo log, and the shared clipboard. `view.samples` is the base;
@@ -1019,16 +1025,32 @@ export function Recorder({
           )}
         </header>
 
-        {denied ? (
+        {loadError ? (
+          // A load/decode failure (chiefly a finished segment's MP3 on a context
+          // left "interrupted", #106) used to render a bare Notice over a null
+          // view — the ≡ opener is disabled on `!view`, so in-sheet Erase was
+          // unreachable and nothing said the recording was safe (#137). This full
+          // panel gives the state-in-place the bar asks for: a recovery tap
+          // (resume + re-read), an exit (Back, to the row's Erase), and copy that
+          // the audio is untouched. The raw `loadError` is kept for the log, not
+          // shown — it is a decoder message, not translator-facing.
+          // Checked BEFORE `denied`: a device with no MediaRecorder (`!supported`)
+          // is `denied`, but its PermissionPanel Retry only re-arms the mic
+          // (`startRecording`), which cannot re-read a clip — so a decode failure
+          // there must reach this panel, whose Retry re-decodes (George R1 P3).
+          // The two never co-occur otherwise: opening the sheet clears any mic
+          // error, so `micError` and `loadError` cannot both be set.
+          <LoadErrorPanel
+            retrying={loadRetrying}
+            onRetry={retryLoad}
+            onBack={close}
+          />
+        ) : denied ? (
           <PermissionPanel
             message={audio.error}
             onRetry={onRetryRecord}
             onBack={close}
           />
-        ) : loadError ? (
-          <div className="flex-1 p-[12px]">
-            <Notice>{loadError}</Notice>
-          </div>
         ) : (
           <>
             {stopError && (
@@ -1501,6 +1523,72 @@ function PermissionPanel({
       <Control
         icon="back"
         label={strings.micBack}
+        variant="quiet"
+        onClick={onBack}
+      />
+    </div>
+  );
+}
+
+/**
+ * The segment could not be opened — a load walk or, far more often, a finished
+ * segment's MP3 decode that failed (an iOS AudioContext left "interrupted",
+ * #106). Same full-panel shape as `PermissionPanel`, and for the same reason:
+ * a disabled control with no reason beside it is a tap that does nothing, and
+ * the ≡ opener is disabled on a null view so in-sheet Erase is out of reach
+ * (#137). Try again resumes the context and re-decodes on this user gesture;
+ * Back returns to the Segments list, where the row's Erase does not decode and
+ * still works. The recording is never touched by a failed open, so the copy
+ * says so, and `role="alert"` makes AT announce that title and body when the
+ * panel mounts — not just the focused control's name (#137 round-2: the safety
+ * copy was visual-only, mirroring `SaveFailed`'s alertdialog now).
+ *
+ * Try again is never unmounted. While a retry is in flight (`retrying`) it stays
+ * in place as `aria-busy` with the busy label and swallows further taps (the
+ * `cancelled` flag drops any superseded load); a busy `Notice` sits beneath it
+ * for the sighted visible feedback (a long-segment decode is not instant). The
+ * old code swapped the whole control for the Notice, which dropped focus off the
+ * `autoFocus`ed button onto the inert background, and `autoFocus`ed it again on
+ * the failed retry's remount — stealing focus from a user who had moved to Back
+ * (#137 round-2). Keeping it mounted removes both. Back stays mounted throughout
+ * too: it is the panel's own named exit, and a retry decode cannot be aborted,
+ * so hiding it would leave the whole retry window with no labelled way out
+ * (George R1 P2).
+ */
+function LoadErrorPanel({
+  retrying,
+  onRetry,
+  onBack,
+}: {
+  retrying: boolean;
+  onRetry: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+    >
+      <span style={{ color: "var(--s-live)" }}>
+        <Icon name="alert" size={52} />
+      </span>
+      <p className="t-title" style={{ color: "var(--s-ink)" }}>
+        {strings.loadFailedTitle}
+      </p>
+      <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
+      <Control
+        icon="retry"
+        label={retrying ? strings.loadRetrying : strings.loadRetry}
+        variant="primary"
+        size={30}
+        autoFocus
+        busy={retrying}
+        onClick={onRetry}
+      />
+      {retrying ? <Notice tone="busy">{strings.loadRetrying}</Notice> : null}
+      <Control
+        icon="back"
+        label={strings.loadBack}
         variant="quiet"
         onClick={onBack}
       />
