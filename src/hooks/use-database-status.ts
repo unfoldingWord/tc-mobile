@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   setUpgradeCoordinator,
@@ -32,27 +32,40 @@ export function useDatabaseStatus(
 ): DatabaseStatus {
   const [status, setStatus] = useState<DatabaseStatus>("ok");
 
-  // Re-registered whenever the predicate changes identity, rather than held
-  // through a ref: inside a versionchange handler the only useful answer is the
-  // current one, and a stale closure would be answering about a take that has
-  // since been saved — or missing one just recorded. The caller decides how
-  // often that is by how it memoises the predicate; the registration itself is
-  // two assignments.
+  /**
+   * The latest predicate, which the registration below reads through.
+   *
+   * The registration itself must NOT depend on the predicate's identity. An
+   * effect keyed on it unregisters before it re-registers, and in that window
+   * `blocking()` sees no coordinator and gives the connection away — precisely
+   * when a take has just become held, because that is what changes the
+   * predicate's identity in the first place. Registering once and reading the
+   * answer through this ref closes the window entirely.
+   */
+  const predicateRef = useRef(holdsUnsavedWork);
+  // In an effect, never during render: `react-hooks/refs`, and the same reason
+  // behind it — nothing here is read while rendering.
+  useEffect(() => {
+    predicateRef.current = holdsUnsavedWork;
+  }, [holdsUnsavedWork]);
+
+  // Registered once, for as long as this hook is mounted, and unregistered only
+  // on unmount.
   useEffect(() => {
     const coordinator: UpgradeCoordinator = {
-      holdsUnsavedWork,
+      holdsUnsavedWork: () => predicateRef.current(),
       onYielded: () => setStatus("reloadNeeded"),
       onBlocked: () => {
         // This panel takes over the screen, which unmounts what is under it.
         // While work is held that would cost more than it explains — the
         // save-failure screen and each screen's own retry are the paths for
         // that — so it waits until nothing is in hand.
-        if (!holdsUnsavedWork()) setStatus("blocked");
+        if (!predicateRef.current()) setStatus("blocked");
       },
     };
     setUpgradeCoordinator(coordinator);
     return () => setUpgradeCoordinator(null);
-  }, [holdsUnsavedWork]);
+  }, []);
 
   return status;
 }
