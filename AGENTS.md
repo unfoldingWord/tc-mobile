@@ -261,7 +261,9 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 - **One `chore(release): vX.Y.Z` PR per `develop -> staging` promotion bumps
   the patch** — daily, whenever there is something to promote. Its body lists
   the PRs it carries (#131 is the shape). Patch numbers are not capped;
-  `0.1.30` is fine.
+  `0.1.30` is fine. **The release-PR body is the changelog** — there is no
+  `CHANGELOG.md` (retired #161: it held only a stale `[Unreleased]` section
+  while eleven `chore(release)` commits had already shipped).
 - **The minor is the milestone.** Every GitHub milestone is named for the
   version its `staging -> main` promotion ships. That PR bumps the minor and
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A

@@ -12,7 +12,15 @@
  * Modification for CC BY-SA purposes: images are centre-cropped to a square and
  * downscaled. Recorded in docs/decisions/0006-obs-content.md.
  *
+ * `sharp` is NOT a project dependency (#161): its native binaries bulk out
+ * every `npm ci` for a script that runs rarely and only when the OBS artwork
+ * changes. Install it on demand before running this file:
+ *
+ *   npm i --no-save sharp
  *   node scripts/build-obs-thumbs.mjs
+ *
+ * (`sharp` is in knip.json's `ignoreDependencies` so this stays a clean
+ * `unlisted`-free `npm run knip`, without listing it in package.json.)
  */
 
 import { mkdir, writeFile, readFile } from "node:fs/promises";

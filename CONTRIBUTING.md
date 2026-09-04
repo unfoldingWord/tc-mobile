@@ -196,7 +196,8 @@ Promotion is `develop` → `staging` → `main`, each by PR. The `staging` → `
 PR is the production gate.
 
 - **One `chore(release)` PR per staging promotion bumps the patch**, and its
-  body lists the PRs it carries.
+  body lists the PRs it carries. **That PR body is the changelog** — there is
+  no `CHANGELOG.md`.
 - **The milestone's `staging` → `main` promotion bumps the minor and tags
   `main`.** The minor is the milestone.
 - **Cloudflare Workers Builds deploys on merge** — there are no deploy
