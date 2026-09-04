@@ -1,0 +1,51 @@
+{
+  /*
+   * The test project — same options as tsconfig.app.json, plus `node` types.
+   *
+   * Until vitest 4, `tests/` got @types/node by accident: vitest 3's public
+   * declarations did `import 'node:stream'` (and node:fs, node:console,
+   * node:worker_threads), so TypeScript loaded @types/node globally for every
+   * file that imported `vitest`. Vitest 4's types import no node builtins, so
+   * `process`, `node:child_process`, `node:fs` and `import.meta.dirname`
+   * stopped resolving in tests/lib-boundary.test.ts, tests/obs-thumbs.test.ts
+   * and tests/precache-manifest.test.ts.
+   *
+   * The node types are declared here rather than appended to
+   * tsconfig.app.json's `types` so that `src/` does not silently gain
+   * `process` and the node builtins. That split is the point: the app project
+   * still compiles src/ without node types, so a `process.env` read in a
+   * component fails `tsc -b` exactly as it did before.
+   *
+   * Keep these compilerOptions in lockstep with tsconfig.app.json — `types` is
+   * the one line that is meant to differ.
+   */
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+
+    /* Paths */
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+
+    "types": ["vite/client", "vite-plugin-pwa/client", "node"]
+  },
+  "include": ["tests"]
+}

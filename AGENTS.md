@@ -44,14 +44,14 @@ loader); do not read every description here as the target.
 
 |         |                                                                            |
 | ------- | -------------------------------------------------------------------------- |
-| Runtime | Node 22.12+ (knip's floor)                                                 |
+| Runtime | Node 22.13+ (ESLint 10's floor; knip's is 22.12)                           |
 | Build   | Vite 7, `@vitejs/plugin-react`                                             |
 | UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
 | PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
 | Storage | IndexedDB via `idb` 8                                                      |
 | Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
-| Tests   | Vitest 3, `fake-indexeddb`                                                 |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
+| Tests   | Vitest 4, `fake-indexeddb`                                                 |
+| Lint    | ESLint 10 flat config, `typescript-eslint` 8, Prettier 3                   |
 | Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
 
 ## Commands
