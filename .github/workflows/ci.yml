@@ -125,6 +125,21 @@ jobs:
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
           echo "PWA artefacts present."
 
+      - name: OBS thumbnails stay out of the precache manifest
+        # tests/precache-manifest.test.ts pins `workbox.globPatterns` in
+        # vite.config.ts, but a re-add via vite-plugin-pwa's `includeAssets`
+        # or `additionalManifestEntries` reaches the generated manifest
+        # without touching globPatterns at all, so that test would not see it
+        # (#219). This greps the actual build output instead: the source of
+        # truth for what a field install fetches. See ADR 0006 / #177 for why
+        # the thumbnails are reader-gated out of the precache today.
+        run: |
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — the thumbnails are reader-gated out of the precache (ADR 0006 / #177) until a screen reads them (tests/precache-manifest.test.ts); update INTENDED there and in vite.config.ts together if a reader has landed."
+            exit 1
+          fi
+          echo "obs/thumbs absent from dist/sw.js."
+
       - name: Report bundle size
         run: |
           {
