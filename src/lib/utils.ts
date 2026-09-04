@@ -1,8 +1,17 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 
+/**
+ * Joins conditional class names. Plain `clsx`, not `tailwind-merge` (#161):
+ * every `cn(` call site was audited and none combines two Tailwind utilities
+ * from the same group where the caller relies on "last one wins" — the
+ * variable half of each call is either a static custom class (`row--finished`,
+ * `control--quiet`) or a caller `className` prop that, at every current call
+ * site, is never actually passed alongside a conflicting utility. If a future
+ * call site needs real conflict resolution, reach for `tailwind-merge` again
+ * rather than assuming `clsx` still covers it.
+ */
 export function cn(...inputs: ClassValue[]): string {
-  return twMerge(clsx(inputs));
+  return clsx(inputs);
 }
 
 /**

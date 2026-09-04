@@ -142,6 +142,7 @@ wiring is later pivot work.
 
 ```bash
 node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
+npm i --no-save sharp                # thumbs script isn't a project dependency (#161)
 node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px frames
 ```
 

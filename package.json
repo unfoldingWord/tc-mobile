@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "description": "translationCore Mobile — offline-first audio notebook/editor PWA for oral Bible translation",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unfoldingWord/tc-mobile.git"
+  },
+  "homepage": "https://github.com/unfoldingWord/tc-mobile#readme",
+  "bugs": {
+    "url": "https://github.com/unfoldingWord/tc-mobile/issues"
+  },
   "scripts": {
     "dev": "vite dev",
     "dev:lan": "vite dev --host",
@@ -38,8 +46,7 @@
     "fflate": "^0.8.3",
     "idb": "^8.0.3",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "tailwind-merge": "^3.4.0"
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
@@ -57,7 +64,6 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.1",
-    "sharp": "^0.35.3",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
