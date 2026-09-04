@@ -29,10 +29,13 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * orphan, the `useState` slot surviving a re-render, and the recovery screen
  * taking over are all outside this module. `discardSave` reports which clip is orphaned; it does not
  * delete it, and nothing here asserts that a delete happened. The storage calls
- * themselves are covered by `tests/storage.test.ts`. The wiring between them
- * has no automated coverage and needs a specific on-device check that has not
- * been run: fill the device, record, and confirm the recovery screen appears
- * and that Retry reuses the same clip. Record and playback were verified on a
+ * themselves are covered by `tests/storage.test.ts`. The wiring between them —
+ * `performSaveTake` and `performDiscardTake`, the orchestration minus React —
+ * is covered in Node by `tests/use-save-take.test.ts` since #180; what has NO
+ * automated coverage is the React state around it (the `useState` slot, the
+ * `savingRef` guard), and the specific on-device check that has still not been
+ * run: fill the device, record, and confirm the recovery screen appears and
+ * that Retry reuses the same clip. Record and playback were verified on a
  * device on 2026-08-22 and work — but a *successful* save exercises none of
  * this. The failure path only opens when the write actually rejects, which on
  * a phone with room to spare it never does.
