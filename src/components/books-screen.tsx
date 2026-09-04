@@ -192,7 +192,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           dead end with recordings invisible on disk (G9). */}
       {error ? (
         <Notice>
-          <span className="min-w-0 flex-1">{error}</span>
+          {/* `error` is a vocabulary key, not a message (#172): the browser's
+              own exception text — "UnknownError: Internal error opening backing
+              store…" — is English, untranslatable, and unreadable to half the
+              people this screen is for. The cause went to the failure sink. */}
+          <span className="min-w-0 flex-1">{strings[error]}</span>
           {loadFailed && (
             <Control
               icon="retry"

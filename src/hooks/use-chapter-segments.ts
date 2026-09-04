@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   addSegment as addSegmentToChapter,
@@ -135,7 +137,8 @@ export function useChapterSegments(chapterId: ChapterId) {
   // (also set by a failed append) and `loading` (never re-armed) cannot.
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A vocabulary key, never a caught message (#172) — see use-books.
+  const [error, setError] = useState<FailureKey | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -150,8 +153,11 @@ export function useChapterSegments(chapterId: ChapterId) {
         setError(null);
         setLoaded(true);
       } catch (cause) {
+        // Before the cancelled check, for the reason use-books states: a read
+        // that failed after the screen went away still failed.
+        reportFailure(cause, "chapter-load");
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(failureKey(cause, "loadFailed"));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -191,8 +197,11 @@ export function useChapterSegments(chapterId: ChapterId) {
       setError(null);
       return segment;
     } catch (cause) {
-      // A failed append reaches the same Notice a load failure does.
-      setError(cause instanceof Error ? cause.message : String(cause));
+      // A failed append reaches the same Notice a load failure does — in the
+      // vocabulary, with the cause going to the sink. A write, so a full phone
+      // is classified as such rather than read as an unexplained failure.
+      reportFailure(cause, "chapter-add-segment");
+      setError(failureKey(cause, "saveFailed"));
       return null;
     }
   }, [chapterId]);
@@ -216,7 +225,8 @@ export function useChapterSegments(chapterId: ChapterId) {
         // duration do not change when it lands.
         if (finished) void requestTranscodeSweep();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        reportFailure(cause, "chapter-set-finished");
+        setError(failureKey(cause, "saveFailed"));
       }
     },
     []

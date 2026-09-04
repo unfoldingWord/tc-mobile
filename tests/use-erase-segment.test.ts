@@ -2,6 +2,10 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  subscribeToFailures,
+  type FailureReport,
+} from "@/hooks/report-failure";
 import { performErase } from "@/hooks/use-erase-segment";
 import {
   addSegment,
@@ -124,21 +128,40 @@ describe("performErase", () => {
     consoleError.mockRestore();
   });
 
-  it("catches a store rejection, surfaces the reason, and does not fire onErased", async () => {
+  it("catches a store rejection, returns a vocabulary key, and does not fire onErased", async () => {
     // A segment id with no row: `clearSegmentTake` throws "No such segment: …".
     // This is the failure path the hook maps to `error` and a `false` return.
+    //
+    // What leaves this function is a KEY, never the store's own message (#172):
+    // "No such segment: seg_…" is English, untranslatable, and meaningless to a
+    // translator who may not read. The cause itself is not dropped — it goes to
+    // the failure sink, which is where a maintainer reads it.
     const bogus = newClipId() as unknown as SegmentId;
     const onErased = vi.fn();
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    // Undone in `finally`: the sink is one module-wide slot, so a subscription
+    // leaked by a failing assertion would make the NEXT case take the "second
+    // sink replaced the first" log and fail for an unrelated reason.
+    const off = subscribeToFailures((report) => reports.push(report));
 
-    const result = await performErase(bogus, onErased);
+    try {
+      const result = await performErase(bogus, onErased);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain("No such segment");
-    expect(onErased).not.toHaveBeenCalled();
-    expect(consoleError).toHaveBeenCalledTimes(1); // never swallowed silently
-    consoleError.mockRestore();
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toBe("eraseFailed");
+      expect(onErased).not.toHaveBeenCalled();
+      // The cause reached the sink, whole, with the site that noticed it.
+      expect(reports).toHaveLength(1);
+      expect(reports[0]?.context).toBe("erase-segment");
+      expect(reports[0]?.cause).toBeInstanceOf(Error);
+      expect((reports[0]?.cause as Error).message).toContain("No such segment");
+      expect(consoleError).toHaveBeenCalledTimes(1); // never swallowed silently
+    } finally {
+      off();
+      consoleError.mockRestore();
+    }
   });
 });

@@ -23,7 +23,8 @@ import { ROW_PEAK_BUCKETS } from "@/types/view";
  * `finish-transcode.ts`: the single encoder lane (one segment at a time, the
  * load inside the lane), the coalescing of requests that land mid-run, the
  * per-segment skips, the peaks-before-encode ordering, and the per-segment error
- * isolation whose only channel is `console.error`. If any regress, storage relief
+ * isolation, whose only channel is the failure sink (#172 — `reportFailure`,
+ * which still logs through `console.error`). If any regress, storage relief
  * (#12) quietly stops and nothing surfaces it.
  *
  * The codec seam is browser-only (`withEncoder` drives a Web Worker), so it is

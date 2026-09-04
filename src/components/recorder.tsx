@@ -1065,7 +1065,9 @@ export function Recorder({
             )}
             {erase.error && (
               <div className="px-[12px] pt-[8px]">
-                <Notice>{strings.eraseFailed}</Notice>
+                {/* The hook's key, looked up — so a full phone says so here too
+                    (#172) instead of the generic erase line. */}
+                <Notice>{strings[erase.error]}</Notice>
               </div>
             )}
             {paused && previewState === "failed" && (
