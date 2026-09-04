@@ -21,6 +21,7 @@ import { strings } from "./strings";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -72,6 +73,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
+  // Durable storage (#12). A book exists only because a write committed, so a
+  // successful shelf read that finds one is "after the first successful write"
+  // reached from the read side — the trigger the hook's docblock explains. The
+  // marker is non-null only when the browser explicitly said it has NOT
+  // promised to keep this data; unknown (no API, a rejected query) says nothing.
+  const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
   // value the name field is seeded with — the "Book NNN" placeholder the hook
@@ -651,11 +658,29 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
       )}
 
-      {/* The encoder has stopped working (#166). Its own line, not the slot
-          above: that slot is the shelf's load/delete channel and is exclusive,
-          and this is a standing background condition rather than something the
-          translator just did. It sits under it so a load failure — which has a
-          recovery — is still read first. */}
+      {/* Two standing background conditions can be true at once — the browser
+          has not promised to keep this storage (#12), AND the encoder has
+          stopped working (#166) — and they are about different subsystems, so
+          #279's precedent (encoderLine's own line, not folded into the
+          load/delete/loading slot above, which stays exclusive and acute-first)
+          extends to both rather than making one dominant CSS-flag over the
+          other: each is `&&`-rendered on its own, and BOTH may show stacked.
+          Neither collides with the slot above — both need a completed,
+          non-loading read, which is exactly when `noticeText` is falsy and
+          `loading` is false; there is no gate keying on that here because
+          `storage` and `encoderLine` are themselves already `null` until then
+          (`useStoragePersistence` requires `hasContent`, i.e. a loaded shelf;
+          `encoderHealth()` has nothing to report before a book exists to
+          encode from).
+
+          Order: storage first, encoder second. Storage's risk is total and
+          unrecoverable (browser eviction, no restore path) where encoder's
+          copy explicitly promises nothing is lost — the more severe standing
+          risk reads first, same principle the load-failure/loading slot above
+          already applies by being exclusive and ordered acute-first. */}
+      {storage === "not-persisted" && (
+        <Notice tone="info">{strings.storageNotPersisted}</Notice>
+      )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
       )}
