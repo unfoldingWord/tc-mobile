@@ -26,7 +26,8 @@ the tree wins, and the disagreement is worth an issue.
 
 ## Setup and commands
 
-Node **22.12 or newer** (`engines` in `package.json`).
+Node **22.13 or newer** (`engines` in `package.json`). ESLint 10 sets that
+floor — it declares `^20.19.0 || ^22.13.0 || >=24`.
 
 ```bash
 npm ci
@@ -36,6 +37,13 @@ npm run verify     # format, lint, knip, typecheck, typecheck:lib, tests, build
 
 `npm run verify` is the gate — what CI runs, in the same order. Husky runs a
 fast subset on commit (lint-staged, typecheck) and tests plus build on push.
+
+**Changing a dependency needs npm 11.** Installing from the committed
+lockfile is fine on any npm — `npm ci` and `npm install` both work — but
+_regenerating_ it on npm 10.9.7, the npm bundled with Node 22, crashes on
+vitest 4's cyclic optional peers with `Cannot read properties of null
+(reading 'edgesOut')`. Use `npx npm@11 install` when you add, remove or bump
+a package.
 
 **Phone testing needs HTTPS.** `getUserMedia` needs a secure context;
 `localhost` qualifies and `http://192.168.x.x` does not, so `npm run dev:lan`

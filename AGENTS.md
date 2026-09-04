@@ -44,7 +44,7 @@ loader); do not read every description here as the target.
 
 |         |                                                                            |
 | ------- | -------------------------------------------------------------------------- |
-| Runtime | Node 22.12+ (knip's floor)                                                 |
+| Runtime | Node 22.13+ (ESLint 10's floor; knip's is 22.12)                           |
 | Build   | Vite 7, `@vitejs/plugin-react`                                             |
 | UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
 | PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
