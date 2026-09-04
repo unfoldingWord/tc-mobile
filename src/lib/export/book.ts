@@ -68,8 +68,8 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  * (nothing to share) or when the run was cancelled during the gather.
  *
  * `nameChapter` supplies each zip entry's filename from the chapter's number:
- * naming is translator-facing copy, so it is injected by the hook (from
- * `strings`) rather than baked in here, keeping this module free of UI text.
+ * the name needs the BOOK's name too, which this module never sees, so it is
+ * injected by the hook (from `lib/export/naming`) rather than built here.
  *
  * `shouldContinue` is the same cancellation seam `exportChapterMp3` takes,
  * checked before each chapter as well as threaded into it: a book is several

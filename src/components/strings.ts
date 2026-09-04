@@ -174,8 +174,6 @@ export const strings = {
     n === 1
       ? "1 segment could not be included."
       : `${n} segments could not be included.`,
-  shareFilename: (book: string, chapter: number): string =>
-    `${book} - Chapter ${chapter}.mp3`,
 
   // Share Book — the book-level ≡ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.
@@ -192,5 +190,4 @@ export const strings = {
     n === 1
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
-  shareBookFilename: (book: string): string => `${book}.zip`,
 } as const;

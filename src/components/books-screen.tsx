@@ -8,6 +8,7 @@ import { Notice } from "./notice";
 import { strings } from "./strings";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { shareBookFilename, shareFilename } from "@/lib/export/naming";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -137,8 +138,8 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     if (!shareMenuBook) return;
     void bookShare.prepare(
       shareMenuBook.bookId,
-      strings.shareBookFilename(shareMenuBook.name),
-      (n) => strings.shareFilename(shareMenuBook.name, n)
+      shareBookFilename(shareMenuBook.name),
+      (n) => shareFilename(shareMenuBook.name, n)
     );
   }, [bookShare, shareMenuBook]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the

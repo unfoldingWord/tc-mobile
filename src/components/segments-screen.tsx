@@ -18,6 +18,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { shareFilename } from "@/lib/export/naming";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
@@ -91,10 +92,7 @@ export const SegmentsScreen = forwardRef<
   // what keeps Record, append, and erase out of an in-flight share.
   const onPrepareShare = useCallback(() => {
     audio.leave();
-    void share.prepare(
-      chapterId,
-      strings.shareFilename(bookName, chapterNumber)
-    );
+    void share.prepare(chapterId, shareFilename(bookName, chapterNumber));
   }, [audio, share, chapterId, bookName, chapterNumber]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` calls
   // `navigator.share` synchronously inside this gesture; the `.then` runs after
