@@ -16,25 +16,33 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * body, silently, before #180 — and the bail-out is a property of the hook's
  * *shape*, not of whether the file happens to violate the rule.
  *
- * This test pins two probes:
+ * Bisecting the real file (delete/simplify, re-lint, repeat) found the
+ * trigger: ANY nested function defined inside a `catch (cause) { ... }`
+ * block that references the caught binding, anywhere in a hook's body,
+ * silences `react-hooks/refs` for the WHOLE of that hook — including an
+ * unrelated ref write earlier in the same body. `useCallback`, `finally`,
+ * and `setState` specifically are all NOT required — confirmed by cutting
+ * each away in turn and re-linting. A second hook in the same FILE is
+ * unaffected, so the bail-out is scoped per hook function, not per file, and
+ * a `catch` with no such closure does not bail on its own. That is narrower
+ * and stranger than "try/catch/finally inside useCallback" (this issue's
+ * working theory) — it is the closure-over-the-catch-binding specifically.
+ *
+ * This test pins three probes:
  *   - a plain render-time ref write, which MUST fire. This is the guarding
  *     assertion: it is what would have caught #212 before the fact, and
  *     mutation (see the eslint.config.mjs edit below, done by hand and
  *     reverted) is how it is proven to guard anything at all.
- *   - the develop-era `commit` shape reproduced standalone: a `useCallback`
- *     whose `catch (cause) { ... }` block passes a `setState` updater that
- *     closes over `cause` — the exact pattern `use-save-take.ts` had, minus
- *     its real imports. Bisecting the real file (see the PR body) found the
- *     bail-out does not need `useCallback`, `finally`, or even `setState`
- *     specifically: ANY nested function defined inside a `catch` block that
- *     references the caught binding, anywhere in a hook's body, silences
- *     `react-hooks/refs` for the WHOLE of that hook — including an unrelated
- *     ref write earlier in the same body. A second hook in the same FILE is
- *     unaffected, so the bail-out is scoped per hook function, not per file.
- *     That is narrower and stranger than "try/catch/finally inside
- *     useCallback" (this issue's working theory) or a `catch` clause on its
- *     own (a `catch` with no such closure does not bail) — it is the
- *     closure-over-the-catch-binding specifically.
+ *   - the MINIMAL bisected trigger: the same render-time ref write, plus
+ *     nothing but a `catch (cause)` whose body defines a closure referencing
+ *     `cause`. No `useCallback`, no `finally`, no `setState` — so a later
+ *     reader cannot "simplify" this fixture without noticing the bail-out
+ *     stops.
+ *   - the full develop-era `commit` shape, belt and braces: `useCallback`,
+ *     `try/catch/finally`, and `setState` updaters closing over `cause` in
+ *     both branches — the exact pattern `use-save-take.ts` had, minus its
+ *     real imports. Kept alongside the minimal case so the realistic shape
+ *     that actually shipped stays pinned too, not just its reduction.
  */
 
 const REPO = join(import.meta.dirname, "..");
@@ -108,21 +116,63 @@ export function usePlainRefsProbe(value: number) {
     expect(rules).toContain("react-hooks/refs");
   }, 15000);
 
-  it("stays silent on the develop-era use-save-take.ts commit shape (#212's blind spot)", () => {
-    // Standalone reproduction of the shape `commit` had in use-save-take.ts
-    // before #180: a `useCallback` with a render-time ref write earlier in
-    // the same hook body, and a `try { ... } catch (cause) { ... } finally
-    // { ... }` whose catch branch hands a `setState` updater a closure that
-    // captures `cause`. Real deps (`saveTake`, `succeedSave`, `failSave`,
-    // `saveFailureKind`) are stubbed so the probe lints standalone; the
-    // shape that matters is preserved verbatim.
+  it("stays silent on the MINIMAL bisected bail-out trigger (#212's blind spot)", () => {
+    // The reduction, not the realistic shape: a render-time ref write plus
+    // nothing else but a `catch (cause)` block whose body defines a closure
+    // that references `cause`. No `useCallback`, no `finally`, no
+    // `setState` — each was cut away in turn against the real file and the
+    // bail-out held every time. This is the fixture that must stay exactly
+    // this small: trimming the closure's reference to `cause`, or the catch
+    // block itself, makes the guarding case above start failing here
+    // instead — which is the point, not a bug in the test.
     //
-    // This assertion is a CHARACTERIZATION, not a requirement — it records
-    // what eslint-plugin-react-hooks 7.1.1 actually does with this shape. If
-    // a plugin upgrade starts reporting `react-hooks/refs` here too, this
+    // CHARACTERIZATION, not a requirement — records what
+    // eslint-plugin-react-hooks 7.1.1 actually does with this shape. If a
+    // plugin upgrade starts reporting `react-hooks/refs` here too, this
     // assertion fails; when that happens, this is a known bug fixed
     // upstream, not a regression, and the note in eslint.config.mjs (and the
     // matching AGENTS.md entry) should be deleted along with this comment.
+    const rules = lintProbe(
+      "minimal-bailout",
+      `import { useRef } from "react";
+
+export function useMinimalBailedRefsProbe(value: number) {
+  const ref = useRef(value);
+  ref.current = value;
+
+  async function commit() {
+    try {
+      await Promise.resolve();
+      return true;
+    } catch (cause) {
+      const handle = () => {
+        void cause;
+      };
+      handle();
+      return false;
+    }
+  }
+
+  return { ref, commit };
+}
+`
+    );
+    expect(rules).not.toContain("react-hooks/refs");
+  }, 15000);
+
+  it("stays silent on the full develop-era use-save-take.ts commit shape too (belt and braces)", () => {
+    // Standalone reproduction of the shape `commit` actually had in
+    // use-save-take.ts before #180: a `useCallback` with a render-time ref
+    // write earlier in the same hook body, and a
+    // `try { ... } catch (cause) { ... } finally { ... }` whose catch branch
+    // hands a `setState` updater a closure that captures `cause`. Real deps
+    // (`saveTake`, `succeedSave`, `failSave`, `saveFailureKind`) are stubbed
+    // so the probe lints standalone; the shape that matters is preserved
+    // verbatim. Kept alongside the minimal probe above — that one pins the
+    // reduction, this one pins the shape that actually shipped.
+    //
+    // CHARACTERIZATION, not a requirement — see the comment on the minimal
+    // case above; the same "this is not a bug to be fixed here" applies.
     const rules = lintProbe(
       "bailed-commit-shape",
       `import { useCallback, useRef, useState } from "react";
