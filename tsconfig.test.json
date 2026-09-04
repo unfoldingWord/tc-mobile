@@ -15,6 +15,9 @@
    * `process` and the node builtins. That split is the point: the app project
    * still compiles src/ without node types, so a `process.env` read in a
    * component fails `tsc -b` exactly as it did before.
+   *
+   * Keep these compilerOptions in lockstep with tsconfig.app.json — `types` is
+   * the one line that is meant to differ.
    */
   "compilerOptions": {
     "target": "ES2022",
