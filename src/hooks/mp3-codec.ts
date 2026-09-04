@@ -8,7 +8,12 @@
  * worker, kept alive for reuse (#182) and serialised by `withEncoder`; an abort
  * terminates it — a real stop, the encode ends mid-loop and its memory goes with
  * the worker — then re-warms a fresh one, and a worker that dies is dropped by a
- * durable `error` listener and rebuilt on the next encode. Decoding is
+ * durable `error` listener and rebuilt on the next encode. Every encode is also
+ * BOUNDED by a deadline (`withDeadline`, #166): a worker that neither answers nor
+ * errors — killed under memory pressure, a chunk that never loads — used to hold
+ * the single lane forever, wedging every later Share and the Finished sweep with
+ * no signal; now it is terminated and re-warmed the same way an abort is, and the
+ * encode rejects with an `EncoderStalledError` so the lane is released. Decoding is
  * `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio boundary.
  *
  * ONE lane. A Finished transcode and a Share are each "one chapter or segment
@@ -33,6 +38,7 @@
  */
 
 import { decodeMp3ToCanonical } from "./audio-io";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { AudioCodec } from "@/types/audio";
 
 /** The one message the client posts: a view onto canonical PCM, transferred. */
@@ -46,6 +52,94 @@ export interface EncodeRequest {
 export type EncodeResponse =
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The encoder stopped working: a worker that neither answered nor errored within
+ * its deadline, so the lane was released and a fresh worker warmed (#166). A
+ * DISTINCT type — killed under memory pressure, or a chunk that never loaded — so
+ * a caller can tell a wedged encoder from a one-off encode error and surface "the
+ * encoder has stopped working" rather than treat it as a transient failure.
+ */
+export class EncoderStalledError extends Error {
+  constructor(timeoutMs: number) {
+    super(
+      `The MP3 encoder did not respond within ${timeoutMs} ms; it was restarted`
+    );
+    this.name = "EncoderStalledError";
+  }
+}
+
+/**
+ * A floor under any encode's deadline, so a tiny clip is never killed for a cold
+ * worker start or a slow phone's first schedule of the timer.
+ */
+const ENCODE_DEADLINE_FLOOR_MS = 15_000;
+
+/**
+ * Deadline granted per SECOND of canonical audio, added to the floor. The encode
+ * is CPU-bound but runs many times faster than real time even on a modest phone,
+ * so a per-second budget of one real second is deliberately generous: it exists
+ * to catch a worker that has stopped answering ENTIRELY (which never returns, so
+ * any finite deadline catches it), not to police a slow-but-progressing encode.
+ * Proportional so a long chapter is not killed for being long while a wedged
+ * worker still is.
+ */
+const ENCODE_DEADLINE_MS_PER_AUDIO_SECOND = 1_000;
+
+/**
+ * The deadline in ms for an encode of `sampleCount` canonical samples: the floor
+ * plus a term proportional to the audio's length. See the two constants above.
+ */
+export function encodeDeadlineMs(sampleCount: number): number {
+  const audioSeconds = sampleCount / CANONICAL_SAMPLE_RATE;
+  return Math.ceil(
+    ENCODE_DEADLINE_FLOOR_MS +
+      audioSeconds * ENCODE_DEADLINE_MS_PER_AUDIO_SECOND
+  );
+}
+
+/**
+ * Bound `work` with a deadline. Settles with `work`'s own result if it finishes
+ * within `timeoutMs`; otherwise runs `onDeadline` ONCE and rejects with an
+ * {@link EncoderStalledError}. The timer is cleared on either settlement, so a
+ * late success never fires recovery and `onDeadline` never fires twice — and a
+ * worker's OWN rejection propagates unchanged, without recovery (that path drops
+ * its dead worker through the durable `error` listener already).
+ *
+ * Pure promise/timer plumbing — no Worker, no DOM — so the deadline itself is
+ * unit-tested in Node (`tests/encoder-deadline.test.ts`). The concrete recovery
+ * it drives, terminate + re-warm, is the same code the abort path runs and is
+ * verified only in a browser.
+ */
+export function withDeadline<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  onDeadline: () => void
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onDeadline();
+      reject(new EncoderStalledError(timeoutMs));
+    }, timeoutMs);
+    work.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (cause: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(cause as Error);
+      }
+    );
+  });
+}
 
 /** The tail of the lane: resolves when the job currently holding it is done. */
 let lane: Promise<void> = Promise.resolve();
@@ -72,7 +166,7 @@ export async function withEncoder<T>(
   try {
     await untilSettled(previous, signal);
     return await work({
-      encodeMp3: (samples) => encodeInWorker(samples, signal),
+      encodeMp3: (samples) => encodeWithDeadline(samples, signal),
       decodeMp3: decodeMp3ToCanonical,
     });
   } finally {
@@ -159,6 +253,39 @@ function encoderWorker(): Worker {
 function dropEncoderWorker(): void {
   sharedWorker?.terminate();
   sharedWorker = null;
+}
+
+/**
+ * Terminate a wedged worker and re-establish a warm one. This is exactly the
+ * abort path's recovery (`encodeInWorker`'s `onAbort`): `terminate()` is the only
+ * thing that stops an in-flight encode NOW, and re-warming restores the reusable
+ * handle. A deadline breach is handled the same way an abort is (#166).
+ */
+function recoverEncoderWorker(): void {
+  dropEncoderWorker();
+  warmEncoder();
+}
+
+/**
+ * Encode in the shared worker, bounded by a deadline (#166).
+ *
+ * Every encode the app runs reaches this through `withEncoder`'s single lane, so
+ * bounding here bounds BOTH egress paths — Share and the Finished sweep. If the
+ * worker neither answers nor errors within the deadline (killed under memory
+ * pressure, a chunk that never loads), the worker is terminated and re-warmed and
+ * the encode rejects with an {@link EncoderStalledError} — which releases the lane
+ * instead of holding it for the life of the page. A normal encode, an abort, and
+ * the worker's own error are unchanged.
+ */
+function encodeWithDeadline(
+  samples: Int16Array,
+  signal?: AbortSignal
+): Promise<Uint8Array<ArrayBuffer>> {
+  return withDeadline(
+    encodeInWorker(samples, signal),
+    encodeDeadlineMs(samples.length),
+    recoverEncoderWorker
+  );
 }
 
 /**

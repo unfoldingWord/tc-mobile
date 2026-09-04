@@ -117,6 +117,16 @@ async function sweepOnce(): Promise<void> {
         await commitTranscode(segmentId, clipId, mp3, peaks);
       });
     } catch (cause) {
+      // The lane can no longer wedge here: every encode is deadline-bounded
+      // (#166), so a stuck worker rejects with an `EncoderStalledError` and this
+      // catch runs instead of the sweep hanging forever. The PCM is kept and the
+      // next sweep retries.
+      //
+      // TODO(#166/#188): a device whose worker cannot run at all now fails fast
+      // but still says nothing to the translator or maintainer. Count consecutive
+      // sweep failures in the module state and surface ONE state-in-place
+      // indicator after N (the Books screen). The presentation goes through the
+      // failure sink / strings owned by #188 — wire it there, not here.
       console.error(
         "Transcoding a finished segment failed; its PCM is kept",
         segmentId,
