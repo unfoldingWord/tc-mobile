@@ -1,10 +1,12 @@
 name: CI
 
 on:
-  # `**` matches slashes; a single `*` does NOT, so `feat/x`-style branches
-  # pushed without a PR would otherwise get no CI run at all.
+  # Push CI runs on the long-lived branches only — merges land there and get no
+  # pull_request event, so they need a push trigger. Feature branches get their
+  # CI from the pull_request trigger below; gating push on them as well would
+  # double-run every push to a branch that also has an open PR.
   push:
-    branches: ["**"]
+    branches: ["develop", "staging", "main"]
   pull_request:
     branches: ["**"]
 

@@ -25,3 +25,8 @@ updates:
       github-actions:
         patterns:
           - "*"
+        # Majors (e.g. checkout v6 -> v7) can change action behaviour, so keep
+        # them out of the weekly digest PR; they get their own review.
+        update-types:
+          - minor
+          - patch

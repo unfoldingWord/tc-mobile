@@ -113,17 +113,25 @@ codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
   -o "$VERDICT_FILE" \
   "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
 
-assert_tree_unchanged "$TREE_BEFORE"
-
-# A sandbox failure produces a plausible-looking REQUEST_CHANGES with nothing
-# assessed. That is a failed run, not a review — fail loudly rather than let it
-# be mistaken for signal. Anchored, case-sensitive, over the final message only.
 # A dud run's files are moved aside (.dud) so triage, which keys on this SHA,
 # reads "not run" instead of triaging a stalled report under the current head.
 quarantine_dud() {
   mv -f "$VERDICT_FILE" "$VERDICT_FILE.dud" 2>/dev/null || true
   mv -f "$REPORT" "$REPORT.dud" 2>/dev/null || true
 }
+
+# A reviewer that mutated the working tree voids the review — quarantine its
+# report too, so the void run is not ingested by SHA-keyed triage as real
+# signal. The bare assert returns 1 under set -e and would otherwise exit here
+# with the report left in place.
+if ! assert_tree_unchanged "$TREE_BEFORE"; then
+  quarantine_dud
+  exit 1
+fi
+
+# A sandbox failure produces a plausible-looking REQUEST_CHANGES with nothing
+# assessed. That is a failed run, not a review — fail loudly rather than let it
+# be mistaken for signal. Anchored, case-sensitive, over the final message only.
 if [ ! -s "$VERDICT_FILE" ] \
   || ! grep -qE '\b(APPROVE|REQUEST_CHANGES)\b' "$VERDICT_FILE"; then
   echo >&2

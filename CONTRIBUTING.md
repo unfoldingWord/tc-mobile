@@ -95,7 +95,7 @@ Two independent reviewers run on every code PR: **Frank** (codex, diff-local)
 and **George** (grok, deep-tree) — two lenses, never a primary and a fallback.
 
 ```bash
-scripts/review/both.sh develop           # both reviewers; base defaults to main, so pass it
+scripts/review/both.sh                    # both reviewers; base defaults to origin/develop
 scripts/review/triage.sh <round> <pr>    # build the round's triage comment
 ```
 
