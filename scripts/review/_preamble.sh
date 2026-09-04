@@ -2,7 +2,11 @@
 # Shared context for both reviewers. Sourced, not executed.
 set -euo pipefail
 
-BASE="${1:-main}"
+# Work is cut from `develop`, not `main`; `main` trails it by many commits, so a
+# default of `main` would review the whole divergence (and embed it in George's
+# prompt). Default to the remote-tracking `develop` so an omitted base reviews
+# only the branch's own change.
+BASE="${1:-origin/develop}"
 OUT_DIR=".review"
 mkdir -p "$OUT_DIR"
 
