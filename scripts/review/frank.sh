@@ -19,14 +19,15 @@
 # Codex reviews the COMMITTED diff, so uncommitted edits do not affect it.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-source scripts/review/_preamble.sh "${1:-main}"
+source scripts/review/_preamble.sh "${1:-origin/develop}"
 
 SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/frank-$SHA.md"
+VERDICT_FILE="$OUT_DIR/frank-verdict-$SHA.txt"
 DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
-read -r -d '' PROMPT <<PROMPT_EOF || true
+read -r -d '' PROMPT_TEMPLATE <<'PROMPT_EOF' || true
 You are **Frank**, a senior/principal engineer with a methodical, analytical,
 no-nonsense review style. You are the grounding rod — the one who connects
 vision to architecture to execution.
@@ -55,7 +56,7 @@ rewrites unless asked. Always actionable — never leave a finding at
 ---
 
 REVIEW ASSIGNMENT — you are Reviewer A in a dual-review pipeline for
-$REPO_CONTEXT
+@@REPO_CONTEXT@@
 
 Your lens is DIFF-LOCAL: correctness of the changed code ITSELF. Logic errors,
 off-by-one and boundary bugs, unhandled failure paths, async/await mistakes,
@@ -74,40 +75,67 @@ Rules of engagement:
 - READ-ONLY. Do not modify, create or delete any file. Do not commit. Do not
   run the test suite or the build. The working tree is checked after this run
   and any mutation voids the review.
-- The full diff under review is at $DIFF_FILE — read it first.
+- The full diff under review is at @@DIFF_FILE@@ — read it first.
 - Your FINAL message must be the complete report, not narration about it.
 
-Branch under review: $BRANCH (against $BASE) — $DIFF_STAT
+Branch under review: @@BRANCH@@ (against @@BASE@@) — @@DIFF_STAT@@
 
-$EVIDENCE_RULES
+@@EVIDENCE_RULES@@
 
-$SEVERITY_RULES
+@@SEVERITY_RULES@@
 PROMPT_EOF
+
+# The delimiter above is QUOTED ('PROMPT_EOF'), so the persona is captured
+# verbatim: literal backticks and $ in a steer (e.g. `settle()`, or a $VAR named
+# in a round-context block) are no longer command-substituted or expanded away.
+# The named fields are injected here by literal string replacement, which does
+# not re-evaluate the value it inserts either.
+PROMPT="$PROMPT_TEMPLATE"
+PROMPT="${PROMPT//@@REPO_CONTEXT@@/$REPO_CONTEXT}"
+PROMPT="${PROMPT//@@DIFF_FILE@@/$DIFF_FILE}"
+PROMPT="${PROMPT//@@BRANCH@@/$BRANCH}"
+PROMPT="${PROMPT//@@BASE@@/$BASE}"
+PROMPT="${PROMPT//@@DIFF_STAT@@/$DIFF_STAT}"
+PROMPT="${PROMPT//@@EVIDENCE_RULES@@/$EVIDENCE_RULES}"
+PROMPT="${PROMPT//@@SEVERITY_RULES@@/$SEVERITY_RULES}"
 
 echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
 TREE_BEFORE="$(snapshot_tree)"
 
+# `-o` writes ONLY the agent's final message to VERDICT_FILE; the tee keeps the
+# full streamed transcript in REPORT for a human. The verdict is judged from
+# VERDICT_FILE, never the transcript: the streamed transcript echoes the prompt
+# and the diff, so a substring match there finds APPROVE/REQUEST_CHANGES in the
+# instructions (or, when this script is itself under review, in its own source)
+# even when the run stalled and assessed nothing.
+rm -f "$VERDICT_FILE"
 codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
+  -o "$VERDICT_FILE" \
   "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
 
 assert_tree_unchanged "$TREE_BEFORE"
 
 # A sandbox failure produces a plausible-looking REQUEST_CHANGES with nothing
 # assessed. That is a failed run, not a review — fail loudly rather than let it
-# be mistaken for signal.
-#
-# Detect it by the REPORT's own shape, never by scanning for error strings: the
-# transcript echoes the diff, and when this script is itself under review a
-# substring match finds its own source. ("P1: Not assessed" is the dud
-# signature; a real review says "No P1 findings".)
-if ! grep -qE "APPROVE|REQUEST_CHANGES" "$REPORT"; then
+# be mistaken for signal. Anchored, case-sensitive, over the final message only.
+# A dud run's files are moved aside (.dud) so triage, which keys on this SHA,
+# reads "not run" instead of triaging a stalled report under the current head.
+quarantine_dud() {
+  mv -f "$VERDICT_FILE" "$VERDICT_FILE.dud" 2>/dev/null || true
+  mv -f "$REPORT" "$REPORT.dud" 2>/dev/null || true
+}
+if [ ! -s "$VERDICT_FILE" ] \
+  || ! grep -qE '\b(APPROVE|REQUEST_CHANGES)\b' "$VERDICT_FILE"; then
   echo >&2
   echo "FAILED RUN: Frank produced no verdict — stalled or cancelled." >&2
+  quarantine_dud
   exit 3
 fi
-if grep -qiE "^\**P1\**:?[[:space:]]*\**Not assessed" "$REPORT"; then
+# "P1: Not assessed" is the dud signature; a real review says "No P1 findings".
+if grep -qiE "^\**P1\**:?[[:space:]]*\**Not assessed" "$VERDICT_FILE"; then
   echo >&2
   echo "FAILED RUN: Frank assessed nothing. This is not a review." >&2
+  quarantine_dud
   exit 3
 fi
 

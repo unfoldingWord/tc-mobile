@@ -1,17 +1,22 @@
 name: CI
 
 on:
+  # `**` matches slashes; a single `*` does NOT, so `feat/x`-style branches
+  # pushed without a PR would otherwise get no CI run at all.
   push:
-    branches: ["*"]
+    branches: ["**"]
   pull_request:
-    branches: ["*"]
+    branches: ["**"]
 
 # Least privilege by default; jobs opt in to what they need.
 permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel only superseded PR runs. On the long-lived branches (develop, staging,
+  # main) every merged commit must keep its own run: two merges landing close
+  # together would otherwise leave the first commit with no completed CI.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secret-scan:
@@ -21,8 +26,12 @@ jobs:
       contents: read
     env:
       GITLEAKS_VERSION: 8.24.3
+      # sha256 of gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz, from the
+      # release's published checksums.txt. A tampered or truncated download
+      # fails the verification below instead of running an unknown binary.
+      GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
 
@@ -37,9 +46,11 @@ jobs:
       # every commit including the root, and needs no licence key.
       - name: Install gitleaks
         run: |
-          curl -sSL --fail \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSL --fail -o "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
           ./gitleaks version
 
       - name: Scan full history
@@ -51,9 +62,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "22"
           cache: "npm"
@@ -90,9 +101,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "22"
           cache: "npm"
@@ -124,7 +135,7 @@ jobs:
               | while read -r size file; do echo "| \`${file#dist/}\` | $size |"; done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: build
           path: dist
