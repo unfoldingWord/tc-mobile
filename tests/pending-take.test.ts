@@ -53,7 +53,8 @@ function pcm(): Int16Array {
 
 function held(
   finished = false,
-  editOnly = false
+  editOnly = false,
+  generation = 0
 ): { take: PendingTake; recorded: Int16Array } {
   const recorded = pcm();
   const take = startSave(null, {
@@ -64,6 +65,7 @@ function held(
     offset: 0,
     finished,
     editOnly,
+    generation,
   });
   return { take, recorded };
 }
@@ -97,6 +99,7 @@ describe("startSave", () => {
       offset: 0,
       finished: false,
       editOnly: false,
+      generation: 0,
     });
     expect(second).toBe(take);
   });
@@ -212,6 +215,7 @@ describe("a take that is saved on the second attempt", () => {
       offset: 0,
       finished: false,
       editOnly: false,
+      generation: 0,
     });
     const failed = failSave(started, CLIP, "quota");
     const retried = retrySave(failed);
@@ -219,6 +223,17 @@ describe("a take that is saved on the second attempt", () => {
     expect(retried?.clipId).toBe(CLIP);
     expect(retried?.segmentId).toBe(SEGMENT);
     expect(succeedSave(retried, CLIP)).toBeNull();
+  });
+
+  it("carries the lossy-pass count through fail and retry", () => {
+    // Same property as the Finished mark, for the same reason: the count belongs
+    // to the audio the slot is holding (the generation of the clip the recorder
+    // decoded it from, #163), so a retry has to stamp what the first attempt
+    // would have. Re-deriving it at write time is the A-14 defect.
+    const { take } = held(false, false, 2);
+    expect(take.generation).toBe(2);
+    const retried = retrySave(failSave(take, CLIP, "quota"));
+    expect(retried?.generation).toBe(2);
   });
 
   it("carries the Finished mark through fail and retry", () => {

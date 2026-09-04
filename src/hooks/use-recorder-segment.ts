@@ -37,6 +37,17 @@ export interface RecorderSegmentView {
    * screen). The read's one failure point is this effect, before any recording.
    */
   readonly samples: Int16Array | null;
+  /**
+   * Lossy encode passes the loaded audio has already been through — the loaded
+   * clip's `generation`, 0 on an empty segment (nothing loaded is nothing
+   * decoded).
+   *
+   * Held for the SAVE, which stamps its new clip with it instead of re-reading
+   * the segment: the Finished sweep can replace this clip with its MP3 (one
+   * generation higher) while the sheet is open, and a buffer decoded from the
+   * PCM would then be recorded as lossier than it is (A-14, #163).
+   */
+  readonly generation: number;
 }
 
 /**
@@ -96,6 +107,10 @@ export async function loadRecorderSegmentView(
     peaks: samples ? computePeaks(samples, PEAK_BUCKETS) : null,
     lengthSamples: samples?.length ?? 0,
     samples,
+    // What the buffer above has been through, read from the clip it came from —
+    // not from the segment at save time, which is a later and possibly
+    // transcoded state (#163).
+    generation: clip?.meta.generation ?? 0,
   };
 }
 

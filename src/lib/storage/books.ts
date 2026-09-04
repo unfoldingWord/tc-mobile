@@ -392,33 +392,58 @@ export async function addTake(
  * whole backing buffer); the take write is `writeTakeInTx`, shared with
  * `addTake`. `putClip` is an upsert on `clipId`, so a retry with the same id
  * overwrites rather than duplicating.
+ *
+ * `opts.generation` is the lossy-pass count of the audio being written — the
+ * generation of the clip the caller LOADED and decoded from. A caller that knows
+ * it (the recorder does: it holds the samples from the moment it opened the
+ * segment) passes it, because re-reading the segment here answers a different
+ * question than the one the field asks; see the comment on the read below.
  */
 export async function saveTake(
   segmentId: SegmentId,
   clipId: ClipId,
   samples: Int16Array,
   sampleRate: number,
-  opts: { finished?: boolean; now?: number } = {}
+  opts: { finished?: boolean; now?: number; generation?: number } = {}
 ): Promise<Take> {
   const now = opts.now ?? Date.now();
-  // Built before the transaction opens, so a 0-frame clip is rejected without
-  // ever starting a write. The generation is stamped below, inside the
-  // transaction, once the prior clip has been read.
-  const base = buildClipMeta(clipId, samples, sampleRate, now);
+  // Built before the transaction opens, so a 0-frame clip is rejected — and a
+  // caller-supplied generation validated — without ever starting a write. When
+  // the caller supplied none, the value here is a placeholder: the generation is
+  // stamped below, inside the transaction, once the prior clip has been read.
+  const base = buildClipMeta(
+    clipId,
+    samples,
+    sampleRate,
+    now,
+    opts.generation ?? 0
+  );
   const bytes = new Int16Array(samples);
 
   const db = await getDb();
   const tx = openTakeTx(db);
   try {
-    // The lossy-pass count carries over from the clip this take REPLACES (B8,
-    // Q5). The only way a segment has a prior take at save time is that the
-    // recorder opened it and edited or inserted into its audio — and if that
-    // audio was an MP3 (a finished segment being fixed), the buffer being saved
-    // was decoded from it and has been through that many lossy passes already.
-    // An erase clears the take first, so a genuinely fresh recording starts at
-    // 0. Read inside the transaction so the count and the take it describes
-    // come from the same state.
-    const generation = await priorClipGeneration(tx, segmentId);
+    // The lossy-pass count (B8, Q5) describes the AUDIO being written: how many
+    // lossy passes the buffer in hand has been through. The caller that decoded
+    // that buffer is the one that knows, so when it says, that is what is
+    // stamped.
+    //
+    // Reading it here instead is only an approximation of the same question, and
+    // A-14 (#163) is where the two part company: the recorder loads a segment's
+    // PCM (generation 0), the Finished sweep commits that clip's MP3 (generation
+    // 1) underneath the open sheet, and this read then stamps a buffer decoded
+    // from the PCM as having survived a lossy pass it never went through. No
+    // audio is lost either way — the field exists to answer a quality question,
+    // and that answer would be wrong.
+    //
+    // The read stays as the default for callers with no better answer: the only
+    // way a segment has a prior take at save time is that the recorder opened it
+    // and edited or inserted into its audio, so its count is the right one to
+    // inherit, and an erase clears the take first so a genuinely fresh recording
+    // starts at 0. Read inside the transaction so the count and the take it
+    // describes come from the same state.
+    const generation =
+      opts.generation ?? (await priorClipGeneration(tx, segmentId));
     const meta = { ...base, generation };
     await tx.objectStore("clipMeta").put(meta);
     await tx.objectStore("clipData").put(bytes.buffer, clipId);

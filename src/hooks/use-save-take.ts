@@ -83,6 +83,11 @@ export async function performSaveTake(
     // demote-to-draft the way a separate write after it would be.
     await saveTake(take.segmentId, take.clipId, merged, CANONICAL_SAMPLE_RATE, {
       finished: take.finished,
+      // The lossy-pass count of the audio in hand, carried from the load rather
+      // than re-read from the segment: a Finished transcode landing under the
+      // open recorder would otherwise stamp this buffer — decoded from the PCM
+      // that clip used to be — as one generation lossier than it is (#163).
+      generation: take.generation,
     });
     // Cleared only here, and only for this attempt. A `finally` would drop
     // the samples on the failure path, which is the one path they exist for.
@@ -215,6 +220,11 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       recorded: Int16Array,
       insertionOffset: number,
       finished: boolean,
+      // Lossy passes `existing` has already been through — the generation of the
+      // clip the recorder loaded it from, 0 on an empty segment. Supplied by the
+      // caller because only it knows what was loaded: by the time this writes,
+      // the Finished sweep may have replaced that clip with an MP3 (#163).
+      generation: number,
       // Set by the edit-only path below; a fresh recording leaves it false. Only
       // the recovery screen's wording depends on it — the save itself is identical.
       editOnly = false
@@ -230,6 +240,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
         offset: insertionOffset,
         finished,
         editOnly,
+        generation,
       });
       // Identity means refused: a recording is already held, and displacing it
       // is the silent loss all of this exists to prevent. The screens disable
@@ -275,7 +286,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     (
       segmentId: SegmentId,
       buffer: Int16Array,
-      finished: boolean
+      finished: boolean,
+      /** Lossy passes the edited buffer already carries (see `saveRecording`). */
+      generation: number
     ): Promise<boolean> => {
       if (buffer.length === 0) {
         return clearSegmentTake(segmentId)
@@ -288,7 +301,15 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
             return false;
           });
       }
-      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
+      return saveRecording(
+        segmentId,
+        buffer,
+        NO_SAMPLES,
+        0,
+        finished,
+        generation,
+        true
+      );
     },
     [saveRecording]
   );
