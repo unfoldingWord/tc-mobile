@@ -289,15 +289,30 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       finished: boolean
     ): Promise<boolean> => {
       if (buffer.length === 0) {
-        return clearSegmentTake(segmentId)
-          .then(() => {
-            onSavedRef.current?.();
+        // Two-arg `.then` on purpose, not `.then().catch()`: the second
+        // handler must only ever see a rejection from `clearSegmentTake`
+        // itself, never one raised by the fulfilled handler below. A chained
+        // `.catch()` would also catch a throwing `onSaved` and report the
+        // clear as failed even though it already committed (#210's shape;
+        // mirrors `performSaveTake`).
+        return clearSegmentTake(segmentId).then(
+          () => {
+            // The clear has committed. Only the store op above is
+            // fallible-and-reportable as a clear failure — `onSaved` runs
+            // outside that guard, in its own try/catch, so a throwing reload
+            // cannot flip an already-landed clear back to "failed".
+            try {
+              onSavedRef.current?.();
+            } catch (cause) {
+              console.error("Post-clear notification failed", cause);
+            }
             return true;
-          })
-          .catch((cause: unknown) => {
+          },
+          (cause: unknown) => {
             console.error("Clearing an edited-to-empty segment failed", cause);
             return false;
-          });
+          }
+        );
       }
       return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
     },
