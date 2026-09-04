@@ -146,7 +146,12 @@ node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px
 ```
 
 Story text and frame metadata are bundled (230 KB), and so are the 128px
-thumbnails — 598 of them for 2.5 MB, precached by the service worker (ADR 0006).
+thumbnails — 598 of them for 2.5 MB. They ship in the build but are **excluded
+from the service-worker precache until a screen reads them** (#177): no shipped
+screen draws them yet, so precaching 2.5 MB of unused pictures only delayed
+offline-readiness. `jpg` is restored to the precache when the Template Library
+(#33) wires a reader — the bundle-and-precache decision itself stands (ADR 0006,
+2026-09-04 amendment).
 **The 360px frames are not bundled**, and after B0 (#26) they are **not cached
 either**: the on-demand IndexedDB fetch for full-size artwork is gone. The
 pre-pivot recording view that rendered a frame's CDN `<img>` is gone too, removed
