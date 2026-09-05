@@ -142,3 +142,69 @@ jobs:
           name: build
           path: dist
           retention-days: 1
+
+  # Headless-Chromium smoke for the browser-only paths (#251): the real
+  # mp3.worker.ts round-trip, decodeAudioData of a stored MP3, the service
+  # worker's atomic precache install, and a real two-tab IndexedDB
+  # blocked/versionchange — none of which the Node/vitest suite above can see
+  # by construction (lib/ is DOM-free on purpose). Gated to pull_request only,
+  # and only when the browser-boundary code it exercises actually changed, so
+  # a docs-only or components-only PR pays nothing for it.
+  browser-smoke:
+    name: Headless-Chromium Smoke
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: the paths check below diffs against the PR's merge
+      # base, which a shallow (default depth-1) checkout does not have.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # A plain `git diff`, not a third-party Action: every other action in
+      # this workflow is `actions/*`, pinned by SHA, and this repo has no
+      # third-party action to date. A two-line diff does the same job without
+      # adding one.
+      - name: Changed paths
+        id: changed
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if git diff --name-only "$base" "${{ github.sha }}" \
+              | grep -qE '^(src/hooks/|vite\.config\.ts$)'; then
+            echo "smoke=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "smoke=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changed.outputs.smoke == 'true'
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        if: steps.changed.outputs.smoke == 'true'
+        run: npm ci
+
+      # A version-matched Chromium download — the standard approach on a
+      # fresh Actions runner. This is NOT how the smoke suite launches
+      # Chromium in the maintainers' sandboxed dev containers, which
+      # pre-install a Chromium outside npm's browser cache and pin
+      # `playwright.config.ts`'s `executablePath` to it instead; a runner has
+      # neither that path nor a pinned-version mismatch to work around.
+      - name: Install Playwright's Chromium
+        if: steps.changed.outputs.smoke == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Build (e2e) and run the smoke suite
+        if: steps.changed.outputs.smoke == 'true'
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.changed.outputs.smoke == 'true' && failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 5
