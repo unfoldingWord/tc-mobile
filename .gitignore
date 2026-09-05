@@ -35,3 +35,7 @@ npm-debug.log*
 # Review reports — transient, regenerated per commit.
 .review/
 .lib-boundary-probe/
+
+# Isolated worktree checkouts the harness creates for background subagents —
+# full repo copies, machine-local, cleaned up when the agent finishes.
+.claude/worktrees/
