@@ -10,7 +10,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,
@@ -46,10 +46,11 @@ function openNewerThanApp(): Promise<IDBPDatabase> {
 }
 
 /**
- * Stand up the real v3 pivot schema and KEEP the connection open, so the app's
- * v4 open is blocked by it. It must be the real v3 shape (not an empty DB): once
- * this connection closes, the app's blocked open proceeds and runs the genuine
- * v3→v4 backfill, which reads the `clipMeta` store v3 created.
+ * Stand up the real v3 pivot schema and KEEP the connection open, so the
+ * app's open (at `APP_VERSION`) is blocked by it. It must be the real v3
+ * shape (not an empty DB): once this connection closes, the app's blocked
+ * open proceeds and runs the genuine v3→v4→v5 backfills in sequence, which
+ * read the `clipMeta`/`books` stores v3 created.
  */
 function openLegacyV3Open(): Promise<IDBPDatabase> {
   return openDB(DB_NAME, 3, {
@@ -73,7 +74,7 @@ afterEach(wipe);
 describe("getDb — blocked open (an older connection elsewhere)", () => {
   it("rejects with a blocked error instead of hanging on 'Loading your books.'", async () => {
     // An older connection is still open (another tab, or the pre-update page
-    // after an autoUpdate SW swap). It never yields, so the app's v4 open cannot
+    // after an autoUpdate SW swap). It never yields, so the app's open cannot
     // upgrade past it.
     const stale = await openLegacyV3Open();
     try {
@@ -118,9 +119,10 @@ describe("getDb — blocked open (an older connection elsewhere)", () => {
 
 describe("getDb — version downgrade (stored data is newer than this build)", () => {
   it("rejects with a downgrade error rather than an opaque VersionError", async () => {
-    // A newer build already wrote v5 on this device; this (older) build asks for
-    // v4. IndexedDB refuses with a VersionError — deleting to 'fix' it would
-    // destroy the newer build's recordings, so the open must fail deliberately.
+    // A newer build already wrote a version above this one on this device;
+    // this (older) build asks for `APP_VERSION`. IndexedDB refuses with a
+    // VersionError — deleting to 'fix' it would destroy the newer build's
+    // recordings, so the open must fail deliberately.
     const newer = await openNewerThanApp();
     newer.close();
 

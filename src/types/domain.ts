@@ -45,9 +45,12 @@ export type ClipId = string & { readonly __brand: "ClipId" };
  *
  * See docs/research/prior-art.md §4.
  *
- * @pivotpending Written by B7's OBS/template import (#33); no reader consumes
- * it as an export this lane, so it is tagged rather than left to fail CI. The
- * type itself is live — `Segment.reference` is typed on it.
+ * Written by #253's `createBookFromTemplate` (`lib/storage/templates.ts`) — an
+ * OBS template stamps `{ book: "OBS", scope: obsFrameScope(story, frame) }`
+ * per frame, a Bible-book template stamps `{ book, scope: String(chapter) }`
+ * per starter segment. No export reads it yet (that stays a later lane's
+ * concern), so the type is live but the field's *use* beyond storage is still
+ * ahead of it.
  */
 export interface SegmentRef {
   /** USFM book code where known, e.g. "RUT", or "OBS" for Open Bible Stories. */
@@ -56,12 +59,33 @@ export interface SegmentRef {
   readonly scope: string;
 }
 
+/**
+ * Where a Book's structure (and, for OBS, its content) came from — stamped
+ * once at creation by `createBookFromTemplate` (#253) and never written
+ * again this lane. `null` is a from-scratch book with no template behind it
+ * (today's `createBook`/`createNextBook` path).
+ *
+ * This is the smallest additive slice of #174's fuller provenance plan
+ * (licence, attribution, `updatedAt`/`deletedAt` on every store) that #253
+ * needs on its own: #174 has not landed as of this field's v5 bump, and #253
+ * blocking on it would trade "nobody can start from OBS at the training" for
+ * a schema bump this repo's own discipline treats as free. #174's remaining
+ * pieces (pendingTakes, timestamps/tombstones) are still that issue's to add,
+ * additively, whenever it lands.
+ */
+export type BookProvenance =
+  | { readonly kind: "obs"; readonly catalogVersion: string }
+  | { readonly kind: "scripture"; readonly book: string }
+  | { readonly kind: "user" };
+
 export interface Book {
   readonly id: BookId;
   /** User-facing; auto-named "Book NNN" in B2 (Q1: rename deferred). */
   readonly name: string;
   /** BCP-47 tag of the language being recorded, when known. */
   readonly languageCode: string | null;
+  /** Source of this book's structure/content, or `null` for a hand-made one. */
+  readonly provenance: BookProvenance | null;
   readonly chapterIds: readonly ChapterId[];
   readonly createdAt: number;
   readonly updatedAt: number;

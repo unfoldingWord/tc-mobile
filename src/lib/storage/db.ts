@@ -39,6 +39,22 @@
  * as the PCM it already is. No store is dropped, no bytes are touched, and a
  * v3 device's recordings come through intact — which `tests/db-migration.test.ts`
  * asserts alongside the v2→v3 wipe it also pins.
+ *
+ * ── v5 (#253): Book.provenance — additive backfill ──
+ *
+ * `Book` gained `provenance` (`BookProvenance | null`, `src/types/domain.ts`),
+ * stamped by the new `createBookFromTemplate` (`lib/storage/templates.ts`).
+ * Every pre-existing `books` row is backfilled `provenance: null` — "no
+ * template behind this book", the honest reading for anything created before
+ * this field existed. No store is dropped, no other field touched.
+ *
+ * This is a deliberately smaller slice than #174's planned v5 (which also
+ * covers a `pendingTakes` store and `updatedAt`/`deletedAt` on every entity
+ * store): #174 had not landed when #253 needed this field, and blocking #253
+ * on it would trade the Template Library for a schema that was still being
+ * planned. #174's remaining pieces land as their own additive bump later —
+ * append-only discipline does not care how many small steps get there, only
+ * that none of them destroy a v3+ device's data.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -57,7 +73,7 @@ import type {
 import type { ClipMeta } from "@/types/audio";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -69,6 +85,12 @@ type ClipMetaV3 = Pick<
   "id" | "sampleRate" | "frameCount" | "durationMs" | "createdAt"
 > &
   Partial<ClipMeta>;
+
+/**
+ * The v4 shape of a `books` row, before `provenance` existed. Only the v5
+ * backfill reads it; the typed store below already speaks the v5 shape.
+ */
+type BookV4 = Omit<Book, "provenance"> & Partial<Pick<Book, "provenance">>;
 
 export interface TcMobileDb extends DBSchema {
   books: { key: BookId; value: Book };
@@ -196,6 +218,23 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 peaks: null,
               };
               await cursor.update(stamped);
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v5 (#253): stamp every pre-existing book as having no template
+        // behind it. Additive — the row and everything it points at (chapters,
+        // segments, takes, audio) are kept untouched; only the new field is
+        // added. On a fresh install, or straight after the v3 recreate, the
+        // store is empty and this loops zero times.
+        if (oldVersion < 5) {
+          const store = tx.objectStore("books");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as BookV4;
+            if (legacy.provenance === undefined) {
+              await cursor.update({ ...legacy, provenance: null });
             }
             cursor = await cursor.continue();
           }
