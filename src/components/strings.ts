@@ -211,4 +211,30 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+
+  // ── Template Library (B7, #246) ───────────────────────────────────────────
+  // The global-menu entry point. One key, like `shareBook`/`shareChapter`: it
+  // IS the row's whole accessible name, no separate "open" variant.
+  templateLibrary: "Template library",
+  // The picker's in-panel back control, shown once a category is chosen —
+  // distinct from the panel's own Close (which exits the whole picker).
+  templatePickerBack: "Back to template categories",
+  templateObs: "Open Bible Stories",
+  templateBible: "Book of the Bible",
+  templateObsLoading: "Loading the story list.",
+  templateObsLoadFailed: "Could not load the story list.",
+  // The one-shot "build this" action, and its busy relabel — `name` is
+  // `templateObs` or a scripture book's name, never raw catalogue text.
+  templateCreate: (name: string): string => `Create ${name}`,
+  templateCreating: (name: string): string => `Creating ${name}…`,
+  // The Bible list's per-row busy mark: 66 rows have no room for the full
+  // sentence, so this is the visible word beside the row while its own
+  // `aria-label` (built the same way `Control`'s hint is) carries the full one.
+  templateCreatingShort: "Creating…",
+  templateCreateFailed: "Could not create this book. Try again.",
+  // OBS story preview row: "N. Title" — mirrors `chapterName`'s "word plus
+  // number" formatting decision living here rather than in the row markup.
+  obsStoryRow: (n: number, title: string): string => `${n}. ${title}`,
+  obsFrameCount: (n: number): string => (n === 1 ? "1 frame" : `${n} frames`),
+  scriptureBookRow: (code: string, name: string): string => `${code} — ${name}`,
 } as const;

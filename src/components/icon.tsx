@@ -34,7 +34,8 @@ export type IconName =
   | "redo"
   | "eye"
   | "eye-off"
-  | "share";
+  | "share"
+  | "templates";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -382,6 +383,32 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </>
+  ),
+  // Template library: a stack of cards/books, three overlapping bars fading
+  // toward the back one. The global menu's "Template library" row and the
+  // picker's two category rows (#246).
+  templates: (
+    <>
+      <rect
+        x="4"
+        y="14"
+        width="14"
+        height="4"
+        rx="1"
+        fill="currentColor"
+        opacity="0.45"
+      />
+      <rect
+        x="4"
+        y="9"
+        width="14"
+        height="4"
+        rx="1"
+        fill="currentColor"
+        opacity="0.7"
+      />
+      <rect x="4" y="4" width="14" height="4" rx="1" fill="currentColor" />
     </>
   ),
 };

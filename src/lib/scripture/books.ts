@@ -46,9 +46,9 @@ export function getScriptureBook(code: string): ScriptureBook | undefined {
  * book: a typo'd code is a bug in the caller (the picker, #246), not a
  * translator choice to honour.
  *
- * @pivotpending No caller yet — #246 (Template Library UI) is the picker
- * that calls this and hands the result to `createBookFromTemplate`. This
- * lane (#253, part of #33) builds only the storage/lib half.
+ * Called by the Template Library picker's Bible category (#246,
+ * `components/template-picker.tsx`), which hands the result to
+ * `createBookFromTemplate`.
  */
 export function bibleBookTemplate(code: string): Template {
   const book = getScriptureBook(code);

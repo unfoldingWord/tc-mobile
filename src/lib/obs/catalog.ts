@@ -63,9 +63,9 @@ export async function listStories(): Promise<
  * catalogue versions imported later would be distinguishable provenance, not
  * a naming collision.
  *
- * @pivotpending No caller yet — #246 (Template Library UI) is the picker
- * that calls this and hands the result to `createBookFromTemplate`. This
- * lane (#253, part of #33) builds only the storage/lib half.
+ * Called by the Template Library picker's OBS category (#246,
+ * `components/template-picker.tsx`), which hands the result to
+ * `createBookFromTemplate`.
  */
 export async function obsTemplate(): Promise<Template> {
   const catalog = await loadCatalog();

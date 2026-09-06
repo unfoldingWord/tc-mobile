@@ -10,16 +10,20 @@ import { describe, expect, it } from "vitest";
 // thumbnails.
 //
 // #177 removed the OBS thumbnails (public/obs/thumbs/*.jpg — 598 files, ~80%
-// of the precache bytes) from the precache because no shipped screen reads
+// of the precache bytes) from the precache because no shipped screen read
 // them yet: a first install over a slow link should not fetch 2.6 MB of
 // pictures nothing draws, and Workbox's atomic install restarts on any one
-// failed fetch. This is a temporary, reader-gated exception (ADR 0006,
-// 2026-09-04 amendment), NOT a permanent ban and NOT a switch to
-// runtime-caching. When a screen reads `thumbUrl` (the Template Library, #33),
-// `jpg` must be RESTORED to `globPatterns` (and INTENDED below updated in the
-// same change, on purpose) — otherwise the tiles are precached nowhere, there
-// is no runtimeCaching, and a field install strands on broken images. The
-// reader-gated test below fails exactly that omission.
+// failed fetch. That was a temporary, reader-gated exception (ADR 0006,
+// 2026-09-04 amendment), never a permanent ban and never a switch to
+// runtime-caching: once a screen reads `thumbUrl`, `jpg` must be RESTORED to
+// `globPatterns` (and INTENDED below updated in the same change, on
+// purpose) — otherwise the tiles are precached nowhere, there is no
+// runtimeCaching, and a field install strands on broken images.
+//
+// #246 (the Template Library picker, B7's #33) is that reader: `jpg` is
+// restored below. The test stays reader-gated both ways — if `thumbUrl`
+// ever loses every caller again, this fails until `jpg` is dropped again
+// too.
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG = path.join(ROOT, "vite.config.ts");
 const SRC = path.join(ROOT, "src");
@@ -27,9 +31,10 @@ const SRC = path.join(ROOT, "src");
 // reader of it.
 const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
 
-// The exact allowlist the app shell needs, and nothing more. `jpg` is absent
-// by #177; restoring it is a deliberate edit here plus in vite.config.ts.
-const INTENDED = ["**/*.{js,css,html,svg,png,woff2}"];
+// The exact allowlist the app shell needs, and nothing more. `jpg` was absent
+// by #177 and is restored here (#246 gives `thumbUrl` its first reader) —
+// a deliberate edit alongside the matching one in vite.config.ts.
+const INTENDED = ["**/*.{js,css,html,svg,png,jpg,woff2}"];
 
 function globPatterns(): string[] {
   const source = readFileSync(CONFIG, "utf8");

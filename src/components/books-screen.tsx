@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { strings } from "./strings";
+import { TemplatePicker } from "./template-picker";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,24 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
+  // Template Library (B7, #246): opened from a row inside the global menu, so
+  // choosing it closes that menu and opens this one — the same one-panel-at-
+  // a-time rule the per-book share menu already follows.
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const onOpenTemplateLibrary = useCallback(() => {
+    setMenuOpen(false);
+    setTemplatePickerOpen(true);
+  }, []);
+  // A book created from a template lands on its first chapter's Segments
+  // screen directly — `onOpenChapter` is the same callback a Books-screen row
+  // tap uses, so navigation is identical either way.
+  const onTemplateCreated = useCallback(
+    (chapterId: ChapterId) => {
+      setTemplatePickerOpen(false);
+      onOpenChapter(chapterId);
+    },
+    [onOpenChapter]
+  );
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
@@ -165,7 +184,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // background). The Menu portals to <body>, so it stays live above this (#77).
     <div
       className="flex h-full flex-col gap-[14px]"
-      inert={menuOpen || shareMenuBook !== null || undefined}
+      inert={
+        menuOpen || shareMenuBook !== null || templatePickerOpen || undefined
+      }
     >
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
         {!showEmpty && (
@@ -234,7 +255,20 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        <Control
+          icon="templates"
+          label={strings.templateLibrary}
+          variant="quiet"
+          onClick={onOpenTemplateLibrary}
+        />
+      </Menu>
+
+      <TemplatePicker
+        open={templatePickerOpen}
+        onClose={() => setTemplatePickerOpen(false)}
+        onCreated={onTemplateCreated}
+      />
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
           the same spot — "Share book" encodes + zips (tap 1), then a primary

@@ -33,21 +33,21 @@ interface MenuProps {
    */
   title?: string;
   /**
-   * The menu's contents. Empty on the global menu this lane: Template Library is
-   * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
-   * opens, traps focus, and closes — not a stub, because the mechanism is exactly
-   * what that batch mounts into.
+   * The menu's contents. The global menu now holds one row, "Template
+   * library" (#246) — `books-screen.tsx` — and the Template Library picker
+   * itself (`template-picker.tsx`) reuses this same surface for its own
+   * steps rather than a second dialog component.
    */
   children?: React.ReactNode;
 }
 
 /**
- * The global menu, opened from the hamburger.
- *
- * This lane ships the surface, not entries: a scrim, a focus trap, close on
- * Escape or a scrim tap, and a heading a screen reader announces. That is the
- * reusable mechanism B6 and B7 both fill, so it earns its place now even while
- * it holds nothing.
+ * The generic menu surface: a scrim, a focus trap, close on Escape or a scrim
+ * tap, and a heading a screen reader announces. Opened as the global menu
+ * (from the hamburger, B2), the per-book/per-chapter share menus and the
+ * recorder's "More" menu (B6/B7), and now the Template Library picker
+ * (#246), which reuses it for its own multi-step content rather than
+ * building a second dialog.
  */
 export function Menu({
   open,

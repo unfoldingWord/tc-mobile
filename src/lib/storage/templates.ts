@@ -11,8 +11,8 @@
  *
  * `createBookFromTemplate` below is the one writer this lane adds: the first
  * writer of `Segment.reference` (`SegmentRef`, `src/types/domain.ts`) and of
- * `Book.provenance` (v5, `lib/storage/db.ts`). Nothing in `src/` calls it yet
- * — the picker UI is #246 — so it is exported for that lane to consume.
+ * `Book.provenance` (v5, `lib/storage/db.ts`). Its caller is the Template
+ * Library picker's UI half (#246, `hooks/use-template-library.ts`).
  */
 
 import { getDb } from "./db";
@@ -100,9 +100,9 @@ function sameSource(a: BookProvenance | null, b: BookProvenance): boolean {
  *
  * Returns the new `BookId`.
  *
- * @pivotpending No caller yet — #246 is the Template Library's UI half (the
- * picker that chooses a `Template` and calls this), which this storage-only
- * lane (#253, part of #33) does not build. Exported for #246 to consume.
+ * Called by the Template Library picker (#246, `hooks/use-template-library.ts`),
+ * which resolves either `obsTemplate()` or `bibleBookTemplate(code)` and
+ * passes the result here.
  */
 export async function createBookFromTemplate(
   template: Template,
