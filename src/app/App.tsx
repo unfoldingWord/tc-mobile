@@ -50,7 +50,7 @@ export function App() {
   const [clipboard, setClipboard] = useState<Int16Array | null>(null);
 
   const audio = useAudioSession();
-  const { leave } = audio;
+  const { leave, primeAudioContext } = audio;
 
   // Transcode on Finished (B8, D3) is a background sweep. Each Finished
   // transition asks for one; this catch-all at launch covers anything left over
@@ -97,10 +97,16 @@ export function App() {
       // Opening the recorder stops any row that was playing — the same single
       // `leave()` every navigation makes.
       leave();
+      // Resume the audio context in THIS tap (#184): the sheet loads and decodes
+      // the segment one commit later, after this gesture's activation is spent,
+      // so an iOS `"interrupted"` context would otherwise meet the first decode
+      // un-resumed — the very trip the #155/#137 recovery panel exists to soften.
+      // Priming it here spares the common transient case that failed open.
+      primeAudioContext();
       setRecordingOrdinal(ordinal);
       setRecorder({ segmentId, ordinal });
     },
-    [leave]
+    [leave, primeAudioContext]
   );
 
   const closeRecorder = useCallback(
