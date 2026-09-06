@@ -77,6 +77,27 @@ async function openLegacyV3() {
   });
 }
 
+/**
+ * Stand up the schema exactly as v4 shipped it (B8): `books` rows have no
+ * `provenance` field yet. This is what a dev device that recorded on v0.1.x
+ * (post-B8, pre-#253) holds when #253's v5 opens it.
+ */
+async function openLegacyV4() {
+  return openDB(DB_NAME, 4, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
 
@@ -102,17 +123,24 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     await v3.put("clipData", pcm.buffer, "c1");
     v3.close();
 
-    const v4 = await getDb();
-    expect(v4.version).toBe(4);
+    // getDb() opens at the CURRENT DB_VERSION, so a v3 device jumps straight
+    // through every intervening additive step (v4's clip backfill, #253's v5
+    // provenance backfill) in one open — exercising them run in sequence, not
+    // in isolation, is itself part of what "append-only" has to hold up under.
+    const db = await getDb();
+    expect(db.version).toBe(5);
 
     // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
-    // onward. A v3 device's recordings come through.
-    expect((await v4.get("books", "b1" as never))?.name).toBe("Book 001");
-    const data = await v4.get("clipData", "c1" as never);
+    // onward. A v3 device's recordings come through, and the v5 step (#253)
+    // backfilled the book with the "no template" provenance.
+    const book = await db.get("books", "b1" as never);
+    expect(book?.name).toBe("Book 001");
+    expect(book?.provenance).toBeNull();
+    const data = await db.get("clipData", "c1" as never);
     expect(Array.from(new Int16Array(data!))).toEqual(Array.from(pcm));
 
     // The row is stamped as the PCM it already was, its v3 fields untouched.
-    const meta = await v4.get("clipMeta", "c1" as never);
+    const meta = await db.get("clipMeta", "c1" as never);
     expect(meta).toEqual({
       id: "c1",
       sampleRate: 44100,
@@ -149,6 +177,56 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     expect(meta?.encoding).toBe("mp3");
     expect(meta?.generation).toBe(2);
     expect(meta?.byteLength).toBe(5);
+  });
+});
+
+describe("v4 → v5 Book.provenance backfill (#253, append-only continues)", () => {
+  it("stamps every pre-existing book provenance: null, and leaves everything else untouched", async () => {
+    const v4 = await openLegacyV4();
+    await v4.put("books", {
+      id: "b1",
+      name: "Book 001",
+      languageCode: "en",
+      chapterIds: ["c1"],
+      createdAt: 5,
+      updatedAt: 9,
+    }); // no `provenance` field — the pre-v5 shape
+    v4.close();
+
+    const v5 = await getDb();
+    expect(v5.version).toBe(5);
+
+    const book = await v5.get("books", "b1" as never);
+    expect(book).toEqual({
+      id: "b1",
+      name: "Book 001",
+      languageCode: "en",
+      chapterIds: ["c1"],
+      createdAt: 5,
+      updatedAt: 9,
+      provenance: null,
+    });
+  });
+
+  it("leaves a book that already carries provenance alone", async () => {
+    // Keys on the field being ABSENT, so re-running it (or a row written by a
+    // newer build before an older one reopened the database) is not
+    // re-stamped back to null over a real provenance value.
+    const v4 = await openLegacyV4();
+    await v4.put("books", {
+      id: "b2",
+      name: "Ruth 001",
+      languageCode: null,
+      provenance: { kind: "scripture", book: "RUT" },
+      chapterIds: [],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    v4.close();
+
+    const v5 = await getDb();
+    const book = await v5.get("books", "b2" as never);
+    expect(book?.provenance).toEqual({ kind: "scripture", book: "RUT" });
   });
 });
 

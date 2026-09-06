@@ -36,24 +36,26 @@ export default defineConfig({
       devOptions: { enabled: true, type: "module" },
       workbox: {
         // Audio lives in IndexedDB, not the Cache API. The OBS thumbnails
-        // (public/obs/thumbs — 598 files, 2.5 MB) are temporarily excluded from
-        // the precache: no shipped screen reads them yet (`thumbUrl` in
-        // src/lib/obs/catalog.ts has no importer), so precaching them made a
-        // first install fetch ~2.6 MB of pictures nothing draws — ~80% of the
-        // bytes and 98% of the entries — and Workbox's atomic install meant a
-        // single failed fetch restarted the whole set. Dropping `jpg` removes
-        // them from the manifest; the files still ship in the bundle.
+        // (public/obs/thumbs — 598 files, 2.5 MB) were temporarily excluded
+        // from the precache by #177: no shipped screen read `thumbUrl`
+        // (src/lib/obs/catalog.ts) yet, so precaching them made a first
+        // install fetch ~2.6 MB of pictures nothing drew — ~80% of the bytes
+        // and 98% of the entries — and Workbox's atomic install meant a
+        // single failed fetch restarted the whole set.
         //
-        // End state (ADR 0006, 2026-09-04 amendment): when a screen reads
-        // `thumbUrl` — the Template Library, #33 — RESTORE `jpg` here so the set
-        // is precached for offline first-run again. This is a reader-gated
-        // exception, NOT a move to runtime-caching, which ADR 0006 rejected for
-        // its stranding risk. See #177; tests/precache-manifest.test.ts pins the
-        // allowlist so `jpg` (and any broader glob) cannot return unnoticed.
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
-        // No single precached asset exceeds the 2 MiB default (the largest is
-        // the ~552 KB entry chunk); the former 4 MiB override existed only for
-        // the now-excluded thumbnails, which were individually tiny anyway.
+        // Restored here (ADR 0006, 2026-09-04 amendment): the Template
+        // Library picker (#246, B7's #33) now reads `thumbUrl` — a story's
+        // first-frame thumbnail is the row's non-reader handle — so the set
+        // is precached again for offline first-run. This is the reader-gated
+        // exception ADR 0006 always intended, NOT a move to runtime-caching,
+        // which it rejected for its stranding risk. See #177;
+        // tests/precache-manifest.test.ts pins the allowlist so a broader
+        // glob (or `jpg` returning without a reader) cannot land unnoticed.
+        globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2}"],
+        // No single precached asset exceeds the 2 MiB default: the largest is
+        // the ~552 KB entry chunk, and the restored thumbnails top out
+        // around 5.5 KB each (598 files, ~2.5 MB total) — no size-limit
+        // override needed for them.
         navigateFallback: "index.html",
         cleanupOutdatedCaches: true,
       },

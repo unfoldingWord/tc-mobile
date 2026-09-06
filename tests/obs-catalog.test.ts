@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import catalog from "@/data/obs-catalog.json";
-import { obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs/catalog";
+import {
+  listStories,
+  obsFrameScope,
+  obsTemplate,
+  OBS_BOOK_CODE,
+  thumbUrl,
+} from "@/lib/obs/catalog";
 import { isValidScope, parseScope } from "@/lib/scripture/scope";
 import type { ObsCatalog } from "@/types/obs";
 
@@ -128,5 +134,70 @@ describe("bundled thumbnails", () => {
       }
     }
     expect(seen.size).toBe(598);
+  });
+});
+
+describe("listStories", () => {
+  it("lists all 50 stories with title and frame count, no frame text or artwork", async () => {
+    const stories = await listStories();
+    expect(stories).toHaveLength(50);
+    expect(stories.map((s) => s.story)).toEqual(
+      Array.from({ length: 50 }, (_, i) => i + 1)
+    );
+    for (const s of stories) {
+      const full = obs.stories.find((story) => story.story === s.story)!;
+      expect(s.title).toBe(full.title);
+      expect(s.frameCount).toBe(full.frames.length);
+      expect(s).not.toHaveProperty("frames");
+    }
+  });
+});
+
+describe("obsTemplate (#253)", () => {
+  it("builds one chapter per story and one segment per frame, all 50 stories, 598 segments total", async () => {
+    const template = await obsTemplate();
+    expect(template.id).toBe("obs");
+    expect(template.title).toBe("Open Bible Stories");
+
+    const chapters = template.chapters();
+    expect(chapters).toHaveLength(50);
+    expect(chapters.map((c) => c.number)).toEqual(
+      Array.from({ length: 50 }, (_, i) => i + 1)
+    );
+
+    let totalSegments = 0;
+    for (const chapter of chapters) {
+      const story = obs.stories.find((s) => s.story === chapter.number)!;
+      expect(chapter.segments).toHaveLength(story.frames.length);
+      totalSegments += chapter.segments.length;
+    }
+    expect(totalSegments).toBe(598);
+  });
+
+  it("references every segment via obsFrameScope, addressed to OBS_BOOK_CODE", async () => {
+    const template = await obsTemplate();
+    for (const chapter of template.chapters()) {
+      chapter.segments.forEach((segment, i) => {
+        const frame = i + 1;
+        expect(segment.reference).toEqual({
+          book: OBS_BOOK_CODE,
+          scope: obsFrameScope(chapter.number, frame),
+        });
+      });
+    }
+  });
+
+  it("stamps provenance to the vendored catalogue's source ref", async () => {
+    const template = await obsTemplate();
+    expect(template.source).toEqual({
+      kind: "obs",
+      catalogVersion: obs.generatedFrom,
+    });
+  });
+
+  it("is pure: calling chapters() twice gives equal, independent structures", async () => {
+    const template = await obsTemplate();
+    expect(template.chapters()).toEqual(template.chapters());
+    expect(template.chapters()).not.toBe(template.chapters());
   });
 });

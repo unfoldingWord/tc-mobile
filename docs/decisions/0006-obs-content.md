@@ -46,6 +46,19 @@ again exactly as this ADR requires — the fix is **reader-gated**, and is **not
 a switch to runtime-caching, which this ADR rejected for its stranding risk.
 Guarded by `tests/precache-manifest.test.ts`. Status stays **Accepted**.
 
+**Amended 2026-09-06 (#246)** — the reader has landed, and `jpg` is
+**restored**. The Template Library picker's OBS step (`src/components/
+template-picker.tsx`) reads `thumbUrl` for each of the 50 stories' first-frame
+thumbnail — the non-reader's handle on the row, per D6 — so
+`workbox.globPatterns` carries `jpg` again (`vite.config.ts`) and
+`tests/precache-manifest.test.ts`'s `INTENDED` is updated to match; the test's
+own reader-gated half now asserts the RESTORE side rather than the exclusion
+side. Precache entry/byte counts (`npm run build`'s Workbox summary,
+`develop` baseline vs. this branch) are recorded in the #246 PR body, per this
+ADR's request that the size cost of restoring be taken as a real number rather
+than the ~611-entry / ~3 MB estimate this ADR carried while the picker was
+still unbuilt. Status stays **Accepted**.
+
 ## Context
 
 Phase 1 was scoped as a blank audio notebook. That makes it hard to beta test:
