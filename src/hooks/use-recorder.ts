@@ -45,6 +45,22 @@ export interface StopResult {
    * a superseded stop, whose UI belongs to a newer recording.
    */
   readonly error: string | null;
+  /**
+   * The captured container bytes, kept ONLY when the decode failed on a current
+   * stop — the one case where the take exists nowhere else and dropping the blob
+   * would lose it for good (#165). Null on success (the PCM is the take then), on
+   * an empty or silent capture (no audio to keep), and on a superseded stop. A
+   * caller holding this can re-decode it in a later gesture (`retryDecode`) or
+   * hand the raw bytes to the share sheet so the recording leaves the phone in
+   * some form rather than none.
+   */
+  readonly blob: Blob | null;
+}
+
+/** The outcome of re-decoding a held take's container bytes (#165). */
+export interface RetryDecodeResult {
+  readonly samples: Int16Array | null;
+  readonly error: string | null;
 }
 
 /**
@@ -94,6 +110,17 @@ export interface UseRecorder {
    * state — see `StopResult`.
    */
   stop: () => Promise<StopResult>;
+  /**
+   * Re-decode a held take's container bytes (`StopResult.blob`) after a decode
+   * failed on Stop (#165). Resumes the shared `AudioContext` first — the caller
+   * must invoke this synchronously in a tap so iOS honours the resume of a
+   * context left "interrupted" (#106), the likeliest cause of the original
+   * failure — then decodes. Never throws: a still-undecodable blob comes back as
+   * `{ samples: null, error }`, a silent one as `{ samples: null }` with the
+   * "no sound" reason, and success as `{ samples, error: null }`. The blob is the
+   * caller's to keep or share out; this does not consume it.
+   */
+  retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
   /**
    * Decode the take captured SO FAR to canonical PCM for an in-sheet preview,
    * WITHOUT ending the take (#101). Meant for a paused take — the caller enables
@@ -522,7 +549,7 @@ export function useRecorder(): UseRecorder {
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
-    if (!recorder) return { samples: null, error: null };
+    if (!recorder) return { samples: null, error: null, blob: null };
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -630,6 +657,7 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         error: current ? "No sound was recorded. Try again." : null,
+        blob: null, // nothing was captured — no bytes to keep
       };
     }
 
@@ -648,20 +676,56 @@ export function useRecorder(): UseRecorder {
         return {
           samples: null,
           error: decodedCurrent ? "No sound was recorded. Try again." : null,
+          blob: null, // decoded to silence — a retry of the same bytes can't help
         };
       }
-      return { samples, error: null };
+      return { samples, error: null, blob: null };
     } catch {
       const stillCurrent = generation === generationRef.current;
       if (stillCurrent) setState("idle");
+      // Keep the container bytes so a current stop's take is NOT lost: the decode
+      // rejected (often a transient iOS "interrupted" context, #106), but the
+      // captured audio is intact in `blob` and can be re-decoded in a later
+      // gesture or shared out (#165). A superseded stop keeps nothing — a newer
+      // recording owns the screen and there is no take to recover here.
       return {
         samples: null,
         error: stillCurrent
           ? "Recording could not be decoded on this device."
           : null,
+        blob: stillCurrent ? blob : null,
       };
     }
   }, [abandonStream, clearTick]);
+
+  const retryDecode = useCallback(
+    async (blob: Blob): Promise<RetryDecodeResult> => {
+      // Resume synchronously in the gesture that called this, BEFORE the decode's
+      // await: a stop that failed because the shared context was left
+      // "interrupted" (a call, Siri, a route change — #106) only un-interrupts on
+      // a user tap, and iOS spends that activation on the first synchronous Web
+      // Audio touch. Fire-and-forget like the record/preview paths — the decode
+      // below runs on the same context the resume is waking.
+      void resumeAudioContext().catch((cause: unknown) => {
+        console.error("Could not resume the audio context", cause);
+      });
+      try {
+        const samples = await decodeToCanonical(blob);
+        // A decode to zero samples is "no sound", not a usable take — same class
+        // as an empty capture, and a retry of the same bytes will not change it.
+        if (samples.length === 0) {
+          return { samples: null, error: "No sound was recorded. Try again." };
+        }
+        return { samples, error: null };
+      } catch {
+        return {
+          samples: null,
+          error: "Recording could not be decoded on this device.",
+        };
+      }
+    },
+    []
+  );
 
   const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
     const recorder = recorderRef.current;
@@ -766,6 +830,7 @@ export function useRecorder(): UseRecorder {
     pause,
     resume,
     stop,
+    retryDecode,
     previewCapture,
     cancel,
     readLevel,

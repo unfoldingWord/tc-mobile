@@ -10,6 +10,7 @@ import {
 import {
   useRecorder,
   type RecorderState,
+  type RetryDecodeResult,
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -111,6 +112,13 @@ export interface UseAudioSession {
    */
   stopRecording: () => Promise<StopResult>;
   /**
+   * Re-decode a held take's container bytes after a decode failed on Stop
+   * (#165). Resumes the context first; call it synchronously in a tap. See
+   * `UseRecorder.retryDecode`. Passed straight through — it touches neither the
+   * floor nor the session, only the shared decode context.
+   */
+  retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
+  /**
    * Decode the paused take's captured audio to canonical PCM for an in-sheet
    * preview (#101), or null when it cannot be produced on this device. Pass the
    * result through `mergeTake`/`playBuffer(..., { preemptPausedMic: true })` to
@@ -169,6 +177,7 @@ export function useAudioSession(): UseAudioSession {
     pause: pauseCapture,
     resume: resumeCapture,
     stop: endRecording,
+    retryDecode,
     previewCapture,
     cancel: cancelRecording,
     state: recorderState,
@@ -590,7 +599,11 @@ export function useAudioSession(): UseAudioSession {
       // Notice), rather than `playbackError`, which would bleed onto the
       // Segments screen after the sheet is gone.
       console.error("Stopping the recorder failed", cause);
-      return { samples: null, error: "Could not finish this recording." };
+      return {
+        samples: null,
+        error: "Could not finish this recording.",
+        blob: null,
+      };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the
@@ -659,6 +672,7 @@ export function useAudioSession(): UseAudioSession {
     pauseRecording,
     resumeRecording,
     stopRecording,
+    retryDecode,
     previewCapture,
     leave,
     readLevel,
