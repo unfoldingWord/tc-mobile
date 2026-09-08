@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   backEffectFor,
   navDirection,
+  overlayBlocksClose,
   popAction,
   screenFor,
 } from "@/lib/nav/navigation";
@@ -93,5 +94,22 @@ describe("popAction", () => {
     expect(popAction("back", "recorder", true)).toBe("rearm-during-commit");
     expect(popAction("back", "segments", true)).toBe("rearm-during-commit");
     expect(popAction("forward", "recorder", true)).toBe("rearm-during-commit");
+  });
+});
+
+describe("overlayBlocksClose", () => {
+  it("refuses close while the erase is busy — never save over an erase (G1)", () => {
+    // The load-bearing G1 row: a system Back must not commit while an erase is in
+    // flight, or `saveEditedSegment` races the erase (last IDB writer wins).
+    expect(overlayBlocksClose(false, false, true)).toBe(true);
+  });
+
+  it("refuses close while the erase-confirm or the menu is open", () => {
+    expect(overlayBlocksClose(false, true, false)).toBe(true);
+    expect(overlayBlocksClose(true, false, false)).toBe(true);
+  });
+
+  it("allows close when no overlay is up", () => {
+    expect(overlayBlocksClose(false, false, false)).toBe(false);
   });
 });

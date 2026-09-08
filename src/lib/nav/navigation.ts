@@ -92,3 +92,22 @@ export function popAction(
   if (direction === "same") return "ignore";
   return backEffectFor(screen);
 }
+
+/**
+ * Whether a Back must be spent dismissing a recorder overlay instead of running
+ * the commit (George R2 G1). The sheet's `inert` blocks the on-screen Back while
+ * the ≡ menu or the erase-confirm is up, but the SYSTEM gesture reaches
+ * `close()` through the imperative handle and never saw those flags — so a Back
+ * during an in-flight erase raced `saveEditedSegment` against the erase (last
+ * IndexedDB writer wins, the confirmed-erased take written back), and a Back
+ * over the confirm dialog committed instead of cancelling. When this returns
+ * true, `close()` dismisses the overlay and resolves `false` (the sheet stays,
+ * its history entry re-armed); it commits only when nothing is in the way.
+ */
+export function overlayBlocksClose(
+  menuOpen: boolean,
+  confirmOpen: boolean,
+  erasing: boolean
+): boolean {
+  return menuOpen || confirmOpen || erasing;
+}
