@@ -13,7 +13,7 @@ import {
   floatToInt16,
   int16ToFloat,
 } from "@/lib/audio/format";
-import { rmsLevel } from "@/lib/audio/meter";
+import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
 /**
  * Candidate capture formats, best first.
@@ -140,6 +140,18 @@ export interface LevelTap {
    */
   readFrame: () => Float32Array | null;
   /**
+   * Whether this LIVE tap's `read()` can be trusted RIGHT NOW — false once the
+   * tap is disconnected, or while the shared `AudioContext` is not `"running"`
+   * (iOS `"suspended"`/`"interrupted"` after backgrounding or an interruption).
+   * In that state the analyser reads all-zeros with no error, so `read()` returns
+   * a level indistinguishable from a dead microphone; the VU meter pulls THIS per
+   * frame to hatch "unavailable" instead of resting empty (#76), mirroring the way
+   * `readFrame()` returns null so the live scope freezes. Reads the LIVE context
+   * state, so it must be called at the decision point (the meter's own frame
+   * clock), never cached.
+   */
+  available: () => boolean;
+  /**
    * Disconnect the graph so `read()` returns 0, but LEAVE the cloned capture
    * tracks live. Safe to call inside the MediaRecorder flush window (between
    * `stop()` and `onstop`): stopping any capture track there can truncate the
@@ -265,6 +277,11 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       graph.getFloatTimeDomainData(frame);
       return frame;
     },
+    // The meter's per-frame trust signal (#76). A disconnected tap has no live
+    // reading; a live tap on a non-"running" context reads zeros. `meterReadable`
+    // is the pure decision, unit-tested in Node — this only supplies the live
+    // context state and the disconnected flag the browser owns.
+    available: () => !disconnected && meterReadable(ctx.state),
     disconnect: disconnectGraph,
     close: () => {
       // Disconnect the graph (if not already), THEN stop the cloned tracks.
