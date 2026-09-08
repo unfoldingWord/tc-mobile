@@ -1155,14 +1155,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // Drop the failed-decode take — this reveals the idle sheet (Record and the
       // header Back live again, `heldTake === null`).
       setHeldTake(null);
-      // But a fresh exit here would ABANDON any B5 cut/paste edits this session
-      // made: they live in `editor`, and before this panel a later Back committed
-      // them through `close()`'s edit-only tail (George R2 B-4). So when there ARE
-      // edits, STAY on the idle sheet and let that Back run — never `close()` from
-      // here, whose cut-to-empty arm would `clearSegmentTake` the on-disk original.
-      // Only when there is nothing to preserve is this a true exit.
-      if (!editor.hasEdits) onExit(false);
-    }, [onExit, editor]);
+      // But a fresh exit here would ABANDON the session work `close()`'s no-commit
+      // tail still owes — and there are TWO halves of it. B5 cut/paste edits live
+      // in `editor` (George R2 B-4); a pending Finished toggle lives in
+      // `finishedIntent`, which `close()` writes via `setFinished` when no take or
+      // edit committed (George R4-G1 — the twin B-4 missed). So STAY on the idle
+      // sheet whenever EITHER is pending and let a later Back run that tail — never
+      // `close()` from here, whose cut-to-empty arm would `clearSegmentTake` the
+      // on-disk original. A true exit only when nothing is owed.
+      if (!editor.hasEdits && finishedIntent === null) onExit(false);
+    }, [onExit, editor, finishedIntent]);
 
     // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
     // user is not stranded on the now-`inert` list behind the modal. Mount-only —
