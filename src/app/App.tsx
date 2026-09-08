@@ -12,7 +12,7 @@ import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useSaveTake } from "@/hooks/use-save-take";
-import { backEffectFor, screenFor } from "@/lib/nav/navigation";
+import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
@@ -45,19 +45,44 @@ export function App() {
   // route in-app instead of leaving the app — which on the recorder fired
   // `pagehide` → `leave()` and dropped the in-progress take (#58).
   const recorderRef = useRef<RecorderHandle>(null);
-  // A popstate is driving the current close/back, so the transition effect that
-  // keeps history in sync must NOT pop again — the browser already did.
-  const popInFlight = useRef(false);
-  // Ignore exactly one popstate: the one our own `history.back()` fires when a
-  // programmatic close (an on-screen Back or an erase) consumes its entry.
+  // A recorder Back is running its async commit (stop → decode → save). While it
+  // is, EVERY further popstate re-arms the protective entry instead of routing,
+  // so a second Back cannot escape the recorder and drop the uncommitted take
+  // (Frank R1 F1). Cleared when the commit settles.
+  const committing = useRef(false);
+  // Ignore exactly one popstate: the one our own `history.back()` fires to
+  // consume an entry (a programmatic close, or the forward-trap re-assertion).
   const suppressPop = useRef(false);
-  const prevRecorder = useRef(recorder);
-  const prevChapterId = useRef(chapterId);
+  // A monotonic id stamped on every entry, so the handler can tell Back from
+  // Forward by comparing the destination index to where we were (F2). Only ever
+  // increments; the live stack is strictly increasing in it (see `navDirection`).
+  const nextIndex = useRef(0);
+  const navIndex = useRef(0);
 
   const pushHistoryEntry = useCallback(() => {
-    // A marker entry whose only job is to be there for Back to consume. The
-    // value is unused — routing reads live React state, not the entry.
-    window.history.pushState({ tc: true }, "");
+    // A marker entry whose only job is to be there for Back to consume, carrying
+    // the monotonic index that tells Back from Forward. Routing reads live React
+    // state for the screen, so the entry needs nothing more than its index.
+    const index = ++nextIndex.current;
+    window.history.pushState({ tc: true, index }, "");
+    navIndex.current = index;
+  }, []);
+
+  // Stamp the entry the app loaded on, so its index is known (0) and a Back from
+  // Segments to it reads as a Back, not an untracked jump.
+  useEffect(() => {
+    window.history.replaceState({ tc: true, index: 0 }, "");
+    navIndex.current = 0;
+    nextIndex.current = 0;
+  }, []);
+
+  const goBack = useCallback(() => {
+    // Every in-app Back — the Segments list's, the recorder's on-screen Back —
+    // goes through the browser so there is ONE Back path (the popstate handler).
+    // That is what gives the on-screen recorder Back the same commit-window
+    // protection as the system gesture, and removes the state-transition effects
+    // whose async re-arm desynced depth (Frank R1 F1).
+    window.history.back();
   }, []);
   // Which segment a held take belongs to, for the recovery screen — captured
   // when the recorder opened, so it survives the sheet closing on a failed
@@ -98,7 +123,7 @@ export function App() {
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
-      pushHistoryEntry(); // Books → Segments: a Back now returns here (#168)
+      pushHistoryEntry(); // Books → Segments: a Back now returns here
       setClipboard(null); // chapter-scoped (G3)
       setRecorder(null);
       setChapterId(id);
@@ -118,7 +143,7 @@ export function App() {
       // Opening the recorder stops any row that was playing — the same single
       // `leave()` every navigation makes.
       leave();
-      pushHistoryEntry(); // Segments → Recorder: Back becomes the commit (#168)
+      pushHistoryEntry(); // Segments → Recorder: Back becomes the commit
       // Resume the audio context in THIS tap (#184): the sheet loads and decodes
       // the segment one commit later, after this gesture's activation is spent,
       // so an iOS `"interrupted"` context would otherwise meet the first decode
@@ -140,87 +165,85 @@ export function App() {
       leave();
       if (dirty) segmentsRef.current?.reload();
       setRecorder(null);
+      // Keep history in step. A popstate-driven close is `committing`: the
+      // browser already popped the entry and the handler pops the protective
+      // one it re-armed, so leave history alone. A programmatic close (erase,
+      // which calls `onExit` directly with no popstate) still has its entry on
+      // the stack — consume it, suppressing the popstate that `back()` fires.
+      if (!committing.current) {
+        suppressPop.current = true;
+        window.history.back();
+      }
     },
     [leave]
   );
 
-  // Route the system Back gesture (#168). Every screen pushed one history entry,
-  // so Back arrives as a `popstate` here instead of exiting the app. The
-  // decision is the pure `backEffectFor`, so the one rule that matters — Back on
-  // the recorder runs the COMMIT path, never a take-dropping unmount (#58) — is
-  // unit-tested.
+  // Route the system Back gesture (#168), and its Forward sibling. Every screen
+  // pushed one indexed history entry, so a gesture arrives as a `popstate` here
+  // instead of exiting the app. The whole decision is the pure `popAction`, so
+  // the two rules that matter are unit-tested: Back on the recorder runs the
+  // COMMIT path (never a take-dropping unmount, #58), and a second Back during
+  // that commit re-arms rather than escaping (Frank R1 F1).
   useEffect(() => {
-    const onPopState = () => {
-      // Our own `history.back()` from a programmatic close fired this; the entry
-      // is already accounted for, so there is nothing to route.
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as { index?: number } | null;
+      const toIndex = state?.index ?? 0;
+      // Our own `history.back()` (a programmatic close, or the forward trap)
+      // fired this; the move is already accounted for. Keep the index truthful.
       if (suppressPop.current) {
         suppressPop.current = false;
+        navIndex.current = toIndex;
         return;
       }
+      const direction = navDirection(navIndex.current, toIndex);
+      navIndex.current = toIndex;
       const screen = screenFor(chapterId !== null, recorder !== null);
-      switch (backEffectFor(screen)) {
+      switch (popAction(direction, screen, committing.current)) {
+        case "rearm-during-commit":
+          // A commit owns the stack. The browser just popped the protective
+          // entry; re-push it so the recorder stays trapped, and ignore the
+          // gesture — the in-flight commit is the only thing that may leave.
+          pushHistoryEntry();
+          return;
+        case "trap-forward":
+          // Forward is not a navigation this app redoes; cancel it so the UI
+          // stays put and history does not desync (F2).
+          suppressPop.current = true;
+          window.history.back();
+          return;
+        case "ignore":
+          return;
         case "commit-close-recorder": {
           const handle = recorderRef.current;
           if (!handle) return;
-          // The browser already popped the recorder's entry. Run the same commit
-          // the on-screen Back runs; if it DECLINES (a save failed, the sheet
-          // stays open with an in-place error), re-arm the trap so the next Back
-          // retries rather than escaping to Segments over an unsaved take.
-          popInFlight.current = true;
+          // The browser already popped the recorder's entry. Re-arm SYNCHRONOUSLY
+          // — before the async commit — so the stop → decode → save window is
+          // never a moment with no entry protecting the recorder (F1). Run the
+          // same `close()` the on-screen Back runs; on exit consume the single
+          // protective entry, on decline leave it (the sheet stays open).
+          pushHistoryEntry();
+          committing.current = true;
           void handle.requestClose().then((exited) => {
-            if (!exited) {
-              popInFlight.current = false;
-              pushHistoryEntry();
+            committing.current = false;
+            if (exited) {
+              suppressPop.current = true;
+              window.history.back();
             }
-            // On exit the transition effect below clears `popInFlight`; leaving
-            // it set tells that effect the browser — not it — consumed the entry.
           });
-          break;
+          return;
         }
         case "to-books":
-          popInFlight.current = true;
           backToBooks();
-          break;
+          return;
         case "exit-app":
           // The Books shelf pushed no entry, so this popstate is the browser
           // already leaving. Nothing to do — and nothing is lost at the shelf.
-          break;
+          return;
       }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, [chapterId, recorder, backToBooks, pushHistoryEntry]);
-
-  // Keep history in step with a recorder close the browser did NOT drive — an
-  // on-screen Back or an erase. The sheet went away without a popstate, so its
-  // entry is still on the stack: consume it, suppressing the popstate that
-  // `back()` fires. A popstate-driven close already popped it (flagged by
-  // `popInFlight`), so there it only clears the flag.
-  useEffect(() => {
-    const closed = prevRecorder.current !== null && recorder === null;
-    prevRecorder.current = recorder;
-    if (!closed) return;
-    if (popInFlight.current) {
-      popInFlight.current = false;
-      return;
-    }
-    suppressPop.current = true;
-    window.history.back();
-  }, [recorder]);
-
-  // The same one level up: a programmatic return from Segments to the Books
-  // shelf (the list's Back). A popstate-driven return already popped the entry.
-  useEffect(() => {
-    const closed = prevChapterId.current !== null && chapterId === null;
-    prevChapterId.current = chapterId;
-    if (!closed) return;
-    if (popInFlight.current) {
-      popInFlight.current = false;
-      return;
-    }
-    suppressPop.current = true;
-    window.history.back();
-  }, [chapterId]);
 
   // Ahead of everything: a held take whose save has failed takes over the
   // screen with retry/discard, and nothing behind it may keep the microphone
@@ -266,7 +289,7 @@ export function App() {
             ref={segmentsRef}
             chapterId={chapterId}
             audio={audio}
-            onBack={backToBooks}
+            onBack={goBack}
             onOpenRecorder={openRecorder}
           />
         )}
@@ -288,6 +311,7 @@ export function App() {
           clipboard={clipboard}
           onClipboardChange={setClipboard}
           onExit={closeRecorder}
+          onRequestBack={goBack}
         />
       )}
       <BuildStamp />
