@@ -186,12 +186,13 @@ jobs:
           retention-days: 1
 
   # Headless-Chromium smoke for the browser-only paths (#251): the real
-  # mp3.worker.ts round-trip, decodeAudioData of a stored MP3, the service
-  # worker's atomic precache install, and a real two-tab IndexedDB
-  # blocked/versionchange — none of which the Node/vitest suite above can see
-  # by construction (lib/ is DOM-free on purpose). Gated to pull_request only,
-  # and only when the browser-boundary code it exercises actually changed, so
-  # a docs-only or components-only PR pays nothing for it.
+  # mp3.worker.ts round-trip, decodeAudioData of the worker's in-memory MP3
+  # output (not the IndexedDB clipData round-trip, which the Node/fake-indexeddb
+  # suite already covers), the service worker's atomic precache install, and a
+  # real two-tab IndexedDB blocked/versionchange — none of which the Node/vitest
+  # suite above can see by construction (lib/ is DOM-free on purpose). Gated to
+  # pull_request only, and only when the browser-boundary code it exercises
+  # actually changed, so a docs-only or components-only PR pays nothing for it.
   browser-smoke:
     name: Headless-Chromium Smoke
     if: github.event_name == 'pull_request'

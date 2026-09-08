@@ -87,7 +87,14 @@ test.describe("service worker install + precache (#251 assertion 1)", () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
 
     const cachedEntryCount = await page.evaluate(async () => {
-      const names = await caches.keys();
+      // Filter to workbox's own precache cache ("workbox-precache-v2-<scope>",
+      // see workbox-core's cacheNames.precache default). Summing every Cache
+      // Storage cache would over-count the moment any `runtimeCaching` entry
+      // (or anything else) opens its own cache — a false failure unrelated to
+      // the precache install this assertion exists to check.
+      const names = (await caches.keys()).filter((name) =>
+        name.startsWith("workbox-precache-")
+      );
       let total = 0;
       for (const name of names) {
         const cache = await caches.open(name);
