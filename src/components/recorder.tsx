@@ -18,6 +18,7 @@ import {
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
+import { classifyShareError } from "@/hooks/share-flow";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -191,6 +192,20 @@ export function Recorder({
   const [heldTake, setHeldTake] = useState<Blob | null>(null);
   const [heldRetrying, setHeldRetrying] = useState(false);
   const [heldShareError, setHeldShareError] = useState<string | null>(null);
+  // Retry failures read under Try again, share failures under Share (George R1
+  // G6): a failed re-decode is NOT a share failure, and one shared slot mislabels
+  // whichever action it was not written by. Each Notice sits under its own control.
+  const [heldRetryError, setHeldRetryError] = useState<string | null>(null);
+  // A successful share of the held bytes. The recording is now off the phone, so
+  // the panel offers a Done exit even though the decode never succeeded (George R1
+  // G1 / Frank F2) — a permanent decode failure is no longer a dead-ended app.
+  const [heldShared, setHeldShared] = useState(false);
+  // The synchronous double-tap latch for Try again, ahead of the `heldRetrying`
+  // render state (Frank F3 / George G3): two taps in one frame both read
+  // `heldRetrying === false` and each mint a fresh clip through `saveRecording`,
+  // orphaning one. A ref answers for the current moment — the same shape as
+  // `closing.current` and `use-save-take`'s `savingRef`, which exist for this race.
+  const heldRetryingRef = useRef(false);
   // Drives the UI: once Back is tapped the sheet is tearing down, and the
   // post-stop save is in flight. Record must be dead through that window — the
   // sheet still shows and a first take's waveform is still empty, so a second
@@ -767,27 +782,23 @@ export function Recorder({
           );
           dirty.current = true;
           committed = true;
-        } else if (result.error) {
-          // The stop yielded no usable audio AND has something to say — an empty
-          // capture or a decode failure. Its cause travels WITH the result, not
-          // the async `error` state a render closure here would read one frame
-          // stale (the round-4 regression that reopened the permission panel).
-          // Do NOT onExit: leave() would close silently on a take that cannot be
-          // recorded again.
-          if (result.blob) {
-            // The decode FAILED but the captured bytes survive (#165) — the take
-            // exists only here. Hold them and hand the body to the recovery
-            // panel (re-decode on a fresh gesture, or share the bytes off the
-            // phone), never a bare Notice that drops the only copy. An empty or
-            // silent capture carries no blob and falls to the Notice below.
-            setHeldTake(result.blob);
-            setHeldShareError(null);
-          } else {
-            // Nothing worth keeping (empty/silent capture): a toolbar Notice
-            // (not the permission panel — this is not a permission miss), and
-            // re-enable so Back or Record works.
-            setStopError(result.error);
-          }
+        } else if (result.blob) {
+          // The decode FAILED but the captured bytes survive (#165) — the take
+          // exists only here. Hold them and hand the body to the recovery panel
+          // (re-decode on a fresh gesture, or share the bytes off the phone),
+          // never a bare Notice that drops the only copy. Checked BEFORE
+          // `result.error` so a SUPERSEDED stop — a leave()/pagehide bumped the
+          // generation mid-decode, so `error` is withheld but `blob` is now kept
+          // (George R1 G2) — holds its bytes instead of falling through to the
+          // silent close below. That interruption is the #106 case #165 exists to
+          // recover, and it was the one this panel never appeared on. Do NOT
+          // onExit: leave() would close silently on a take that cannot be recorded
+          // again. An empty or silent capture carries no blob and falls to the
+          // Notice below.
+          setHeldTake(result.blob);
+          setHeldShareError(null);
+          setHeldRetryError(null);
+          setHeldShared(false);
           // Reopening idle: drop the kept preview so the stage reverts to
           // `working` rather than a whole-clip preview with no insert line
           // (George R4 #1).
@@ -795,12 +806,25 @@ export function Recorder({
           closing.current = false;
           setIsClosing(false);
           return;
+        } else if (result.error) {
+          // The stop yielded no usable audio, no bytes worth keeping, AND has
+          // something to say — an empty or silent capture. Its cause travels WITH
+          // the result, not the async `error` state a render closure here would
+          // read one frame stale (the round-4 regression that reopened the
+          // permission panel). A toolbar Notice (not the permission panel — this
+          // is not a permission miss), and re-enable so Back or Record works. Do
+          // NOT onExit.
+          setStopError(result.error);
+          cancelPreview();
+          closing.current = false;
+          setIsClosing(false);
+          return;
         }
-        // else: no samples and no error — a superseded stop (a cancel/leave
-        // landed during it). Nothing to save and nothing to say, so fall through
-        // and close, rather than dead-ending the sheet open (#59). An empty
-        // capture is NOT this branch — it returns the "No sound" error above and
-        // stays open to retry.
+        // else: no samples, no bytes, and no error — a superseded stop whose
+        // capture yielded nothing to keep (a cancel/leave landed during it).
+        // Nothing to save and nothing to say, so fall through and close, rather
+        // than dead-ending the sheet open (#59). An empty capture is NOT this
+        // branch — it returns the "No sound" error above and stays open to retry.
       }
       // An edit-only close (B5): cuts/pastes with no take committed. Gated on
       // `!attemptedCapture` so a superseded capture stop (above) abandons the
@@ -894,9 +918,14 @@ export function Recorder({
   // sheet closes; on failure the bytes stay held and the panel says why.
   const retryHeldTake = useCallback(() => {
     const blob = heldTake;
-    if (!blob || heldRetrying) return;
+    // Synchronous latch FIRST (Frank F3 / George G3): the render-state
+    // `heldRetrying` only hides Try again once the busy re-render lands, so two
+    // taps in one frame both read it false and each mint a fresh clip through
+    // `saveRecording`, orphaning one. The ref answers for this instant.
+    if (!blob || heldRetryingRef.current) return;
+    heldRetryingRef.current = true;
     setHeldRetrying(true);
-    setHeldShareError(null);
+    setHeldRetryError(null);
     void (async () => {
       try {
         const result = await audio.retryDecode(blob);
@@ -911,24 +940,40 @@ export function Recorder({
           dirty.current = true;
           setHeldTake(null);
           setHeldRetrying(false);
+          heldRetryingRef.current = false;
           onExit(true);
           return;
         }
-        // Still no usable audio — keep the bytes and the panel; say why.
+        if (result.silent) {
+          // Decoded to SILENCE (George R1 G5): the same bytes cannot yield sound
+          // on a further retry, so stop trapping the translator on Try again.
+          // Drop the held take and fall to the toolbar Notice with Back/Record
+          // live — the rule `stop()` already applies (blob: null on a silent
+          // decode). Not a `heldRetryError`: the panel is gone, so the message
+          // belongs on the Notice the drop reveals.
+          setHeldTake(null);
+          setHeldRetrying(false);
+          heldRetryingRef.current = false;
+          setStopError(result.error);
+          return;
+        }
+        // The re-decode failed again (transient) — keep the bytes and the panel;
+        // say why UNDER Try again, not the Share slot (George R1 G6).
         setHeldRetrying(false);
-        setHeldShareError(result.error);
+        heldRetryingRef.current = false;
+        setHeldRetryError(result.error);
       } catch (cause: unknown) {
         // saveRecording is contracted never to reject; this is the last net so a
         // thrown save cannot strand the panel in a permanent busy state with the
-        // take still held.
+        // take still held. A save failure is not a share failure (George R1 G6).
         console.error("Saving the recovered recording failed", cause);
         setHeldRetrying(false);
-        setHeldShareError(strings.takeShareFailed);
+        heldRetryingRef.current = false;
+        setHeldRetryError(strings.takeRetryFailed);
       }
     })();
   }, [
     heldTake,
-    heldRetrying,
     audio,
     saveRecording,
     segmentId,
@@ -944,17 +989,28 @@ export function Recorder({
   // (AbortError) is not a failure; anything else is surfaced in place.
   const shareHeldTake = useCallback(() => {
     const blob = heldTake;
-    if (!blob) return;
+    // Ignore a Share tap while a re-decode is in flight (George R1 G7): the
+    // retry just resumed the shared AudioContext, and opening the OS share sheet
+    // can re-interrupt it out from under the decode. The panel also disables
+    // Share while `heldRetrying`; this is the synchronous backstop.
+    if (!blob || heldRetryingRef.current) return;
     setHeldShareError(null);
-    const ext = blob.type.includes("mp4")
-      ? "m4a"
+    // Strip the codec parameters off the capture MIME (George R1 G4): iOS
+    // records `audio/mp4;codecs=mp4a.40.2`, and a parameterised type can make
+    // `canShare({files})` return false on the one platform that reaches this
+    // panel. Share the bare container family instead — the same param-free types
+    // the chapter-share path uses.
+    const container = blob.type.includes("mp4")
+      ? { ext: "m4a", type: "audio/mp4" }
       : blob.type.includes("webm")
-        ? "webm"
+        ? { ext: "webm", type: "audio/webm" }
         : blob.type.includes("ogg")
-          ? "ogg"
-          : "audio";
-    const file = new File([blob], `recording.${ext}`, {
-      type: blob.type || "application/octet-stream",
+          ? { ext: "ogg", type: "audio/ogg" }
+          : blob.type.includes("mpeg") || blob.type.includes("mp3")
+            ? { ext: "mp3", type: "audio/mpeg" }
+            : { ext: "audio", type: "application/octet-stream" };
+    const file = new File([blob], `recording.${container.ext}`, {
+      type: container.type,
     });
     if (
       typeof navigator.share !== "function" ||
@@ -964,12 +1020,43 @@ export function Recorder({
       setHeldShareError(strings.takeShareUnavailable);
       return;
     }
-    void navigator.share({ files: [file] }).catch((cause: unknown) => {
-      if (cause instanceof DOMException && cause.name === "AbortError") return;
-      console.error("Could not share the recovered recording", cause);
-      setHeldShareError(strings.takeShareFailed);
-    });
+    // Whether activation is live at the call decides how a NotAllowedError reads
+    // (see `classifyShareError`). Read it immediately before `share`, with no
+    // await between — the tap's activation must still be valid here.
+    const hadActivation = navigator.userActivation?.isActive ?? false;
+    void navigator.share({ files: [file] }).then(
+      () => {
+        // Rescued off the phone. Offer a Done exit even though the decode never
+        // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
+        setHeldShared(true);
+        setHeldShareError(null);
+      },
+      (cause: unknown) => {
+        // Reuse the chapter-share classifier (George R1 G4): a user dismiss
+        // (`AbortError`) and a spent-activation `NotAllowedError` (`retry`) are
+        // not failures to alarm the translator with — the File still stands, a
+        // fresh tap re-sends. Only a standing refusal is a real error.
+        const outcome = classifyShareError(cause, hadActivation);
+        if (outcome === "dismissed" || outcome === "retry") return;
+        console.error("Could not share the recovered recording", cause);
+        setHeldShareError(strings.takeShareFailed);
+      }
+    );
   }, [heldTake]);
+
+  // Leave the recovery panel (George R1 G1 / Frank F2). The panel was otherwise a
+  // dead end when the decode never succeeds — the disabled header Back kept a
+  // SILENT Back from dropping the only copy, but left no honest exit at all. Two
+  // gestures reach here, and the panel gates each so neither is a stray drop: the
+  // Done exit only after a Share SUCCEEDED (the bytes are off the phone, nothing
+  // lost), and the two-tap ARMED discard (a confirmed, deliberate loss, the same
+  // shape SaveFailed uses). Both drop the held take and `onExit(false)` — nothing
+  // was committed; the retry guard blocks the window a re-decode is mid-flight.
+  const leaveHeldTake = useCallback(() => {
+    if (heldRetryingRef.current) return;
+    setHeldTake(null);
+    onExit(false);
+  }, [onExit]);
 
   // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
   // user is not stranded on the now-`inert` list behind the modal. Mount-only —
@@ -1143,9 +1230,13 @@ export function Recorder({
           // There is no discard — see the header Back, disabled while this holds.
           <SaveDecodeFailedPanel
             retrying={heldRetrying}
+            retryError={heldRetryError}
             shareError={heldShareError}
+            shared={heldShared}
             onRetry={retryHeldTake}
             onShare={shareHeldTake}
+            onDiscard={leaveHeldTake}
+            onDone={leaveHeldTake}
           />
         ) : loadError ? (
           // A load/decode failure (chiefly a finished segment's MP3 on a context
@@ -1721,26 +1812,53 @@ function LoadErrorPanel({
 /**
  * The take captured, but the decode after Stop failed (#165) — most often a
  * transient iOS "interrupted" context (#106), not corrupt bytes. Unlike
- * `LoadErrorPanel` (whose audio is safe on disk, so Back to the row's Erase is a
- * fine exit), this take exists ONLY as the held container bytes, so this panel
- * offers NO discard: its two actions both preserve the recording. Try again
- * re-decodes on this gesture (resuming the context first) and, on success,
- * commits and closes; Share hands the raw bytes to the OS so they leave the
- * phone when the decode simply will not succeed. `role="alert"` announces the
- * title and body on mount, and Try again stays mounted through a retry
- * (`busy`/relabelled), never swapped — the same focus-keeping shape #137 landed.
+ * `LoadErrorPanel` (whose audio is safe on disk), this take exists ONLY as the
+ * held container bytes, so the two rescue actions come first: Try again
+ * re-decodes on this gesture (resuming the context) and, on success, commits and
+ * closes; Share hands the raw bytes to the OS so they leave the phone when the
+ * decode simply will not succeed.
+ *
+ * But rescue can fail forever, and round-1 review (George G1 / Frank F2) found
+ * the panel was then a dead-ended app: Share did not release the sheet and the
+ * header Back was disabled, so a permanent decode failure left NO way out. Two
+ * exits close that without reintroducing the SILENT Back the disabled header
+ * prevented:
+ * - `onDone` appears once a Share SUCCEEDS (`shared`) — the bytes are off the
+ *   phone, so leaving loses nothing.
+ * - `onDiscard` is a TWO-TAP armed discard, the same shape as the `SaveFailed`
+ *   screen: a deliberate, confirmed loss, never a stray tap.
+ *
+ * Retry failures read under Try again and share failures under Share (G6), and
+ * Share is disabled mid-retry so its sheet cannot re-interrupt the context the
+ * retry just resumed (G7). `role="alert"` announces the title and each Notice;
+ * Try again stays mounted through a retry (`busy`/relabelled), never swapped —
+ * the same focus-keeping shape #137 landed.
  */
 function SaveDecodeFailedPanel({
   retrying,
+  retryError,
   shareError,
+  shared,
   onRetry,
   onShare,
+  onDiscard,
+  onDone,
 }: {
   retrying: boolean;
+  retryError: string | null;
   shareError: string | null;
+  shared: boolean;
   onRetry: () => void;
   onShare: () => void;
+  onDiscard: () => void;
+  onDone: () => void;
 }) {
+  // The discard's armed second tap. A retry (or any retry in flight) disarms it,
+  // so the confirmation cannot be carried across an unrelated action into a stray
+  // delete — the same care `SaveFailed` takes by deriving `armed` from the
+  // attempt count. There is no attempt count here, so the retry handler disarms.
+  const [armed, setArmed] = useState(false);
+  const showArmed = armed && !retrying;
   return (
     <div
       role="alert"
@@ -1762,18 +1880,60 @@ function SaveDecodeFailedPanel({
         size={30}
         autoFocus
         busy={retrying}
-        onClick={onRetry}
+        onClick={() => {
+          setArmed(false);
+          onRetry();
+        }}
       />
       {retrying ? (
         <Notice tone="busy">{strings.takeRecoverRetrying}</Notice>
+      ) : retryError ? (
+        <Notice>{retryError}</Notice>
       ) : null}
       <Control
         icon="share"
         label={strings.takeRecoverShare}
         variant="quiet"
-        onClick={onShare}
+        // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt
+        // the shared context the retry just resumed.
+        disabled={retrying}
+        onClick={() => {
+          setArmed(false);
+          onShare();
+        }}
       />
       {shareError ? <Notice>{shareError}</Notice> : null}
+      {shared ? (
+        <>
+          <Notice tone="info">{strings.takeRecoverShared}</Notice>
+          <Control
+            icon="check"
+            label={strings.takeRecoverDone}
+            variant="primary"
+            size={30}
+            onClick={onDone}
+          />
+        </>
+      ) : null}
+      <div className="mt-[10px] flex flex-col items-center gap-[8px]">
+        <Control
+          icon="trash"
+          label={
+            showArmed
+              ? strings.takeRecoverDiscardArmed
+              : strings.takeRecoverDiscard
+          }
+          variant="quiet"
+          className={showArmed ? "text-[var(--s-live)]" : undefined}
+          disabled={retrying}
+          onClick={() => (showArmed ? onDiscard() : setArmed(true))}
+        />
+        {showArmed ? (
+          <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+            {strings.takeRecoverDiscardHint}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

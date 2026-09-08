@@ -110,6 +110,20 @@ export const strings = {
   // The share sheet is missing or refused these bytes.
   takeShareUnavailable: "Sharing is not available on this device.",
   takeShareFailed: "Could not share the recording. Try again.",
+  // A re-decode failed AGAIN (kept under Try again, not the Share slot — George
+  // R1 G6). A thrown save on a recovered take reads here too, distinct from a
+  // share failure: the recording is still held, so this says "save", not "share".
+  takeRetryFailed: "Could not save the recording. Try again.",
+  // The held bytes went to the OS share sheet. Shown once a share succeeds, with
+  // the Done exit — the recording is off the phone, so leaving loses nothing.
+  takeRecoverShared: "Recording shared.",
+  takeRecoverDone: "Done",
+  // The two-tap discard on the recovery panel (George R1 G1 / Frank F2): the
+  // panel is otherwise a dead end when the decode never succeeds. Same armed
+  // second-tap shape as the SaveFailed screen — a stray tap never deletes.
+  takeRecoverDiscard: "Delete this recording",
+  takeRecoverDiscardArmed: "Tap again to delete this recording for good",
+  takeRecoverDiscardHint: "Tap again to delete it.",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
