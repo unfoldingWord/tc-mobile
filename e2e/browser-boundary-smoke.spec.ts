@@ -156,6 +156,18 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
       // the app here too (rather than a blank page) matches what a second
       // real tab of this PWA looks like.
       await pageB.goto("/");
+      // BOTH documents hold a live `getDb()` connection, not just page A:
+      // mounting the app runs `App.tsx`'s transcode sweep and `BooksScreen`'s
+      // `useBooks`, each of which calls the same singleton. Settle page B's
+      // own open BEFORE deleting, or the delete races this test's own fixture
+      // rather than the thing under test (round-2 George G-4). `openDb()` here
+      // opens nothing extra — `getDb()` is a memoized promise, so awaiting it
+      // just waits for the connection the mount already started. This matters
+      // most when #236/#240 land and the expected outcome flips to
+      // `"success"`: an in-flight open with no `versionchange` handler yet
+      // attached would keep the result `"blocked"` for the wrong reason.
+      await waitForHarness(pageB);
+      await pageB.evaluate(() => window.__e2e!.openDb());
 
       const outcome = await pageB.evaluate(
         () =>

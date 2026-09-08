@@ -132,10 +132,37 @@ jobs:
       # edit away from being loosened by someone who has not read either
       # comment, and until now the exclusion was asserted only in prose
       # (round-1 George G4). `grep -r` matching is the failure: found = leak.
+      #
+      # TWO tokens, because either one alone has a bypass (round-2 George G-2):
+      #
+      #   `e2e-harness` is the module id, and it survives a leak only as a
+      #   CHUNK FILENAME (`assets/e2e-harness-*.js`) — that is, only while the
+      #   dynamic `import()` keeps the harness in a chunk of its own. It is not
+      #   a runtime string inside `src/app/e2e-harness.ts`. Drop
+      #   `vite.config.ts`'s `external` marker AND make `main.tsx`'s import
+      #   static, and Rollup inlines the harness into the entry chunk: no such
+      #   filename anywhere, and this check alone reports "no leak" on a build
+      #   that shipped the harness.
+      #
+      #   `__e2e` is the property the harness assigns on `window`. A minifier
+      #   renames locals; it cannot rename a property accessed by name, so this
+      #   token follows the CODE rather than the chunk-splitting artefact, and
+      #   catches the inlined case the first token misses.
+      #
+      # Both are checked, and either match fails the step.
       - name: Confirm the e2e harness did not leak into the build
         run: |
+          set -euo pipefail
+          leaked=0
           if grep -rl "e2e-harness" dist/; then
-            echo "::error::e2e harness leaked into production dist/"
+            echo "::error::e2e harness chunk leaked into production dist/"
+            leaked=1
+          fi
+          if grep -rl "__e2e" dist/; then
+            echo "::error::e2e harness code (window.__e2e) leaked into production dist/"
+            leaked=1
+          fi
+          if [ "$leaked" -ne 0 ]; then
             exit 1
           fi
           echo "No e2e harness in dist/."
@@ -192,6 +219,15 @@ jobs:
       # and under the round-1 gate (`src/hooks/` or `vite.config.ts` only)
       # they would not have run it (round-1 Frank C2).
       #
+      # `src/app/main.tsx` is in the gate for the same reason and is easy to
+      # miss: it is the ONLY production loader of the harness (the
+      # `import.meta.env.MODE === "e2e"` dynamic `import()` at its foot). A PR
+      # that deletes or breaks just that branch changes no other gated path, so
+      # without this entry the gate reads `smoke=false`, Playwright never runs,
+      # and CI goes green while `window.__e2e` has silently stopped loading —
+      # every spec here would fail on the next PR that did trip the gate
+      # (round-2 Frank F2 / George G-3).
+      #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
       # diff and a genuinely empty one both read as "no match", so the suite
@@ -212,7 +248,7 @@ jobs:
           # then reads a here-string, not a pipe: no pipeline whose exit status
           # could be confused with the match result.
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/app/e2e-harness\.ts$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
             echo "smoke=true" >> "$GITHUB_OUTPUT"
           else
             echo "smoke=false" >> "$GITHUB_OUTPUT"
