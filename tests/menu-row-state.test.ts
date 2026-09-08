@@ -172,11 +172,18 @@ describe("rowHint — which reasons carry a cue", () => {
   // Every control a hint tells the translator to use must EXIST under that name.
   // An earlier draft said "tap Back"; nothing in the product is named Back — the
   // two chevrons are "Close menu" and "Close recorder" — so a screen-reader user
-  // hunting for it found nothing (George, round 2). The two strings that must
-  // NAME the control are checked directly, so a rename of the control fails the
-  // suite instead of silently orphaning the words.
+  // hunting for it found nothing (George, round 2). Every string that NAMES the
+  // control is checked directly, so a rename of the control fails the suite
+  // instead of silently orphaning the words. `recorderInterrupted` was the gap:
+  // it names "Close recorder" too but the scan below (which only bans "tap Back")
+  // could not catch a rename that orphaned it, so a rename would have left it
+  // green with dead words (George, #154 confirming round → #196).
   it("hint copy names controls that actually exist", () => {
-    for (const copy of [strings.blockedByTake, strings.previewUnavailable]) {
+    for (const copy of [
+      strings.blockedByTake,
+      strings.previewUnavailable,
+      strings.recorderInterrupted,
+    ]) {
       expect(copy).toContain(strings.closeRecorder);
     }
   });
