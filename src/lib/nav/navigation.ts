@@ -47,3 +47,48 @@ export function backEffectFor(screen: Screen): BackEffect {
       return "exit-app";
   }
 }
+
+/**
+ * Which way a `popstate` moved, from the monotonic index each history entry
+ * carries (Frank R1 F2). `popstate` fires for FORWARD as well as Back — a
+ * standalone PWA can swipe forward — and the old handler routed on the current
+ * screen alone, so a Forward was misread as a Back and dropped the UI to Books.
+ * The live stack is strictly increasing in index bottom-to-top (a push always
+ * truncates the forward entries and appends a higher index), so a lower
+ * destination index is a Back and a higher one a Forward.
+ */
+export type NavDirection = "back" | "forward" | "same";
+
+export function navDirection(from: number, to: number): NavDirection {
+  if (to < from) return "back";
+  if (to > from) return "forward";
+  return "same";
+}
+
+/**
+ * What the `popstate` handler does — the whole decision, pure so the two cases
+ * Frank's R1 review turned on are pinned by a Node test rather than a browser:
+ *
+ * - **A commit is in flight (`committing`)** → `rearm-during-commit`,
+ *   whatever the direction. This is the F1 data-loss guard: while the recorder's
+ *   Back is running stop → decode → save (seconds on a long take), a second Back
+ *   must be ABSORBED by re-pushing the protective entry, never allowed to escape
+ *   the recorder and drop the uncommitted take (#58). Break this row and the
+ *   second Back leaves over an unsaved recording — the exact regression.
+ * - **Forward** → `trap-forward`: cancel it (the handler re-asserts history),
+ *   the app stays put. Never route a Forward as a Back (F2).
+ * - **Back** → the `backEffectFor` mapping for the current screen.
+ */
+export type PopAction =
+  "rearm-during-commit" | "trap-forward" | "ignore" | BackEffect;
+
+export function popAction(
+  direction: NavDirection,
+  screen: Screen,
+  committing: boolean
+): PopAction {
+  if (committing) return "rearm-during-commit";
+  if (direction === "forward") return "trap-forward";
+  if (direction === "same") return "ignore";
+  return backEffectFor(screen);
+}

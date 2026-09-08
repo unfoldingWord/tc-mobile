@@ -93,6 +93,16 @@ interface RecorderProps {
    * behind it.
    */
   onExit: (dirty: boolean) => void;
+  /**
+   * Request a Back through the browser history (#168). The on-screen Back
+   * controls call THIS, not `close()` directly, so an on-screen Back and the
+   * system gesture travel the one popstate path — which is what gives the
+   * on-screen Back the same commit-window protection App re-arms for the system
+   * one (Frank R1 F1). App answers the resulting popstate by invoking
+   * `requestClose()`, so the commit still runs; erase is the one exit that
+   * bypasses this and calls `onExit` directly (it must not re-commit).
+   */
+  onRequestBack: () => void;
 }
 
 /**
@@ -139,6 +149,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       clipboard,
       onClipboardChange,
       onExit,
+      onRequestBack,
     },
     ref
   ) {
@@ -1016,7 +1027,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               icon="back"
               label={strings.closeRecorder}
               variant="quiet"
-              onClick={close}
+              onClick={onRequestBack}
             />
             <span
               className="min-w-0 flex-1 truncate"
@@ -1084,13 +1095,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             <LoadErrorPanel
               retrying={loadRetrying}
               onRetry={retryLoad}
-              onBack={close}
+              onBack={onRequestBack}
             />
           ) : denied ? (
             <PermissionPanel
               message={audio.error}
               onRetry={onRetryRecord}
-              onBack={close}
+              onBack={onRequestBack}
             />
           ) : (
             <>

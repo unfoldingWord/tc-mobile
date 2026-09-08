@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { backEffectFor, screenFor } from "@/lib/nav/navigation";
+import {
+  backEffectFor,
+  navDirection,
+  popAction,
+  screenFor,
+} from "@/lib/nav/navigation";
 
 /**
  * The History wiring in `App.tsx` is browser-only and untestable here (there is
@@ -39,5 +44,54 @@ describe("backEffectFor", () => {
 
   it("exits the app from the Books shelf, where Back loses nothing", () => {
     expect(backEffectFor("books")).toBe("exit-app");
+  });
+});
+
+describe("navDirection", () => {
+  it("is back when the destination index is lower", () => {
+    expect(navDirection(2, 1)).toBe("back");
+  });
+
+  it("is forward when the destination index is higher", () => {
+    // `popstate` fires for Forward too; the old handler had no way to see this
+    // and misrouted it as a Back (Frank R1 F2).
+    expect(navDirection(1, 2)).toBe("forward");
+  });
+
+  it("is same when the index did not move", () => {
+    expect(navDirection(1, 1)).toBe("same");
+  });
+});
+
+describe("popAction", () => {
+  it("routes a Back on the recorder to the commit path (#58)", () => {
+    expect(popAction("back", "recorder", false)).toBe("commit-close-recorder");
+  });
+
+  it("routes a Back on Segments to Books, and on Books to exit", () => {
+    expect(popAction("back", "segments", false)).toBe("to-books");
+    expect(popAction("back", "books", false)).toBe("exit-app");
+  });
+
+  it("traps a Forward instead of misrouting it as a Back (F2)", () => {
+    // The load-bearing F2 row: a Forward while on Segments must NOT run
+    // `to-books` (which dropped the UI to Books). It is trapped.
+    expect(popAction("forward", "segments", false)).toBe("trap-forward");
+    expect(popAction("forward", "recorder", false)).toBe("trap-forward");
+  });
+
+  it("ignores a same-index popstate", () => {
+    expect(popAction("same", "segments", false)).toBe("ignore");
+  });
+
+  it("re-arms every gesture while a recorder commit is in flight (F1)", () => {
+    // The load-bearing F1 row. First Back starts the commit…
+    expect(popAction("back", "recorder", false)).toBe("commit-close-recorder");
+    // …and a SECOND Back arriving before it settles must re-arm the protective
+    // entry, never escape the recorder and drop the uncommitted take (#58).
+    // `committing` wins over direction and screen, so nothing else can leave.
+    expect(popAction("back", "recorder", true)).toBe("rearm-during-commit");
+    expect(popAction("back", "segments", true)).toBe("rearm-during-commit");
+    expect(popAction("forward", "recorder", true)).toBe("rearm-during-commit");
   });
 });
