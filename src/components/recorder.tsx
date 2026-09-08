@@ -125,6 +125,7 @@ export function Recorder({
     error: loadError,
     retrying: loadRetrying,
     retry: retryLoad,
+    reload: reloadView,
     setFinished,
   } = useRecorderSegment(segmentId);
 
@@ -165,7 +166,12 @@ export function Recorder({
   const insertionOffset = useRef(0);
   /** A take was committed or the finished flag toggled — App should reload. */
   const dirty = useRef(false);
-  /** Guards the async close so a double-tap on Back cannot commit twice. */
+  /**
+   * Guards the async close so a double-tap on Back cannot commit twice — and,
+   * since #134, the commit `onEnterEdit` runs too: it is the single "a commit is
+   * in flight" latch, so a Back tapped mid-Edit-commit (or the reverse) is
+   * refused rather than double-committing the same take.
+   */
   const closing = useRef(false);
   /**
    * The finished checkbox's desired state, or null when the translator has not
@@ -569,11 +575,91 @@ export function Recorder({
   // Enter edit mode from the record menu. Play is a record-only control, so any
   // live buffer playback is stopped first — else it would orphan itself with no
   // control to stop it.
+  //
+  // With a live or paused take in hand this COMMITS it first (#134): editing
+  // works on `view.samples`, and an in-progress take is not there yet (Model A),
+  // so it is persisted through the same stop → decode → save `close()` runs on
+  // Back — minus the exit — then the segment is reopened at idle on the committed
+  // audio and edit mode entered. Without this the enabled row would drop the
+  // translator into edit mode over the STALE stored clip, editing the wrong audio
+  // — the leak the old idle-only gate prevented and the reason the fix cannot
+  // live in the view alone.
   const onEnterEdit = useCallback(() => {
+    // Stop any buffer playback (Play is record-only) and invalidate an in-flight
+    // preview decode — Edit is a record-menu action, same boundary `openMenu` and
+    // a record tap clean up.
     audio.stopBuffer();
-    setMode("edit");
     setMenuOpen(false);
-  }, [audio]);
+    // No live/paused take: edit the stored/edited working buffer as before (#89).
+    // The gate only offers Edit with a take while recording or paused, so nothing
+    // else reaches the commit branch below.
+    if (!(recording || paused)) {
+      cancelPreview();
+      setMode("edit");
+      return;
+    }
+    // A live or paused take: commit it, then reopen in edit mode on the committed
+    // audio. `closing.current` is the shared "a commit is in flight" latch, so a
+    // Back tapped during this cannot double-commit the same take.
+    if (closing.current) return;
+    closing.current = true;
+    setIsClosing(true);
+    // Invalidate any in-flight preview decode and reset its state, then drop the
+    // preview's PCM but keep its peaks on stage through the commit — exactly the
+    // pair `close()` runs, so a first take does not blank while it saves.
+    abortPreview();
+    setPreview((p) => (p ? { buffer: new Int16Array(0), peaks: p.peaks } : p));
+    void (async () => {
+      const result = await audio.stopRecording();
+      if (result.samples && result.samples.length > 0) {
+        // Splice the take into the WORKING buffer at the locked offset, exactly
+        // as `close()` does; the mark rides the take through `addTake`. The
+        // boolean is deliberately not branched on — a failed save becomes App's
+        // recovery screen, same contract `close()` relies on.
+        await saveRecording(
+          segmentId,
+          editor.working,
+          result.samples,
+          insertionOffset.current,
+          finishedIntent === true
+        );
+        dirty.current = true;
+        // Re-read the segment and AWAIT the fresh view, so the editor re-bases on
+        // the committed samples (`useSegmentEditor` resets when `view.samples`
+        // changes) BEFORE edit mode opens — the mode switch below then batches
+        // with the new view in one render, with no window where edit mode is live
+        // over the pre-take buffer. Awaited in this handler, not an effect, to
+        // stay clear of set-state-in-effect. A reopen that FAILED (decode/load
+        // error) returns null and leaves the recovery panel owning the body — so
+        // do not enter edit mode there.
+        const next = await reloadView();
+        closing.current = false;
+        setIsClosing(false);
+        if (next) setMode("edit");
+        return;
+      }
+      // No usable audio. An empty or undecodable capture has a reason to show and
+      // stays in record mode to retry; a superseded stop (a leave landed) has
+      // neither — either way, do not enter edit. Same handling as `close()`.
+      if (result.error) {
+        setStopError(result.error);
+        cancelPreview();
+      }
+      closing.current = false;
+      setIsClosing(false);
+    })();
+  }, [
+    audio,
+    recording,
+    paused,
+    saveRecording,
+    segmentId,
+    editor,
+    finishedIntent,
+    reloadView,
+    abortPreview,
+    cancelPreview,
+  ]);
 
   // The permission panel's Retry. It bypasses `onRecordButton`, so it must force
   // record mode itself: Edit is reachable while the panel is up (empty segment +
@@ -903,7 +989,11 @@ export function Recorder({
   const starting = state === "requesting";
   const editReason = editRowReason({
     hasView: view !== null,
-    takeActive,
+    // A recording/paused take no longer blocks Edit (#134) — entering Edit
+    // commits it first (`onEnterEdit`). Only the actual commit window does: the
+    // Back-tapped close, and a #59 interruption's `processing` freeze.
+    committing: isClosing || state === "processing",
+    hasTake: recording || paused,
     starting,
     denied,
     hasAudio,
@@ -1382,15 +1472,17 @@ export function Recorder({
               icon="edit"
               label={strings.enterEdit}
               variant="quiet"
-              // Idle-only. Editable when there is audio to edit OR a full
-              // clipboard to paste — a never-recorded segment with a pending clip
-              // must still open edit mode to receive it, or the chapter-wide
-              // clipboard (G3) could never land on an empty segment (George R2).
+              // Editable when there is audio to edit, a full clipboard to paste
+              // — a never-recorded segment with a pending clip must still open
+              // edit mode to receive it, or the chapter-wide clipboard (G3) could
+              // never land on an empty segment (George R2) — OR a live/paused
+              // take, which `onEnterEdit` commits first, then edits (#134). Only
+              // the commit window itself blocks it now, not every non-idle state.
               // Never while `denied`: the permission panel owns the body, and
               // entering edit there strands the edit toolbar over a Retry that
               // starts the mic (George R3, with onRetryRecord as the other half).
               // The gate lives in `editRowReason` so the grey row can say WHY
-              // (#135): a take in flight shows the `alert` badge — a state mark
+              // (#135): a take mid-commit shows the `alert` badge — a state mark
               // that names no control — and the reason joins the row's
               // accessible name.
               disabled={editReason !== null}

@@ -17,10 +17,12 @@ import type { IconName } from "./icon";
 import { strings } from "./strings";
 
 /**
- * The reasons, most actionable first. `"uncommitted-take"` is the #134 case — a
- * take is live, paused or committing, and closing the recorder is what lifts it
- * — and outranks every other reason because it is the one the translator can act
- * on from here. Nothing in this product is named "Back"; see {@link rowHint}.
+ * The reasons, most actionable first. `"uncommitted-take"` marks a take in
+ * flight, and closing the recorder is what lifts it. Its scope differs per row:
+ * for Erase and Mark, any live/paused/committing take; for Edit, ONLY the commit
+ * window itself — a live or paused take instead lets Edit commit-then-edit
+ * (#134). It outranks the state reasons because it is the one the translator can
+ * act on from here. Nothing in this product is named "Back"; see {@link rowHint}.
  */
 export type RowReason =
   | "uncommitted-take"
@@ -34,14 +36,26 @@ interface EditRowInputs {
   /** A segment is loaded (`view !== null`). */
   readonly hasView: boolean;
   /**
-   * A take is being made or committed: any non-idle recorder state, OR the
-   * close window (Back tapped, the stop→decode→save still in flight). Editing
-   * is strictly idle (Model A: edits, then a record commits on close).
+   * A take is being COMMITTED right now: the close window (Back tapped, the
+   * stop→decode→save still in flight), or a #59 interruption's `processing`
+   * freeze. Editing waits for that commit to settle.
+   *
+   * Deliberately NARROWER than the old "any non-idle state" — the #134 fix. A
+   * recording or paused take no longer blocks Edit: entering Edit COMMITS that
+   * take first (stop → decode → save → reopen at idle) and then edits it, the
+   * record-then-edit-in-one-sitting flow the requirements owner confirmed
+   * required (2026-09-04). Mirrors `markRowReason`'s `takeCommitting`.
    */
-  readonly takeActive: boolean;
+  readonly committing: boolean;
   /**
-   * The mic is being REQUESTED — `getUserMedia` has not resolved, so no audio
-   * exists yet. A subset of `takeActive`, split out because the uncommitted-take
+   * A live or paused take exists — the audio entering Edit will commit and then
+   * edit. Counts as "there is something to edit" alongside `hasAudio`/`canPaste`,
+   * so a FIRST take (nothing stored on disk yet) still reaches Edit.
+   */
+  readonly hasTake: boolean;
+  /**
+   * The mic is being REQUESTED — `getUserMedia` has not resolved, so no take
+   * exists to commit yet. Split from `committing` because the uncommitted-take
    * words ("…to save the recording") promise a save that cannot happen here.
    */
   readonly starting: boolean;
@@ -57,17 +71,22 @@ interface EditRowInputs {
 }
 
 /**
- * The record-menu "Edit recording" row. Null when enabled. Reproduces exactly
- * the gate the row shipped with:
- * `!idleEditable || denied || (!hasAudio && !canPaste)`, where
- * `idleEditable = hasView && !takeActive`.
+ * The record-menu "Edit recording" row. Null when enabled.
+ *
+ * Enabled when there is something to edit — stored audio, a full clipboard, or a
+ * live/paused take that entering Edit commits first (#134) — and no commit is
+ * already in flight. Blocked by: the mic still starting, a commit already
+ * running, no segment, a denied mic, or an empty segment with an empty clipboard
+ * and no take. The old gate `!idleEditable || denied || (!hasAudio && !canPaste)`
+ * treated every non-idle state as a block; #134 splits that into `committing`
+ * (still a block) and `hasTake` (now editable, commit-then-edit).
  */
 export function editRowReason(i: EditRowInputs): RowReason | null {
   if (i.starting) return "starting";
-  if (i.takeActive) return "uncommitted-take";
+  if (i.committing) return "uncommitted-take";
   if (!i.hasView) return "no-segment";
   if (i.denied) return "denied";
-  if (!i.hasAudio && !i.canPaste) return "no-audio";
+  if (!i.hasTake && !i.hasAudio && !i.canPaste) return "no-audio";
   return null;
 }
 
