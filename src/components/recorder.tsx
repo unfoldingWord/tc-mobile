@@ -33,7 +33,7 @@ import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { computePeaks } from "@/lib/audio/peaks";
 import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
-import { overlayBlocksClose } from "@/lib/nav/navigation";
+import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -736,8 +736,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // erase (the R-B6 last-writer race) or a menu selection. Resolve false so
       // App keeps the sheet's protective history entry and the sheet itself.
       if (overlayBlocksClose(menuOpen, confirmOpen, erase.erasing)) {
-        setMenuOpen(false);
-        setConfirmOpen(false);
+        // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
+        // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
+        // un-inerts the sheet (its `inert` is driven by `confirmOpen`), exposing
+        // Record, whose new capture the erase's `onExit` then discards. Let the
+        // erase's own completion tear the confirm down.
+        const dismiss = overlayDismissal(menuOpen, confirmOpen, erase.erasing);
+        if (dismiss.closeMenu) setMenuOpen(false);
+        if (dismiss.closeConfirm) setConfirmOpen(false);
         return Promise.resolve(false);
       }
       closing.current = true;
@@ -1031,11 +1037,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           not reliably hide the background for AT/switch users — G8 already
           refused to trust that on the Segments list — so without this an AT user
           could reach the covered Record while the menu is up and mutate the
-          splice base under a Redo (George R4). */}
+          splice base under a Redo (George R4). `erase.erasing` is folded in
+          alongside `confirmOpen` so the sheet stays inert across the whole erase
+          even if the confirm flag is cleared out from under it — Record must never
+          be tappable while a delete runs (Frank R4-1). */}
         <div
           ref={sheetRef}
           className="recorder-sheet mx-auto max-w-md"
-          inert={menuShown || confirmOpen || undefined}
+          inert={menuShown || confirmOpen || erase.erasing || undefined}
         >
           <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
             <Control
