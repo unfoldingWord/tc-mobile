@@ -206,6 +206,11 @@ export function Recorder({
   // orphaning one. A ref answers for the current moment — the same shape as
   // `closing.current` and `use-save-take`'s `savingRef`, which exist for this race.
   const heldRetryingRef = useRef(false);
+  // The synchronous in-flight latch for Share (George R2 B-6): a same-gesture
+  // double-tap before the OS sheet paints could fire a second `navigator.share`,
+  // whose rejection paints `takeShareFailed` even beside the first's success. The
+  // same shape `useShareFlow.send`'s `sendingRef` uses for exactly this race.
+  const heldSharingRef = useRef(false);
   // Drives the UI: once Back is tapped the sheet is tearing down, and the
   // post-stop save is in flight. Record must be dead through that window — the
   // sheet still shows and a first take's waveform is still empty, so a second
@@ -992,8 +997,11 @@ export function Recorder({
     // Ignore a Share tap while a re-decode is in flight (George R1 G7): the
     // retry just resumed the shared AudioContext, and opening the OS share sheet
     // can re-interrupt it out from under the decode. The panel also disables
-    // Share while `heldRetrying`; this is the synchronous backstop.
-    if (!blob || heldRetryingRef.current) return;
+    // Share while `heldRetrying`; this is the synchronous backstop. `heldSharingRef`
+    // additionally refuses a same-gesture double-tap before the OS sheet paints,
+    // whose second `navigator.share` would be classified `failed` and paint an
+    // error beside the first's success (George R2 B-6).
+    if (!blob || heldRetryingRef.current || heldSharingRef.current) return;
     setHeldShareError(null);
     // Strip the codec parameters off the capture MIME (George R1 G4): iOS
     // records `audio/mp4;codecs=mp4a.40.2`, and a parameterised type can make
@@ -1024,14 +1032,19 @@ export function Recorder({
     // (see `classifyShareError`). Read it immediately before `share`, with no
     // await between — the tap's activation must still be valid here.
     const hadActivation = navigator.userActivation?.isActive ?? false;
+    // Latched synchronously here, before the async `share` — the moment a second
+    // same-frame tap reads (George R2 B-6). Cleared in both settle arms.
+    heldSharingRef.current = true;
     void navigator.share({ files: [file] }).then(
       () => {
+        heldSharingRef.current = false;
         // Rescued off the phone. Offer a Done exit even though the decode never
         // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
         setHeldShared(true);
         setHeldShareError(null);
       },
       (cause: unknown) => {
+        heldSharingRef.current = false;
         // Reuse the chapter-share classifier (George R1 G4): a user dismiss
         // (`AbortError`) and a spent-activation `NotAllowedError` (`retry`) are
         // not failures to alarm the translator with — the File still stands, a
@@ -1050,13 +1063,21 @@ export function Recorder({
   // gestures reach here, and the panel gates each so neither is a stray drop: the
   // Done exit only after a Share SUCCEEDED (the bytes are off the phone, nothing
   // lost), and the two-tap ARMED discard (a confirmed, deliberate loss, the same
-  // shape SaveFailed uses). Both drop the held take and `onExit(false)` — nothing
-  // was committed; the retry guard blocks the window a re-decode is mid-flight.
+  // shape SaveFailed uses). The retry guard blocks the window a re-decode is
+  // mid-flight.
   const leaveHeldTake = useCallback(() => {
     if (heldRetryingRef.current) return;
+    // Drop the failed-decode take — this reveals the idle sheet (Record and the
+    // header Back live again, `heldTake === null`).
     setHeldTake(null);
-    onExit(false);
-  }, [onExit]);
+    // But a fresh exit here would ABANDON any B5 cut/paste edits this session
+    // made: they live in `editor`, and before this panel a later Back committed
+    // them through `close()`'s edit-only tail (George R2 B-4). So when there ARE
+    // edits, STAY on the idle sheet and let that Back run — never `close()` from
+    // here, whose cut-to-empty arm would `clearSegmentTake` the on-disk original.
+    // Only when there is nothing to preserve is this a true exit.
+    if (!editor.hasEdits) onExit(false);
+  }, [onExit, editor]);
 
   // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
   // user is not stranded on the now-`inert` list behind the modal. Mount-only —

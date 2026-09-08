@@ -46,13 +46,18 @@ export interface StopResult {
    */
   readonly error: string | null;
   /**
-   * The captured container bytes, kept ONLY when the decode failed on a current
-   * stop — the one case where the take exists nowhere else and dropping the blob
-   * would lose it for good (#165). Null on success (the PCM is the take then), on
-   * an empty or silent capture (no audio to keep), and on a superseded stop. A
-   * caller holding this can re-decode it in a later gesture (`retryDecode`) or
-   * hand the raw bytes to the share sheet so the recording leaves the phone in
-   * some form rather than none.
+   * The captured container bytes, kept whenever a decode FAILED — on a current
+   * stop AND on a superseded one (George R1 G2). A failed decode is the one case
+   * where the take exists nowhere else, so dropping the blob would lose it for
+   * good (#165); and a `leave()`/pagehide bumping the generation mid-decode is
+   * the very #106 interruption most likely to fail it, so the bytes are kept even
+   * when the stop is superseded — only the shared `error` is withheld then, since
+   * a newer owner speaks for the screen. `close()` DEPENDS on this: it holds the
+   * take whenever `blob` is set, so re-narrowing it to current-only would re-drop
+   * the interruption case. Null on success (the PCM is the take) and on an empty
+   * or silent capture (no audio worth keeping — a retry of the same bytes cannot
+   * help). A caller holding this can re-decode it (`retryDecode`) or hand the raw
+   * bytes to the share sheet so the recording leaves the phone in some form.
    */
   readonly blob: Blob | null;
 }
