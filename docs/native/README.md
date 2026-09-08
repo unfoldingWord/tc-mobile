@@ -110,10 +110,13 @@ TestFlight only; **App Store submission is out of scope** (#262).
 3. **Version/build:** set _Marketing Version_ and bump _Build_ (`CURRENT_PROJECT_VERSION`)
    for each upload — App Store Connect rejects a duplicate build number. See
    [§6](#6-versioning) for how these relate to `package.json`.
-4. **Microphone permission:** the app records audio — confirm
-   `NSMicrophoneUsageDescription` is present in `ios/App/App/Info.plist` with
-   human copy before the first TestFlight build. (Verify/add on the Mac; the
-   recording path is the product's whole point — #262 / #86 C1–C2.)
+4. **Microphone permission:** the app records audio and iOS terminates the
+   first `getUserMedia` request in WKWebView if no usage-description string is
+   present. `NSMicrophoneUsageDescription` now **ships in the committed shell**
+   (`ios/App/App/Info.plist`: _"tC Mobile uses the microphone to record spoken
+   translations."_) — no Mac step is needed to add it. Adjust the copy here if
+   the wording changes, but do not remove the key: the recording path is the
+   product's whole point (#262 / #86 C1–C2, PR #265).
 5. Select **Any iOS Device (arm64)** → _Product → Archive_.
 6. In the Organizer: **Distribute App → TestFlight (Internal/External)** →
    upload to App Store Connect.
@@ -127,14 +130,24 @@ TestFlight only; **App Store submission is out of scope** (#262).
 
 Sideload only; **Play Store submission is out of scope** (#262).
 
+**Microphone permission:** the app records audio, so the manifest declares
+`RECORD_AUDIO`. This now **ships in the committed shell**
+(`android/app/src/main/AndroidManifest.xml`, alongside `INTERNET`) — the system
+WebView cannot grant `getUserMedia({audio:true})` a permission the manifest
+never declares. Android 6+ also shows a **runtime** prompt on first record;
+confirm the prompt appears and audio captures on-device (part of the
+audio-revalidation spike, §8). Do not remove the permission (#262 / #86 C1–C2,
+PR #265).
+
 1. **Create a signing keystore once** (keep it and its passwords safe — losing
    it means a new app identity):
    ```bash
    keytool -genkey -v -keystore tc-mobile-release.jks \
      -keyalg RSA -keysize 2048 -validity 10000 -alias tc-mobile
    ```
-   Store it **outside** the repo (keystores are git-ignored) and record the
-   passwords in the team secret store.
+   Store it **outside** the repo and record the passwords in the team secret
+   store. As a backstop, `android/.gitignore` ignores `*.jks`/`*.keystore` so a
+   keystore accidentally dropped inside `android/` is not committed.
 2. Wire release signing in `android/app/build.gradle` (`signingConfigs` +
    `buildTypes.release`), reading passwords from
    `~/.gradle/gradle.properties` or env vars — **never commit them**.
