@@ -4,6 +4,7 @@ import {
   backEffectFor,
   navDirection,
   overlayBlocksClose,
+  overlayDismissal,
   popAction,
   screenFor,
 } from "@/lib/nav/navigation";
@@ -135,5 +136,28 @@ describe("overlayBlocksClose", () => {
 
   it("allows close when no overlay is up", () => {
     expect(overlayBlocksClose(false, false, false)).toBe(false);
+  });
+});
+
+describe("overlayDismissal", () => {
+  it("does NOT dismiss the confirm while an erase is in flight (Frank R4-1)", () => {
+    // The load-bearing R4 row: clearing `confirmOpen` mid-erase un-inerts the
+    // sheet and exposes Record, whose new capture the erase completion discards.
+    // While erasing, the confirm is left alone — the erase tears itself down.
+    expect(overlayDismissal(false, true, true)).toEqual({
+      closeMenu: false,
+      closeConfirm: false,
+    });
+  });
+
+  it("dismisses a confirm dialog that is not yet erasing, and the menu", () => {
+    expect(overlayDismissal(false, true, false)).toEqual({
+      closeMenu: false,
+      closeConfirm: true,
+    });
+    expect(overlayDismissal(true, false, false)).toEqual({
+      closeMenu: true,
+      closeConfirm: false,
+    });
   });
 });

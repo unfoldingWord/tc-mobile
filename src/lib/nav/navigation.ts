@@ -128,3 +128,21 @@ export function overlayBlocksClose(
 ): boolean {
   return menuOpen || confirmOpen || erasing;
 }
+
+/**
+ * When a system Back is absorbed by an open recorder overlay (`overlayBlocksClose`
+ * is true), WHICH overlays `close()` may dismiss (Frank R4-1). The ≡ menu and a
+ * confirm dialog still awaiting the user are dismissed; but a confirm whose erase
+ * is ALREADY IN FLIGHT is NOT. `onConfirmErase` deliberately holds `confirmOpen`
+ * true across the whole IndexedDB delete precisely to keep the sheet `inert`, and
+ * clearing it mid-erase un-inerts the sheet and exposes Record — whose newly
+ * started capture the erase's own completion (`onExit`) then discards. So while
+ * `erasing`, leave the confirm alone and let the erase tear itself down.
+ */
+export function overlayDismissal(
+  menuOpen: boolean,
+  confirmOpen: boolean,
+  erasing: boolean
+): { closeMenu: boolean; closeConfirm: boolean } {
+  return { closeMenu: menuOpen, closeConfirm: confirmOpen && !erasing };
+}
