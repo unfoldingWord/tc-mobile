@@ -1505,7 +1505,15 @@ function PermissionPanel({
   onBack: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center">
+    // `role="alert"` so AT announces the title when the panel mounts and — the
+    // point here — when the async permission refine sharpens the message after
+    // Retry has autofocused, which a screen-reader user parked on Retry would
+    // otherwise never hear (#203 is a non-reader feature; George R1 P3). Mirrors
+    // `LoadErrorPanel`, whose title is likewise announced without being focused.
+    <div
+      role="alert"
+      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+    >
       <span style={{ color: "var(--s-live)" }}>
         <Icon name="alert" size={52} />
       </span>

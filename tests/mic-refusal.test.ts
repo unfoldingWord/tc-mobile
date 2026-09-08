@@ -17,10 +17,11 @@ describe("classifyMicRefusal", () => {
     expect(classifyMicRefusal("NotAllowedError", "granted")).toBe("os-blocked");
   });
 
-  it("is os-blocked when refused while the state still reads prompt", () => {
-    // A real user "no" flips the stored state to denied, so a refusal with the
-    // state still at prompt is the OS layer, not the tap.
-    expect(classifyMicRefusal("NotAllowedError", "prompt")).toBe("os-blocked");
+  it("is prompt (not os-blocked) when the state still reads prompt", () => {
+    // A dismissed prompt (X / tap-outside / Esc) leaves the state at `prompt`
+    // and throws NotAllowedError; the remedy is to tap Record again and Allow,
+    // NOT device settings — so this must not read as the OS case (R1 P2).
+    expect(classifyMicRefusal("NotAllowedError", "prompt")).toBe("prompt");
   });
 
   it("is site-blocked when the origin's permission reads denied", () => {
