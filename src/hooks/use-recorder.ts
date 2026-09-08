@@ -5,6 +5,10 @@ import {
   type CaptureScope,
   createCapturePeaks,
 } from "@/lib/audio/capture-peaks";
+import {
+  classifyStopDecode,
+  type StopDecodeError,
+} from "@/lib/audio/stop-decode";
 
 import {
   createLevelTap,
@@ -14,6 +18,19 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+
+/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
+ *  here beside the recorder's other error copy; the classifier stays UI-free. */
+function stopDecodeMessage(error: StopDecodeError): string | null {
+  switch (error) {
+    case "silence":
+      return "No sound was recorded. Try again.";
+    case "undecodable":
+      return "Recording could not be decoded on this device.";
+    case null:
+      return null;
+  }
+}
 
 /**
  * Columns the live-waveform ring holds while recording (#120). One column is
@@ -66,15 +83,6 @@ export interface StopResult {
 export interface RetryDecodeResult {
   readonly samples: Int16Array | null;
   readonly error: string | null;
-  /**
-   * The bytes decoded successfully but to ZERO samples — silence, not a usable
-   * take. Distinct from a decode that threw: silence cannot become sound on a
-   * further retry of the same bytes, so the caller drops the held take and stops
-   * trapping the translator on it (George R1 G5), the same rule `stop()` applies
-   * when it returns `blob: null` on a silent decode. False on success and on a
-   * thrown decode (whose bytes are still worth keeping).
-   */
-  readonly silent: boolean;
 }
 
 /**
@@ -675,45 +683,34 @@ export function useRecorder(): UseRecorder {
       };
     }
 
+    // The whole outcome — emit samples? keep the bytes? which message? — is the
+    // pure `classifyStopDecode`, so the load-bearing #106/#165 contract (a decode
+    // THROW keeps the bytes even when superseded; a zero-sample decode keeps
+    // nothing) is pinned by a Node test rather than living only here (George R3
+    // G-3). `current` is re-read after each await, so it reflects a `leave()`/
+    // pagehide that landed during the decode.
     try {
       const samples = await decodeToCanonical(blob);
-      const decodedCurrent = generation === generationRef.current;
-      // Returned even when superseded: these are confirmed samples, and the
-      // caller decides what to do with them. Only the shared UI state is
-      // withheld, because a newer recording owns it now.
-      if (decodedCurrent) setState("idle");
-      // A successful decode to ZERO samples is "no sound" too — same class as an
-      // empty blob, not a usable take. Classified here, at the source, so a
-      // caller keying on `samples.length` never gets a non-null empty buffer
-      // paired with a null error (which showed no message at all — F7).
-      if (samples.length === 0) {
-        return {
-          samples: null,
-          error: decodedCurrent ? "No sound was recorded. Try again." : null,
-          blob: null, // decoded to silence — a retry of the same bytes can't help
-        };
-      }
-      return { samples, error: null, blob: null };
+      const current2 = generation === generationRef.current;
+      const verdict = classifyStopDecode(
+        { decoded: true, sampleCount: samples.length },
+        current2
+      );
+      if (current2) setState("idle");
+      return {
+        samples: verdict.emitSamples ? samples : null,
+        error: stopDecodeMessage(verdict.error),
+        blob: verdict.keepBlob ? blob : null,
+      };
     } catch {
-      const stillCurrent = generation === generationRef.current;
-      if (stillCurrent) setState("idle");
-      // Keep the container bytes so this stop's take is NOT lost: the decode
-      // rejected (often a transient iOS "interrupted" context, #106), but the
-      // captured audio is intact in `blob` and can be re-decoded in a later
-      // gesture or shared out (#165). The blob is returned EVEN WHEN SUPERSEDED,
-      // the same rule the success branch already applies to `samples` (George R1
-      // G2): the interruption that supersedes the stop — a `leave()`/pagehide
-      // bumping the generation mid-decode — is the very #106 event most likely to
-      // fail the decode, so gating the bytes on `stillCurrent` dropped the take on
-      // exactly the case #165 exists to recover. Only the shared UI `error` stays
-      // withheld when superseded — a newer owner speaks for the screen — while the
-      // caller keeps the bytes and decides.
+      const current2 = generation === generationRef.current;
+      const verdict = classifyStopDecode({ decoded: false }, current2);
+      if (current2) setState("idle");
       return {
         samples: null,
-        error: stillCurrent
-          ? "Recording could not be decoded on this device."
-          : null,
-        blob,
+        error: stopDecodeMessage(verdict.error),
+        // Kept even when superseded — see `classifyStopDecode` and #165.
+        blob: verdict.keepBlob ? blob : null,
       };
     }
   }, [abandonStream, clearTick]);
@@ -731,21 +728,20 @@ export function useRecorder(): UseRecorder {
       });
       try {
         const samples = await decodeToCanonical(blob);
-        // A decode to zero samples is "no sound", not a usable take — same class
-        // as an empty capture, and a retry of the same bytes will not change it.
+        // A decode to zero samples yields no usable take. On the RETRY path this
+        // is NOT proven silence the way it is for `stop()`: the bytes are held
+        // only because the FIRST decode THREW, so a later zero-sample decode is
+        // ambiguous, and dropping the held take on it would lose the only copy
+        // (George R3 G-1). So this is just another retry failure — the caller
+        // keeps the bytes and surfaces the message; it never drops them.
         if (samples.length === 0) {
-          return {
-            samples: null,
-            error: "No sound was recorded. Try again.",
-            silent: true,
-          };
+          return { samples: null, error: "No sound was recorded. Try again." };
         }
-        return { samples, error: null, silent: false };
+        return { samples, error: null };
       } catch {
         return {
           samples: null,
           error: "Recording could not be decoded on this device.",
-          silent: false,
         };
       }
     },

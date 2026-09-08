@@ -200,6 +200,10 @@ export function Recorder({
   // the panel offers a Done exit even though the decode never succeeded (George R1
   // G1 / Frank F2) — a permanent decode failure is no longer a dead-ended app.
   const [heldShared, setHeldShared] = useState(false);
+  // A share is in flight (its OS sheet may still be up). Mirrors `heldRetrying`:
+  // it disables Try again in the panel while sharing (George R3 G-2), the visible
+  // half of the `heldSharingRef` guard, symmetric with G7's Share-while-retrying.
+  const [heldSharing, setHeldSharing] = useState(false);
   // The synchronous double-tap latch for Try again, ahead of the `heldRetrying`
   // render state (Frank F3 / George G3): two taps in one frame both read
   // `heldRetrying === false` and each mint a fresh clip through `saveRecording`,
@@ -927,7 +931,12 @@ export function Recorder({
     // `heldRetrying` only hides Try again once the busy re-render lands, so two
     // taps in one frame both read it false and each mint a fresh clip through
     // `saveRecording`, orphaning one. The ref answers for this instant.
-    if (!blob || heldRetryingRef.current) return;
+    // Refuse while a re-decode OR a share is in flight (George R3 G-2): G7 was
+    // one-directional — Share checked both latches but Try again checked only its
+    // own, so a Try again tapped before the share sheet paints re-decoded while
+    // the OS sheet interrupted the context, and a silent result there could then
+    // lose the take. The ref answers for this instant, ahead of the render state.
+    if (!blob || heldRetryingRef.current || heldSharingRef.current) return;
     heldRetryingRef.current = true;
     setHeldRetrying(true);
     setHeldRetryError(null);
@@ -949,21 +958,13 @@ export function Recorder({
           onExit(true);
           return;
         }
-        if (result.silent) {
-          // Decoded to SILENCE (George R1 G5): the same bytes cannot yield sound
-          // on a further retry, so stop trapping the translator on Try again.
-          // Drop the held take and fall to the toolbar Notice with Back/Record
-          // live — the rule `stop()` already applies (blob: null on a silent
-          // decode). Not a `heldRetryError`: the panel is gone, so the message
-          // belongs on the Notice the drop reveals.
-          setHeldTake(null);
-          setHeldRetrying(false);
-          heldRetryingRef.current = false;
-          setStopError(result.error);
-          return;
-        }
-        // The re-decode failed again (transient) — keep the bytes and the panel;
-        // say why UNDER Try again, not the Share slot (George R1 G6).
+        // The re-decode produced no usable audio — a throw OR a zero-sample decode.
+        // On the RETRY path a zero-sample decode is NOT proven silence (the bytes
+        // are held only because the FIRST decode threw), so NEVER drop the held
+        // take here — that would lose the only copy (George R3 G-1). Keep the bytes
+        // and the panel and say why UNDER Try again (George R1 G6); Share and the
+        // two-tap discard are the exits that keep this from trapping (the concern
+        // G5 raised, now satisfied without dropping the take).
         setHeldRetrying(false);
         heldRetryingRef.current = false;
         setHeldRetryError(result.error);
@@ -1010,13 +1011,18 @@ export function Recorder({
     // the chapter-share path uses.
     const container = blob.type.includes("mp4")
       ? { ext: "m4a", type: "audio/mp4" }
-      : blob.type.includes("webm")
-        ? { ext: "webm", type: "audio/webm" }
-        : blob.type.includes("ogg")
-          ? { ext: "ogg", type: "audio/ogg" }
-          : blob.type.includes("mpeg") || blob.type.includes("mp3")
-            ? { ext: "mp3", type: "audio/mpeg" }
-            : { ext: "audio", type: "application/octet-stream" };
+      : blob.type.includes("aac")
+        ? // A real `CANDIDATE_MIME_TYPES` entry (George R3 G-4): without this an
+          // aac capture fell to `application/octet-stream`, which `canShare` often
+          // refuses on the very iOS path that reaches this panel to rescue bytes.
+          { ext: "aac", type: "audio/aac" }
+        : blob.type.includes("webm")
+          ? { ext: "webm", type: "audio/webm" }
+          : blob.type.includes("ogg")
+            ? { ext: "ogg", type: "audio/ogg" }
+            : blob.type.includes("mpeg") || blob.type.includes("mp3")
+              ? { ext: "mp3", type: "audio/mpeg" }
+              : { ext: "audio", type: "application/octet-stream" };
     const file = new File([blob], `recording.${container.ext}`, {
       type: container.type,
     });
@@ -1033,11 +1039,14 @@ export function Recorder({
     // await between — the tap's activation must still be valid here.
     const hadActivation = navigator.userActivation?.isActive ?? false;
     // Latched synchronously here, before the async `share` — the moment a second
-    // same-frame tap reads (George R2 B-6). Cleared in both settle arms.
+    // same-frame tap reads (George R2 B-6). The render state disables Try again
+    // while the sheet is up (George R3 G-2). Both cleared in both settle arms.
     heldSharingRef.current = true;
+    setHeldSharing(true);
     void navigator.share({ files: [file] }).then(
       () => {
         heldSharingRef.current = false;
+        setHeldSharing(false);
         // Rescued off the phone. Offer a Done exit even though the decode never
         // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
         setHeldShared(true);
@@ -1045,6 +1054,7 @@ export function Recorder({
       },
       (cause: unknown) => {
         heldSharingRef.current = false;
+        setHeldSharing(false);
         // Reuse the chapter-share classifier (George R1 G4): a user dismiss
         // (`AbortError`) and a spent-activation `NotAllowedError` (`retry`) are
         // not failures to alarm the translator with — the File still stands, a
@@ -1251,6 +1261,7 @@ export function Recorder({
           // There is no discard — see the header Back, disabled while this holds.
           <SaveDecodeFailedPanel
             retrying={heldRetrying}
+            sharing={heldSharing}
             retryError={heldRetryError}
             shareError={heldShareError}
             shared={heldShared}
@@ -1857,6 +1868,7 @@ function LoadErrorPanel({
  */
 function SaveDecodeFailedPanel({
   retrying,
+  sharing,
   retryError,
   shareError,
   shared,
@@ -1866,6 +1878,7 @@ function SaveDecodeFailedPanel({
   onDone,
 }: {
   retrying: boolean;
+  sharing: boolean;
   retryError: string | null;
   shareError: string | null;
   shared: boolean;
@@ -1901,6 +1914,10 @@ function SaveDecodeFailedPanel({
         size={30}
         autoFocus
         busy={retrying}
+        // Disabled while a share is in flight (George R3 G-2): the mirror of the
+        // Share-disabled-while-retrying guard below, so Try again cannot re-decode
+        // into the context the OS share sheet is interrupting.
+        disabled={sharing}
         onClick={() => {
           setArmed(false);
           onRetry();
