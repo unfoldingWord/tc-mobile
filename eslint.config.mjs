@@ -94,7 +94,18 @@ export default tseslint.config(
   // in afterAll. An interrupted run leaves it behind, and it contains
   // deliberately-invalid code — gitignored, so it must be lint-ignored too.
   {
-    ignores: ["dist", "dev-dist", ".wrangler", "public", ".lib-boundary-probe"],
+    ignores: [
+      "dist",
+      "dev-dist",
+      ".wrangler",
+      "public",
+      ".lib-boundary-probe",
+      // Capacitor native projects (#262) — generated/managed by the `cap` CLI.
+      // No first-party TS/TSX lives here; skip them so ESLint never trips on a
+      // generated file inside the iOS/Android shells.
+      "android",
+      "ios",
+    ],
   },
 
   {
