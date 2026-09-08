@@ -24,8 +24,26 @@ export const strings = {
       expanded ? "expanded" : "collapsed"
     }`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
-  openChapter: (n: number): string => `Open chapter ${n}`,
+  openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
+  /**
+   * The chapter's display heading: the facilitator's passage label when set
+   * (#264), otherwise the default "Chapter {number}". One place both the Books
+   * row and the Segments breadcrumb resolve the name, so they never diverge.
+   */
+  chapterHeading: (name: string | null, n: number): string =>
+    name ?? `Chapter ${n}`,
+
+  // ── Rename (#264) — book and chapter, from their ≡ menus ──────────────────
+  renameBook: "Rename book",
+  renameChapter: "Rename chapter",
+  // The inline text field's accessible name (the whole text layer of the input)
+  // and its placeholder.
+  bookNameField: "Book name",
+  chapterNameField: "Chapter name",
+  // The check control that commits the typed name.
+  saveName: "Save name",
+  renameCancel: "Cancel",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",

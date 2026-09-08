@@ -25,6 +25,8 @@ import {
   getSegmentsOfChapter,
   isFinished,
   listBooks,
+  renameBook,
+  renameChapter,
   resolveChapterClipIds,
   saveTake,
   setSegmentFinished,
@@ -542,6 +544,88 @@ describe("book tree", () => {
   it("rejects takes against an unknown segment", async () => {
     await expect(addTake("nope" as never, newClipId(), 100)).rejects.toThrow(
       /No such segment/
+    );
+  });
+});
+
+/**
+ * Renaming a book and a chapter in place (#264, the Nairobi manual workflow).
+ *
+ * A facilitator names a book for the passage ("Mark") and a chapter for the
+ * span ("Mark 6"). Each rename is a get-then-put in ONE transaction — the
+ * idempotency bar — and re-running it with the same value must not write.
+ */
+describe("rename book and chapter", () => {
+  it("gives a fresh chapter a null name (default 'Chapter N' until renamed)", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    // The field is present and null, not absent — so a reader never sees
+    // `undefined` and the display fallback keys on one shape.
+    expect(chapter.name).toBeNull();
+    expect((await getChapter(chapter.id))?.name).toBeNull();
+  });
+
+  it("renames a book in place and floats it up the shelf", async () => {
+    const book = await createBook("Book 001", null, 1000);
+    const renamed = await renameBook(book.id, "Mark", 5000);
+
+    expect(renamed.name).toBe("Mark");
+    // Rename is activity: updatedAt bumps so the book the facilitator just
+    // labelled is where listBooks (sorted by updatedAt) puts it — the top.
+    expect(renamed.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.name).toBe("Mark");
+  });
+
+  it("trims a book name and ignores an all-whitespace rename", async () => {
+    const book = await createBook("Book 001", null, 1000);
+    expect((await renameBook(book.id, "  Mark  ", 2000)).name).toBe("Mark");
+
+    // A book must always have a non-empty name: an empty/whitespace rename
+    // keeps the current one and does not bump recency (nothing changed).
+    const noop = await renameBook(book.id, "   ", 9000);
+    expect(noop.name).toBe("Mark");
+    expect(noop.updatedAt).toBe(2000);
+  });
+
+  it("renaming a book to its current name is an idempotent no-op", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const again = await renameBook(book.id, "Mark", 9000);
+    // No write: updatedAt is not bumped, so a re-run does not reshuffle the shelf.
+    expect(again.updatedAt).toBe(1000);
+  });
+
+  it("rejects renaming an unknown book", async () => {
+    await expect(renameBook("nope" as never, "Mark")).rejects.toThrow(
+      /No such book/
+    );
+  });
+
+  it("renames a chapter in place", async () => {
+    const book = await createBook("Mark");
+    const chapter = await addChapter(book.id);
+    const renamed = await renameChapter(chapter.id, "Mark 6");
+
+    expect(renamed.name).toBe("Mark 6");
+    expect((await getChapter(chapter.id))?.name).toBe("Mark 6");
+    // The ordinal is untouched — the name is a label over it, not a replacement.
+    expect(renamed.number).toBe(chapter.number);
+  });
+
+  it("trims a chapter name and reverts to the default when cleared", async () => {
+    const book = await createBook("Mark");
+    const chapter = await addChapter(book.id);
+    expect((await renameChapter(chapter.id, "  Mark 6  ")).name).toBe("Mark 6");
+
+    // Clearing the name (empty/whitespace) reverts to null, so the display
+    // falls back to "Chapter N" again rather than storing an empty label.
+    const cleared = await renameChapter(chapter.id, "   ");
+    expect(cleared.name).toBeNull();
+    expect((await getChapter(chapter.id))?.name).toBeNull();
+  });
+
+  it("rejects renaming an unknown chapter", async () => {
+    await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
+      /No such chapter/
     );
   });
 });

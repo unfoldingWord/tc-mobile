@@ -11,6 +11,7 @@ import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
+import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { strings } from "./strings";
@@ -56,6 +57,7 @@ export const SegmentsScreen = forwardRef<
   const {
     bookName,
     chapterNumber,
+    chapterName,
     rows,
     loading,
     loaded,
@@ -65,7 +67,11 @@ export const SegmentsScreen = forwardRef<
     addSegment,
     setFinished,
     eraseRow,
+    renameChapter,
   } = useChapterSegments(chapterId);
+  // The passage heading the breadcrumb shows: the facilitator's label, else
+  // "Chapter {number}" (#264).
+  const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
 
   useImperativeHandle(ref, () => ({ reload }), [reload]);
 
@@ -83,6 +89,9 @@ export const SegmentsScreen = forwardRef<
   // The chapter-level ≡ menu (B7) — holds Share chapter, and the home for future
   // chapter actions. Like the row menu, the list goes inert behind it.
   const [chapterMenuOpen, setChapterMenuOpen] = useState(false);
+  // Whether the chapter ≡ menu is showing its rename field (#264) or its action
+  // list. Resets to the action list whenever the menu closes.
+  const [renamingChapter, setRenamingChapter] = useState(false);
   const share = useChapterShare();
   // Tap 1 — encode the chapter and arm the send gesture. Free the audio floor
   // first: a clip may be sounding when the menu opens, and the encode has taken
@@ -111,8 +120,21 @@ export const SegmentsScreen = forwardRef<
   // File and clear state so a stale "ready" cannot linger behind a closed menu.
   const onCloseChapterMenu = useCallback(() => {
     setChapterMenuOpen(false);
+    setRenamingChapter(false);
     share.reset();
   }, [share]);
+  // Commit the typed chapter name (#264), then close the menu on success. The
+  // hook patches the breadcrumb in place. A failed write keeps the field up
+  // with the reason in the menu's own Notice — the screen Notice sits behind
+  // the scrim.
+  const onSaveChapterName = useCallback(
+    (name: string) => {
+      void renameChapter(name).then((ok) => {
+        if (ok) onCloseChapterMenu();
+      });
+    },
+    [renameChapter, onCloseChapterMenu]
+  );
   const erase = useEraseSegment();
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
@@ -257,7 +279,7 @@ export const SegmentsScreen = forwardRef<
           className="min-w-0 flex-1 truncate border-0 bg-transparent p-0 text-left"
           style={{ color: "var(--s-ink)" }}
         >
-          {bookName} &gt; {strings.chapterName(chapterNumber)}
+          {bookName} &gt; {chapterHeading}
         </button>
         {!showEmpty && (
           <Control
@@ -268,15 +290,17 @@ export const SegmentsScreen = forwardRef<
             onClick={() => void onAppend()}
           />
         )}
-        {!showEmpty && (
-          <Control
-            icon="menu"
-            label={strings.chapterMenuOpen}
-            variant="quiet"
-            disabled={loading || refreshing || loadFailed}
-            onClick={() => setChapterMenuOpen(true)}
-          />
-        )}
+        {/* Shown even on an empty chapter (unlike the append +, which would
+            duplicate the empty-state CTA): a freshly created chapter has no
+            segments yet, and renaming it for the passage is exactly the first
+            setup step (#264). Share inside handles the no-audio case itself. */}
+        <Control
+          icon="menu"
+          label={strings.chapterMenuOpen}
+          variant="quiet"
+          disabled={loading || refreshing || loadFailed}
+          onClick={() => setChapterMenuOpen(true)}
+        />
       </header>
 
       {/* One line, one place: a load failure or a playback failure (a
@@ -344,41 +368,68 @@ export const SegmentsScreen = forwardRef<
         onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
       >
-        {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once armed
-            it becomes a primary "Share now" that hands the File to the sheet in a
-            fresh activation (tap 2). autoFocus moves focus onto it as it appears,
-            since the Menu only lands focus on its open edge. */}
-        {share.status === "ready" ? (
-          <Control
-            icon="share"
-            label={strings.shareSend}
-            variant="primary"
-            autoFocus
-            onClick={onSendShare}
-          />
+        {renamingChapter ? (
+          <>
+            {/* Rename the chapter in place (#264). Seeded with the current
+                custom label, or empty when it is still the default "Chapter N"
+                — so the facilitator types the passage rather than editing a
+                placeholder. */}
+            <NameEdit
+              initialValue={chapterName ?? ""}
+              fieldLabel={strings.chapterNameField}
+              onSave={onSaveChapterName}
+              onCancel={() => setRenamingChapter(false)}
+            />
+            {/* A failed rename speaks here — the screen Notice is behind the
+                scrim — while the field stays up for another try. */}
+            {error && <Notice>{error}</Notice>}
+          </>
         ) : (
-          // Stays enabled while `preparing`: a re-tap is already a no-op via the
-          // hook's `preparingRef`, and disabling it would drop this control out of
-          // Menu's `FOCUSABLE` set (which excludes `[disabled]`), breaking the Tab
-          // trap and letting focus escape the portal (George R-B7).
-          <Control
-            icon="share"
-            label={strings.shareChapter}
-            variant="quiet"
-            onClick={onPrepareShare}
-          />
+          <>
+            <Control
+              icon="edit"
+              label={strings.renameChapter}
+              variant="quiet"
+              onClick={() => setRenamingChapter(true)}
+            />
+            {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once
+                armed it becomes a primary "Share now" that hands the File to the
+                sheet in a fresh activation (tap 2). autoFocus moves focus onto it
+                as it appears, since the Menu only lands focus on its open edge. */}
+            {share.status === "ready" ? (
+              <Control
+                icon="share"
+                label={strings.shareSend}
+                variant="primary"
+                autoFocus
+                onClick={onSendShare}
+              />
+            ) : (
+              // Stays enabled while `preparing`: a re-tap is already a no-op via
+              // the hook's `preparingRef`, and disabling it would drop this
+              // control out of Menu's `FOCUSABLE` set (which excludes
+              // `[disabled]`), breaking the Tab trap and letting focus escape the
+              // portal (George R-B7).
+              <Control
+                icon="share"
+                label={strings.shareChapter}
+                variant="quiet"
+                onClick={onPrepareShare}
+              />
+            )}
+            {/* Feedback rides inside the panel because the flow keeps the menu
+                open: the busy state while encoding, a gap warning once armed
+                (`info`, not `busy` — the chapter is ready, this is a heads-up
+                about what it lacks, #112), and any error code mapped above. */}
+            {share.status === "preparing" && (
+              <Notice tone="busy">{strings.sharePreparing}</Notice>
+            )}
+            {share.status === "ready" && share.missing > 0 && (
+              <Notice tone="info">{strings.shareMissing(share.missing)}</Notice>
+            )}
+            {shareErrorText && <Notice>{shareErrorText}</Notice>}
+          </>
         )}
-        {/* Feedback rides inside the panel because the flow keeps the menu open:
-            the busy state while encoding, a gap warning once armed (`info`, not
-            `busy` — the chapter is ready, this is a heads-up about what it lacks,
-            #112), and any error code mapped above. */}
-        {share.status === "preparing" && (
-          <Notice tone="busy">{strings.sharePreparing}</Notice>
-        )}
-        {share.status === "ready" && share.missing > 0 && (
-          <Notice tone="info">{strings.shareMissing(share.missing)}</Notice>
-        )}
-        {shareErrorText && <Notice>{shareErrorText}</Notice>}
       </Menu>
     </div>
   );

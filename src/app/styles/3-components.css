@@ -316,6 +316,36 @@
     overflow-y: auto;
   }
 
+  /* --- inline name edit (#264) ------------------------------------------- */
+  /* The rename field + its commit control, shown inside a ≡ menu. The input
+     sits on the raised surface with an edged outline so it reads as a fillable
+     field against the menu panel, and gains the focus ring every control uses. */
+  .name-edit {
+    display: flex;
+    align-items: center;
+    gap: var(--c-gap-parts);
+  }
+  .name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-md);
+    font-family: inherit;
+    font-size: var(--p-text-md);
+  }
+  .name-input::placeholder {
+    color: var(--s-ink-faint);
+  }
+  .name-input:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-color: var(--s-focus);
+  }
+
   /* --- the erase confirm dialog (B6) ------------------------------------- */
   /* A centred sheet, not the side drawer: it sits above the recorder sheet
      (z 60) and the menu (z 80) because it can be raised from either. */
