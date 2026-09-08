@@ -145,6 +145,36 @@ describe("v4 → v5 chapter-name backfill (append-only)", () => {
   });
 });
 
+describe("v3 → v5 chapter-name backfill over a real row", () => {
+  it("stamps a v3 nameless chapter with name: null on the way to v5, keeping its data", async () => {
+    // The existing v4→v5 test writes its chapter into a v4 database; the v3 path
+    // only ever ran over an EMPTY chapters store (G-P3.5). A device that recorded
+    // on the v3 pivot build holds nameless chapter rows and jumps v3→v5 in one
+    // open — the v4 clip backfill and the v5 chapter backfill both run on the way
+    // up. This pins that the chapter row survives and gains name: null.
+    const v3 = await openLegacyV3();
+    await v3.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: ["s1", "s2"],
+    });
+    v3.close();
+
+    const v5 = await getDb();
+    expect(v5.version).toBe(5);
+
+    const chapter = await v5.get("chapters", "ch1" as never);
+    expect(chapter).toEqual({
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: ["s1", "s2"],
+      name: null,
+    });
+  });
+});
+
 describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
   it("keeps every v3 row and stamps each clip as generation-0 PCM", async () => {
     const v3 = await openLegacyV3();

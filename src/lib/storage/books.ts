@@ -100,7 +100,9 @@ export async function createBook(
  * New Book taps both read `books.length === 0` from the same render and would
  * both persist "Book 001". IndexedDB serialises overlapping readwrite
  * transactions, so counting and putting in one transaction gives the second tap
- * the first's write — "Book 001", then "Book 002". (Rename is deferred, Q1.)
+ * the first's write — "Book 001", then "Book 002". The auto-name is a starting
+ * label; a facilitator renames the book for the passage through {@link renameBook}
+ * (#264).
  */
 export async function createNextBook(now: number = Date.now()): Promise<Book> {
   const db = await getDb();
@@ -226,14 +228,21 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * refused. Setting the name to what it already is writes nothing (idempotent
  * no-op). The chapter's `number` — its ordinal and export position — is never
  * touched; the name is a label over it.
+ *
+ * A real rename also bumps the parent book's `updatedAt` in the SAME transaction
+ * — labelling a chapter is activity on its book, and `listBooks` sorts by
+ * `updatedAt`, so the book floats up the shelf exactly as `addChapter`,
+ * `renameBook`, and recording do (G4). The no-op path skips the bump, so a
+ * re-run never reshuffles the shelf.
  */
 export async function renameChapter(
   id: ChapterId,
-  name: string
+  name: string,
+  now: number = Date.now()
 ): Promise<Chapter> {
   const db = await getDb();
-  const tx = db.transaction("chapters", "readwrite");
-  const chapter = await tx.store.get(id);
+  const tx = db.transaction(["chapters", "books"], "readwrite");
+  const chapter = await tx.objectStore("chapters").get(id);
   if (!chapter) throw new Error(`No such chapter: ${id}`);
 
   const trimmed = name.trim();
@@ -241,12 +250,18 @@ export async function renameChapter(
   // one), rather than storing an empty label.
   const nextName = trimmed === "" ? null : trimmed;
   if (nextName === (chapter.name ?? null)) {
-    await tx.done; // idempotent no-op.
+    await tx.done; // idempotent no-op: no write, no recency bump.
     return chapter;
   }
 
   const updated: Chapter = { ...chapter, name: nextName };
-  await tx.store.put(updated);
+  await tx.objectStore("chapters").put(updated);
+  // Float the parent book up the shelf, in this same transaction. A dangling
+  // parent is skipped rather than failing a rename that otherwise succeeded.
+  const book = await tx.objectStore("books").get(chapter.bookId);
+  if (book) {
+    await tx.objectStore("books").put({ ...book, updatedAt: now });
+  }
   await tx.done;
   return updated;
 }

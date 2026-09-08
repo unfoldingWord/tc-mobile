@@ -58,6 +58,13 @@ export function NameEdit({
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
+            // Stop the Escape here: the Menu binds a WINDOW-level keydown that
+            // closes the whole panel on Escape and does not honour
+            // `defaultPrevented`. Without this, one Escape fires both `onCancel`
+            // (return to the action list) AND the Menu's `onClose` — which drops
+            // an armed share via `share.reset()` (G1). Cancel must only step back
+            // to the action list, never dismiss the menu.
+            e.stopPropagation();
             onCancel();
           }
         }}

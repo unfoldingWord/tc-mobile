@@ -611,6 +611,31 @@ describe("rename book and chapter", () => {
     expect(renamed.number).toBe(chapter.number);
   });
 
+  it("floats the parent book up the shelf when a chapter is renamed", async () => {
+    // G4: labelling a chapter is activity on its book. listBooks sorts by
+    // updatedAt, so a renamed chapter must float its book, consistent with
+    // addChapter/renameBook/recording — not leave it where it was.
+    const book = await createBook("Mark", null, 1000);
+    const chapter = await addChapter(book.id);
+    await renameChapter(chapter.id, "Mark 6", 5000);
+    expect((await getBook(book.id))?.updatedAt).toBe(5000);
+  });
+
+  it("renaming a chapter to its current name is an idempotent no-op (no book bump)", async () => {
+    // The symmetric no-op the book path already covers (G-P3.4). Re-running a
+    // rename with the same value writes nothing AND must not bump the parent
+    // book's recency — otherwise a re-run reshuffles the shelf.
+    const book = await createBook("Mark", null, 1000);
+    const chapter = await addChapter(book.id);
+    await renameChapter(chapter.id, "Mark 6", 2000);
+    expect((await getBook(book.id))?.updatedAt).toBe(2000);
+
+    const again = await renameChapter(chapter.id, "Mark 6", 9000);
+    expect(again.name).toBe("Mark 6");
+    // No write on the no-op: the book's recency is unchanged, not bumped to 9000.
+    expect((await getBook(book.id))?.updatedAt).toBe(2000);
+  });
+
   it("trims a chapter name and reverts to the default when cleared", async () => {
     const book = await createBook("Mark");
     const chapter = await addChapter(book.id);

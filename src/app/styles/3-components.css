@@ -335,7 +335,13 @@
     border: 1px solid var(--s-edge);
     border-radius: var(--p-radius-md);
     font-family: inherit;
-    font-size: var(--p-text-md);
+    /* 16px, not --p-text-md (13px): iOS Safari auto-zooms a focused <input>
+       under 16px and ignores index.html's user-scalable=no for it, so a smaller
+       field zooms the sheet on focus and does not reset cleanly (G5). This is the
+       app's first text field, so the viewport policy never had to coexist with
+       one. No token is exactly 16px (--p-text-lg is 21px, too large for a field),
+       so the floor is set here on the input itself. */
+    font-size: 16px;
   }
   .name-input::placeholder {
     color: var(--s-ink-faint);

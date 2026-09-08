@@ -92,6 +92,12 @@ export const SegmentsScreen = forwardRef<
   // Whether the chapter ≡ menu is showing its rename field (#264) or its action
   // list. Resets to the action list whenever the menu closes.
   const [renamingChapter, setRenamingChapter] = useState(false);
+  // A monotonic token for the current chapter-menu session. It advances whenever
+  // the menu opens, closes, or arms a share — every transition after which a
+  // late-resolving rename must NOT run its close, or it would drop a prepared
+  // encode (F1). onSaveChapterName captures it and closes only if it still
+  // matches. A ref, read at resolution time, so it sees the live value.
+  const chapterMenuSession = useRef(0);
   const share = useChapterShare();
   // Tap 1 — encode the chapter and arm the send gesture. Free the audio floor
   // first: a clip may be sounding when the menu opens, and the encode has taken
@@ -100,6 +106,9 @@ export const SegmentsScreen = forwardRef<
   // what keeps Record, append, and erase out of an in-flight share.
   const onPrepareShare = useCallback(() => {
     audio.leave();
+    // Arming a share ends the current rename-close session: a rename resolving
+    // after this must not close the menu and drop the encode we are preparing.
+    chapterMenuSession.current += 1;
     void share.prepare(
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
@@ -119,18 +128,31 @@ export const SegmentsScreen = forwardRef<
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File and clear state so a stale "ready" cannot linger behind a closed menu.
   const onCloseChapterMenu = useCallback(() => {
+    chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
     share.reset();
   }, [share]);
+  // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
+  // from a prior open cannot close this one.
+  const openChapterMenu = useCallback(() => {
+    chapterMenuSession.current += 1;
+    setChapterMenuOpen(true);
+  }, []);
   // Commit the typed chapter name (#264), then close the menu on success. The
   // hook patches the breadcrumb in place. A failed write keeps the field up
   // with the reason in the menu's own Notice — the screen Notice sits behind
   // the scrim.
   const onSaveChapterName = useCallback(
     (name: string) => {
+      // Capture the session this rename belongs to. IDB can settle after the
+      // user has closed the menu or armed a share — both advance the token — so
+      // close ONLY if we are still the same session (F1). Without this, the stale
+      // resolution closes the now-current menu and runs share.reset(),
+      // discarding a prepared encode.
+      const session = chapterMenuSession.current;
       void renameChapter(name).then((ok) => {
-        if (ok) onCloseChapterMenu();
+        if (ok && chapterMenuSession.current === session) onCloseChapterMenu();
       });
     },
     [renameChapter, onCloseChapterMenu]
@@ -299,7 +321,7 @@ export const SegmentsScreen = forwardRef<
           label={strings.chapterMenuOpen}
           variant="quiet"
           disabled={loading || refreshing || loadFailed}
-          onClick={() => setChapterMenuOpen(true)}
+          onClick={openChapterMenu}
         />
       </header>
 
