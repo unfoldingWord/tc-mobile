@@ -219,17 +219,18 @@ export function App() {
       }
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
-      // The recovery screen is a modal, not a navigation level (George R2 G2). A
-      // Back under it must not mutate chapter state (which the modal hides) or
-      // walk toward the document unload that drops the in-memory held take — trap
-      // it. Retry/Discard on the panel are the only ways out.
-      if (recovering) {
-        suppressPop.current = true;
-        window.history.back();
-        return;
-      }
       const screen = screenFor(chapterId !== null, recorder !== null);
-      switch (popAction(direction, screen, committing.current)) {
+      switch (popAction(direction, screen, committing.current, recovering)) {
+        case "trap-recovery":
+          // The `SaveFailed` recovery screen is a modal, not a navigation level
+          // (George R2 G2), and the only in-memory copy of the held take lives in
+          // React state behind it. RE-ARM to absorb the gesture — the same push
+          // `rearm-during-commit` uses — never `history.back()`: the browser has
+          // already popped one entry toward root, and a second back() walks toward
+          // the document unload that drops the take (Frank R3 G-R3-1). Retry /
+          // Discard on the panel are the only ways out.
+          pushHistoryEntry();
+          return;
         case "rearm-during-commit":
           // A commit owns the stack. The browser just popped the protective
           // entry; re-push it so the recorder stays trapped, and ignore the

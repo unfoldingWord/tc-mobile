@@ -66,34 +66,58 @@ describe("navDirection", () => {
 
 describe("popAction", () => {
   it("routes a Back on the recorder to the commit path (#58)", () => {
-    expect(popAction("back", "recorder", false)).toBe("commit-close-recorder");
+    expect(popAction("back", "recorder", false, false)).toBe(
+      "commit-close-recorder"
+    );
   });
 
   it("routes a Back on Segments to Books, and on Books to exit", () => {
-    expect(popAction("back", "segments", false)).toBe("to-books");
-    expect(popAction("back", "books", false)).toBe("exit-app");
+    expect(popAction("back", "segments", false, false)).toBe("to-books");
+    expect(popAction("back", "books", false, false)).toBe("exit-app");
   });
 
   it("traps a Forward instead of misrouting it as a Back (F2)", () => {
     // The load-bearing F2 row: a Forward while on Segments must NOT run
     // `to-books` (which dropped the UI to Books). It is trapped.
-    expect(popAction("forward", "segments", false)).toBe("trap-forward");
-    expect(popAction("forward", "recorder", false)).toBe("trap-forward");
+    expect(popAction("forward", "segments", false, false)).toBe("trap-forward");
+    expect(popAction("forward", "recorder", false, false)).toBe("trap-forward");
   });
 
   it("ignores a same-index popstate", () => {
-    expect(popAction("same", "segments", false)).toBe("ignore");
+    expect(popAction("same", "segments", false, false)).toBe("ignore");
   });
 
   it("re-arms every gesture while a recorder commit is in flight (F1)", () => {
     // The load-bearing F1 row. First Back starts the commit…
-    expect(popAction("back", "recorder", false)).toBe("commit-close-recorder");
+    expect(popAction("back", "recorder", false, false)).toBe(
+      "commit-close-recorder"
+    );
     // …and a SECOND Back arriving before it settles must re-arm the protective
     // entry, never escape the recorder and drop the uncommitted take (#58).
     // `committing` wins over direction and screen, so nothing else can leave.
-    expect(popAction("back", "recorder", true)).toBe("rearm-during-commit");
-    expect(popAction("back", "segments", true)).toBe("rearm-during-commit");
-    expect(popAction("forward", "recorder", true)).toBe("rearm-during-commit");
+    expect(popAction("back", "recorder", true, false)).toBe(
+      "rearm-during-commit"
+    );
+    expect(popAction("back", "segments", true, false)).toBe(
+      "rearm-during-commit"
+    );
+    expect(popAction("forward", "recorder", true, false)).toBe(
+      "rearm-during-commit"
+    );
+  });
+
+  it("traps every gesture under the failed-save recovery modal (R3 G-R3-1)", () => {
+    // The load-bearing R3 row. A Back under the `SaveFailed` modal must NOT run
+    // `to-books`/`exit-app` — those walk one entry farther toward the document
+    // unload that destroys the heap and the ONLY in-memory copy of the held take.
+    // `recovering` outranks direction, screen, and even a commit in flight, so
+    // nothing under the modal can escape; the handler absorbs it by re-arming.
+    expect(popAction("back", "segments", false, true)).toBe("trap-recovery");
+    expect(popAction("back", "books", false, true)).toBe("trap-recovery");
+    expect(popAction("back", "recorder", false, true)).toBe("trap-recovery");
+    expect(popAction("forward", "segments", false, true)).toBe("trap-recovery");
+    expect(popAction("same", "segments", false, true)).toBe("trap-recovery");
+    expect(popAction("back", "recorder", true, true)).toBe("trap-recovery");
   });
 });
 
