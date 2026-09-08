@@ -33,6 +33,7 @@ import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { computePeaks } from "@/lib/audio/peaks";
 import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
+import { overlayBlocksClose } from "@/lib/nav/navigation";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -728,6 +729,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // recorder's history entry consumed — it re-arms the trap so the next Back
       // retries rather than escaping to Segments over an unsaved take.
       if (closing.current) return Promise.resolve(false);
+      // A system Back reaches close() through the imperative handle even while an
+      // overlay is up — the sheet's `inert` blocks the on-screen Back but not the
+      // ref call (George R2 G1). When the ≡ menu or the erase-confirm owns the
+      // screen, the Back must dismiss IT and stay, never commit over an in-flight
+      // erase (the R-B6 last-writer race) or a menu selection. Resolve false so
+      // App keeps the sheet's protective history entry and the sheet itself.
+      if (overlayBlocksClose(menuOpen, confirmOpen, erase.erasing)) {
+        setMenuOpen(false);
+        setConfirmOpen(false);
+        return Promise.resolve(false);
+      }
       closing.current = true;
       setIsClosing(true);
       // Abort any in-flight preview decode (#101): a decode resolving during the
@@ -914,6 +926,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setFinished,
       abortPreview,
       cancelPreview,
+      menuOpen,
+      confirmOpen,
+      erase.erasing,
     ]);
 
     // The only handle App holds on the sheet: a system Back routes here (#168) and

@@ -53,6 +53,12 @@ export function App() {
   // Ignore exactly one popstate: the one our own `history.back()` fires to
   // consume an entry (a programmatic close, or the forward-trap re-assertion).
   const suppressPop = useRef(false);
+  // An in-app Back is in flight (its `history.back()` has not yet come back as a
+  // popstate). A synchronous latch so a rapid double-tap on the on-screen Back
+  // issues only ONE traversal — the tap-level guard `onClick={close}` used to get
+  // from `closing.current` before Back was rerouted through history (George R2
+  // G3). Cleared as each popstate lands.
+  const backRequested = useRef(false);
   // A monotonic id stamped on every entry, so the handler can tell Back from
   // Forward by comparing the destination index to where we were (F2). Only ever
   // increments; the live stack is strictly increasing in it (see `navDirection`).
@@ -82,6 +88,12 @@ export function App() {
     // That is what gives the on-screen recorder Back the same commit-window
     // protection as the system gesture, and removes the state-transition effects
     // whose async re-arm desynced depth (Frank R1 F1).
+    //
+    // Latch so a same-frame double-tap issues one traversal, not two — the second
+    // `history.back()` would otherwise be coalesced into a single 2→0 jump that
+    // mis-shapes the stack (George R2 G3). The latch clears as the popstate lands.
+    if (backRequested.current) return;
+    backRequested.current = true;
     window.history.back();
   }, []);
   // Which segment a held take belongs to, for the recovery screen — captured
@@ -178,6 +190,13 @@ export function App() {
     [leave]
   );
 
+  // A held take whose save has failed takes over the screen with retry/discard
+  // (the `SaveFailed` early return below). Computed here so the popstate handler
+  // can see it: that screen is a modal, NOT a navigation level, so Back must not
+  // route `to-books` under it (George R2 G2).
+  const recovery = pendingTake && pendingTake.attempts > 0 ? pendingTake : null;
+  const recovering = recovery !== null;
+
   // Route the system Back gesture (#168), and its Forward sibling. Every screen
   // pushed one indexed history entry, so a gesture arrives as a `popstate` here
   // instead of exiting the app. The whole decision is the pure `popAction`, so
@@ -186,6 +205,9 @@ export function App() {
   // that commit re-arms rather than escaping (Frank R1 F1).
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
+      // A Back gesture landed, so the in-flight in-app Back (if any) is done —
+      // release the double-tap latch (G3).
+      backRequested.current = false;
       const state = event.state as { index?: number } | null;
       const toIndex = state?.index ?? 0;
       // Our own `history.back()` (a programmatic close, or the forward trap)
@@ -197,6 +219,15 @@ export function App() {
       }
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
+      // The recovery screen is a modal, not a navigation level (George R2 G2). A
+      // Back under it must not mutate chapter state (which the modal hides) or
+      // walk toward the document unload that drops the in-memory held take — trap
+      // it. Retry/Discard on the panel are the only ways out.
+      if (recovering) {
+        suppressPop.current = true;
+        window.history.back();
+        return;
+      }
       const screen = screenFor(chapterId !== null, recorder !== null);
       switch (popAction(direction, screen, committing.current)) {
         case "rearm-during-commit":
@@ -223,13 +254,24 @@ export function App() {
           // protective entry, on decline leave it (the sheet stays open).
           pushHistoryEntry();
           committing.current = true;
-          void handle.requestClose().then((exited) => {
-            committing.current = false;
-            if (exited) {
-              suppressPop.current = true;
-              window.history.back();
-            }
-          });
+          void handle
+            .requestClose()
+            .then((exited) => {
+              if (exited) {
+                suppressPop.current = true;
+                window.history.back();
+              }
+            })
+            .catch((cause: unknown) => {
+              // `close()` never rejects by contract (its own `.catch` still calls
+              // `onExit`), but the synchronous prelude or an `onExit` throw could —
+              // and if `committing` never cleared, EVERY later Back would re-arm and
+              // the recorder would be trapped forever (George R2 G4). Surface it.
+              console.error("Recorder close rejected", cause);
+            })
+            .finally(() => {
+              committing.current = false;
+            });
           return;
         }
         case "to-books":
@@ -243,14 +285,11 @@ export function App() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [chapterId, recorder, backToBooks, pushHistoryEntry]);
+  }, [chapterId, recorder, recovering, backToBooks, pushHistoryEntry]);
 
-  // Ahead of everything: a held take whose save has failed takes over the
-  // screen with retry/discard, and nothing behind it may keep the microphone
-  // or a sound alive under a modal with no control to reach them.
-  const recovery = pendingTake && pendingTake.attempts > 0 ? pendingTake : null;
-  const recovering = recovery !== null;
-
+  // Ahead of everything: a held take whose save has failed keeps the microphone
+  // and any sound off under the modal with no control to reach them. (`recovery`
+  // and `recovering` are computed above, so the popstate handler can see them.)
   useEffect(() => {
     if (recovering) leave();
   }, [recovering, leave]);
