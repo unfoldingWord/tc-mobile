@@ -94,8 +94,11 @@ export default tseslint.config(
   // in afterAll. An interrupted run leaves it behind, and it contains
   // deliberately-invalid code — gitignored, so it must be lint-ignored too.
   {
+    // `dist-e2e` is build output too (`npm run build:e2e`, #251) and was
+    // missing here while `dist` was listed — round-1 George G5.
     ignores: [
       "dist",
+      "dist-e2e",
       "dev-dist",
       ".wrangler",
       "public",
