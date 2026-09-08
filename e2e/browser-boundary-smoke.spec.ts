@@ -1,22 +1,21 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { expect, test } from "@playwright/test";
 
 /**
- * Headless-Chromium smoke for the browser-only paths (#251).
+ * Headless-Chromium smoke for the browser-only paths (#251), assertions 2-4.
  *
  * Every path here is exercised in Node today only through a fake: the worker
  * round-trip through `FakeWorker` (`tests/mp3-codec.test.ts`,
  * `tests/encoder-lane.test.ts`), `decodeAudioData` never at all (`lib/`
- * cannot see it by construction — AGENTS.md), the service worker's atomic
- * precache install asserted only by grepping `vite.config.ts`'s source
- * (`tests/precache-manifest.test.ts`), and IndexedDB's `blocked`/
+ * cannot see it by construction — AGENTS.md), and IndexedDB's `blocked`/
  * `versionchange` dance against `fake-indexeddb`, which is its own
  * implementation of the spec, not the browser's. A fake that agrees with the
  * reasoning proves the reasoning, not the browser — this file is the cheapest
  * evidence between that and someone's phone.
+ *
+ * Assertion 1 (the service worker's precache install) is NOT here: it needs no
+ * harness, so it runs against the real `dist/` build in
+ * `service-worker-precache.spec.ts`. This file needs `window.__e2e`, which
+ * only `dist-e2e/` carries.
  *
  * Deliberately NOT a UI test suite: no screenshots, and no clicking through
  * Books → Segments → Recorder. `src/app/e2e-harness.ts` (shipped only by
@@ -37,63 +36,24 @@ import { expect, test } from "@playwright/test";
  * this spec to also assert the heartbeat is a small, separate follow-up.
  */
 
-const DIST_E2E = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "dist-e2e"
-);
-
-/**
- * The number of DISTINCT cache entries the built `sw.js` will actually put
- * into Cache Storage — not the raw manifest array length, and not hardcoded,
- * so this stays correct as the app's own asset count changes.
- *
- * `sw.js` is minified to one line; workbox's own export name
- * (`precacheAndRoute`) survives minification because it is a property key on
- * the imported `workbox-*.js` module, not a local identifier renamed. Entries
- * are extracted with a regex rather than parsed as JSON/eval'd, since they use
- * unquoted keys (`{url:"...",revision:...}`) — never a security boundary
- * here, since the file is this build's own output.
- *
- * MUST dedupe by `url + revision`, not count raw array entries: this build's
- * manifest lists each of the three PWA icons TWICE — once because
- * `globPatterns` matches the file directly under `public/icons`, once because
- * `vite-plugin-pwa` also lists every `manifest.icons` entry — with the SAME
- * url and the SAME content-hash revision both times (observed directly
- * against `dist-e2e/sw.js`: 14 raw entries, 3 exact `{url,revision}`
- * duplicates). Workbox's precache controller computes ONE cache key per
- * `{url,revision}` pair (revision-tagged as `?__WB_REVISION__=<hash>` when the
- * url itself carries no content hash), so `cache.put()` for the second
- * duplicate silently overwrites the first — real Chromium's `caches` ends up
- * with 11 entries for a 14-entry manifest, not 14. A first draft of this
- * assertion asserted raw length and failed against a genuine headless-Chromium
- * run for exactly this reason — precisely the class of gap this issue exists
- * to catch, so the assertion is deliberately shaped around it rather than
- * loosened to whatever the browser happened to return.
- */
-function distinctPrecacheEntryCount(): number {
-  const sw = readFileSync(path.join(DIST_E2E, "sw.js"), "utf8");
-  const match = sw.match(/precacheAndRoute\((\[[^\]]*\])/);
-  if (!match?.[1]) {
-    throw new Error("could not find a precacheAndRoute(...) manifest in sw.js");
-  }
-  const entries = [
-    ...match[1].matchAll(/\{url:"([^"]*)",revision:(null|"[^"]*")\}/g),
-  ];
-  if (entries.length === 0) {
-    throw new Error("matched precacheAndRoute(...) but parsed zero entries");
-  }
-  const keys = new Set(entries.map((m) => `${m[1]}|${m[2]}`));
-  return keys.size;
-}
+/** Samples per MPEG-1 Layer III granule (`lib/audio/mp3-align.ts`). */
+const MP3_GRANULE = 1152;
+/** A standard decoder's own delay, which some decoders trim and some do not. */
+const MP3_DECODER_DELAY = 529;
 
 declare global {
   interface Window {
     __e2e?: {
       encodeAndDecode: (frameCount: number) => Promise<{
         mp3Length: number;
-        decodedFrameCount: number;
+        rawDecodedFrameCount: number;
+        emittedFrameCount: number;
+        fittedFrameCount: number;
         expectedFrameCount: number;
+        rmsWindow: number;
+        fittedHeadRms: number;
+        fittedTailRms: number;
+        sourceRms: number;
       }>;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
@@ -107,29 +67,8 @@ async function waitForHarness(page: import("@playwright/test").Page) {
   await page.waitForFunction(() => typeof window.__e2e !== "undefined");
 }
 
-test.describe("service worker install + precache (#251 assertion 1)", () => {
-  test("installs and precaches exactly this build's manifest", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    await page.evaluate(() => navigator.serviceWorker.ready);
-
-    const cachedEntryCount = await page.evaluate(async () => {
-      const names = await caches.keys();
-      let total = 0;
-      for (const name of names) {
-        const cache = await caches.open(name);
-        total += (await cache.keys()).length;
-      }
-      return total;
-    });
-
-    expect(cachedEntryCount).toBe(distinctPrecacheEntryCount());
-  });
-});
-
 test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2-3)", () => {
-  test("a real worker encode returns an MP3, and a real decodeAudioData recovers the frame count", async ({
+  test("a real worker encode returns an MP3, and a real decodeAudioData lands on the recording", async ({
     page,
   }) => {
     await page.goto("/");
@@ -151,12 +90,50 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
 
     // Assertion 3: decodeAudioData is a real browser API call here, not
     // `lib/`'s injected fake — `fitMp3Decode` (`lib/audio/mp3-align.ts`) must
-    // correctly identify which of the three known decoder behaviours this
-    // browser's `decodeAudioData` used and align to it. `fitToFrames` always
-    // returns exactly the requested length, so equality (not a tolerance
-    // window) is the meaningful assertion: it can only hold if the alignment
-    // branch matched what Chromium's decoder actually did.
-    expect(result.decodedFrameCount).toBe(result.expectedFrameCount);
+    // identify which of the three known decoder behaviours this browser's
+    // `decodeAudioData` used and align to it.
+    //
+    // What is NOT asserted, and why: the FITTED length. `fitMp3Decode` ends in
+    // `fitToFrames`, which returns exactly `frames` in all three of its
+    // branches (`lib/audio/edit.ts`) — so `fitted.length === frameCount` holds
+    // whatever head skip the alignment picked, including a wrong one. Round 1
+    // asserted exactly that and proved nothing (round-1 Frank C1). It is kept
+    // below only as a cheap invariant on `fitToFrames`, not as evidence of
+    // alignment.
+    expect(result.fittedFrameCount).toBe(result.expectedFrameCount);
+
+    // The RAW decode length is what actually says what the browser did. It
+    // must be one of the three lengths `fitMp3Decode` knows how to align:
+    // every granule emitted (trimmed nothing), that minus the decoder's own
+    // 529 (trimmed its own delay), or exactly the fed-in count (trimmed both,
+    // honouring a tag lamejs does not write). Any other length means this
+    // browser is a decoder the module has never met and is being handled by
+    // its clamped best-effort fallback — which is precisely the thing a Node
+    // fake cannot tell us, so it is asserted rather than assumed.
+    expect(result.emittedFrameCount).toBeGreaterThanOrEqual(frameCount);
+    expect([
+      result.emittedFrameCount,
+      result.emittedFrameCount - MP3_DECODER_DELAY,
+      frameCount,
+    ]).toContain(result.rawDecodedFrameCount);
+    // The emitted length is whole granules of a real stream's frame headers.
+    expect(result.emittedFrameCount % MP3_GRANULE).toBe(0);
+
+    // And the alignment must land on the RECORDING, not on the priming or the
+    // padding. The harness feeds a 440 Hz tone at amplitude 8000, so every
+    // window of the recording has an RMS near 8000/√2; the decoder's ~1105
+    // samples of priming, and the encoder's tail padding, are silence. A head
+    // skip that is too small leaves priming at the front, one that is too
+    // large runs off the end into padding — either way one of these two windows
+    // reads ~0 while a fitted-length check stays green. Bounds are loose (half
+    // to 1.5x the source's own RMS over the same window) because a 64 kbps
+    // lossy round-trip is not sample-exact; the failure being caught is
+    // silence, which is an order of magnitude away, not a few percent.
+    expect(result.sourceRms).toBeGreaterThan(1_000);
+    expect(result.fittedHeadRms).toBeGreaterThan(result.sourceRms * 0.5);
+    expect(result.fittedHeadRms).toBeLessThan(result.sourceRms * 1.5);
+    expect(result.fittedTailRms).toBeGreaterThan(result.sourceRms * 0.5);
+    expect(result.fittedTailRms).toBeLessThan(result.sourceRms * 1.5);
   });
 });
 
@@ -211,7 +188,8 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
       // an inference from `fake-indexeddb`. Once #236/#240 land and `db.ts`
       // closes on `versionchange`, this assertion is expected to flip to
       // `"success"` — updating it then is that change's job, not a
-      // regression in this one.
+      // regression in this one. `.github/workflows/ci.yml`'s paths gate
+      // covers `src/lib/storage/` so that PR cannot land without running this.
       expect(outcome).toBe("blocked");
 
       const versionChangeFired = await pageA.evaluate(

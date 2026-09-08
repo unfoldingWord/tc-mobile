@@ -18,7 +18,7 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "npm run build:e2e && playwright test",
+    "test:e2e": "npm run build && npm run build:e2e && playwright test",
     "verify": "npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run typecheck:lib && npm run test && npm run build",
     "deploy": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
