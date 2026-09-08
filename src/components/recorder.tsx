@@ -1505,19 +1505,21 @@ function PermissionPanel({
   onBack: () => void;
 }) {
   return (
-    // `role="alert"` so AT announces the title when the panel mounts and — the
-    // point here — when the async permission refine sharpens the message after
-    // Retry has autofocused, which a screen-reader user parked on Retry would
-    // otherwise never hear (#203 is a non-reader feature; George R1 P3). Mirrors
-    // `LoadErrorPanel`, whose title is likewise announced without being focused.
-    <div
-      role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
-    >
+    <div className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center">
       <span style={{ color: "var(--s-live)" }}>
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
+      {/* `role="alert"` on the TITLE alone, not the wrapper (George R3 P3). The
+        wrapper also holds the autofocused Retry/Back, so an alert there
+        re-announced the BUTTON LABELS on the async permission refine and — with
+        the focused control a descendant of the live region, the shape ARIA
+        warns against — risked the sharpened message being swallowed instead: the
+        very announcement #203's R1-P3 set out to deliver. Scoping the live region
+        to the title text keeps the focused controls outside it, so when the
+        refine updates `message` in place the refined line announces cleanly.
+        (`LoadErrorPanel`'s title is static, so its mount-only alert is fine as
+        a wrapper — this split is not needed there.) */}
+      <p role="alert" className="t-title" style={{ color: "var(--s-ink)" }}>
         {message ?? strings.micNeededTitle}
       </p>
       <Control
