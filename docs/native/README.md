@@ -139,6 +139,13 @@ confirm the prompt appears and audio captures on-device (part of the
 audio-revalidation spike, §8). Do not remove the permission (#262 / #86 C1–C2,
 PR #265).
 
+**Backups are off:** the manifest sets `android:allowBackup="false"`
+(`AndroidManifest.xml`). Recordings and project metadata live in
+WebView/IndexedDB and are the system of record; Android auto-backup would make
+them eligible to leave the device (cloud backup / device transfer). Recordings
+stay on-device only — do not re-enable backup without a backup-rule exclusion
+for the audio store (PR #265).
+
 1. **Create a signing keystore once** (keep it and its passwords safe — losing
    it means a new app identity):
    ```bash
