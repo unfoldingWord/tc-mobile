@@ -69,6 +69,14 @@ export function navDirection(from: number, to: number): NavDirection {
  * What the `popstate` handler does — the whole decision, pure so the two cases
  * Frank's R1 review turned on are pinned by a Node test rather than a browser:
  *
+ * - **A failed-save recovery modal is up (`recovering`)** → `trap-recovery`,
+ *   whatever the direction. The `SaveFailed` screen is a modal, NOT a navigation
+ *   level (George R2 G2), and the only in-memory copy of the held take lives in
+ *   React state behind it. So every gesture under it — Back included — must be
+ *   ABSORBED by re-arming the protective entry (`pushHistoryEntry`), never walked
+ *   farther back: a plain Back walks toward the document unload that destroys the
+ *   heap and the take with it (Frank R3 G-R3-1). Checked FIRST — the modal
+ *   outranks the screen beneath and any direction.
  * - **A commit is in flight (`committing`)** → `rearm-during-commit`,
  *   whatever the direction. This is the F1 data-loss guard: while the recorder's
  *   Back is running stop → decode → save (seconds on a long take), a second Back
@@ -78,15 +86,24 @@ export function navDirection(from: number, to: number): NavDirection {
  * - **Forward** → `trap-forward`: cancel it (the handler re-asserts history),
  *   the app stays put. Never route a Forward as a Back (F2).
  * - **Back** → the `backEffectFor` mapping for the current screen.
+ *
+ * `trap-recovery` and `rearm-during-commit` both re-arm by pushing a fresh entry;
+ * they are named apart so the handler's intent — and each test row — stays legible.
  */
 export type PopAction =
-  "rearm-during-commit" | "trap-forward" | "ignore" | BackEffect;
+  | "trap-recovery"
+  | "rearm-during-commit"
+  | "trap-forward"
+  | "ignore"
+  | BackEffect;
 
 export function popAction(
   direction: NavDirection,
   screen: Screen,
-  committing: boolean
+  committing: boolean,
+  recovering: boolean
 ): PopAction {
+  if (recovering) return "trap-recovery";
   if (committing) return "rearm-during-commit";
   if (direction === "forward") return "trap-forward";
   if (direction === "same") return "ignore";
