@@ -10,9 +10,16 @@ import pkg from "./package.json" with { type: "json" };
 // git works in the Cloudflare Workers build (it clones the repo) and in local
 // dev; the env var is a belt-and-braces fallback, then a literal so a build
 // never fails for want of a SHA.
+//
+// `--short=7` pins the length: `git rev-parse --short HEAD` alone varies with
+// a repo's `core.abbrev`, and `scripts/check-deploy.mjs`'s consumer-side
+// `currentSha()` does strict equality against this value — two correct call
+// sites producing different-length short SHAs for the same commit was a false
+// FAIL waiting to happen (round-1 George G3). Keep this in sync with
+// `SHA_LENGTH` there.
 const buildSha = (() => {
   try {
-    return execSync("git rev-parse --short HEAD", {
+    return execSync("git rev-parse --short=7 HEAD", {
       stdio: ["ignore", "pipe", "ignore"],
     })
       .toString()
