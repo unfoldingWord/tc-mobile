@@ -204,10 +204,12 @@ PR is the production gate.
   **manual** native lanes (`ios-testflight.yml`, `android-apk.yml`), which are
   `workflow_dispatch`-only and never fire on push/PR.
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
-  `npm run check:deploy` (or `node scripts/check-deploy.mjs <origin>`) does
-  this by fetching `/version.json` from the deployed origin — see AGENTS.md,
-  "Confirming a deploy and rolling one back", for the check and the rollback
-  path.
+  `npm run check:deploy` checks the `develop -> staging` promotion (staging is
+  the default origin); `npm run check:deploy:prod` checks `staging -> main`
+  and requires its production origin explicitly — the two are not
+  interchangeable. Both fetch `/version.json` from the deployed origin — see
+  AGENTS.md, "Confirming a deploy and rolling one back", for the full command
+  forms, the production URL, and the rollback path.
 
 ## Working with an AI coding agent
 
