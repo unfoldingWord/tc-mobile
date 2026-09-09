@@ -10,6 +10,10 @@ import {
   type MicPermissionState,
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
+import {
+  classifyStopDecode,
+  type StopDecodeError,
+} from "@/lib/audio/stop-decode";
 
 import {
   createLevelTap,
@@ -19,6 +23,19 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+
+/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
+ *  here beside the recorder's other error copy; the classifier stays UI-free. */
+function stopDecodeMessage(error: StopDecodeError): string | null {
+  switch (error) {
+    case "silence":
+      return "No sound was recorded. Try again.";
+    case "undecodable":
+      return "Recording could not be decoded on this device.";
+    case null:
+      return null;
+  }
+}
 
 /**
  * The permission state for the microphone, or `"unknown"` where the platform
@@ -88,6 +105,27 @@ export interface StopResult {
    * a superseded stop, whose UI belongs to a newer recording.
    */
   readonly error: string | null;
+  /**
+   * The captured container bytes, kept whenever a decode FAILED — on a current
+   * stop AND on a superseded one (George R1 G2). A failed decode is the one case
+   * where the take exists nowhere else, so dropping the blob would lose it for
+   * good (#165); and a `leave()`/pagehide bumping the generation mid-decode is
+   * the very #106 interruption most likely to fail it, so the bytes are kept even
+   * when the stop is superseded — only the shared `error` is withheld then, since
+   * a newer owner speaks for the screen. `close()` DEPENDS on this: it holds the
+   * take whenever `blob` is set, so re-narrowing it to current-only would re-drop
+   * the interruption case. Null on success (the PCM is the take) and on an empty
+   * or silent capture (no audio worth keeping — a retry of the same bytes cannot
+   * help). A caller holding this can re-decode it (`retryDecode`) or hand the raw
+   * bytes to the share sheet so the recording leaves the phone in some form.
+   */
+  readonly blob: Blob | null;
+}
+
+/** The outcome of re-decoding a held take's container bytes (#165). */
+export interface RetryDecodeResult {
+  readonly samples: Int16Array | null;
+  readonly error: string | null;
 }
 
 /**
@@ -137,6 +175,17 @@ export interface UseRecorder {
    * state — see `StopResult`.
    */
   stop: () => Promise<StopResult>;
+  /**
+   * Re-decode a held take's container bytes (`StopResult.blob`) after a decode
+   * failed on Stop (#165). Resumes the shared `AudioContext` first — the caller
+   * must invoke this synchronously in a tap so iOS honours the resume of a
+   * context left "interrupted" (#106), the likeliest cause of the original
+   * failure — then decodes. Never throws: a still-undecodable blob comes back as
+   * `{ samples: null, error }`, a silent one as `{ samples: null }` with the
+   * "no sound" reason, and success as `{ samples, error: null }`. The blob is the
+   * caller's to keep or share out; this does not consume it.
+   */
+  retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
   /**
    * Decode the take captured SO FAR to canonical PCM for an in-sheet preview,
    * WITHOUT ending the take (#101). Meant for a paused take — the caller enables
@@ -577,7 +626,7 @@ export function useRecorder(): UseRecorder {
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
-    if (!recorder) return { samples: null, error: null };
+    if (!recorder) return { samples: null, error: null, blob: null };
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -685,38 +734,74 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         error: current ? "No sound was recorded. Try again." : null,
+        blob: null, // nothing was captured — no bytes to keep
       };
     }
 
+    // The whole outcome — emit samples? keep the bytes? which message? — is the
+    // pure `classifyStopDecode`, so the load-bearing #106/#165 contract (a decode
+    // THROW keeps the bytes even when superseded; a zero-sample decode keeps
+    // nothing) is pinned by a Node test rather than living only here (George R3
+    // G-3). `current` is re-read after each await, so it reflects a `leave()`/
+    // pagehide that landed during the decode.
     try {
       const samples = await decodeToCanonical(blob);
-      const decodedCurrent = generation === generationRef.current;
-      // Returned even when superseded: these are confirmed samples, and the
-      // caller decides what to do with them. Only the shared UI state is
-      // withheld, because a newer recording owns it now.
-      if (decodedCurrent) setState("idle");
-      // A successful decode to ZERO samples is "no sound" too — same class as an
-      // empty blob, not a usable take. Classified here, at the source, so a
-      // caller keying on `samples.length` never gets a non-null empty buffer
-      // paired with a null error (which showed no message at all — F7).
-      if (samples.length === 0) {
-        return {
-          samples: null,
-          error: decodedCurrent ? "No sound was recorded. Try again." : null,
-        };
-      }
-      return { samples, error: null };
+      const current2 = generation === generationRef.current;
+      const verdict = classifyStopDecode(
+        { decoded: true, sampleCount: samples.length },
+        current2
+      );
+      if (current2) setState("idle");
+      return {
+        samples: verdict.emitSamples ? samples : null,
+        error: stopDecodeMessage(verdict.error),
+        blob: verdict.keepBlob ? blob : null,
+      };
     } catch {
-      const stillCurrent = generation === generationRef.current;
-      if (stillCurrent) setState("idle");
+      const current2 = generation === generationRef.current;
+      const verdict = classifyStopDecode({ decoded: false }, current2);
+      if (current2) setState("idle");
       return {
         samples: null,
-        error: stillCurrent
-          ? "Recording could not be decoded on this device."
-          : null,
+        error: stopDecodeMessage(verdict.error),
+        // Kept even when superseded — see `classifyStopDecode` and #165.
+        blob: verdict.keepBlob ? blob : null,
       };
     }
   }, [abandonStream, clearTick]);
+
+  const retryDecode = useCallback(
+    async (blob: Blob): Promise<RetryDecodeResult> => {
+      // Resume synchronously in the gesture that called this, BEFORE the decode's
+      // await: a stop that failed because the shared context was left
+      // "interrupted" (a call, Siri, a route change — #106) only un-interrupts on
+      // a user tap, and iOS spends that activation on the first synchronous Web
+      // Audio touch. Fire-and-forget like the record/preview paths — the decode
+      // below runs on the same context the resume is waking.
+      void resumeAudioContext().catch((cause: unknown) => {
+        console.error("Could not resume the audio context", cause);
+      });
+      try {
+        const samples = await decodeToCanonical(blob);
+        // A decode to zero samples yields no usable take. On the RETRY path this
+        // is NOT proven silence the way it is for `stop()`: the bytes are held
+        // only because the FIRST decode THREW, so a later zero-sample decode is
+        // ambiguous, and dropping the held take on it would lose the only copy
+        // (George R3 G-1). So this is just another retry failure — the caller
+        // keeps the bytes and surfaces the message; it never drops them.
+        if (samples.length === 0) {
+          return { samples: null, error: "No sound was recorded. Try again." };
+        }
+        return { samples, error: null };
+      } catch {
+        return {
+          samples: null,
+          error: "Recording could not be decoded on this device.",
+        };
+      }
+    },
+    []
+  );
 
   const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
     const recorder = recorderRef.current;
@@ -821,6 +906,7 @@ export function useRecorder(): UseRecorder {
     pause,
     resume,
     stop,
+    retryDecode,
     previewCapture,
     cancel,
     readLevel,
