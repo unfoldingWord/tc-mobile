@@ -10,6 +10,7 @@ import {
 import {
   useRecorder,
   type RecorderState,
+  type RetryDecodeResult,
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -111,6 +112,13 @@ export interface UseAudioSession {
    */
   stopRecording: () => Promise<StopResult>;
   /**
+   * Re-decode a held take's container bytes after a decode failed on Stop
+   * (#165). Resumes the context first; call it synchronously in a tap. See
+   * `UseRecorder.retryDecode`. Passed straight through — it touches neither the
+   * floor nor the session, only the shared decode context.
+   */
+  retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
+  /**
    * Decode the paused take's captured audio to canonical PCM for an in-sheet
    * preview (#101), or null when it cannot be produced on this device. Pass the
    * result through `mergeTake`/`playBuffer(..., { preemptPausedMic: true })` to
@@ -120,11 +128,32 @@ export interface UseAudioSession {
   /** End every sound this screen owns, synchronously. Call on every navigation. */
   leave: () => void;
   /**
+   * Resume the shared audio context inside the gesture that opens the recorder
+   * sheet (#184), before the async segment load one commit later. Fire-and-
+   * forget, like the retry and playback resume paths; call it synchronously in
+   * the open tap so an iOS `"interrupted"` context is running by the time the
+   * first `decodeAudioData` runs, sparing the common transient case a failed
+   * open and an extra "Try again" tap. A no-op when the context is already
+   * running.
+   */
+  primeAudioContext: () => void;
+  /**
    * The live capture level for the VU meter, in the raw amplitude domain. A PULL
    * read (D-LEVEL-PULL): the meter polls it on its own frame clock, so nothing
    * above this layer re-renders per frame. 0 whenever nothing is capturing.
    */
   readLevel: () => number;
+  /**
+   * Whether `readLevel` can be trusted this frame (#76). A PULL like `readLevel`:
+   * `true` when NOT in a live take (the meter rests empty via `active`, so "not
+   * recording" reads as "not broken"); `false` ONLY while recording and either
+   * the tap is missing or the shared context is not `"running"` (iOS
+   * `"suspended"`/`"interrupted"` after backgrounding or an interruption), where
+   * the analyser reads zeros a translator would misread as a dead mic. The VU
+   * meter hatches "unavailable" on a false. Distinct from `meterFailed`, the
+   * OPEN-time "tap never wired" state.
+   */
+  readMeterAvailable: () => boolean;
   /**
    * The live-waveform scope for the current take (#120), or `null` when nothing
    * is capturing OR the tap could not be wired (a `meterFailed` take records but
@@ -169,6 +198,7 @@ export function useAudioSession(): UseAudioSession {
     pause: pauseCapture,
     resume: resumeCapture,
     stop: endRecording,
+    retryDecode,
     previewCapture,
     cancel: cancelRecording,
     state: recorderState,
@@ -176,6 +206,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
@@ -590,7 +621,11 @@ export function useAudioSession(): UseAudioSession {
       // Notice), rather than `playbackError`, which would bleed onto the
       // Segments screen after the sheet is gone.
       console.error("Stopping the recorder failed", cause);
-      return { samples: null, error: "Could not finish this recording." };
+      return {
+        samples: null,
+        error: "Could not finish this recording.",
+        blob: null,
+      };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the
@@ -620,6 +655,20 @@ export function useAudioSession(): UseAudioSession {
     setPlayingBuffer(false);
     setPlaybackError(null);
   }, [cancelRecording, session, setPlaying, setPlayingBuffer]);
+
+  const primeAudioContext = useCallback(() => {
+    // Un-interrupt the shared context inside the tap that opens the sheet, so
+    // the FIRST decode of a finished segment runs on a running context rather
+    // than an interrupted one (#184). The load itself runs one commit later from
+    // `useRecorderSegment`'s effect — after this gesture's activation is spent —
+    // so resuming there would be too late on iOS, exactly the shape #155's retry
+    // fixed for the SECOND attempt. Fire-and-forget with the same failure sink
+    // as the sibling resume call sites; it touches neither the floor nor the
+    // session, only the shared decode/playback context.
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
+  }, []);
 
   useEffect(() => {
     // Backstop only. `startRecording` releases a refused claim on the completion
@@ -659,9 +708,12 @@ export function useAudioSession(): UseAudioSession {
     pauseRecording,
     resumeRecording,
     stopRecording,
+    retryDecode,
     previewCapture,
     leave,
+    primeAudioContext,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,

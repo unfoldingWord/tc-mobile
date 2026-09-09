@@ -22,3 +22,25 @@ export function formatDuration(ms: number): string {
   const seconds = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
+
+/**
+ * Make a free-text label safe to sit inside a filename or a zip entry name.
+ *
+ * Since #264 a book can be renamed to anything a facilitator types, and that
+ * name flows into the Share filenames and the zip entry names (G3). A `/` (or
+ * `\`) in a name like "Mark/Luke" would otherwise split a zip entry into a
+ * folder — a corrupt-or-ambiguous archive — and the reserved characters
+ * `: * ? " < > |` are illegal in filenames on common filesystems. Each of those,
+ * plus any control character (`\p{Cc}`), is replaced with a space; runs of
+ * whitespace then collapse and the ends are trimmed, so the result is a readable
+ * label and never a path.
+ *
+ * Only the EXPORT form is sanitised. The stored display name is untouched — the
+ * shelf still shows exactly what was typed.
+ */
+export function filenameSafe(label: string): string {
+  return label
+    .replace(/[/\\:*?"<>|\p{Cc}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}

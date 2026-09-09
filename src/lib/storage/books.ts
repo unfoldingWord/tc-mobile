@@ -44,7 +44,12 @@ const uuid = (): string => crypto.randomUUID();
 function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
     ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
-    "readwrite"
+    "readwrite",
+    // Strict durability: this transaction creates the ONLY copy of a recording,
+    // and under the browser default (relaxed on Chromium) it can report success
+    // before the bytes are flushed — so a crash or a power loss just after Stop
+    // loses the take. Same bar `commitTranscode` holds (#179, ADR 0009).
+    { durability: "strict" }
   );
 }
 
@@ -95,7 +100,9 @@ export async function createBook(
  * New Book taps both read `books.length === 0` from the same render and would
  * both persist "Book 001". IndexedDB serialises overlapping readwrite
  * transactions, so counting and putting in one transaction gives the second tap
- * the first's write — "Book 001", then "Book 002". (Rename is deferred, Q1.)
+ * the first's write — "Book 001", then "Book 002". The auto-name is a starting
+ * label; a facilitator renames the book for the passage through {@link renameBook}
+ * (#264).
  */
 export async function createNextBook(now: number = Date.now()): Promise<Book> {
   const db = await getDb();
@@ -121,6 +128,42 @@ export async function listBooks(): Promise<Book[]> {
 
 export async function getBook(id: BookId): Promise<Book | undefined> {
   return (await getDb()).get("books", id);
+}
+
+/**
+ * Rename a book in place (#264 — the Nairobi manual workflow names a book for
+ * the passage, e.g. "Mark").
+ *
+ * Get-then-put in ONE readwrite transaction — the idempotency bar, never a
+ * read-tx-then-write-tx seam. The new name is trimmed; a blank/whitespace-only
+ * rename is refused (a book must always have a non-empty name) and keeps the
+ * current one. Renaming to the current name writes nothing and does NOT bump
+ * `updatedAt`, so a re-run is a true no-op that never reshuffles the shelf.
+ * Any real rename bumps `updatedAt` — labelling a book is activity, and
+ * `listBooks` sorts by it, so the book just named floats to the top.
+ */
+export async function renameBook(
+  id: BookId,
+  name: string,
+  now: number = Date.now()
+): Promise<Book> {
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  const book = await tx.store.get(id);
+  if (!book) throw new Error(`No such book: ${id}`);
+
+  const trimmed = name.trim();
+  // Blank keeps the current name — the invariant that a book is always named.
+  const nextName = trimmed === "" ? book.name : trimmed;
+  if (nextName === book.name) {
+    await tx.done; // idempotent no-op: no write, no recency bump.
+    return book;
+  }
+
+  const updated: Book = { ...book, name: nextName, updatedAt: now };
+  await tx.store.put(updated);
+  await tx.done;
+  return updated;
 }
 
 // ── Chapters ─────────────────────────────────────────────────────────────
@@ -156,6 +199,9 @@ export async function addChapter(
     id: uuid() as ChapterId,
     bookId,
     number: resolvedNumber,
+    // Unnamed by default — the display falls back to "Chapter {number}" until
+    // the facilitator renames it for the passage (#264).
+    name: null,
     segmentIds: [],
   };
   await tx.objectStore("chapters").put(chapter);
@@ -170,6 +216,54 @@ export async function addChapter(
 
 export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
   return (await getDb()).get("chapters", id);
+}
+
+/**
+ * Rename a chapter in place (#264 — a chapter is labelled for its span, e.g.
+ * "Mark 6").
+ *
+ * Get-then-put in ONE readwrite transaction, like {@link renameBook}. The name
+ * is trimmed; unlike a book, a chapter has a default ("Chapter {number}"), so a
+ * blank/whitespace-only rename CLEARS the label back to `null` rather than being
+ * refused. Setting the name to what it already is writes nothing (idempotent
+ * no-op). The chapter's `number` — its ordinal and export position — is never
+ * touched; the name is a label over it.
+ *
+ * A real rename also bumps the parent book's `updatedAt` in the SAME transaction
+ * — labelling a chapter is activity on its book, and `listBooks` sorts by
+ * `updatedAt`, so the book floats up the shelf exactly as `addChapter`,
+ * `renameBook`, and recording do (G4). The no-op path skips the bump, so a
+ * re-run never reshuffles the shelf.
+ */
+export async function renameChapter(
+  id: ChapterId,
+  name: string,
+  now: number = Date.now()
+): Promise<Chapter> {
+  const db = await getDb();
+  const tx = db.transaction(["chapters", "books"], "readwrite");
+  const chapter = await tx.objectStore("chapters").get(id);
+  if (!chapter) throw new Error(`No such chapter: ${id}`);
+
+  const trimmed = name.trim();
+  // Blank clears back to the default "Chapter N" (chapters, unlike books, have
+  // one), rather than storing an empty label.
+  const nextName = trimmed === "" ? null : trimmed;
+  if (nextName === (chapter.name ?? null)) {
+    await tx.done; // idempotent no-op: no write, no recency bump.
+    return chapter;
+  }
+
+  const updated: Chapter = { ...chapter, name: nextName };
+  await tx.objectStore("chapters").put(updated);
+  // Float the parent book up the shelf, in this same transaction. A dangling
+  // parent is skipped rather than failing a rename that otherwise succeeded.
+  const book = await tx.objectStore("books").get(chapter.bookId);
+  if (book) {
+    await tx.objectStore("books").put({ ...book, updatedAt: now });
+  }
+  await tx.done;
+  return updated;
 }
 
 /**
@@ -464,7 +558,9 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(
     ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
-    "readwrite"
+    "readwrite",
+    // Strict durability: this removes the only copy of a take. #179.
+    { durability: "strict" }
   );
   const segment = await tx.objectStore("segments").get(segmentId);
   if (!segment) throw new Error(`No such segment: ${segmentId}`);

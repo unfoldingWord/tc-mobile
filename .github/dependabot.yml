@@ -1,0 +1,32 @@
+# Dependency updates. The CI `npm audit` step is a hard gate, so an upstream
+# advisory blocks every PR until it is patched; these grouped weekly PRs are the
+# update path that keeps that gate cheap to clear. The github-actions ecosystem
+# also keeps the SHA-pinned actions in ci.yml current (their `# vX.Y.Z` comments
+# are bumped alongside the digest).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        # Majors (e.g. checkout v6 -> v7) can change action behaviour, so keep
+        # them out of the weekly digest PR; they get their own review.
+        update-types:
+          - minor
+          - patch

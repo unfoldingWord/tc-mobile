@@ -4,38 +4,32 @@
 "world's simplest mobile audio notebook and editor" for oral communities doing
 Bible translation.
 
-> **Status: pre-pivot scaffold.** The audio core and the storage layer are
-> working and unit-tested. The UI is a disposable vertical slice, and it is
-> being replaced rather than evolved — see [The pivot](#the-pivot) below. The
-> source requirements are [`docs/spec-transcription.md`](docs/spec-transcription.md)
-> (page 1) and [`docs/spec-transcription-p3-p4.md`](docs/spec-transcription-p3-p4.md)
-> (the mockups); [`docs/decisions/`](docs/decisions/) has what was decided and
-> why.
-
 ## Why this exists
 
 There is no pathway for translation production in communities that cannot use
 text-based modalities. Oral communicators have no "pencil and paper." This is
 an attempt at one.
 
-## The pivot
+## Where the model came from
 
-Tim Jore drew a set of screen mockups on 22 Aug 2026, and they are now the
-first principles for the UI. The domain model moves with them:
+The product mockups of 22 Aug 2026 — which arrived about an hour after work
+began — set the domain model the app uses today. The initial scaffold was
+replaced rather than evolved:
 
 ```
 was:  Project -> Chapter -> Section -> Segment -> Take
 now:  Book    -> Chapter ->            Segment  (-> Take, hidden, 1:1)
 ```
 
-A segment is the unit of work — one recording, edited in place. The pre-pivot
-UI in `src/components` and `src/app` is being replaced, not evolved.
+A segment is the unit of work — one recording, edited in place.
 
-[`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record.
-[#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
-and the work is nine batches, B0–B8. **None of them has started**, so
-everything below describes the tree as it stands today: `Section` is still in
-the model, and no mockup screen exists yet.
+The issues and the docs call that replacement **the pivot**, and the word is
+load-bearing: it names the umbrella issue, the batch numbering, and the
+`@pivotpending` tag in the source.
+[`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record,
+[#25](https://github.com/unfoldingWord/tc-mobile/issues/25) is the umbrella
+issue, and the work is nine batches, B0–B8 — all landed except the Template
+Library half of B7.
 
 ## Run it
 
@@ -97,8 +91,8 @@ share-sheet export path yet — see #18.
 and a check that the PWA service worker and manifest were emitted. It deploys
 nothing.
 
-The repo is `sethstoll3/tc-mobile` — **private and personal for now**, pending
-the tech-lead approval and recorded DRI an org repo requires.
+The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
+prepared to be made public.
 
 ## Architecture
 
@@ -118,10 +112,10 @@ src/
 └── app/         Screens                   (imports: everything)
 ```
 
-The split is deliberate. Tim said from the start that the UI "needs lots of
-changes, but I don't know what they are yet" — the pivot is that rewrite
-arriving. Keeping `lib/` DOM-free is what lets the UI layer be replaced without
-touching the audio core.
+The split is deliberate. The requirements owner said from the start that the UI
+would need extensive changes that were not yet specified — the pivot is that
+rewrite arriving. Keeping `lib/` DOM-free is what lets the UI layer be replaced
+without touching the audio core.
 
 ## Audio pipeline
 
@@ -152,7 +146,12 @@ node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px
 ```
 
 Story text and frame metadata are bundled (230 KB), and so are the 128px
-thumbnails — 598 of them for 2.5 MB, precached by the service worker (ADR 0006).
+thumbnails — 598 of them for 2.5 MB. They ship in the build but are **excluded
+from the service-worker precache until a screen reads them** (#177): no shipped
+screen draws them yet, so precaching 2.5 MB of unused pictures only delayed
+offline-readiness. `jpg` is restored to the precache when the Template Library
+(#33) wires a reader — the bundle-and-precache decision itself stands (ADR 0006,
+2026-09-04 amendment).
 **The 360px frames are not bundled**, and after B0 (#26) they are **not cached
 either**: the on-demand IndexedDB fetch for full-size artwork is gone. The
 pre-pivot recording view that rendered a frame's CDN `<img>` is gone too, removed
@@ -176,8 +175,9 @@ aggregation.
 
 > **Settled, not yet implemented.** The OBS licence treats a _translation_ as a
 > derivative work, so recordings produced against OBS content **are** CC BY-SA
-> and must not carry the unfoldingWord® trademark. Tim confirmed that reading on
-> 2026-08-23 (#15 closed). **Nothing in the export path implements it yet** —
+> and must not carry the unfoldingWord® trademark. The requirements owner
+> confirmed that reading on 2026-08-23 (#15 closed). **Nothing in the export
+> path implements it yet** —
 > there is no export path at all (#18) — and the data model still cannot tell an
 > OBS-derived recording from a user-authored one. ADR 0006.
 
@@ -185,21 +185,19 @@ aggregation.
 
 Read [`docs/research/prior-art.md`](docs/research/prior-art.md) before designing
 anything. In short: **Shema Studio has already shipped essentially this entire
-v1 feature list** (its source is not public — someone needs to ask Han Chung),
-and **Benjamin Wright's `tcorePSA` already proved this exact stack** —
-Vite + PWA + IndexedDB — on low-end Android inside uW.
+v1 feature list** (its source is not public — someone needs to ask the Shema
+Studio developer), and **a uW Scripture Burrito prototype already proved this
+exact stack** — Vite + PWA + IndexedDB — on low-end Android inside uW.
 
 ## Docs
 
-|                                                                        |                                                                 |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [`docs/design/pivot-plan.md`](docs/design/pivot-plan.md)               | **The plan of record** for the pivot — #25                      |
-| [`docs/spec-transcription.md`](docs/spec-transcription.md)             | Tim's handwritten inception notes, page 1, transcribed          |
-| [`docs/spec-transcription-p3-p4.md`](docs/spec-transcription-p3-p4.md) | The screen mockups, pages 3–4, transcribed                      |
-| [`docs/design/`](docs/design/)                                         | Mockup images, the gap analysis, and the pre-pivot design work  |
-| [`docs/research/prior-art.md`](docs/research/prior-art.md)             | Shema Studio, passage-recorder-app, tcorePSA, Scripture Burrito |
-| [`docs/decisions/`](docs/decisions/)                                   | ADRs                                                            |
-| [`AGENTS.md`](AGENTS.md)                                               | Contributor and agent guide                                     |
+|                                                            |                                                       |
+| ---------------------------------------------------------- | ----------------------------------------------------- |
+| [`docs/design/pivot-plan.md`](docs/design/pivot-plan.md)   | **The plan of record** for the pivot — #25            |
+| [`docs/design/`](docs/design/)                             | Screen design passes and design notes                 |
+| [`docs/research/prior-art.md`](docs/research/prior-art.md) | Shema Studio, passage-recorder-app, Scripture Burrito |
+| [`docs/decisions/`](docs/decisions/)                       | ADRs                                                  |
+| [`AGENTS.md`](AGENTS.md)                                   | Contributor and agent guide                           |
 
 ## Licence
 

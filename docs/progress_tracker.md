@@ -11,6 +11,212 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-08 — sprint planning with Tim & Elsy; a 10-PR merge day; first Android on-device pass
+
+**Branches:** ten PRs merged to **`develop`** (`0ba3687` → `8011bdc`). **Nothing promoted** —
+`staging` still v0.1.12, `main` still `3464a30`. A build-review-merge day, not a promotion day.
+Note: the 2026-09-04 merge-train EOD (PR #242) and gate-chart (#254) are still **unmerged docs
+PRs**, so this entry follows 2026-09-03 in the committed tracker with a gap.
+
+### Sprint plan (set with Tim & Elsy this morning)
+
+- **V1 = end of September**, in **three one-week sprints**. **Sprint 1 (→ Mon 2026-09-14):
+  installable apps** — wrap the PWA with Capacitor → **iOS TestFlight + Android APK** so the
+  Nairobi testers (**Caleb, Javi**) hit real devices early.
+- **Team:** **Elsy Lambert** PM (not Birch — AGENTS.md DRI block is stale), **Tim** product owner,
+  **Seth** dev lead. Weekly sync, same time.
+- **V1-required / v1-desired** labels are the must-have axis (they already existed); 25 v1-required
+  issues, all in the `v0.2.0` gate. **Template Library retagged non-blocking** (v2-required →
+  v1-desired). A PM status **artifact** was built and iterated for the meeting.
+
+### Merged (10 PRs, `0ba3687` → `8011bdc`)
+
+| PR         | What                                                                                               | Closes       |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------ |
+| #190       | lib-boundary paths in POSIX form (Windows push)                                                    | #189         |
+| #256       | headless-Chromium smoke for browser-only paths                                                     | #251         |
+| #260       | distinguish the three microphone refusals                                                          | #203         |
+| #255, #275 | dependabot minor/patch groups                                                                      | —            |
+| **#259**   | **recorder foundation** — resume-on-open + Back→commit (**5 review rounds**)                       | #184, #168   |
+| #266       | rename books & chapters in place (v5 schema migration)                                             | #264         |
+| #265       | **Capacitor scaffold** — native mic perms + `allowBackup=false`                                    | part of #262 |
+| **#258**   | **keep audio on decode fail** — root-fixed the `leaveHeldTake`/`close()`-tail class (**5 rounds**) | #165         |
+| #267       | VU meter hatches on a suspended context (3 rounds)                                                 | #76          |
+
+The recorder cluster's data-loss core (#259/#260/#258/#267) is fully landed.
+
+### First-ever Android on-device pass (Seth)
+
+**The core loop works on Android** (Chrome): record → playback → edit → select/move → trim. Two
+**v1-required** bugs found and filed with code-grounded hypotheses:
+
+- **#269** — stored-segment playback is **silent** (record + in-recorder playback work). Byte-level
+  proof the lamejs MP3 is **headerless** (no Xing/Info); prime suspect is Android `decodeAudioData`
+  on that stream. Needs a device check to confirm the layer, then a storage-format call (options:
+  Xing header / WAV / Opus / OfflineAudioContext rate-pin — may touch ADR 0009 → Tim).
+- **#272** — **Share Book fails** ("could not share this book"); `navigator.canShare` likely rejects
+  the `.zip`. Share Chapter (single MP3) is the discriminator.
+
+### Also filed / decided
+
+Issues: **#262** (Capacitor umbrella), **#263** (re-validate audio in the WebView), **#264** (rename),
+**#269**, **#272**, **#277** (deferred audio-io P3). Jesse filed **#276**. **#258 R4-G1** round-5
+root fix authorized (cap-exceeded, DRI) and merged. Backlog reassigned Jesse↔Seth.
+
+### In progress
+
+- **#268 — reach Edit in-sheet (#134)** — **round 3 of 4**. The P1 data-loss fix is confirmed
+  (`onEnterEdit`'s held-take blob branch mirrors `close()`'s precedence). **Two open P2 siblings**:
+  (1) Try-again after an Edit-commit decode-fail lands on Segments, not edit mode; (2) `finishedIntent`
+  isn't consumed on in-sheet reopen — **a finished-status requirements question for Tim**. Root fix =
+  make Edit's post-conditions match Back across all session-state consumers. Fix pushed at `3e0013b`.
+
+### Tooling / process
+
+- **George (grok) is unreliable under parallel load** — OOM/no-verdict when several grok reviews run
+  at once (memory contention). **Serialize George** (one grok review at a time); re-run on OOM;
+  fall back to Frank + independent agent deep-tree, recorded per PR (#208 precedent).
+- Cross-review caught real defects in our **own** subagent work: missing native mic permissions, an
+  `allowBackup` privacy leak, a zip path-injection, a false "verified on-device" comment, and a
+  cross-PR data-loss seam (#268). The loop earned its keep.
+- Swept **35 stale agent worktrees**.
+
+### Blockers / needs a human
+
+- **Seth:** the **Share-Chapter device check** settles #269's layer and #272's zip theory in one tap.
+- **Seth (Mac):** the **Monday** Capacitor iOS TestFlight + Android APK builds (#262).
+- **Tim:** the #269 storage-format call (post-device-check) and the #268 `finishedIntent` semantics.
+
+### Next steps
+
+1. **#268 round 4** — the root fix for the two P2 siblings + Tim's `finishedIntent` call.
+2. **Seth's device check** → then the #269 fix path.
+3. **Monday installable** — Capacitor Mac builds (#262/#263).
+4. Contributor PRs: Ben's #232/#215 (round-1 P2s), #244 (gate checklist).
+5. Merge the stale docs PRs (#242 EOD-09-04, #254 gate chart) on green.
+
+---
+
+## 2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the microphone report resolved outside the app
+
+**Branches:** `release/v0.1.12` → **`develop`** (#201, squash `7152289`); develop →
+**`staging`** (#202, merge `afdfa6e`, **v0.1.12**). **Production `main` untouched**
+(`3464a30`). **Closed:** #195. **Filed:** #203.
+
+### The promotion, and what the served-version check finally proved
+
+The day's entry above closed with the queue drained but nothing promoted. It is promoted
+now. #201 bumped the patch (version files only, no source), #202 merged develop into
+staging as a merge commit, and both went green before merging.
+
+The check that matters is the served bundle, not the merge (#143's lesson):
+
+```
+assets/index-D3ys2Ga5.js  →  "0.1.12"  "afdfa6e"
+```
+
+`afdfa6e` is the promotion's own merge commit and the `staging` tip. **This is the first
+time that check has passed since the anomaly below was noticed.** Deploy took roughly
+15–20 minutes from merge, against the ~10 minutes seen on 2026-09-02 — a poller that gave
+up at 15 missed it by moments. Worth knowing before calling a deploy failed.
+
+Testers now have the whole recorder queue: the recovery screen (#38 part), disabled-row
+reasons (#135), the `info` notice tone (#112), the warm encoder worker (#182), the
+transcode sweep test and its coalescer fold (#181), the processing status (#39) and the
+failed-segment recovery (#137) — on top of the scrubbed tree and the working agreement.
+
+### The staging URL was not serving the staging branch, and now is
+
+Found while checking the field report, and it changed the plan twice. `curl` of the
+staging URL stamped commit `494ef8a` — a **develop** commit that is not an ancestor of
+`staging` — while the branch tip was yesterday's promotion. `__BUILD_SHA__` is read from
+the repository at build time (`vite.config.ts`), so that was genuinely the commit built.
+
+A first hypothesis, that the Worker's production branch was set to `develop`, was
+**wrong and withdrawn**: a console screenshot showed it correctly set to `staging`. The
+detour was still worth it — it surfaced two settings from #72 that were still open, both
+now fixed:
+
+- deploy command `npx wrangler deploy` → **`npx wrangler deploy --env staging`**. The bare
+  form names the _production_ Worker per `wrangler.jsonc`'s top-level `name`, which is why
+  the asymmetry matters: production's command is correctly bare, staging's needs the flag.
+  There is no `prod` environment; `--env prod` would create a third Worker.
+- build watch exclude paths gained `docs/**`, `*.md`, `.github/**`, `.claude/**`, `LICENSE`.
+  Verified first that nothing in the build imports Markdown or `docs/`, so no needed rebuild
+  can be skipped. `public/**` and `package.json` stay included on purpose — the licence
+  texts #144 ships live in the first, and the version stamp is read from the second.
+
+**Production was never mis-deployed.** It serves a bundle with no version stamp at all,
+consistent with `main` at `3464a30` (2026-08-22), which predates the stamp component.
+
+**Still open on #72, deliberately:** the promotion would have deployed the staging branch
+either way, so it does not prove that non-production builds have stopped reaching that URL.
+**The next merge to `develop` is the decisive observation** — if the staging URL still
+stamps `afdfa6e` afterwards, the anomaly is gone and #72 closes.
+
+### #195 — not a defect, and the eliminations are worth keeping
+
+Root cause: **macOS Privacy & Security had Chrome's microphone switched off.** With that
+toggle off the browser cannot obtain the device at all, so `getUserMedia` rejects with
+`NotAllowedError` regardless of the site permission — which is exactly why granting "allow
+this time" and "always allow" both appeared to do nothing.
+
+The app behaved correctly. `use-recorder.ts:473-474` maps that rejection to the copy, and
+the panel showed it. The platform does not distinguish an OS denial from a site denial;
+both arrive as the same error with no guaranteed distinguishing message.
+
+Three hypotheses were tested against the tree before the cause was known, and the
+eliminations stand:
+
+1. **A request-path regression from #139 or #140 — refuted.** The whole non-comment diff of
+   `src/hooks/use-recorder.ts` since the last known-good build is a new `peekScope`
+   accessor and one `catch` that now names its cause. `getUserMedia` is still the first
+   await in `start()`, `resumeAudioContext()` after it, in both revisions.
+2. **A mislabel of another state — refuted.** `PermissionPanel` renders `message={audio.error}`,
+   reachable only through the `NotAllowedError` mapping; a panel raised by `!audio.supported`
+   alone would have shown no message. The refusal was genuine.
+3. **Headers or embedding — ruled out.** No `_headers` file, no `Permissions-Policy` in the
+   tree, no headers in `wrangler.jsonc`.
+
+**#203 filed from the residual, September gate:** an OS-level denial, a blocked site and a
+tapped "no" are indistinguishable to this app and the copy names only the last. A maintainer
+with a debugger lost time to it; a facilitator on a borrowed Android phone at the training,
+reading a second language or not reading at all, has no chance. Sketched options include
+`navigator.permissions.query` (separates two of three cases on Chromium and Android, absent
+on iOS Safari — labelled inference, to verify on device) and a glyph pair rather than a
+sentence.
+
+### Workspace hygiene
+
+One day of parallel agents produced **37 worktrees**; all removed, along with 50 stale local
+branches (`worktree-agent-*` and review scratch). Only the main checkout, the mockups
+checkout and the session worktree remain. Squash merges mean `git branch -d` cannot see PR
+branches as merged — "upstream is gone" is the usable delete signal.
+
+### Blockers / needs a human
+
+- **Requirements owner:** going public; whether the removed third-party design material may
+  remain in history; #134; Q2/#33; #12; #116; and which of #115/#116/#33/#72 leave the
+  September gate.
+- **Android:** one contributor has a phone now, the maintainer's arrives 2026-09-05. Three of
+  the five audit P1s can only be closed there, and **Android has still never run this app.**
+  Staging now carries no known recorder blocker, so the pass is unblocked on its own merits.
+- **Two settings on #72** are closed; the third question waits on the next develop merge.
+
+### Next steps
+
+1. **The next merge to `develop`** settles #72 — check whether the staging URL still stamps
+   `afdfa6e`.
+2. Close #144 (two layout P2s: link width floor, and the About list branch missing the scroll
+   contract) and #156 (four sentences across three stylesheets), draining the queue entirely.
+3. Non-author reviews for the three maintainer PRs: #186 strict durability, #188 error
+   boundary and failure sink, #194 the README scrub.
+4. Scrub part 2 — `AGENTS.md` and the transfer plan — cut after #144 and #156 so it rebases
+   zero times.
+5. The on-device pass on both platforms: the v0.2.0 gate.
+
+---
+
 ## 2026-09-03 — public-readiness scrub, the design audit and its 26 issues, three lanes, six merges from the recorder queue
 
 **Branches:** eleven PRs merged to **`develop`**, which moved `b746516` → **`58457d9`**.

@@ -29,7 +29,8 @@ import type { ChapterId, ClipId } from "@/types/domain";
 /**
  * Silence between concatenated segments, in seconds. A chapter whose segments
  * ran together would be hard to follow; a short gap sets them apart. The exact
- * length is a product feel, not a constraint — flagged for Tim.
+ * length is a product feel, not a constraint — flagged for the requirements
+ * owner.
  */
 export const SEGMENT_GAP_SECONDS = 0.5;
 

@@ -40,7 +40,9 @@ scripts/review/george.sh [base]    # Reviewer B — deep-tree
 scripts/review/both.sh [base]      # both, sequentially
 ```
 
-`base` defaults to `main`. Reports are written to `.review/` (git-ignored).
+`base` defaults to `origin/develop` — work is cut from `develop`, so an omitted
+base reviews only the branch's own change rather than its whole divergence from
+`main`. Reports are written to `.review/` (git-ignored).
 
 ## Merge policy
 

@@ -8,6 +8,8 @@
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
  */
+import { filenameSafe } from "@/lib/utils";
+
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -24,8 +26,25 @@ export const strings = {
       expanded ? "expanded" : "collapsed"
     }`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
-  openChapter: (n: number): string => `Open chapter ${n}`,
+  openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
+  /**
+   * The chapter's display heading: the facilitator's passage label when set
+   * (#264), otherwise the default "Chapter {number}". One place both the Books
+   * row and the Segments breadcrumb resolve the name, so they never diverge.
+   */
+  chapterHeading: (name: string | null, n: number): string =>
+    name ?? `Chapter ${n}`,
+
+  // ── Rename (#264) — book and chapter, from their ≡ menus ──────────────────
+  renameBook: "Rename book",
+  renameChapter: "Rename chapter",
+  // The inline text field's accessible name (the whole text layer of the input)
+  // and its placeholder.
+  bookNameField: "Book name",
+  chapterNameField: "Chapter name",
+  // The check control that commits the typed name.
+  saveName: "Save name",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
@@ -91,6 +110,39 @@ export const strings = {
   // instant) and the panel does not flicker to the disabled sheet and back.
   // Try again relabels and goes busy in place rather than unmounting (#137 G2).
   loadRetrying: "Opening your recording…",
+
+  // ── Recorder save-decode failure (#165) ───────────────────────────────────
+  // After Stop the captured audio could not be decoded — most often a transient
+  // iOS "interrupted" AudioContext (#106), not corrupt bytes. The take exists
+  // ONLY as the held container bytes, so this panel never offers a plain
+  // discard: Try again re-decodes on a fresh gesture (resuming the context), and
+  // Share hands the raw bytes to the OS so the recording leaves the phone in some
+  // form rather than none. "yet" because a retry commonly succeeds.
+  takeRecoverTitle: "This recording could not be saved yet",
+  takeRecoverBody:
+    "Your recording is still here. Try again, or share it to keep it safe.",
+  takeRecoverRetry: "Try again",
+  // Shown in place of the Try again label and as a busy Notice while a re-decode
+  // is in flight — the same in-place busy shape as `loadRetrying` (#137 G2).
+  takeRecoverRetrying: "Saving your recording…",
+  takeRecoverShare: "Share the recording",
+  // The share sheet is missing or refused these bytes.
+  takeShareUnavailable: "Sharing is not available on this device.",
+  takeShareFailed: "Could not share the recording. Try again.",
+  // A re-decode failed AGAIN (kept under Try again, not the Share slot — George
+  // R1 G6). A thrown save on a recovered take reads here too, distinct from a
+  // share failure: the recording is still held, so this says "save", not "share".
+  takeRetryFailed: "Could not save the recording. Try again.",
+  // The held bytes went to the OS share sheet. Shown once a share succeeds, with
+  // the Done exit — the recording is off the phone, so leaving loses nothing.
+  takeRecoverShared: "Recording shared.",
+  takeRecoverDone: "Done",
+  // The two-tap discard on the recovery panel (George R1 G1 / Frank F2): the
+  // panel is otherwise a dead end when the decode never succeeds. Same armed
+  // second-tap shape as the SaveFailed screen — a stray tap never deletes.
+  takeRecoverDiscard: "Delete this recording",
+  takeRecoverDiscardArmed: "Tap again to delete this recording for good",
+  takeRecoverDiscardHint: "Tap again to delete it.",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
@@ -174,8 +226,11 @@ export const strings = {
     n === 1
       ? "1 segment could not be included."
       : `${n} segments could not be included.`,
+  // The book name is free text since #264, so sanitise it into the filename —
+  // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
+  // The chapter is an ordinal, always safe.
   shareFilename: (book: string, chapter: number): string =>
-    `${book} - Chapter ${chapter}.mp3`,
+    `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
 
   // Share Book — the book-level ≡ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.
@@ -192,5 +247,25 @@ export const strings = {
     n === 1
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
-  shareBookFilename: (book: string): string => `${book}.zip`,
+  // Sanitised like shareFilename: the book name is the .zip File name and must
+  // not carry a path separator or a reserved character (G3).
+  shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+
+  // ── Root error boundary (#167) ───────────────────────────────────────────
+  // The whole text layer of the crash screen. Says that something failed and
+  // nothing more: the cause goes to the failure sink for a maintainer to read,
+  // never to a translator. It is also the screen's accessible name.
+  appFailed: "Something went wrong.",
+  // The one action, named for what it actually does. NOT `tryAgain`: on the
+  // Books shelf that label means "run the load that just failed again", and
+  // here the button reloads the document — the app starts over from disk, and
+  // anything that lived only in memory is already gone. A screen reader speaks
+  // the label and nothing else, so the two must not share one.
+  appReload: "Restart the app",
+  // Said once, under the mark: what the button is about to do. No cause text —
+  // a stack-shaped string in a language the reader may not speak is worse than
+  // the glyph alone. It does NOT claim the in-progress work survived: a render
+  // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
+  // "everything you saved is still here" line would over-promise (George, r2).
+  appReloadTeach: "The app will start again.",
 } as const;

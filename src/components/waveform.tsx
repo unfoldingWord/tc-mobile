@@ -29,8 +29,9 @@ interface WaveformProps {
    * yet (`recorded` is false) but the line still marks where recording is
    * happening. Without it, gating the centerline on `recorded` alone would drop
    * the record-position marker mid-first-take. Idle + never-recorded (neither
-   * `recorded` nor `capturing`) shows no red line, per Tim's build feedback:
-   * the centerline appears only when a waveform exists or one is being made.
+   * `recorded` nor `capturing`) shows no red line, per the requirements
+   * owner's build feedback: the centerline appears only when a waveform exists
+   * or one is being made.
    */
   capturing?: boolean;
   /**
@@ -103,7 +104,7 @@ export function Waveform({
       if (!view || playing) return;
       // Only when a waveform exists (`recorded`) or one is being made
       // (`capturing`); an idle never-recorded segment shows the dotted rule with
-      // no red line (Tim's build feedback).
+      // no red line (the requirements owner's build feedback).
       if (!recorded && !capturing) return;
       ctx.fillStyle = live;
       ctx.fillRect(Math.round(view.centerFraction * w) - 1, 0, 2, h);

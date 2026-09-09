@@ -33,7 +33,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   replacement of the initial scaffold ("the pivot", `docs/design/pivot-plan.md`,
   #25).
 - Open Bible Stories bundled as beta content: 50 stories / 598 frames of
-  metadata (230 KB) plus 128px thumbnails precached for offline first-run.
+  metadata (230 KB) plus 128px thumbnails. The thumbnails ship in the build but
+  are excluded from the service-worker precache until a screen reads them (#177,
+  ADR 0006 2026-09-04 amendment); the precache returns when the Template Library
+  (#33) wires a reader.
   `scripts/build-obs-catalog.mjs` rebuilds the catalogue from Door43. (B0 (#26)
   removed the on-demand full-size-artwork cache and the narration path; the
   empty v2 `media` store is retired by B1's drop-and-recreate.)

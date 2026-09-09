@@ -6,6 +6,7 @@ import {
   createNextBook,
   getChapter,
   listBooks,
+  renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import type { Book, BookId, Chapter } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -34,6 +35,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
       return {
         chapterId: chapter.id,
         number: chapter.number,
+        name: chapter.name,
         finishedCount: finished,
         totalCount: total,
       };
@@ -115,5 +117,32 @@ export function useBooks() {
     [reload]
   );
 
-  return { books, loading, loaded, error, reload, createBook, addChapter };
+  const renameBook = useCallback(
+    async (bookId: BookId, name: string): Promise<Book | null> => {
+      // reload() rather than an in-place patch: a rename bumps the book's
+      // updatedAt, and listBooks sorts by it, so the shelf order actually
+      // changes — the same reason createBook/addChapter reload. A failed write
+      // reaches the same Notice a load failure does.
+      try {
+        const book = await renameBookInStore(bookId, name);
+        reload();
+        return book;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
+      }
+    },
+    [reload]
+  );
+
+  return {
+    books,
+    loading,
+    loaded,
+    error,
+    reload,
+    createBook,
+    addChapter,
+    renameBook,
+  };
 }

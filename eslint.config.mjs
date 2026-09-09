@@ -14,8 +14,8 @@ import tseslint from "typescript-eslint";
  *
  * Rule: Never import "upward" in the hierarchy.
  *
- * Why this matters here specifically: Tim has said the UI "needs lots of
- * changes, but I don't know what they are yet." Keeping the audio core in
+ * Why this matters here specifically: the requirements owner has said the UI
+ * needs extensive changes that are not yet specified. Keeping the audio core in
  * `lib/` — pure, DOM-free, and unit-tested — means the disposable layer
  * (components/app) can be rewritten repeatedly without endangering the
  * durable layer.
@@ -94,7 +94,21 @@ export default tseslint.config(
   // in afterAll. An interrupted run leaves it behind, and it contains
   // deliberately-invalid code — gitignored, so it must be lint-ignored too.
   {
-    ignores: ["dist", "dev-dist", ".wrangler", "public", ".lib-boundary-probe"],
+    // `dist-e2e` is build output too (`npm run build:e2e`, #251) and was
+    // missing here while `dist` was listed — round-1 George G5.
+    ignores: [
+      "dist",
+      "dist-e2e",
+      "dev-dist",
+      ".wrangler",
+      "public",
+      ".lib-boundary-probe",
+      // Capacitor native projects (#262) — generated/managed by the `cap` CLI.
+      // No first-party TS/TSX lives here; skip them so ESLint never trips on a
+      // generated file inside the iOS/Android shells.
+      "android",
+      "ios",
+    ],
   },
 
   {

@@ -5,6 +5,15 @@ import {
   type CaptureScope,
   createCapturePeaks,
 } from "@/lib/audio/capture-peaks";
+import {
+  classifyMicRefusal,
+  type MicPermissionState,
+  type MicRefusal,
+} from "@/lib/audio/mic-refusal";
+import {
+  classifyStopDecode,
+  type StopDecodeError,
+} from "@/lib/audio/stop-decode";
 
 import {
   createLevelTap,
@@ -15,11 +24,94 @@ import {
   resumeAudioContext,
 } from "./audio-io";
 
+/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
+ *  here beside the recorder's other error copy; the classifier stays UI-free. */
+function stopDecodeMessage(error: StopDecodeError): string | null {
+  switch (error) {
+    case "silence":
+      return "No sound was recorded. Try again.";
+    case "undecodable":
+      return "Recording could not be decoded on this device.";
+    case null:
+      return null;
+  }
+}
+
+/**
+ * The permission state for the microphone, or `"unknown"` where the platform
+ * hides it (iOS Safari has no `navigator.permissions`). Browser-only, so it
+ * lives here at the audio boundary and feeds the pure `classifyMicRefusal`.
+ */
+async function queryMicPermission(): Promise<MicPermissionState> {
+  try {
+    const perms = navigator.permissions;
+    if (!perms?.query) return "unknown";
+    const status = await perms.query({
+      // `"microphone"` is a valid PermissionName at runtime but missing from
+      // some TS DOM lib versions; the cast is the one narrow spot that needs it.
+      name: "microphone" as PermissionName,
+    });
+    return status.state;
+  } catch {
+    // Firefox rejects a microphone query outright; treat that like an absent API.
+    return "unknown";
+  }
+}
+
+/** The honest sentence for each refusal (#203). Inline here, like the recorder's
+ *  other error copy, because `hooks/` cannot reach the components' string table. */
+function micRefusalMessage(refusal: MicRefusal): string {
+  switch (refusal) {
+    case "no-device":
+      return "No microphone was found on this device.";
+    case "site-blocked":
+      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
+    case "os-blocked":
+      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
+    case "prompt":
+      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
+    case "other":
+      return "Could not start recording.";
+  }
+}
+
+/**
+ * Install the foreground re-arm for a live take (#76), returning the effect
+ * cleanup.
+ *
+ * Returning from an iOS backgrounding or an OS interruption can leave the shared
+ * `AudioContext` `"suspended"`/`"interrupted"`, so the VU tap reads zeros even
+ * though capture is fine. The `resume()` gesture already covers a manual
+ * pause→resume; this covers a return that is NOT a resume tap — a background then
+ * foreground with capture still live. Fire-and-forget: the resume must never gate
+ * anything, and best effort — iOS MAY withhold the un-suspend until the next real
+ * user gesture, in which case the meter stays honestly hatched (`available()` ->
+ * false) until a tap. That withholding is the open device question the iOS pass
+ * settles.
+ *
+ * `recording` gates it: only a live take has a meter to rescue, and `resume()`
+ * owns the paused edge, so idle/paused/requesting/processing arm nothing and hand
+ * back a no-op cleanup. A module function, not an inline effect body, so the two
+ * guards and the listener add/remove are exercisable without a React renderer
+ * (this repo has none in Node) — see `tests/foreground-resume.test.ts`.
+ */
+export function armForegroundResume(recording: boolean): () => void {
+  if (!recording) return () => {};
+  const onVisibility = () => {
+    if (document.visibilityState !== "visible") return;
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context on foreground", cause);
+    });
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => document.removeEventListener("visibilitychange", onVisibility);
+}
+
 /**
  * Columns the live-waveform ring holds while recording (#120). One column is
  * pushed per animation frame, so at ~60 fps this is roughly `SCOPE_CAPACITY/60`
  * seconds of visible history. 180 ≈ 3 s beside the head — a provisional default
- * to tune on the device pass alongside `headFraction` (Tim's UX call).
+ * to tune on the device pass alongside `headFraction` (the requirements owner's UX call).
  */
 const SCOPE_CAPACITY = 180;
 
@@ -44,6 +136,27 @@ export interface StopResult {
    * an empty capture or an undecodable one. Null when there is nothing to say:
    * a superseded stop, whose UI belongs to a newer recording.
    */
+  readonly error: string | null;
+  /**
+   * The captured container bytes, kept whenever a decode FAILED — on a current
+   * stop AND on a superseded one (George R1 G2). A failed decode is the one case
+   * where the take exists nowhere else, so dropping the blob would lose it for
+   * good (#165); and a `leave()`/pagehide bumping the generation mid-decode is
+   * the very #106 interruption most likely to fail it, so the bytes are kept even
+   * when the stop is superseded — only the shared `error` is withheld then, since
+   * a newer owner speaks for the screen. `close()` DEPENDS on this: it holds the
+   * take whenever `blob` is set, so re-narrowing it to current-only would re-drop
+   * the interruption case. Null on success (the PCM is the take) and on an empty
+   * or silent capture (no audio worth keeping — a retry of the same bytes cannot
+   * help). A caller holding this can re-decode it (`retryDecode`) or hand the raw
+   * bytes to the share sheet so the recording leaves the phone in some form.
+   */
+  readonly blob: Blob | null;
+}
+
+/** The outcome of re-decoding a held take's container bytes (#165). */
+export interface RetryDecodeResult {
+  readonly samples: Int16Array | null;
   readonly error: string | null;
 }
 
@@ -95,6 +208,17 @@ export interface UseRecorder {
    */
   stop: () => Promise<StopResult>;
   /**
+   * Re-decode a held take's container bytes (`StopResult.blob`) after a decode
+   * failed on Stop (#165). Resumes the shared `AudioContext` first — the caller
+   * must invoke this synchronously in a tap so iOS honours the resume of a
+   * context left "interrupted" (#106), the likeliest cause of the original
+   * failure — then decodes. Never throws: a still-undecodable blob comes back as
+   * `{ samples: null, error }`, a silent one as `{ samples: null }` with the
+   * "no sound" reason, and success as `{ samples, error: null }`. The blob is the
+   * caller's to keep or share out; this does not consume it.
+   */
+  retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
+  /**
    * Decode the take captured SO FAR to canonical PCM for an in-sheet preview,
    * WITHOUT ending the take (#101). Meant for a paused take — the caller enables
    * Play while paused and previews what was recorded before committing on Back.
@@ -122,6 +246,19 @@ export interface UseRecorder {
    * superseded analyser.
    */
   readLevel: () => number;
+  /**
+   * Whether the VU meter's `readLevel` can be trusted RIGHT NOW. A PULL like
+   * `readLevel`, polled on the meter's own frame clock. `true` when NOT in a live
+   * take — outside recording the meter rests empty via `active` rather than
+   * hatching on the way down, so "not recording" reads as "not broken". `false`
+   * ONLY while recording and either the tap is missing or the shared context is
+   * not `"running"` (iOS `"suspended"`/`"interrupted"` after backgrounding or an
+   * interruption), where the analyser reads zeros indistinguishable from a dead
+   * mic. The meter hatches "unavailable" on a false (#76). Distinct from
+   * `meterFailed`, which is the OPEN-time "tap never wired" state; this is the
+   * per-frame runtime state a wired tap can still fall into.
+   */
+  readMeterAvailable: () => boolean;
   /**
    * The live-waveform scope for the current take (#120), or `null` when nothing
    * is capturing or the tap could not be wired. A PULL like `readLevel`: the
@@ -244,6 +381,23 @@ export function useRecorder(): UseRecorder {
 
   /** The current capture level for the VU meter, 0 when nothing is capturing. */
   const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
+
+  // Whether that level can be trusted this frame (#76). Gated on `recordingRef`
+  // exactly like `readScope` below, and for the same teardown-window reason: at
+  // Stop/interrupt the tap is torn down SYNCHRONOUSLY (nulled in `stop()`,
+  // `disconnect()`ed in `onInterrupted`) one commit BEFORE `setState` leaves
+  // "recording", so `active` in `VuMeter` is still true in that window. Without
+  // the gate `available()` -> false there would flash the "meter broken" hatch —
+  // the exact dead-mic misread #76 exists to prevent (George R1 P2). `LiveScope`
+  // documents the same frame (`live-scope.tsx:176-180`). While recording, a
+  // wired tap defers to its own live context-state check; a false there is a
+  // genuine suspended/interrupted context. Outside recording return `true` so the
+  // meter never hatches on the way down — it rests empty via `active` instead.
+  const readMeterAvailable = useCallback(
+    (): boolean =>
+      recordingRef.current ? (tapRef.current?.available() ?? false) : true,
+    []
+  );
 
   /**
    * The live-waveform scope for the current take, or `null` when not recording
@@ -469,11 +623,23 @@ export function useRecorder(): UseRecorder {
       if (generation !== generationRef.current) return false;
       releaseStream();
       setState("idle");
-      setError(
-        cause instanceof DOMException && cause.name === "NotAllowedError"
-          ? "Microphone permission was denied."
-          : "Could not start recording."
-      );
+      const name = cause instanceof DOMException ? cause.name : undefined;
+      // Immediate message from the exception alone — the permission state is not
+      // in hand yet, so classify as `unknown` (a NotAllowedError → the honest
+      // "allow it, or check settings" line). No blank while the query resolves.
+      setError(micRefusalMessage(classifyMicRefusal(name, "unknown")));
+      // Refine once the Permissions API answers, which splits the site block from
+      // the OS block (#203/#195). It is async, so re-check the generation before
+      // applying — a `cancel()`/newer `start()` may have taken over meanwhile —
+      // and only for the refusal it can sharpen. iOS returns `unknown` and this
+      // no-ops, leaving the immediate line.
+      if (name === "NotAllowedError") {
+        void queryMicPermission().then((permission) => {
+          if (permission === "unknown") return;
+          if (generation !== generationRef.current) return;
+          setError(micRefusalMessage(classifyMicRefusal(name, permission)));
+        });
+      }
       return false;
     }
   }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
@@ -522,7 +688,7 @@ export function useRecorder(): UseRecorder {
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
-    if (!recorder) return { samples: null, error: null };
+    if (!recorder) return { samples: null, error: null, blob: null };
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this
@@ -630,38 +796,74 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         error: current ? "No sound was recorded. Try again." : null,
+        blob: null, // nothing was captured — no bytes to keep
       };
     }
 
+    // The whole outcome — emit samples? keep the bytes? which message? — is the
+    // pure `classifyStopDecode`, so the load-bearing #106/#165 contract (a decode
+    // THROW keeps the bytes even when superseded; a zero-sample decode keeps
+    // nothing) is pinned by a Node test rather than living only here (George R3
+    // G-3). `current` is re-read after each await, so it reflects a `leave()`/
+    // pagehide that landed during the decode.
     try {
       const samples = await decodeToCanonical(blob);
-      const decodedCurrent = generation === generationRef.current;
-      // Returned even when superseded: these are confirmed samples, and the
-      // caller decides what to do with them. Only the shared UI state is
-      // withheld, because a newer recording owns it now.
-      if (decodedCurrent) setState("idle");
-      // A successful decode to ZERO samples is "no sound" too — same class as an
-      // empty blob, not a usable take. Classified here, at the source, so a
-      // caller keying on `samples.length` never gets a non-null empty buffer
-      // paired with a null error (which showed no message at all — F7).
-      if (samples.length === 0) {
-        return {
-          samples: null,
-          error: decodedCurrent ? "No sound was recorded. Try again." : null,
-        };
-      }
-      return { samples, error: null };
+      const current2 = generation === generationRef.current;
+      const verdict = classifyStopDecode(
+        { decoded: true, sampleCount: samples.length },
+        current2
+      );
+      if (current2) setState("idle");
+      return {
+        samples: verdict.emitSamples ? samples : null,
+        error: stopDecodeMessage(verdict.error),
+        blob: verdict.keepBlob ? blob : null,
+      };
     } catch {
-      const stillCurrent = generation === generationRef.current;
-      if (stillCurrent) setState("idle");
+      const current2 = generation === generationRef.current;
+      const verdict = classifyStopDecode({ decoded: false }, current2);
+      if (current2) setState("idle");
       return {
         samples: null,
-        error: stillCurrent
-          ? "Recording could not be decoded on this device."
-          : null,
+        error: stopDecodeMessage(verdict.error),
+        // Kept even when superseded — see `classifyStopDecode` and #165.
+        blob: verdict.keepBlob ? blob : null,
       };
     }
   }, [abandonStream, clearTick]);
+
+  const retryDecode = useCallback(
+    async (blob: Blob): Promise<RetryDecodeResult> => {
+      // Resume synchronously in the gesture that called this, BEFORE the decode's
+      // await: a stop that failed because the shared context was left
+      // "interrupted" (a call, Siri, a route change — #106) only un-interrupts on
+      // a user tap, and iOS spends that activation on the first synchronous Web
+      // Audio touch. Fire-and-forget like the record/preview paths — the decode
+      // below runs on the same context the resume is waking.
+      void resumeAudioContext().catch((cause: unknown) => {
+        console.error("Could not resume the audio context", cause);
+      });
+      try {
+        const samples = await decodeToCanonical(blob);
+        // A decode to zero samples yields no usable take. On the RETRY path this
+        // is NOT proven silence the way it is for `stop()`: the bytes are held
+        // only because the FIRST decode THREW, so a later zero-sample decode is
+        // ambiguous, and dropping the held take on it would lose the only copy
+        // (George R3 G-1). So this is just another retry failure — the caller
+        // keeps the bytes and surfaces the message; it never drops them.
+        if (samples.length === 0) {
+          return { samples: null, error: "No sound was recorded. Try again." };
+        }
+        return { samples, error: null };
+      } catch {
+        return {
+          samples: null,
+          error: "Recording could not be decoded on this device.",
+        };
+      }
+    },
+    []
+  );
 
   const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
     const recorder = recorderRef.current;
@@ -754,6 +956,16 @@ export function useRecorder(): UseRecorder {
     setError(null);
   }, [clearTick, releaseStream]);
 
+  // Re-arm Web Audio when the app returns to the foreground mid-take (#76).
+  // Extracted to `armForegroundResume` so its two guards (recording, visible) and
+  // the add/remove-listener wiring are unit-testable in Node with no renderer,
+  // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
+  // mutates each guard to prove it. The effect is the one-line call plus the
+  // `[state]` dependency: browser-boundary wiring whose guards are Node-tested,
+  // but the effect actually firing and iOS gesture-withholding are the on-device
+  // pass for #76 — NOT yet run on any device.
+  useEffect(() => armForegroundResume(state === "recording"), [state]);
+
   // Never leave the microphone hot if the screen unmounts mid-recording.
   useEffect(() => () => cancel(), [cancel]);
 
@@ -766,9 +978,11 @@ export function useRecorder(): UseRecorder {
     pause,
     resume,
     stop,
+    retryDecode,
     previewCapture,
     cancel,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
