@@ -687,10 +687,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         const result = await audio.stopRecording();
         if (result.samples && result.samples.length > 0) {
           // Splice the take into the WORKING buffer at the locked offset, exactly
-          // as `close()` does; the mark rides the take through `addTake`. The
-          // boolean is deliberately not branched on — a failed save becomes App's
-          // recovery screen, same contract `close()` relies on.
-          await saveRecording(
+          // as `close()` does; the mark rides the take through `addTake`. UNLIKE
+          // `close()`, whose next step is always onExit, this path means to STAY
+          // and open edit mode — so it MUST branch on saveRecording's boolean.
+          // A quota/IDB failure returns false and turns into App's recovery screen,
+          // which early-returns SaveFailed and unmounts this sheet; if we ignored
+          // the boolean and entered edit mode, App's `recorder` state would stay set
+          // under that screen and a Discard/Retry would REMOUNT the sheet instead of
+          // returning to Segments — the recovery post-condition (`recorder === null`)
+          // broken (George R1 P2). The held take carries the samples and the mark;
+          // retry/discard live on the recovery screen, not here.
+          const saved = await saveRecording(
             segmentId,
             editor.working,
             result.samples,
@@ -698,6 +705,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             finishedIntent === true
           );
           dirty.current = true;
+          if (!saved) {
+            // Take the SAME exit `close()`'s capture path takes: it always reaches
+            // `onExit(dirty)` after the save (`commitPendingAndExit` with
+            // `committed`), so App clears `recorder` and the recovery screen owns
+            // the body with nothing mounted behind it. Do NOT enter edit mode.
+            onExit(dirty.current);
+            return;
+          }
           // Re-read the segment and AWAIT the fresh view, so the editor re-bases on
           // the committed samples (`useSegmentEditor` resets when `view.samples`
           // changes) BEFORE edit mode opens — the mode switch below then batches
@@ -733,6 +748,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       reloadView,
       abortPreview,
       cancelPreview,
+      onExit,
     ]);
 
     // The permission panel's Retry. It bypasses `onRecordButton`, so it must force
