@@ -21,6 +21,68 @@ just the native shell and the pipeline to produce installable builds.
 
 ---
 
+## 0. Minimal Monday path
+
+**Goal (Monday, 2026-09-14):** get _a_ build installed on a real phone that
+**opens, prompts for the microphone, and records a passage in the foreground.**
+That is the whole bar. **Background / lock-screen capture is a known limitation
+and a separate spike ([§8](#8-the-one-real-risk-do-not-skip)) — it is _not_ a
+Monday blocker.** Do not spend Monday's Mac time on native plugins, app icons,
+or version-sync ([§6](#6-versioning)); none of them affect install-open-record.
+
+The two platforms have very different fastest routes:
+
+- **Android — recommended Monday-fast route, no external gatekeeper.**
+  `./gradlew assembleDebug` produces an **auto-signed _debug_ APK** that
+  installs and runs on a device **today, with zero keystore and no Google
+  account**. Android's debug build type is signed with the local debug keystore
+  the toolchain generates for you, so there is nothing to set up first.
+
+  ```bash
+  npm run build && npx cap sync android
+  cd android && ./gradlew assembleDebug
+  # → android/app/build/outputs/apk/debug/app-debug.apk
+  ```
+
+  Send that APK to a tester and follow the sideload steps in
+  [§5](#5-android--apk-sideload) step 4 (enable _Install unknown apps_, open the
+  file). The signed-**release** path (a keystore + `signingConfigs`, §5 steps
+  1–3) is the durable distribution route and can follow later — it is **not**
+  needed to hit Monday's bar.
+
+- **iOS — gated on the Apple Developer account (the long pole).** There is no
+  debug-APK equivalent: every install onto an iPhone requires a signing identity
+  tied to an **Apple Developer Program** membership and the unfoldingWord Apple
+  **Team**. **Before Monday, verify the Team exists and enrollment is active**
+  (see [§0.1](#01-humanpaid-gates) and [§4](#4-ios--testflight)). If it is not,
+  that is the item to resolve first — the Xcode steps cannot start without it. A
+  local build to a **cabled personal device** is possible with a free Apple ID
+  but is not the TestFlight path testers use; TestFlight still needs the paid
+  membership.
+
+If only one platform is ready on Monday, ship that one. Android via the debug
+APK is the route with no human/paid dependency, so it is the safest to count on.
+
+### 0.1 Human / paid gates
+
+Some steps depend on people, money, or approvals outside this repo. Start these
+early — a membership or an access grant can take **more than a day**.
+
+| Gate                                   | Platform | Cost   | Lead time                      | Needed for                                              |
+| -------------------------------------- | -------- | ------ | ------------------------------ | ------------------------------------------------------- |
+| **Apple Developer Program** membership | iOS      | Paid   | Enrollment can take **a day+** | Any signed iOS install; TestFlight                      |
+| **unfoldingWord Apple Team**           | iOS      | —      | Access grant                   | Signing under the org identity                          |
+| **App Store Connect** access           | iOS      | —      | Access grant                   | Adding the build + testers (Caleb, Javi, Tim)           |
+| Android signing                        | Android  | **$0** | **None**                       | Nothing external — debug APK, or a self-signed keystore |
+
+**Android has no external gatekeeper.** You either use the auto-signed debug APK
+above, or generate your own release keystore locally (§5 step 1) — no account,
+no payment, no approval. **iOS cannot start until the Apple items above are in
+place**, so confirm them before Monday rather than discovering the gap that
+morning.
+
+---
+
 ## 1. What is in the repo
 
 | Path                            | What it is                               | Committed?      |
@@ -69,9 +131,15 @@ Both `cap add` and `cap sync` run **without** Xcode/Android Studio (verified in
 this container). Everything past sync — `cap open`, archive, gradle assemble,
 signing, upload — needs the native toolchains on a Mac.
 
-Convenience scripts were **not** added to `package.json`: `npx cap sync`,
-`npx cap open ios`, `npx cap open android` are the documented commands and the
-`cap` CLI is already a dev dependency. (Add them later if the workflow warrants.)
+Convenience scripts are in `package.json` (added for the Monday prep, #262):
+
+- `npm run cap:sync` → `npm run build && npx cap sync` (rebuild the web bundle
+  and copy it into both native projects — the core loop above in one command).
+- `npm run cap:ios` → `npx cap open ios`.
+- `npm run cap:android` → `npx cap open android`.
+
+They are thin wrappers over the `cap` CLI, which is already a dev dependency;
+the underlying `npx cap …` commands still work directly.
 
 ---
 
