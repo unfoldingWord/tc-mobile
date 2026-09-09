@@ -5,6 +5,11 @@ import {
   type CaptureScope,
   createCapturePeaks,
 } from "@/lib/audio/capture-peaks";
+import {
+  classifyMicRefusal,
+  type MicPermissionState,
+  type MicRefusal,
+} from "@/lib/audio/mic-refusal";
 
 import {
   createLevelTap,
@@ -14,6 +19,44 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+
+/**
+ * The permission state for the microphone, or `"unknown"` where the platform
+ * hides it (iOS Safari has no `navigator.permissions`). Browser-only, so it
+ * lives here at the audio boundary and feeds the pure `classifyMicRefusal`.
+ */
+async function queryMicPermission(): Promise<MicPermissionState> {
+  try {
+    const perms = navigator.permissions;
+    if (!perms?.query) return "unknown";
+    const status = await perms.query({
+      // `"microphone"` is a valid PermissionName at runtime but missing from
+      // some TS DOM lib versions; the cast is the one narrow spot that needs it.
+      name: "microphone" as PermissionName,
+    });
+    return status.state;
+  } catch {
+    // Firefox rejects a microphone query outright; treat that like an absent API.
+    return "unknown";
+  }
+}
+
+/** The honest sentence for each refusal (#203). Inline here, like the recorder's
+ *  other error copy, because `hooks/` cannot reach the components' string table. */
+function micRefusalMessage(refusal: MicRefusal): string {
+  switch (refusal) {
+    case "no-device":
+      return "No microphone was found on this device.";
+    case "site-blocked":
+      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
+    case "os-blocked":
+      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
+    case "prompt":
+      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
+    case "other":
+      return "Could not start recording.";
+  }
+}
 
 /**
  * Columns the live-waveform ring holds while recording (#120). One column is
@@ -469,11 +512,23 @@ export function useRecorder(): UseRecorder {
       if (generation !== generationRef.current) return false;
       releaseStream();
       setState("idle");
-      setError(
-        cause instanceof DOMException && cause.name === "NotAllowedError"
-          ? "Microphone permission was denied."
-          : "Could not start recording."
-      );
+      const name = cause instanceof DOMException ? cause.name : undefined;
+      // Immediate message from the exception alone — the permission state is not
+      // in hand yet, so classify as `unknown` (a NotAllowedError → the honest
+      // "allow it, or check settings" line). No blank while the query resolves.
+      setError(micRefusalMessage(classifyMicRefusal(name, "unknown")));
+      // Refine once the Permissions API answers, which splits the site block from
+      // the OS block (#203/#195). It is async, so re-check the generation before
+      // applying — a `cancel()`/newer `start()` may have taken over meanwhile —
+      // and only for the refusal it can sharpen. iOS returns `unknown` and this
+      // no-ops, leaving the immediate line.
+      if (name === "NotAllowedError") {
+        void queryMicPermission().then((permission) => {
+          if (permission === "unknown") return;
+          if (generation !== generationRef.current) return;
+          setError(micRefusalMessage(classifyMicRefusal(name, permission)));
+        });
+      }
       return false;
     }
   }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
