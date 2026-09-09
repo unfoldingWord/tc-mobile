@@ -8,6 +8,8 @@
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
  */
+import { filenameSafe } from "@/lib/utils";
+
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -24,8 +26,25 @@ export const strings = {
       expanded ? "expanded" : "collapsed"
     }`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
-  openChapter: (n: number): string => `Open chapter ${n}`,
+  openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
+  /**
+   * The chapter's display heading: the facilitator's passage label when set
+   * (#264), otherwise the default "Chapter {number}". One place both the Books
+   * row and the Segments breadcrumb resolve the name, so they never diverge.
+   */
+  chapterHeading: (name: string | null, n: number): string =>
+    name ?? `Chapter ${n}`,
+
+  // ── Rename (#264) — book and chapter, from their ≡ menus ──────────────────
+  renameBook: "Rename book",
+  renameChapter: "Rename chapter",
+  // The inline text field's accessible name (the whole text layer of the input)
+  // and its placeholder.
+  bookNameField: "Book name",
+  chapterNameField: "Chapter name",
+  // The check control that commits the typed name.
+  saveName: "Save name",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
@@ -174,8 +193,11 @@ export const strings = {
     n === 1
       ? "1 segment could not be included."
       : `${n} segments could not be included.`,
+  // The book name is free text since #264, so sanitise it into the filename —
+  // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
+  // The chapter is an ordinal, always safe.
   shareFilename: (book: string, chapter: number): string =>
-    `${book} - Chapter ${chapter}.mp3`,
+    `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
 
   // Share Book — the book-level ≡ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.
@@ -192,7 +214,9 @@ export const strings = {
     n === 1
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
-  shareBookFilename: (book: string): string => `${book}.zip`,
+  // Sanitised like shareFilename: the book name is the .zip File name and must
+  // not carry a path separator or a reserved character (G3).
+  shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and

@@ -120,6 +120,16 @@ export interface UseAudioSession {
   /** End every sound this screen owns, synchronously. Call on every navigation. */
   leave: () => void;
   /**
+   * Resume the shared audio context inside the gesture that opens the recorder
+   * sheet (#184), before the async segment load one commit later. Fire-and-
+   * forget, like the retry and playback resume paths; call it synchronously in
+   * the open tap so an iOS `"interrupted"` context is running by the time the
+   * first `decodeAudioData` runs, sparing the common transient case a failed
+   * open and an extra "Try again" tap. A no-op when the context is already
+   * running.
+   */
+  primeAudioContext: () => void;
+  /**
    * The live capture level for the VU meter, in the raw amplitude domain. A PULL
    * read (D-LEVEL-PULL): the meter polls it on its own frame clock, so nothing
    * above this layer re-renders per frame. 0 whenever nothing is capturing.
@@ -631,6 +641,20 @@ export function useAudioSession(): UseAudioSession {
     setPlaybackError(null);
   }, [cancelRecording, session, setPlaying, setPlayingBuffer]);
 
+  const primeAudioContext = useCallback(() => {
+    // Un-interrupt the shared context inside the tap that opens the sheet, so
+    // the FIRST decode of a finished segment runs on a running context rather
+    // than an interrupted one (#184). The load itself runs one commit later from
+    // `useRecorderSegment`'s effect — after this gesture's activation is spent —
+    // so resuming there would be too late on iOS, exactly the shape #155's retry
+    // fixed for the SECOND attempt. Fire-and-forget with the same failure sink
+    // as the sibling resume call sites; it touches neither the floor nor the
+    // session, only the shared decode/playback context.
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
+  }, []);
+
   useEffect(() => {
     // Backstop only. `startRecording` releases a refused claim on the completion
     // path; this still covers a recorder that reaches idle by some route that
@@ -671,6 +695,7 @@ export function useAudioSession(): UseAudioSession {
     stopRecording,
     previewCapture,
     leave,
+    primeAudioContext,
     readLevel,
     readMeterAvailable,
     readScope,

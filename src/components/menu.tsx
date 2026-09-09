@@ -108,6 +108,12 @@ export function Menu({
     const panel = panelRef.current;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // A child already handled this Escape (the rename field calls
+        // preventDefault on its own Cancel — G1). Honour it: closing the whole
+        // menu here would double-fire and drop an armed share via share.reset().
+        // This reads a flag on the one shared native event, so it holds no matter
+        // how React delegates the portalled field's synthetic event.
+        if (e.defaultPrevented) return;
         onCloseRef.current();
         return;
       }
