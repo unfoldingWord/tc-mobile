@@ -8,6 +8,7 @@ import {
   getChapter,
   getSegmentsOfChapter,
   isFinished,
+  renameChapter as renameChapterInStore,
   setSegmentFinished,
 } from "@/lib/storage/books";
 import {
@@ -91,6 +92,8 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
 interface ChapterView {
   readonly bookName: string;
   readonly chapterNumber: number;
+  /** The facilitator's passage label, or null ⇒ show "Chapter {number}" (#264). */
+  readonly chapterName: string | null;
   readonly rows: SegmentRow[];
 }
 
@@ -111,6 +114,7 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   return {
     bookName: book?.name ?? "",
     chapterNumber: chapter.number,
+    chapterName: chapter.name,
     rows,
   };
 }
@@ -128,6 +132,7 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
 export function useChapterSegments(chapterId: ChapterId) {
   const [bookName, setBookName] = useState("");
   const [chapterNumber, setChapterNumber] = useState(0);
+  const [chapterName, setChapterName] = useState<string | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   // Latches on the first successful read — see use-books: distinguishes a
@@ -146,6 +151,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         if (cancelled) return;
         setBookName(view.bookName);
         setChapterNumber(view.chapterNumber);
+        setChapterName(view.chapterName);
         setRows(view.rows);
         setError(null);
         setLoaded(true);
@@ -222,6 +228,26 @@ export function useChapterSegments(chapterId: ChapterId) {
     []
   );
 
+  const renameChapter = useCallback(
+    async (name: string): Promise<boolean> => {
+      // Rename touches no audio, so patch the breadcrumb in place rather than
+      // reload() (which re-walks the chapter's PCM). The store normalises the
+      // name (trim, blank ⇒ null); take the resolved value back from it so the
+      // breadcrumb shows exactly what was stored. A failed write reaches the
+      // same Notice a load/append failure does.
+      try {
+        const chapter = await renameChapterInStore(chapterId, name);
+        setChapterName(chapter.name);
+        setError(null);
+        return true;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return false;
+      }
+    },
+    [chapterId]
+  );
+
   const eraseRow = useCallback((segmentId: SegmentId) => {
     // Erase makes ONE row never-recorded and touches no other clip, so patch it
     // in place — exactly like addSegment/setFinished — rather than reload() the
@@ -248,6 +274,7 @@ export function useChapterSegments(chapterId: ChapterId) {
   return {
     bookName,
     chapterNumber,
+    chapterName,
     rows,
     loading,
     loaded,
@@ -257,5 +284,6 @@ export function useChapterSegments(chapterId: ChapterId) {
     addSegment,
     setFinished,
     eraseRow,
+    renameChapter,
   };
 }

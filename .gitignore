@@ -5,8 +5,13 @@ node_modules
 
 # Build output
 dist/
+dist-e2e/
 dev-dist/
 *.tsbuildinfo
+
+# Playwright (#251)
+/test-results/
+/playwright-report/
 
 # Cloudflare
 .wrangler/

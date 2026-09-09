@@ -4,6 +4,7 @@ import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
+import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { strings } from "./strings";
 import { useBookShare } from "@/hooks/use-book-share";
@@ -26,8 +27,16 @@ interface BooksScreenProps {
  * because the next thing they do is add a chapter to it.
  */
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
-  const { books, loading, loaded, error, reload, createBook, addChapter } =
-    useBooks();
+  const {
+    books,
+    loading,
+    loaded,
+    error,
+    reload,
+    createBook,
+    addChapter,
+    renameBook,
+  } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
@@ -52,6 +61,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
   // resolves the id back to a row, auto-closing the menu if that book vanishes.
   const [shareMenuBookId, setShareMenuBookId] = useState<BookId | null>(null);
+  // Whether the open book ≡ menu is in rename mode (the name field showing) or
+  // its action list. Resets to the action list every time the menu closes.
+  const [renamingBook, setRenamingBook] = useState(false);
+  // A monotonic token for the current book-menu session. It advances whenever the
+  // menu closes, switches to another book, or arms a share — every transition
+  // after which a late-resolving rename must NOT run its close, or it would drop
+  // a different menu's state or a prepared encode (F1). onSaveBookName captures
+  // the token and closes only if it still matches. A ref, read at resolution
+  // time, so it sees the live value, not the one closed over at save.
+  const bookMenuSession = useRef(0);
   const bookShare = useBookShare();
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
@@ -124,17 +143,46 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
   const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // Open a book's ≡ menu, ending any prior menu session so a rename still in
+  // flight from the previous one cannot close this one.
+  const onOpenShareMenu = useCallback((bookId: BookId) => {
+    bookMenuSession.current += 1;
+    setShareMenuBookId(bookId);
+  }, []);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
   const onCloseShareMenu = useCallback(() => {
+    bookMenuSession.current += 1;
     setShareMenuBookId(null);
+    setRenamingBook(false);
     bookShare.reset();
   }, [bookShare]);
+  // Commit the typed book name (#264), then close the menu on success. A failed
+  // write keeps the menu open with the reason in its own Notice — the screen's
+  // Notice sits behind the scrim, so a rename needs a channel inside the panel.
+  const onSaveBookName = useCallback(
+    (name: string) => {
+      if (!shareMenuBookId) return;
+      // Capture the session this rename belongs to. IDB can settle after the
+      // user has closed the menu, reopened another book's menu, or armed a share
+      // — all of which advance the token — so close ONLY if we are still the
+      // same session (F1). Without this, the stale resolution closes the
+      // now-current menu and runs share.reset(), discarding a prepared encode.
+      const session = bookMenuSession.current;
+      void renameBook(shareMenuBookId, name).then((book) => {
+        if (book && bookMenuSession.current === session) onCloseShareMenu();
+      });
+    },
+    [renameBook, shareMenuBookId, onCloseShareMenu]
+  );
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
   // menu stays open across both gestures (the shelf is `inert` behind it), so the
   // panel is what the translator is looking at.
   const onPrepareBookShare = useCallback(() => {
     if (!shareMenuBook) return;
+    // Arming a share ends the current rename-close session: a rename resolving
+    // after this must not close the menu and drop the encode we are preparing.
+    bookMenuSession.current += 1;
     void bookShare.prepare(
       shareMenuBook.bookId,
       strings.shareBookFilename(shareMenuBook.name),
@@ -225,7 +273,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
                 expanded={expanded.has(book.bookId)}
                 onToggle={() => toggle(book.bookId)}
                 onNewChapter={() => void onNewChapter(book.bookId)}
-                onOpenShareMenu={() => setShareMenuBookId(book.bookId)}
+                onOpenShareMenu={() => onOpenShareMenu(book.bookId)}
                 onOpenChapter={onOpenChapter}
                 setNode={setNode}
               />
@@ -246,32 +294,56 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         onClose={onCloseShareMenu}
         title={strings.bookMenuTitle}
       >
-        {bookShare.status === "ready" ? (
-          <Control
-            icon="share"
-            label={strings.shareSend}
-            variant="primary"
-            autoFocus
-            onClick={onSendBookShare}
-          />
+        {renamingBook && shareMenuBook ? (
+          <>
+            {/* Rename the book in place (#264). The store seeds the field with
+                the current name so a small fix is an edit, not a retype. */}
+            <NameEdit
+              initialValue={shareMenuBook.name}
+              fieldLabel={strings.bookNameField}
+              onSave={onSaveBookName}
+              onCancel={() => setRenamingBook(false)}
+            />
+            {/* A failed rename speaks here — the screen's Notice is behind the
+                scrim — while the field stays up for another try. */}
+            {error && <Notice>{error}</Notice>}
+          </>
         ) : (
-          <Control
-            icon="share"
-            label={strings.shareBook}
-            variant="quiet"
-            onClick={onPrepareBookShare}
-          />
+          <>
+            <Control
+              icon="edit"
+              label={strings.renameBook}
+              variant="quiet"
+              onClick={() => setRenamingBook(true)}
+            />
+            {bookShare.status === "ready" ? (
+              <Control
+                icon="share"
+                label={strings.shareSend}
+                variant="primary"
+                autoFocus
+                onClick={onSendBookShare}
+              />
+            ) : (
+              <Control
+                icon="share"
+                label={strings.shareBook}
+                variant="quiet"
+                onClick={onPrepareBookShare}
+              />
+            )}
+            {bookShare.status === "preparing" && (
+              <Notice tone="busy">{strings.shareBookPreparing}</Notice>
+            )}
+            {bookShare.status === "ready" && bookShare.missing > 0 && (
+              // A heads-up once the zip is armed, not a wait (#112).
+              <Notice tone="info">
+                {strings.shareBookMissing(bookShare.missing)}
+              </Notice>
+            )}
+            {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
+          </>
         )}
-        {bookShare.status === "preparing" && (
-          <Notice tone="busy">{strings.shareBookPreparing}</Notice>
-        )}
-        {bookShare.status === "ready" && bookShare.missing > 0 && (
-          // A heads-up once the zip is armed, not a wait (#112).
-          <Notice tone="info">
-            {strings.shareBookMissing(bookShare.missing)}
-          </Notice>
-        )}
-        {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
       </Menu>
     </div>
   );
@@ -367,7 +439,9 @@ interface ChapterItemProps {
 }
 
 function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
-  const { number, finishedCount, totalCount } = chapter;
+  const { number, name, finishedCount, totalCount } = chapter;
+  // The passage label the facilitator set (#264), else "Chapter {number}".
+  const heading = strings.chapterHeading(name, number);
   // An empty chapter shows no counter — "0/0" would read as a failed 21, not
   // as "nothing here yet" (spec §2.4).
   const hasCounter = totalCount > 0;
@@ -377,11 +451,11 @@ function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
       <button
         type="button"
         onClick={onOpen}
-        aria-label={strings.openChapter(number)}
+        aria-label={strings.openChapter(heading)}
         className="flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left"
       >
         <span className="min-w-0 truncate" style={{ color: "var(--s-ink)" }}>
-          {number} — {strings.chapterName(number)}
+          {heading}
         </span>
         {hasCounter && (
           <span

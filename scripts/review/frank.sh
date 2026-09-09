@@ -19,14 +19,14 @@
 # Codex reviews the COMMITTED diff, so uncommitted edits do not affect it.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-source scripts/review/_preamble.sh "${1:-main}"
+source scripts/review/_preamble.sh "${1:-origin/develop}"
 
 SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/frank-$SHA.md"
 DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
-read -r -d '' PROMPT <<PROMPT_EOF || true
+read -r -d '' PROMPT_TEMPLATE <<'PROMPT_EOF' || true
 You are **Frank**, a senior/principal engineer with a methodical, analytical,
 no-nonsense review style. You are the grounding rod — the one who connects
 vision to architecture to execution.
@@ -55,7 +55,7 @@ rewrites unless asked. Always actionable — never leave a finding at
 ---
 
 REVIEW ASSIGNMENT — you are Reviewer A in a dual-review pipeline for
-$REPO_CONTEXT
+@@REPO_CONTEXT@@
 
 Your lens is DIFF-LOCAL: correctness of the changed code ITSELF. Logic errors,
 off-by-one and boundary bugs, unhandled failure paths, async/await mistakes,
@@ -74,15 +74,33 @@ Rules of engagement:
 - READ-ONLY. Do not modify, create or delete any file. Do not commit. Do not
   run the test suite or the build. The working tree is checked after this run
   and any mutation voids the review.
-- The full diff under review is at $DIFF_FILE — read it first.
+- The full diff under review is at @@DIFF_FILE@@ — read it first.
 - Your FINAL message must be the complete report, not narration about it.
 
-Branch under review: $BRANCH (against $BASE) — $DIFF_STAT
+Branch under review: @@BRANCH@@ (against @@BASE@@) — @@DIFF_STAT@@
 
-$EVIDENCE_RULES
+@@EVIDENCE_RULES@@
 
-$SEVERITY_RULES
+@@SEVERITY_RULES@@
 PROMPT_EOF
+
+# The delimiter above is QUOTED ('PROMPT_EOF'), so the persona is captured
+# verbatim: literal backticks and $ in a steer (e.g. `settle()`, or a $VAR named
+# in a round-context block) are no longer command-substituted or expanded away.
+# The named fields are injected here by literal string replacement. Bash 5.2
+# defaults `patsub_replacement` on, which makes a literal `&` in a replacement
+# value expand to the matched placeholder (a `feature/a&b` base would inject
+# `feature/a@@BASE@@b`); disable it so the value is inserted verbatim. Guarded
+# for bash < 5.2, where the option does not exist and `&` is not special.
+shopt -u patsub_replacement 2>/dev/null || true
+PROMPT="$PROMPT_TEMPLATE"
+PROMPT="${PROMPT//@@REPO_CONTEXT@@/$REPO_CONTEXT}"
+PROMPT="${PROMPT//@@DIFF_FILE@@/$DIFF_FILE}"
+PROMPT="${PROMPT//@@BRANCH@@/$BRANCH}"
+PROMPT="${PROMPT//@@BASE@@/$BASE}"
+PROMPT="${PROMPT//@@DIFF_STAT@@/$DIFF_STAT}"
+PROMPT="${PROMPT//@@EVIDENCE_RULES@@/$EVIDENCE_RULES}"
+PROMPT="${PROMPT//@@SEVERITY_RULES@@/$SEVERITY_RULES}"
 
 echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
 TREE_BEFORE="$(snapshot_tree)"

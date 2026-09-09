@@ -11,6 +11,92 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-08 — sprint planning with Tim & Elsy; a 10-PR merge day; first Android on-device pass
+
+**Branches:** ten PRs merged to **`develop`** (`0ba3687` → `8011bdc`). **Nothing promoted** —
+`staging` still v0.1.12, `main` still `3464a30`. A build-review-merge day, not a promotion day.
+Note: the 2026-09-04 merge-train EOD (PR #242) and gate-chart (#254) are still **unmerged docs
+PRs**, so this entry follows 2026-09-03 in the committed tracker with a gap.
+
+### Sprint plan (set with Tim & Elsy this morning)
+
+- **V1 = end of September**, in **three one-week sprints**. **Sprint 1 (→ Mon 2026-09-14):
+  installable apps** — wrap the PWA with Capacitor → **iOS TestFlight + Android APK** so the
+  Nairobi testers (**Caleb, Javi**) hit real devices early.
+- **Team:** **Elsy Lambert** PM (not Birch — AGENTS.md DRI block is stale), **Tim** product owner,
+  **Seth** dev lead. Weekly sync, same time.
+- **V1-required / v1-desired** labels are the must-have axis (they already existed); 25 v1-required
+  issues, all in the `v0.2.0` gate. **Template Library retagged non-blocking** (v2-required →
+  v1-desired). A PM status **artifact** was built and iterated for the meeting.
+
+### Merged (10 PRs, `0ba3687` → `8011bdc`)
+
+| PR         | What                                                                                               | Closes       |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------ |
+| #190       | lib-boundary paths in POSIX form (Windows push)                                                    | #189         |
+| #256       | headless-Chromium smoke for browser-only paths                                                     | #251         |
+| #260       | distinguish the three microphone refusals                                                          | #203         |
+| #255, #275 | dependabot minor/patch groups                                                                      | —            |
+| **#259**   | **recorder foundation** — resume-on-open + Back→commit (**5 review rounds**)                       | #184, #168   |
+| #266       | rename books & chapters in place (v5 schema migration)                                             | #264         |
+| #265       | **Capacitor scaffold** — native mic perms + `allowBackup=false`                                    | part of #262 |
+| **#258**   | **keep audio on decode fail** — root-fixed the `leaveHeldTake`/`close()`-tail class (**5 rounds**) | #165         |
+| #267       | VU meter hatches on a suspended context (3 rounds)                                                 | #76          |
+
+The recorder cluster's data-loss core (#259/#260/#258/#267) is fully landed.
+
+### First-ever Android on-device pass (Seth)
+
+**The core loop works on Android** (Chrome): record → playback → edit → select/move → trim. Two
+**v1-required** bugs found and filed with code-grounded hypotheses:
+
+- **#269** — stored-segment playback is **silent** (record + in-recorder playback work). Byte-level
+  proof the lamejs MP3 is **headerless** (no Xing/Info); prime suspect is Android `decodeAudioData`
+  on that stream. Needs a device check to confirm the layer, then a storage-format call (options:
+  Xing header / WAV / Opus / OfflineAudioContext rate-pin — may touch ADR 0009 → Tim).
+- **#272** — **Share Book fails** ("could not share this book"); `navigator.canShare` likely rejects
+  the `.zip`. Share Chapter (single MP3) is the discriminator.
+
+### Also filed / decided
+
+Issues: **#262** (Capacitor umbrella), **#263** (re-validate audio in the WebView), **#264** (rename),
+**#269**, **#272**, **#277** (deferred audio-io P3). Jesse filed **#276**. **#258 R4-G1** round-5
+root fix authorized (cap-exceeded, DRI) and merged. Backlog reassigned Jesse↔Seth.
+
+### In progress
+
+- **#268 — reach Edit in-sheet (#134)** — **round 3 of 4**. The P1 data-loss fix is confirmed
+  (`onEnterEdit`'s held-take blob branch mirrors `close()`'s precedence). **Two open P2 siblings**:
+  (1) Try-again after an Edit-commit decode-fail lands on Segments, not edit mode; (2) `finishedIntent`
+  isn't consumed on in-sheet reopen — **a finished-status requirements question for Tim**. Root fix =
+  make Edit's post-conditions match Back across all session-state consumers. Fix pushed at `3e0013b`.
+
+### Tooling / process
+
+- **George (grok) is unreliable under parallel load** — OOM/no-verdict when several grok reviews run
+  at once (memory contention). **Serialize George** (one grok review at a time); re-run on OOM;
+  fall back to Frank + independent agent deep-tree, recorded per PR (#208 precedent).
+- Cross-review caught real defects in our **own** subagent work: missing native mic permissions, an
+  `allowBackup` privacy leak, a zip path-injection, a false "verified on-device" comment, and a
+  cross-PR data-loss seam (#268). The loop earned its keep.
+- Swept **35 stale agent worktrees**.
+
+### Blockers / needs a human
+
+- **Seth:** the **Share-Chapter device check** settles #269's layer and #272's zip theory in one tap.
+- **Seth (Mac):** the **Monday** Capacitor iOS TestFlight + Android APK builds (#262).
+- **Tim:** the #269 storage-format call (post-device-check) and the #268 `finishedIntent` semantics.
+
+### Next steps
+
+1. **#268 round 4** — the root fix for the two P2 siblings + Tim's `finishedIntent` call.
+2. **Seth's device check** → then the #269 fix path.
+3. **Monday installable** — Capacitor Mac builds (#262/#263).
+4. Contributor PRs: Ben's #232/#215 (round-1 P2s), #244 (gate checklist).
+5. Merge the stale docs PRs (#242 EOD-09-04, #254 gate chart) on green.
+
+---
+
 ## 2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the microphone report resolved outside the app
 
 **Branches:** `release/v0.1.12` → **`develop`** (#201, squash `7152289`); develop →

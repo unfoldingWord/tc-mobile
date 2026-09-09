@@ -15,6 +15,12 @@ import type { BookId, ChapterId, ClipId, SegmentId } from "./domain";
 export interface ChapterRow {
   readonly chapterId: ChapterId;
   readonly number: number;
+  /**
+   * The facilitator's passage label (#264), or `null` ⇒ show "Chapter
+   * {number}". The Books row and the Segments breadcrumb both render it through
+   * `strings.chapterHeading`.
+   */
+  readonly name: string | null;
   /** From `chapterProgress` — count of segments with `status === "affirmed"`. */
   readonly finishedCount: number;
   /** 0 ⇒ the UI shows NO counter (an empty chapter is not "0/0"). */

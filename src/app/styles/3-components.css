@@ -316,6 +316,42 @@
     overflow-y: auto;
   }
 
+  /* --- inline name edit (#264) ------------------------------------------- */
+  /* The rename field + its commit control, shown inside a ≡ menu. The input
+     sits on the raised surface with an edged outline so it reads as a fillable
+     field against the menu panel, and gains the focus ring every control uses. */
+  .name-edit {
+    display: flex;
+    align-items: center;
+    gap: var(--c-gap-parts);
+  }
+  .name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-md);
+    font-family: inherit;
+    /* 16px, not --p-text-md (13px): iOS Safari auto-zooms a focused <input>
+       under 16px and ignores index.html's user-scalable=no for it, so a smaller
+       field zooms the sheet on focus and does not reset cleanly (G5). This is the
+       app's first text field, so the viewport policy never had to coexist with
+       one. No token is exactly 16px (--p-text-lg is 21px, too large for a field),
+       so the floor is set here on the input itself. */
+    font-size: 16px;
+  }
+  .name-input::placeholder {
+    color: var(--s-ink-faint);
+  }
+  .name-input:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-color: var(--s-focus);
+  }
+
   /* --- the erase confirm dialog (B6) ------------------------------------- */
   /* A centred sheet, not the side drawer: it sits above the recorder sheet
      (z 60) and the menu (z 80) because it can be raised from either. */
@@ -571,10 +607,12 @@
   .vu-meter__fill[data-zone="red"] {
     background: var(--s-live);
   }
-  /* Meter unavailable: the level tap could not be wired on this device. A
-     hatched, dimmed track reads as "not working" rather than "no sound" — so a
-     permanently-empty strip is not mistaken for a dead microphone (Frank R-B6).
-     The fill stays empty. */
+  /* Meter unavailable: either the level tap could not be wired at open time (the
+     static "tap never wired" failure), or — per frame, mid-take — the shared
+     audio context went `suspended`/`interrupted` so the analyser reads zeros
+     (#76). A hatched, dimmed track reads as "not working" rather than "no sound"
+     — so an empty strip is not mistaken for a dead microphone (Frank R-B6). The
+     fill stays empty. */
   .vu-meter[data-state="unavailable"] {
     opacity: 0.55;
   }

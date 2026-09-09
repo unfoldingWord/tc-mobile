@@ -1,7 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["scripts/*.mjs"],
-  "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts", "scripts/*.mjs"],
+  "entry": ["scripts/*.mjs", "src/app/e2e-harness.ts"],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "tests/**/*.ts",
+    "scripts/*.mjs",
+    "e2e/**/*.ts"
+  ],
   "ignoreDependencies": ["tailwindcss"],
   "vitest": { "entry": ["tests/**/*.test.ts"] },
   "tags": ["-@pivotpending"]

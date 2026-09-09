@@ -77,8 +77,103 @@ async function openLegacyV3() {
   });
 }
 
+/**
+ * Stand up the v4 schema (the v3 pivot stores — v4 added no store, only the
+ * clip-encoding backfill). A chapter row written here has NO `name`, which is
+ * exactly what a device that recorded on v0.1.x holds when #264's v5 opens it.
+ */
+async function openLegacyV4() {
+  return openDB(DB_NAME, 4, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
+
+describe("v4 → v5 chapter-name backfill (append-only)", () => {
+  it("stamps a pre-existing nameless chapter with name: null, keeping its data", async () => {
+    const v4 = await openLegacyV4();
+    await v4.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 6,
+      segmentIds: ["s1", "s2"],
+    });
+    v4.close();
+
+    const v5 = await getDb();
+    expect(v5.version).toBe(5);
+
+    const chapter = await v5.get("chapters", "ch1" as never);
+    // The field is now present and null — never undefined — and every other
+    // field is untouched (ordinal, parent, segment order all come through).
+    expect(chapter).toEqual({
+      id: "ch1",
+      bookId: "b1",
+      number: 6,
+      segmentIds: ["s1", "s2"],
+      name: null,
+    });
+  });
+
+  it("leaves a chapter that already carries a name alone", async () => {
+    // Keys on the field being ABSENT, so a row written by a newer build before
+    // an older one reopened the database is not clobbered back to null.
+    const v4 = await openLegacyV4();
+    await v4.put("chapters", {
+      id: "ch2",
+      bookId: "b1",
+      number: 6,
+      segmentIds: [],
+      name: "Mark 6",
+    });
+    v4.close();
+
+    const v5 = await getDb();
+    expect((await v5.get("chapters", "ch2" as never))?.name).toBe("Mark 6");
+  });
+});
+
+describe("v3 → v5 chapter-name backfill over a real row", () => {
+  it("stamps a v3 nameless chapter with name: null on the way to v5, keeping its data", async () => {
+    // The existing v4→v5 test writes its chapter into a v4 database; the v3 path
+    // only ever ran over an EMPTY chapters store (G-P3.5). A device that recorded
+    // on the v3 pivot build holds nameless chapter rows and jumps v3→v5 in one
+    // open — the v4 clip backfill and the v5 chapter backfill both run on the way
+    // up. This pins that the chapter row survives and gains name: null.
+    const v3 = await openLegacyV3();
+    await v3.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: ["s1", "s2"],
+    });
+    v3.close();
+
+    const v5 = await getDb();
+    expect(v5.version).toBe(5);
+
+    const chapter = await v5.get("chapters", "ch1" as never);
+    expect(chapter).toEqual({
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: ["s1", "s2"],
+      name: null,
+    });
+  });
+});
 
 describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
   it("keeps every v3 row and stamps each clip as generation-0 PCM", async () => {
@@ -103,7 +198,10 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     v3.close();
 
     const v4 = await getDb();
-    expect(v4.version).toBe(4);
+    // getDb now opens v5; the v4 clip-encoding backfill still runs on the way
+    // up (oldVersion < 4), and the v5 chapter backfill no-ops over the empty
+    // chapters store.
+    expect(v4.version).toBe(5);
 
     // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
     // onward. A v3 device's recordings come through.

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -78,9 +78,9 @@ describe("the lib/ DOM boundary — what the gate actually covers", () => {
       [TSC, "-p", join(REPO, "tsconfig.lib.json"), "--listFilesOnly"],
       { cwd: REPO, encoding: "utf8", stdio: "pipe" }
     );
-    expect(files).toContain(join("src", "lib", "audio", "format.ts"));
-    expect(files).toContain(join("src", "lib", "storage", "db.ts"));
-    expect(files).toContain(join("src", "types", "domain.ts"));
+    expect(files).toContain(posix.join("src", "lib", "audio", "format.ts"));
+    expect(files).toContain(posix.join("src", "lib", "storage", "db.ts"));
+    expect(files).toContain(posix.join("src", "types", "domain.ts"));
   });
 
   it("bans navigator and localStorage as VALUES in the lib/ eslint config", () => {
