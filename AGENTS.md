@@ -317,19 +317,37 @@ It is deliberately not a build asset the PWA precaches (`.json` is outside
 `workbox.globPatterns` in `vite.config.ts`), so fetching it always reaches the
 origin, never a cached copy.
 
-After a `develop -> staging` or `staging -> main` merge, the promoter runs:
+Each promotion type has its own explicit command — **the two are not
+interchangeable**, and the production one is deliberately not just "the same
+command with a different URL pasted in" (round-1 George G2: a bare
+`check:deploy` run from a checkout still pointed at staging silently PASSed
+for what should have been checking production, because the default origin is
+always staging and nothing forced a promoter to say otherwise):
 
 ```bash
-npm run check:deploy                                   # staging, this checkout's HEAD
+# develop -> staging: bare command, defaults to the staging Worker.
+npm run check:deploy                                   # this checkout's HEAD
 node scripts/check-deploy.mjs <origin> --sha=<short-sha> --version=<x.y.z>
+
+# staging -> main (production, the highest-stakes gate in the repo):
+# --require-origin makes the script itself refuse to run without an explicit
+# origin, so this can never silently fall back to checking staging instead.
+npm run check:deploy:prod                               # this checkout's HEAD
+node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> --version=<x.y.z>
 ```
 
-It fetches `<origin>/version.json?t=<timestamp>` (the query string busts any
-intermediate cache), compares `sha` and `version` against what was expected,
-prints a pass/fail line, and exits non-zero on a mismatch or a fetch failure —
-so it can gate a promoter's next step without anyone reading a diff by eye.
-The default origin is the staging Worker; pass `main`'s URL to check a
-production promotion.
+`check:deploy:prod` is
+`node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
+(`package.json`) — the `tc-mobile` Worker's URL, written down here because
+nowhere else in the tree was. `check:deploy`'s (staging's) is
+`https://tc-mobile-staging.unfoldingword.workers.dev`, also used in "Device
+testing" below.
+
+Either command fetches `<origin>/version.json?t=<timestamp>` (the query
+string busts any intermediate cache), compares `sha` and `version` against
+what was expected, prints a pass/fail line, and exits non-zero on a mismatch
+or a fetch failure — so it can gate a promoter's next step without anyone
+reading a diff by eye.
 
 **Rolling back.** Two ways to move the deployed Worker back to a prior build,
 independent of the version check above:
