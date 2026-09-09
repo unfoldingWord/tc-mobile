@@ -65,11 +65,21 @@ export default defineConfig(({ mode }) => ({
         // exception, NOT a move to runtime-caching, which ADR 0006 rejected for
         // its stranding risk. See #177; tests/precache-manifest.test.ts pins the
         // allowlist so `jpg` (and any broader glob) cannot return unnoticed.
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        //
+        // `txt` precaches the licence texts under `public/licenses/` (#36) so
+        // the LGPL notice resolves offline in the field, same as the app shell
+        // — small files (the largest is the ~42 KB LGPL text), unrelated to the
+        // thumbnail exclusion above.
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,txt}"],
         // No single precached asset exceeds the 2 MiB default (the largest is
         // the ~552 KB entry chunk); the former 4 MiB override existed only for
         // the now-excluded thumbnails, which were individually tiny anyway.
         navigateFallback: "index.html",
+        // The licence texts (#36) are real files, not app routes: keep the SPA
+        // navigate-fallback from answering a `/licenses/*.txt` miss with the app
+        // shell instead of the licence (George G1). The About panel reads them
+        // by fetch, not navigation, so this only hardens the edge.
+        navigateFallbackDenylist: [/\.txt$/],
         cleanupOutdatedCaches: true,
       },
       manifest: {

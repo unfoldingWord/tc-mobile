@@ -29,7 +29,9 @@ const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
 
 // The exact allowlist the app shell needs, and nothing more. `jpg` is absent
 // by #177; restoring it is a deliberate edit here plus in vite.config.ts.
-const INTENDED = ["**/*.{js,css,html,svg,png,woff2}"];
+// `txt` precaches the licence texts under public/licenses/ so the LGPL notice
+// resolves offline (#36) — small files, unrelated to the thumbnail exclusion.
+const INTENDED = ["**/*.{js,css,html,svg,png,woff2,txt}"];
 
 function globPatterns(): string[] {
   const source = readFileSync(CONFIG, "utf8");

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "translationCore Mobile — offline-first audio notebook/editor PWA for oral Bible translation",
+  "license": "MIT",
   "scripts": {
     "dev": "vite dev",
     "dev:lan": "vite dev --host",

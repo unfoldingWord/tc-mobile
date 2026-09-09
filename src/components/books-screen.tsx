@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AboutPanel } from "./about-panel";
 import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
@@ -56,6 +57,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
+  // About & licenses (#36), opened from the global menu. Kept separate so the
+  // menu closes as the panel opens — one drawer at a time — and both inert the
+  // shelf behind them.
+  const [aboutOpen, setAboutOpen] = useState(false);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
@@ -213,7 +218,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // background). The Menu portals to <body>, so it stays live above this (#77).
     <div
       className="flex h-full flex-col gap-[14px]"
-      inert={menuOpen || shareMenuBook !== null || undefined}
+      inert={menuOpen || aboutOpen || shareMenuBook !== null || undefined}
     >
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
         {!showEmpty && (
@@ -282,7 +287,22 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      {/* The global menu. Template Library is still B7 (#33); its first real
+          entry is About & licenses (#36) — the reachable-on-the-phone home for
+          the LGPL notice and licence text lamejs requires (ADR 0003). */}
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        <Control
+          icon="info"
+          label={strings.aboutOpen}
+          variant="quiet"
+          onClick={() => {
+            setMenuOpen(false);
+            setAboutOpen(true);
+          }}
+        />
+      </Menu>
+
+      <AboutPanel open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
           the same spot — "Share book" encodes + zips (tap 1), then a primary
