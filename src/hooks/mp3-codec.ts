@@ -411,11 +411,17 @@ function encodeInWorker(
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
       const response = event.data;
       // A progress heartbeat is a sign of life, not a result: reset the silence
-      // window (and clear the freeze latch — a beat means the worker is running
-      // NOW) and keep waiting for done/error.
+      // window and keep waiting for done/error. The freeze latch is cleared
+      // only while the page is VISIBLE — a beat then means the worker is running
+      // now. A beat delivered while HIDDEN (queued just before an iOS freeze;
+      // Android keeping the worker briefly alive) says nothing about the
+      // suspension that may still follow it, and clearing the latch there would
+      // let the overdue timer trip on the resume-order race the latch exists to
+      // close (George R1 F1). The hide handler set it; only a visible resume,
+      // or `onStall` granting its one fresh window, may drop it.
       if (response.kind === "progress") {
         lastMessageAt = Date.now();
-        mightHaveFrozen = false;
+        if (!pageHidden()) mightHaveFrozen = false;
         return;
       }
       release();

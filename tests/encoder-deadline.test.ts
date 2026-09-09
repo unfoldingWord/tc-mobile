@@ -197,6 +197,34 @@ describe("the encode silence deadline (#166)", () => {
     expect(nth(0).terminated).toBe(false);
   });
 
+  it("does not trip when a heartbeat lands AFTER hide but before the freeze (George R1 F1)", async () => {
+    const { doc, dispatchVisibility } = installFakeDocument();
+    const p = encode(Int16Array.of(11));
+    await microtasks();
+    void p.catch(() => {});
+
+    // Hide fires normally, latching that a freeze may span.
+    doc.hidden = true;
+    dispatchVisibility();
+    // One queued heartbeat is delivered while hidden, before JS suspends (an
+    // iOS beat posted just before the freeze; Android keeping the worker briefly
+    // alive). It is a sign of life, but it must NOT clear the freeze latch — the
+    // page is still hidden, so a freeze may still follow it.
+    nth(0).emitProgress(0.5);
+
+    // The freeze ends: `hidden` flips back, and the overdue stall timer runs
+    // BEFORE the queued visibilitychange handler.
+    doc.hidden = false;
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    // Must NOT have tripped: the elapsed silence spans a suspension.
+    expect(nth(0).terminated).toBe(false);
+
+    dispatchVisibility();
+    nth(0).emitDone(new Uint8Array([11]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+    expect(nth(0).terminated).toBe(false);
+  });
+
   it("does not trip when the encode BEGINS while the page is already hidden", async () => {
     const { doc, dispatchVisibility } = installFakeDocument();
     // Backgrounded before the encode even starts — no hide transition will fire,
