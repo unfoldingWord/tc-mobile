@@ -735,7 +735,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // keep the intent so the held take and the recovery screen still carry the
           // mark. The checkbox does not flip: `displayedFinished` falls back to the
           // just-saved `view.finished` (true) until an edit sets `pendingDemote`.
-          // (Semantics confirmed with the DRI 2026-09-09; owed Tim's requirements sign-off.)
+          // (Confirmed by Tim 2026-09-09: "Re-record should drop to draft until
+          // finished is manually chosen again.")
           setFinishedIntent(null);
           // Re-read the segment and AWAIT the fresh view, so the editor re-bases on
           // the committed samples (`useSegmentEditor` resets when `view.samples`
