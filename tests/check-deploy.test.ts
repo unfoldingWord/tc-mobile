@@ -9,6 +9,8 @@ import {
   isMainEntry,
   normalizeSha,
   parseArgs,
+  remoteRefForOrigin,
+  resolveExpectedSha,
   SpaFallbackError,
 } from "../scripts/check-deploy.mjs";
 
@@ -190,6 +192,105 @@ describe("SpaFallbackError", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(SpaFallbackError);
     expect(err.message).toBe("origin served HTML instead of JSON");
+  });
+});
+
+describe("remoteRefForOrigin", () => {
+  // round-3 George #1: Cloudflare Workers Builds deploys the promoted
+  // branch's tip (usually a merge commit for this repo's PR-promotion
+  // flow), not whatever commit a promoter's local checkout has HEAD on. For
+  // the two known default origins the expected sha must come from the
+  // corresponding remote-tracking ref instead.
+  it("maps the staging default origin to origin/staging", () => {
+    expect(
+      remoteRefForOrigin("https://tc-mobile-staging.unfoldingword.workers.dev")
+    ).toBe("origin/staging");
+  });
+
+  it("maps the production origin to origin/main", () => {
+    expect(
+      remoteRefForOrigin("https://tc-mobile.unfoldingword.workers.dev")
+    ).toBe("origin/main");
+  });
+
+  it("returns undefined for an origin that isn't a known default (e.g. a per-PR preview Worker)", () => {
+    expect(
+      remoteRefForOrigin("https://some-preview.unfoldingword.workers.dev")
+    ).toBeUndefined();
+  });
+});
+
+describe("resolveExpectedSha", () => {
+  // round-3 George #1: the fix itself. `runGit` is faked so these run
+  // without a real git repo; `warn` is captured so the tests can assert on
+  // which path (remote ref vs HEAD fallback) actually ran, not just the
+  // returned sha.
+  it("resolves from origin/staging for the staging default origin, not HEAD", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd.includes("origin/staging")) return "afdfa6e";
+      if (cmd.includes("HEAD")) return "7152289";
+      throw new Error(`unexpected git command: ${cmd}`);
+    };
+    const warnings: string[] = [];
+    const sha = resolveExpectedSha(
+      "https://tc-mobile-staging.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    expect(sha).toBe("afdfa6e");
+    expect(calls.some((c) => c.includes("origin/staging"))).toBe(true);
+    expect(calls.some((c) => c.includes("HEAD"))).toBe(false);
+    expect(warnings.join(" ")).toContain("origin/staging");
+  });
+
+  it("resolves from origin/main for the production origin", () => {
+    const runGit = (cmd: string) =>
+      cmd.includes("origin/main") ? "deadbee" : "wrongsha";
+    const sha = resolveExpectedSha(
+      "https://tc-mobile.unfoldingword.workers.dev",
+      { runGit }
+    );
+    expect(sha).toBe("deadbee");
+  });
+
+  it("falls back to local HEAD for an origin with no known remote ref", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      return "0feature";
+    };
+    const warnings: string[] = [];
+    const sha = resolveExpectedSha(
+      "https://some-preview.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    expect(sha).toBe("0feature");
+    expect(calls).toEqual(["git rev-parse --short=7 HEAD"]);
+    expect(warnings.join(" ")).toContain("not a known staging/prod default");
+  });
+
+  it("falls back to local HEAD when the remote-tracking ref can't be resolved (e.g. not fetched)", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd.includes("origin/staging")) {
+        throw new Error("unknown revision or path not in the working tree");
+      }
+      return "fallback1";
+    };
+    const warnings: string[] = [];
+    const sha = resolveExpectedSha(
+      "https://tc-mobile-staging.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    expect(sha).toBe("fallback1");
+    expect(calls).toEqual([
+      "git rev-parse --short=7 origin/staging",
+      "git rev-parse --short=7 HEAD",
+    ]);
+    expect(warnings.join(" ")).toContain("could not resolve origin/staging");
+    expect(warnings.join(" ")).toContain("git fetch origin");
   });
 });
 

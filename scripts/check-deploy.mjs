@@ -16,10 +16,19 @@
  *   node scripts/check-deploy.mjs [origin] [--origin=<url>] [--version=X.Y.Z] [--sha=abcdef1]
  *
  * `origin` (positional, or `--origin=`) defaults to the staging Worker.
- * `--version` defaults to this checkout's package.json version; `--sha`
- * defaults to `git rev-parse --short=7 HEAD`. The SHA is the primary signal
- * (it identifies the exact commit); version is checked too since a stale
- * build can share a SHA with nothing meaningful if HEAD has moved.
+ * `--version` defaults to this checkout's package.json version. `--sha`, when
+ * not given explicitly, is resolved by `resolveExpectedSha()`: for the two
+ * known default origins (staging, production) that resolves the *promoted
+ * branch's remote-tracking ref* (`origin/staging` / `origin/main`) rather
+ * than local `HEAD` — Cloudflare Workers Builds deploys that branch's tip,
+ * which for this repo's merge-PR promotion flow is a merge commit, not
+ * whatever commit the promoter's local checkout happens to have `HEAD` on
+ * (round-3 George #1). Run `git fetch origin` first for that to be accurate;
+ * it falls back to local `HEAD` (with a printed reason) for any other origin,
+ * or if the remote-tracking ref can't be resolved at all. The SHA is the
+ * primary signal (it identifies the exact commit); version is checked too
+ * since a stale build can share a SHA with nothing meaningful if HEAD has
+ * moved.
  *
  * `--require-origin` refuses to fall back to the staging default when no
  * origin was given — used by `check:deploy:prod` (round-1 George G2) so a
@@ -33,12 +42,13 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_ORIGIN = "https://tc-mobile-staging.unfoldingword.workers.dev";
+const PROD_ORIGIN = "https://tc-mobile.unfoldingword.workers.dev";
 
 // Short SHAs must be a fixed length on both the producer (vite.config.ts's
-// `buildSha`, which this script's own `currentSha()` mirrors) and the
-// consumer (`compareDeployed`, below) — `git rev-parse --short HEAD` alone
-// varies with a repo's `core.abbrev`, so two correct call sites can still
-// disagree on length for the same commit (round-1 George G3).
+// `buildSha`, which this script's own `resolveExpectedSha()` mirrors) and
+// the consumer (`compareDeployed`, below) — `git rev-parse --short HEAD`
+// alone varies with a repo's `core.abbrev`, so two correct call sites can
+// still disagree on length for the same commit (round-1 George G3).
 const SHA_LENGTH = 7;
 
 function currentVersion() {
@@ -46,12 +56,68 @@ function currentVersion() {
   return JSON.parse(readFileSync(pkgPath, "utf8")).version;
 }
 
-function currentSha() {
-  return execSync(`git rev-parse --short=${SHA_LENGTH} HEAD`, {
-    stdio: ["ignore", "pipe", "ignore"],
-  })
+function runGitSync(cmd) {
+  return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] })
     .toString()
     .trim();
+}
+
+/**
+ * Maps a known default origin to the remote-tracking ref whose tip Cloudflare
+ * Workers Builds actually deploys for that origin's promotion —
+ * `origin/staging` for the staging default, `origin/main` for the production
+ * Worker. For this repo's merge-PR promotion flow that tip is a merge
+ * commit, not a promoter's local branch tip: `docs/progress_tracker.md:102,118`
+ * recorded the v0.1.12 `develop -> staging` promotion (#202) as merge commit
+ * `afdfa6e`, the staging tip, not develop's pre-merge `7152289` (round-3
+ * George #1). Returns `undefined` for any other origin (a per-PR preview
+ * Worker, a hand-typed URL) — there is no known branch to resolve there, so
+ * the caller falls back to local `HEAD`. Pure and exported for tests.
+ */
+export function remoteRefForOrigin(origin) {
+  if (origin === DEFAULT_ORIGIN) return "origin/staging";
+  if (origin === PROD_ORIGIN) return "origin/main";
+  return undefined;
+}
+
+/**
+ * Resolves the sha to expect for a promotion check. For a known
+ * staging/prod default origin this reads the *promoted branch's*
+ * remote-tracking ref (see `remoteRefForOrigin`) rather than local `HEAD`,
+ * since Cloudflare deploys that branch's tip — usually a merge commit a
+ * promoter's checkout is not sitting on. Falls back to local `HEAD` (naming
+ * the reason) when the origin has no known ref, or when the ref can't be
+ * resolved at all (e.g. `git fetch origin` was never run, so
+ * `origin/staging`/`origin/main` don't exist locally).
+ *
+ * `runGit` is injected (default: real `git` via `execSync`) so a test can
+ * fake git without a real repository or network; `warn` is injected so a
+ * test can capture which ref/fallback was used instead of asserting on
+ * stdout. Exported for tests.
+ */
+export function resolveExpectedSha(
+  origin,
+  { runGit = runGitSync, warn = () => {} } = {}
+) {
+  const ref = remoteRefForOrigin(origin);
+  if (ref) {
+    try {
+      const sha = runGit(`git rev-parse --short=${SHA_LENGTH} ${ref}`);
+      warn(
+        `expected sha resolved from ${ref} (the promoted branch tip Cloudflare deploys), not local HEAD — run "git fetch origin" first if this looks stale`
+      );
+      return sha;
+    } catch (err) {
+      warn(
+        `could not resolve ${ref} (${err.message}) — falling back to local HEAD; run "git fetch origin" first for an accurate check`
+      );
+    }
+  } else {
+    warn(
+      `${origin} is not a known staging/prod default — using local HEAD as the expected sha`
+    );
+  }
+  return runGit(`git rev-parse --short=${SHA_LENGTH} HEAD`);
 }
 
 /**
@@ -228,7 +294,9 @@ async function main() {
   const { origin, version, sha } = parsed;
   const expected = {
     version: version ?? currentVersion(),
-    sha: sha ?? currentSha(),
+    sha:
+      sha ??
+      resolveExpectedSha(origin, { warn: (msg) => console.log(`  ${msg}`) }),
   };
 
   console.log(

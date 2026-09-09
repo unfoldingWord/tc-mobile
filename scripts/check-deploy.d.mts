@@ -15,6 +15,16 @@ export declare function isMainEntry(
   argvPath: string | undefined
 ): boolean;
 
+export declare function remoteRefForOrigin(origin: string): string | undefined;
+
+export declare function resolveExpectedSha(
+  origin: string,
+  options?: {
+    runGit?: (cmd: string) => string;
+    warn?: (message: string) => void;
+  }
+): string;
+
 export declare function describeFetchFailure(
   err: { name?: string; message: string },
   context?: { timeoutMs?: number; url?: string }
