@@ -182,9 +182,11 @@ interface MarkRowInputs {
   readonly hasView: boolean;
   /**
    * The take is COMMITTING — the close window or a requesting/processing state.
-   * Deliberately narrower than the Edit/Erase rows' `takeActive`: Mark finished
-   * stays live while recording or paused, because the mark rides the take through
-   * `addTake` (the record-and-mark-done-in-one-sheet flow, G8/G10).
+   * Deliberately narrower than the Erase row's `takeActive` (the Edit row no
+   * longer uses `takeActive` — since #134 it reaches Edit on a live/paused take
+   * and splits that input into `committing`/`hasTake`): Mark finished stays live
+   * while recording or paused, because the mark rides the take through `addTake`
+   * (the record-and-mark-done-in-one-sheet flow, G8/G10).
    */
   readonly takeCommitting: boolean;
   /** The mic is being requested — see `EditRowInputs.starting`. */

@@ -129,11 +129,13 @@ export interface RecorderHandle {
  *
  * B5 layers waveform editing on top, over a working buffer (`useSegmentEditor`):
  * a selection frame that cuts to a chapter-scoped clipboard, a paste at the
- * centerline, and an in-memory undo/redo log. Editing is strictly idle (Model A:
- * edits first, then one record commits on close), so a live take disables the
- * edit controls, and the record's splice base is the edited buffer. On close the
- * working buffer is persisted — spliced with the recording, or on its own for an
- * edit-only session (`saveEditedSegment`).
+ * centerline, and an in-memory undo/redo log. Editing itself runs strictly idle
+ * (Model A: edits first, then one record commits on close). A live/paused take no
+ * longer blocks reaching Edit (#134): the record menu's Edit commits the take
+ * first (`onEnterEdit`), then reopens in edit mode over the committed audio; the
+ * record's splice base is the edited buffer. On close the working buffer is
+ * persisted — spliced with the recording, or on its own for an edit-only session
+ * (`saveEditedSegment`).
  *
  * The sheet is two modes (#89). RECORD mode is the hero Record + Play pair with
  * the menu opener in the header; the finished toggle lives in that menu. EDIT
@@ -727,16 +729,42 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           if (next) setMode("edit");
           return;
         }
-        // No usable audio. An empty or undecodable capture has a reason to show and
-        // stays in record mode to retry; a superseded stop (a leave landed) has
-        // neither — either way, do not enter edit. Same handling as `close()`.
+        // No usable audio. Mirror close()'s precedence exactly (:1063): a decode
+        // failure whose captured bytes survived (#165/#106) is the take's ONLY
+        // copy — HOLD it and hand the body to the recovery panel, checked BEFORE
+        // the plain error Notice so a superseded stop (blob kept, error withheld)
+        // cannot fall through and silently drop it. Only an empty/silent capture
+        // (blob-less, error set) stays in record mode to retry. Either way, do NOT
+        // enter edit mode.
+        if (result.blob) {
+          // The decode FAILED (or a leave() superseded the stop) but the bytes are
+          // the only copy of the take — exactly close()'s :1063 branch. Route to the
+          // recovery panel (re-decode on a fresh gesture, or share off-phone); do
+          // NOT onExit and do NOT enter edit mode. Retry/discard/share live there.
+          setHeldTake(result.blob);
+          setHeldShareError(null);
+          setHeldRetryError(null);
+          setHeldShared(false);
+          cancelPreview();
+          closing.current = false;
+          setIsClosing(false);
+          return;
+        }
         if (result.error) {
           setStopError(result.error);
           cancelPreview();
         }
         closing.current = false;
         setIsClosing(false);
-      })();
+      })().catch((cause: unknown) => {
+        // Last net (mirror close() :1110): neither stopRecording nor saveRecording
+        // rejects by contract, but were one ever to reject after the `closing` latch
+        // was set, the latch would stick and Back/Record/Play/menu would all refuse
+        // with no recovery panel. Exit as close() does so the sheet unmounts and the
+        // latch releases; the recovery slot carries anything a failed commit held.
+        console.error("Committing the recording to enter edit failed", cause);
+        onExit(dirty.current);
+      });
     }, [
       audio,
       recording,
@@ -1336,8 +1364,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // The ≡-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
-    // greys it are one derivation, not two switches. `!idleEditable` is exactly
-    // `!view || takeActive`, spelled out here as the two inputs.
+    // greys it are one derivation, not two switches. Erase still spells
+    // `!idleEditable` as `!view || takeActive`; Edit no longer does — since #134 a
+    // live/paused take reaches Edit (it commits first), so Edit's `takeActive`
+    // input is split into `committing` (the real commit window) and `hasTake`.
     const starting = state === "requesting";
     const editReason = editRowReason({
       hasView: view !== null,
