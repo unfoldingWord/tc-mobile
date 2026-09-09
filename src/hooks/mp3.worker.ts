@@ -12,9 +12,12 @@
  * bundles this file and its lamejs import as their own chunk, so the LGPL
  * encoder sits behind one message interface rather than inside the app bundle.
  *
- * The protocol is one request, one response — no queue, no progress stream
- * (nothing consumes one yet; when the share panel grows a real meter, add it
- * then). `hooks/mp3-codec.ts` keeps ONE worker warm and reuses it across
+ * The protocol is one request, a throttled stream of `progress` HEARTBEATS, then
+ * one `done`/`error`. The heartbeat is not a UI meter (nothing consumes a meter
+ * yet); it is the client's liveness signal — `hooks/mp3-codec.ts` bounds every
+ * encode by how long the worker stays SILENT, and each heartbeat resets that
+ * window so a long encode is not judged stalled while a wedged one still is
+ * (#166). `hooks/mp3-codec.ts` keeps ONE worker warm and reuses it across
  * encodes, serialised so only one request is ever in flight (#182); this handler
  * holds no state between messages — every value is built inside the callback —
  * which is what makes that reuse safe. The PCM arrives as a transferred
@@ -25,12 +28,33 @@
 import { encodeMp3 } from "@/lib/audio/mp3";
 import type { EncodeRequest, EncodeResponse } from "./mp3-codec";
 
+/**
+ * Post a progress heartbeat at most this often. `encodeMp3` calls `onProgress`
+ * once per 1152-sample frame — thousands of times for a chapter — so throttle it
+ * to a steady pulse the client's silence deadline can watch without flooding the
+ * message channel. Well under `ENCODER_SILENCE_TIMEOUT_MS`, so a healthy encode
+ * always beats the window.
+ */
+const PROGRESS_HEARTBEAT_MS = 500;
+
 addEventListener("message", (event: MessageEvent<EncodeRequest>) => {
   const { buffer, byteOffset, length } = event.data;
   let response: EncodeResponse;
   let transfer: Transferable[] = [];
   try {
-    const mp3 = encodeMp3(new Int16Array(buffer, byteOffset, length));
+    let lastHeartbeatAt = 0;
+    const mp3 = encodeMp3(new Int16Array(buffer, byteOffset, length), {
+      onProgress: (fraction) => {
+        const now = Date.now();
+        if (now - lastHeartbeatAt < PROGRESS_HEARTBEAT_MS) return;
+        lastHeartbeatAt = now;
+        // Delivered to the main thread as the encode runs (the busy worker does
+        // not block the idle main thread from receiving), which is what keeps the
+        // silence deadline fed. Carries no result; the `done` below has the MP3.
+        const beat: EncodeResponse = { kind: "progress", fraction };
+        postMessage(beat);
+      },
+    });
     response = { kind: "done", mp3: mp3.buffer };
     transfer = [mp3.buffer];
   } catch (cause) {
