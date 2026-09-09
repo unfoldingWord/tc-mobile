@@ -607,10 +607,12 @@
   .vu-meter__fill[data-zone="red"] {
     background: var(--s-live);
   }
-  /* Meter unavailable: the level tap could not be wired on this device. A
-     hatched, dimmed track reads as "not working" rather than "no sound" — so a
-     permanently-empty strip is not mistaken for a dead microphone (Frank R-B6).
-     The fill stays empty. */
+  /* Meter unavailable: either the level tap could not be wired at open time (the
+     static "tap never wired" failure), or — per frame, mid-take — the shared
+     audio context went `suspended`/`interrupted` so the analyser reads zeros
+     (#76). A hatched, dimmed track reads as "not working" rather than "no sound"
+     — so an empty strip is not mistaken for a dead microphone (Frank R-B6). The
+     fill stays empty. */
   .vu-meter[data-state="unavailable"] {
     opacity: 0.55;
   }

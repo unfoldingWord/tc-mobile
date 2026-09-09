@@ -144,6 +144,17 @@ export interface UseAudioSession {
    */
   readLevel: () => number;
   /**
+   * Whether `readLevel` can be trusted this frame (#76). A PULL like `readLevel`:
+   * `true` when NOT in a live take (the meter rests empty via `active`, so "not
+   * recording" reads as "not broken"); `false` ONLY while recording and either
+   * the tap is missing or the shared context is not `"running"` (iOS
+   * `"suspended"`/`"interrupted"` after backgrounding or an interruption), where
+   * the analyser reads zeros a translator would misread as a dead mic. The VU
+   * meter hatches "unavailable" on a false. Distinct from `meterFailed`, the
+   * OPEN-time "tap never wired" state.
+   */
+  readMeterAvailable: () => boolean;
+  /**
    * The live-waveform scope for the current take (#120), or `null` when nothing
    * is capturing OR the tap could not be wired (a `meterFailed` take records but
    * produces no scope — the sheet keeps the static waveform up in that case). A
@@ -195,6 +206,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
@@ -701,6 +713,7 @@ export function useAudioSession(): UseAudioSession {
     leave,
     primeAudioContext,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,

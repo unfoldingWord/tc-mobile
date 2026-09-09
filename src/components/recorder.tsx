@@ -1616,6 +1616,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 <div className="px-[16px]">
                   <VuMeter
                     readLevel={audio.readLevel}
+                    // Per-frame trust signal (#76): a wired tap whose context goes
+                    // suspended/interrupted mid-take reads zeros, so the strip
+                    // hatches "unavailable" rather than resting empty (a dead-mic
+                    // misread). Recovers to animating when the context resumes.
+                    readAvailable={audio.readMeterAvailable}
                     // Only while actually recording — NOT paused. MediaRecorder
                     // pause does not pause the mic track, so the analyser keeps
                     // reading; a live bar over a paused take reads as "still
