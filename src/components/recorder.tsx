@@ -211,6 +211,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      */
     const closing = useRef(false);
     /**
+     * Which entry set `heldTake` — the failed-decode recovery panel (#165) now has
+     * two setters with different post-conditions, the second-setter split George's
+     * R3 P2 #1 caught. Back's close() sets the take and its `retryHeldTake` success
+     * must EXIT to Segments; `onEnterEdit`'s commit (#134) sets the take and its
+     * retry must instead reach EDIT mode over the committed samples. This ref is the
+     * discriminator: `onEnterEdit`'s blob branch sets it true, every other setter
+     * (close()) leaves it false, and `retryHeldTake` consumes it. A ref, not state —
+     * read synchronously in retry's async tail, no render depends on it.
+     */
+    const enterEditAfterRecover = useRef(false);
+    /**
      * The finished checkbox's desired state, or null when the translator has not
      * touched it this session. The write is deferred to `close()` and applied
      * AFTER any take commit (G5-#2): `addTake` demotes an approved segment to
@@ -715,6 +726,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             onExit(dirty.current);
             return;
           }
+          // The take — with its mark, `finishedIntent === true` above — is now on
+          // disk. Reset the session's finished intent so the reopened sheet matches a
+          // real close-and-reopen (a remount resets it to null): a subsequent in-sheet
+          // re-record or edit then demotes "unless re-marked" exactly as it would
+          // after a remount, rather than silently carrying THIS mark onto changed
+          // audio (George R3 P2 #2). Only on SUCCESS — the !saved / blob / error arms
+          // keep the intent so the held take and the recovery screen still carry the
+          // mark. The checkbox does not flip: `displayedFinished` falls back to the
+          // just-saved `view.finished` (true) until an edit sets `pendingDemote`.
+          // (Semantics confirmed with the DRI 2026-09-09; owed Tim's requirements sign-off.)
+          setFinishedIntent(null);
           // Re-read the segment and AWAIT the fresh view, so the editor re-bases on
           // the committed samples (`useSegmentEditor` resets when `view.samples`
           // changes) BEFORE edit mode opens — the mode switch below then batches
@@ -741,7 +763,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // the only copy of the take — exactly close()'s :1063 branch. Route to the
           // recovery panel (re-decode on a fresh gesture, or share off-phone); do
           // NOT onExit and do NOT enter edit mode. Retry/discard/share live there.
+          // Unlike close()'s identical branch, mark this recovery as Edit-initiated
+          // so a successful Try again reaches edit mode instead of exiting to
+          // Segments — the take was committed to be EDITED (#134), and the recovery
+          // is a detour, not a Back (George R3 P2 #1).
           setHeldTake(result.blob);
+          enterEditAfterRecover.current = true;
           setHeldShareError(null);
           setHeldRetryError(null);
           setHeldShared(false);
@@ -1102,6 +1129,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // again. An empty or silent capture carries no blob and falls to the
             // Notice below.
             setHeldTake(result.blob);
+            // A Back-initiated recovery exits to Segments on a successful retry — the
+            // opposite of onEnterEdit's. Stamp the discriminator false so a stale true
+            // from an earlier Edit-commit recovery cannot redirect this one into edit
+            // mode (George R3 P2 #1).
+            enterEditAfterRecover.current = false;
             setHeldShareError(null);
             setHeldRetryError(null);
             setHeldShared(false);
@@ -1200,6 +1232,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setHeldTake(null);
             setHeldRetrying(false);
             heldRetryingRef.current = false;
+            if (enterEditAfterRecover.current) {
+              // This recovery was reached from Edit (#134), not Back: the commit is
+              // done, so reopen edit mode over the just-committed samples exactly as
+              // onEnterEdit's success arm does — do NOT exit to Segments. A reload
+              // that fails returns null and leaves the load-error panel owning the
+              // body; do not force edit mode there. (George R3 P2 #1.)
+              enterEditAfterRecover.current = false;
+              const next = await reloadView();
+              if (next) setMode("edit");
+              return;
+            }
             onExit(true);
             return;
           }
@@ -1230,6 +1273,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       segmentId,
       editor,
       finishedIntent,
+      reloadView,
       onExit,
     ]);
 
@@ -1329,6 +1373,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // call to `close()` — that would re-enter its capture/overlay/held-take
       // machinery; this is the tail alone.
       setHeldTake(null);
+      // The discarded take carried whatever entry set it; clear the Edit-origin latch
+      // so it cannot leak into a later Back-initiated recovery (George R3 P2 #1).
+      enterEditAfterRecover.current = false;
       closing.current = true;
       setIsClosing(true);
       void commitPendingAndExit(false, false);
