@@ -1221,7 +1221,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         try {
           const result = await audio.retryDecode(blob);
           if (result.samples && result.samples.length > 0) {
-            await saveRecording(
+            const saved = await saveRecording(
               segmentId,
               editor.working,
               result.samples,
@@ -1229,20 +1229,47 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               finishedIntent === true
             );
             dirty.current = true;
-            setHeldTake(null);
-            setHeldRetrying(false);
-            heldRetryingRef.current = false;
             if (enterEditAfterRecover.current) {
-              // This recovery was reached from Edit (#134), not Back: the commit is
-              // done, so reopen edit mode over the just-committed samples exactly as
-              // onEnterEdit's success arm does — do NOT exit to Segments. A reload
-              // that fails returns null and leaves the load-error panel owning the
-              // body; do not force edit mode there. (George R3 P2 #1.)
+              // Edit-initiated recovery (#134): this branch owes App and the recorder
+              // the SAME three post-conditions onEnterEdit's success arm has, and a
+              // bare onExit is not enough. Mirror it faithfully (Frank R4 F1/F2,
+              // George R4 #1/#2/#3):
               enterEditAfterRecover.current = false;
+              // (1) Branch on saveRecording's boolean. A quota/IDB failure returns
+              // false and becomes App's SaveFailed, which unmounts this sheet; enter
+              // edit mode and App's `recorder` stays set under it, so a Discard/Retry
+              // REMOUNTS the sheet instead of returning to Segments (George R1 P2, the
+              // post-condition onEnterEdit protects at its success arm). Exit instead.
+              if (!saved) {
+                setHeldTake(null);
+                setHeldRetrying(false);
+                heldRetryingRef.current = false;
+                onExit(dirty.current);
+                return;
+              }
+              // (2) Reset the session mark so the reopened sheet matches a remount —
+              // a later in-sheet edit/re-record then demotes "unless re-marked"
+              // (George R4 #3 / R3 P2 #2). (3) KEEP the recovery panel mounted
+              // (`heldTake` still owns the body, `heldRetrying` still true) ACROSS the
+              // reload: dropping it here paints the record-mode hero over the still
+              // pre-take `working` buffer, and a Record or punch-in Erase in that
+              // window 1:1-replaces the take just recovered (George R4 #1, a data-loss
+              // race). Swap panel → edit mode in ONE batched render after the reload.
+              setFinishedIntent(null);
               const next = await reloadView();
+              setHeldTake(null);
+              setHeldRetrying(false);
+              heldRetryingRef.current = false;
               if (next) setMode("edit");
               return;
             }
+            // Back-initiated recovery: unchanged. The committed take (its mark carried
+            // by saveRecording) exits to Segments; a save failure still lands on App's
+            // SaveFailed via onExit clearing `recorder` (parity with the pre-#134
+            // behaviour George R3 accepted — the boolean is not branched here).
+            setHeldTake(null);
+            setHeldRetrying(false);
+            heldRetryingRef.current = false;
             onExit(true);
             return;
           }

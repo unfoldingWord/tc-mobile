@@ -157,9 +157,13 @@ export interface RowHint {
  *   (`recorder.tsx`'s `menuShown`), so these rows genuinely cannot be seen under
  *   it. The permission panel is the reason, stated in full where the translator
  *   is looking; a badge on a hidden row would be a second, weaker copy of it.
- * - `no-segment` — `view` is set when the sheet mounts and never returns to null
- *   while it is open, so this is unreachable rather than dismissed. It exists to
- *   make the function total.
+ * - `no-segment` — `view` starts set when the sheet mounts, and the one thing that
+ *   returns it to null while open is a failed `reload()` (`use-recorder-segment`'s
+ *   `setView(null)`, the commit-then-edit reload miss #134 added). In THAT state the
+ *   LoadErrorPanel owns the body and no menu row is rendered, so the hint is still
+ *   never SEEN — dismissed by the panel, not merely unreachable. It exists to make
+ *   the function total. (Corrected George R4 P3: the old "never returns to null"
+ *   claim was false once reload gained a failure path.)
  */
 export function rowHint(reason: RowReason | null): RowHint | null {
   switch (reason) {
