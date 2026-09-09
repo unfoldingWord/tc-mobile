@@ -22,10 +22,25 @@ const buildSha = (() => {
   }
 })();
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_SHA__: JSON.stringify(buildSha),
+  },
+  build: {
+    rollupOptions: {
+      // `main.tsx` dynamically imports the Playwright smoke harness (#251),
+      // gated on `import.meta.env.MODE === "e2e"`. That runtime guard alone
+      // would NOT keep it out of a real build: Rollup discovers a dynamic
+      // `import()` target from the module graph regardless of a surrounding
+      // condition, so `src/app/e2e-harness.ts` would still be bundled as a
+      // reachable (if never actually reached) chunk in `staging`/`main`'s
+      // build. Marking it EXTERNAL for every mode but `"e2e"` is what
+      // actually excludes it — Rollup then never resolves or bundles the
+      // module at all. Verified directly against `dist/`'s output, not
+      // inferred (see the PR's local run notes).
+      external: mode === "e2e" ? [] : [/\/e2e-harness(\.tsx?)?$/],
+    },
   },
   plugins: [
     react(),
@@ -97,4 +112,4 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },
-});
+}));

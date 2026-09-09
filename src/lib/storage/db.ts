@@ -39,6 +39,13 @@
  * as the PCM it already is. No store is dropped, no bytes are touched, and a
  * v3 device's recordings come through intact — which `tests/db-migration.test.ts`
  * asserts alongside the v2→v3 wipe it also pins.
+ *
+ * ── v5 (#264): chapter names — append-only ──
+ *
+ * `Chapter` gained an optional `name` (a passage label like "Mark 6"). The v5
+ * step stamps `name: null` on every pre-existing chapter row, so a reader never
+ * meets `undefined` and the display fallback keys on one shape. Additive, like
+ * v4: no store dropped, no other field touched.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -57,7 +64,7 @@ import type {
 import type { ClipMeta } from "@/types/audio";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -196,6 +203,23 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 peaks: null,
               };
               await cursor.update(stamped);
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v5 (#264): stamp every pre-existing chapter with `name: null`.
+        // Additive — only the missing field is added, nothing else is touched.
+        // On a fresh install, or straight after the v3 recreate, the store is
+        // empty and this loops zero times. Keys on the field being ABSENT, so a
+        // row already carrying a name (from a newer build) is left alone.
+        if (oldVersion < 5) {
+          const store = tx.objectStore("chapters");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as Chapter & { name?: string | null };
+            if (legacy.name === undefined) {
+              await cursor.update({ ...legacy, name: null });
             }
             cursor = await cursor.continue();
           }
