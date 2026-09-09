@@ -754,6 +754,102 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       })();
     }, [erase, segmentId, onExit, audio]);
 
+    // The no-capture commit tail, shared by `close()` (when nothing was captured)
+    // and `leaveHeldTake` (the recovery-panel exit). ONE path for both halves of
+    // the session work an exit still owes — a pending B5 edit AND a pending
+    // Finished toggle — so a recovery exit can never drop one of them again (the
+    // root of the class George raised as R2 B-4, the edits half, and R4-G1, the
+    // flag half; Seth's round-5 direction). `committed`/`attemptedCapture` are
+    // threaded from the caller so the same `!committed && !attemptedCapture` gates
+    // hold; returns whether it exited (false keeps the sheet open on a write
+    // failure, with the reason in place).
+    const commitPendingAndExit = useCallback(
+      async (
+        committed: boolean,
+        attemptedCapture: boolean
+      ): Promise<boolean> => {
+        try {
+          // An edit-only close (B5): cuts/pastes with no take committed. Gated on
+          // `!attemptedCapture` so a superseded capture stop abandons the session
+          // like B4 — persisting or clearing there is the George-R5 loss.
+          if (!committed && !attemptedCapture && editor.hasEdits) {
+            if (editor.workingLength === 0) {
+              // Cut down to nothing clears the take (no 0-frame ghost). A failed
+              // clear must keep the sheet open with an in-place error — closing as
+              // if the erase happened would leave the original on disk under a UI
+              // that says it is gone. Same shape as the finished-flag write below.
+              const cleared = await saveEditedSegment(
+                segmentId,
+                editor.working,
+                false
+              );
+              if (!cleared) {
+                setStopError(strings.clearFailed);
+                cancelPreview();
+                closing.current = false;
+                setIsClosing(false);
+                return false;
+              }
+            } else {
+              // A non-empty edit replaces the audio through the same never-lose
+              // machinery a recording uses (owned slot → App recovery on failure),
+              // so its boolean is not branched on here. It demotes an approved
+              // segment to draft unless re-marked, and the mark rides the write.
+              await saveEditedSegment(
+                segmentId,
+                editor.working,
+                finishedIntent === true
+              );
+            }
+            dirty.current = true;
+            committed = true;
+          }
+          // A toggle with no new take is a direct write — there is no take to carry
+          // it. Only when the translator actually changed it from the stored value,
+          // and only when nothing was committed (a commit already carried the mark).
+          if (
+            !committed &&
+            view &&
+            finishedIntent !== null &&
+            finishedIntent !== view.finished
+          ) {
+            try {
+              await setFinished(finishedIntent);
+            } catch (cause) {
+              // The store rejects a finished mark on a segment with no take — a
+              // take deleted externally between toggle and close. Surface it
+              // (F5-#1) rather than only the console, and stay open.
+              console.error("Could not change the finished flag", cause);
+              setStopError(strings.finishedWriteFailed);
+              cancelPreview();
+              closing.current = false;
+              setIsClosing(false);
+              return false;
+            }
+          }
+          onExit(dirty.current);
+          return true;
+        } catch (cause) {
+          // Last net — neither save rejects by contract, but a rejection here would
+          // cost a recording; exit rather than strand the sheet (the recovery slot
+          // carries anything a failed commit held).
+          console.error("Committing the recording on close failed", cause);
+          onExit(dirty.current);
+          return true;
+        }
+      },
+      [
+        editor,
+        saveEditedSegment,
+        segmentId,
+        finishedIntent,
+        view,
+        setFinished,
+        cancelPreview,
+        onExit,
+      ]
+    );
+
     const close = useCallback((): Promise<boolean> => {
       // Resolves true when the sheet actually exits (`onExit` fired), false when a
       // commit failure keeps it open with an in-place error. App's history routing
@@ -904,69 +1000,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // than dead-ending the sheet open (#59). An empty capture is NOT this
           // branch — it returns the "No sound" error above and stays open to retry.
         }
-        // An edit-only close (B5): cuts/pastes with no take committed. Gated on
-        // `!attemptedCapture` so a superseded capture stop (above) abandons the
-        // session like B4 — persisting or clearing there is the George-R5 loss.
-        if (!committed && !attemptedCapture && editor.hasEdits) {
-          if (editor.workingLength === 0) {
-            // Cut down to nothing clears the take (no 0-frame ghost). Unlike a
-            // non-empty save it has NO recovery slot, so a failed clear must keep
-            // the sheet open with an in-place error — closing as if the erase
-            // happened would leave the original audio on disk under a UI that says
-            // it is gone (and a clipboard copy alongside it). Same shape as the
-            // finished-flag write failure below.
-            const cleared = await saveEditedSegment(
-              segmentId,
-              editor.working,
-              false
-            );
-            if (!cleared) {
-              setStopError(strings.clearFailed);
-              cancelPreview();
-              closing.current = false;
-              setIsClosing(false);
-              return false;
-            }
-          } else {
-            // A non-empty edit replaces the audio through the same never-lose
-            // machinery a recording uses (the owned slot → App's recovery screen on
-            // failure), so its boolean is deliberately not branched on here — just
-            // like the record path. Like a re-record it demotes an approved segment
-            // to draft unless explicitly re-marked, and the mark rides the write.
-            await saveEditedSegment(
-              segmentId,
-              editor.working,
-              finishedIntent === true
-            );
-          }
-          dirty.current = true;
-          committed = true;
-        }
-        // A toggle with no new take is a direct write — there is no take to carry
-        // it. Only when the translator actually changed it from the stored value,
-        // and only when nothing was committed (a commit already carried the mark).
-        if (
-          !committed &&
-          view &&
-          finishedIntent !== null &&
-          finishedIntent !== view.finished
-        ) {
-          try {
-            await setFinished(finishedIntent);
-          } catch (cause) {
-            // The store rejects a finished mark on a segment with no take — a take
-            // deleted externally between toggle and close. Surface it (F5-#1)
-            // rather than only the console, and stay open.
-            console.error("Could not change the finished flag", cause);
-            setStopError(strings.finishedWriteFailed);
-            cancelPreview();
-            closing.current = false;
-            setIsClosing(false);
-            return false;
-          }
-        }
-        onExit(dirty.current);
-        return true;
+        // Persist any pending edit and Finished flag, then exit — the shared
+        // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
+        return commitPendingAndExit(committed, attemptedCapture);
       })().catch((cause: unknown) => {
         // Neither call rejects by contract; this is the last net on the one path
         // where a failure would cost a recording that cannot be made again.
@@ -980,17 +1016,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       recording,
       paused,
       state,
-      view,
       audio,
       saveRecording,
-      saveEditedSegment,
       editor,
       segmentId,
       onExit,
       finishedIntent,
-      setFinished,
       abortPreview,
       cancelPreview,
+      commitPendingAndExit,
       menuOpen,
       confirmOpen,
       erase.erasing,
@@ -1151,20 +1185,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // ARMED discard (a confirmed, deliberate loss, the SaveFailed shape). The retry
     // guard blocks the window a re-decode is mid-flight.
     const leaveHeldTake = useCallback(() => {
-      if (heldRetryingRef.current) return;
-      // Drop the failed-decode take — this reveals the idle sheet (Record and the
-      // header Back live again, `heldTake === null`).
+      // The synchronous double-close latch, mirroring `close()` — a second tap
+      // during the commit must not run the tail twice.
+      if (heldRetryingRef.current || closing.current) return;
+      // Drop the failed-decode take, then run the SAME no-capture tail `close()`
+      // runs (Seth's round-5 root fix for R4-G1). It commits BOTH halves the exit
+      // still owes — a pending B5 edit AND a pending Finished toggle — then exits;
+      // on a write failure it keeps the sheet open with the reason, revealing the
+      // idle recorder (`heldTake === null`). One path, so a recovery exit can never
+      // drop one half again (B-4 was the edits half, R4-G1 the flag half). NOT a
+      // call to `close()` — that would re-enter its capture/overlay/held-take
+      // machinery; this is the tail alone.
       setHeldTake(null);
-      // But a fresh exit here would ABANDON the session work `close()`'s no-commit
-      // tail still owes — and there are TWO halves of it. B5 cut/paste edits live
-      // in `editor` (George R2 B-4); a pending Finished toggle lives in
-      // `finishedIntent`, which `close()` writes via `setFinished` when no take or
-      // edit committed (George R4-G1 — the twin B-4 missed). So STAY on the idle
-      // sheet whenever EITHER is pending and let a later Back run that tail — never
-      // `close()` from here, whose cut-to-empty arm would `clearSegmentTake` the
-      // on-disk original. A true exit only when nothing is owed.
-      if (!editor.hasEdits && finishedIntent === null) onExit(false);
-    }, [onExit, editor, finishedIntent]);
+      closing.current = true;
+      setIsClosing(true);
+      void commitPendingAndExit(false, false);
+    }, [commitPendingAndExit]);
 
     // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
     // user is not stranded on the now-`inert` list behind the modal. Mount-only —
