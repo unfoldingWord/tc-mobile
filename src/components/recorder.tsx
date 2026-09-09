@@ -129,11 +129,13 @@ export interface RecorderHandle {
  *
  * B5 layers waveform editing on top, over a working buffer (`useSegmentEditor`):
  * a selection frame that cuts to a chapter-scoped clipboard, a paste at the
- * centerline, and an in-memory undo/redo log. Editing is strictly idle (Model A:
- * edits first, then one record commits on close), so a live take disables the
- * edit controls, and the record's splice base is the edited buffer. On close the
- * working buffer is persisted — spliced with the recording, or on its own for an
- * edit-only session (`saveEditedSegment`).
+ * centerline, and an in-memory undo/redo log. Editing itself runs strictly idle
+ * (Model A: edits first, then one record commits on close). A live/paused take no
+ * longer blocks reaching Edit (#134): the record menu's Edit commits the take
+ * first (`onEnterEdit`), then reopens in edit mode over the committed audio; the
+ * record's splice base is the edited buffer. On close the working buffer is
+ * persisted — spliced with the recording, or on its own for an edit-only session
+ * (`saveEditedSegment`).
  *
  * The sheet is two modes (#89). RECORD mode is the hero Record + Play pair with
  * the menu opener in the header; the finished toggle lives in that menu. EDIT
@@ -160,6 +162,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       error: loadError,
       retrying: loadRetrying,
       retry: retryLoad,
+      reload: reloadView,
       setFinished,
     } = useRecorderSegment(segmentId);
 
@@ -200,8 +203,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const insertionOffset = useRef(0);
     /** A take was committed or the finished flag toggled — App should reload. */
     const dirty = useRef(false);
-    /** Guards the async close so a double-tap on Back cannot commit twice. */
+    /**
+     * Guards the async close so a double-tap on Back cannot commit twice — and,
+     * since #134, the commit `onEnterEdit` runs too: it is the single "a commit is
+     * in flight" latch, so a Back tapped mid-Edit-commit (or the reverse) is
+     * refused rather than double-committing the same take.
+     */
     const closing = useRef(false);
+    /**
+     * Which entry set `heldTake` — the failed-decode recovery panel (#165) now has
+     * two setters with different post-conditions, the second-setter split George's
+     * R3 P2 #1 caught. Back's close() sets the take and its `retryHeldTake` success
+     * must EXIT to Segments; `onEnterEdit`'s commit (#134) sets the take and its
+     * retry must instead reach EDIT mode over the committed samples. This ref is the
+     * discriminator: `onEnterEdit`'s blob branch sets it true, every other setter
+     * (close()) leaves it false, and `retryHeldTake` consumes it. A ref, not state —
+     * read synchronously in retry's async tail, no render depends on it.
+     */
+    const enterEditAfterRecover = useRef(false);
     /**
      * The finished checkbox's desired state, or null when the translator has not
      * touched it this session. The write is deferred to `close()` and applied
@@ -641,11 +660,162 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // Enter edit mode from the record menu. Play is a record-only control, so any
     // live buffer playback is stopped first — else it would orphan itself with no
     // control to stop it.
+    //
+    // With a live or paused take in hand this COMMITS it first (#134): editing
+    // works on `view.samples`, and an in-progress take is not there yet (Model A),
+    // so it is persisted through the same stop → decode → save `close()` runs on
+    // Back — minus the exit — then the segment is reopened at idle on the committed
+    // audio and edit mode entered. Without this the enabled row would drop the
+    // translator into edit mode over the STALE stored clip, editing the wrong audio
+    // — the leak the old idle-only gate prevented and the reason the fix cannot
+    // live in the view alone.
     const onEnterEdit = useCallback(() => {
+      // Stop any buffer playback (Play is record-only) and, on the no-take path,
+      // invalidate any in-flight preview decode — Edit is a record-menu action,
+      // the same boundary `openMenu` and a record tap clean up.
       audio.stopBuffer();
-      setMode("edit");
       setMenuOpen(false);
-    }, [audio]);
+      // No live/paused take: edit the stored/edited working buffer as before (#89).
+      // The gate only offers Edit with a take while recording or paused, so nothing
+      // else reaches the commit branch below.
+      if (!(recording || paused)) {
+        cancelPreview();
+        setMode("edit");
+        return;
+      }
+      // A live or paused take: commit it, then reopen in edit mode on the committed
+      // audio. `closing.current` is the shared "a commit is in flight" latch, so a
+      // Back tapped during this cannot double-commit the same take.
+      if (closing.current) return;
+      closing.current = true;
+      setIsClosing(true);
+      // Abort any in-flight preview decode, then drop the preview's PCM but keep its
+      // peaks on stage through the commit — exactly the pair `close()` runs, so a
+      // first take does not blank while it saves.
+      abortPreview();
+      setPreview((p) =>
+        p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
+      );
+      void (async () => {
+        const result = await audio.stopRecording();
+        if (result.samples && result.samples.length > 0) {
+          // Splice the take into the WORKING buffer at the locked offset, exactly
+          // as `close()` does; the mark rides the take through `addTake`. UNLIKE
+          // `close()`, whose next step is always onExit, this path means to STAY
+          // and open edit mode — so it MUST branch on saveRecording's boolean.
+          // A quota/IDB failure returns false and turns into App's recovery screen,
+          // which early-returns SaveFailed and unmounts this sheet; if we ignored
+          // the boolean and entered edit mode, App's `recorder` state would stay set
+          // under that screen and a Discard/Retry would REMOUNT the sheet instead of
+          // returning to Segments — the recovery post-condition (`recorder === null`)
+          // broken (George R1 P2). The held take carries the samples and the mark;
+          // retry/discard live on the recovery screen, not here.
+          const saved = await saveRecording(
+            segmentId,
+            editor.working,
+            result.samples,
+            insertionOffset.current,
+            finishedIntent === true
+          );
+          dirty.current = true;
+          if (!saved) {
+            // Take the SAME exit `close()`'s capture path takes: it always reaches
+            // `onExit(dirty)` after the save (`commitPendingAndExit` with
+            // `committed`), so App clears `recorder` and the recovery screen owns
+            // the body with nothing mounted behind it. Do NOT enter edit mode.
+            onExit(dirty.current);
+            return;
+          }
+          // The take — with its mark, `finishedIntent === true` above — is now on
+          // disk. Reset the session's finished intent so the reopened sheet matches a
+          // real close-and-reopen (a remount resets it to null): a subsequent in-sheet
+          // re-record or edit then demotes "unless re-marked" exactly as it would
+          // after a remount, rather than silently carrying THIS mark onto changed
+          // audio (George R3 P2 #2). Only on SUCCESS — the !saved / blob / error arms
+          // keep the intent so the held take and the recovery screen still carry the
+          // mark. The checkbox does not flip: `displayedFinished` falls back to the
+          // just-saved `view.finished` (true) until an edit sets `pendingDemote`.
+          // (Confirmed by Tim 2026-09-09: "Re-record should drop to draft until
+          // finished is manually chosen again.")
+          setFinishedIntent(null);
+          // Re-read the segment and AWAIT the fresh view, so the editor re-bases on
+          // the committed samples (`useSegmentEditor` resets when `view.samples`
+          // changes) BEFORE edit mode opens — the mode switch below then batches
+          // with the new view in one render, with no window where edit mode is live
+          // over the pre-take buffer. Awaited in this handler, not an effect, to
+          // stay clear of set-state-in-effect.
+          const next = await reloadView();
+          closing.current = false;
+          setIsClosing(false);
+          if (!next) {
+            // The commit SUCCEEDED but the reopen's reload threw (`setView(null)`).
+            // Do NOT stay on the resulting LoadErrorPanel: for a never-recorded
+            // segment the editor does not rebase — its base is the `EMPTY` singleton,
+            // so `setView(null)` is a no-op reset (`use-segment-editor.ts:99,113`) —
+            // and a pending paste's stale `working` survives. LoadErrorPanel's Back
+            // then runs `close()`'s edit-only save and OVERWRITES the take just
+            // committed (George R5, data loss). The take is on disk, so exit to
+            // Segments exactly as the `!saved` arm does.
+            onExit(dirty.current);
+            return;
+          }
+          setMode("edit");
+          return;
+        }
+        // No usable audio. Mirror close()'s precedence exactly (:1063): a decode
+        // failure whose captured bytes survived (#165/#106) is the take's ONLY
+        // copy — HOLD it and hand the body to the recovery panel, checked BEFORE
+        // the plain error Notice so a superseded stop (blob kept, error withheld)
+        // cannot fall through and silently drop it. Only an empty/silent capture
+        // (blob-less, error set) stays in record mode to retry. Either way, do NOT
+        // enter edit mode.
+        if (result.blob) {
+          // The decode FAILED (or a leave() superseded the stop) but the bytes are
+          // the only copy of the take — exactly close()'s :1063 branch. Route to the
+          // recovery panel (re-decode on a fresh gesture, or share off-phone); do
+          // NOT onExit and do NOT enter edit mode. Retry/discard/share live there.
+          // Unlike close()'s identical branch, mark this recovery as Edit-initiated
+          // so a successful Try again reaches edit mode instead of exiting to
+          // Segments — the take was committed to be EDITED (#134), and the recovery
+          // is a detour, not a Back (George R3 P2 #1).
+          setHeldTake(result.blob);
+          enterEditAfterRecover.current = true;
+          setHeldShareError(null);
+          setHeldRetryError(null);
+          setHeldShared(false);
+          cancelPreview();
+          closing.current = false;
+          setIsClosing(false);
+          return;
+        }
+        if (result.error) {
+          setStopError(result.error);
+          cancelPreview();
+        }
+        closing.current = false;
+        setIsClosing(false);
+      })().catch((cause: unknown) => {
+        // Last net (mirror close() :1110): neither stopRecording nor saveRecording
+        // rejects by contract, but were one ever to reject after the `closing` latch
+        // was set, the latch would stick and Back/Record/Play/menu would all refuse
+        // with no recovery panel. Exit as close() does so the sheet unmounts and the
+        // latch releases; the recovery slot carries anything a failed commit held.
+        console.error("Committing the recording to enter edit failed", cause);
+        onExit(dirty.current);
+      });
+    }, [
+      audio,
+      recording,
+      paused,
+      saveRecording,
+      segmentId,
+      editor,
+      finishedIntent,
+      reloadView,
+      abortPreview,
+      cancelPreview,
+      onExit,
+    ]);
 
     // The permission panel's Retry. It bypasses `onRecordButton`, so it must force
     // record mode itself: Edit is reachable while the panel is up (empty segment +
@@ -970,6 +1140,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // again. An empty or silent capture carries no blob and falls to the
             // Notice below.
             setHeldTake(result.blob);
+            // A Back-initiated recovery exits to Segments on a successful retry — the
+            // opposite of onEnterEdit's. Stamp the discriminator false so a stale true
+            // from an earlier Edit-commit recovery cannot redirect this one into edit
+            // mode (George R3 P2 #1).
+            enterEditAfterRecover.current = false;
             setHeldShareError(null);
             setHeldRetryError(null);
             setHeldShared(false);
@@ -1057,7 +1232,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         try {
           const result = await audio.retryDecode(blob);
           if (result.samples && result.samples.length > 0) {
-            await saveRecording(
+            const saved = await saveRecording(
               segmentId,
               editor.working,
               result.samples,
@@ -1065,6 +1240,53 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               finishedIntent === true
             );
             dirty.current = true;
+            if (enterEditAfterRecover.current) {
+              // Edit-initiated recovery (#134): this branch owes App and the recorder
+              // the SAME three post-conditions onEnterEdit's success arm has, and a
+              // bare onExit is not enough. Mirror it faithfully (Frank R4 F1/F2,
+              // George R4 #1/#2/#3):
+              enterEditAfterRecover.current = false;
+              // (1) Branch on saveRecording's boolean. A quota/IDB failure returns
+              // false and becomes App's SaveFailed, which unmounts this sheet; enter
+              // edit mode and App's `recorder` stays set under it, so a Discard/Retry
+              // REMOUNTS the sheet instead of returning to Segments (George R1 P2, the
+              // post-condition onEnterEdit protects at its success arm). Exit instead.
+              if (!saved) {
+                setHeldTake(null);
+                setHeldRetrying(false);
+                heldRetryingRef.current = false;
+                onExit(dirty.current);
+                return;
+              }
+              // (2) Reset the session mark so the reopened sheet matches a remount —
+              // a later in-sheet edit/re-record then demotes "unless re-marked"
+              // (George R4 #3 / R3 P2 #2). (3) KEEP the recovery panel mounted
+              // (`heldTake` still owns the body, `heldRetrying` still true) ACROSS the
+              // reload: dropping it here paints the record-mode hero over the still
+              // pre-take `working` buffer, and a Record or punch-in Erase in that
+              // window 1:1-replaces the take just recovered (George R4 #1, a data-loss
+              // race). Swap panel → edit mode in ONE batched render after the reload.
+              setFinishedIntent(null);
+              const next = await reloadView();
+              setHeldTake(null);
+              setHeldRetrying(false);
+              heldRetryingRef.current = false;
+              if (!next) {
+                // Same reload-null hazard as onEnterEdit's success arm (George R5):
+                // the editor does not rebase for a never-recorded segment, so a
+                // pending paste's stale `working` would let LoadErrorPanel's Back
+                // overwrite the take just committed. The take is on disk — exit to
+                // Segments rather than leave the stale editor behind the panel.
+                onExit(dirty.current);
+                return;
+              }
+              setMode("edit");
+              return;
+            }
+            // Back-initiated recovery: unchanged. The committed take (its mark carried
+            // by saveRecording) exits to Segments; a save failure still lands on App's
+            // SaveFailed via onExit clearing `recorder` (parity with the pre-#134
+            // behaviour George R3 accepted — the boolean is not branched here).
             setHeldTake(null);
             setHeldRetrying(false);
             heldRetryingRef.current = false;
@@ -1098,6 +1320,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       segmentId,
       editor,
       finishedIntent,
+      reloadView,
       onExit,
     ]);
 
@@ -1197,6 +1420,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // call to `close()` — that would re-enter its capture/overlay/held-take
       // machinery; this is the tail alone.
       setHeldTake(null);
+      // The discarded take carried whatever entry set it; clear the Edit-origin latch
+      // so it cannot leak into a later Back-initiated recovery (George R3 P2 #1).
+      enterEditAfterRecover.current = false;
       closing.current = true;
       setIsClosing(true);
       void commitPendingAndExit(false, false);
@@ -1232,12 +1458,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // The ≡-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
-    // greys it are one derivation, not two switches. `!idleEditable` is exactly
-    // `!view || takeActive`, spelled out here as the two inputs.
+    // greys it are one derivation, not two switches. Erase still spells
+    // `!idleEditable` as `!view || takeActive`; Edit no longer does — since #134 a
+    // live/paused take reaches Edit (it commits first), so Edit's `takeActive`
+    // input is split into `committing` (the real commit window) and `hasTake`.
     const starting = state === "requesting";
     const editReason = editRowReason({
       hasView: view !== null,
-      takeActive,
+      // A recording/paused take no longer blocks Edit (#134) — entering Edit
+      // commits it first (`onEnterEdit`). Only the actual commit window does: the
+      // Back-tapped close, and a #59 interruption's `processing` freeze.
+      committing: isClosing || state === "processing",
+      hasTake: recording || paused,
       starting,
       denied,
       hasAudio,
@@ -1753,15 +1985,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 icon="edit"
                 label={strings.enterEdit}
                 variant="quiet"
-                // Idle-only. Editable when there is audio to edit OR a full
-                // clipboard to paste — a never-recorded segment with a pending clip
-                // must still open edit mode to receive it, or the chapter-wide
-                // clipboard (G3) could never land on an empty segment (George R2).
+                // Editable when there is audio to edit, a full clipboard to paste
+                // — a never-recorded segment with a pending clip must still open
+                // edit mode to receive it, or the chapter-wide clipboard (G3) could
+                // never land on an empty segment (George R2) — OR a live/paused
+                // take, which `onEnterEdit` commits first, then edits (#134). Only
+                // the commit window itself blocks it now, not every non-idle state.
                 // Never while `denied`: the permission panel owns the body, and
                 // entering edit there strands the edit toolbar over a Retry that
                 // starts the mic (George R3, with onRetryRecord as the other half).
                 // The gate lives in `editRowReason` so the grey row can say WHY
-                // (#135): a take in flight shows the `alert` badge — a state mark
+                // (#135): a take mid-commit shows the `alert` badge — a state mark
                 // that names no control — and the reason joins the row's
                 // accessible name.
                 disabled={editReason !== null}
