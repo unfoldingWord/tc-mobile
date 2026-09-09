@@ -59,12 +59,14 @@ export default defineConfig(({ mode }) => ({
         // single failed fetch restarted the whole set. Dropping `jpg` removes
         // them from the manifest; the files still ship in the bundle.
         //
-        // End state (ADR 0006, 2026-09-04 amendment): when a screen reads
-        // `thumbUrl` — the Template Library, #33 — RESTORE `jpg` here so the set
-        // is precached for offline first-run again. This is a reader-gated
-        // exception, NOT a move to runtime-caching, which ADR 0006 rejected for
-        // its stranding risk. See #177; tests/precache-manifest.test.ts pins the
-        // allowlist so `jpg` (and any broader glob) cannot return unnoticed.
+        // End state (ADR 0006, 2026-09-04 amendment): when a screen reads OBS
+        // frame imagery — imports/calls `thumbUrl`, or otherwise references
+        // the `/obs/thumbs/` path (the Template Library, #33) — RESTORE `jpg`
+        // here so the set is precached for offline first-run again. This is a
+        // reader-gated exception, NOT a move to runtime-caching, which ADR
+        // 0006 rejected for its stranding risk. See #177;
+        // tests/precache-manifest.test.ts pins the allowlist so `jpg` (and any
+        // broader glob) cannot return unnoticed.
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         // No single precached asset exceeds the 2 MiB default (the largest is
         // the ~552 KB entry chunk); the former 4 MiB override existed only for
