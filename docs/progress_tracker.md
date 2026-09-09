@@ -11,6 +11,57 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-09 — #134 to green (rounds 4–6), v0.1.13 promoted & verified, first Android pass on staging, Monday-Capacitor assessment
+
+**Branches:** merged to **`develop`**: #254 (gate-chart docs), #232 (drift guard), #268 (#134 recorder fix), #287 (native Monday-prep docs), plus #281 (v0.1.13 bump). **v0.1.13 promoted to `staging` (#282) and verified live.** `main` still `3464a30`. **Closed:** #134 (via #268), #207 (dup of #279). **Filed:** #283–#286.
+
+### #134 / #268 — recorder Edit-reachability, review-clean and merged
+
+Rounds 4–6 of dual review to clean (Frank + George both APPROVE @ `89cbe8c`); **Tim signed off** the finished-status default (a re-record drops to draft until finished is re-chosen). The chain: R3 second-setter split → R4 `retryHeldTake` was an incomplete copy of `onEnterEdit`'s success-arm contract (3 P2s, both reviewers converged) → **R5 a _pre-existing_ data-loss bug in `onEnterEdit`** (reload-null + the `EMPTY`-base identity → LoadErrorPanel Back overwrites the just-committed take), George deep-tree — fixed both arms → R6 clean. Merged (auto-closed #134). **T2 on-device pass still owed** — browser-only wiring; the 5 scenarios live in #245.
+
+### v0.1.13 promoted & deployed
+
+First promotion since v0.1.12 (2026-09-03), 22 commits behind. #281 (bump) → develop, #282 (develop→staging). **Staging serves `0.1.13`** (bundle `index-Rioadegv.js`), confirmed by the served version string (the #143 proof). Deploy landed in ~1 min — Workers Builds healthier than right after the transfer.
+
+### First Android on-device pass (Seth, on staging v0.1.13)
+
+Core loop + editing + **Share Chapter work** on Android Chrome. Findings:
+
+- **#272 Share Book fails "Could not share this book" — CONFIRMED.** Android Web Share rejects `application/zip`; Chapter's `audio/mpeg` passes. Fix = multi-file audio share, pending Benjamin's share-shape nod.
+- **#269 likely a device setting** Seth overlooked — stored playback works on v0.1.13; the storage-format scoping is shelved (one clean confirm to close).
+- **New:** #283 (2nd-take waveform doesn't append live — **v1-required** bug), #284 (no Play in edit mode — Tim decision), #285 (menu stays open on approve), #286 (discoverability bundle).
+
+### Contributor PR reviews (Seth as reviewer)
+
+- **#232** round 2: Frank's lone P1 **REFUTED** (a `;` breaks the `[^;]*` span so the regex can't match), George APPROVE → merged.
+- **#215** round 3: George one valid P2 (`check:deploy` derives the SHA from local HEAD but Cloudflare deploys the merge-commit tip → false-FAIL) → Ben, round 4.
+- **#207 closed** as dup of **#279** (Jesse). **#279** round 1: Frank APPROVE, George one P2 (freeze-latch cleared while `document.hidden` → false-kills Share on WebView resume) → Jesse pushed `fa9aab2`, **awaiting round 2**.
+
+### Monday-Capacitor assessment (the pivot, in focus)
+
+Paused to assess: **the whole PR queue is v0.2.0 polish — nothing advances the Monday (2026-09-14) sprint-1 goal.** #262/#263 (installable apps) are native/Mac work with no PR. Four parallel lanes:
+
+- **#262 build-readiness:** scaffold sound, **bundles the web assets** (true offline app); blockers are **the Apple account (iOS) + a Mac**; **Android debug APK (`./gradlew assembleDebug`) installs today, no keystore.**
+- **#263 WebView audio risk:** **mic (getUserMedia) favorable-but-unverified is the go/no-go**; background capture won't hold in a WebView; Android `navigator.share` likely absent (reframes #272 → maybe `@capacitor/share`); `storage.persist()` still uncalled.
+- **Scope locked (Seth):** **a foreground install-and-record demo is the Monday bar** — background capture is a known limitation, not a blocker.
+- **#287** shipped: the tester-install guide, a "Minimal Monday path" + human-gates callout in `docs/native/README.md`, and `cap:sync`/`cap:ios`/`cap:android` npm scripts.
+
+### Blockers / needs a human
+
+- **Seth (Mac, Monday-critical, no code):** ① confirm the unfoldingWord Apple Developer account, ② `./gradlew assembleDebug` for the Android APK, ③ **the iPhone WKWebView record→playback mic test** (the go/no-go).
+- **Tim:** #284 (no-Play-in-edit design call).
+- **Benjamin:** #272 share-shape change (zip → multi-file audio).
+
+### Next steps
+
+1. The Monday trio above (Seth's Mac).
+2. #279 round 2 (Jesse's fix), #215 round 4 (Ben's fix).
+3. #268's on-device pass (rides the next promotion or a develop preview); then #283 (the waveform bug).
+4. Rebase the recorder-stack PRs (#274/#213/#239/#230/#235/#218) — develop moved under them.
+5. Fill #287's tester-doc placeholders (APK URL, support channel) before sending to testers.
+
+---
+
 ## 2026-09-08 — sprint planning with Tim & Elsy; a 10-PR merge day; first Android on-device pass
 
 **Branches:** ten PRs merged to **`develop`** (`0ba3687` → `8011bdc`). **Nothing promoted** —
