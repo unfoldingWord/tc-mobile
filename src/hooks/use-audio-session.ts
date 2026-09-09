@@ -137,11 +137,13 @@ export interface UseAudioSession {
   readLevel: () => number;
   /**
    * Whether `readLevel` can be trusted this frame (#76). A PULL like `readLevel`:
-   * false while nothing is capturing, and false mid-take while the shared context
-   * is not `"running"` (iOS `"suspended"`/`"interrupted"` after backgrounding or
-   * an interruption), where the analyser reads zeros a translator would misread
-   * as a dead mic. The VU meter hatches "unavailable" on a false. Distinct from
-   * `meterFailed`, the OPEN-time "tap never wired" state.
+   * `true` when NOT in a live take (the meter rests empty via `active`, so "not
+   * recording" reads as "not broken"); `false` ONLY while recording and either
+   * the tap is missing or the shared context is not `"running"` (iOS
+   * `"suspended"`/`"interrupted"` after backgrounding or an interruption), where
+   * the analyser reads zeros a translator would misread as a dead mic. The VU
+   * meter hatches "unavailable" on a false. Distinct from `meterFailed`, the
+   * OPEN-time "tap never wired" state.
    */
   readMeterAvailable: () => boolean;
   /**

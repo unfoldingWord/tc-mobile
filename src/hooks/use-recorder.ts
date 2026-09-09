@@ -199,13 +199,15 @@ export interface UseRecorder {
   readLevel: () => number;
   /**
    * Whether the VU meter's `readLevel` can be trusted RIGHT NOW. A PULL like
-   * `readLevel`, polled on the meter's own frame clock: false while nothing is
-   * capturing, and false mid-take while the shared context is not `"running"`
-   * (iOS `"suspended"`/`"interrupted"` after backgrounding or an interruption),
-   * where the analyser reads zeros indistinguishable from a dead mic. The meter
-   * hatches "unavailable" on a false rather than resting empty (#76). Distinct
-   * from `meterFailed`, which is the OPEN-time "tap never wired" state; this is
-   * the per-frame runtime state a wired tap can still fall into.
+   * `readLevel`, polled on the meter's own frame clock. `true` when NOT in a live
+   * take — outside recording the meter rests empty via `active` rather than
+   * hatching on the way down, so "not recording" reads as "not broken". `false`
+   * ONLY while recording and either the tap is missing or the shared context is
+   * not `"running"` (iOS `"suspended"`/`"interrupted"` after backgrounding or an
+   * interruption), where the analyser reads zeros indistinguishable from a dead
+   * mic. The meter hatches "unavailable" on a false (#76). Distinct from
+   * `meterFailed`, which is the OPEN-time "tap never wired" state; this is the
+   * per-frame runtime state a wired tap can still fall into.
    */
   readMeterAvailable: () => boolean;
   /**
@@ -874,7 +876,9 @@ export function useRecorder(): UseRecorder {
   // the add/remove-listener wiring are unit-testable in Node with no renderer,
   // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
   // mutates each guard to prove it. The effect is the one-line call plus the
-  // `[state]` dependency (browser-boundary wiring, verified on-device).
+  // `[state]` dependency: browser-boundary wiring whose guards are Node-tested,
+  // but the effect actually firing and iOS gesture-withholding are the on-device
+  // pass for #76 — NOT yet run on any device.
   useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.

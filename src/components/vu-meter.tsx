@@ -122,6 +122,16 @@ export function VuMeter({
     // Track the hatch/animate state so the DOM is touched only on a transition,
     // not every frame — the same "only on change" rule the zone attribute uses.
     let hatched: boolean | null = null;
+    // Seed the first paint before the rAF loop runs. On a `vuVisible` remount
+    // (recorder menu toggle) while recording with an already-suspended context,
+    // `tick` would not fire until the next frame, leaving one frame of an empty
+    // full-opacity track — the dead-mic look, the per-frame twin of the static
+    // open-time first-paint case above (George R2 P3). Hatch now if the tap is
+    // already unavailable so the very first commit is correct.
+    if (!readAvailableRef.current()) {
+      hatch();
+      hatched = true;
+    }
     const tick = () => {
       if (!readAvailableRef.current()) {
         // A wired tap whose context went suspended/interrupted mid-take (#76):
