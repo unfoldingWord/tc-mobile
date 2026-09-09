@@ -742,13 +742,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // changes) BEFORE edit mode opens — the mode switch below then batches
           // with the new view in one render, with no window where edit mode is live
           // over the pre-take buffer. Awaited in this handler, not an effect, to
-          // stay clear of set-state-in-effect. A reopen that FAILED (decode/load
-          // error) returns null and leaves the recovery panel owning the body — so
-          // do not enter edit mode there.
+          // stay clear of set-state-in-effect.
           const next = await reloadView();
           closing.current = false;
           setIsClosing(false);
-          if (next) setMode("edit");
+          if (!next) {
+            // The commit SUCCEEDED but the reopen's reload threw (`setView(null)`).
+            // Do NOT stay on the resulting LoadErrorPanel: for a never-recorded
+            // segment the editor does not rebase — its base is the `EMPTY` singleton,
+            // so `setView(null)` is a no-op reset (`use-segment-editor.ts:99,113`) —
+            // and a pending paste's stale `working` survives. LoadErrorPanel's Back
+            // then runs `close()`'s edit-only save and OVERWRITES the take just
+            // committed (George R5, data loss). The take is on disk, so exit to
+            // Segments exactly as the `!saved` arm does.
+            onExit(dirty.current);
+            return;
+          }
+          setMode("edit");
           return;
         }
         // No usable audio. Mirror close()'s precedence exactly (:1063): a decode
@@ -1260,7 +1270,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               setHeldTake(null);
               setHeldRetrying(false);
               heldRetryingRef.current = false;
-              if (next) setMode("edit");
+              if (!next) {
+                // Same reload-null hazard as onEnterEdit's success arm (George R5):
+                // the editor does not rebase for a never-recorded segment, so a
+                // pending paste's stale `working` would let LoadErrorPanel's Back
+                // overwrite the take just committed. The take is on disk — exit to
+                // Segments rather than leave the stale editor behind the panel.
+                onExit(dirty.current);
+                return;
+              }
+              setMode("edit");
               return;
             }
             // Back-initiated recovery: unchanged. The committed take (its mark carried
