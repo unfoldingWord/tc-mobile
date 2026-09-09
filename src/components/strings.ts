@@ -111,6 +111,39 @@ export const strings = {
   // Try again relabels and goes busy in place rather than unmounting (#137 G2).
   loadRetrying: "Opening your recording…",
 
+  // ── Recorder save-decode failure (#165) ───────────────────────────────────
+  // After Stop the captured audio could not be decoded — most often a transient
+  // iOS "interrupted" AudioContext (#106), not corrupt bytes. The take exists
+  // ONLY as the held container bytes, so this panel never offers a plain
+  // discard: Try again re-decodes on a fresh gesture (resuming the context), and
+  // Share hands the raw bytes to the OS so the recording leaves the phone in some
+  // form rather than none. "yet" because a retry commonly succeeds.
+  takeRecoverTitle: "This recording could not be saved yet",
+  takeRecoverBody:
+    "Your recording is still here. Try again, or share it to keep it safe.",
+  takeRecoverRetry: "Try again",
+  // Shown in place of the Try again label and as a busy Notice while a re-decode
+  // is in flight — the same in-place busy shape as `loadRetrying` (#137 G2).
+  takeRecoverRetrying: "Saving your recording…",
+  takeRecoverShare: "Share the recording",
+  // The share sheet is missing or refused these bytes.
+  takeShareUnavailable: "Sharing is not available on this device.",
+  takeShareFailed: "Could not share the recording. Try again.",
+  // A re-decode failed AGAIN (kept under Try again, not the Share slot — George
+  // R1 G6). A thrown save on a recovered take reads here too, distinct from a
+  // share failure: the recording is still held, so this says "save", not "share".
+  takeRetryFailed: "Could not save the recording. Try again.",
+  // The held bytes went to the OS share sheet. Shown once a share succeeds, with
+  // the Done exit — the recording is off the phone, so leaving loses nothing.
+  takeRecoverShared: "Recording shared.",
+  takeRecoverDone: "Done",
+  // The two-tap discard on the recovery panel (George R1 G1 / Frank F2): the
+  // panel is otherwise a dead end when the decode never succeeds. Same armed
+  // second-tap shape as the SaveFailed screen — a stray tap never deletes.
+  takeRecoverDiscard: "Delete this recording",
+  takeRecoverDiscardArmed: "Tap again to delete this recording for good",
+  takeRecoverDiscardHint: "Tap again to delete it.",
+
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
   // the action is stop (D4), so the label says "Stop playing".
