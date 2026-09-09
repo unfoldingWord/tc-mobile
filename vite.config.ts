@@ -106,6 +106,18 @@ export default defineConfig(({ mode }) => ({
         // the ~552 KB entry chunk); the former 4 MiB override existed only for
         // the now-excluded thumbnails, which were individually tiny anyway.
         navigateFallback: "index.html",
+        // `version.json` is deliberately outside globPatterns (comment above
+        // `versionJsonPlugin`) so a `fetch()` always reaches the origin, never
+        // a cached copy. But Workbox's navigateFallback intercepts *every*
+        // same-origin navigation request, not just missing routes — without
+        // this denylist entry, a browser *navigating* to /version.json
+        // (typed in the address bar, opened as a link) on an installed PWA
+        // would still be served the cached index.html shell. AGENTS.md's
+        // "Confirming a deploy" claim that fetching it always reaches the
+        // origin is about `check:deploy`'s Node fetch (not navigation-mode,
+        // never intercepted); this keeps that true for a browser navigation
+        // too (round-3 George #2).
+        navigateFallbackDenylist: [/^\/version\.json$/],
         cleanupOutdatedCaches: true,
       },
       manifest: {
