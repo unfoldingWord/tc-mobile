@@ -343,7 +343,11 @@ and `buildSha` the footer build stamp uses) —
 `{ "version": "0.1.x", "sha": "<short sha>", "builtAt": "<ISO timestamp>" }`.
 It is deliberately not a build asset the PWA precaches (`.json` is outside
 `workbox.globPatterns` in `vite.config.ts`), so fetching it always reaches the
-origin, never a cached copy.
+origin, never a cached copy. `navigateFallbackDenylist` in the same Workbox
+config (round-3 George #2) keeps that true for a browser _navigation_ to
+`/version.json` too, not just `check:deploy`'s script-side fetch — without it,
+Workbox's SPA-shell fallback would intercept a navigation there on an
+installed PWA even though `.json` was never precached.
 
 Each promotion type has its own explicit command — **the two are not
 interchangeable**, and the production one is deliberately not just "the same
@@ -354,15 +358,33 @@ always staging and nothing forced a promoter to say otherwise):
 
 ```bash
 # develop -> staging: bare command, defaults to the staging Worker.
-npm run check:deploy                                   # this checkout's HEAD
+npm run check:deploy                        # expected sha from origin/staging
 node scripts/check-deploy.mjs <origin> --sha=<short-sha> --version=<x.y.z>
 
 # staging -> main (production, the highest-stakes gate in the repo):
 # --require-origin makes the script itself refuse to run without an explicit
 # origin, so this can never silently fall back to checking staging instead.
-npm run check:deploy:prod                               # this checkout's HEAD
+npm run check:deploy:prod                   # expected sha from origin/main
 node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> --version=<x.y.z>
 ```
+
+**Which sha is compared, and why `git fetch` first.** Cloudflare Workers
+Builds deploys the promoted branch's tip — for this repo's merge-PR promotion
+flow, that tip is a **merge commit**, not the feature/develop branch tip a
+promoter's local checkout usually has `HEAD` on (round-3 George #1:
+`docs/progress_tracker.md:102,118` recorded the v0.1.12 `develop -> staging`
+promotion (#202) as merge commit `afdfa6e`, not develop's pre-merge tip
+`7152289`). So the bare commands above do **not** compare against local
+`HEAD` by default: for the staging and production default origins,
+`resolveExpectedSha()` (`scripts/check-deploy.mjs`) reads the corresponding
+**remote-tracking ref** instead — `origin/staging` for `check:deploy`,
+`origin/main` for `check:deploy:prod` — falling back to local `HEAD` (and
+printing why) only when that ref can't be resolved, or the origin isn't one
+of these two defaults. **Run `git fetch origin` before either bare command**
+so that ref is up to date; without a fetch, a stale or absent remote-tracking
+ref makes the check fall back to `HEAD`, which reintroduces the original
+false-FAIL risk. Passing `--sha=<short-sha>` explicitly always overrides this
+resolution entirely.
 
 `check:deploy:prod` is
 `node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
