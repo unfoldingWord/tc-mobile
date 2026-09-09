@@ -150,7 +150,8 @@ thumbnails — 598 of them for 2.5 MB. They ship in the build but are **excluded
 from the service-worker precache until a screen reads them** (#177): no shipped
 screen draws them yet, so precaching 2.5 MB of unused pictures only delayed
 offline-readiness. `jpg` is restored to the precache when the Template Library
-(#33) wires a reader — the bundle-and-precache decision itself stands (ADR 0006,
+(#33) wires a reader — imports/calls `thumbUrl`, or otherwise references the
+`/obs/thumbs/` path — the bundle-and-precache decision itself stands (ADR 0006,
 2026-09-04 amendment).
 **The 360px frames are not bundled**, and after B0 (#26) they are **not cached
 either**: the on-demand IndexedDB fetch for full-size artwork is gone. The

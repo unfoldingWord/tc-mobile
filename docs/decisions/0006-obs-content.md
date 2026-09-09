@@ -42,11 +42,15 @@ it (#33) has not landed. Precaching 598 files / 2.5 MB that nothing draws only
 delayed offline-readiness (611 → 13 precache entries, ~80% of the bytes) and
 exposed Workbox's atomic install to a full restart on any one failed fetch.
 **The stranding rationale below is not weakened:** you cannot be stranded by a
-picture no screen shows. When a screen reads `thumbUrl` (the Template Library,
-#33), **`jpg` is restored to `workbox.globPatterns`** so the set is precached
-again exactly as this ADR requires — the fix is **reader-gated**, and is **not**
-a switch to runtime-caching, which this ADR rejected for its stranding risk.
-Guarded by `tests/precache-manifest.test.ts`. Status stays **Accepted**.
+picture no screen shows. When a screen reads OBS frame imagery — imports or
+calls `thumbUrl`, or otherwise references the `/obs/thumbs/` path (the
+Template Library, #33) — **`jpg` is restored to `workbox.globPatterns`** so
+the set is precached again exactly as this ADR requires — the fix is
+**reader-gated**, and is **not** a switch to runtime-caching, which this ADR
+rejected for its stranding risk. Guarded by `tests/precache-manifest.test.ts`
+(a `frame.image` CDN read is deliberately not one of the matched patterns —
+that URL is not same-origin, so restoring `jpg` would not serve it; see the
+test file's comments, #232 round-1 review). Status stays **Accepted**.
 
 ## Context
 
@@ -98,13 +102,13 @@ list rendered tiles at 48–56px. Centre-cropped and downscaled to 128px (2x the
 largest tile), **the entire 598-frame set is 2.5 MB** — sixteen times smaller
 than the source, and small enough to simply ship.
 
-| Asset                                 | Size       | Decision                                                                                                                                                                                                                                       |
-| ------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                                                                                                                                                                      |
-| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled; precache paused (#177)** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs`. Excluded from the precache until a screen reads `thumbUrl` (#33), when `jpg` is restored to `globPatterns`. See the 2026-09-04 amendment. |
-| Full-size artwork, 360px              | 46.8 MB    | **Removed (B0, #26).** Was fetched per story into IndexedDB; the cache is deleted, Q4 answered no                                                                                                                                              |
-| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                                                                                                                                                                             |
-| Story narration MP3, 32kbps           | ~1 MB each | **Removed (B0, #26).** Out of Phase 1 (D5); the fetch path is deleted                                                                                                                                                                          |
+| Asset                                 | Size       | Decision                                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Story text + frame metadata           | 230 KB     | **Bundled** — `src/data/obs-catalog.json`                                                                                                                                                                                                                                                      |
+| **Thumbnails, 128px, all 598 frames** | **2.5 MB** | **Bundled; precache paused (#177)** — `public/obs/thumbs/`, built by `scripts/build-obs-thumbs.mjs`. Excluded from the precache until a screen reads OBS frame imagery — `thumbUrl` or the `/obs/thumbs/` path (#33) — when `jpg` is restored to `globPatterns`. See the 2026-09-04 amendment. |
+| Full-size artwork, 360px              | 46.8 MB    | **Removed (B0, #26).** Was fetched per story into IndexedDB; the cache is deleted, Q4 answered no                                                                                                                                                                                              |
+| Full-size artwork, 2160px             | ~600 MB    | Not viable, unused                                                                                                                                                                                                                                                                             |
+| Story narration MP3, 32kbps           | ~1 MB each | **Removed (B0, #26).** Out of Phase 1 (D5); the fetch path is deleted                                                                                                                                                                                                                          |
 
 **What bundling bought, beyond offline-on-first-run:**
 
