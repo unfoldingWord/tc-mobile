@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { meterZone, toDisplayLevel } from "@/lib/audio/meter";
 import { cn } from "@/lib/utils";
@@ -80,7 +80,15 @@ export function VuMeter({
     readAvailableRef.current = readAvailable;
   }, [readAvailable]);
 
-  useEffect(() => {
+  // `useLayoutEffect`, not `useEffect`: on a `meterFailed`+`active` mount the
+  // static hatch below must land BEFORE the browser paints, or the freshly
+  // mounted meter shows one frame of an empty full-opacity track — the dead-mic
+  // look R-B6 forbids — until a passive effect runs (George R1 P3). Same reason,
+  // same precedent as `LiveScope`'s first paint (`live-scope.tsx:87-92`). The
+  // `data-state` write stays imperative (out of JSX) so a per-frame `elapsedMs`
+  // re-render cannot clobber the live hatch; the `aria-label` remains declarative,
+  // so accessibility is unaffected by the effect timing.
+  useLayoutEffect(() => {
     const root = rootRef.current;
     const fill = fillRef.current;
     if (!root || !fill) return;

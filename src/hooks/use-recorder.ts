@@ -59,6 +59,38 @@ function micRefusalMessage(refusal: MicRefusal): string {
 }
 
 /**
+ * Install the foreground re-arm for a live take (#76), returning the effect
+ * cleanup.
+ *
+ * Returning from an iOS backgrounding or an OS interruption can leave the shared
+ * `AudioContext` `"suspended"`/`"interrupted"`, so the VU tap reads zeros even
+ * though capture is fine. The `resume()` gesture already covers a manual
+ * pause→resume; this covers a return that is NOT a resume tap — a background then
+ * foreground with capture still live. Fire-and-forget: the resume must never gate
+ * anything, and best effort — iOS MAY withhold the un-suspend until the next real
+ * user gesture, in which case the meter stays honestly hatched (`available()` ->
+ * false) until a tap. That withholding is the open device question the iOS pass
+ * settles.
+ *
+ * `recording` gates it: only a live take has a meter to rescue, and `resume()`
+ * owns the paused edge, so idle/paused/requesting/processing arm nothing and hand
+ * back a no-op cleanup. A module function, not an inline effect body, so the two
+ * guards and the listener add/remove are exercisable without a React renderer
+ * (this repo has none in Node) — see `tests/foreground-resume.test.ts`.
+ */
+export function armForegroundResume(recording: boolean): () => void {
+  if (!recording) return () => {};
+  const onVisibility = () => {
+    if (document.visibilityState !== "visible") return;
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context on foreground", cause);
+    });
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => document.removeEventListener("visibilitychange", onVisibility);
+}
+
+/**
  * Columns the live-waveform ring holds while recording (#120). One column is
  * pushed per animation frame, so at ~60 fps this is roughly `SCOPE_CAPACITY/60`
  * seconds of visible history. 180 ≈ 3 s beside the head — a provisional default
@@ -299,12 +331,20 @@ export function useRecorder(): UseRecorder {
   /** The current capture level for the VU meter, 0 when nothing is capturing. */
   const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
 
-  // Whether that level can be trusted this frame (#76). No tap (idle, or a
-  // meterFailed take) is not trustworthy — false; but the meter only surfaces
-  // "unavailable" while `active` (recording), so a false at idle rests empty as
-  // before. A wired tap defers to its own live context-state check.
+  // Whether that level can be trusted this frame (#76). Gated on `recordingRef`
+  // exactly like `readScope` below, and for the same teardown-window reason: at
+  // Stop/interrupt the tap is torn down SYNCHRONOUSLY (nulled in `stop()`,
+  // `disconnect()`ed in `onInterrupted`) one commit BEFORE `setState` leaves
+  // "recording", so `active` in `VuMeter` is still true in that window. Without
+  // the gate `available()` -> false there would flash the "meter broken" hatch —
+  // the exact dead-mic misread #76 exists to prevent (George R1 P2). `LiveScope`
+  // documents the same frame (`live-scope.tsx:176-180`). While recording, a
+  // wired tap defers to its own live context-state check; a false there is a
+  // genuine suspended/interrupted context. Outside recording return `true` so the
+  // meter never hatches on the way down — it rests empty via `active` instead.
   const readMeterAvailable = useCallback(
-    (): boolean => tapRef.current?.available() ?? false,
+    (): boolean =>
+      recordingRef.current ? (tapRef.current?.available() ?? false) : true,
     []
   );
 
@@ -830,30 +870,12 @@ export function useRecorder(): UseRecorder {
   }, [clearTick, releaseStream]);
 
   // Re-arm Web Audio when the app returns to the foreground mid-take (#76).
-  // Returning from an iOS backgrounding or an OS interruption can leave the
-  // shared context "suspended"/"interrupted", so the VU tap reads zeros even
-  // though capture is fine. The `resume()` gesture already covers a manual
-  // pause→resume; this covers a return that is NOT a resume tap — a background
-  // then foreground with capture still live. Only while recording: a paused or
-  // idle recorder has no live meter to rescue, and `resume()` owns the paused
-  // edge. Fire-and-forget — the resume must never gate anything — and best
-  // effort: iOS MAY withhold the un-suspend until the next real user gesture, in
-  // which case the meter stays honestly hatched (`available()` -> false) until a
-  // tap. That withholding is the open device question the iOS pass settles.
-  useEffect(() => {
-    if (state !== "recording") return;
-    const onVisibility = () => {
-      if (document.visibilityState !== "visible") return;
-      void resumeAudioContext().catch((cause: unknown) => {
-        console.error(
-          "Could not resume the audio context on foreground",
-          cause
-        );
-      });
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [state]);
+  // Extracted to `armForegroundResume` so its two guards (recording, visible) and
+  // the add/remove-listener wiring are unit-testable in Node with no renderer,
+  // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
+  // mutates each guard to prove it. The effect is the one-line call plus the
+  // `[state]` dependency (browser-boundary wiring, verified on-device).
+  useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.
   useEffect(() => () => cancel(), [cancel]);
