@@ -37,6 +37,11 @@ npm-debug.log*
 # is the author's, not something a commit should make by accident.
 .claude/skills/
 
+# Harness-local scratch: per-agent git worktrees the CLI creates for
+# background subagents. Each is a full nested checkout, never this repo's
+# content to track.
+.claude/worktrees/
+
 # Review reports — transient, regenerated per commit.
 .review/
 .lib-boundary-probe/
