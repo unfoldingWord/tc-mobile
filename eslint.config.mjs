@@ -103,6 +103,11 @@ export default tseslint.config(
       ".wrangler",
       "public",
       ".lib-boundary-probe",
+      // Capacitor native projects (#262) — generated/managed by the `cap` CLI.
+      // No first-party TS/TSX lives here; skip them so ESLint never trips on a
+      // generated file inside the iOS/Android shells.
+      "android",
+      "ios",
     ],
   },
 
