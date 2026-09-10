@@ -1,8 +1,11 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, useCallback, type ErrorInfo, type ReactNode } from "react";
 
+import { flushFailureLog } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
+import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { Notice } from "./notice";
 import { strings } from "./strings";
 
 interface ErrorBoundaryProps {
@@ -20,15 +23,92 @@ const TITLE_ID = "app-failed-title";
 const TEACH_ID = "app-failed-teach";
 
 /**
- * Restart the app from disk. Everything saved lives in IndexedDB.
+ * Restart the app from disk, once the failure has actually been written down.
  *
  * This is a reload, and the label says so (`strings.appReload`, not the Books
  * shelf's `tryAgain`): it cannot bring back anything that lived only in memory,
  * and a deterministic boot crash will simply reach the same screen again — an
  * open gap recorded on #167, not something this control can pretend away.
+ *
+ * **The flush is not a nicety** (George, round 2). `componentDidCatch` reports
+ * fire-and-forget, and on a render-phase throw no effect has run yet — so that
+ * write is usually the `getDb` open itself, plus the v6 upgrade on a device
+ * coming from v5. A synchronous `location.reload()` unloads the page in the
+ * middle of it, and this repo already treats an `pagehide` mid-write as a real
+ * race rather than a theoretical one. Losing the record of a render crash to
+ * the very button offered for recovering from it is the worst trade available.
+ *
+ * `flushFailureLog` cannot reject, so there is no failure arm to write: the
+ * lane is kept settled by its own `enqueue`. If it somehow never settles the
+ * reload does not happen, which is the safe side — the screen stays up with the
+ * Send control on it.
  */
-function reload(): void {
+async function reload(): Promise<void> {
+  await flushFailureLog();
   window.location.reload();
+}
+
+/**
+ * Send the failure log from the crash screen.
+ *
+ * Why this is here at all (George, round 2): the boundary REPLACES the tree, so
+ * the `≡` marker and the menu that normally sends the log are unmounted with
+ * `BooksScreen`. On a deterministic render throw on the home path, Restart
+ * reaches this same screen again — so without a control here, the one failure
+ * the durable log most exists to carry is the one failure that could never
+ * leave the phone.
+ *
+ * A separate function component because `ErrorBoundary` is a class (there is
+ * still no hook form of `getDerivedStateFromError`) and this needs hooks.
+ *
+ * Same two-gesture contract as everywhere else, and deliberately SECOND in the
+ * order: Restart is the primary action and keeps the big `--primary` control.
+ * This one is quiet — it is for the facilitator standing next to the
+ * translator, not for the translator.
+ */
+function SendLogControl() {
+  const share = useFailureLogShare();
+
+  const onPrepare = useCallback(() => {
+    void share.prepare();
+  }, [share]);
+
+  // No `onDone` to close: there is nothing to close, and after a send the
+  // screen stays exactly as it was. The flow returns to `idle` on its own.
+  const onSend = useCallback(() => {
+    void share.send();
+  }, [share]);
+
+  const errorText =
+    share.error === "nothing"
+      ? strings.shareFailureLogNothing
+      : share.error === "failed"
+        ? strings.shareFailureLogFailed
+        : null;
+
+  return (
+    <>
+      {share.status === "ready" ? (
+        <Control
+          icon="share"
+          label={strings.shareSend}
+          variant="quiet"
+          onClick={onSend}
+        />
+      ) : (
+        <Control
+          icon="share"
+          label={strings.shareFailureLog}
+          variant="quiet"
+          onClick={onPrepare}
+        />
+      )}
+      {share.status === "preparing" && (
+        <Notice tone="busy">{strings.shareFailureLogPreparing}</Notice>
+      )}
+      {errorText && <Notice>{errorText}</Notice>}
+    </>
+  );
 }
 
 /**
@@ -38,7 +118,8 @@ function reload(): void {
  * screen reader straight to "Restart the app" and can swallow the alert that
  * mounted with it — the action announced with no reason. Focusing the labelled
  * heading inside the `alertdialog` announces the dialog and what happened
- * first, and leaves the one control the very next stop.
+ * first, and leaves Restart — the primary action — the very next stop, with
+ * Send after it.
  */
 function focusOnMount(node: HTMLParagraphElement | null): void {
   node?.focus();
@@ -71,7 +152,7 @@ function focusOnMount(node: HTMLParagraphElement | null): void {
  *   - **The mark carries the meaning, the sentence only supports it.** Two
  *     short lines: what happened, and what the button will do.
  *
- * What it deliberately does NOT do yet: hand a held recording forward. A
+ * What it deliberately does NOT do: hand a held recording forward. A
  * failed-save take lives in RAM in `App`'s state (`useSaveTake`, #38), and this
  * boundary rendering its fallback means `App` is already unmounted and that
  * slot is already gone. Lifting the slot somewhere both can read it means
@@ -139,8 +220,11 @@ export class ErrorBoundary extends Component<
             label={strings.appReload}
             variant="primary"
             size={30}
-            onClick={reload}
+            onClick={() => void reload()}
           />
+
+          {/* The log's only door once the tree is gone. */}
+          <SendLogControl />
         </div>
       </main>
     );

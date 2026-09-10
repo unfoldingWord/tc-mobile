@@ -221,6 +221,14 @@ test("tap 1 renders the log to a text File, tap 2 hands it over", async ({
   await page.addInitScript(() => {
     const shared: { name: string; type: string; text: string }[] = [];
     (window as unknown as { __shared: typeof shared }).__shared = shared;
+    // An EXPLICIT yes for files. Required since round 2: absence of `canShare`
+    // is no longer read as "files work", and headless Chromium on Linux does
+    // not actually offer a file share — so without this stub the code correctly
+    // falls back to text and this case would be testing the wrong branch.
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: (data: { files?: File[] }) => data.files !== undefined,
+    });
     Object.defineProperty(navigator, "share", {
       configurable: true,
       value: async (data: { files?: File[] }) => {
@@ -358,6 +366,145 @@ test("says so when NEITHER a file nor text can be shared", async ({ page }) => {
     page.getByText("Could not send the problem report. Try again.")
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
+});
+
+test("a Web Share LEVEL 1 browser (no canShare) shares text, not a file", async ({
+  page,
+}) => {
+  // Frank, round 2. `navigator.canShare` arrived with Web Share Level 2, which
+  // is also what added file sharing — so a Level 1 browser has `share`, has no
+  // `canShare`, and cannot take `{ files }` at all. Treating that absence as
+  // "files work" armed the file branch on exactly those browsers and `send()`
+  // then failed with no fallback left, which is the bug the fallback exists to
+  // prevent, one layer down.
+  await page.addInitScript(() => {
+    const shared: { kind: string; text: string }[] = [];
+    (window as unknown as { __shared: typeof shared }).__shared = shared;
+    // Level 1: delete canShare entirely.
+    Reflect.deleteProperty(Navigator.prototype, "canShare");
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: { files?: File[]; text?: string }) => {
+        if (data.files !== undefined) {
+          throw new DOMException("files unsupported", "TypeError");
+        }
+        shared.push({ kind: "text", text: data.text ?? "" });
+      },
+    });
+  });
+  await page.reload();
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+  expect(await page.evaluate(() => typeof navigator.canShare)).not.toBe(
+    "function"
+  );
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+  await page.getByRole("button", { name: "Send problem report" }).click();
+  await page.getByRole("button", { name: "Share now" }).click();
+
+  const shared = await page.evaluate(
+    () =>
+      (window as unknown as { __shared: { kind: string; text: string }[] })
+        .__shared
+  );
+  expect(shared).toHaveLength(1);
+  expect(shared[0]?.kind).toBe("text");
+  expect(shared[0]?.text).toContain(FORCED);
+});
+
+test("the count recovers after a transient failed read, without a reload", async ({
+  page,
+}) => {
+  // George P2-A, round 2. A failed count read was swallowed and never retried;
+  // the shelf's own Try again does not re-run the hook's effect, and the panel
+  // is gated on the count. So after a transient open failure (a second tab
+  // holding an upgrade — `DatabaseBlockedError`, #221) a log that WAS on disk
+  // stayed invisible and could never be sent.
+  //
+  // The sequencing is what makes this test the retry and not the write path:
+  // the row is stored on THIS load, then the next load's first reads fail with
+  // no write following, so only a retry can bring the count in.
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+
+  // Refuse every IndexedDB open for the first few seconds of the next load,
+  // then recover — a blocking copy going away.
+  await page.addInitScript(() => {
+    const realOpen = indexedDB.open.bind(indexedDB);
+    const refuseUntil = Date.now() + 2500;
+    Object.defineProperty(indexedDB, "open", {
+      configurable: true,
+      value: (...args: Parameters<typeof realOpen>) => {
+        if (Date.now() < refuseUntil) {
+          throw new DOMException("another copy is open", "InvalidStateError");
+        }
+        return realOpen(...args);
+      },
+    });
+  });
+  await page.reload();
+
+  // The row is on disk and no write will happen on this load, so the marker can
+  // only appear if the failed read is retried.
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded.",
+    { timeout: 20_000 }
+  );
+  await expect(marker(page)).toHaveCount(1);
+});
+
+test("a failure landing between the two gestures drops the armed snapshot", async ({
+  page,
+}) => {
+  // George P3-D, round 2. Tap 1 renders a SNAPSHOT of the log; the count beside
+  // it is live. A failure arriving in that window left the Notice saying "2
+  // problems recorded" while Share still held the one-entry file — the screen
+  // and the file disagreeing about what is being sent, which a maintainer
+  // cannot detect from the file alone.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => true,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+  await page.reload();
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+
+  // Tap 1 arms a one-entry payload.
+  await page.getByRole("button", { name: "Send problem report" }).click();
+  await expect(page.getByRole("button", { name: "Share now" })).toBeVisible();
+
+  // A second failure lands before tap 2.
+  await forceFailure(page);
+
+  const menu = page.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByText("2 problems recorded")).toBeVisible();
+  // The stale payload is dropped: the primary Send is gone and the panel is
+  // back to tap 1, so the next arm covers both entries.
+  await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Send problem report" })
+  ).toBeVisible();
 });
 
 test("clear empties the log, and it stays empty across a reload", async ({

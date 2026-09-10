@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { Control } from "./control";
 import { Notice } from "./notice";
@@ -40,6 +40,25 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // into React state to render a count would defeat the reason `countFailures`
   // exists — the Books screen already has the number this panel is given.
   const share = useFailureLogShare();
+
+  // Drop an armed payload when a NEW failure lands between the two gestures
+  // (George P3-D, round 2). Tap 1 renders a snapshot of the log; the count
+  // beside it is live. Without this, a failure arriving during that window made
+  // the Notice say "2 problems recorded" while Share still held the one-entry
+  // file — the screen and the file disagreeing about what is being sent, which
+  // is exactly the kind of quiet mismatch a maintainer cannot detect from the
+  // file alone. Re-arming costs one tap and is the honest answer.
+  const armedAt = useRef(count);
+  useEffect(() => {
+    if (share.status === "idle") {
+      armedAt.current = count;
+      return;
+    }
+    if (count !== armedAt.current) {
+      armedAt.current = count;
+      share.reset();
+    }
+  }, [count, share]);
 
   // Tap 1 — read the log and render it to a text File, arming the send gesture.
   const onPrepare = useCallback(() => {

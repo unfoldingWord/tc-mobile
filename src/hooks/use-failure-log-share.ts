@@ -114,10 +114,18 @@ export function useFailureLogShare(): UseFailureLogShare {
       const file = new File([text], failureLogFilename(), {
         type: "text/plain",
       });
-      // Prefer the file — an attachment a facilitator can forward intact. Fall
-      // back to text only when the platform will not take this file.
+      // Prefer the file — an attachment a facilitator can forward intact — but
+      // only on an EXPLICIT yes (Frank, round 2).
+      //
+      // An absent `canShare` is not a yes. `navigator.canShare` arrived with
+      // Web Share **Level 2**, which is also what added file sharing; a Level 1
+      // browser has `share` and no `canShare` and cannot take `{ files }` at
+      // all. Treating absence as "files work" armed the file branch on exactly
+      // those browsers, and `send()` then failed with no fallback left to try —
+      // the same shape as the bug this fallback exists to fix, one layer down.
+      // Unknown support means take the shape every Web Share browser has.
       const canShareFile =
-        typeof navigator.canShare !== "function" ||
+        typeof navigator.canShare === "function" &&
         navigator.canShare({ files: [file] });
       if (canShareFile) {
         armed.current = { kind: "file", file };
