@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { Control } from "./control";
 import { Notice } from "./notice";
 import { strings } from "./strings";
-import { useFailureEntries } from "@/hooks/failure-log";
+import { clearFailureLog } from "@/hooks/failure-log";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 
 interface FailureLogPanelProps {
@@ -35,9 +35,10 @@ interface FailureLogPanelProps {
  * and no dead menu row on a phone that has never failed.
  */
 export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
-  // Mounted only while the panel is up, so the stacks are in memory only while
-  // someone is looking at the door to them.
-  const { clear } = useFailureEntries();
+  // `clearFailureLog` directly, not through a hook that also LOADS the entries
+  // (George #6, round 1). The panel renders no entry, so reading every stack
+  // into React state to render a count would defeat the reason `countFailures`
+  // exists — the Books screen already has the number this panel is given.
   const share = useFailureLogShare();
 
   // Tap 1 — read the log and render it to a text File, arming the send gesture.
@@ -59,17 +60,22 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // panel's marker. Close the menu with it rather than leaving an emptied panel
   // standing over two controls that now do nothing.
   const onClear = useCallback(() => {
-    void clear().then(
+    void clearFailureLog().then(
       () => onDone(),
       () => {
         // A failed clear leaves the log exactly as it was, which is the safe
-        // side of this write — nothing is lost. Saying so would need a fourth
-        // string for a case a second tap resolves, so the panel stays put and
-        // the marker keeps its count. The write's own reason went to the
-        // console for a maintainer.
+        // side of this write — nothing is lost, and the marker keeps its count,
+        // so the panel stays put and a second tap can try again. Deliberately
+        // no copy: a fourth string for a case a retry resolves is not worth the
+        // reading load on a screen built for people who may not read.
+        //
+        // NOT silent, which is what AGENTS.md forbids: `clearFailureLog` logs
+        // the reason on its way past, and that is the only trace of it there
+        // will be (Frank #2 ≡ George #4, round 1 — this comment used to claim
+        // that logging happened when nothing below it logged at all).
       }
     );
-  }, [clear, onDone]);
+  }, [onDone]);
 
   const errorText =
     share.error === "nothing"
