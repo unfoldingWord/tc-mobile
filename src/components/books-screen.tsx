@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
 import { EmptyState } from "./empty-state";
+import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { strings } from "./strings";
+import { useFailureCount } from "@/hooks/failure-log";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { cn } from "@/lib/utils";
@@ -56,6 +58,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
+  // The durable failure log's size (#205). Books is home, and the global menu is
+  // the only surface reachable from every state this screen can be in — a failed
+  // shelf read included, which is precisely when a facilitator needs the report.
+  // Kept current as failures land, so a rejection that happens while the shelf
+  // is open marks the control without a reload.
+  const failureCount = useFailureCount();
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
@@ -226,12 +234,35 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             onClick={() => void onNewBook()}
           />
         )}
-        <Control
-          icon="menu"
-          label={strings.menuOpen}
-          variant="quiet"
-          onClick={() => setMenuOpen(true)}
-        />
+        {/* State-in-place on the control itself, which AGENTS.md prefers to a
+            message bubble: while the failure log is non-empty the ≡ carries an
+            alert mark and says so in its name. The `control-hinted` wrapper is
+            rendered UNCONDITIONALLY — swapping the button's parent as a failure
+            lands would remount it and destroy it while focused, the same trap
+            `Control`'s own hint wrapper documents. */}
+        <span className="control-hinted">
+          <Control
+            icon="menu"
+            label={
+              failureCount > 0
+                ? strings.menuOpenWithFailures(failureCount)
+                : strings.menuOpen
+            }
+            variant="quiet"
+            onClick={() => setMenuOpen(true)}
+          />
+          {failureCount > 0 && (
+            // Decorative for AT — the count is already in the button's
+            // accessible name — so a screen reader hears it once.
+            <span
+              className="control-hint"
+              aria-hidden="true"
+              style={{ color: "var(--s-live)" }}
+            >
+              <Icon name="alert" size={12} />
+            </span>
+          )}
+        </span>
       </header>
 
       {/* Books is home — a chapter opens on top and a failed shelf read has no
@@ -282,7 +313,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        {/* Mounted only while the log holds something, so a phone that has
+            never failed opens the same empty panel it always did. */}
+        {failureCount > 0 && (
+          <FailureLogPanel
+            count={failureCount}
+            onDone={() => setMenuOpen(false)}
+          />
+        )}
+      </Menu>
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
           the same spot — "Share book" encodes + zips (tap 1), then a primary
