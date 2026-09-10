@@ -1997,8 +1997,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       label={strings.liveWaveform}
                     />
                   ) : (
-                    // Idle / edit / playback, a punch-in/append capture, and the
-                    // tap-failed fallback: `capturing` keeps the #110 record
+                    // Idle / edit / playback, a prepared preview (of any take),
+                    // and the tap-failed fallback. A live take-in-flight is NOT
+                    // here anymore — an append grows on `LiveScope` too now
+                    // (#283); this branch is reached mid-take only via a preview
+                    // or a failed tap. `capturing` keeps the #110 record
                     // centerline over the existing audio (or the dotted first-take
                     // rule when the tap failed), not a blank stage (George R1/R2).
                     <Waveform
