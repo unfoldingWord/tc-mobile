@@ -295,6 +295,99 @@ describe("the encode silence deadline (#166)", () => {
     expect(FakeWorker.instances).toHaveLength(1);
   });
 
+  it("a settled encode's overdue stall timer never kills a LATER encode (George R3 P2)", async () => {
+    // `clearTimeout` cannot un-queue a callback the platform has already
+    // dispatched, so a stall timer that came due in the same turn as `done`
+    // still runs after the job settled. Without a settled guard it saw a stale
+    // `lastMessageAt`, judged the encode stalled, and called
+    // `teardownAndRecover()` — terminating the SHARED worker that the next
+    // encode is by then using. Share Book runs every chapter through one
+    // `withEncoder` turn, so that loses the whole book's work.
+    //
+    // Fake timers cannot reproduce an already-dispatched callback (their
+    // clearTimeout really does un-queue it), so the callback is captured at arm
+    // time and invoked by hand after the settle — which is exactly the ordering
+    // the platform produces.
+    const armed: Array<() => void> = [];
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: () => void
+    ) => {
+      armed.push(fn);
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    try {
+      const first = encode(Int16Array.of(1));
+      await microtasks();
+      const worker = nth(0);
+      expect(armed).not.toHaveLength(0);
+      const overdueStall = armed[armed.length - 1]!;
+
+      // The first encode settles normally.
+      worker.emitDone(new Uint8Array([1]).buffer);
+      await expect(first).resolves.toBeInstanceOf(Uint8Array);
+
+      // A second encode takes the same warm worker.
+      const second = encode(Int16Array.of(2));
+      await microtasks();
+      expect(FakeWorker.instances).toHaveLength(1);
+
+      // Push the clock past the window. Without this the frozen fake clock
+      // makes the stale callback measure zero silence and return harmlessly —
+      // the test would pass on the clock rather than on the guard.
+      vi.setSystemTime(Date.now() + TIMEOUT + 1);
+
+      // Now the first encode's already-dispatched stall callback runs.
+      overdueStall();
+
+      // It must do nothing: the second encode's worker is untouched and its
+      // encode still completes.
+      expect(worker.terminated).toBe(false);
+      expect(FakeWorker.instances).toHaveLength(1);
+      worker.emitDone(new Uint8Array([2]).buffer);
+      await expect(second).resolves.toBeInstanceOf(Uint8Array);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("re-arms the silence window on every heartbeat instead of firing on a grid", async () => {
+    // A healthy encode used to run `onStall` every 15 s and re-arm for the
+    // remainder — correct in outcome, but it kept a live timer racing `done`
+    // on a fixed grid for the whole encode. Resetting the window on each beat
+    // means a progressing encode never reaches `onStall` at all, which is what
+    // shrinks the race above to the single final window.
+    let stallRuns = 0;
+    const armed: Array<() => void> = [];
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: () => void
+    ) => {
+      armed.push(() => {
+        stallRuns++;
+        fn();
+      });
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    try {
+      const p = encode(Int16Array.of(3));
+      await microtasks();
+      const armsAfterStart = armed.length;
+
+      // Three heartbeats, each of which must replace the pending window.
+      nth(0).emitProgress(0.25);
+      nth(0).emitProgress(0.5);
+      nth(0).emitProgress(0.75);
+      expect(armed.length).toBe(armsAfterStart + 3);
+
+      nth(0).emitDone(new Uint8Array([3]).buffer);
+      await expect(p).resolves.toBeInstanceOf(Uint8Array);
+      // The encode never once had to judge itself stalled.
+      expect(stallRuns).toBe(0);
+      expect(nth(0).terminated).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("pins the silence timeout to a sane, device-friendly value", () => {
     expect(TIMEOUT).toBe(15_000);
   });

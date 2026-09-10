@@ -135,6 +135,61 @@ describe("requestTranscodeSweep — a stalled encoder", () => {
     }
   });
 
+  it("does not re-run the same run after a stall, even if a request arrived (#290)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // A Finished transition landing during the 15 s stall window sets the
+      // coalescing flag, so `runSweeps` looped once more the moment the stall
+      // broke out — re-arming the same wedged worker on the same segment and
+      // holding the lane for another window (Frank R3 P2 / #290). The break has
+      // to end the RUN, not just the pass.
+      let requested = false;
+      encodeMp3.mockImplementation(async (s: Int16Array) => {
+        if (s[0] === 1) {
+          // ONE transition arrives mid-run; do not await, that is the live run.
+          // Re-requesting on every pass would spin forever against the unfixed
+          // code, which is a hang rather than a legible failure.
+          if (!requested) {
+            requested = true;
+            void requestTranscodeSweep();
+          }
+          throw new EncoderStalledError(15_000);
+        }
+        return new Uint8Array([s[0] ?? 0]);
+      });
+
+      await expect(requestTranscodeSweep()).resolves.toBeUndefined();
+
+      // One pass only: the list was taken once and the wedged worker was asked
+      // once. A second pass would show up as a second listing.
+      expect(listPcmFinishedSegments).toHaveBeenCalledTimes(1);
+      expect(withEncoder).toHaveBeenCalledTimes(1);
+      expect(commitTranscode).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("still honours a request that arrived during a HEALTHY run", async () => {
+    // The stall break must not cost the ordinary coalescing guarantee: a
+    // transition landing mid-run is still swept without waiting for the next
+    // launch.
+    let requested = false;
+    encodeMp3.mockImplementation(async (s: Int16Array) => {
+      if (!requested) {
+        requested = true;
+        void requestTranscodeSweep();
+      }
+      return new Uint8Array([s[0] ?? 0]);
+    });
+
+    await expect(requestTranscodeSweep()).resolves.toBeUndefined();
+
+    // Two passes over the two segments: the mid-run request earned its re-run.
+    expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
+    expect(withEncoder).toHaveBeenCalledTimes(4);
+  });
+
   it("CONTINUES to the next segment on a plain encode error", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {

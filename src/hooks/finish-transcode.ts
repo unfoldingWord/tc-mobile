@@ -76,22 +76,31 @@ export function requestTranscodeSweep(): Promise<void> {
  */
 async function runSweeps(): Promise<void> {
   try {
+    let stalled = false;
     do {
       requestedDuringRun = false;
-      await sweepOnce();
-    } while (requestedDuringRun);
+      stalled = await sweepOnce();
+      // A stall ends the RUN, not just the pass. Breaking out of `sweepOnce`
+      // alone left the coalescing flag set, so a Finished transition that
+      // landed during the 15 s stall window sent the loop straight back at the
+      // same wedged worker — another window on the lane with every queued Share
+      // behind it, for a worker we already know is not answering (Frank R3 P2,
+      // #290). The retry belongs to the next launch or the next transition,
+      // once the page and its worker are healthy again.
+    } while (requestedDuringRun && !stalled);
   } finally {
     running = null;
   }
 }
 
-async function sweepOnce(): Promise<void> {
+/** One pass. Resolves `true` when it stopped because the encoder is wedged. */
+async function sweepOnce(): Promise<boolean> {
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
   } catch (cause) {
     console.error("Could not list segments awaiting transcode", cause);
-    return;
+    return false;
   }
   for (const { segmentId, clipId } of owed) {
     try {
@@ -129,7 +138,7 @@ async function sweepOnce(): Promise<void> {
       // PCM is kept and the next launch's sweep (or the next transition's
       // request) retries once the page — and its worker — are healthy again.
       // A plain per-segment error keeps the loop going to the next segment.
-      if (cause instanceof EncoderStalledError) break;
+      if (cause instanceof EncoderStalledError) return true;
       // TODO(#166/#188): the stall (and repeated plain failures) still say nothing
       // to the translator or maintainer. Count consecutive sweep failures in the
       // module state and surface ONE state-in-place indicator after N (the Books
@@ -137,4 +146,5 @@ async function sweepOnce(): Promise<void> {
       // #188 — wire it there, not here.
     }
   }
+  return false;
 }
