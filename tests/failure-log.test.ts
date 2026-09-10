@@ -156,28 +156,46 @@ describe("the durable sink", () => {
   });
 
   /**
-   * Let the sink's write lane drain.
+   * Wait until the log holds exactly `expected` rows.
    *
-   * Polls the store until the count stops moving rather than yielding a fixed
-   * number of ticks: each append is a real IndexedDB transaction, so how many
-   * turns of the loop a serialised run of them needs is not a number a test
-   * should be guessing. A fixed-tick version of this was flaky under exactly
-   * the case it was written for (three reports in one tick).
+   * Waits for the OUTCOME, not for a quiet poll (Frank #3, round 1). The
+   * previous version returned as soon as two consecutive reads matched, so an
+   * append that had not yet opened its transaction read 0 twice and `settle()`
+   * returned while the write was still in flight — the repo's "a test that
+   * passes while the code is broken" class, and it would have let the
+   * failed-write cases assert an empty log for the wrong reason. Asserting the
+   * count we expect means a write that never lands fails here, loudly, instead
+   * of passing quietly.
    */
-  const settle = async () => {
-    let previous = -1;
-    for (let i = 0; i < 200; i++) {
-      const now = await countFailures();
-      if (now === previous) return;
-      previous = now;
+  const settle = async (expected: number) => {
+    for (let i = 0; i < 500; i++) {
+      if ((await countFailures()) === expected) return;
       await new Promise((r) => setTimeout(r, 1));
     }
-    throw new Error("the failure-log write lane never drained");
+    throw new Error(
+      `the log never reached ${expected} rows (held ${await countFailures()})`
+    );
+  };
+
+  /**
+   * Wait for a `console.error` line matching `fragment`.
+   *
+   * The completion signal for a case where NOTHING lands in the store: a failed
+   * append is observable only through the terminal it falls back to, so this is
+   * what "the write finished failing" looks like. `settle(0)` cannot serve —
+   * the log reads 0 before the write starts as well as after it fails.
+   */
+  const logLine = async (fragment: string) => {
+    for (let i = 0; i < 500; i++) {
+      if (logged.some((args) => String(args[0]).includes(fragment))) return;
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    throw new Error(`no console.error containing ${fragment}`);
   };
 
   it("stores a reported failure as text, keeping the context", async () => {
     reportFailure(new RangeError("out of range"), "unhandled-rejection");
-    await settle();
+    await settle(1);
 
     const rows = await readFailures();
     expect(rows).toHaveLength(1);
@@ -189,7 +207,7 @@ describe("the durable sink", () => {
 
   it("keeps a render throw's component tree", async () => {
     reportFailure(new Error("render blew up"), "render", "\n  in Recorder");
-    await settle();
+    await settle(1);
     expect((await readFailures())[0]?.componentStack).toBe("\n  in Recorder");
   });
 
@@ -199,7 +217,7 @@ describe("the durable sink", () => {
     // `formatFailureLog` then writes the string "undefined" into a
     // maintainer's file where a stack should be.
     reportFailure("a thrown string has no stack", "uncaught-error");
-    await settle();
+    await settle(1);
     const row = await readFailures().then((r) => r[0]);
     expect(row?.message).toBe("a thrown string has no stack");
     expect(row && "stack" in row).toBe(false);
@@ -210,7 +228,7 @@ describe("the durable sink", () => {
     // present-but-undefined field, which `formatFailureLog` then renders as the
     // string "undefined" into a maintainer's file.
     reportFailure(new Error("no tree"), "uncaught-error");
-    await settle();
+    await settle(1);
     const row = await readFailures().then((r) => r[0]);
     expect(row && "componentStack" in row).toBe(false);
   });
@@ -219,7 +237,7 @@ describe("the durable sink", () => {
     reportFailure(new Error("one"), "a");
     reportFailure(new Error("two"), "b");
     reportFailure(new Error("three"), "c");
-    await settle();
+    await settle(3);
 
     expect((await readFailures()).map((e) => e.context).sort()).toEqual([
       "a",
@@ -265,11 +283,13 @@ describe("the durable sink", () => {
       .mockRejectedValueOnce(new Error("disk full"));
 
     reportFailure(new Error("lost"), "first");
-    await settle();
+    // The failed append lands nothing, so the log's own count cannot say it
+    // finished — its terminal is what says so.
+    await logLine("could not store a failure");
     spy.mockRestore();
 
     reportFailure(new Error("kept"), "second");
-    await settle();
+    await settle(1);
 
     expect((await readFailures()).map((e) => e.context)).toEqual(["second"]);
   });
@@ -284,28 +304,88 @@ describe("the durable sink", () => {
     );
 
     reportFailure(new Error("boom"), "quota");
-    await settle();
+    // Waiting on the log line, not on a count: an empty log reads 0 before the
+    // write starts as well as after it fails, so `settle(0)` would pass on a
+    // write that never ran at all.
+    await logLine("could not store a failure");
 
     expect(await countFailures()).toBe(0);
-    expect(
-      logged.some((args) =>
-        String(args[0]).includes("could not store a failure")
-      )
-    ).toBe(true);
   });
 
   it("stops storing once uninstalled", async () => {
     uninstall?.();
     uninstall = null;
     reportFailure(new Error("after"), "gone");
-    await settle();
+    // Nothing is queued, so there is no landing to wait for. Drain generously
+    // and assert the log stayed empty; a write that did start would land inside
+    // this window and fail the assertion.
+    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 1));
     expect(await countFailures()).toBe(0);
   });
 
   it("clearFailureLog empties what the sink stored", async () => {
     reportFailure(new Error("boom"), "a");
-    await settle();
+    await settle(1);
     await clearFailureLog();
     expect(await countFailures()).toBe(0);
+  });
+
+  it("a clear cannot overtake an append still in flight", async () => {
+    // Frank #1 ≡ George #1, round 1. The clear used to call the store directly,
+    // in its own transaction concurrent with the lane: a clear issued while an
+    // append was in flight emptied the store FIRST and the append landed after
+    // it, so a log the person had explicitly discarded came back holding a row.
+    //
+    // Both operations are now on one lane, so this is deterministic: the append
+    // completes, then the clear empties what it wrote.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = failuresStore.appendFailure;
+    vi.spyOn(failuresStore, "appendFailure").mockImplementationOnce(
+      async (entry) => {
+        await held;
+        await real(entry);
+      }
+    );
+
+    reportFailure(new Error("mid-flight"), "a");
+    // The clear is issued while the append is still held — the exact overlap.
+    const cleared = clearFailureLog();
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    release?.();
+    await cleared;
+
+    expect(await countFailures()).toBe(0);
+  });
+
+  it("a failed clear rejects to the caller AND leaves a trace", async () => {
+    // The panel needs the rejection (so it does not report the log as
+    // discarded); a maintainer needs the line (nothing under `clearFailureLog`
+    // logs anything of its own). Frank #2 ≡ George #4, round 1.
+    reportFailure(new Error("boom"), "a");
+    await settle(1);
+
+    vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
+      new Error("connection closed")
+    );
+
+    await expect(clearFailureLog()).rejects.toThrow("connection closed");
+    expect(
+      logged.some((args) => String(args[0]).includes("could not clear the log"))
+    ).toBe(true);
+    // And the row is still there — a failed clear loses nothing.
+    expect(await countFailures()).toBe(1);
+  });
+
+  it("a failed clear does not poison the lane", async () => {
+    vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
+      new Error("connection closed")
+    );
+    await expect(clearFailureLog()).rejects.toThrow("connection closed");
+
+    reportFailure(new Error("after a failed clear"), "later");
+    await settle(1);
   });
 });

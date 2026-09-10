@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { describeCause } from "@/lib/failure-text";
 import {
   appendFailure,
   clearFailures,
   countFailures,
-  readFailures,
 } from "@/lib/storage/failures";
 import { subscribeToFailures } from "./report-failure";
 import type { StoredFailure } from "@/types/failure";
@@ -16,8 +15,8 @@ import type { StoredFailure } from "@/types/failure";
  *
  * `report-failure.ts` is the funnel; `lib/storage/failures.ts` is the store.
  * This is the part that must know about both, plus the two things neither can
- * own: that a log write must never re-enter the funnel, and that writes have to
- * be serialised.
+ * own: that a log write must never re-enter the funnel, and that EVERY write
+ * has to be serialised.
  *
  * ── Why the writes are serialised ──
  *
@@ -28,10 +27,43 @@ import type { StoredFailure } from "@/types/failure";
  * first — is insertion order. A failure cascade (one throw producing three) is
  * exactly when the order matters most. So the writes go through one promise
  * chain, which also bounds how many transactions a cascade opens at once.
+ *
+ * **A clear is a write, and goes through the same lane** (Frank #1 ≡ George #1,
+ * round 1). It used to call the store directly, which put it in its own
+ * transaction concurrent with any in-flight append: a clear that overtook a
+ * pending append emptied the store and then the append landed, so a log the
+ * person had explicitly cleared came back holding a row. Ordering the clear
+ * against the appends is the only thing that makes "cleared" mean cleared.
  */
 
-/** The serialising lane. Every append waits for the previous one to settle. */
+/**
+ * The serialising lane. Every append AND every clear waits for the previous
+ * operation to settle.
+ *
+ * The lane itself never rejects — {@link enqueue} keeps it settled — so a failed
+ * operation cannot poison the ones behind it.
+ */
 let lane: Promise<void> = Promise.resolve();
+
+/**
+ * Run `op` after everything already queued, and hand its result back to the
+ * caller.
+ *
+ * Two different promises on purpose. The one returned is `op`'s own, so a caller
+ * that needs to know whether the write succeeded — the panel's Clear — sees the
+ * rejection. The one stored as the lane has both arms flattened to `undefined`,
+ * so the NEXT operation runs whatever happened to this one. Collapsing those
+ * into a single promise is what would make one failed write stop the log
+ * forever.
+ */
+function enqueue<T>(op: () => Promise<T>): Promise<T> {
+  const run = lane.then(op);
+  lane = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
 
 /**
  * UI subscribers, notified after a write lands so a screen showing the log (or
@@ -74,16 +106,11 @@ export function installFailureLog(): () => void {
         ? {}
         : { componentStack: report.componentStack }),
     };
-    // The lane is advanced synchronously, inside the subscriber, so two reports
-    // in one tick are ordered by the order they arrived here — not by whichever
-    // transaction commits first.
-    //
-    // One `.then` arm, not two: `writeEntry` swallows its own failure and can
-    // never reject, so the lane can never be in a rejected state and a rejection
-    // handler here would be unreachable. That is load-bearing — a lane that
-    // COULD reject and had no second arm would poison every later append — so
-    // the two facts are stated together rather than one relying on the other.
-    lane = lane.then(() => writeEntry(entry));
+    // Queued synchronously, inside the subscriber, so two reports in one tick
+    // are ordered by the order they arrived here — not by whichever transaction
+    // commits first. `writeEntry` swallows its own failure, so there is nothing
+    // for this caller to observe and nothing to leave unhandled.
+    void enqueue(() => writeEntry(entry));
   });
 }
 
@@ -107,10 +134,30 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
   }
 }
 
-/** Empty the log, then tell the watchers. */
-export async function clearFailureLog(): Promise<void> {
-  await clearFailures();
-  notifyWatchers();
+/**
+ * Empty the log, ordered against the appends, then tell the watchers.
+ *
+ * On the shared lane (C1 above), so a clear cannot overtake an append that is
+ * still in flight and leave the person with a row they thought they discarded.
+ *
+ * REJECTS to the caller, and logs on the way past. Both halves matter and
+ * neither is redundant (Frank #2 ≡ George #4, round 1): the rejection is how the
+ * panel knows not to report the log as discarded, and the `console.error` is the
+ * only evidence a maintainer will ever get, since nothing below here — neither
+ * `clearFailures` nor `getDb` — logs anything of its own. Without it a clear
+ * that failed produced no UI change AND no trace, which is the "errors have a
+ * channel" bar failing in the one module that exists to satisfy it.
+ */
+export function clearFailureLog(): Promise<void> {
+  return enqueue(async () => {
+    try {
+      await clearFailures();
+    } catch (clearFailure) {
+      console.error("[failure-log] could not clear the log", clearFailure);
+      throw clearFailure;
+    }
+    notifyWatchers();
+  });
 }
 
 /**
@@ -148,57 +195,4 @@ export function useFailureCount(): number {
   }, []);
 
   return count;
-}
-
-/** What {@link useFailureEntries} hands back. */
-export interface FailureEntries {
-  /** The log, newest first. Empty until the first read lands. */
-  readonly entries: readonly StoredFailure[];
-  /** The first read (or a re-read) is in flight. */
-  readonly loading: boolean;
-  /** Empty the log. Rejects like any other write; the caller decides the copy. */
-  readonly clear: () => Promise<void>;
-}
-
-/**
- * The log itself, read while a panel showing it is open.
- *
- * Mounted only by the panel, so the stacks are in memory only while someone is
- * looking at them — and re-read on every store, because the panel is reachable
- * from the same screen a failure can land on.
- */
-export function useFailureEntries(): FailureEntries {
-  const [entries, setEntries] = useState<readonly StoredFailure[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let live = true;
-    const refresh = () => {
-      void readFailures().then(
-        (rows) => {
-          if (!live) return;
-          setEntries(rows);
-          setLoading(false);
-        },
-        () => {
-          if (!live) return;
-          // The panel shows "no failures recorded" over a log it could not
-          // read. Honest for the one thing the panel is for — carrying the log
-          // off the phone — because there is nothing to carry either way, and
-          // the alternative is raw exception text on a translator's screen.
-          setLoading(false);
-        }
-      );
-    };
-    watchers.add(refresh);
-    refresh();
-    return () => {
-      live = false;
-      watchers.delete(refresh);
-    };
-  }, []);
-
-  const clear = useCallback(() => clearFailureLog(), []);
-
-  return { entries, loading, clear };
 }

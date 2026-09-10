@@ -422,6 +422,28 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           db.createObjectStore("clipData");
         }
 
+        // v6 (#205): the durable failure log. A new store and nothing else —
+        // no row anywhere is read, stamped or moved, so this is the cheapest
+        // shape an upgrade has. Guarded on `oldVersion < 6` like its siblings
+        // so a fresh install creates it once and a v5 device gains it once.
+        //
+        // ORDER IS LOAD-BEARING: this runs BEFORE the two backfills below, and
+        // therefore before the upgrade has awaited anything (George #2, round
+        // 1). A `versionchange` transaction stays alive across awaited IDB
+        // requests — idb's documented pattern, and what the backfills rely on —
+        // but a STRUCTURE change after the handler has yielded is a different
+        // thing, and some WebKit versions refuse it with `InvalidStateError`,
+        // aborting the whole upgrade. On a fresh install both backfills below
+        // open a cursor unconditionally, so a v6 create placed after them sits
+        // behind two awaits on every new phone — and iOS is the October target.
+        // The create depends on no awaited result, so keeping it up here costs
+        // nothing and removes the question. Pinned by
+        // `tests/db-migration.test.ts`, which fails the upgrade if a structure
+        // change is attempted after a yield.
+        if (oldVersion < 6) {
+          db.createObjectStore("failures", { autoIncrement: true });
+        }
+
         // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
         // rows and the audio behind them are kept. On a fresh install, or straight
         // after the v3 recreate above, the store is empty and this loops zero
@@ -465,14 +487,6 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             }
             cursor = await cursor.continue();
           }
-        }
-
-        // v6 (#205): the durable failure log. A new store and nothing else —
-        // no row anywhere is read, stamped or moved, so this is the cheapest
-        // shape an upgrade has. Guarded on `oldVersion < 6` like its siblings
-        // so a fresh install creates it once and a v5 device gains it once.
-        if (oldVersion < 6) {
-          db.createObjectStore("failures", { autoIncrement: true });
         }
       },
       blocked() {

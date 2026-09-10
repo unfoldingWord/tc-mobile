@@ -59,21 +59,72 @@ function marker(page: import("@playwright/test").Page) {
   return page.locator("header .control-hint");
 }
 
-test.beforeEach(async ({ page }) => {
-  // A fresh origin state per test: the log is durable, which is exactly what
-  // would otherwise leak between cases.
-  await page.goto("/");
+/**
+ * Reset the origin's log between cases by CLEARING every object store.
+ *
+ * Never `deleteDatabase` (George #3, round 1): AGENTS.md bans exactly the shape
+ * this used to have — a delete that resolves on `onblocked`. After `goto("/")`
+ * the app already holds a connection, so the delete blocks, `onblocked` fires,
+ * a handler that resolves there reports success, and the database is still
+ * there with the previous case's rows in it. `tests/support.ts` clears stores
+ * for this reason and this is the browser-side twin of it.
+ *
+ * `indexedDB.open` with no version opens at whatever version is on disk, so it
+ * runs no upgrade and blocks nobody.
+ *
+ * **What this does and does not buy, measured rather than assumed.** George's
+ * finding had two halves. The mechanism half is confirmed: the old reset did not
+ * do what its comment said. The LEAK half does not reproduce under this config —
+ * with the reset removed entirely, all cases still pass, and a probe that left a
+ * row behind on purpose read `0` rows in the next case, because Playwright gives
+ * each test a fresh browser context and that isolates the origin's IndexedDB.
+ * So this helper is belt-and-braces today, kept so the invariant survives a
+ * config change (a shared context, `reuseExistingServer` with parallel workers)
+ * rather than because a case leaks now. The part that actually carries weight
+ * against a false pass is the ASSERTION below, which fails loudly if a case ever
+ * does start dirty — where the old reset would have passed quietly.
+ */
+async function clearAllStores(page: import("@playwright/test").Page) {
   await page.evaluate(
     () =>
-      new Promise<void>((resolve) => {
-        const request = indexedDB.deleteDatabase("tc-mobile");
-        request.onsuccess = () => resolve();
-        request.onerror = () => resolve();
-        request.onblocked = () => resolve();
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("tc-mobile");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const stores = Array.from(db.objectStoreNames);
+          if (stores.length === 0) {
+            db.close();
+            resolve();
+            return;
+          }
+          const tx = db.transaction(stores, "readwrite");
+          for (const name of stores) tx.objectStore(name).clear();
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        };
       })
   );
-  await page.reload();
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/");
+  // Wait for the app to be up before clearing, so the store list is the real
+  // v6 schema and not an empty database this reset just created.
   await expect(menuControl(page)).toBeVisible();
+  await clearAllStores(page);
+  await page.reload();
+  // Assert the RESET took, rather than assuming it. `useFailureCount` starts at
+  // 0 and reads IndexedDB in an effect, so a case that merely found "no marker"
+  // could be seeing the pre-effect state; waiting for the control to settle on
+  // its quiet name is what distinguishes "read the empty log" from "has not
+  // read yet". Every case starts from this known state.
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+  await expect(marker(page)).toHaveCount(0);
 });
 
 test("a quiet phone shows no marker and an empty menu", async ({ page }) => {
@@ -219,6 +270,94 @@ test("tap 1 renders the log to a text File, tap 2 hands it over", async ({
   expect(file.text).toContain(FORCED);
   // Never the string "undefined" where a field was absent.
   expect(file.text).not.toContain("undefined");
+});
+
+test("falls back to sharing TEXT when the platform refuses a text/plain file", async ({
+  page,
+}) => {
+  // George #5, round 1: the log's one exit used to run on the File-only
+  // `useShareFlow`, which sets `error: "failed"` when
+  // `canShare({ files })` is false — a standing refusal no retry clears. iOS
+  // has historically not accepted every type in a file share, so on the
+  // platform this ships to first the log could have had no exit at all. This
+  // stubs exactly that platform: files refused, text allowed.
+  await page.addInitScript(() => {
+    const shared: { kind: string; text: string }[] = [];
+    (window as unknown as { __shared: typeof shared }).__shared = shared;
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      // Refuse any file share; allow text. The shape an iOS build can present.
+      value: (data: { files?: File[]; text?: string }) =>
+        data.files === undefined && typeof data.text === "string",
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: { files?: File[]; text?: string }) => {
+        if (data.files !== undefined) {
+          // What the real platform would do if we ignored its own canShare.
+          throw new DOMException("not allowed", "NotAllowedError");
+        }
+        shared.push({ kind: "text", text: data.text ?? "" });
+      },
+    });
+  });
+  await page.reload();
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+
+  // Tap 1 must ARM, not fail — this is the assertion the old flow could not
+  // satisfy.
+  await page.getByRole("button", { name: "Send problem report" }).click();
+  const send = page.getByRole("button", { name: "Share now" });
+  await expect(send).toBeVisible();
+
+  await send.click();
+  await expect(page.getByRole("dialog", { name: "Menu" })).toHaveCount(0);
+
+  const shared = await page.evaluate(
+    () =>
+      (window as unknown as { __shared: { kind: string; text: string }[] })
+        .__shared
+  );
+  expect(shared).toHaveLength(1);
+  expect(shared[0]?.kind).toBe("text");
+  // The same content the file would have carried — the log genuinely left.
+  expect(shared[0]?.text).toContain("tc-mobile failure log");
+  expect(shared[0]?.text).toContain(FORCED);
+});
+
+test("says so when NEITHER a file nor text can be shared", async ({ page }) => {
+  // The other side of the fallback: when the platform offers no shape at all,
+  // the panel shows its failure rather than arming a button that cannot work.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => false,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+  await page.reload();
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+  await page.getByRole("button", { name: "Send problem report" }).click();
+
+  await expect(
+    page.getByText("Could not send the problem report. Try again.")
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
 });
 
 test("clear empties the log, and it stays empty across a reload", async ({

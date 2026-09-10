@@ -261,6 +261,100 @@ describe("v5 → v6 failure log (append-only, a new store)", () => {
   });
 });
 
+describe("no structure change after the upgrade has yielded (George #2, R1)", () => {
+  /**
+   * A `versionchange` transaction stays alive across awaited IDB requests, and
+   * the v4/v5 backfills depend on that. A STRUCTURE change after the handler has
+   * yielded is a different thing: some WebKit versions refuse it with
+   * `InvalidStateError` and abort the whole upgrade, which would leave `getDb()`
+   * rejecting and nothing able to record. `fake-indexeddb` permits it, so the
+   * ordering cannot be caught by simply opening the database — this models the
+   * refusal instead.
+   *
+   * `openCursor` is the yield: every await in the upgrade is one of these. Once
+   * one has been called, `createObjectStore` throws, exactly as the strict
+   * engine would. Both prototypes are restored afterwards.
+   */
+  function refuseStructureChangeAfterYield(): () => void {
+    const openCursor = IDBObjectStore.prototype.openCursor;
+    const createObjectStore = IDBDatabase.prototype.createObjectStore;
+    let yielded = false;
+
+    IDBObjectStore.prototype.openCursor = function (
+      this: IDBObjectStore,
+      ...args: Parameters<typeof openCursor>
+    ) {
+      yielded = true;
+      return openCursor.apply(this, args);
+    };
+    IDBDatabase.prototype.createObjectStore = function (
+      this: IDBDatabase,
+      ...args: Parameters<typeof createObjectStore>
+    ) {
+      if (yielded) {
+        throw new Error(
+          "InvalidStateError: createObjectStore after the upgrade yielded"
+        );
+      }
+      return createObjectStore.apply(this, args);
+    };
+
+    return () => {
+      IDBObjectStore.prototype.openCursor = openCursor;
+      IDBDatabase.prototype.createObjectStore = createObjectStore;
+    };
+  }
+
+  it("opens on a FRESH install under an engine that refuses a late create", async () => {
+    // oldVersion 0 runs the v3 recreate and then BOTH backfills, each of which
+    // opens a cursor unconditionally even over an empty store — so this is the
+    // path where a v6 create placed after them sits behind two awaits, on every
+    // new phone.
+    const restore = refuseStructureChangeAfterYield();
+    try {
+      const db = await getDb();
+      expect(db.version).toBe(APP_VERSION);
+      expect(Array.from(db.objectStoreNames)).toContain("failures");
+    } finally {
+      restore();
+    }
+  });
+
+  it("opens on a v3 UPGRADE carrying rows, under the same refusal", async () => {
+    // The other entry that actually yields. A v5 → v6 upgrade runs ONLY the v6
+    // block — no backfill, so no cursor and no await — and would pass this
+    // whatever the order. A v3 device is the real case: both backfills run, over
+    // NON-EMPTY stores, so the upgrade genuinely yields before it finishes.
+    const v3 = await openLegacyV3();
+    await v3.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: [],
+    });
+    await v3.put("clipMeta", {
+      id: "c1",
+      sampleRate: 44100,
+      frameCount: 10,
+      durationMs: 1,
+      createdAt: 7,
+    });
+    v3.close();
+
+    const restore = refuseStructureChangeAfterYield();
+    try {
+      const db = await getDb();
+      expect(db.version).toBe(APP_VERSION);
+      expect(Array.from(db.objectStoreNames)).toContain("failures");
+      // And both yield-dependent backfills still did their job.
+      expect((await db.get("chapters", "ch1" as never))?.name).toBeNull();
+      expect((await db.get("clipMeta", "c1" as never))?.encoding).toBe("pcm");
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
   it("keeps every v3 row and stamps each clip as generation-0 PCM", async () => {
     const v3 = await openLegacyV3();
