@@ -298,4 +298,23 @@ describe("the encode silence deadline (#166)", () => {
   it("pins the silence timeout to a sane, device-friendly value", () => {
     expect(TIMEOUT).toBe(15_000);
   });
+
+  it("keeps the worker's heartbeat well inside the silence window (George R2 P3-3)", async () => {
+    // The two constants live in different modules and nothing but this bound
+    // couples them: raise the worker's pulse (or drop the window) far enough and
+    // a HEALTHY encode goes silent past its deadline and is killed. Two beats of
+    // headroom, so losing one message to scheduling is not fatal.
+    //
+    // Importing the worker runs its top-level `addEventListener`, which Node has
+    // no global for, so both worker-scope globals are stubbed for the import.
+    vi.stubGlobal("addEventListener", () => {});
+    vi.stubGlobal("postMessage", () => {});
+    try {
+      const { PROGRESS_HEARTBEAT_MS } = await import("@/hooks/mp3.worker");
+      expect(PROGRESS_HEARTBEAT_MS).toBeGreaterThan(0);
+      expect(PROGRESS_HEARTBEAT_MS * 2).toBeLessThan(TIMEOUT);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
