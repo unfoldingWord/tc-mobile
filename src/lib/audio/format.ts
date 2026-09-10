@@ -33,7 +33,19 @@ export function floatToInt16(input: Float32Array): Int16Array<ArrayBuffer> {
 }
 
 /**
- * Convert 16-bit PCM back to normalised floats in [-1, 1].
+ * Convert a window of 16-bit PCM into a caller-owned Float32Array, returning
+ * how many samples were written.
+ *
+ * Fills `output` from `input[start]` onward, stopping at whichever runs out
+ * first, and touches nothing beyond what it wrote. The return value is the whole
+ * contract for where the real samples end: on a short tail the caller must pass
+ * a `subarray` of exactly that count onward, because whatever sat in the rest of
+ * the window is left alone rather than cleared.
+ *
+ * WINDOWED on purpose (#175). The predecessor allocated one Float32 for a whole
+ * clip, which on a ten-minute segment is 105.8 MB handed to a `copyToChannel`
+ * that then holds its own copy. Playback now reuses one one-second window for
+ * the whole clip, so the peak is the window, not the recording.
  *
  * The floor is clamped for the same reason `computePeaks` clamps it: Int16 is
  * asymmetric, so -32768 over INT16_MAX is -1.0000305. `floatToInt16` stores
@@ -41,12 +53,16 @@ export function floatToInt16(input: Float32Array): Int16Array<ArrayBuffer> {
  * here on every play — this feeds `copyToChannel` in hooks/audio-io.ts, where
  * out-of-range sample handling is implementation-defined.
  */
-export function int16ToFloat(input: Int16Array): Float32Array<ArrayBuffer> {
-  const out = new Float32Array(input.length);
-  for (let i = 0; i < input.length; i++) {
-    out[i] = Math.max(-1, input[i]! / INT16_MAX);
+export function int16ToFloatInto(
+  input: Int16Array,
+  output: Float32Array,
+  start: number
+): number {
+  const count = Math.min(output.length, Math.max(0, input.length - start));
+  for (let i = 0; i < count; i++) {
+    output[i] = Math.max(-1, input[start + i]! / INT16_MAX);
   }
-  return out;
+  return count;
 }
 
 export function framesToMs(
