@@ -25,6 +25,23 @@ export declare function resolveExpectedSha(
   }
 ): string;
 
+export declare function resolveExpectedVersion(
+  origin: string,
+  options?: {
+    runGit?: (cmd: string) => string;
+    warn?: (message: string) => void;
+  }
+): string;
+
+export declare function resolveExpected(
+  origin: string,
+  parsed?: { version?: string | undefined; sha?: string | undefined },
+  deps?: {
+    runGit?: (cmd: string) => string;
+    warn?: (message: string) => void;
+  }
+): { version: string; sha: string };
+
 export declare function describeFetchFailure(
   err: { name?: string; message: string },
   context?: { timeoutMs?: number; url?: string }
