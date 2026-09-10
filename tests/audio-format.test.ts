@@ -124,6 +124,33 @@ describe("int16ToFloatInto — the window contract (#175)", () => {
     expect(Array.from(window)).toEqual([0.25, 0.25, 0.25, 0.25]);
   });
 
+  it("rejects a negative or fractional start rather than emitting NaN", () => {
+    // Out of contract, and silence here is the dangerous answer: `count` stays
+    // positive, `input[start + i]` misses every real index, and the window fills
+    // with `undefined / INT16_MAX` — NaN handed to `copyToChannel`, whose
+    // out-of-range behaviour is implementation-defined. No live caller does this
+    // (`toAudioBuffer` steps by an integer window from 0), so this guards the
+    // T1 primitive's contract, not a reachable bug. Throwing beats clamping: a
+    // clamp would hide the future caller's defect instead of naming it.
+    const input = Int16Array.of(1, 2, 3);
+    const window = new Float32Array(2);
+
+    expect(() => int16ToFloatInto(input, window, -1)).toThrow(RangeError);
+    expect(() => int16ToFloatInto(input, window, 0.5)).toThrow(RangeError);
+    expect(() => int16ToFloatInto(input, window, NaN)).toThrow(RangeError);
+    expect(() => int16ToFloatInto(input, window, Infinity)).toThrow(RangeError);
+    // Nothing was written on any of those paths.
+    expect(Array.from(window)).toEqual([0, 0]);
+  });
+
+  it("still accepts every in-contract start, including the empty tail", () => {
+    const input = Int16Array.of(1, 2, 3);
+    const window = new Float32Array(2);
+    expect(() => int16ToFloatInto(input, window, 0)).not.toThrow();
+    expect(() => int16ToFloatInto(input, window, 3)).not.toThrow();
+    expect(() => int16ToFloatInto(input, window, 99)).not.toThrow();
+  });
+
   it("never writes past the window, however long the input is", () => {
     const input = new Int16Array(1_000).fill(32767);
     const window = new Float32Array(4);

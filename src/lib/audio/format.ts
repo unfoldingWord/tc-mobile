@@ -47,6 +47,13 @@ export function floatToInt16(input: Float32Array): Int16Array<ArrayBuffer> {
  * that then holds its own copy. Playback now reuses one one-second window for
  * the whole clip, so the peak is the window, not the recording.
  *
+ * `start` must be a NON-NEGATIVE INTEGER, and a violation throws rather than
+ * clamping (Frank round-2 P2). A negative or fractional start leaves `count`
+ * positive while every `input[start + i]` misses a real index, so the window
+ * would fill with `undefined / INT16_MAX` — NaN, handed to a `copyToChannel`
+ * whose out-of-range behaviour is implementation-defined. No caller does this
+ * today; the throw is here so a future one is told, not silently given noise.
+ *
  * The floor is clamped for the same reason `computePeaks` clamps it: Int16 is
  * asymmetric, so -32768 over INT16_MAX is -1.0000305. `floatToInt16` stores
  * -32768 for any input at or below -1, so a clipped take round-trips through
@@ -58,6 +65,11 @@ export function int16ToFloatInto(
   output: Float32Array,
   start: number
 ): number {
+  if (!Number.isInteger(start) || start < 0) {
+    throw new RangeError(
+      `int16ToFloatInto: start must be a non-negative integer, got ${start}`
+    );
+  }
   const count = Math.min(output.length, Math.max(0, input.length - start));
   for (let i = 0; i < count; i++) {
     output[i] = Math.max(-1, input[start + i]! / INT16_MAX);

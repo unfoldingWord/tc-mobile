@@ -34,8 +34,13 @@ import type { EncodeRequest, EncodeResponse } from "./mp3-codec";
  * to a steady pulse the client's silence deadline can watch without flooding the
  * message channel. Well under `ENCODER_SILENCE_TIMEOUT_MS`, so a healthy encode
  * always beats the window.
+ *
+ * Exported so the bound against `ENCODER_SILENCE_TIMEOUT_MS` is a test and not
+ * a comment (George round-2 P3-3): the two constants live in different modules,
+ * and if the pulse ever drifted up to the window a healthy encode would be
+ * judged stalled and killed.
  */
-const PROGRESS_HEARTBEAT_MS = 500;
+export const PROGRESS_HEARTBEAT_MS = 500;
 
 addEventListener("message", (event: MessageEvent<EncodeRequest>) => {
   const { buffer, byteOffset, length } = event.data;
