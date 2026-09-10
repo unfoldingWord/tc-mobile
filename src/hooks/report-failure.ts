@@ -11,8 +11,9 @@
  *
  * What it deliberately is NOT: a network reporter, a third-party SDK, or a
  * queue. This app is offline-first and runs on phones whose owners did not
- * consent to telemetry. The value here is that there is ONE function to change
- * when a real destination is chosen, instead of 25 call sites to find.
+ * consent to telemetry. Nothing here leaves the device — the destination #205
+ * added is a bounded log in the same IndexedDB the recordings live in, and it
+ * leaves the phone only when a person hands it to the OS share sheet.
  *
  * Layer: `hooks/`, not `app/`, because the callers the follow-up routes here
  * live in `hooks/` and `components/`, and neither may import from `app/`
@@ -29,8 +30,9 @@
  * promise can reject with anything, and the two things this repo must never do
  * with it are assume it is an `Error` and show it to a translator.
  *
- * @pivotpending #205 — exported for the durable/visible sink #205 wires up;
- * only tests consume the type today.
+ * The durable sink (#205) renders it to `StoredFailure` before storing: `cause`
+ * is not safely structured-cloneable, and nothing in this shape may reach a
+ * translator's screen.
  */
 export interface FailureReport {
   /**
@@ -57,11 +59,28 @@ export interface FailureReport {
 type FailureListener = (report: FailureReport) => void;
 
 /**
- * The single subscriber. One slot, not a list: a second consumer of the same
- * failures is a second place to keep in sync, and this exists precisely so
- * there is one.
+ * The subscribers. A set, not one slot — changed in #205, and the reason is
+ * worth keeping.
+ *
+ * This was a single slot, on the argument that a second consumer of the same
+ * failures is a second place to keep in sync. What that shape actually produced
+ * was a displacement bug (#188 round 3, Frank P2, deferred to #205): a second
+ * `subscribeToFailures` REPLACED the first, and the second subscriber's
+ * unsubscribe then emptied the only slot. With #205 there is a durable sink
+ * installed for the life of the page, so any transient subscriber — a panel that
+ * wants to refresh a count while it is open — would silently take the durable
+ * log offline and leave nothing behind when it closed.
+ *
+ * The two alternatives were "the durable sink wins" (the first subscription is
+ * un-displaceable, later ones are refused) and this. A set is chosen because
+ * refusing a subscription is a failure mode with no channel to report it
+ * through, and because "one sink" was never the property that mattered — the
+ * property AGENTS.md asks for is one FUNNEL, which `reportFailure` still is.
+ *
+ * Iterated over a copy on dispatch, so a listener that unsubscribes (or
+ * subscribes) while being called cannot mutate the collection mid-walk.
  */
-let sink: FailureListener | null = null;
+const sinks = new Set<FailureListener>();
 
 /**
  * The last object-identity cause reported, and the context it was reported
@@ -75,30 +94,23 @@ let lastCause: unknown = null;
 let lastContext: string | null = null;
 
 /**
- * Install the failure sink. Returns the uninstall.
+ * Add a failure subscriber. Returns the removal.
  *
- * Nothing in `src/` subscribes yet: choosing what a translator sees when a
- * failure is reported from OUTSIDE React's render — a background rejection,
- * while a screen is working — is deliberately not decided in the PR that builds
- * the channel. Replacing the live tree on any stray rejection would unmount
- * `App`, and `App` is where a failed-save recording is held in RAM (#38), so
- * the safe default until the pending take can be handed off (#180 owns the slot
- * this needs) is: report it, do not tear anything down. Tracked on #167.
+ * The production subscriber is the durable log in `hooks/failure-log.ts`
+ * (#205), installed once from the entry so it is live before the App graph
+ * evaluates. What a translator SEES when a failure is reported from outside
+ * React's render — a background rejection, while a screen is working — is still
+ * deliberately not "replace the live tree": that would unmount `App`, and `App`
+ * is where a failed-save recording is held in RAM (#38). So the answer stays
+ * report it, record it, mark the control, tear nothing down. Tracked on #167.
  *
- * @pivotpending #205 — the durable/visible destination for reported failures.
- * The seam is exported and unit-tested; the production subscriber lands in #205.
+ * Subscribing the same listener twice is a no-op (it is a set), and the
+ * returned removal is safe to call more than once.
  */
 export function subscribeToFailures(listener: FailureListener): () => void {
-  if (sink) {
-    // Not silent, and not a throw: losing the first sink would lose the only
-    // channel, and throwing here would take down whatever installed the second.
-    console.error("A second failure sink replaced the first; one is kept.");
-  }
-  sink = listener;
+  sinks.add(listener);
   return () => {
-    // Only if it is still ours: a later subscriber's slot is not this one's to
-    // clear.
-    if (sink === listener) sink = null;
+    sinks.delete(listener);
   };
 }
 
@@ -166,24 +178,30 @@ export function reportFailure(
   // cause stays the second argument every reader (and every existing case)
   // expects, and a report with no tree keeps exactly the two it had.
   //
-  // `console.error` is the terminal today. It is not a channel on a phone in a
-  // village — the durable, translator-visible destination is deferred to #205,
-  // which consumes the `subscribeToFailures` seam. This PR delivers the boundary
-  // and the single funnel; #205 delivers where the funnel ends.
+  // `console.error` is KEPT alongside the durable log (#205), not replaced by
+  // it. It is not a channel on a phone in a village — that is what the log is
+  // for — but it is the channel on a maintainer's desk, where a live console is
+  // the fastest read there is, and it is the only one left if the durable write
+  // is what failed.
   if (componentStack === undefined) console.error(`[${context}]`, cause);
   else console.error(`[${context}]`, cause, componentStack);
 
-  const listener = sink;
-  if (!listener) return;
-  try {
-    listener(
-      componentStack === undefined
-        ? { context, cause }
-        : { context, cause, componentStack }
-    );
-  } catch (sinkFailure) {
-    // Logged directly rather than through `reportFailure`, which would recurse
-    // straight back into the sink that just threw.
-    console.error("[report-failure] the failure sink threw", sinkFailure);
+  if (sinks.size === 0) return;
+  const report: FailureReport =
+    componentStack === undefined
+      ? { context, cause }
+      : { context, cause, componentStack };
+  // A copy, so a listener that subscribes or unsubscribes from inside its own
+  // call cannot mutate the set being walked.
+  for (const listener of Array.from(sinks)) {
+    try {
+      listener(report);
+    } catch (sinkFailure) {
+      // Logged directly rather than through `reportFailure`, which would
+      // recurse straight back into the sink that just threw. One throwing
+      // subscriber must not cost the others their report, which is why this is
+      // caught per listener and not around the loop.
+      console.error("[report-failure] a failure subscriber threw", sinkFailure);
+    }
   }
 }

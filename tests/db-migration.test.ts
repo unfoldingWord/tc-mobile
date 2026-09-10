@@ -9,6 +9,11 @@ import { closeDb, getDb } from "@/lib/storage/db";
 // is migrating. Kept in sync by hand — there is nothing else to key it off.
 const DB_NAME = "tc-mobile";
 
+// The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
+// a migration test necessarily knows the ladder it is climbing. Asserted rather
+// than assumed, so a bump that forgets to add its own case fails here first.
+const APP_VERSION = 6;
+
 /**
  * Delete the database outright so each test starts from a true fresh install.
  *
@@ -98,6 +103,27 @@ async function openLegacyV4() {
   });
 }
 
+/**
+ * Stand up the v5 schema — the v3 pivot stores, with named chapters and the v4
+ * clip fields already in place, and NO `failures` store. This is what a device
+ * on v0.1.13 holds when #205's v6 opens it.
+ */
+async function openLegacyV5() {
+  return openDB(DB_NAME, 5, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
 
@@ -113,7 +139,7 @@ describe("v4 → v5 chapter-name backfill (append-only)", () => {
     v4.close();
 
     const v5 = await getDb();
-    expect(v5.version).toBe(5);
+    expect(v5.version).toBe(APP_VERSION);
 
     const chapter = await v5.get("chapters", "ch1" as never);
     // The field is now present and null — never undefined — and every other
@@ -162,7 +188,7 @@ describe("v3 → v5 chapter-name backfill over a real row", () => {
     v3.close();
 
     const v5 = await getDb();
-    expect(v5.version).toBe(5);
+    expect(v5.version).toBe(APP_VERSION);
 
     const chapter = await v5.get("chapters", "ch1" as never);
     expect(chapter).toEqual({
@@ -172,6 +198,66 @@ describe("v3 → v5 chapter-name backfill over a real row", () => {
       segmentIds: ["s1", "s2"],
       name: null,
     });
+  });
+});
+
+describe("v5 → v6 failure log (append-only, a new store)", () => {
+  it("adds the failures store to a v5 database without touching a row", async () => {
+    // The strongest shape an upgrade has: a new store and nothing else. This
+    // pins BOTH halves — that the store arrives, and that the existing tree is
+    // not read, stamped or moved on the way (a v6 step that recreated anything
+    // would take a dev device's recordings with it).
+    const v5 = await openLegacyV5();
+    await v5.put("books", {
+      id: "b1",
+      name: "Book 001",
+      languageCode: null,
+      chapterIds: ["ch1"],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    await v5.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 6,
+      segmentIds: [],
+      name: "Mark 6",
+    });
+    v5.close();
+
+    const v6 = await getDb();
+    expect(v6.version).toBe(APP_VERSION);
+    expect(Array.from(v6.objectStoreNames)).toContain("failures");
+    expect(await v6.count("failures")).toBe(0);
+
+    // Untouched, including the v5 name the v5 backfill must not re-stamp.
+    expect((await v6.get("books", "b1" as never))?.chapterIds).toEqual(["ch1"]);
+    expect((await v6.get("chapters", "ch1" as never))?.name).toBe("Mark 6");
+  });
+
+  it("creates the failures store on a fresh install too", async () => {
+    // oldVersion 0 runs the v3 recreate and then every additive step. Without
+    // its own case, a v6 block written inside the `oldVersion < 3` branch would
+    // pass the upgrade test above and leave every new phone with no log.
+    const db = await getDb();
+    expect(Array.from(db.objectStoreNames)).toContain("failures");
+  });
+
+  it("keeps a failure row across the next open", async () => {
+    // The point of the store: durability. Written, connection dropped, read
+    // back — which is the reload a `console.error` does not survive.
+    const first = await getDb();
+    await first.add("failures", {
+      at: 5,
+      context: "render",
+      message: "Error: boom",
+    });
+    await closeDb();
+
+    const second = await getDb();
+    expect(await second.getAll("failures")).toEqual([
+      { at: 5, context: "render", message: "Error: boom" },
+    ]);
   });
 });
 
@@ -198,10 +284,10 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     v3.close();
 
     const v4 = await getDb();
-    // getDb now opens v5; the v4 clip-encoding backfill still runs on the way
-    // up (oldVersion < 4), and the v5 chapter backfill no-ops over the empty
-    // chapters store.
-    expect(v4.version).toBe(5);
+    // getDb now opens the current version; the v4 clip-encoding backfill still
+    // runs on the way up (oldVersion < 4), the v5 chapter backfill no-ops over
+    // the empty chapters store, and v6 adds the failure log.
+    expect(v4.version).toBe(APP_VERSION);
 
     // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
     // onward. A v3 device's recordings come through.

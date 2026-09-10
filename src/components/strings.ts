@@ -498,4 +498,30 @@ export const strings = {
   dbBlockedTeach: "Close the other one to carry on.",
   dbOutOfDate: "This copy is out of date.",
   dbOutOfDateTeach: "Restart to use the new version.",
+
+  // ── Failure log (#205) ───────────────────────────────────────────────────
+  // The durable destination for reported failures, reachable from the global
+  // menu on Books. None of this is copy a non-reader depends on — the marker on
+  // the ≡ control and the alert glyph carry the state — but the accessible name
+  // is the whole text layer for AT, so it says what happened and how many.
+  //
+  // "Problem report" throughout, never "error log": the person tapping this is
+  // a facilitator sending something to a maintainer, and the noun has to name
+  // the thing they are sending, not the file format it happens to be.
+  failuresMarker: (n: number): string =>
+    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+  // Replaces the plain "Open menu" name while the log is non-empty, so the one
+  // control that leads to the report announces that it does.
+  menuOpenWithFailures: (n: number): string =>
+    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+  // Said in the menu, above the two actions. Deliberately not "the app
+  // crashed": most entries are a single failed write the translator never saw,
+  // and alarming a person about work that is still on the phone is its own harm.
+  failuresTeach: "Send this to your helper if something is not working.",
+  shareFailureLog: "Send problem report",
+  shareFailureLogPreparing: "Preparing the problem report.",
+  // The log emptied between the render that offered Share and the tap.
+  shareFailureLogNothing: "There is nothing to send now.",
+  shareFailureLogFailed: "Could not send the problem report. Try again.",
+  clearFailureLog: "Clear problem report",
 } as const;

@@ -11,6 +11,7 @@ import { shareControlAffordance } from "./control-affordance";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
+import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
@@ -18,6 +19,7 @@ import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
 import { shareErrorText } from "./share-error-copy";
 import { strings } from "./strings";
+import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
@@ -84,6 +86,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
+  // The durable failure log's size (#205). Books is home, and the global menu is
+  // the only surface reachable from every state this screen can be in — a failed
+  // shelf read included, which is precisely when a facilitator needs the report.
+  // Kept current as failures land, so a rejection that happens while the shelf
+  // is open marks the control without a reload.
+  const failureCount = useFailureCount();
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
   // value the name field is seeded with — the "Book NNN" placeholder the hook
   // derives from the loaded shelf. Held as the seed rather than a boolean so the
@@ -633,12 +641,35 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             onClick={onNewBook}
           />
         )}
-        <Control
-          icon="menu"
-          label={strings.menuOpen}
-          variant="quiet"
-          onClick={() => setMenuOpen(true)}
-        />
+        {/* State-in-place on the control itself, which AGENTS.md prefers to a
+            message bubble: while the failure log is non-empty the ≡ carries an
+            alert mark and says so in its name. The `control-hinted` wrapper is
+            rendered UNCONDITIONALLY — swapping the button's parent as a failure
+            lands would remount it and destroy it while focused, the same trap
+            `Control`'s own hint wrapper documents. */}
+        <span className="control-hinted">
+          <Control
+            icon="menu"
+            label={
+              failureCount > 0
+                ? strings.menuOpenWithFailures(failureCount)
+                : strings.menuOpen
+            }
+            variant="quiet"
+            onClick={() => setMenuOpen(true)}
+          />
+          {failureCount > 0 && (
+            // Decorative for AT — the count is already in the button's
+            // accessible name — so a screen reader hears it once.
+            <span
+              className="control-hint"
+              aria-hidden="true"
+              style={{ color: "var(--s-live)" }}
+            >
+              <Icon name="alert" size={12} />
+            </span>
+          )}
+        </span>
       </header>
 
       {/* Books is home — a chapter opens on top and a failed shelf read has no
@@ -724,7 +755,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        {/* Mounted only while the log holds something, so a phone that has
+            never failed opens the same empty panel it always did. */}
+        {failureCount > 0 && (
+          <FailureLogPanel
+            count={failureCount}
+            onDone={() => setMenuOpen(false)}
+          />
+        )}
+      </Menu>
 
       {/* New Book asks for the name before it creates anything (#314). The same
           panel surface the rename uses — so the focus trap, Escape, the scrim
