@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { describeCause } from "@/lib/failure-text";
+import { boundText, describeCause } from "@/lib/failure-text";
 import {
   appendFailure,
   clearFailures,
@@ -35,6 +35,17 @@ import type { StoredFailure } from "@/types/failure";
  * person had explicitly cleared came back holding a row. Ordering the clear
  * against the appends is the only thing that makes "cleared" mean cleared.
  */
+
+/**
+ * How many times a failed count read is retried before it waits for the app to
+ * be brought to the foreground again. Five attempts on the backoff below spans
+ * roughly half a minute, which covers a second tab being closed; past that,
+ * returning to the app is a better signal than a timer that never stops.
+ */
+const MAX_COUNT_RETRIES = 5;
+
+/** First retry delay, doubling each attempt. */
+const RETRY_BACKOFF_MS = 1_000;
 
 /**
  * The serialising lane. Every append AND every clear waits for the previous
@@ -102,9 +113,13 @@ export function installFailureLog(): () => void {
       context: report.context,
       message,
       ...(stack === undefined ? {} : { stack }),
+      // Bounded like the other two (George P3-C, round 2). React's tree is not
+      // part of the cause, so `describeCause` never sees it — it was the one
+      // field that could be stored uncut, in the database the recordings live
+      // in, next to a stack that had been cut.
       ...(report.componentStack === undefined
         ? {}
-        : { componentStack: report.componentStack }),
+        : { componentStack: boundText(report.componentStack) }),
     };
     // Queued synchronously, inside the subscriber, so two reports in one tick
     // are ordered by the order they arrived here — not by whichever transaction
@@ -161,6 +176,25 @@ export function clearFailureLog(): Promise<void> {
 }
 
 /**
+ * Resolve once everything currently queued on the lane has settled.
+ *
+ * The crash screen's Restart is a synchronous `location.reload()`, and a
+ * render-phase throw reports through this module BEFORE any effect has run — so
+ * that write is often the `getDb` open itself, and on a device coming from v5 it
+ * carries the v6 upgrade too. Reloading into that unloads the page mid-open, and
+ * this repo already treats an iOS `pagehide` as a real race rather than a
+ * theoretical one. A render crash is the failure the durable log most exists to
+ * keep; losing it to the button offered for recovering from it is the worst
+ * possible trade (George, round 2).
+ *
+ * Awaits the LANE, not a specific write, so it covers whatever a cascade
+ * queued. It cannot reject: the lane is kept settled by `enqueue`.
+ */
+export function flushFailureLog(): Promise<void> {
+  return lane;
+}
+
+/**
  * How many failures the log holds, kept current as new ones land.
  *
  * This is what the Books screen reads: the marker on the ≡ control is the
@@ -174,23 +208,54 @@ export function useFailureCount(): number {
 
   useEffect(() => {
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+
     const refresh = () => {
       void countFailures().then(
         (n) => {
-          if (live) setCount(n);
+          if (!live) return;
+          attempt = 0;
+          setCount(n);
         },
         () => {
-          // Deliberately quiet. `getDb` failing is already surfaced by the
-          // shelf's own Notice with a Try again; a second voice for the same
-          // cause, in a place a translator cannot act on, is noise.
+          if (!live) return;
+          // Quiet, but NOT final (George, round 2). Staying quiet is right —
+          // a failed `getDb` is already on the shelf's own Notice with a Try
+          // again, and a second voice for the same cause, somewhere a
+          // translator cannot act, is noise. Giving up is not: the read fails
+          // on a TRANSIENT open (a second tab holding an upgrade,
+          // `DatabaseBlockedError`, #221), the shelf's Try again does not
+          // re-run this effect, and the count then sat at 0 forever — so a log
+          // that was on disk and had survived a reload stayed invisible, and
+          // the panel that sends it never mounted, because it is gated on the
+          // count.
+          attempt += 1;
+          if (attempt > MAX_COUNT_RETRIES) return;
+          timer = setTimeout(refresh, RETRY_BACKOFF_MS * 2 ** (attempt - 1));
         }
       );
     };
+
+    // Coming back to the app is the moment the blocking copy is most likely to
+    // be gone, and it resets the ladder so a returning user is never stuck with
+    // a spent one.
+    const onForeground = () => {
+      if (document.hidden) return;
+      attempt = 0;
+      refresh();
+    };
+
     watchers.add(refresh);
+    document.addEventListener("visibilitychange", onForeground);
+    window.addEventListener("focus", onForeground);
     refresh();
     return () => {
       live = false;
+      if (timer !== undefined) clearTimeout(timer);
       watchers.delete(refresh);
+      document.removeEventListener("visibilitychange", onForeground);
+      window.removeEventListener("focus", onForeground);
     };
   }, []);
 

@@ -23,8 +23,16 @@ import type { StoredFailure } from "@/types/failure";
  */
 const MAX_TEXT = 2000;
 
-/** Clip to {@link MAX_TEXT}, marking that something was dropped. */
-function bounded(text: string): string {
+/**
+ * Clip to {@link MAX_TEXT}, marking that something was dropped.
+ *
+ * Exported because `componentStack` needs it too and is bounded at the sink
+ * rather than here: it does not come from the cause, it comes from React, so
+ * `describeCause` never sees it. It was the one unbounded field in a stored row
+ * (George, round 2) — a deep tree stored uncut next to a cut stack, in the same
+ * database the recordings live in.
+ */
+export function boundText(text: string): string {
   return text.length <= MAX_TEXT ? text : `${text.slice(0, MAX_TEXT)}…[cut]`;
 }
 
@@ -64,14 +72,14 @@ export function describeCause(cause: unknown): {
   let stack: string | undefined;
   try {
     const raw = (cause as { stack?: unknown } | null | undefined)?.stack;
-    if (typeof raw === "string" && raw !== "") stack = bounded(raw);
+    if (typeof raw === "string" && raw !== "") stack = boundText(raw);
   } catch {
     // A throwing `stack` getter. The message above still stands.
   }
 
   return stack === undefined
-    ? { message: bounded(message) }
-    : { message: bounded(message), stack };
+    ? { message: boundText(message) }
+    : { message: boundText(message), stack };
 }
 
 /**

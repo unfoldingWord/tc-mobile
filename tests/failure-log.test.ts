@@ -2,7 +2,11 @@ import "fake-indexeddb/auto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearFailureLog, installFailureLog } from "@/hooks/failure-log";
+import {
+  clearFailureLog,
+  flushFailureLog,
+  installFailureLog,
+} from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
 import * as failuresStore from "@/lib/storage/failures";
 import {
@@ -310,6 +314,63 @@ describe("the durable sink", () => {
     await logLine("could not store a failure");
 
     expect(await countFailures()).toBe(0);
+  });
+
+  it("bounds componentStack like the other two fields", async () => {
+    // George P3-C, round 2: React's tree does not come from the cause, so
+    // `describeCause` never sees it, and it was the one field that could be
+    // stored uncut — a deep tree next to a stack that HAD been cut, in the same
+    // database the recordings live in.
+    reportFailure(new Error("deep"), "render", "x".repeat(5000));
+    await settle(1);
+    const row = await readFailures().then((r) => r[0]);
+    expect(row?.componentStack?.length).toBeLessThan(2100);
+    expect(row?.componentStack?.endsWith("…[cut]")).toBe(true);
+  });
+
+  it("flushFailureLog resolves only after a queued write has landed", async () => {
+    // George P2-B, round 2. The crash screen's Restart awaits this before
+    // reloading: on a render throw no effect has run, so the queued write is
+    // often the `getDb` open itself, and reloading into it unloads mid-write.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = failuresStore.appendFailure;
+    vi.spyOn(failuresStore, "appendFailure").mockImplementationOnce(
+      async (entry) => {
+        await held;
+        await real(entry);
+      }
+    );
+
+    reportFailure(new Error("mid-flight"), "render");
+
+    let flushed = false;
+    const flush = flushFailureLog().then(() => {
+      flushed = true;
+    });
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    // Still held: a flush that resolved here would be no better than not
+    // waiting at all.
+    expect(flushed).toBe(false);
+    expect(await countFailures()).toBe(0);
+
+    release?.();
+    await flush;
+    expect(flushed).toBe(true);
+    // The row is on disk BEFORE the reload the caller does next.
+    expect(await countFailures()).toBe(1);
+  });
+
+  it("flushFailureLog never rejects, even after a failed write", async () => {
+    // The caller is `reload()`, which has no failure arm — a rejecting flush
+    // would leave the crash screen's Restart doing nothing at all.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValueOnce(
+      new Error("disk full")
+    );
+    reportFailure(new Error("boom"), "render");
+    await expect(flushFailureLog()).resolves.toBeUndefined();
   });
 
   it("stops storing once uninstalled", async () => {
