@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -40,6 +40,35 @@ function globPatterns(): string[] {
   return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
 }
 
+// The `navigateFallbackDenylist` entry, lifted out of vite.config.ts as a live
+// RegExp rather than retyped here — a copy would pass while the config's own
+// pattern regressed, which is exactly the class of bug this pins.
+function navigateFallbackDenylist(): RegExp {
+  const source = readFileSync(CONFIG, "utf8");
+  const match = source.match(
+    /navigateFallbackDenylist:\s*\[\s*\/(.*?)\/[gimsuy]*\s*\]/
+  );
+  const body = match?.[1];
+  if (body === undefined)
+    throw new Error(
+      "could not find a single-entry navigateFallbackDenylist in vite.config.ts"
+    );
+  return new RegExp(body);
+}
+
+// The emitted service worker's precache manifest, when a build exists.
+// generateSW inlines it as `precacheAndRoute([{url:"...",revision:...},...])`.
+const SW = path.join(ROOT, "dist", "sw.js");
+
+function precachedUrls(): string[] {
+  const source = readFileSync(SW, "utf8");
+  const match = source.match(/precacheAndRoute\(\[(.*?)\],/s);
+  const body = match?.[1];
+  if (body === undefined)
+    throw new Error("could not find precacheAndRoute([...]) in dist/sw.js");
+  return [...body.matchAll(/url:"([^"]+)"/g)].map((m) => m[1] ?? "");
+}
+
 function tsFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -74,6 +103,74 @@ describe("workbox precache globPatterns", () => {
     expect(globPatterns()).toEqual(INTENDED);
   });
 });
+
+describe("navigateFallbackDenylist keeps /version.json off the SPA shell", () => {
+  // round-5 George G-F2: round 3 added the denylist entry but anchored it
+  // `/^\/version\.json$/`. Workbox tests `navigateFallbackDenylist` against
+  // the request URL's `pathname + search`, so the `$` meant the entry did NOT
+  // match `/version.json?t=<timestamp>` — precisely the cache-busting URL form
+  // `scripts/check-deploy.mjs` builds — and a browser navigation to that URL
+  // on an installed PWA was still served the cached index.html shell. The
+  // round-3 comment in vite.config.ts claimed otherwise.
+  const denylist = navigateFallbackDenylist();
+
+  it("matches the bare path", () => {
+    expect(denylist.test("/version.json")).toBe(true);
+  });
+
+  it("matches the cache-busting query form check-deploy.mjs actually fetches", () => {
+    expect(denylist.test("/version.json?t=1757520000000")).toBe(true);
+  });
+
+  it("does not match a different file that merely starts the same way", () => {
+    expect(denylist.test("/version.jsonfoo")).toBe(false);
+    expect(denylist.test("/version.json.bak")).toBe(false);
+  });
+
+  it("does not match an unrelated route", () => {
+    expect(denylist.test("/other.json")).toBe(false);
+    expect(denylist.test("/books/1")).toBe(false);
+  });
+});
+
+// round-5 George G-F3: "version.json is never precached" was protected only
+// indirectly, by `.json` sitting outside globPatterns — nothing read the
+// manifest workbox actually emitted. This does, and it catches the routes the
+// glob check cannot see (an `additionalManifestEntries`, a workbox option or
+// plugin change that injects an entry directly).
+//
+// TWO limitations, stated rather than glossed, because a reader must not take
+// a green run here for more than it is:
+//
+//   1. It needs a build. `npm run verify` runs the suite BEFORE `npm run
+//      build`, and CI builds in a separate job that runs no tests — so on a
+//      tree that has never been built there is nothing to read and this is
+//      skipped rather than failing a fresh clone or CI's quality job.
+//   2. What it reads is the LAST build's output, which within a single
+//      `verify` is the build from before the current source change. A green
+//      result is therefore a statement about that build, not a proof about
+//      uncommitted source. Two consecutive verifies converge.
+//
+// The always-on half of the invariant is the exact-allowlist assertion above:
+// `json` cannot enter globPatterns without failing that, unskippably and with
+// no build required.
+describe.skipIf(!existsSync(SW))(
+  "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
+  () => {
+    it("never contains version.json", () => {
+      const urls = precachedUrls();
+      // Non-empty, or an empty parse would vacuously satisfy the assertion.
+      expect(urls.length).toBeGreaterThan(0);
+      const offenders = urls.filter(
+        (url) => url === "version.json" || url.endsWith("/version.json")
+      );
+      expect(
+        offenders,
+        "version.json must never be precached: a post-promotion check fetching it has to reach the origin, not a service-worker cache (AGENTS.md, 'Confirming a deploy and rolling one back')"
+      ).toEqual([]);
+    });
+  }
+);
 
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
   const readers = thumbUrlReaders();

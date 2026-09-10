@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -10,9 +12,19 @@ import {
   normalizeSha,
   parseArgs,
   remoteRefForOrigin,
+  resolveExpected,
   resolveExpectedSha,
+  resolveExpectedVersion,
   SpaFallbackError,
 } from "../scripts/check-deploy.mjs";
+
+// An independent oracle for "this checkout's version", read the same way
+// `currentVersion()` reads it but without importing it — the fallback
+// assertions below must pin the *behaviour* (fall back to the working tree),
+// not a literal that goes stale at the next release bump.
+const LOCAL_VERSION: string = JSON.parse(
+  readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")
+).version;
 
 describe("compareDeployed", () => {
   it("passes when sha and version both match", () => {
@@ -294,6 +306,146 @@ describe("resolveExpectedSha", () => {
   });
 });
 
+describe("resolveExpectedVersion", () => {
+  // round-5 George G-F1: round 3 moved the expected *sha* onto the promoted
+  // branch's remote-tracking ref but left the expected *version* reading the
+  // promoter's working tree. That is a false FAIL on a correct deploy: a
+  // promoter sitting on develop at 0.1.12 runs `check:deploy:prod` after a
+  // real v0.2.0 `staging -> main` promotion — the sha matches (ref-resolved),
+  // the version compares local 0.1.12 against deployed 0.2.0, and the gate
+  // fails the very promotion it exists to confirm. The version must resolve
+  // from the same ref as the sha.
+  it("resolves the version from origin/main's package.json, not this checkout's (the G-F1 false FAIL)", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd === "git show origin/main:package.json") {
+        return JSON.stringify({ name: "tc-mobile", version: "0.2.0" });
+      }
+      throw new Error(`unexpected git command: ${cmd}`);
+    };
+    const warnings: string[] = [];
+    const version = resolveExpectedVersion(
+      "https://tc-mobile.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    // The promoted branch says 0.2.0; the local checkout still says 0.1.12.
+    expect(LOCAL_VERSION).toBe("0.1.12");
+    expect(version).toBe("0.2.0");
+    expect(version).not.toBe(LOCAL_VERSION);
+    expect(calls).toEqual(["git show origin/main:package.json"]);
+    expect(warnings.join(" ")).toContain("origin/main");
+  });
+
+  it("resolves from origin/staging for the staging default origin", () => {
+    const runGit = (cmd: string) =>
+      cmd === "git show origin/staging:package.json"
+        ? JSON.stringify({ version: "0.1.13" })
+        : (() => {
+            throw new Error(`unexpected git command: ${cmd}`);
+          })();
+    expect(
+      resolveExpectedVersion(
+        "https://tc-mobile-staging.unfoldingword.workers.dev",
+        { runGit }
+      )
+    ).toBe("0.1.13");
+  });
+
+  it("falls back to this checkout's package.json for an origin with no known remote ref", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      throw new Error("should not shell out for an unknown origin");
+    };
+    const warnings: string[] = [];
+    const version = resolveExpectedVersion(
+      "https://some-preview.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    expect(version).toBe(LOCAL_VERSION);
+    expect(calls).toEqual([]);
+    expect(warnings.join(" ")).toContain("not a known staging/prod default");
+  });
+
+  it("falls back to this checkout's package.json when the ref can't be resolved (e.g. not fetched)", () => {
+    const runGit = () => {
+      throw new Error("unknown revision or path not in the working tree");
+    };
+    const warnings: string[] = [];
+    const version = resolveExpectedVersion(
+      "https://tc-mobile-staging.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    expect(version).toBe(LOCAL_VERSION);
+    expect(warnings.join(" ")).toContain(
+      "could not read origin/staging:package.json"
+    );
+    expect(warnings.join(" ")).toContain("git fetch origin");
+  });
+
+  it("falls back to this checkout's package.json when the ref's package.json has no usable version", () => {
+    const runGit = () => JSON.stringify({ name: "tc-mobile" });
+    const warnings: string[] = [];
+    const version = resolveExpectedVersion(
+      "https://tc-mobile-staging.unfoldingword.workers.dev",
+      { runGit, warn: (m) => warnings.push(m) }
+    );
+    expect(version).toBe(LOCAL_VERSION);
+    expect(warnings.join(" ")).toContain("no usable");
+  });
+});
+
+describe("resolveExpected", () => {
+  // The pairing itself, not either resolver on its own: G-F1 was not a broken
+  // resolver, it was `main()` calling one resolver for the sha and reading the
+  // working tree for the version. This is the seam that pins both halves to
+  // the same commit, and the seam `main()` uses.
+  const PROD = "https://tc-mobile.unfoldingword.workers.dev";
+  const refGit = (cmd: string) => {
+    if (cmd === "git show origin/main:package.json")
+      return JSON.stringify({ version: "0.2.0" });
+    if (cmd === "git rev-parse --short=7 origin/main") return "merge01";
+    throw new Error(`unexpected git command: ${cmd}`);
+  };
+
+  it("takes BOTH halves from the promoted branch's ref when neither is given", () => {
+    expect(resolveExpected(PROD, {}, { runGit: refGit })).toEqual({
+      version: "0.2.0",
+      sha: "merge01",
+    });
+  });
+
+  it("lets an explicit --version override the ref resolution", () => {
+    const expected = resolveExpected(
+      PROD,
+      { version: "9.9.9" },
+      { runGit: refGit }
+    );
+    expect(expected.version).toBe("9.9.9");
+    expect(expected.sha).toBe("merge01");
+  });
+
+  it("lets an explicit --sha override the ref resolution", () => {
+    const expected = resolveExpected(
+      PROD,
+      { sha: "abc1234" },
+      { runGit: refGit }
+    );
+    expect(expected.sha).toBe("abc1234");
+    expect(expected.version).toBe("0.2.0");
+  });
+
+  it("shells out to git for neither half when both are given explicitly", () => {
+    const runGit = () => {
+      throw new Error("git must not be consulted when both are explicit");
+    };
+    expect(
+      resolveExpected(PROD, { version: "0.2.0", sha: "abc1234" }, { runGit })
+    ).toEqual({ version: "0.2.0", sha: "abc1234" });
+  });
+});
+
 describe("parseArgs", () => {
   it("defaults to the staging origin when nothing is given", () => {
     const { origin } = parseArgs([]);
@@ -340,5 +492,57 @@ describe("parseArgs", () => {
       "--origin=https://tc-mobile.unfoldingword.workers.dev",
     ]);
     expect(origin).toBe("https://tc-mobile.unfoldingword.workers.dev");
+  });
+
+  // round-5 Frank F-P2: unrecognized `--` flags were silently dropped, so a
+  // typo'd `--verison=0.1.13` matched no branch, contributed nothing, and the
+  // run carried on comparing against whatever the default resolution produced.
+  // A deployment gate that ignores an argument the promoter meant to constrain
+  // it with is failing open — the same defect class as round-1 George G2.
+  it("throws on a typo'd --version flag instead of silently ignoring it", () => {
+    expect(() => parseArgs(["--verison=0.1.13"])).toThrow(/--verison=0.1.13/);
+    expect(() => parseArgs(["--verison=0.1.13"])).toThrow(/unrecognized/);
+  });
+
+  it("throws on any unrecognized -- flag", () => {
+    expect(() => parseArgs(["--dry-run"])).toThrow(/unrecognized/);
+  });
+
+  it("still accepts every recognized flag together", () => {
+    const parsed = parseArgs([
+      "--require-origin",
+      "--origin=https://example.test",
+      "--version=0.2.0",
+      "--sha=abc1234",
+    ]);
+    expect(parsed).toEqual({
+      origin: "https://example.test",
+      version: "0.2.0",
+      sha: "abc1234",
+    });
+  });
+
+  // Also round-5 Frank F-P2: two origins is an ambiguous instruction to the
+  // highest-stakes gate in the repo. Last-one-wins silently checked one origin
+  // while the promoter believed they had named the other.
+  it("throws when an origin is given both positionally and with --origin=", () => {
+    expect(() =>
+      parseArgs(["https://example.test", "--origin=https://other.test"])
+    ).toThrow(/more than once/);
+  });
+
+  it("throws when --origin= is given twice with different values", () => {
+    expect(() =>
+      parseArgs([
+        "--origin=https://example.test",
+        "--origin=https://other.test",
+      ])
+    ).toThrow(/more than once/);
+  });
+
+  it("throws even when the two origins are identical — one origin, stated once", () => {
+    expect(() =>
+      parseArgs(["https://example.test", "--origin=https://example.test"])
+    ).toThrow(/more than once/);
   });
 });

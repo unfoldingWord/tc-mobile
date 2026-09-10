@@ -15,20 +15,28 @@
  *
  *   node scripts/check-deploy.mjs [origin] [--origin=<url>] [--version=X.Y.Z] [--sha=abcdef1]
  *
- * `origin` (positional, or `--origin=`) defaults to the staging Worker.
- * `--version` defaults to this checkout's package.json version. `--sha`, when
- * not given explicitly, is resolved by `resolveExpectedSha()`: for the two
- * known default origins (staging, production) that resolves the *promoted
- * branch's remote-tracking ref* (`origin/staging` / `origin/main`) rather
- * than local `HEAD` — Cloudflare Workers Builds deploys that branch's tip,
+ * `origin` (positional, or `--origin=`) defaults to the staging Worker, and
+ * may be given exactly once — a second origin, by either spelling, is a
+ * parse error rather than a silent last-one-wins, as is any unrecognized
+ * `--` flag (round-5 Frank F-P2: a typo'd `--verison=` was dropped on the
+ * floor and the gate carried on unconstrained).
+ *
+ * Neither half of the expectation defaults to the promoter's working tree.
+ * `--sha` and `--version`, when not given explicitly, are resolved by
+ * `resolveExpectedSha()` and `resolveExpectedVersion()` from the *same*
+ * source: for the two known default origins (staging, production) that is the
+ * *promoted branch's remote-tracking ref* (`origin/staging` / `origin/main`),
+ * not local `HEAD` — Cloudflare Workers Builds deploys that branch's tip,
  * which for this repo's merge-PR promotion flow is a merge commit, not
  * whatever commit the promoter's local checkout happens to have `HEAD` on
- * (round-3 George #1). Run `git fetch origin` first for that to be accurate;
- * it falls back to local `HEAD` (with a printed reason) for any other origin,
- * or if the remote-tracking ref can't be resolved at all. The SHA is the
- * primary signal (it identifies the exact commit); version is checked too
- * since a stale build can share a SHA with nothing meaningful if HEAD has
- * moved.
+ * (round-3 George #1; round-5 George G-F1 for the version half, which was
+ * left behind and made a correct `v0.2.0` production promotion FAIL against a
+ * checkout still on `0.1.12`). Run `git fetch origin` first for that to be
+ * accurate; both fall back to the local checkout (with a printed reason) for
+ * any other origin, or if the remote-tracking ref can't be resolved at all.
+ * The SHA is the primary signal (it identifies the exact commit); version is
+ * checked too since a stale build can share a SHA with nothing meaningful if
+ * HEAD has moved.
  *
  * `--require-origin` refuses to fall back to the staging default when no
  * origin was given — used by `check:deploy:prod` (round-1 George G2) so a
@@ -118,6 +126,72 @@ export function resolveExpectedSha(
     );
   }
   return runGit(`git rev-parse --short=${SHA_LENGTH} HEAD`);
+}
+
+/**
+ * Resolves the version to expect for a promotion check — the exact mirror of
+ * `resolveExpectedSha` above, and for the same reason. Round 3 moved the
+ * expected *sha* onto the promoted branch's remote-tracking ref but left the
+ * expected *version* reading the promoter's working tree, which made the gate
+ * fail on the promotion it exists to confirm: a promoter sitting on develop at
+ * `0.1.12` runs `check:deploy:prod` after a real `v0.2.0` `staging -> main`
+ * promotion, the sha matches (ref-resolved), and the version compares local
+ * `0.1.12` against deployed `0.2.0` — a false FAIL on a correct production
+ * deploy (round-5 George G-F1). Both halves of the expectation must come from
+ * the same commit.
+ *
+ * Reads `package.json`'s `version` out of the ref with `git show`. Falls back
+ * to this checkout's `package.json` (`currentVersion()`, naming the reason)
+ * when the origin has no known ref, when the ref can't be resolved (e.g. `git
+ * fetch origin` was never run), or when what the ref holds has no usable
+ * `version` field.
+ *
+ * `runGit` and `warn` are injected exactly as in `resolveExpectedSha`, so a
+ * test can fake git without a real repository or network. Exported for tests.
+ */
+export function resolveExpectedVersion(
+  origin,
+  { runGit = runGitSync, warn = () => {} } = {}
+) {
+  const ref = remoteRefForOrigin(origin);
+  if (!ref) {
+    warn(
+      `${origin} is not a known staging/prod default — using this checkout's package.json as the expected version`
+    );
+    return currentVersion();
+  }
+  try {
+    const version = JSON.parse(runGit(`git show ${ref}:package.json`)).version;
+    if (typeof version === "string" && version.length > 0) {
+      warn(
+        `expected version resolved from ${ref}:package.json (the promoted branch tip Cloudflare deploys), not this checkout — run "git fetch origin" first if this looks stale`
+      );
+      return version;
+    }
+    warn(
+      `${ref}:package.json has no usable "version" field — falling back to this checkout's package.json`
+    );
+  } catch (err) {
+    warn(
+      `could not read ${ref}:package.json (${err.message}) — falling back to this checkout's package.json; run "git fetch origin" first for an accurate check`
+    );
+  }
+  return currentVersion();
+}
+
+/**
+ * What to compare the deployed `version.json` against: the explicit `--version`
+ * / `--sha` when given, otherwise each half resolved from the promoted
+ * branch's ref. Both halves must come from the *same* place — resolving one
+ * from the ref and the other from the working tree is the G-F1 false FAIL —
+ * and this is the single seam where that pairing lives, so a test can pin it
+ * without `main()`'s network call. Exported for tests.
+ */
+export function resolveExpected(origin, { version, sha } = {}, deps = {}) {
+  return {
+    version: version ?? resolveExpectedVersion(origin, deps),
+    sha: sha ?? resolveExpectedSha(origin, deps),
+  };
 }
 
 /**
@@ -239,10 +313,22 @@ async function fetchVersionJson(
   return { url, body };
 }
 
+const USAGE =
+  "usage: node scripts/check-deploy.mjs [origin] [--origin=<url>] " +
+  "[--version=X.Y.Z] [--sha=<short-sha>] [--require-origin]";
+
 /**
  * Argument parsing, pulled out so `--require-origin` can be unit tested
  * without a process exit. Throws (rather than calling `process.exit`) on a
  * bad combination — `main()` turns that into a FAIL line.
+ *
+ * Every rejection here exists because the alternative is failing *open*.
+ * An unrecognized `--` flag used to be dropped silently, so a typo'd
+ * `--verison=0.1.13` constrained nothing and the run happily checked whatever
+ * the default resolution produced; and a second origin used to overwrite the
+ * first, so the highest-stakes gate in the repo could check an origin the
+ * promoter had not meant (round-5 Frank F-P2, the same defect class as
+ * round-1 George G2).
  */
 export function parseArgs(argv) {
   let origin;
@@ -250,19 +336,32 @@ export function parseArgs(argv) {
   let version;
   let sha;
   let requireOrigin = false;
+  const setOrigin = (value) => {
+    if (originGiven) {
+      throw new Error(
+        `origin was given more than once ("${origin}" then "${value}") — ` +
+          `pass exactly one of a positional origin or --origin=<url>. ${USAGE}`
+      );
+    }
+    origin = value;
+    originGiven = true;
+  };
   for (const arg of argv) {
     if (arg.startsWith("--version=")) {
       version = arg.slice("--version=".length);
     } else if (arg.startsWith("--sha=")) {
       sha = arg.slice("--sha=".length);
     } else if (arg.startsWith("--origin=")) {
-      origin = arg.slice("--origin=".length);
-      originGiven = true;
+      setOrigin(arg.slice("--origin=".length));
     } else if (arg === "--require-origin") {
       requireOrigin = true;
-    } else if (!arg.startsWith("--")) {
-      origin = arg;
-      originGiven = true;
+    } else if (arg.startsWith("--")) {
+      throw new Error(
+        `unrecognized argument "${arg}" — refusing to run a deploy check with an ` +
+          `argument it silently ignores (a typo'd flag would constrain nothing). ${USAGE}`
+      );
+    } else {
+      setOrigin(arg);
     }
   }
   if (requireOrigin && !originGiven) {
@@ -292,12 +391,11 @@ async function main() {
     return;
   }
   const { origin, version, sha } = parsed;
-  const expected = {
-    version: version ?? currentVersion(),
-    sha:
-      sha ??
-      resolveExpectedSha(origin, { warn: (msg) => console.log(`  ${msg}`) }),
-  };
+  const expected = resolveExpected(
+    origin,
+    { version, sha },
+    { warn: (msg) => console.log(`  ${msg}`) }
+  );
 
   console.log(
     `Checking ${origin} against version=${expected.version} sha=${expected.sha}`

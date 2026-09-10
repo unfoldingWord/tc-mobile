@@ -12,11 +12,11 @@ import pkg from "./package.json" with { type: "json" };
 // never fails for want of a SHA.
 //
 // `--short=7` pins the length: `git rev-parse --short HEAD` alone varies with
-// a repo's `core.abbrev`, and `scripts/check-deploy.mjs`'s consumer-side
-// `currentSha()` does strict equality against this value — two correct call
-// sites producing different-length short SHAs for the same commit was a false
-// FAIL waiting to happen (round-1 George G3). Keep this in sync with
-// `SHA_LENGTH` there.
+// a repo's `core.abbrev`, and `scripts/check-deploy.mjs`'s consumer side
+// (`resolveExpectedSha()`, plus the `compareDeployed` comparison it feeds)
+// matches against this value — two correct call sites producing
+// different-length short SHAs for the same commit was a false FAIL waiting to
+// happen (round-1 George G3). Keep this in sync with `SHA_LENGTH` there.
 const buildSha = (() => {
   try {
     return execSync("git rev-parse --short=7 HEAD", {
@@ -117,7 +117,18 @@ export default defineConfig(({ mode }) => ({
         // origin is about `check:deploy`'s Node fetch (not navigation-mode,
         // never intercepted); this keeps that true for a browser navigation
         // too (round-3 George #2).
-        navigateFallbackDenylist: [/^\/version\.json$/],
+        //
+        // Workbox matches this against the request URL's `pathname + search`,
+        // so the pattern must tolerate a query string: `check-deploy.mjs`
+        // fetches `/version.json?t=<timestamp>` to bust intermediate caches,
+        // and a `$`-anchored `/^\/version\.json$/` did not match that at all
+        // — the exact URL form this entry exists for was still falling
+        // through to the shell (round-5 George G-F2). `(\?|$)` matches the
+        // bare path and the query form while still rejecting a different file
+        // that merely starts the same way (`/version.jsonfoo`).
+        // tests/precache-manifest.test.ts pins that behaviour against this
+        // literal.
+        navigateFallbackDenylist: [/^\/version\.json(\?|$)/],
         cleanupOutdatedCaches: true,
       },
       manifest: {
