@@ -20,6 +20,12 @@
  * Decoding is `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio
  * boundary.
  *
+ * EVERY worker, warm or rebuilt, is constructed from a blob SNAPSHOT of the
+ * worker chunk taken at warmup, so no rebuild depends on a URL a service-worker
+ * update has purged (#192). That matters precisely because the three recoveries
+ * above — abort, stall and crash — all `terminate()` and rebuild, and a rebuild
+ * can come hours after the update.
+ *
  * AND IT SAYS SO. #166's other half: every encode's outcome moves an
  * {@link EncoderHealth} store this module owns, which the Books shelf draws one
  * line from. It lives here rather than in a caller because this is the one place
@@ -49,6 +55,14 @@
 
 import { decodeMp3ToCanonical } from "./audio-io";
 import { reportFailure } from "./report-failure";
+// The BUILT worker chunk's URL. `?worker&url` is the only form that yields it
+// outside a `new Worker(new URL(...))` literal: a bare
+// `new URL("./mp3.worker.ts", import.meta.url)` makes Vite inline the raw `.ts`
+// SOURCE as a `data:video/mp2t;base64,…` URI, which is un-runnable (#192,
+// observed in `dist/` on PR #187). This is now the module's ONLY reference to
+// the worker file, so exactly one chunk is emitted and lamejs is not duplicated
+// (round-1 George G2).
+import encoderChunkUrl from "./mp3.worker.ts?worker&url";
 import type { AudioCodec } from "@/types/audio";
 
 /** The one message the client posts: a view onto canonical PCM, transferred. */
@@ -338,30 +352,62 @@ function untilSettled(
  * life of the page (round-1 R1). An abort must stop the in-flight encode NOW,
  * which only `terminate()` can do, so it drops the worker and immediately
  * re-warms a fresh one (round-1 R2). The common reuse path fetches nothing. A
- * drop-and-rebuild — after an abort, or a crash — DOES re-fetch the hashed URL,
- * so it restores the warm worker only while that chunk is still fetchable; a
- * rebuild after a service-worker update has purged the chunk fails to the
- * durable listener and surfaces on the next encode. Closing that post-purge
- * window fully needs the worker snapshotted to a purge-immune source (#192).
+ * drop-and-rebuild — after an abort, or a crash — used to re-fetch the hashed
+ * chunk URL, which is exactly the URL a service-worker update purges. An abort
+ * can come hours after the update (the translator opens Share and cancels), so
+ * the rebuild could not race the purge, and the encoder was dead for the rest of
+ * the page's life (#192). Every worker is now built from `workerScriptUrl()`: a
+ * BLOB snapshot of the chunk, taken at warmup while the chunk is still
+ * fetchable, which no cache eviction can reach. The direct chunk URL remains the
+ * fallback for as long as the snapshot has not been taken, or could not be.
  */
 let sharedWorker: Worker | null = null;
 
+/**
+ * Whether the live `sharedWorker` came from the blob snapshot, and whether it
+ * has ever answered a message.
+ *
+ * The snapshot path cannot be exercised in CI — Node has neither `Worker` nor a
+ * real blob worker — so it ships with a self-healing guard rather than on faith:
+ * a snapshot-built worker that errors WITHOUT ever having answered is treated as
+ * a bad snapshot (wrong format, truncated fetch, a CSP that forbids blob
+ * workers) and the snapshot is thrown away, so the next rebuild falls back to
+ * the chunk URL and the encoder degrades to the #182 behaviour instead of
+ * bricking. A worker that has answered at least once has proven the snapshot
+ * runs, so a later crash — OOM mid-encode — keeps it.
+ */
+let workerFromSnapshot = false;
+let workerProven = false;
+
+/** The blob snapshot of the worker chunk, and the one attempt to take it. */
+let snapshotUrl: string | null = null;
+let snapshotStarted = false;
+
+/** The script every worker is built from: the snapshot if we have one. */
+function workerScriptUrl(): string {
+  return snapshotUrl ?? encoderChunkUrl;
+}
+
 function encoderWorker(): Worker {
   if (!sharedWorker) {
-    // Vite resolves this to the worker's own chunk (lamejs inside it) and the
-    // PWA precache picks that chunk up with the rest of `dist/assets`.
-    const worker = new Worker(new URL("./mp3.worker.ts", import.meta.url), {
-      type: "module",
-    });
+    const fromSnapshot = snapshotUrl !== null;
+    // `{ type: "module" }` matches the built chunk either way: Vite emits it as
+    // a zero-import IIFE (verified against `dist/`), which is valid module
+    // source, and dev serves it as a real module.
+    const worker = new Worker(workerScriptUrl(), { type: "module" });
     // Durable, for the worker's whole life: a load failure or a between-encodes
     // crash arrives here even when no per-job `onerror` is attached, so the dead
     // handle is dropped instead of reused (R1). `addEventListener` survives a
     // job's `onerror =` assignment; the guard stops an old worker's late error
     // from dropping a newer one.
     worker.addEventListener("error", () => {
-      if (sharedWorker === worker) dropEncoderWorker();
+      if (sharedWorker !== worker) return;
+      if (workerFromSnapshot && !workerProven) discardWorkerSnapshot();
+      dropEncoderWorker();
     });
     sharedWorker = worker;
+    workerFromSnapshot = fromSnapshot;
+    workerProven = false;
   }
   return sharedWorker;
 }
@@ -379,6 +425,8 @@ function encoderWorker(): Worker {
 function dropEncoderWorker(): void {
   const worker = sharedWorker;
   sharedWorker = null;
+  workerFromSnapshot = false;
+  workerProven = false;
   try {
     worker?.terminate();
   } catch (cause) {
@@ -398,9 +446,62 @@ function recoverEncoderWorker(): void {
   warmEncoder();
 }
 
+/** Throw away a snapshot that cannot run, and stop trying to take another. */
+function discardWorkerSnapshot(): void {
+  if (snapshotUrl) URL.revokeObjectURL(snapshotUrl);
+  snapshotUrl = null;
+  // `snapshotStarted` stays true: re-fetching the same chunk would produce the
+  // same unusable blob.
+}
+
+/**
+ * Take the blob snapshot of the worker chunk, once, at warmup (#192).
+ *
+ * Production only. In dev the chunk is served as an unbundled module with its
+ * own imports, so a blob copy of it would resolve nothing — and dev has no
+ * service worker purging assets out from under the page, which is the whole
+ * problem this solves.
+ *
+ * Best-effort and asynchronous: the fetch happens in the background while the
+ * warm worker (built from the direct URL) is already running, so nothing waits
+ * on it. A failure leaves `snapshotUrl` null and the codec on the #182
+ * behaviour. The snapshot is kept for the page's lifetime — that is the point —
+ * and revoked only when `discardWorkerSnapshot` rejects it.
+ */
+function captureWorkerSnapshot(): void {
+  if (snapshotStarted) return;
+  snapshotStarted = true;
+  if (!import.meta.env.PROD) return;
+  if (
+    typeof fetch !== "function" ||
+    typeof Blob === "undefined" ||
+    typeof URL === "undefined" ||
+    typeof URL.createObjectURL !== "function"
+  )
+    return;
+  void fetch(encoderChunkUrl)
+    .then((response) => {
+      if (!response.ok)
+        throw new Error(`worker chunk fetch failed: ${response.status}`);
+      return response.text();
+    })
+    .then((source) => {
+      snapshotUrl = URL.createObjectURL(
+        new Blob([source], { type: "text/javascript" })
+      );
+    })
+    .catch(() => {
+      // Best-effort by design: the direct chunk URL stays in use. Nothing is
+      // logged — a snapshot that could not be taken is not itself a failure the
+      // translator or the sweep can act on, and the encoder still works until an
+      // update purges the chunk.
+    });
+}
+
 /**
  * Warm the encoder worker so a later encode does not depend on a chunk URL a
- * service-worker update may have purged (#182).
+ * service-worker update may have purged (#182), and snapshot that chunk so a
+ * REBUILD does not either (#192).
  *
  * Best-effort: a no-op where `Worker` is absent, and a rare synchronous
  * construction throw is swallowed here. An asynchronous load failure is NOT
@@ -409,8 +510,13 @@ function recoverEncoderWorker(): void {
  * `onerror`. Call it once from the app shell at startup, while the running
  * build's precache still holds the worker chunk; it is also called after an
  * abort to re-establish the warm worker.
+ *
+ * The snapshot is taken on every call but acts only once, and it is taken even
+ * when the construction below throws — a browser that refuses `new Worker` here
+ * may still fetch, and the snapshot is what a later attempt will need.
  */
 export function warmEncoder(): void {
+  captureWorkerSnapshot();
   if (typeof Worker === "undefined") return;
   try {
     encoderWorker();
@@ -434,9 +540,9 @@ export function warmEncoder(): void {
  * the worker is terminated, dropped and re-warmed, and the promise rejects with
  * the signal's reason (an `AbortError` by default). Rejects with the encoder's own
  * error if it throws inside the worker, with the load error if the worker script
- * cannot start (e.g. its chunk is not in the offline cache), and with a plain
- * error where `Worker` does not exist at all (see the header: no inline fallback,
- * on purpose).
+ * cannot start (neither the blob snapshot nor the chunk could be run), and with
+ * a plain error where `Worker` does not exist at all (see the header: no inline
+ * fallback, on purpose).
  *
  * Every encode is bounded by a SILENCE deadline (#166). The worker posts a
  * throttled progress heartbeat while it encodes; each message — progress, done or
@@ -608,6 +714,9 @@ function encodeInWorker(
 
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
       if (settled) return;
+      // It answered, so the script it was built from runs — see `workerProven`.
+      // A progress heartbeat counts: it is the worker's own code executing.
+      if (sharedWorker === worker) workerProven = true;
       const response = event.data;
       // A progress heartbeat is a sign of life, not a result: reset the silence
       // window and keep waiting for done/error. The freeze latch is cleared
