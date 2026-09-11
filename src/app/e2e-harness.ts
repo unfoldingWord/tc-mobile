@@ -23,7 +23,7 @@
  * a fake-microphone UI flow would be far more brittle than this.
  */
 
-import { withEncoder } from "@/hooks/mp3-codec";
+import { withEncoder, warmEncoder } from "@/hooks/mp3-codec";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -128,6 +128,68 @@ async function encodeAndDecode(
   };
 }
 
+/**
+ * Force the abort-driven REBUILD of the encoder worker, then encode through it
+ * (#192).
+ *
+ * This is the path #182 left exposed and #192 closes. A warm worker survives a
+ * service-worker update because it holds its compiled script; an abort
+ * `terminate()`s it — the only way to stop an in-flight encode — and the
+ * rebuild that follows is what used to go back to the hashed chunk URL the
+ * update had purged.
+ *
+ * The spec BLOCKS that chunk URL before calling this, which is the purge. So
+ * the rebuilt worker can only have come from the blob snapshot taken at warmup,
+ * and a returned MP3 is that blob worker actually running — the one claim the
+ * Node tests cannot make, because they stub `fetch`, `Blob` and
+ * `createObjectURL`.
+ *
+ * The abort must land while an encode is genuinely IN FLIGHT: an abort before
+ * `withEncoder` reaches the codec rejects at the lane and never terminates
+ * anything, which would leave the warm worker alive and this assertion green
+ * for the wrong reason. Hence the large frame count and the yield below — and
+ * hence the spec also asserts the rebuild really happened.
+ */
+async function encodeAfterAbortRebuild(frameCount: number): Promise<{
+  aborted: boolean;
+  workersBuiltAfterPurge: number;
+  mp3Length: number;
+}> {
+  // A first encode proves the warm worker is up and the lane is clear, so the
+  // abort below cannot be rejected while merely waiting for a previous job.
+  await withEncoder(undefined, (codec) =>
+    codec.encodeMp3(syntheticPcm(MP3_GRANULE))
+  );
+
+  const controller = new AbortController();
+  const inFlight = withEncoder(controller.signal, (codec) =>
+    codec.encodeMp3(syntheticPcm(frameCount))
+  );
+  // Yield so `withEncoder` reaches `encodeMp3` and the PCM is posted; only then
+  // does the abort go through `onAbort` and terminate the worker.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort();
+  let aborted = false;
+  try {
+    await inFlight;
+  } catch {
+    aborted = true;
+  }
+
+  // The abort re-warms immediately; count what the page fetched for it. With
+  // the chunk route blocked, a worker built from the chunk URL cannot start, so
+  // a successful encode here is the blob's.
+  const workersBuiltAfterPurge = performance
+    .getEntriesByType("resource")
+    .filter((entry) => /assets\/mp3\.worker-.*\.js$/.test(entry.name)).length;
+
+  warmEncoder();
+  const mp3 = await withEncoder(undefined, (codec) =>
+    codec.encodeMp3(syntheticPcm(frameCount))
+  );
+  return { aborted, workersBuiltAfterPurge, mp3Length: mp3.length };
+}
+
 /** Open the app's real IndexedDB connection through its real singleton. */
 async function openDb(): Promise<{ name: string; version: number }> {
   const db = await getDb();
@@ -149,6 +211,7 @@ declare global {
   interface Window {
     __e2e?: {
       encodeAndDecode: typeof encodeAndDecode;
+      encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -157,4 +220,9 @@ declare global {
   }
 }
 
-window.__e2e = { encodeAndDecode, openDb, watchVersionChange };
+window.__e2e = {
+  encodeAndDecode,
+  encodeAfterAbortRebuild,
+  openDb,
+  watchVersionChange,
+};

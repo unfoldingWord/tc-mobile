@@ -257,10 +257,10 @@ Two mechanics are load-bearing and were verified against `dist/`, not assumed:
 `{ type: "module" }` is correct for the blob: Vite emits the chunk as a
 zero-import IIFE, which is valid module source.
 
-**A snapshot that cannot run must not brick the encoder.** The blob path is
-browser-only-verifiable — Node has no `Worker`, no real blob worker, and CI
-cannot exercise the `?worker&url` → `blob:` round trip — so it ships with a
-self-healing guard rather than on faith. A snapshot-built worker that errors
+**A snapshot that cannot run must not brick the encoder.** Node has no `Worker`
+and no real blob worker, and the browsers that matter here — iOS Safari, the
+Android WebView — are not the one CI runs. So the path ships with a self-healing
+guard rather than on faith. A snapshot-built worker that errors
 **without ever having answered a message** is read as a bad snapshot (wrong
 format, truncated fetch, a CSP that forbids blob workers): the snapshot is
 revoked and discarded, and the next rebuild falls back to the chunk URL, so the
@@ -279,14 +279,27 @@ taken is not a condition the translator or the sweep can act on.
 Unit-tested in Node (`tests/mp3-codec.test.ts`) by stubbing `fetch`, `Blob` and
 the object-URL pair. What those tests pin is the **decision** — which URL each
 worker is built from, when the snapshot is taken, and when a snapshot is thrown
-away — not that a real blob worker runs the real chunk. Mutation-proven: building
-always from the chunk URL kills four tests; dropping the production gate, the
-once-only fetch guard, the discard-on-unproven-error guard, or the `proven`
-condition each kills exactly the test named for it.
+away — not that a real blob worker runs the real chunk; that is the Chromium
+smoke's job, below. Mutation-proven: building always from the chunk URL kills
+four tests; dropping the production gate, the once-only fetch guard, the
+discard-on-unproven-error guard, or the `proven` condition each kills exactly
+the test named for it.
 
-**Still not device-verified**, and this is the claim to keep honest: the blob
-worker has never been constructed in a browser here, and the purge → cache-miss
-chain it defends against still needs a device with **two deployed builds** to
-observe. The fallback above is what makes shipping it before that evidence
-defensible; it is not a substitute for the evidence. Folded into the on-device
-pass (#245 / #263).
+**Verified in a real browser**, which #192 did not expect to be possible — the
+issue was written before the headless-Chromium smoke (#251) landed.
+`e2e/browser-boundary-smoke.spec.ts` loads the app, waits for BOTH chunk
+requests (the warm worker's script load and the snapshot's own `fetch`), then
+fails every later request for the hashed chunk — the purge, simulated the only
+way a test can — aborts an in-flight encode to force the rebuild, and encodes.
+A real MP3 comes back from a worker built entirely from the blob, and the
+rebuild issued no new chunk request. The gate fails in the other state, which
+is what makes it a gate (#270): with the snapshot ignored and the rebuild back
+on the chunk URL, the spec fails with `The MP3 encoder worker failed to start`
+— the bug's own symptom.
+
+**Still not device-verified, and the distinction matters.** What Chromium now
+proves is that a blob-built worker runs the real chunk and that a rebuild does
+not touch the network. What it does NOT prove is the trigger: the real
+`cleanupOutdatedCaches` purge chain still needs a device with **two deployed
+builds** to observe, and iOS Safari and Android WebView have run none of this.
+Folded into the on-device pass (#245 / #263).
