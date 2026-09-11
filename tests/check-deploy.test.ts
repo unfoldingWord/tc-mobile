@@ -329,8 +329,10 @@ describe("resolveExpectedVersion", () => {
       "https://tc-mobile.unfoldingword.workers.dev",
       { runGit, warn: (m) => warnings.push(m) }
     );
-    // The promoted branch says 0.2.0; the local checkout still says 0.1.12.
-    expect(LOCAL_VERSION).toBe("0.1.12");
+    // The promoted branch says 0.2.0, distinct from this checkout's version
+    // (whatever it currently is) — pinning the checkout's own version here
+    // would go stale at the next release bump, exactly what this file's
+    // LOCAL_VERSION comment warns against.
     expect(version).toBe("0.2.0");
     expect(version).not.toBe(LOCAL_VERSION);
     expect(calls).toEqual(["git show origin/main:package.json"]);
