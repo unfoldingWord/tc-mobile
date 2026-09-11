@@ -11,6 +11,73 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
+
+**A build day, both PRs authored + merged to `develop`.** `staging` still v0.1.13,
+`main` still `3464a30`. **Merged:** #295, #296, and #293 (the stale EOD-2026-09-10
+doc, docs-on-green). **Filed:** #294 (safe-area, closed via #295).
+
+### #295 — safe-area overlays, recorder Back cleared the status-bar clock (#294) → merged
+
+Found live in the **iOS Simulator** (Seth): the recorder **Back** control (and the ≡
+menu) sat under the status-bar clock and couldn't be tapped. Root cause: the
+`fixed; inset:0` scrims (`.recorder-scrim`, `.menu-scrim`) escape the body's
+`env(safe-area-inset-*)` padding. Fix: re-apply the insets on `.recorder-sheet`
+(top/bottom) and `.menu-panel` (all four — it docks flush-right). **Dual review:**
+George R1 P2 (menu drawer needs the right inset in landscape) → fixed; **Frank R2 P2
+(recorder-sheet also needs horizontal insets) REFUTED** — the sheet is `mx-auto
+max-w-md` (448px), centred clear of the notch at every landscape phone width; George
+corroborated twice. Seth's call: refute, not concede (no dead CSS). CI green, merged.
+On-device confirm folds into the Monday #263 pass.
+
+### #296 — iOS TestFlight CI pipeline (#262) → merged after 7 review rounds
+
+Seth chose the automated CI route over a manual archive. **`.github/workflows/ios-testflight.yml`**
+(manual `workflow_dispatch`, macos-14) builds `dist/` → `cap sync ios` → archives the
+`App` scheme → `fastlane ios beta` uploads to TestFlight, **API-key signed** (no
+`match`, no committed cert). Committed to make CI buildable: a **shared `App.xcscheme`**
+(Xcode kept it in gitignored `xcuserdata`), `Gemfile.lock` (fastlane 2.239.0, `ruby`+darwin
+platforms), export-compliance flag, an **ubuntu preflight** (ref + all four secrets gated
+before the billed macOS runner), Dependabot bundler entry, and a reconciled
+`docs/native/README.md` §4a runbook.
+
+**Seven dual-review rounds** (Frank + George), every one a real, distinct defect of the
+class _"CI/macOS behaviour that can't run from the Linux box"_: `sort -V`/`base64 --decode`
+GNU-isms, unlocked Gemfile, build-number collisions (→ unix timestamp), gym's two-phase
+export signing (`export_xcargs` + `Apple Distribution`), the codesign keychain (`setup_ci`),
+bundler platform, plus a full sweep of the deploy/version **doc invariants** the change made
+stale. Past the round cap → **escalated to Seth (DRI), who authorised landing at the polish
+tail** (no P1 for the last two rounds); the irreducible residual is that **the first real
+dispatch is the first verification of signing**. Consolidated triage posted to #296.
+_(Ruby isn't in the container but `apt-get install -y ruby bundler` works — used to generate
+the lock with `bundle lock --add-platform arm64-darwin-23 x86_64-darwin-23 ruby`.)_
+
+### PM Status artifact refreshed + gap-audited
+
+Updated the org-shared **tC Mobile — PM Status** artifact to 2026-09-11 (v9), then
+**reconciled it against commits/closures/open-PRs/comments** (v10): credited the 8–9 Sep
+recorder/audio reliability wave (#165/#184/#168/#203/#106/#76), restored the OBS-offline +
+durable-storage props with the #258 in-session-only asterisk, and scoped #263 to a
+**foreground** demo. Comment scan confirmed no product-owner decision was resolved off-page.
+
+### Blockers / needs a human
+
+- **Seth (Mac, Monday 2026-09-14):** the WKWebView **mic go/no-go** (#263, foreground bar);
+  Android `./gradlew assembleDebug` APK; and now the **TestFlight first dispatch** — blocked
+  on wiring the App Store Connect account (API key + app record + internal tester group +
+  4 GitHub secrets, per `docs/native/README.md` §4a).
+- **Benjamin:** #272 Android Share Book share-shape nod (zip → multi-file audio).
+- **Contributors:** #279 (Jesse, stall-timer race / #175 split), #289 (Jesse, failure log
+  R3), #215 (Ben, red `resolveExpectedVersion` test) — awaiting author pushes.
+
+### Next steps
+
+1. **Seth's Monday trio** on the Mac: #263 mic go/no-go, Android APK, TestFlight first dispatch.
+2. #292 (2nd-take live waveform, #283) on-device confirm, then it can promote.
+3. Re-review + merge-on-clean the contributor PRs (#279/#289/#215) as authors push.
+
+---
+
 ## 2026-09-10 — review day: #279/#289/#215 rounds, #283 fixed (#292), dependabot/#242 housekeeping
 
 **A review-and-one-fix day. No merges (nothing came back clean), no promotions** —
