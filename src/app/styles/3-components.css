@@ -311,10 +311,16 @@
     border-left: 1px solid var(--s-edge);
     /* A full-height fixed overlay (`.menu-scrim` is `position: fixed; inset: 0`)
        escapes the body's `env(safe-area-inset-*)` padding, so this drawer paints
-       under the status-bar clock and over the home indicator. Re-add the top and
-       bottom insets here or the first menu item and Close sit beneath the clock. */
-    padding: calc(var(--p-space-5) + env(safe-area-inset-top)) var(--p-space-4)
-      calc(var(--p-space-5) + env(safe-area-inset-bottom));
+       under the status-bar clock and over the home indicator. Restore all four
+       insets — the same four-sided contract `body` carries — not just top/bottom:
+       the drawer docks flush right (`.menu-scrim` justify-flex-end) with Close in
+       the top-right, so in landscape with the notch on the right the right inset
+       (~47-59px) would otherwise bury the Close target. Portrait left/right insets
+       are 0, so this is a no-op on the reported clock overlap. */
+    padding: calc(var(--p-space-5) + env(safe-area-inset-top))
+      calc(var(--p-space-4) + env(safe-area-inset-right))
+      calc(var(--p-space-5) + env(safe-area-inset-bottom))
+      calc(var(--p-space-4) + env(safe-area-inset-left));
     display: flex;
     flex-direction: column;
     gap: var(--c-gap-items);
