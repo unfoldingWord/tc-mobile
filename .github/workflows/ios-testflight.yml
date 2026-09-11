@@ -67,13 +67,18 @@ jobs:
       - name: Write the App Store Connect API key
         env:
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        # Decode with Ruby (preinstalled on the macOS runner), not `base64`: the
+        # decode flag differs by platform (`--decode`/`-d` is GNU, `-D` is the
+        # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
+        # wrapped secret. Reading the secret from ENV keeps it out of the process
+        # arguments and the shell history.
         run: |
           set -euo pipefail
           if [ -z "${ASC_KEY_P8_BASE64:-}" ]; then
             echo "::error::ASC_KEY_P8_BASE64 secret is empty"
             exit 1
           fi
-          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > fastlane/AuthKey.p8
+          ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
 
       - name: Install fastlane
         # `--frozen` makes the run fail if Gemfile.lock does not satisfy the
@@ -86,7 +91,8 @@ jobs:
           bundle _2.3.15_ install --frozen --jobs 4 --retry 3
 
       - name: Archive and upload to TestFlight
-        run: bundle exec fastlane ios beta
+        # Same pinned bundler as the install step, so both invocations agree.
+        run: bundle _2.3.15_ exec fastlane ios beta
 
       - name: Remove the API key
         # Runner state is ephemeral, but do not leave the decoded key on disk
