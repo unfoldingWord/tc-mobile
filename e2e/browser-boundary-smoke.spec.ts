@@ -75,9 +75,11 @@ declare global {
       }>;
       encodeAfterAbortRebuild: (frameCount: number) => Promise<{
         aborted: boolean;
-        workersBuiltAfterPurge: number;
+        chunkRequestsBefore: number;
+        chunkRequestsAfter: number;
         mp3Length: number;
       }>;
+      workerSnapshotFetched: () => boolean;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
       versionChangeFired?: boolean;
@@ -286,45 +288,39 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
   test("an abort-driven rebuild still encodes after the chunk URL is unreachable", async ({
     page,
   }) => {
-    // The harness build is served over HTTP with no service worker purging
-    // anything, so the purge is simulated the only way a test can: once the
-    // snapshot has been taken, every later request for the hashed chunk is
-    // failed, exactly as a `cleanupOutdatedCaches` eviction leaves it for an
-    // offline page. Nothing else about the page changes.
-    const chunkRequests: string[] = [];
-    page.on("request", (request) => {
-      if (/assets\/mp3\.worker-.*\.js$/.test(request.url()))
-        chunkRequests.push(request.url());
-    });
-
     await page.goto("/");
     await waitForHarness(page);
 
-    // TWO requests for the chunk mean both things happened: the warm worker
-    // loaded its script, and `captureWorkerSnapshot`'s `fetch` read the same
-    // chunk to build the blob. Without the second there is no snapshot, and
-    // the rest of this test would prove nothing.
+    // Wait for `captureWorkerSnapshot`'s OWN fetch of the chunk to land. Purging
+    // before the snapshot exists would leave nothing to rebuild from, and the
+    // assertion below would fail for a reason that has nothing to do with the
+    // fix. Asked of the page's resource timeline rather than Playwright's
+    // request events, so the whole test reads one clock.
     await expect
-      .poll(() => chunkRequests.length, { timeout: 10_000 })
-      .toBeGreaterThanOrEqual(2);
+      .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotFetched()), {
+        timeout: 10_000,
+      })
+      .toBe(true);
 
-    // The purge.
+    // The purge. The harness build is served over HTTP with no service worker
+    // evicting anything, so it is simulated the only way a test can: every
+    // later request for the hashed chunk fails, exactly as a
+    // `cleanupOutdatedCaches` eviction leaves it for an offline page.
     await page.route(/assets\/mp3\.worker-.*\.js$/, (route) => route.abort());
 
     const result = await page.evaluate(
       async () => await window.__e2e!.encodeAfterAbortRebuild(44_100)
     );
 
-    // The abort really terminated an in-flight encode — otherwise the warm
-    // worker was never dropped, no rebuild happened, and the MP3 below would
-    // be the ORIGINAL worker's, proving nothing about the snapshot (#270: a
-    // gate has to be able to fail).
+    // The abort really terminated an in-flight encode. Without this the warm
+    // worker was never dropped, no rebuild happened, and the MP3 below would be
+    // the ORIGINAL worker's — green for the wrong reason (#270: a gate has to be
+    // able to fail).
     expect(result.aborted).toBe(true);
-    // And the rebuild fetched nothing: the count is unchanged from the two
-    // requests before the purge. A worker built from the chunk URL would have
-    // issued a third request — and it would have been aborted by the route.
-    expect(result.workersBuiltAfterPurge).toBe(chunkRequests.length);
-    // A real MP3 came back from a worker built entirely from the blob.
+    // The rebuild fetched nothing. A worker built from the chunk URL would have
+    // issued another request — and the route would have failed it.
+    expect(result.chunkRequestsAfter).toBe(result.chunkRequestsBefore);
+    // And a real MP3 came back, so the blob worker genuinely ran the encoder.
     expect(result.mp3Length).toBeGreaterThan(0);
   });
 });
