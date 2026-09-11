@@ -152,7 +152,8 @@ async function encodeAndDecode(
  */
 async function encodeAfterAbortRebuild(frameCount: number): Promise<{
   aborted: boolean;
-  workersBuiltAfterPurge: number;
+  chunkRequestsBefore: number;
+  chunkRequestsAfter: number;
   mp3Length: number;
 }> {
   // A first encode proves the warm worker is up and the lane is clear, so the
@@ -160,6 +161,8 @@ async function encodeAfterAbortRebuild(frameCount: number): Promise<{
   await withEncoder(undefined, (codec) =>
     codec.encodeMp3(syntheticPcm(MP3_GRANULE))
   );
+
+  const chunkRequestsBefore = chunkRequestCount();
 
   const controller = new AbortController();
   const inFlight = withEncoder(controller.signal, (codec) =>
@@ -176,18 +179,50 @@ async function encodeAfterAbortRebuild(frameCount: number): Promise<{
     aborted = true;
   }
 
-  // The abort re-warms immediately; count what the page fetched for it. With
-  // the chunk route blocked, a worker built from the chunk URL cannot start, so
-  // a successful encode here is the blob's.
-  const workersBuiltAfterPurge = performance
-    .getEntriesByType("resource")
-    .filter((entry) => /assets\/mp3\.worker-.*\.js$/.test(entry.name)).length;
-
+  // The abort re-warms; this encode runs on whatever that rebuild produced.
   warmEncoder();
   const mp3 = await withEncoder(undefined, (codec) =>
     codec.encodeMp3(syntheticPcm(frameCount))
   );
-  return { aborted, workersBuiltAfterPurge, mp3Length: mp3.length };
+  return {
+    aborted,
+    chunkRequestsBefore,
+    chunkRequestsAfter: chunkRequestCount(),
+    mp3Length: mp3.length,
+  };
+}
+
+/**
+ * How many times this page has requested the hashed worker chunk, counted from
+ * the page's OWN resource timeline.
+ *
+ * Both numbers the caller compares come from here, so the comparison never
+ * straddles two measurement systems: Playwright's request events and this
+ * timeline agree today, but a worker script load shows up here with
+ * `initiatorType: "other"`, which is a Chromium detail and not a contract.
+ */
+function chunkRequestCount(): number {
+  return performance
+    .getEntriesByType("resource")
+    .filter((entry) => /assets\/mp3\.worker-.*\.js$/.test(entry.name)).length;
+}
+
+/**
+ * Has `captureWorkerSnapshot`'s own `fetch` of the chunk completed?
+ *
+ * The spec waits on this before simulating the purge: blocking the chunk before
+ * the snapshot exists would leave nothing to rebuild from and the assertion
+ * would fail for the wrong reason. The `fetch` initiator is what distinguishes
+ * it from the warm worker's script load.
+ */
+function workerSnapshotFetched(): boolean {
+  return performance
+    .getEntriesByType("resource")
+    .some(
+      (entry) =>
+        /assets\/mp3\.worker-.*\.js$/.test(entry.name) &&
+        (entry as PerformanceResourceTiming).initiatorType === "fetch"
+    );
 }
 
 /** Open the app's real IndexedDB connection through its real singleton. */
@@ -212,6 +247,7 @@ declare global {
     __e2e?: {
       encodeAndDecode: typeof encodeAndDecode;
       encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
+      workerSnapshotFetched: typeof workerSnapshotFetched;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -223,6 +259,7 @@ declare global {
 window.__e2e = {
   encodeAndDecode,
   encodeAfterAbortRebuild,
+  workerSnapshotFetched,
   openDb,
   watchVersionChange,
 };
