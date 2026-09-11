@@ -50,6 +50,26 @@ jobs:
       - name: Sync dist/ into the iOS project
         run: npx cap sync ios
 
+      # This is the first path that puts dist/ on testers' phones, and
+      # workflow_dispatch can build a ref that never passed ci.yml's build job.
+      # Re-assert its cheap ship-blockers here — a missing service worker or
+      # manifest, or a leaked e2e harness — plus that cap sync actually copied
+      # the bundle (ios/App/App/public is gitignored; a sync that exits 0 without
+      # it would archive a blank WebView).
+      - name: Guard the synced bundle
+        run: |
+          set -euo pipefail
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          for tok in "e2e-harness" "__e2e"; do
+            if grep -rq "$tok" dist/; then
+              echo "::error::e2e harness ($tok) leaked into dist/"
+              exit 1
+            fi
+          done
+          test -f ios/App/App/public/index.html || { echo "::error::cap sync did not copy the web bundle into ios/"; exit 1; }
+          echo "Bundle built, clean, and synced into ios/."
+
       # Use the runner image's default Xcode (a recent stable, symlinked at
       # /Applications/Xcode.app). Selecting a version dynamically is avoided on
       # purpose: BSD `sort` on the macOS runner has no `-V`, and a hardcoded

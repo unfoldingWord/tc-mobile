@@ -25,7 +25,6 @@ platform :ios do
     key_id = ENV.fetch("ASC_KEY_ID")
     issuer_id = ENV.fetch("ASC_ISSUER_ID")
     team_id = ENV.fetch("APPLE_TEAM_ID")
-    app_identifier = ENV.fetch("APP_IDENTIFIER", "org.unfoldingword.tcmobile")
     # The .p8 is decoded from a secret into this path by the workflow. An
     # absolute path is required by `xcodebuild -authenticationKeyPath`.
     key_path = File.expand_path("AuthKey.p8", __dir__)
@@ -37,22 +36,35 @@ platform :ios do
       in_house: false,
     )
 
-    # The build number must be unique and strictly increasing per marketing
-    # version or App Store Connect rejects the upload as a duplicate. Derive it
-    # from what is already on TestFlight (one above the latest), NOT from
-    # GITHUB_RUN_NUMBER: the run number starts at 1 — colliding with the manual
-    # build 1 the runbook recommends uploading first — and is unchanged on a
-    # rerun, so a rerun after a successful upload would collide too. Reading the
-    # live latest sidesteps both, and stays correct whether the previous build
-    # came from CI or a manual Xcode upload. Requires the app record to exist
-    # (a documented prerequisite); with no builds yet it starts from 1. The
-    # marketing version stays MARKETING_VERSION from the project — bump it in the
-    # pbxproj when the user-facing version changes (docs/native §6).
-    build_number = latest_testflight_build_number(
-      api_key: api_key,
-      app_identifier: app_identifier,
-      initial_build_number: 0,
-    ) + 1
+    # A unix timestamp for the build number: unique and strictly increasing on
+    # every run with no round-trip to App Store Connect. Reading the latest
+    # TestFlight build and adding one would race `skip_waiting_for_build_processing`
+    # below — a rerun fired before Apple has indexed the previous upload reads the
+    # stale latest and collides (a duplicate build App Store Connect rejects). A
+    # timestamp also clears the manual build "1" the runbook uploads first and
+    # needs no app record to pre-exist. CFBundleVersion takes a single integer up
+    # to 2^32; a 10-digit epoch is well under that. The marketing version stays
+    # MARKETING_VERSION from the project — bump it in the pbxproj when the
+    # user-facing version changes (docs/native §6).
+    build_number = Time.now.to_i.to_s
+
+    # Signing / auth flags. gym runs xcodebuild TWICE — archive, then export
+    # (`xcodebuild -exportArchive`) — feeding `xcargs` to the first and
+    # `export_xcargs` to the second. BOTH need the API-key authentication or the
+    # export phase signs against a runner keychain with no logged-in account and
+    # fails to package the IPA. The project inherits `CODE_SIGN_IDENTITY = "iPhone
+    # Developer"` (project-level, pbxproj) and sets no team, so override the
+    # identity to Apple Distribution for the App Store export and inject the team
+    # the project omits. The API key lets these create/download the distribution
+    # certificate and profile on the fly (automatic signing).
+    signing_xcargs = [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath", key_path,
+      "-authenticationKeyID", key_id,
+      "-authenticationKeyIssuerID", issuer_id,
+      "DEVELOPMENT_TEAM=#{team_id}",
+      'CODE_SIGN_IDENTITY="Apple Distribution"',
+    ].join(" ")
 
     build_app(
       project: "ios/App/App.xcodeproj",
@@ -62,18 +74,10 @@ platform :ios do
       export_method: "app-store",
       output_directory: "build",
       output_name: "App.ipa",
-      # Automatic signing in CI: the API key lets xcodebuild create/download the
-      # distribution certificate and provisioning profile on the fly. The
-      # project's DEVELOPMENT_TEAM is empty (it is a personal choice on a Mac),
-      # so it is supplied here rather than committed.
-      xcargs: [
-        "-allowProvisioningUpdates",
-        "-authenticationKeyPath", key_path,
-        "-authenticationKeyID", key_id,
-        "-authenticationKeyIssuerID", issuer_id,
-        "DEVELOPMENT_TEAM=#{team_id}",
-        "CURRENT_PROJECT_VERSION=#{build_number}",
-      ].join(" "),
+      # CURRENT_PROJECT_VERSION is baked in at archive time, so it rides only on
+      # the archive xcargs; the shared signing flags go to both phases.
+      xcargs: "#{signing_xcargs} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_xcargs: signing_xcargs,
       export_options: {
         method: "app-store",
         signingStyle: "automatic",

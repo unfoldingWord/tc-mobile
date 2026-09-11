@@ -325,10 +325,12 @@ source of truth later, a small `cap sync`-time script can stamp them from
 
 **They do not collide.** Cloudflare Workers Builds deploys the PWA by running
 `wrangler deploy` (serving `./dist`) on pushes to `develop`/`staging`/`main`
-(AGENTS.md → _Cloudflare Workers Builds owns deployment_). Capacitor produces
-**local** native artifacts on a Mac and deploys nothing — there is no native
-build in CI and no new deploy workflow. `cap sync` only copies `dist/` into the
-native projects locally.
+(AGENTS.md → _Cloudflare Workers Builds owns deployment_). The native TestFlight
+build ([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step)) runs on a macOS
+runner, but **only on manual dispatch** (`ios-testflight.yml`, `workflow_dispatch`)
+— never on push/PR — so it is not a Workers Builds trigger and produces no web
+deploy. `cap sync` only copies `dist/` into the native projects; the archive it
+uploads goes to App Store Connect, not Cloudflare.
 
 Two operational notes:
 

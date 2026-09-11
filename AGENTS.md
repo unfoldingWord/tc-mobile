@@ -279,10 +279,14 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 
 ### Cloudflare Workers Builds owns deployment
 
-There are no deploy workflows in `.github/`. Deleting them removed a real
-collision: Cloudflare and Actions would otherwise both deploy on the same
-triggers, to different targets — two preview deploys per PR and two
-deployments per merge.
+No Actions workflow deploys the **PWA**. The four web-deploy workflows were
+deleted to remove a real collision: Cloudflare and Actions would otherwise both
+deploy on the same triggers, to different targets — two preview deploys per PR
+and two deployments per merge. The only deploy workflow in `.github/` is the
+**manual** iOS TestFlight lane (`ios-testflight.yml`) — a native build to App
+Store Connect, `workflow_dispatch`-only, so it never fires on push/PR and is not
+a Workers Builds trigger (#262, `docs/native/README.md` §4a). Do not add a
+push/PR deploy job.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -300,8 +304,10 @@ documentation commit burns a build.
 
 Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The
 API token lives in Cloudflare's build settings, **not** in a GitHub secret —
-Actions no longer deploys anything, so it needs no Cloudflare credentials. Only
-`ci.yml` remains there.
+Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
+TestFlight lane authenticates to App Store Connect with its own secrets, not
+Cloudflare's). Besides `ci.yml`, `.github/` holds only the manual
+`ios-testflight.yml`.
 
 ## Device testing — the HTTPS caveat
 
