@@ -11,6 +11,81 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-10 — review day: #279/#289/#215 rounds, #283 fixed (#292), dependabot/#242 housekeeping
+
+**A review-and-one-fix day. No merges (nothing came back clean), no promotions** —
+`staging` still v0.1.13, `main` still `3464a30`. All three in-flight PRs re-reviewed
+after author fixes and handed back with fresh blockers. **Filed:** #290, #291.
+
+### #283 — recorder 2nd-take live waveform — FIXED → PR #292 (draft, → develop)
+
+Root cause: the record-stage branch ANDed `!hasAudio`, so any append (2nd take) fell
+to `Waveform`'s static peaks and never grew live (found on Android v0.1.13). Lifted the
+decision into a pure Node-testable seam (`src/components/recorder-stage.ts`,
+`liveScopeShown`) and made an append render exactly like a first take. **Dual review
+clean rounds 1–2**: George R1 caught a real deep-tree P2 the first cut introduced (a
+`LiveScope`→`Waveform` swap on an append's pause/close flashed blank then showed the
+pre-take clip) — fixed @ `01d805b` by dropping the `hasAudio` gate entirely; both
+mutation-proven. `verify` + CI green. **Draft — browser-only render, device-unverified;
+gated on the on-device pass (#245/#263).**
+
+### #279 (Jesse, #166 encoder deadline + #175 playback memory) — round 3, NOT clean
+
+R2 (Frank P2 `int16ToFloatInto` un-validated `start` → NaN; George APPROVE, 3×P3 → filed
+**#290** sweep-retry, **#291** terminate-throw). Jesse fixed the start-guard (`0600e3a`).
+**R3: George P2 (blocking)** — a settled encode's stall timer can `terminate()` the shared
+worker a _later_ encode is using (Share Book / Finished sweep → zip dropped, whole-book
+re-encode; verified: `release()` has no `settled` flag, `progress` never resets the timer).
+Frank P2 = the #290 sweep-coalescing (severity contested; George judged it compatible).
+**Siblings trend flagged** — 3rd straight round of new race findings in the #166
+stall lifecycle while the #175 half stays clean; recommended splitting #279 (land #175,
+rework the stall state machine in its own PR — the #208→#220 precedent). Round 3 of 4.
+
+### #289 (Jesse, #205 durable failure log, T1) — rounds 1→2, NOT clean
+
+R1: Frank 3×P2, George 5×P2 + 2×P3 — convergences on clear-running-off-the-write-lane and
+a swallowed/mis-commented failed-clear, plus a T1 migration `createObjectStore`-after-await.
+Jesse's fix (`23fb0cd`) **closed the round-1 data-safety holes** (v6 create before the
+yields, one-transaction prune, clear on the lane). **R2: 3 new P2s** — share text-fallback
+(absent `canShare` arms files, never `{text}`); `useFailureCount` never retries after a
+recovered blocked-open (marker stuck at 0, Send never mounts); crash-screen Restart reloads
+without awaiting the log write and unmounts the only Send UI. Running George twice surfaced
+a superset (grok non-determinism — the extra run earned the crash-Restart P2). Round 2 of 4.
+
+### #215 (Ben, version.json + rollback, #176) — round 4 = cap, then R5 held on red CI
+
+R4: Frank P2 (fail-open — `parseArgs` silently drops unknown `--flags`); **George P2
+(blocking)** — expected _version_ still read from local `package.json` though R3 moved the
+_SHA_ to the remote ref, so `check:deploy:prod` would false-FAIL the first v0.2.0
+staging→main promotion (the gate failing its own gate); George P2 denylist regex misses the
+`?t=` form; P3. Round 4 = cap, shape = siblings-but-finite → **R5 authorized (DRI)**. Ben
+pushed R5 (`b202f6c`) but **Code Quality is red** (`resolveExpectedVersion` test:
+`expected '0.1.13' to be '0.1.12'`) → R5 held, pointer posted for Ben.
+
+### Housekeeping
+
+Closed **#227/#229/#228** (eslint/@eslint/js→10, vitest→5) — superseded by **#237**
+(deliberate eslint-10/vitest-4 dev-tooling pass, part of #233). Left **#226**
+(`@vitejs/plugin-react`, not in #237's scope). Closed **#242** (my stale, now-conflicting
+EOD-2026-09-04 doc). Open PR count 28 → 24.
+
+### Blockers / back to authors
+
+- **Jesse:** #279 R4 (the stall-timer race; the #175/#166 split call), #289 R3 (3 P2s).
+- **Ben:** #215 — fix the red `resolveExpectedVersion` test, then R5.
+- **Seth:** the Monday (2026-09-14) iPhone **WKWebView mic go/no-go** — device connection being
+  set up; a Simulator smoke can run in parallel (no Apple account needed) but can't test
+  background/lock/interruption. #292's live-append check folds into the same device pass.
+
+### Next steps
+
+1. Re-review + **merge on clean** (Seth authorized) as Jesse/Ben push; one at a time, rebase-check between.
+2. #279: the split decision (approaching the round cap).
+3. #292 on-device confirm (iPhone WKWebView + Android), then promote.
+4. The Monday trio on Seth's Mac: confirm the unfoldingWord Apple account, `./gradlew assembleDebug` APK, the WKWebView record→playback mic test.
+
+---
+
 ## 2026-09-09 — #134 to green (rounds 4–6), v0.1.13 promoted & verified, first Android pass on staging, Monday-Capacitor assessment
 
 **Branches:** merged to **`develop`**: #254 (gate-chart docs), #232 (drift guard), #268 (#134 recorder fix), #287 (native Monday-prep docs), plus #281 (v0.1.13 bump). **v0.1.13 promoted to `staging` (#282) and verified live.** `main` still `3464a30`. **Closed:** #134 (via #268), #207 (dup of #279). **Filed:** #283–#286.
