@@ -182,6 +182,31 @@ export function useRecorderSegment(segmentId: SegmentId) {
     setAttempt((n) => n + 1);
   }, []);
 
+  // Imperatively re-read the segment and RETURN the fresh view. Used after an
+  // in-sheet take commit (#134): the recorder commits a paused take, then awaits
+  // this so `view.samples` — and, through it, the editor's base — reflect the
+  // just-saved audio, and only then switches to edit mode. Awaitable on purpose,
+  // separate from the mount/`retry` effect: the caller must sequence the mode
+  // switch AFTER the reload without a set-state-in-effect, and with no window
+  // where edit mode is live over the pre-take buffer. No `setRetrying` or
+  // `resumeAudioContext`: the context is already live from the recording that
+  // just finished, and this is a normal reload, not a recovery from a failed open.
+  const reload = useCallback(async (): Promise<RecorderSegmentView | null> => {
+    try {
+      const next = await loadRecorderSegmentView(segmentId);
+      setView(next);
+      setError(null);
+      return next;
+    } catch (cause) {
+      // Same failure channel as the load effect: the message drives the recovery
+      // panel, the cause reaches the log sink (not translator-facing).
+      console.error("Could not reload the segment after a commit", cause);
+      setView(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
+    }
+  }, [segmentId]);
+
   const setFinished = useCallback(
     async (finished: boolean): Promise<void> => {
       // The toggle is disabled on an empty segment and the store rejects it
@@ -195,5 +220,5 @@ export function useRecorderSegment(segmentId: SegmentId) {
     [segmentId]
   );
 
-  return { view, error, retrying, retry, setFinished };
+  return { view, error, retrying, retry, reload, setFinished };
 }

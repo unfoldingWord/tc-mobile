@@ -3,8 +3,10 @@
  *
  * The catalogue is ~230 KB of JSON. It is loaded via dynamic `import()` so it
  * does not sit in the entry chunk: a translator who opens their own recordings
- * should not pay for story metadata they are not using. The service worker
- * still precaches the chunk, so it is available offline on first run.
+ * should not pay for story metadata they are not using. That chunk is
+ * precached only once a production module imports this file — today none
+ * does, so Vite tree-shakes the dynamic `import()` out of the build and the
+ * chunk is precached nowhere (ADR 0006, 2026-09-04 amendment).
  */
 
 import type { ObsCatalog, ObsStory } from "@/types/obs";
