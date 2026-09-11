@@ -50,16 +50,16 @@ jobs:
       - name: Sync dist/ into the iOS project
         run: npx cap sync ios
 
-      # Select the newest Xcode installed on the image rather than pin an action
-      # or a version that drifts as the runner image updates. Every other
-      # workflow here uses only actions/* pinned by SHA; a one-line shell select
-      # keeps that "no third-party action" property (see ci.yml).
-      - name: Select the latest Xcode
+      # Use the runner image's default Xcode (a recent stable, symlinked at
+      # /Applications/Xcode.app). Selecting a version dynamically is avoided on
+      # purpose: BSD `sort` on the macOS runner has no `-V`, and a hardcoded
+      # `Xcode_XX.app` path drifts out from under us as the image updates. No
+      # third-party action is used, keeping the "actions/* pinned by SHA only"
+      # property this repo's workflows hold (see ci.yml).
+      - name: Select Xcode
         run: |
           set -euo pipefail
-          latest="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
-          echo "Using $latest"
-          sudo xcode-select -s "$latest/Contents/Developer"
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
       # The .p8 never touches the repo. It is decoded from a secret into the
@@ -76,10 +76,14 @@ jobs:
           printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > fastlane/AuthKey.p8
 
       - name: Install fastlane
+        # `--frozen` makes the run fail if Gemfile.lock does not satisfy the
+        # Gemfile, rather than silently re-resolving — so every run installs the
+        # exact gem set the committed lock pins. Bundler is pinned to the lock's
+        # `BUNDLED WITH` version so it never rewrites the lock underneath us.
         run: |
           set -euo pipefail
-          gem install bundler --no-document
-          bundle install --jobs 4 --retry 3
+          gem install bundler -v 2.3.15 --no-document
+          bundle _2.3.15_ install --frozen --jobs 4 --retry 3
 
       - name: Archive and upload to TestFlight
         run: bundle exec fastlane ios beta

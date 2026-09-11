@@ -243,7 +243,9 @@ user-facing version changes.
 - `ITSAppUsesNonExemptEncryption = false` in `Info.plist` — the app uses only
   standard HTTPS, so it is export-exempt; this skips the per-build _Missing
   Compliance_ prompt in App Store Connect.
-- `Gemfile` and `fastlane/{Appfile,Fastfile}`. No CocoaPods (SPM — [§3](#3-one-time-mac-prerequisites)).
+- `Gemfile` + `Gemfile.lock` (locked to the macOS runner's platforms) and
+  `fastlane/{Appfile,Fastfile}`. The workflow installs with `--frozen`, so a run
+  fails rather than silently re-resolving. No CocoaPods (SPM — [§3](#3-one-time-mac-prerequisites)).
 
 ### Prove the chain once by hand first (recommended)
 

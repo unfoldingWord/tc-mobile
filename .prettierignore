@@ -21,3 +21,4 @@ ios
 # generated report/README should not be formatted either.
 fastlane
 Gemfile
+Gemfile.lock
