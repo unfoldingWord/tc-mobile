@@ -175,9 +175,12 @@ TestFlight only; **App Store submission is out of scope** (#262).
    _Automatically manage signing_ → pick the unfoldingWord **Team**. Confirm the
    bundle id is `org.unfoldingword.tcmobile` (register it in the Apple Developer
    portal / App Store Connect the first time).
-3. **Version/build:** set _Marketing Version_ and bump _Build_ (`CURRENT_PROJECT_VERSION`)
-   for each upload — App Store Connect rejects a duplicate build number. See
-   [§6](#6-versioning) for how these relate to `package.json`.
+3. **Version/build:** set _Marketing Version_ and set _Build_ (`CURRENT_PROJECT_VERSION`)
+   **higher than the last build already on TestFlight** — App Store Connect rejects
+   a build number that is not greater. The committed value is `1`, but the CI lane
+   (§4a) uploads large unix-timestamp builds, so read the last `CFBundleVersion`
+   from App Store Connect and exceed it rather than incrementing the committed `1`.
+   See [§6](#6-versioning) for how these relate to `package.json`.
 4. **Microphone permission:** the app records audio and iOS terminates the
    first `getUserMedia` request in WKWebView if no usage-description string is
    present. `NSMicrophoneUsageDescription` now **ships in the committed shell**
@@ -191,6 +194,85 @@ TestFlight only; **App Store submission is out of scope** (#262).
 7. In **App Store Connect → TestFlight**, add the build to a tester group
    (Caleb, Javi, Tim). External testers need a one-time Beta App Review.
 8. **Testers install** via the **TestFlight** app using the invite link/email.
+
+---
+
+## 4a. iOS → TestFlight via CI (automated, no Mac step)
+
+[`.github/workflows/ios-testflight.yml`](../../.github/workflows/ios-testflight.yml)
+builds the iOS app on a macOS runner and uploads it to TestFlight with Fastlane
+([`fastlane/Fastfile`](../../fastlane/Fastfile), lane `ios beta`), signing via an
+App Store Connect **API key** — no `match`, no committed certificate, no second
+repo. It is **manual-trigger only** (`workflow_dispatch`): run it from **Actions →
+iOS TestFlight → Run workflow**, choosing the branch to build. It never runs on
+push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
+and adds no required check to normal PRs.
+
+**What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
+`App` scheme (Release) → upload to TestFlight. **A green run means the binary
+uploaded, not that a tester received it:** the lane sets
+`skip_waiting_for_build_processing` (it does not hold the billed runner open for
+Apple's processing) and assigns no tester group, so it cannot observe a later
+processing rejection either. Internal testers receive the build automatically once
+processing finishes **only if the internal tester group has _Automatically
+distribute new builds_ enabled** (§4a setup) — otherwise assign the processed build
+to the group by hand. **External** distribution needs a Beta App Review and is a
+separate step.
+
+The build number (`CFBundleVersion`) is the run's **unix timestamp** — unique and
+strictly increasing with no round-trip to App Store Connect. (Reading the latest
+build and adding one would race the no-wait upload: a rerun fired before Apple
+indexes the previous build reads a stale latest and uploads a duplicate.) The
+user-facing **marketing version** stays `MARKETING_VERSION` from the project —
+**`1.0`** today, the native-shell version, deliberately independent of the PWA's
+`package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.0`, not
+the web `0.x`. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
+change.
+
+### One-time setup (human, outside this repo)
+
+1. **App Store Connect API key.** App Store Connect → _Users and Access →
+   Integrations → App Store Connect API_ → generate a key with the **App Manager**
+   role — required so the archive may create the distribution certificate and
+   provisioning profile via `-allowProvisioningUpdates`. Download the `.p8`
+   **once** (it cannot be re-downloaded); note the **Key ID** and **Issuer ID**.
+2. **The app record must already exist.** App Store Connect → _Apps → **+** → New
+   App_, bundle id `org.unfoldingword.tcmobile`. `upload_to_testflight` uploads to
+   an existing app; it does **not** create one. (A first manual Xcode upload,
+   [§4](#4-ios--testflight), also creates it — see the recommendation below.)
+   Then create an **internal tester group** (TestFlight → Internal Testing) and
+   enable **_Automatically distribute new builds_** on it, or an uploaded build
+   reaches no one until it is assigned to a group by hand.
+3. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+
+   | Secret              | Value                                                                      |
+   | ------------------- | -------------------------------------------------------------------------- |
+   | `ASC_KEY_ID`        | the API **Key ID**                                                         |
+   | `ASC_ISSUER_ID`     | the API **Issuer ID**                                                      |
+   | `ASC_KEY_P8_BASE64` | the `.p8` contents, base64-encoded (`base64 -i AuthKey_XXXX.p8 \| pbcopy`) |
+   | `APPLE_TEAM_ID`     | the unfoldingWord Apple **Team ID** (Developer portal → _Membership_)      |
+
+   The `.p8` is decoded into `fastlane/AuthKey.p8` at build time (gitignored) and
+   removed after the run. **Never commit it.**
+
+### Committed to make CI buildable (evidence)
+
+- `ios/App/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme` — a **shared**
+  scheme. Xcode keeps the `App` scheme in gitignored `xcuserdata` by default, so a
+  fresh CI checkout had **no** scheme for `xcodebuild` to build. This commits one.
+- `ITSAppUsesNonExemptEncryption = false` in `Info.plist` — the app uses only
+  standard HTTPS, so it is export-exempt; this skips the per-build _Missing
+  Compliance_ prompt in App Store Connect.
+- `Gemfile` + `Gemfile.lock` (locked to the macOS runner's platforms) and
+  `fastlane/{Appfile,Fastfile}`. The workflow installs with `--frozen`, so a run
+  fails rather than silently re-resolving. No CocoaPods (SPM — [§3](#3-one-time-mac-prerequisites)).
+
+### Prove the chain once by hand first (recommended)
+
+None of this could be run where it was authored (Linux, no Xcode), so do **one**
+manual archive+upload ([§4](#4-ios--testflight)) to confirm the account, Team,
+bundle id and app record are wired before relying on CI. After that, the workflow
+is the repeatable path. **The first green CI run is the first real verification.**
 
 ---
 
@@ -247,7 +329,9 @@ for the audio store (PR #265).
 native builds carry their **own** version fields:
 
 - **iOS:** `MARKETING_VERSION` (user-facing) + `CURRENT_PROJECT_VERSION`
-  (build, must increase every upload).
+  (build, must increase every upload — and the CI lane uploads unix-timestamp
+  builds, so a later manual build must exceed the last `CFBundleVersion` on
+  TestFlight, not the committed `1`; §4a).
 - **Android:** `versionName` (user-facing) + `versionCode` (integer, must
   increase every upload).
 
@@ -262,15 +346,20 @@ source of truth later, a small `cap sync`-time script can stamp them from
 
 **They do not collide.** Cloudflare Workers Builds deploys the PWA by running
 `wrangler deploy` (serving `./dist`) on pushes to `develop`/`staging`/`main`
-(AGENTS.md → _Cloudflare Workers Builds owns deployment_). Capacitor produces
-**local** native artifacts on a Mac and deploys nothing — there is no native
-build in CI and no new deploy workflow. `cap sync` only copies `dist/` into the
-native projects locally.
+(AGENTS.md → _Cloudflare Workers Builds owns deployment_). The native TestFlight
+build ([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step)) runs on a macOS
+runner, but **only on manual dispatch** (`ios-testflight.yml`, `workflow_dispatch`)
+— never on push/PR — so it is not a Workers Builds trigger and produces no web
+deploy. `cap sync` only copies `dist/` into the native projects; the archive it
+uploads goes to App Store Connect, not Cloudflare.
 
 Two operational notes:
 
-- The native build consumes the **same** `dist/` the PWA ships, so a tester's
-  native app and the staging PWA run identical web code from the same commit.
+- The native build consumes the **same** `dist/` the dispatched ref built, so a
+  tester's native app runs identical web code to the PWA **at that ref** — identical
+  to staging only when the workflow is dispatched from `staging`. The lane's ref
+  guard refuses anything but `staging`/`main` unless explicitly overridden, so build
+  tester IPAs from `staging` or `main`, not `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the

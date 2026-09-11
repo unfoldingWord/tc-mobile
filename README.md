@@ -70,10 +70,12 @@ Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
-**Cloudflare Workers Builds deploys** straight from the repo — there are no
-deploy workflows in `.github/`. It is configured per Worker, so the repo is
-connected twice: `tc-mobile` builds from `main`, `tc-mobile-staging` builds
-from `staging` with `--env staging`.
+**Cloudflare Workers Builds deploys** the PWA straight from the repo — no
+Actions workflow deploys the web app. (The one deploy workflow in `.github/` is
+the manual iOS TestFlight lane, run by hand — a native build, not a web deploy.)
+Workers Builds is configured per Worker, so the repo is connected twice:
+`tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
+`--env staging`.
 
 ### Testing on a phone
 
@@ -87,9 +89,11 @@ share-sheet export path yet — see #18.
 
 ### CI
 
-`ci.yml` only: full-history secret scan, format, lint, knip, typecheck, test, build,
+`ci.yml`: full-history secret scan, format, lint, knip, typecheck, test, build,
 and a check that the PWA service worker and manifest were emitted. It deploys
-nothing.
+nothing. (`.github/` also holds `ios-testflight.yml` — a manual, native TestFlight
+upload run by hand; it is the only workflow that ships a binary, and never to
+Cloudflare.)
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
 prepared to be made public.

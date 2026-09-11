@@ -1,0 +1,106 @@
+# iOS → TestFlight, no manual Mac step (#262).
+#
+# The `beta` lane archives the SAME web build the PWA ships (`dist/`, already
+# copied into ios/ by `npx cap sync ios` before this runs) and uploads it to
+# TestFlight. Signing is App-Store-Connect-managed: an API key (not an Apple ID
+# + password, and not `match`/a certs repo) authenticates both the provisioning
+# updates during archive and the upload. That is why there is no second repo and
+# no committed certificate here.
+#
+# Prerequisites the pipeline cannot create for you (docs/native/README.md §4a):
+#   • the App Store Connect API key must have App Manager (or Admin) role, so
+#     `-allowProvisioningUpdates` may create the distribution cert + profile;
+#   • the app record for the bundle id must already exist in App Store Connect
+#     (create it once in the UI, or with a first manual Xcode upload) — pilot
+#     uploads to an existing app, it does not create one.
+#
+# Everything below runs on the macOS runner or a Mac; nothing here was executed
+# in the Linux container this was authored in.
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Archive dist/ and upload to TestFlight"
+  lane :beta do
+    # On a GitHub-hosted macOS runner, codesign needs an unlocked keychain of
+    # its own — the API key authenticates to App Store Connect but does not
+    # unlock the default login keychain for the distribution certificate that
+    # `-allowProvisioningUpdates` creates. `setup_ci` creates and unlocks a
+    # temporary keychain for the run; without it the archive/export fails with
+    # `errSecInternalComponent` after ~20 min of billed macOS. Actions sets CI=true.
+    setup_ci if ENV["CI"]
+
+    key_id = ENV.fetch("ASC_KEY_ID")
+    issuer_id = ENV.fetch("ASC_ISSUER_ID")
+    team_id = ENV.fetch("APPLE_TEAM_ID")
+    # The .p8 is decoded from a secret into this path by the workflow. An
+    # absolute path is required by `xcodebuild -authenticationKeyPath`.
+    key_path = File.expand_path("AuthKey.p8", __dir__)
+
+    api_key = app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      key_filepath: key_path,
+      in_house: false,
+    )
+
+    # A unix timestamp for the build number: unique and strictly increasing on
+    # every run with no round-trip to App Store Connect. Reading the latest
+    # TestFlight build and adding one would race `skip_waiting_for_build_processing`
+    # below — a rerun fired before Apple has indexed the previous upload reads the
+    # stale latest and collides (a duplicate build App Store Connect rejects). A
+    # timestamp also clears the manual build "1" the runbook uploads first and
+    # needs no app record to pre-exist. CFBundleVersion takes a single integer up
+    # to 2^32; a 10-digit epoch is well under that. The marketing version stays
+    # MARKETING_VERSION from the project — bump it in the pbxproj when the
+    # user-facing version changes (docs/native §6).
+    build_number = Time.now.to_i.to_s
+
+    # Signing / auth flags. gym runs xcodebuild TWICE — archive, then export
+    # (`xcodebuild -exportArchive`) — feeding `xcargs` to the first and
+    # `export_xcargs` to the second. BOTH need the API-key authentication or the
+    # export phase signs against a runner keychain with no logged-in account and
+    # fails to package the IPA. The project inherits `CODE_SIGN_IDENTITY = "iPhone
+    # Developer"` (project-level, pbxproj) and sets no team, so override the
+    # identity to Apple Distribution for the App Store export and inject the team
+    # the project omits. The API key lets these create/download the distribution
+    # certificate and profile on the fly (automatic signing).
+    signing_xcargs = [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath", key_path,
+      "-authenticationKeyID", key_id,
+      "-authenticationKeyIssuerID", issuer_id,
+      "DEVELOPMENT_TEAM=#{team_id}",
+      'CODE_SIGN_IDENTITY="Apple Distribution"',
+    ].join(" ")
+
+    build_app(
+      project: "ios/App/App.xcodeproj",
+      scheme: "App",
+      configuration: "Release",
+      clean: true,
+      export_method: "app-store",
+      output_directory: "build",
+      output_name: "App.ipa",
+      # CURRENT_PROJECT_VERSION is baked in at archive time, so it rides only on
+      # the archive xcargs; the shared signing flags go to both phases.
+      xcargs: "#{signing_xcargs} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_xcargs: signing_xcargs,
+      export_options: {
+        method: "app-store",
+        signingStyle: "automatic",
+        teamID: team_id,
+      },
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      # Do not hold the (billed) macOS runner open while Apple processes the
+      # build; processing and internal-tester distribution finish server-side.
+      skip_waiting_for_build_processing: true,
+      # Internal testers only. External distribution needs a Beta App Review and
+      # is a deliberate, separate step in App Store Connect.
+      distribute_external: false,
+    )
+  end
+end
