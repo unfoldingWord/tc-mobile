@@ -309,7 +309,12 @@
     height: 100%;
     background: var(--s-surface);
     border-left: 1px solid var(--s-edge);
-    padding: var(--p-space-5) var(--p-space-4);
+    /* A full-height fixed overlay (`.menu-scrim` is `position: fixed; inset: 0`)
+       escapes the body's `env(safe-area-inset-*)` padding, so this drawer paints
+       under the status-bar clock and over the home indicator. Re-add the top and
+       bottom insets here or the first menu item and Close sit beneath the clock. */
+    padding: calc(var(--p-space-5) + env(safe-area-inset-top)) var(--p-space-4)
+      calc(var(--p-space-5) + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     gap: var(--c-gap-items);
@@ -409,7 +414,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--c-gap-items);
-    padding: var(--p-space-4) var(--p-space-3);
+    /* `.recorder-scrim` is `position: fixed; inset: 0`, so it covers the whole
+       viewport and does not inherit the body's `env(safe-area-inset-*)` padding.
+       Without re-adding the top inset here the header (Back, ≡) lands under the
+       status-bar clock and cannot be tapped; the bottom inset clears the home
+       indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
+    padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
+      calc(var(--p-space-4) + env(safe-area-inset-bottom));
   }
   /* The waveform stage. `position: relative` anchors the recording indicator;
      the centerline itself is drawn on the canvas so it stays pixel-aligned
