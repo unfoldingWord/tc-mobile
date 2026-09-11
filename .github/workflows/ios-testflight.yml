@@ -28,8 +28,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A cheap ubuntu gate BEFORE any billed macOS runner is acquired. Refuse a
+  # non-staging/main ref (the dispatch picker defaults to develop, and this is
+  # the first path that puts a build on a tester's phone) and a missing secret
+  # here — not ~10 minutes into the archive. An unset GitHub secret expands to
+  # "", which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
+  # missing. The macOS job `needs:` this, so a failure never reaches macos-14.
+  preflight:
+    name: Preflight (ref + secrets)
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+      REF: ${{ github.ref_name }}
+      ALLOW_ANY: ${{ inputs.allow_any_ref }}
+    steps:
+      - name: Require staging/main (or an explicit override)
+        run: |
+          set -euo pipefail
+          if [ "$ALLOW_ANY" = "true" ]; then
+            echo "allow_any_ref set — building '$REF'."
+          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
+            echo "::error::Refusing to build a tester IPA from '$REF'. Dispatch from staging or main, or set allow_any_ref."
+            exit 1
+          fi
+
+      - name: Require all four App Store Connect secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::secret $name is unset or empty"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Ref and all four secrets present."
+
   testflight:
     name: Build and upload to TestFlight
+    needs: preflight
     runs-on: macos-14
     timeout-minutes: 45
     permissions:
@@ -40,23 +82,6 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # Tester-facing builds must come from a promoted branch. The dispatch ref
-      # picker defaults to develop, and this is the first path that puts a build
-      # on a tester's phone — so refuse anything but staging/main unless the
-      # operator explicitly opts into a feature-branch experiment.
-      - name: Guard the ref
-        env:
-          REF: ${{ github.ref_name }}
-          ALLOW_ANY: ${{ inputs.allow_any_ref }}
-        run: |
-          set -euo pipefail
-          if [ "$ALLOW_ANY" = "true" ]; then
-            echo "allow_any_ref set — building '$REF'."
-          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
-            echo "::error::Refusing to build a tester IPA from '$REF'. Dispatch from staging or main, or set allow_any_ref."
-            exit 1
-          fi
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -116,12 +141,9 @@ jobs:
         # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
         # wrapped secret. Reading the secret from ENV keeps it out of the process
         # arguments and the shell history.
+        # The preflight job already failed the run if this secret is unset/empty.
         run: |
           set -euo pipefail
-          if [ -z "${ASC_KEY_P8_BASE64:-}" ]; then
-            echo "::error::ASC_KEY_P8_BASE64 secret is empty"
-            exit 1
-          fi
           ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
 
       - name: Install fastlane
@@ -129,8 +151,7 @@ jobs:
         # instead of silently re-resolving, so every run installs exactly the
         # locked gem set. Bundler is pinned to the lock's `BUNDLED WITH` so it
         # never rewrites the lock underneath us. Install into vendor/bundle (not
-        # the system gem dir, which is often not writable on the runner) and
-        # cache it keyed on the lock.
+        # the system gem dir, which is often not writable on the runner).
         run: |
           set -euo pipefail
           gem install bundler -v 2.6.9 --no-document

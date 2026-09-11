@@ -209,11 +209,15 @@ push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexist
 and adds no required check to normal PRs.
 
 **What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
-`App` scheme (Release) → upload to TestFlight, where **internal testers receive it
-automatically once App Store Connect finishes processing** (a few minutes,
-server-side). The lane does not wait for that (billed runner time) and does not
-distribute to **external** testers — that needs a Beta App Review and is a separate
-step. An internal tester group must exist in App Store Connect.
+`App` scheme (Release) → upload to TestFlight. **A green run means the binary
+uploaded, not that a tester received it:** the lane sets
+`skip_waiting_for_build_processing` (it does not hold the billed runner open for
+Apple's processing) and assigns no tester group, so it cannot observe a later
+processing rejection either. Internal testers receive the build automatically once
+processing finishes **only if the internal tester group has _Automatically
+distribute new builds_ enabled** (§4a setup) — otherwise assign the processed build
+to the group by hand. **External** distribution needs a Beta App Review and is a
+separate step.
 
 The build number (`CFBundleVersion`) is the run's **unix timestamp** — unique and
 strictly increasing with no round-trip to App Store Connect. (Reading the latest
@@ -236,6 +240,9 @@ change.
    App_, bundle id `org.unfoldingword.tcmobile`. `upload_to_testflight` uploads to
    an existing app; it does **not** create one. (A first manual Xcode upload,
    [§4](#4-ios--testflight), also creates it — see the recommendation below.)
+   Then create an **internal tester group** (TestFlight → Internal Testing) and
+   enable **_Automatically distribute new builds_** on it, or an uploaded build
+   reaches no one until it is assigned to a group by hand.
 3. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
 
    | Secret              | Value                                                                      |

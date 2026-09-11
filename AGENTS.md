@@ -306,8 +306,8 @@ Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The
 API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, not
-Cloudflare's). Besides `ci.yml`, `.github/` holds only the manual
-`ios-testflight.yml`.
+Cloudflare's). Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the
+manual `ios-testflight.yml`.
 
 ## Device testing — the HTTPS caveat
 
