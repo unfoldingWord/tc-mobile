@@ -207,10 +207,11 @@ and adds no required check to normal PRs.
 
 **What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
 `App` scheme (Release) → upload to TestFlight (internal testers). The build number
-is the **GitHub run number** (monotonic; App Store Connect rejects a duplicate
-build). The marketing version stays `MARKETING_VERSION` from the project — bump it
-in `ios/App/App.xcodeproj/project.pbxproj` ([§6](#6-versioning)) when the
-user-facing version changes.
+is derived from TestFlight — **one above the latest build already there** — so it
+never collides with a manual Xcode upload or a workflow rerun (App Store Connect
+rejects a duplicate build number). The marketing version stays `MARKETING_VERSION`
+from the project — bump it in `ios/App/App.xcodeproj/project.pbxproj`
+([§6](#6-versioning)) when the user-facing version changes.
 
 ### One-time setup (human, outside this repo)
 
