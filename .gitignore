@@ -49,5 +49,7 @@ fastlane/report.xml
 fastlane/README.md
 fastlane/test_output/
 /build/
+/vendor/
+.bundle/
 *.ipa
 *.app.dSYM.zip

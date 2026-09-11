@@ -175,9 +175,12 @@ TestFlight only; **App Store submission is out of scope** (#262).
    _Automatically manage signing_ → pick the unfoldingWord **Team**. Confirm the
    bundle id is `org.unfoldingword.tcmobile` (register it in the Apple Developer
    portal / App Store Connect the first time).
-3. **Version/build:** set _Marketing Version_ and bump _Build_ (`CURRENT_PROJECT_VERSION`)
-   for each upload — App Store Connect rejects a duplicate build number. See
-   [§6](#6-versioning) for how these relate to `package.json`.
+3. **Version/build:** set _Marketing Version_ and set _Build_ (`CURRENT_PROJECT_VERSION`)
+   **higher than the last build already on TestFlight** — App Store Connect rejects
+   a build number that is not greater. The committed value is `1`, but the CI lane
+   (§4a) uploads large unix-timestamp builds, so read the last `CFBundleVersion`
+   from App Store Connect and exceed it rather than incrementing the committed `1`.
+   See [§6](#6-versioning) for how these relate to `package.json`.
 4. **Microphone permission:** the app records audio and iOS terminates the
    first `getUserMedia` request in WKWebView if no usage-description string is
    present. `NSMicrophoneUsageDescription` now **ships in the committed shell**
@@ -206,12 +209,21 @@ push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexist
 and adds no required check to normal PRs.
 
 **What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
-`App` scheme (Release) → upload to TestFlight (internal testers). The build number
-is derived from TestFlight — **one above the latest build already there** — so it
-never collides with a manual Xcode upload or a workflow rerun (App Store Connect
-rejects a duplicate build number). The marketing version stays `MARKETING_VERSION`
-from the project — bump it in `ios/App/App.xcodeproj/project.pbxproj`
-([§6](#6-versioning)) when the user-facing version changes.
+`App` scheme (Release) → upload to TestFlight, where **internal testers receive it
+automatically once App Store Connect finishes processing** (a few minutes,
+server-side). The lane does not wait for that (billed runner time) and does not
+distribute to **external** testers — that needs a Beta App Review and is a separate
+step. An internal tester group must exist in App Store Connect.
+
+The build number (`CFBundleVersion`) is the run's **unix timestamp** — unique and
+strictly increasing with no round-trip to App Store Connect. (Reading the latest
+build and adding one would race the no-wait upload: a rerun fired before Apple
+indexes the previous build reads a stale latest and uploads a duplicate.) The
+user-facing **marketing version** stays `MARKETING_VERSION` from the project —
+**`1.0`** today, the native-shell version, deliberately independent of the PWA's
+`package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.0`, not
+the web `0.x`. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
+change.
 
 ### One-time setup (human, outside this repo)
 
@@ -310,7 +322,9 @@ for the audio store (PR #265).
 native builds carry their **own** version fields:
 
 - **iOS:** `MARKETING_VERSION` (user-facing) + `CURRENT_PROJECT_VERSION`
-  (build, must increase every upload).
+  (build, must increase every upload — and the CI lane uploads unix-timestamp
+  builds, so a later manual build must exceed the last `CFBundleVersion` on
+  TestFlight, not the committed `1`; §4a).
 - **Android:** `versionName` (user-facing) + `versionCode` (integer, must
   increase every upload).
 
@@ -334,8 +348,11 @@ uploads goes to App Store Connect, not Cloudflare.
 
 Two operational notes:
 
-- The native build consumes the **same** `dist/` the PWA ships, so a tester's
-  native app and the staging PWA run identical web code from the same commit.
+- The native build consumes the **same** `dist/` the dispatched ref built, so a
+  tester's native app runs identical web code to the PWA **at that ref** — identical
+  to staging only when the workflow is dispatched from `staging`. The lane's ref
+  guard refuses anything but `staging`/`main` unless explicitly overridden, so build
+  tester IPAs from `staging` or `main`, not `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the

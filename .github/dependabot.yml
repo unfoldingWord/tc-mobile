@@ -42,3 +42,9 @@ updates:
       bundler:
         patterns:
           - "*"
+        # Majors can break fastlane on a billed macOS run (the only place these
+        # gems execute), so keep them out of the weekly digest like the actions
+        # group above; they get their own review.
+        update-types:
+          - minor
+          - patch

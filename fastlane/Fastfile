@@ -22,6 +22,14 @@ default_platform(:ios)
 platform :ios do
   desc "Archive dist/ and upload to TestFlight"
   lane :beta do
+    # On a GitHub-hosted macOS runner, codesign needs an unlocked keychain of
+    # its own — the API key authenticates to App Store Connect but does not
+    # unlock the default login keychain for the distribution certificate that
+    # `-allowProvisioningUpdates` creates. `setup_ci` creates and unlocks a
+    # temporary keychain for the run; without it the archive/export fails with
+    # `errSecInternalComponent` after ~20 min of billed macOS. Actions sets CI=true.
+    setup_ci if ENV["CI"]
+
     key_id = ENV.fetch("ASC_KEY_ID")
     issuer_id = ENV.fetch("ASC_ISSUER_ID")
     team_id = ENV.fetch("APPLE_TEAM_ID")
