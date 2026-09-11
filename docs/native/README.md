@@ -194,6 +194,66 @@ TestFlight only; **App Store submission is out of scope** (#262).
 
 ---
 
+## 4a. iOS → TestFlight via CI (automated, no Mac step)
+
+[`.github/workflows/ios-testflight.yml`](../../.github/workflows/ios-testflight.yml)
+builds the iOS app on a macOS runner and uploads it to TestFlight with Fastlane
+([`fastlane/Fastfile`](../../fastlane/Fastfile), lane `ios beta`), signing via an
+App Store Connect **API key** — no `match`, no committed certificate, no second
+repo. It is **manual-trigger only** (`workflow_dispatch`): run it from **Actions →
+iOS TestFlight → Run workflow**, choosing the branch to build. It never runs on
+push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
+and adds no required check to normal PRs.
+
+**What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
+`App` scheme (Release) → upload to TestFlight (internal testers). The build number
+is the **GitHub run number** (monotonic; App Store Connect rejects a duplicate
+build). The marketing version stays `MARKETING_VERSION` from the project — bump it
+in `ios/App/App.xcodeproj/project.pbxproj` ([§6](#6-versioning)) when the
+user-facing version changes.
+
+### One-time setup (human, outside this repo)
+
+1. **App Store Connect API key.** App Store Connect → _Users and Access →
+   Integrations → App Store Connect API_ → generate a key with the **App Manager**
+   role — required so the archive may create the distribution certificate and
+   provisioning profile via `-allowProvisioningUpdates`. Download the `.p8`
+   **once** (it cannot be re-downloaded); note the **Key ID** and **Issuer ID**.
+2. **The app record must already exist.** App Store Connect → _Apps → **+** → New
+   App_, bundle id `org.unfoldingword.tcmobile`. `upload_to_testflight` uploads to
+   an existing app; it does **not** create one. (A first manual Xcode upload,
+   [§4](#4-ios--testflight), also creates it — see the recommendation below.)
+3. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+
+   | Secret              | Value                                                                      |
+   | ------------------- | -------------------------------------------------------------------------- |
+   | `ASC_KEY_ID`        | the API **Key ID**                                                         |
+   | `ASC_ISSUER_ID`     | the API **Issuer ID**                                                      |
+   | `ASC_KEY_P8_BASE64` | the `.p8` contents, base64-encoded (`base64 -i AuthKey_XXXX.p8 \| pbcopy`) |
+   | `APPLE_TEAM_ID`     | the unfoldingWord Apple **Team ID** (Developer portal → _Membership_)      |
+
+   The `.p8` is decoded into `fastlane/AuthKey.p8` at build time (gitignored) and
+   removed after the run. **Never commit it.**
+
+### Committed to make CI buildable (evidence)
+
+- `ios/App/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme` — a **shared**
+  scheme. Xcode keeps the `App` scheme in gitignored `xcuserdata` by default, so a
+  fresh CI checkout had **no** scheme for `xcodebuild` to build. This commits one.
+- `ITSAppUsesNonExemptEncryption = false` in `Info.plist` — the app uses only
+  standard HTTPS, so it is export-exempt; this skips the per-build _Missing
+  Compliance_ prompt in App Store Connect.
+- `Gemfile` and `fastlane/{Appfile,Fastfile}`. No CocoaPods (SPM — [§3](#3-one-time-mac-prerequisites)).
+
+### Prove the chain once by hand first (recommended)
+
+None of this could be run where it was authored (Linux, no Xcode), so do **one**
+manual archive+upload ([§4](#4-ios--testflight)) to confirm the account, Team,
+bundle id and app record are wired before relying on CI. After that, the workflow
+is the repeatable path. **The first green CI run is the first real verification.**
+
+---
+
 ## 5. Android → APK sideload
 
 Sideload only; **Play Store submission is out of scope** (#262).
