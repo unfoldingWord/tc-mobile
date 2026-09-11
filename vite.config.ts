@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 
@@ -10,9 +10,16 @@ import pkg from "./package.json" with { type: "json" };
 // git works in the Cloudflare Workers build (it clones the repo) and in local
 // dev; the env var is a belt-and-braces fallback, then a literal so a build
 // never fails for want of a SHA.
+//
+// `--short=7` pins the length: `git rev-parse --short HEAD` alone varies with
+// a repo's `core.abbrev`, and `scripts/check-deploy.mjs`'s consumer side
+// (`resolveExpectedSha()`, plus the `compareDeployed` comparison it feeds)
+// matches against this value — two correct call sites producing
+// different-length short SHAs for the same commit was a false FAIL waiting to
+// happen (round-1 George G3). Keep this in sync with `SHA_LENGTH` there.
 const buildSha = (() => {
   try {
-    return execSync("git rev-parse --short HEAD", {
+    return execSync("git rev-parse --short=7 HEAD", {
       stdio: ["ignore", "pipe", "ignore"],
     })
       .toString()
@@ -21,6 +28,34 @@ const buildSha = (() => {
     return process.env.WORKERS_CI_COMMIT_SHA?.slice(0, 7) ?? "dev";
   }
 })();
+
+// A machine-checkable version signal alongside the human-read footer stamp
+// (`components/build-stamp.tsx`). Emitted at build time, not committed, so it
+// can never drift from the build that produced it — same inputs as the
+// footer's __APP_VERSION__/__BUILD_SHA__. It is deliberately `.json`, not one
+// of the PWA precache's globPatterns extensions, so a post-promotion check
+// fetching it always hits the deployed origin rather than a cached copy.
+function versionJsonPlugin(): Plugin {
+  return {
+    name: "version-json",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source:
+          JSON.stringify(
+            {
+              version: pkg.version,
+              sha: buildSha,
+              builtAt: new Date().toISOString(),
+            },
+            null,
+            2
+          ) + "\n",
+      });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => ({
   define: {
@@ -44,6 +79,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    versionJsonPlugin(),
     VitePWA({
       registerType: "autoUpdate",
       // `dev-dist` lets us verify offline behaviour in `vite dev` instead of
@@ -72,6 +108,29 @@ export default defineConfig(({ mode }) => ({
         // the ~552 KB entry chunk); the former 4 MiB override existed only for
         // the now-excluded thumbnails, which were individually tiny anyway.
         navigateFallback: "index.html",
+        // `version.json` is deliberately outside globPatterns (comment above
+        // `versionJsonPlugin`) so a `fetch()` always reaches the origin, never
+        // a cached copy. But Workbox's navigateFallback intercepts *every*
+        // same-origin navigation request, not just missing routes — without
+        // this denylist entry, a browser *navigating* to /version.json
+        // (typed in the address bar, opened as a link) on an installed PWA
+        // would still be served the cached index.html shell. AGENTS.md's
+        // "Confirming a deploy" claim that fetching it always reaches the
+        // origin is about `check:deploy`'s Node fetch (not navigation-mode,
+        // never intercepted); this keeps that true for a browser navigation
+        // too (round-3 George #2).
+        //
+        // Workbox matches this against the request URL's `pathname + search`,
+        // so the pattern must tolerate a query string: `check-deploy.mjs`
+        // fetches `/version.json?t=<timestamp>` to bust intermediate caches,
+        // and a `$`-anchored `/^\/version\.json$/` did not match that at all
+        // — the exact URL form this entry exists for was still falling
+        // through to the shell (round-5 George G-F2). `(\?|$)` matches the
+        // bare path and the query form while still rejecting a different file
+        // that merely starts the same way (`/version.jsonfoo`).
+        // tests/precache-manifest.test.ts pins that behaviour against this
+        // literal.
+        navigateFallbackDenylist: [/^\/version\.json(\?|$)/],
         cleanupOutdatedCaches: true,
       },
       manifest: {

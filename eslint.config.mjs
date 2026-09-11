@@ -226,6 +226,8 @@ export default tseslint.config(
         TextEncoder: "readonly",
         TextDecoder: "readonly",
         setTimeout: "readonly",
+        // check-deploy.mjs's fetch timeout (round-1 Frank F2).
+        AbortSignal: "readonly",
       },
     },
   }

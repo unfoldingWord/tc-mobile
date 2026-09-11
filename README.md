@@ -88,8 +88,8 @@ share-sheet export path yet — see #18.
 ### CI
 
 `ci.yml` only: full-history secret scan, format, lint, knip, typecheck, test, build,
-and a check that the PWA service worker and manifest were emitted. It deploys
-nothing.
+and a check that the PWA service worker, manifest, and `version.json` were
+emitted. It deploys nothing.
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
 prepared to be made public.

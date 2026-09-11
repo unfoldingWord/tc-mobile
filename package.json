@@ -27,7 +27,9 @@
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "prepare": "husky",
     "knip": "knip --include dependencies,unlisted,files,exports,types",
-    "typecheck:lib": "tsc -p tsconfig.lib.json"
+    "typecheck:lib": "tsc -p tsconfig.lib.json",
+    "check:deploy": "node scripts/check-deploy.mjs",
+    "check:deploy:prod": "node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [

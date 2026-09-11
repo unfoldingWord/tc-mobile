@@ -202,6 +202,15 @@ PR is the production gate.
 - **Cloudflare Workers Builds deploys on merge** — there are no deploy
   workflows in `.github/`; only `ci.yml` lives there.
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
+  `npm run check:deploy` checks the `develop -> staging` promotion (staging is
+  the default origin); `npm run check:deploy:prod` checks `staging -> main`
+  and requires its production origin explicitly — the two are not
+  interchangeable. Both fetch `/version.json` from the deployed origin and,
+  for these two default origins, compare it against the **promoted branch's
+  remote-tracking ref** (`origin/staging` / `origin/main`), not local `HEAD`
+  — `git fetch origin` first for that to be accurate. See AGENTS.md,
+  "Confirming a deploy and rolling one back", for the full command forms, the
+  production URL, and the rollback path.
 
 ## Working with an AI coding agent
 
