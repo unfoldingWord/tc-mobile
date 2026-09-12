@@ -258,6 +258,7 @@ PLATFORMS
   x86_64-darwin-23
 
 DEPENDENCIES
+  CFPropertyList (= 3.0.8)
   fastlane (~> 2.226)
 
 BUNDLED WITH
