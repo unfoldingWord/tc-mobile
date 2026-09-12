@@ -26,13 +26,13 @@ with the answers pre-filled.
 | An Apple ID with 2FA                                  | Every portal below requires it                        |                             |
 | The unfoldingWord Apple **Team**, enrolled and active | No signed iOS install exists without it               | **unverified — see §1**     |
 | Your **role** on that team                            | Decides whether you can mint the API key at all (§6)  |                             |
-| A password manager entry to hold the values           | The `.p8` downloads **once** and cannot be re-fetched | 1Password is on this Mac    |
+| A password manager entry to hold the values           | The `.p8` downloads **once** and cannot be re-fetched | any secure password manager |
 | Admin on `unfoldingWord/tc-mobile`                    | To set repository secrets                             | yes (`gh` is authenticated) |
 
 **Do not record any of the values below in this repo.** The Key ID, Issuer ID
 and Team ID are not catastrophic on their own, but the `.p8` API key and the
-Distribution `.p12` (§5.5) are signing credentials. Keep every value in
-1Password (uw-devops) and paste it into GitHub secrets from there.
+Distribution `.p12` (§5.5) are signing credentials. Keep every value in a
+password manager and paste it into GitHub secrets from there.
 
 ---
 
@@ -255,8 +255,8 @@ reason for manual over automatic signing (see the `fastlane/Fastfile` header).
 
 ### Then base64-encode both for the secrets (§8)
 
-File the `.p12` and its password in 1Password (uw-devops) **before** anything
-else — a `.p12` cannot be re-exported once the private key leaves the keychain.
+File the `.p12` and its password in a password manager **before** anything else
+— a `.p12` cannot be re-exported once the private key leaves the keychain.
 Then base64 both files into the GitHub secrets in §8.
 
 ---
@@ -281,7 +281,8 @@ Then **Download** the key. Three things about that download:
    shown **once at the top of the Keys page**, shared by every key on the team —
    easy to close the page and then not know where to find it again.
 
-**Put the `.p8` in 1Password immediately**, before doing anything else with it.
+**Put the `.p8` in your password manager immediately**, before doing anything
+else with it.
 It is gitignored at `fastlane/AuthKey.p8` and the workflow deletes it after each
 run, but the copy in `~/Downloads` is the only one that exists until you file it.
 
@@ -407,7 +408,7 @@ target).
 
 ## 12. Worksheet
 
-Fill this in **in 1Password**, not in this file.
+Fill this in **in a password manager**, not in this file.
 
 ```
 Apple Developer Program enrolled?    yes / no        (Q1)
@@ -421,7 +422,7 @@ Dist cert + .p12 (private key incl)? yes / no        -> IOS_DIST_CERT_P12_BASE64
 App Store profile downloaded?        yes / no        -> IOS_PROVISION_PROFILE_BASE64 (§5.5)
 API Key ID                           ________        -> ASC_KEY_ID
 API Issuer ID                        ________        -> ASC_ISSUER_ID
-.p8 filed in 1Password?              yes / no        -> ASC_KEY_P8_BASE64
+.p8 filed in a password manager?     yes / no        -> ASC_KEY_P8_BASE64
 Internal group auto-distribute on?   yes / no        (§7 — the quiet failure)
 Seven secrets set?                   yes / no        (§8)
 First dispatch ref + allow_any_ref   ________        (§9)
@@ -436,7 +437,7 @@ recommends proving the chain with **one manual Xcode archive** before trusting
 CI, since none of this has ever executed. That needs a working local toolchain,
 and as of **2026-09-12 this Mac does not have one**:
 
-| Check          | State on `excalibur.local`, 2026-09-12                                                                                                                                                                                 |
+| Check          | State on the build Mac, 2026-09-12                                                                                                                                                                                     |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `node` / `npm` | **absent** — not in Homebrew, no nvm/mise/asdf/volta, nothing on `PATH`. `node_modules/` (2026-09-10, Mach-O arm64) proves it was here recently; `PATH` still references `/pkg/env/global/bin`, which no longer exists |
 | `xcode-select` | points at `/Library/Developer/CommandLineTools`, so `xcodebuild` errors out. Xcode **26.6** and Xcode-beta **27.0** are both installed                                                                                 |

@@ -11,8 +11,8 @@
 # Why manual? Automatic signing (`-allowProvisioningUpdates` + API key) creates
 # machine-bound keys in the runner's ephemeral keychain, which are discarded at
 # the end of each run and eventually hit Apple's cert-per-machine limit. Manual
-# signing hands CI a stable identity that lives in 1Password (uw-devops) and
-# never changes between runs.
+# signing hands CI a stable identity that lives in a secrets vault and never
+# changes between runs.
 #
 # Prerequisites the pipeline cannot create for you (docs/native/README.md §4a):
 #   • an Apple Distribution certificate (.p12) in GitHub secret

@@ -252,8 +252,8 @@ change.
    Store** provisioning profile bound to `org.unfoldingword.tcmobile` and that
    certificate. [`ios-credentials.md`](ios-credentials.md) walks the portal
    steps; base64-encode both files for the secrets below. Keep the `.p12` and its
-   export password in 1Password (uw-devops): the same identity is reused on every
-   run — the point of manual over automatic signing.
+   export password in a secrets vault: the same identity is reused on every run —
+   the point of manual over automatic signing.
 3. **The app record must already exist.** App Store Connect → _Apps → **+** → New
    App_, bundle id `org.unfoldingword.tcmobile`. `upload_to_testflight` uploads to
    an existing app; it does **not** create one. (A first manual Xcode upload,
