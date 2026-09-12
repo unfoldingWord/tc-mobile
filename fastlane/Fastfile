@@ -51,11 +51,21 @@ platform :ios do
       keychain_password: ENV.fetch("MATCH_KEYCHAIN_PASSWORD", ""),
     )
 
-    # Install the provisioning profile and capture its UUID. The .mobileprovision
-    # is decoded from a secret into fastlane/dist_profile.mobileprovision by the
-    # workflow. PROVISIONING_PROFILE_SPECIFIER in xcargs below targets it by UUID
-    # so xcodebuild does not have to search by name.
-    profile_uuid = install_provisioning_profile(
+    # Extract the UUID from the provisioning profile before installing it.
+    # `install_provisioning_profile` returns the installed file path, not the
+    # UUID — and that path contains a space ("Provisioning Profiles/…") that
+    # xcodebuild splits into a stray build-action argument, failing with
+    # "Unknown build action 'Profiles/…'". Parse the UUID directly from the
+    # .mobileprovision CMS envelope so PROVISIONING_PROFILE_SPECIFIER and the
+    # export_options map both receive a clean UUID string.
+    require "plist"
+    profile_plist = `/usr/bin/security cms -D -i fastlane/dist_profile.mobileprovision 2>/dev/null`
+    profile_uuid = Plist.parse_xml(profile_plist)["UUID"]
+    UI.user_error!("Could not parse UUID from provisioning profile") unless profile_uuid
+
+    # Install the provisioning profile into ~/Library/MobileDevice/Provisioning
+    # Profiles/ so xcodebuild can find it by the UUID extracted above.
+    install_provisioning_profile(
       path: "fastlane/dist_profile.mobileprovision",
     )
 
