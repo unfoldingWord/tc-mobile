@@ -14,10 +14,13 @@ just the native shell and the pipeline to produce installable builds.
 > in a Linux CI container with **no Xcode and no Android Studio**. The native
 > _projects_ were generated and the web bundle synced into them (`cap add`,
 > `cap sync` both run without native SDKs), but **no `.ipa`, `.aab`, or `.apk`
-> was built, signed, or run on any device or simulator.** Every step in
-> [§4](#4-ios--testflight) and [§5](#5-android--apk-sideload) requires a Mac
-> with the native toolchains and is Seth's to run. Nothing below has been
-> verified on a device.
+> was built, signed, or run on any device or simulator.** The local steps in
+> [§4](#4-ios--testflight) and [§5](#5-android--apk-sideload) require a Mac
+> with the native toolchains and are Seth's to run; the CI lanes in
+> [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) and
+> [§5a](#5a-android--apk-via-ci-automated-no-mac-step) run on GitHub-hosted
+> runners instead (the iOS lane is proven end to end, the Android lane has not
+> yet been dispatched). Nothing below has been verified on a device.
 
 ---
 
@@ -49,6 +52,16 @@ The two platforms have very different fastest routes:
   file). The signed-**release** path (a keystore + `signingConfigs`, §5 steps
   1–3) is the durable distribution route and can follow later — it is **not**
   needed to hit Monday's bar.
+
+  > **The debug APK is for the developer's own proof, not for anyone who will
+  > later receive a release build.** Android ties app identity to the signing
+  > key: a phone that installed a debug-signed APK **cannot update** to a
+  > release-signed one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, whatever the
+  > `versionCode`). The only way forward is uninstall — and because backups are
+  > off (§5) and IndexedDB is the system of record, **uninstall deletes every
+  > recording on that phone.** Once the release keystore exists, testers get
+  > release-signed builds only (§5a), and every one of them is signed with the
+  > same keystore.
 
 - **iOS — gated on the Apple Developer account (the long pole).** There is no
   debug-APK equivalent: every install onto an iPhone requires a signing identity
@@ -327,20 +340,28 @@ for the audio store (PR #265).
    Store it **outside** the repo and record the passwords in the team secret
    store. As a backstop, `android/.gitignore` ignores `*.jks`/`*.keystore` so a
    keystore accidentally dropped inside `android/` is not committed.
-2. Wire release signing is **already in `android/app/build.gradle`** — the
-   `signingConfigs.release` block reads four env vars: `ANDROID_KEYSTORE_PATH`,
-   `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Set
-   them in your shell (or `~/.gradle/gradle.properties`) before running
-   `assembleRelease`. The build fails loudly if any are unset, so it cannot
-   silently produce an unsigned APK. **Never commit the keystore or passwords.**
-3. Build a signed APK:
+2. Release signing is **already wired in `android/app/build.gradle`** — the
+   `signingConfigs.release` block reads four **environment variables**:
+   `ANDROID_KEYSTORE_PATH`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+   `ANDROID_KEY_PASSWORD`. Export them in your shell before running
+   `assembleRelease`. They are read with `System.getenv`, so entries in
+   `~/.gradle/gradle.properties` do **not** work — those become Gradle project
+   properties, not env vars, and the guard below would report all four as
+   missing. The build fails loudly if any is unset, so it cannot silently
+   produce an unsigned APK. **Never commit the keystore or passwords.**
+3. Build a signed APK — **always with a `versionCode`**, the same unix
+   timestamp the CI lane uses:
    ```bash
    npx cap sync android
-   cd android && ./gradlew assembleRelease
+   cd android && ./gradlew assembleRelease -PversionCode="$(date +%s)"
    # → android/app/build/outputs/apk/release/app-release.apk
    ```
-   (`npx cap open android` opens Android Studio if you prefer _Build → Generate
-   Signed Bundle / APK_. Use **APK**, not AAB, for sideload.)
+   Without `-PversionCode` the build defaults to `versionCode 1`. Android
+   refuses a downgrade, so after **any** CI APK (§5a) a `1` can never install
+   over it — the tester's only way forward would be uninstall, which wipes
+   their recordings. (`npx cap open android` opens Android Studio if you prefer
+   _Build → Generate Signed Bundle / APK_; set the version code there too. Use
+   **APK**, not AAB, for sideload.)
 4. **Testers install:** enable _Install unknown apps_ for the browser/file
    app on the device, then open the APK to install. Distribute the file via a
    link the testers can reach (e.g. a shared drive).
@@ -362,12 +383,23 @@ with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
 
 **`versionCode`** is the run's unix timestamp — unique and strictly increasing
 with no external round-trip. Android refuses a `versionCode` downgrade, so
-every build that reaches a tester must carry a higher code than the last.
+every build that reaches a tester must carry a higher code than the last. A
+local `assembleRelease` must pass the same `-PversionCode="$(date +%s)"` (§5
+step 3); the committed default of `1` never installs over a CI build.
 
-**Tester distribution:** workflow artifacts require a GitHub login to download.
-For field testers without a GitHub account, attach the APK to the GitHub
-pre-release created on each `staging → main` promotion, or drop it on a shared
-drive (README §5 step 4 covers installation).
+**One keystore, forever.** Every APK a tester receives must be signed with the
+same release keystore — a phone cannot update across signing keys, and the
+forced uninstall wipes IndexedDB, i.e. every recording (§0). A debug-signed APK
+(§0's Monday route) is therefore a dead end for anyone who will later get a CI
+build: never hand one to a tester once the release keystore exists.
+
+**Tester distribution:** workflow artifacts require a GitHub login to download,
+and the lane attaches the APK **only** as a run artifact — nothing creates a
+GitHub release or pre-release today (the repo's first tag is the v0.2.0
+promotion). So the channel is: a person with repository access downloads
+`android-apk` from the run, and shares the `.apk` through the team drive; §5
+step 4 covers installation on the phone. Attaching the APK to a release is a
+follow-up once a release step exists, not a documented path.
 
 ### One-time setup
 
@@ -387,11 +419,14 @@ drive (README §5 step 4 covers installation).
 
 **First dispatch:** the preflight checks the ref and all four secrets before any
 Gradle work. The `build.gradle` signing config also fails loudly if the env vars
-are unset — two layers. The Ubuntu runner image is assumed to have the Android
-SDK and JDK preinstalled (`ANDROID_HOME`, `JAVA_HOME`); if the first dispatch
-fails on a missing SDK platform, add
-`$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36"` as
-a step before `cap sync android`.
+are unset — two layers. What the runner provides was checked against the
+`ubuntu-24.04` image notes (actions/runner-images, 2026-09-12), not observed on
+a live run: Android SDK Platform 36 and Build-tools 36.0.0 under `ANDROID_HOME`,
+and Ruby for the keystore decode — so no `sdkmanager` step is needed. The JDK is
+the one thing the image gets **wrong** for this project: its default is Java 17,
+while Capacitor's generated `android/app/capacitor.build.gradle` compiles at
+Java 21, so the lane pins JDK 21 with `actions/setup-java` before `cap sync`.
+The lane has not been dispatched yet; the first run is the end-to-end proof.
 
 ---
 
@@ -407,8 +442,9 @@ native builds carry their **own** version fields:
   TestFlight, not the committed `1`; §4a).
 - **Android:** `versionName` (user-facing) + `versionCode` (integer, must
   increase every install). The CI lane (§5a) stamps `versionCode` with a unix
-  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` uses
-  `1` unless you pass `-PversionCode=<N>` explicitly.
+  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` must
+  pass the same, because the committed default is `1`, and once any CI APK is
+  on a phone a `1` is a downgrade that Android refuses (§5 step 3).
 
 ---
 
