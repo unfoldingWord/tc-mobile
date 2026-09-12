@@ -58,29 +58,36 @@ platform :ios do
 
     # Signing / auth flags. gym runs xcodebuild TWICE — archive, then export
     # (`xcodebuild -exportArchive`) — feeding `xcargs` to the first and
-    # `export_xcargs` to the second. BOTH need the API-key authentication or the
-    # export phase signs against a runner keychain with no logged-in account and
-    # fails to package the IPA. The project's target uses `CODE_SIGN_STYLE =
+    # `export_xcargs` to the second. The project's target uses `CODE_SIGN_STYLE =
     # Automatic` (pbxproj) and sets no team, so inject the team the project omits
     # and let Xcode resolve the identity: with automatic signing the archive
     # phase self-signs and the export phase, driven by `export_options` below
     # (method: app-store, signingStyle: automatic), selects the distribution
-    # identity. `-allowProvisioningUpdates` + the API key let it create/download
-    # the distribution certificate and profile on the fly.
+    # identity. `-allowProvisioningUpdates` + the API key create/download the
+    # distribution certificate and profile on the fly.
     #
-    # Do NOT also force `CODE_SIGN_IDENTITY = "Apple Distribution"` here: a manual
-    # identity conflicts with the automatic style and xcodebuild aborts the
-    # archive ("App has conflicting provisioning settings … a conflicting code
-    # signing identity Apple Distribution has been manually specified"). The
-    # export method, not a hand-set identity, is what makes this a distribution
-    # build.
-    signing_xcargs = [
+    # Do NOT force `CODE_SIGN_IDENTITY = "Apple Distribution"`: a manual identity
+    # conflicts with the automatic style and xcodebuild aborts the archive ("App
+    # has conflicting provisioning settings …"). The export method, not a
+    # hand-set identity, is what makes this a distribution build.
+    #
+    # The auth flags are asymmetric between the two phases, and this is load-
+    # bearing (observed on run 34698062609):
+    #   • ARCHIVE — gym does NOT inject the API key here, so the archive xcodebuild
+    #     runs with exactly the flags below and needs them by hand.
+    #   • EXPORT  — gym DOES inject `-allowProvisioningUpdates` and the API-key
+    #     auth into `-exportArchive` on its own (from the app_store_connect_api_key
+    #     lane context). Repeating them in export_xcargs made xcodebuild abort with
+    #     "option '-authenticationKeyPath' may only be provided once". So the
+    #     export args carry ONLY the team the project omits.
+    archive_xcargs = [
       "-allowProvisioningUpdates",
       "-authenticationKeyPath", key_path,
       "-authenticationKeyID", key_id,
       "-authenticationKeyIssuerID", issuer_id,
       "DEVELOPMENT_TEAM=#{team_id}",
     ].join(" ")
+    export_xcargs = "DEVELOPMENT_TEAM=#{team_id}"
 
     build_app(
       project: "ios/App/App.xcodeproj",
@@ -91,9 +98,9 @@ platform :ios do
       output_directory: "build",
       output_name: "App.ipa",
       # CURRENT_PROJECT_VERSION is baked in at archive time, so it rides only on
-      # the archive xcargs; the shared signing flags go to both phases.
-      xcargs: "#{signing_xcargs} CURRENT_PROJECT_VERSION=#{build_number}",
-      export_xcargs: signing_xcargs,
+      # the archive xcargs.
+      xcargs: "#{archive_xcargs} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_xcargs: export_xcargs,
       export_options: {
         method: "app-store",
         signingStyle: "automatic",
