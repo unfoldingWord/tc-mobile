@@ -253,6 +253,110 @@ refusing read-only `gh`/`git show` with variables/heredocs.
    in the next lane-touching PR, proven by a dispatch rather than trusted.
 5. #250: the names scrub in the native docs and this tracker before the public flip.
 
+### 2026-09-12 (late) — Android APK lane: #318 filed, #319 built, dual-reviewed to APPROVE ×2 in 4 rounds, merged; #320/#321 spawned; D1 risk assessment recorded
+
+**Continues the evening.** SOD (late) found the tree exactly as the evening left it (#308
+merged as `1fa7fac`, staging serving v0.1.15, CI all green, four contributor PRs awaiting
+Seth's review rounds). The session then answered "how do we get to an APK, does it need
+signing?" and turned the answer into the lane. **Branches:** `develop` `1fa7fac` →
+**`0dd30cc`** (#319 squash); `staging` `a742a10` (v0.1.15, unchanged); `main` `3464a30`
+(held, #244). Filed: **#318, #320, #321.** Merged: **#319.** Milestone v0.2.0 open count
+19 → **22** (three new gate-scope issues, all housekeeping of the lane itself).
+
+**#318 — the Android APK lane had no issue.** #262's checkbox was the only trace; #245 is
+the Chrome/PWA test protocol, #263 assumes an installed build. Filed with the seven-step
+plan (local `assembleDebug` proof → keystore custody → `signingConfigs` → CI dispatch lane
+→ `versionCode` stamp → tester distribution → docs) and the one Android-specific T1
+constraint: **app identity is the signing key** — a phone cannot update across keys, the
+forced uninstall wipes IndexedDB, i.e. every recording, and the keystore therefore cannot
+be rotated. #262's checkbox now links #318; its evening status ("Android sibling = #245")
+corrected by comment.
+
+**#319 — steps 3, 4, 6, authored in Seth's other session, reviewed here** (branch held by
+the main checkout, so fixes were committed on a detached local branch and pushed with
+`git push origin HEAD:feat/android-apk-lane`; Seth pulls before touching it). Review loop,
+cap 4, used 4 — **both APPROVE at `6ce0a92`**, one docs-only follow-up carried by
+range-diff acceptance (the 09-03 precedent), squash-merged `0dd30cc`:
+
+| Round | Head      | Frank                      | George                           | Fix commit           |
+| ----- | --------- | -------------------------- | -------------------------------- | -------------------- |
+| 1     | `8b23e33` | REQUEST_CHANGES — 1 P2     | REQUEST_CHANGES — **1 P1**, 4 P2 | `5761965` (7 + 2 P3) |
+| 2     | `5761965` | REQUEST_CHANGES — 1 P2     | REQUEST_CHANGES — 1 P2, 5 P3     | `95b36a8` (7)        |
+| 3     | `95b36a8` | REQUEST_CHANGES — **1 P1** | REQUEST_CHANGES — 1 P2, 2 P3     | `6ce0a92` (2 P3)     |
+| 4     | `6ce0a92` | **APPROVE**                | **APPROVE** — 3 docs P3          | `7e74fb1` (docs)     |
+
+- **What review caught that would have failed the first dispatch:** the runner image
+  defaults to **JDK 17** and Capacitor's generated `capacitor.build.gradle` compiles at
+  **Java 21** — George P1, converged with the reviewer's own check against the
+  runner-image README. Fixed with a SHA-pinned `actions/setup-java` 21 (the macos-15
+  default-Xcode trap's Android twin). Also: `upload-artifact` defaults to `warn` on a
+  missing file (a green run with no APK) → `test -f` + `if-no-files-found: error`; the
+  docs described `~/.gradle/gradle.properties` (never read — `System.getenv` only) and a
+  GitHub pre-release that nothing creates; three files still called the iOS lane the only
+  binary workflow; the §0 "send that APK to a tester" imperative contradicted the identity
+  rule twice over.
+- **Refuted with evidence, not argument:** George R3's warm-daemon claim (a daemon started
+  without the env vars would keep them stale) — Gradle's
+  `ApplyClientEnvironmentVariables.java` _"applies the environment variables specified by
+  the client to the daemon JVM … and restores the previous values when the build
+  finishes."_ Frank R3's P1 fix (drop `allow_any_ref`) — a dispatch runs the dispatched
+  ref's **own** yml (the ref gotcha), so a push-access actor deletes the gate on their
+  branch; the in-yml gate is a **mistake guard, not an actor guard**. Premise accepted,
+  fix refuted, decision → #321.
+- **Reviewer behaviour, for the record:** George delivered a full verdict **all four
+  rounds**, first run, 20–35 KB prompts, grok serialized, Frank concurrent — against the
+  46 KB double-stall on #309 this afternoon. Frank did **not** re-raise his own R3 P1 in
+  R4 with the override unchanged; dispositions stand on evidence, never on a reviewer
+  going quiet.
+- **Merge mechanics lesson:** the PR body's "Closes #318" was changed to "Part of #318"
+  before merging and GitHub **still closed #318** from the link recorded at PR-open time.
+  Reopened with a comment; unlink in the sidebar next time, or never write "Closes" on a
+  partial delivery.
+
+**#320 (iOS sibling of Frank R2):** the ref gate compares `ref_name`, so a tag named
+`staging` passes; Android now also requires `ref_type == branch`. #320 also carries the
+iOS bundle guard's missing `obs/thumbs` check (George R3). Both ride the next iOS-lane PR
+with #311, re-proven by a dispatch.
+
+**#321 (D1 — Seth asked "what is the risk, especially public?"):** 11 signing secrets are
+reachable by any of **37 push-access, 2FA-enforced** accounts via a dispatched branch's own
+code — a compromised account, not a malicious colleague, is the realistic actor; the
+Android keystore is the irreversible asset. **Going public does not widen reach** (dispatch
+and secrets stay write-only; fork PRs get no secrets; no `pull_request_target`; read-only
+default token) and **unlocks the fix**: GitHub Environments with required reviewers, free
+on public repos, unavailable on this private free-plan repo. **DRI decision:** accept the
+mistake-guard design now; environment gate for both lanes in the #250 flip PR set; prune
+push access via the org admins; create the keystore only when the first real tester build
+is needed. Recorded on #321 and on #319.
+
+**Also:** memory updated (George threshold data, Frank non-determinism, the detached-branch
+push pattern, the worktree guard's script-file workaround, the "Closes" link lesson).
+`develop` CI green at `0dd30cc`.
+
+### Blockers / needs a human (late)
+
+- **#318 steps 1, 2, 5, 7 are all human:** a Mac with Android Studio + JDK 21 for the
+  `assembleDebug` proof (developer device only — never a future tester phone); the release
+  keystore + four secrets (create at the last responsible moment, per #321); the first
+  dispatch (`allow_any_ref` from `develop`, or promote to `staging` first).
+- **Tester receipt of the TestFlight build** still unconfirmed (evening item).
+- **#244 gate count moved the wrong way:** 22 open. The three new ones are lane
+  housekeeping; the triage in the evening's next-step 3 is now more pressing, not less.
+- **Contributor review rounds** still waiting on Seth as reviewer: #279 (R4, cap), #289
+  (R3), #215 (R5 or decision), #144 (scope question), #302 (never reviewed).
+
+### Next steps (late)
+
+1. **#318 step 1 + #245 on the same phone:** local debug APK, run the protocol, post the
+   header. This also answers #263 for Android.
+2. **#318 step 2 → first dispatch:** keystore, secrets, dispatch with `allow_any_ref`; expect
+   the fail-closed toolchain assert to speak first if the image notes were wrong.
+3. **#244 triage** of the 22 open milestone issues, explicitly close-or-move.
+4. Contributor PR rounds (#279, #289, #215, #144, #302) — the review debt is now the
+   largest item on the board after Android.
+5. Evening items still standing: TestFlight tester receipt; `ios-credentials.md` §9 refresh
+   - #311 + #320 in one iOS-lane PR; #250 names scrub.
+
 ---
 
 ## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
