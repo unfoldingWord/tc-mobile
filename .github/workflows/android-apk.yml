@@ -209,8 +209,9 @@ jobs:
       # tester distribution is: a person with repo access downloads the artifact
       # and shares the .apk through the team drive (docs/native/README.md §5a).
       # `if-no-files-found` defaults to `warn`, which would let a run go green with
-      # nothing attached — the "green is not delivered" failure the iOS runbook
-      # §10 names. Fail instead (second layer; the test -f above is the first).
+      # nothing attached — the "a green run is not a delivered build" point
+      # docs/native/README.md §4a makes for TestFlight. Fail instead (second
+      # layer; the test -f above is the first).
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-apk-${{ github.sha }}

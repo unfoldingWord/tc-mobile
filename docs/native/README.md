@@ -76,8 +76,13 @@ The two platforms have very different fastest routes:
   but is not the TestFlight path testers use; TestFlight still needs the paid
   membership.
 
-If only one platform is ready on Monday, ship that one. Android via the debug
-APK is the route with no human/paid dependency, so it is the safest to count on.
+If only one platform is ready on Monday, ship that one. Android has no human or
+paid dependency, so it is the safest to count on — but **what ships to testers is
+the release-signed CI APK ([§5a](#5a-android--apk-via-ci-automated-no-mac-step))
+once the keystore and its four secrets exist.** The debug APK above proves the
+toolchain and the WebView on a developer's own device; it never goes to a phone
+that will later receive a release build (see the callout under the Android
+route).
 
 ### 0.1 Human / paid gates
 
@@ -145,7 +150,11 @@ npx cap sync           # copy dist/ into ios/ and android/, refresh native deps
 `cap sync` = `cap copy` (web assets + config) + `cap update` (native deps).
 Both `cap add` and `cap sync` run **without** Xcode/Android Studio (verified in
 this container). Everything past sync — `cap open`, archive, gradle assemble,
-signing, upload — needs the native toolchains on a Mac.
+signing, upload — needs the native toolchains: **locally that is a Mac** with
+Xcode and Android Studio (§3), which is what the team runs; **in CI it is the two
+manual lanes**, [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) for
+TestFlight and [§5a](#5a-android--apk-via-ci-automated-no-mac-step) for the
+APK, which need no Mac at all.
 
 Convenience scripts are in `package.json` (added for the Monday prep, #262):
 
