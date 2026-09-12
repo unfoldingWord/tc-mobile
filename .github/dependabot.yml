@@ -52,5 +52,9 @@ updates:
       # CFPropertyList 3.0.9 declares required_ruby_version < 3.2 and breaks the
       # frozen install on the macos-14 runner (Ruby 3.3.12). Pinned to 3.0.8 in
       # the Gemfile; a weekly patch bump to 3.0.9 would silently re-break the
-      # TestFlight lane, since ci.yml never runs bundle install (#262).
+      # TestFlight lane, since ci.yml never runs bundle install (#262). Ignore
+      # ONLY the known-bad release, so a later 3.0.x with the ceiling lifted (or
+      # a security fix) is still offered.
       - dependency-name: CFPropertyList
+        versions:
+          - "3.0.9"
