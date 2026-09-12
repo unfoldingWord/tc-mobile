@@ -1,7 +1,7 @@
 # tC Mobile
 
 **translationCore Mobile** — an offline-first PWA that aims to be the
-"world's simplest mobile audio notebook and pencil" editor for oral communities doing 
+"world's simplest mobile audio notebook and pencil" editor for oral communities doing
 translation.
 
 ## Why this exists
