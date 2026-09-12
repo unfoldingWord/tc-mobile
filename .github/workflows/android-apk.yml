@@ -110,17 +110,22 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # Fail closed on the SDK facts the lane relies on, before npm ci spends
+      # Fail closed on every runner fact the lane relies on, before npm ci spends
       # minutes — the Android counterpart of the iOS lane's Xcode 26 check.
-      # compileSdk 36 comes from android/variables.gradle.
-      - name: Assert the Android SDK this project compiles against
+      # compileSdk 36 comes from android/variables.gradle; AGP resolves
+      # Build-tools 36.0.0 for it; Ruby does the keystore decode below.
+      - name: Assert the toolchain this project compiles against
         run: |
           set -euo pipefail
           : "${ANDROID_HOME:?ANDROID_HOME is unset on this runner image}"
           test -d "$ANDROID_HOME/platforms/android-36" \
             || { echo "::error::Android SDK Platform 36 not found under $ANDROID_HOME/platforms. Installed:"; ls "$ANDROID_HOME/platforms" || true; exit 1; }
+          test -d "$ANDROID_HOME/build-tools/36.0.0" \
+            || { echo "::error::Android Build-tools 36.0.0 not found under $ANDROID_HOME/build-tools. Installed:"; ls "$ANDROID_HOME/build-tools" || true; exit 1; }
+          command -v ruby >/dev/null \
+            || { echo "::error::ruby not on PATH; the keystore decode step needs it"; exit 1; }
           java -version 2>&1 | head -1
-          echo "ANDROID_HOME=$ANDROID_HOME, platform android-36 present."
+          echo "ANDROID_HOME=$ANDROID_HOME; platform android-36, build-tools 36.0.0 and ruby present."
 
       - name: Install dependencies
         run: npm ci
@@ -148,6 +153,13 @@ jobs:
               exit 1
             fi
           done
+          # ci.yml's fourth ship-blocker: the OBS thumbnails must not be in the
+          # service-worker precache (ADR 0006 / #177) — ~598 files stalling the
+          # first native launch. The iOS guard omits this one; #320 carries it.
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
+            exit 1
+          fi
           test -f android/app/src/main/assets/public/index.html \
             || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
           echo "Bundle built, clean, and synced into android/."
