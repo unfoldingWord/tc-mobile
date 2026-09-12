@@ -113,7 +113,19 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          # App Store Connect requires the iOS 26 SDK (Xcode 26+). The image's
+          # default /Applications/Xcode.app symlink points to 16.x on macos-15,
+          # which Apple rejects at upload. Prefer any versioned Xcode_26*.app;
+          # BSD sort has no -V so sort lexicographically descending — fine for
+          # the 26.x range. If none is found, print what IS installed and exit
+          # so the error lands here rather than after ~10 min of billed archive.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -r | head -1 || true)
+          if [ -z "$XCODE" ]; then
+            echo "::error::Xcode 26 not found on this runner. Available versions:"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          sudo xcode-select -s "${XCODE}/Contents/Developer"
           xcodebuild -version
 
       - name: Sync dist/ into the iOS project
