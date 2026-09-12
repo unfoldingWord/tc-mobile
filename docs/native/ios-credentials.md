@@ -150,6 +150,25 @@ dropdown of _registered_ identifiers only — if you skip this step,
 `org.unfoldingword.tcmobile` simply will not be in the list, and the form does
 not tell you why.
 
+> **`org.`, not `com.` — and this is a real near-miss, caught in the form on
+> 2026-09-12.** Reverse-DNS convention follows the domain the org controls, and
+> unfoldingWord's is `unfoldingword.org`. Registering `com.unfoldingword.tcmobile`
+> instead would have compiled and archived perfectly and then failed at upload,
+> because the identifier is baked into **nine** places across both platforms:
+>
+> | File                                              | What                                          |
+> | ------------------------------------------------- | --------------------------------------------- |
+> | `capacitor.config.ts`                             | `appId`                                       |
+> | `fastlane/Appfile`                                | `app_identifier` default                      |
+> | `ios/App/App.xcodeproj/project.pbxproj`           | `PRODUCT_BUNDLE_IDENTIFIER` (**two** configs) |
+> | `android/app/build.gradle`                        | `namespace` **and** `applicationId`           |
+> | `android/app/src/main/res/values/strings.xml`     | `package_name`, `custom_url_scheme`           |
+> | `android/app/src/main/java/org/unfoldingword/...` | the Java package **and its directory path**   |
+>
+> The Android Java package is the expensive one: changing it moves source
+> directories, not just a string. **Register the identifier to match the repo**
+> — the repo is not the thing to bend here.
+
 ---
 
 ## 5. Step D — create the App Store Connect app record
@@ -162,22 +181,32 @@ one. Without this step the archive succeeds and the upload fails.
 | Question         | Answer                           | Why / watch out                                                                               |
 | ---------------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
 | Platforms        | **iOS** only                     | No macOS/tvOS/visionOS build exists                                                           |
-| **Name**         | see the naming note below        | **Globally unique across the entire App Store**, even for a TestFlight-only app               |
+| **Name**         | **`translationCore Mobile`**     | **Decided by Tim, 2026-09-12**, confirmed with the team. See the naming note below            |
 | Primary Language | **English (U.S.)**               | The UI is English today; this is metadata, not a product constraint                           |
 | Bundle ID        | **`org.unfoldingword.tcmobile`** | Picked from the dropdown §4 populated                                                         |
 | **SKU**          | `tc-mobile`                      | Your own internal identifier. Never shown to users, but effectively permanent                 |
 | User Access      | **Full Access**                  | "Limited Access" restricts which team members see the app — no reason to for an internal test |
 
-**The naming question, spelled out.** The repo carries two names:
+**The naming question — settled.** The repo carries two names:
 `capacitor.config.ts` `appName` and `Info.plist` `CFBundleDisplayName` are
 **`tC Mobile`** (the home-screen label); the PWA manifest `name` is
 **`translationCore Mobile`**. App Store Connect's **Name** is a third, separate
-thing and must be unique across the whole store. `tC Mobile` is short and
-plausibly already taken; `translationCore Mobile` is far more likely to be free.
-**The App Store Connect name does not have to match the home-screen label**, and
-changing it later is easy — so if the first choice is rejected with "The App
-Name you entered is already being used", take the longer one and move on rather
-than renaming anything in the repo.
+thing and must be unique across the whole store.
+
+**Tim chose `translationCore Mobile` on 2026-09-12**, confirmed with the rest of
+the team. That is the App Store Connect record name. It is also the longer and
+more distinctive of the two, so it is the less likely of them to collide with an
+existing app.
+
+**This does not change anything in the repo.** The App Store Connect name does
+not have to match the home-screen label, and the home-screen label stays
+`tC Mobile` — a store name and a springboard label are independent fields.
+Do not "align" `capacitor.config.ts` or `Info.plist` to the store name; the
+short label is the right thing on a phone home screen.
+
+If App Store Connect still rejects it with "The App Name you entered is already
+being used", that is a question for Tim, not a decision to make in the form —
+the name was agreed with the team.
 
 **What you will _not_ be asked, and should not go looking for.** TestFlight
 **internal** testing needs no screenshots, no description, no privacy-policy
@@ -318,7 +347,7 @@ target).
 | Preflight fails in ~30s naming a secret                           | That secret is unset **or empty** — §8                                                                   |
 | Preflight refuses the ref                                         | §9 — dispatch `develop` with `allow_any_ref`, or promote first                                           |
 | `org.unfoldingword.tcmobile` missing from the New App dropdown    | §4 was skipped — the identifier is not registered                                                        |
-| "The App Name you entered is already being used"                  | §5's naming note — take `translationCore Mobile`                                                         |
+| "The App Name you entered is already being used"                  | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form |
 | Upload rejected, "no app record" / "cannot find app"              | §5 was skipped, or the bundle id does not match exactly                                                  |
 | Signing/provisioning failure in the **export** phase, late in run | The API key's role is too low — §6 wants **App Manager**                                                 |
 | `errSecInternalComponent` after ~20 min                           | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand |
@@ -336,7 +365,7 @@ Apple Developer Program enrolled?    yes / no        (Q1)
 My role on the team                  ________        (Q2 — can I mint a Team key?)
 Team ID                              ________        -> APPLE_TEAM_ID
 Bundle ID registered?                yes / no        (§4)
-App Store Connect app record name    ________        (§5)
+App Store Connect app record name    translationCore Mobile   (§5, decided)
 SKU                                  ________        (§5)
 API Key ID                           ________        -> ASC_KEY_ID
 API Issuer ID                        ________        -> ASC_ISSUER_ID
