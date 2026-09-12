@@ -231,6 +231,13 @@ change.
 
 ### One-time setup (human, outside this repo)
 
+> **Doing this for the first time?** [`ios-credentials.md`](ios-credentials.md)
+> walks the same four items as a sit-down checklist — every field each Apple
+> form asks for, with the answer for this project, the two prerequisite
+> questions that can block the whole session (enrollment status and your team
+> role), and the failure modes that produce a **green** run no tester ever
+> receives. The summary below is the reference; that file is the procedure.
+
 1. **App Store Connect API key.** App Store Connect → _Users and Access →
    Integrations → App Store Connect API_ → generate a key with the **App Manager**
    role — required so the archive may create the distribution certificate and
