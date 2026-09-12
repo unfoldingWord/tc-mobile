@@ -11,6 +11,199 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
+
+**A build day, both PRs authored + merged to `develop`.** `staging` still v0.1.13,
+`main` still `3464a30`. **Merged:** #295, #296, and #293 (the stale EOD-2026-09-10
+doc, docs-on-green). **Filed:** #294 (safe-area, closed via #295).
+
+### #295 — safe-area overlays, recorder Back cleared the status-bar clock (#294) → merged
+
+Found live in the **iOS Simulator** (Seth): the recorder **Back** control (and the ≡
+menu) sat under the status-bar clock and couldn't be tapped. Root cause: the
+`fixed; inset:0` scrims (`.recorder-scrim`, `.menu-scrim`) escape the body's
+`env(safe-area-inset-*)` padding. Fix: re-apply the insets on `.recorder-sheet`
+(top/bottom) and `.menu-panel` (all four — it docks flush-right). **Dual review:**
+George R1 P2 (menu drawer needs the right inset in landscape) → fixed; **Frank R2 P2
+(recorder-sheet also needs horizontal insets) REFUTED** — the sheet is `mx-auto
+max-w-md` (448px), centred clear of the notch at every landscape phone width; George
+corroborated twice. Seth's call: refute, not concede (no dead CSS). CI green, merged.
+On-device confirm folds into the Monday #263 pass.
+
+### #296 — iOS TestFlight CI pipeline (#262) → merged after 7 review rounds
+
+Seth chose the automated CI route over a manual archive. **`.github/workflows/ios-testflight.yml`**
+(manual `workflow_dispatch`, macos-14) builds `dist/` → `cap sync ios` → archives the
+`App` scheme → `fastlane ios beta` uploads to TestFlight, **API-key signed** (no
+`match`, no committed cert). Committed to make CI buildable: a **shared `App.xcscheme`**
+(Xcode kept it in gitignored `xcuserdata`), `Gemfile.lock` (fastlane 2.239.0, `ruby`+darwin
+platforms), export-compliance flag, an **ubuntu preflight** (ref + all four secrets gated
+before the billed macOS runner), Dependabot bundler entry, and a reconciled
+`docs/native/README.md` §4a runbook.
+
+**Seven dual-review rounds** (Frank + George), every one a real, distinct defect of the
+class _"CI/macOS behaviour that can't run from the Linux box"_: `sort -V`/`base64 --decode`
+GNU-isms, unlocked Gemfile, build-number collisions (→ unix timestamp), gym's two-phase
+export signing (`export_xcargs` + `Apple Distribution`), the codesign keychain (`setup_ci`),
+bundler platform, plus a full sweep of the deploy/version **doc invariants** the change made
+stale. Past the round cap → **escalated to Seth (DRI), who authorised landing at the polish
+tail** (no P1 for the last two rounds); the irreducible residual is that **the first real
+dispatch is the first verification of signing**. Consolidated triage posted to #296.
+_(Ruby isn't in the container but `apt-get install -y ruby bundler` works — used to generate
+the lock with `bundle lock --add-platform arm64-darwin-23 x86_64-darwin-23 ruby`.)_
+
+### PM Status artifact refreshed + gap-audited
+
+Updated the org-shared **tC Mobile — PM Status** artifact to 2026-09-11 (v9), then
+**reconciled it against commits/closures/open-PRs/comments** (v10): credited the 8–9 Sep
+recorder/audio reliability wave (#165/#184/#168/#203/#106/#76), restored the OBS-offline +
+durable-storage props with the #258 in-session-only asterisk, and scoped #263 to a
+**foreground** demo. Comment scan confirmed no product-owner decision was resolved off-page.
+
+### Blockers / needs a human
+
+- **Seth (Mac, Monday 2026-09-14):** the WKWebView **mic go/no-go** (#263, foreground bar);
+  Android `./gradlew assembleDebug` APK; and now the **TestFlight first dispatch** — blocked
+  on wiring the App Store Connect account (API key + app record + internal tester group +
+  4 GitHub secrets, per `docs/native/README.md` §4a).
+- **Benjamin:** #272 Android Share Book share-shape nod (zip → multi-file audio).
+- **Contributors:** #279 (Jesse, stall-timer race / #175 split), #289 (Jesse, failure log
+  R3), #215 (Ben, red `resolveExpectedVersion` test) — awaiting author pushes.
+
+### Next steps
+
+1. **Seth's Monday trio** on the Mac: #263 mic go/no-go, Android APK, TestFlight first dispatch.
+2. #292 (2nd-take live waveform, #283) on-device confirm, then it can promote.
+3. Re-review + merge-on-clean the contributor PRs (#279/#289/#215) as authors push.
+
+---
+
+## 2026-09-10 — review day: #279/#289/#215 rounds, #283 fixed (#292), dependabot/#242 housekeeping
+
+**A review-and-one-fix day. No merges (nothing came back clean), no promotions** —
+`staging` still v0.1.13, `main` still `3464a30`. All three in-flight PRs re-reviewed
+after author fixes and handed back with fresh blockers. **Filed:** #290, #291.
+
+### #283 — recorder 2nd-take live waveform — FIXED → PR #292 (draft, → develop)
+
+Root cause: the record-stage branch ANDed `!hasAudio`, so any append (2nd take) fell
+to `Waveform`'s static peaks and never grew live (found on Android v0.1.13). Lifted the
+decision into a pure Node-testable seam (`src/components/recorder-stage.ts`,
+`liveScopeShown`) and made an append render exactly like a first take. **Dual review
+clean rounds 1–2**: George R1 caught a real deep-tree P2 the first cut introduced (a
+`LiveScope`→`Waveform` swap on an append's pause/close flashed blank then showed the
+pre-take clip) — fixed @ `01d805b` by dropping the `hasAudio` gate entirely; both
+mutation-proven. `verify` + CI green. **Draft — browser-only render, device-unverified;
+gated on the on-device pass (#245/#263).**
+
+### #279 (Jesse, #166 encoder deadline + #175 playback memory) — round 3, NOT clean
+
+R2 (Frank P2 `int16ToFloatInto` un-validated `start` → NaN; George APPROVE, 3×P3 → filed
+**#290** sweep-retry, **#291** terminate-throw). Jesse fixed the start-guard (`0600e3a`).
+**R3: George P2 (blocking)** — a settled encode's stall timer can `terminate()` the shared
+worker a _later_ encode is using (Share Book / Finished sweep → zip dropped, whole-book
+re-encode; verified: `release()` has no `settled` flag, `progress` never resets the timer).
+Frank P2 = the #290 sweep-coalescing (severity contested; George judged it compatible).
+**Siblings trend flagged** — 3rd straight round of new race findings in the #166
+stall lifecycle while the #175 half stays clean; recommended splitting #279 (land #175,
+rework the stall state machine in its own PR — the #208→#220 precedent). Round 3 of 4.
+
+### #289 (Jesse, #205 durable failure log, T1) — rounds 1→2, NOT clean
+
+R1: Frank 3×P2, George 5×P2 + 2×P3 — convergences on clear-running-off-the-write-lane and
+a swallowed/mis-commented failed-clear, plus a T1 migration `createObjectStore`-after-await.
+Jesse's fix (`23fb0cd`) **closed the round-1 data-safety holes** (v6 create before the
+yields, one-transaction prune, clear on the lane). **R2: 3 new P2s** — share text-fallback
+(absent `canShare` arms files, never `{text}`); `useFailureCount` never retries after a
+recovered blocked-open (marker stuck at 0, Send never mounts); crash-screen Restart reloads
+without awaiting the log write and unmounts the only Send UI. Running George twice surfaced
+a superset (grok non-determinism — the extra run earned the crash-Restart P2). Round 2 of 4.
+
+### #215 (Ben, version.json + rollback, #176) — round 4 = cap, then R5 held on red CI
+
+R4: Frank P2 (fail-open — `parseArgs` silently drops unknown `--flags`); **George P2
+(blocking)** — expected _version_ still read from local `package.json` though R3 moved the
+_SHA_ to the remote ref, so `check:deploy:prod` would false-FAIL the first v0.2.0
+staging→main promotion (the gate failing its own gate); George P2 denylist regex misses the
+`?t=` form; P3. Round 4 = cap, shape = siblings-but-finite → **R5 authorized (DRI)**. Ben
+pushed R5 (`b202f6c`) but **Code Quality is red** (`resolveExpectedVersion` test:
+`expected '0.1.13' to be '0.1.12'`) → R5 held, pointer posted for Ben.
+
+### Housekeeping
+
+Closed **#227/#229/#228** (eslint/@eslint/js→10, vitest→5) — superseded by **#237**
+(deliberate eslint-10/vitest-4 dev-tooling pass, part of #233). Left **#226**
+(`@vitejs/plugin-react`, not in #237's scope). Closed **#242** (my stale, now-conflicting
+EOD-2026-09-04 doc). Open PR count 28 → 24.
+
+### Blockers / back to authors
+
+- **Jesse:** #279 R4 (the stall-timer race; the #175/#166 split call), #289 R3 (3 P2s).
+- **Ben:** #215 — fix the red `resolveExpectedVersion` test, then R5.
+- **Seth:** the Monday (2026-09-14) iPhone **WKWebView mic go/no-go** — device connection being
+  set up; a Simulator smoke can run in parallel (no Apple account needed) but can't test
+  background/lock/interruption. #292's live-append check folds into the same device pass.
+
+### Next steps
+
+1. Re-review + **merge on clean** (Seth authorized) as Jesse/Ben push; one at a time, rebase-check between.
+2. #279: the split decision (approaching the round cap).
+3. #292 on-device confirm (iPhone WKWebView + Android), then promote.
+4. The Monday trio on Seth's Mac: confirm the unfoldingWord Apple account, `./gradlew assembleDebug` APK, the WKWebView record→playback mic test.
+
+---
+
+## 2026-09-09 — #134 to green (rounds 4–6), v0.1.13 promoted & verified, first Android pass on staging, Monday-Capacitor assessment
+
+**Branches:** merged to **`develop`**: #254 (gate-chart docs), #232 (drift guard), #268 (#134 recorder fix), #287 (native Monday-prep docs), plus #281 (v0.1.13 bump). **v0.1.13 promoted to `staging` (#282) and verified live.** `main` still `3464a30`. **Closed:** #134 (via #268), #207 (dup of #279). **Filed:** #283–#286.
+
+### #134 / #268 — recorder Edit-reachability, review-clean and merged
+
+Rounds 4–6 of dual review to clean (Frank + George both APPROVE @ `89cbe8c`); **Tim signed off** the finished-status default (a re-record drops to draft until finished is re-chosen). The chain: R3 second-setter split → R4 `retryHeldTake` was an incomplete copy of `onEnterEdit`'s success-arm contract (3 P2s, both reviewers converged) → **R5 a _pre-existing_ data-loss bug in `onEnterEdit`** (reload-null + the `EMPTY`-base identity → LoadErrorPanel Back overwrites the just-committed take), George deep-tree — fixed both arms → R6 clean. Merged (auto-closed #134). **T2 on-device pass still owed** — browser-only wiring; the 5 scenarios live in #245.
+
+### v0.1.13 promoted & deployed
+
+First promotion since v0.1.12 (2026-09-03), 22 commits behind. #281 (bump) → develop, #282 (develop→staging). **Staging serves `0.1.13`** (bundle `index-Rioadegv.js`), confirmed by the served version string (the #143 proof). Deploy landed in ~1 min — Workers Builds healthier than right after the transfer.
+
+### First Android on-device pass (Seth, on staging v0.1.13)
+
+Core loop + editing + **Share Chapter work** on Android Chrome. Findings:
+
+- **#272 Share Book fails "Could not share this book" — CONFIRMED.** Android Web Share rejects `application/zip`; Chapter's `audio/mpeg` passes. Fix = multi-file audio share, pending Benjamin's share-shape nod.
+- **#269 likely a device setting** Seth overlooked — stored playback works on v0.1.13; the storage-format scoping is shelved (one clean confirm to close).
+- **New:** #283 (2nd-take waveform doesn't append live — **v1-required** bug), #284 (no Play in edit mode — Tim decision), #285 (menu stays open on approve), #286 (discoverability bundle).
+
+### Contributor PR reviews (Seth as reviewer)
+
+- **#232** round 2: Frank's lone P1 **REFUTED** (a `;` breaks the `[^;]*` span so the regex can't match), George APPROVE → merged.
+- **#215** round 3: George one valid P2 (`check:deploy` derives the SHA from local HEAD but Cloudflare deploys the merge-commit tip → false-FAIL) → Ben, round 4.
+- **#207 closed** as dup of **#279** (Jesse). **#279** round 1: Frank APPROVE, George one P2 (freeze-latch cleared while `document.hidden` → false-kills Share on WebView resume) → Jesse pushed `fa9aab2`, **awaiting round 2**.
+
+### Monday-Capacitor assessment (the pivot, in focus)
+
+Paused to assess: **the whole PR queue is v0.2.0 polish — nothing advances the Monday (2026-09-14) sprint-1 goal.** #262/#263 (installable apps) are native/Mac work with no PR. Four parallel lanes:
+
+- **#262 build-readiness:** scaffold sound, **bundles the web assets** (true offline app); blockers are **the Apple account (iOS) + a Mac**; **Android debug APK (`./gradlew assembleDebug`) installs today, no keystore.**
+- **#263 WebView audio risk:** **mic (getUserMedia) favorable-but-unverified is the go/no-go**; background capture won't hold in a WebView; Android `navigator.share` likely absent (reframes #272 → maybe `@capacitor/share`); `storage.persist()` still uncalled.
+- **Scope locked (Seth):** **a foreground install-and-record demo is the Monday bar** — background capture is a known limitation, not a blocker.
+- **#287** shipped: the tester-install guide, a "Minimal Monday path" + human-gates callout in `docs/native/README.md`, and `cap:sync`/`cap:ios`/`cap:android` npm scripts.
+
+### Blockers / needs a human
+
+- **Seth (Mac, Monday-critical, no code):** ① confirm the unfoldingWord Apple Developer account, ② `./gradlew assembleDebug` for the Android APK, ③ **the iPhone WKWebView record→playback mic test** (the go/no-go).
+- **Tim:** #284 (no-Play-in-edit design call).
+- **Benjamin:** #272 share-shape change (zip → multi-file audio).
+
+### Next steps
+
+1. The Monday trio above (Seth's Mac).
+2. #279 round 2 (Jesse's fix), #215 round 4 (Ben's fix).
+3. #268's on-device pass (rides the next promotion or a develop preview); then #283 (the waveform bug).
+4. Rebase the recorder-stack PRs (#274/#213/#239/#230/#235/#218) — develop moved under them.
+5. Fill #287's tester-doc placeholders (APK URL, support channel) before sending to testers.
+
+---
+
 ## 2026-09-08 — sprint planning with Tim & Elsy; a 10-PR merge day; first Android on-device pass
 
 **Branches:** ten PRs merged to **`develop`** (`0ba3687` → `8011bdc`). **Nothing promoted** —

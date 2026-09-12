@@ -13,24 +13,28 @@ import { strings } from "@/components/strings";
  *
  * The rows' `disabled` flags used to be inline boolean expressions in
  * `recorder.tsx`; the cue that explains a grey row has to be derived from the
- * SAME predicates, or the two drift and the row lies. These pin (1) that the
- * derived reason reproduces the exact gate each row shipped with, (2) which
- * reason wins when several hold, and (3) which reasons carry a glyph cue.
+ * SAME predicates, or the two drift and the row lies. These pin (1) the gate
+ * each row carries — the Edit row's since #134 lets a live/paused take through
+ * (commit-then-edit), so it no longer just reproduces the shipped idle-only
+ * gate — (2) which reason wins when several hold, and (3) which reasons carry a
+ * glyph cue.
  *
  * No renderer here (this repo has no jsdom); `Control`'s badge markup and the
- * menu's reachability are review + on-device surface.
+ * menu's reachability — and the commit-then-edit wiring itself — are review +
+ * on-device surface.
  */
 
 const editOpen = {
   hasView: true,
-  takeActive: false,
+  committing: false,
+  hasTake: false,
   starting: false,
   denied: false,
   hasAudio: true,
   canPaste: false,
 };
 
-describe("editRowReason — reproduces the shipped gate", () => {
+describe("editRowReason — the record-then-edit gate (#134)", () => {
   it("is enabled at idle with audio", () => {
     expect(editRowReason(editOpen)).toBeNull();
   });
@@ -41,14 +45,39 @@ describe("editRowReason — reproduces the shipped gate", () => {
     ).toBeNull();
   });
 
-  it("is disabled on an empty segment with an empty clipboard", () => {
+  it("is disabled on an empty segment with an empty clipboard and no take", () => {
     expect(
       editRowReason({ ...editOpen, hasAudio: false, canPaste: false })
     ).toBe("no-audio");
   });
 
-  it("is disabled while a take is live, paused or committing (the #134 case)", () => {
-    expect(editRowReason({ ...editOpen, takeActive: true })).toBe(
+  // The #134 fix, red-first: this asserted "uncommitted-take" (disabled) before
+  // the fix — the exact bug the requirements owner reported, Edit greyed after a
+  // take. A live or paused take now ENABLES Edit; `onEnterEdit` commits it, then
+  // edits. Reverting the `committing`/`hasTake` split (blocking on any non-idle
+  // state again) turns this red.
+  it("is ENABLED while a take is live or paused — entering Edit commits it, then edits (#134)", () => {
+    expect(editRowReason({ ...editOpen, hasTake: true })).toBeNull();
+  });
+
+  // A FIRST take: nothing stored on disk, empty clipboard, but the paused take is
+  // the thing to edit — so `hasTake` alone must carry it past the no-audio gate.
+  it("is ENABLED on a first take with nothing stored yet (#134)", () => {
+    expect(
+      editRowReason({
+        ...editOpen,
+        hasTake: true,
+        hasAudio: false,
+        canPaste: false,
+      })
+    ).toBeNull();
+  });
+
+  // The one window that still blocks Edit: the take is actually committing (the
+  // Back-tapped close, or a #59 interruption's `processing` freeze). Editing must
+  // wait for that to settle, so the row keeps its reason there.
+  it("is disabled ONLY while the take is committing — the close/processing window (#134)", () => {
+    expect(editRowReason({ ...editOpen, committing: true })).toBe(
       "uncommitted-take"
     );
   });
@@ -61,11 +90,12 @@ describe("editRowReason — reproduces the shipped gate", () => {
     expect(editRowReason({ ...editOpen, hasView: false })).toBe("no-segment");
   });
 
-  it("the uncommitted take outranks every other reason — it is the actionable one", () => {
+  it("the committing window outranks every other reason — it is the actionable one", () => {
     expect(
       editRowReason({
         hasView: true,
-        takeActive: true,
+        committing: true,
+        hasTake: false,
         starting: false,
         denied: true,
         hasAudio: false,
@@ -267,7 +297,12 @@ describe("markRowReason — the third row in the same menu (round 3)", () => {
 describe("the starting race — all three rows, distinct words", () => {
   it("outranks the uncommitted-take reason on every row", () => {
     expect(
-      editRowReason({ ...editOpen, takeActive: true, starting: true })
+      editRowReason({
+        ...editOpen,
+        committing: true,
+        hasTake: true,
+        starting: true,
+      })
     ).toBe("starting");
     expect(
       eraseRowReason({ ...eraseOpen, takeActive: true, starting: true })

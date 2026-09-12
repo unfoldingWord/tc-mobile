@@ -1,0 +1,169 @@
+name: iOS TestFlight
+
+# Manual only. This is a NATIVE build (Capacitor → TestFlight), not a web
+# deploy: it produces an .ipa on a macOS runner and uploads it to App Store
+# Connect. It never runs on push/PR, so it does not collide with Cloudflare
+# Workers Builds (which owns the PWA deploy — AGENTS.md) and adds no required
+# check to normal PRs. Run it from the Actions tab when a build is wanted;
+# `workflow_dispatch` builds whatever ref you pick there.
+#
+# macOS runners bill at a premium, so the trigger is deliberate and the lane
+# does not wait for Apple's server-side processing (see the Fastfile).
+#
+# One-time setup lives in docs/native/README.md §4a: the four secrets below,
+# the App Store Connect app record, and the API key's role.
+on:
+  workflow_dispatch:
+    inputs:
+      allow_any_ref:
+        description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  # One upload at a time; never cancel an in-flight archive/upload.
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  # A cheap ubuntu gate BEFORE any billed macOS runner is acquired. Refuse a
+  # non-staging/main ref (the dispatch picker defaults to develop, and this is
+  # the first path that puts a build on a tester's phone) and a missing secret
+  # here — not ~10 minutes into the archive. An unset GitHub secret expands to
+  # "", which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
+  # missing. The macOS job `needs:` this, so a failure never reaches macos-14.
+  preflight:
+    name: Preflight (ref + secrets)
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+      REF: ${{ github.ref_name }}
+      ALLOW_ANY: ${{ inputs.allow_any_ref }}
+    steps:
+      - name: Require staging/main (or an explicit override)
+        run: |
+          set -euo pipefail
+          if [ "$ALLOW_ANY" = "true" ]; then
+            echo "allow_any_ref set — building '$REF'."
+          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
+            echo "::error::Refusing to build a tester IPA from '$REF'. Dispatch from staging or main, or set allow_any_ref."
+            exit 1
+          fi
+
+      - name: Require all four App Store Connect secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::secret $name is unset or empty"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Ref and all four secrets present."
+
+  testflight:
+    name: Build and upload to TestFlight
+    needs: preflight
+    runs-on: macos-14
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build
+
+      # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
+      # Swift package through xcodebuild, so it must use the same toolchain gym
+      # archives with, or SPM resolves against one Xcode and the archive runs on
+      # another. Use the image's default Xcode (a recent stable, symlinked at
+      # /Applications/Xcode.app) — no dynamic version-sort (BSD `sort` has no
+      # `-V`), no hardcoded `Xcode_XX.app` that drifts as the image updates, and
+      # no third-party action, keeping the "actions/* pinned by SHA only"
+      # property this repo's workflows hold (see ci.yml).
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Sync dist/ into the iOS project
+        run: npx cap sync ios
+
+      # This is the first path that puts dist/ on testers' phones, and
+      # workflow_dispatch can build a ref that never passed ci.yml's build job.
+      # Re-assert its cheap ship-blockers here — a missing service worker or
+      # manifest, or a leaked e2e harness — plus that cap sync actually copied
+      # the bundle (ios/App/App/public is gitignored; a sync that exits 0 without
+      # it would archive a blank WebView).
+      - name: Guard the synced bundle
+        run: |
+          set -euo pipefail
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          for tok in "e2e-harness" "__e2e"; do
+            if grep -rq "$tok" dist/; then
+              echo "::error::e2e harness ($tok) leaked into dist/"
+              exit 1
+            fi
+          done
+          test -f ios/App/App/public/index.html || { echo "::error::cap sync did not copy the web bundle into ios/"; exit 1; }
+          echo "Bundle built, clean, and synced into ios/."
+
+      # The .p8 never touches the repo. It is decoded from a secret into the
+      # gitignored fastlane/AuthKey.p8 that the Fastfile reads.
+      - name: Write the App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        # Decode with Ruby (preinstalled on the macOS runner), not `base64`: the
+        # decode flag differs by platform (`--decode`/`-d` is GNU, `-D` is the
+        # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
+        # wrapped secret. Reading the secret from ENV keeps it out of the process
+        # arguments and the shell history.
+        # The preflight job already failed the run if this secret is unset/empty.
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
+
+      - name: Install fastlane
+        # `--frozen` fails the run if Gemfile.lock does not satisfy the Gemfile
+        # instead of silently re-resolving, so every run installs exactly the
+        # locked gem set. Bundler is pinned to the lock's `BUNDLED WITH` so it
+        # never rewrites the lock underneath us. Install into vendor/bundle (not
+        # the system gem dir, which is often not writable on the runner).
+        run: |
+          set -euo pipefail
+          gem install bundler -v 2.6.9 --no-document
+          bundle _2.6.9_ config set --local path vendor/bundle
+          bundle _2.6.9_ install --frozen --jobs 4 --retry 3
+
+      - name: Archive and upload to TestFlight
+        # Same pinned bundler as the install step, so both invocations agree.
+        run: bundle _2.6.9_ exec fastlane ios beta
+
+      - name: Remove the API key
+        # Runner state is ephemeral, but do not leave the decoded key on disk
+        # between steps once the lane is done.
+        if: always()
+        run: rm -f fastlane/AuthKey.p8

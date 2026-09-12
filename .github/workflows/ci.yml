@@ -125,6 +125,33 @@ jobs:
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
           echo "PWA artefacts present."
 
+      - name: OBS thumbnails stay out of the precache manifest
+        # tests/precache-manifest.test.ts pins `workbox.globPatterns` in
+        # vite.config.ts, but a re-add via vite-plugin-pwa's `includeAssets`
+        # or `additionalManifestEntries` reaches the generated manifest
+        # without touching globPatterns at all, so that test would not see it
+        # (#219). This greps the actual build output instead: the source of
+        # truth for what a field install fetches. See ADR 0006 / #177 for why
+        # the thumbnails are reader-gated out of the precache today.
+        #
+        # This check is an UNCONDITIONAL ban on the substring, not a two-state
+        # reader-gated check like tests/precache-manifest.test.ts — bash has
+        # no cheap equivalent of that test's source scan for a reader. That is
+        # deliberate, not an oversight (#232 round-1 review, finding C2): it
+        # is a hard stop that WILL fail once a real reader lands (Template
+        # Library, #33) and `jpg` is legitimately restored to the precache.
+        # At that point this step itself is the third place to update or
+        # remove — alongside `tests/precache-manifest.test.ts`'s `INTENDED`
+        # and `vite.config.ts`'s `globPatterns` — not a bug to silently work
+        # around by loosening or deleting the grep without also updating the
+        # other two.
+        run: |
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — the thumbnails are reader-gated out of the precache (ADR 0006 / #177) until a screen reads them. If a reader has legitimately landed (e.g. the Template Library, #33), this is expected: update INTENDED in tests/precache-manifest.test.ts, globPatterns in vite.config.ts, AND this grep step in ci.yml together — this step is an unconditional ban and must change too, or every build after the restore fails here."
+            exit 1
+          fi
+          echo "obs/thumbs absent from dist/sw.js."
+
       # The e2e smoke harness (#251) must never reach a shipped build. What
       # keeps it out is `vite.config.ts`'s `build.rollupOptions.external`, not
       # `main.tsx`'s `import.meta.env.MODE` guard — a runtime guard alone does
