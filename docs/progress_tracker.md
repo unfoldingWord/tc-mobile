@@ -159,6 +159,100 @@ certs** on the team → zero collision risk with his other App Store apps / Expo
    `fix/ios-signing-automatic` with `allow_any_ref` → on green, merge → promote v0.1.15.
 3. Android APK + device pass (unchanged from the morning plan).
 
+### 2026-09-12 (evening) — manual signing proven and merged (#309), v0.1.15 promoted to staging, first no-override staging TestFlight green; `main` held to the v0.2.0 gate
+
+**Continues the afternoon:** the Option B rework was written, dual-reviewed, proven on a
+real archive, merged, promoted, and proven again from `staging`. **Branches:** `develop`
+`f129791` (#309) → `49e5e43` (#312 bump); **`staging` `a742a10` (#313) — serves v0.1.15**
+(`index-DgzP7o_F.js`, the #143 served-bundle check, was `index-BBkKvfMS.js`); `main` still
+`3464a30`, **held by DRI decision** (below). Merged today (evening): #310, #309, #312, #313.
+Filed: #311. Two builds in TestFlight.
+
+**The SOD blocker — `develop` was red, and so was every PR.** The direct web edit `337dd12`
+(README description) left a trailing space; `format:check` failed on the push. Because
+`pull_request` CI builds the **merge ref**, #309 showed the same red without touching
+README — and `gh run rerun` **cannot clear it** (it re-uses the stale merge ref; only a new
+commit against the fixed base does). Fix **#310** (Prettier, wording untouched) → `develop`
+green → #309 green on its next push. Lesson kept in memory.
+
+**#309 — the manual-signing lane, review loop (cap 4, used 2):**
+
+| Round | Head      | Frank                                        | George                                                    | Outcome                                               |
+| ----- | --------- | -------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
+| 1     | `07a4bf3` | REQUEST_CHANGES — P2 docs, P3 `security cms` | REQUEST_CHANGES — **P1 docs**, P2 paths, P3 Xcode comment | all fixed in `198335b`; George P2 **refuted** (below) |
+| 2     | `9fb4d40` | **APPROVE** — 1 P3 → **#311** (deferred)     | **stalled ×2**, no verdict → skipped, residual accepted   | merge on Frank + CI + DRI acceptance, recorded on PR  |
+
+- **The convergence blocker (Frank P2 = George P1):** the setup docs still described
+  API-key _automatic_ signing and four secrets — the one docs hunk in the PR had made it
+  worse. Fixed: README §4a rewritten (API key is **upload-only**; seven-secret table; new
+  signing-credentials item) and `ios-credentials.md` gained **§5.5** (Distribution `.p12`
+  _with private key_ + App Store profile procedure), §6/§8/§11/§12 corrected. Seth read and
+  verified the docs; then a **genericize pass** for the public repo (`9fb4d40`): no
+  password-manager brand, no vault name, no hostname (Keychain Access stays — it is the
+  macOS tool in the export procedure).
+- **George P2 refuted with evidence, not argument.** It predicted `import_certificate` could
+  not find `fastlane/dist_cert.p12` if Fastlane chdir'd to `fastlane/` (as the file's own
+  comment claimed). The green run 34705900932 step 12 archived with exactly those paths, so
+  cwd is the repo root and **the comment was false**. Cleanup kept anyway: all three
+  credentials resolve via `__dir__` (correct regardless of cwd) and the comment is fixed.
+- **Frank P3 fixed:** `security cms` decoded via `Open3` — exit status checked, stderr kept,
+  nil parse guarded before `["UUID"]` (was a `NoMethodError` path).
+- **George stalls (2×) — a new data point:** output frozen after the preamble (376 B, then
+  410 B), process alive, ~1 % CPU, no verdict after 7–8 min each, with grok fully
+  serialized. Round 1 re-ran fine on a 22 KB prompt; both round-2 stalls were on the 46 KB
+  prompt carrying the two rewritten docs. _Inference:_ prompt size, not just contention.
+  DRI call: skip, **residual recorded as an escalation on the round-2 triage**, not silent.
+- **Seth's fix chain to green (for the record):** secret set in the wrong repo → the
+  installed profile path contains a space (`Provisioning Profiles/…`, so parse the UUID from
+  the CMS envelope instead) → `__dir__` absolute paths → `macos-15` → explicit `Xcode_26*.app`
+  (the image default is 16.x; Apple rejects its uploads).
+- **Re-proven before merge:** the `__dir__` change postdated the green run, so Seth
+  re-dispatched from the branch — run **34710542194**, `headSha 9fb4d40`, steps 10–13 green.
+  Then admin-merged (squash `f129791`).
+
+**Promotion — v0.1.15 to `staging`.** #312 `chore(release)` (squash `49e5e43`, version files
+only) → #313 `develop → staging` (**merge commit** `a742a10`; promotions merge, bumps
+squash). Served-verified: hash moved to `index-DgzP7o_F.js`, bundle stamps `0.1.15`.
+**Then the check that answers "can we dispatch from any branch once we merge up?":** run
+**34711705269** from `staging`, **no `allow_any_ref`**, steps 10–13 green.
+
+> **The ref gotcha, now proven:** `workflow_dispatch` runs the **dispatched ref's own** yml +
+> Fastfile. Between #306 and #313 `staging` carried a _broken_ automatic-signing copy (fails
+> at Install fastlane — worse than absent); `main` has **no workflow file**. A promotion is
+> what makes a branch dispatchable. `ios-credentials.md` §9's "ref trap" table is now stale.
+
+**`main` — held to the Sept-30 v0.2.0 gate (DRI, tonight).** Considered and declined on the
+evidence: `main` pre-pivot; #244's checklist essentially unchecked; 19 open milestone
+issues incl. P1s #59/#38; Android never run (#245); the requirements owner signs. `staging`
+covers tester builds, so `main` is not needed for TestFlight. Recorded on #244 — with one
+labeled observation toward its "#72: a develop merge does not move the staging URL" box:
+three `develop` merges today left staging on `index-BBkKvfMS.js`; only #313 moved it.
+
+**Also:** #262 status posted; #250 progress posted (names left for that issue's scope);
+memory updated (TestFlight pipeline, George); harness feedback sent on the worktree guard
+refusing read-only `gh`/`git show` with variables/heredocs.
+
+### Blockers / needs a human (evening)
+
+- **Did a tester receive it?** Green ≠ delivered (runbook §10). Seth: confirm the internal
+  group got build(s) from runs 34710542194 / 34711705269, or assign by hand.
+- **Android has still never run** (#245) — the open sibling on the gate, and the training's
+  other platform.
+- **#308 (this EOD PR)** needs a merge — docs, green alone. `develop` moved 5 commits under
+  it; tracker-only, so no conflict expected.
+
+### Next steps (evening)
+
+1. **Android first on-device pass (#245)** — protocol + evidence sheet; the gate's biggest
+   unrun item.
+2. Confirm tester receipt of the TestFlight build (above).
+3. **v0.2.0 gate work (#244):** triage the 19 open milestone issues (close vs. move to
+   v0.3.0, explicitly), work the checklist, Tim's sign-off → then `staging → main` with the
+   `0.2.0` minor bump + `git tag v0.2.0`.
+4. Docs: refresh `ios-credentials.md` §9 ref-trap table; #311 (`sort -r` Xcode 26.9 > 26.10)
+   in the next lane-touching PR, proven by a dispatch rather than trusted.
+5. #250: the names scrub in the native docs and this tracker before the public flip.
+
 ---
 
 ## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
