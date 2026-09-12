@@ -10,7 +10,7 @@ name: iOS TestFlight
 # macOS runners bill at a premium, so the trigger is deliberate and the lane
 # does not wait for Apple's server-side processing (see the Fastfile).
 #
-# One-time setup lives in docs/native/README.md §4a: the four secrets below,
+# One-time setup lives in docs/native/README.md §4a: the seven secrets below,
 # the App Store Connect app record, and the API key's role.
 on:
   workflow_dispatch:
@@ -43,6 +43,9 @@ jobs:
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+      IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+      IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+      IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
       REF: ${{ github.ref_name }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
@@ -56,23 +59,24 @@ jobs:
             exit 1
           fi
 
-      - name: Require all four App Store Connect secrets
+      - name: Require all seven secrets
         run: |
           set -euo pipefail
           missing=0
-          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64; do
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
+                      IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
             if [ -z "${!name:-}" ]; then
               echo "::error::secret $name is unset or empty"
               missing=1
             fi
           done
           [ "$missing" -eq 0 ] || exit 1
-          echo "Ref and all four secrets present."
+          echo "Ref and all seven secrets present."
 
   testflight:
     name: Build and upload to TestFlight
     needs: preflight
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     permissions:
       contents: read
@@ -80,6 +84,10 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # The Fastfile reads IOS_DIST_CERT_PASSWORD directly from ENV to unlock
+      # the imported .p12; the p12 and profile themselves are decoded in the
+      # "Write signing credentials" step and not needed as env vars here.
+      IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -97,15 +105,29 @@ jobs:
       # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
       # Swift package through xcodebuild, so it must use the same toolchain gym
       # archives with, or SPM resolves against one Xcode and the archive runs on
-      # another. Use the image's default Xcode (a recent stable, symlinked at
-      # /Applications/Xcode.app) — no dynamic version-sort (BSD `sort` has no
-      # `-V`), no hardcoded `Xcode_XX.app` that drifts as the image updates, and
-      # no third-party action, keeping the "actions/* pinned by SHA only"
+      # another. App Store Connect requires the iOS 26 SDK, so this pins Xcode 26
+      # explicitly rather than the image default: /Applications/Xcode.app is 16.x
+      # on macos-15 and Apple rejects its uploads. The step below globs the
+      # versioned Xcode_26*.app and fails closed if none is present (BSD `sort`
+      # has no `-V`, so it sorts lexicographically — fine within the 26.x range).
+      # No third-party action, keeping the "actions/* pinned by SHA only"
       # property this repo's workflows hold (see ci.yml).
       - name: Select Xcode
         run: |
           set -euo pipefail
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          # App Store Connect requires the iOS 26 SDK (Xcode 26+). The image's
+          # default /Applications/Xcode.app symlink points to 16.x on macos-15,
+          # which Apple rejects at upload. Prefer any versioned Xcode_26*.app;
+          # BSD sort has no -V so sort lexicographically descending — fine for
+          # the 26.x range. If none is found, print what IS installed and exit
+          # so the error lands here rather than after ~10 min of billed archive.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -r | head -1 || true)
+          if [ -z "$XCODE" ]; then
+            echo "::error::Xcode 26 not found on this runner. Available versions:"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          sudo xcode-select -s "${XCODE}/Contents/Developer"
           xcodebuild -version
 
       - name: Sync dist/ into the iOS project
@@ -146,24 +168,47 @@ jobs:
           set -euo pipefail
           ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
 
+      # The signing credentials never touch the repo. Decoded here from secrets
+      # into gitignored paths that the Fastfile reads. Same Ruby decode technique
+      # as the API key step above: cross-platform, tolerates wrapped secrets,
+      # keeps the secrets out of process arguments and shell history.
+      - name: Write the signing credentials
+        env:
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("fastlane/dist_cert.p12", Base64.decode64(ENV.fetch("IOS_DIST_CERT_P12_BASE64")))'
+          ruby -rbase64 -e 'File.binwrite("fastlane/dist_profile.mobileprovision", Base64.decode64(ENV.fetch("IOS_PROVISION_PROFILE_BASE64")))'
+
       - name: Install fastlane
-        # `--frozen` fails the run if Gemfile.lock does not satisfy the Gemfile
+        # `frozen` fails the run if Gemfile.lock does not satisfy the Gemfile
         # instead of silently re-resolving, so every run installs exactly the
-        # locked gem set. Bundler is pinned to the lock's `BUNDLED WITH` so it
-        # never rewrites the lock underneath us. Install into vendor/bundle (not
-        # the system gem dir, which is often not writable on the runner).
+        # locked gem set. It is set through `bundle config` rather than the
+        # `--frozen` flag: bundler 2.6 deprecates the flag because it "relies on
+        # being remembered across bundler invocations", which a future runner
+        # image could stop doing without any change here — the config form is
+        # explicit per checkout. The first real dispatch (run 34694213885,
+        # 2026-09-12) proved the guard works: it refused a lock resolved under a
+        # pre-3.2 Ruby (CFPropertyList 3.0.9, `ruby < 3.2`) on the runner's
+        # 3.3.12 instead of quietly re-resolving. Bundler is pinned to the lock's
+        # `BUNDLED WITH` so it never rewrites the lock underneath us. Install
+        # into vendor/bundle (not the system gem dir, which is often not
+        # writable on the runner).
         run: |
           set -euo pipefail
           gem install bundler -v 2.6.9 --no-document
           bundle _2.6.9_ config set --local path vendor/bundle
-          bundle _2.6.9_ install --frozen --jobs 4 --retry 3
+          bundle _2.6.9_ config set --local frozen true
+          bundle _2.6.9_ install --jobs 4 --retry 3
 
       - name: Archive and upload to TestFlight
         # Same pinned bundler as the install step, so both invocations agree.
         run: bundle _2.6.9_ exec fastlane ios beta
 
-      - name: Remove the API key
-        # Runner state is ephemeral, but do not leave the decoded key on disk
+      - name: Remove decoded credentials
+        # Runner state is ephemeral, but do not leave decoded secrets on disk
         # between steps once the lane is done.
         if: always()
-        run: rm -f fastlane/AuthKey.p8
+        run: rm -f fastlane/AuthKey.p8 fastlane/dist_cert.p12 fastlane/dist_profile.mobileprovision

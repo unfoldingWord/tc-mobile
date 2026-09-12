@@ -201,9 +201,12 @@ TestFlight only; **App Store submission is out of scope** (#262).
 
 [`.github/workflows/ios-testflight.yml`](../../.github/workflows/ios-testflight.yml)
 builds the iOS app on a macOS runner and uploads it to TestFlight with Fastlane
-([`fastlane/Fastfile`](../../fastlane/Fastfile), lane `ios beta`), signing via an
-App Store Connect **API key** — no `match`, no committed certificate, no second
-repo. It is **manual-trigger only** (`workflow_dispatch`): run it from **Actions →
+([`fastlane/Fastfile`](../../fastlane/Fastfile), lane `ios beta`). Signing is
+**manual**: a Distribution certificate (`.p12`) and an App Store provisioning
+profile (`.mobileprovision`) are decoded from secrets into a temporary keychain;
+the App Store Connect **API key** authenticates the **upload only**, not signing.
+No `match`, no certs repo. It is **manual-trigger only** (`workflow_dispatch`):
+run it from **Actions →
 iOS TestFlight → Run workflow**, choosing the branch to build. It never runs on
 push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
 and adds no required check to normal PRs.
@@ -238,29 +241,40 @@ change.
 > role), and the failure modes that produce a **green** run no tester ever
 > receives. The summary below is the reference; that file is the procedure.
 
-1. **App Store Connect API key.** App Store Connect → _Users and Access →
-   Integrations → App Store Connect API_ → generate a key with the **App Manager**
-   role — required so the archive may create the distribution certificate and
-   provisioning profile via `-allowProvisioningUpdates`. Download the `.p8`
-   **once** (it cannot be re-downloaded); note the **Key ID** and **Issuer ID**.
-2. **The app record must already exist.** App Store Connect → _Apps → **+** → New
+1. **App Store Connect API key — for the upload, not signing.** App Store
+   Connect → _Users and Access → Integrations → App Store Connect API_ →
+   generate a key with the **App Manager** role (`upload_to_testflight` needs it
+   to submit the build). Download the `.p8` **once** (it cannot be
+   re-downloaded); note the **Key ID** and **Issuer ID**.
+2. **A Distribution certificate and an App Store provisioning profile — the
+   signing identity.** Manual signing needs a stable Apple **Distribution**
+   certificate exported as a `.p12` **with its private key**, plus an **App
+   Store** provisioning profile bound to `org.unfoldingword.tcmobile` and that
+   certificate. [`ios-credentials.md`](ios-credentials.md) walks the portal
+   steps; base64-encode both files for the secrets below. Keep the `.p12` and its
+   export password in a secrets vault: the same identity is reused on every run —
+   the point of manual over automatic signing.
+3. **The app record must already exist.** App Store Connect → _Apps → **+** → New
    App_, bundle id `org.unfoldingword.tcmobile`. `upload_to_testflight` uploads to
    an existing app; it does **not** create one. (A first manual Xcode upload,
    [§4](#4-ios--testflight), also creates it — see the recommendation below.)
    Then create an **internal tester group** (TestFlight → Internal Testing) and
    enable **_Automatically distribute new builds_** on it, or an uploaded build
    reaches no one until it is assigned to a group by hand.
-3. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+4. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
 
-   | Secret              | Value                                                                      |
-   | ------------------- | -------------------------------------------------------------------------- |
-   | `ASC_KEY_ID`        | the API **Key ID**                                                         |
-   | `ASC_ISSUER_ID`     | the API **Issuer ID**                                                      |
-   | `ASC_KEY_P8_BASE64` | the `.p8` contents, base64-encoded (`base64 -i AuthKey_XXXX.p8 \| pbcopy`) |
-   | `APPLE_TEAM_ID`     | the unfoldingWord Apple **Team ID** (Developer portal → _Membership_)      |
+   | Secret                         | Value                                                                      |
+   | ------------------------------ | -------------------------------------------------------------------------- |
+   | `ASC_KEY_ID`                   | the API **Key ID**                                                         |
+   | `ASC_ISSUER_ID`                | the API **Issuer ID**                                                      |
+   | `ASC_KEY_P8_BASE64`            | the `.p8` contents, base64-encoded (`base64 -i AuthKey_XXXX.p8 \| pbcopy`) |
+   | `APPLE_TEAM_ID`                | the unfoldingWord Apple **Team ID** (Developer portal → _Membership_)      |
+   | `IOS_DIST_CERT_P12_BASE64`     | the Distribution `.p12` (private key included), base64-encoded             |
+   | `IOS_DIST_CERT_PASSWORD`       | the `.p12` export password                                                 |
+   | `IOS_PROVISION_PROFILE_BASE64` | the App Store `.mobileprovision`, base64-encoded                           |
 
-   The `.p8` is decoded into `fastlane/AuthKey.p8` at build time (gitignored) and
-   removed after the run. **Never commit it.**
+   The `.p8`, `.p12` and `.mobileprovision` are decoded into `fastlane/` at build
+   time (all gitignored) and removed after the run. **Never commit them.**
 
 ### Committed to make CI buildable (evidence)
 
@@ -271,8 +285,9 @@ change.
   standard HTTPS, so it is export-exempt; this skips the per-build _Missing
   Compliance_ prompt in App Store Connect.
 - `Gemfile` + `Gemfile.lock` (locked to the macOS runner's platforms) and
-  `fastlane/{Appfile,Fastfile}`. The workflow installs with `--frozen`, so a run
-  fails rather than silently re-resolving. No CocoaPods (SPM — [§3](#3-one-time-mac-prerequisites)).
+  `fastlane/{Appfile,Fastfile}`. The workflow sets `bundle config set --local
+frozen true` before `bundle install`, so a run fails rather than silently
+  re-resolving. No CocoaPods (SPM — [§3](#3-one-time-mac-prerequisites)).
 
 ### Prove the chain once by hand first (recommended)
 
