@@ -403,6 +403,7 @@ None of this is needed for the **CI** path, which is why §§1–9 come first.
 **A caveat if you run `bundle` locally:** `Gemfile.lock` was generated for
 `arm64-darwin-23` / `x86_64-darwin-23` (the macOS runner) plus the generic
 `ruby` platform. This Mac reports `arm64-darwin25`, so a local
-`bundle install --frozen` leans on that generic entry. If it refuses, that is a
-local-platform artifact, **not** a broken lock — the CI runner is darwin-23 and
-matches exactly. Do not "fix" the lock to suit this Mac; it would desync CI.
+`bundle config set --local frozen true` then `bundle install` leans on that
+generic entry. If it refuses, that is a local-platform artifact, **not** a
+broken lock — the CI runner is darwin-23 and matches exactly. Do not "fix" the
+lock to suit this Mac; it would desync CI.
