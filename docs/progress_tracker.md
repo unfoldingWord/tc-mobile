@@ -11,6 +11,99 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-12 — the first native build attempted: Apple credentials done, v0.1.14 promoted, TestFlight dispatch failed at Install fastlane; triage cuts the gate to 20
+
+**Branches:** merged to **`develop`**: #301 (EOD 09-11), #303 (credentials runbook), #304
+(v0.1.14 bump). **`develop` → `staging`: #306** (merge commit `d1e38d8`) — **staging serves
+0.1.14** (`index-BBkKvfMS.js`, the #143 served-bundle check). `main` still `3464a30`.
+**Open:** #307 (the TestFlight fix, awaiting Seth's review from his other login). **Filed:**
+#305. **Closed as superseded:** PRs #299, #300, #226. Working from the Mac (`excalibur`)
+for the first time, not the container.
+
+### The Apple side is done (#262)
+
+Seth registered `org.unfoldingword.tcmobile` (Explicit, no capabilities), created the App
+Store Connect record **translationCore Mobile** — the name Tim chose and confirmed with the
+team — SKU `tc-mobile`, minted the API key at **App Manager**, created the internal tester
+group with _Automatically distribute new builds_ on, and set all four secrets; verified with
+`gh secret list`. One near-miss caught in the form: `com.unfoldingword.tcmobile` typed
+where the repo has `org.` in nine places across both platforms — the identifier now
+matches the repo, not the other way round. Recorded in
+[`docs/native/ios-credentials.md`](native/ios-credentials.md) (#303), which also flags
+that enrollment status was unverified in our own docs and that Team API keys have
+historically been Account-Holder-only.
+
+### First TestFlight dispatch — run 34694213885 — failed before signing
+
+Dispatched from `staging` with `allow_any_ref` unticked. **Preflight passed** (ref, all four
+secrets). **macOS steps 1–9 passed** (checkout, Node, build, Xcode select, `cap sync ios`,
+bundle guard, API key written). **Step 10 `Install fastlane` failed:**
+`CFPropertyList-3.0.9 requires ruby version < 3.2` against the runner's Ruby **3.3.12**. The
+lock was resolved in the Linux container under a pre-3.2 Ruby, and CFPropertyList shipped
+3.0.9 (`< 3.2`) and 4.0.0 (`>= 3.2`) on the same day; `--frozen` refused to re-resolve —
+the behaviour #296 asked for. **Fix: PR #307** — `bundle lock --update CFPropertyList` only
+(→ **3.0.8**, no Ruby constraint; 4.0.0 would break `xcodeproj`'s `< 4.0` bound), one line,
+platforms untouched, plus `frozen` via `bundle config set --local` instead of the
+deprecated flag. Verified locally with a frozen install and `fastlane --version` under
+Ruby 4.0.6; the runner is the judge. **Archive, export signing and upload have still never
+run.** Agreed route after merge: dispatch from `develop` with `allow_any_ref` as the signing
+smoke, then promote v0.1.15 once the chain is proven.
+
+### Triage — DRI-approved and applied
+
+Every open issue read against its milestone and the 09-08 sprint plan
+([board](https://claude.ai/code/artifact/ebe10d00-20b6-4808-b9dd-f83685f3918c)).
+**Left the gate → v0.3.0**, each with a comment: #246, #253, #33 (Template Library — Tim
+retagged it v1-desired on 09-08; the milestone never followed), #115, #116 (hang on Q6),
+#290, #291, #305. **Orphans → v1.0.0:** #273, #276, #280. **Dependabot majors closed** as
+superseded by #237/#238. **Refreshes** on #243 (three rows answered since 09-04; only Q6 and
+#116 still change V1 code), #244 (five checklist lines now closed), #245 (step 2 named an
+About screen that is draft #144), #25 (remaining scope). **All 18 open gate issues
+reassigned to Seth alone** — Jesse is travelling and off code; hand-over notes on #12,
+#166, #180. The gate is now 20 open (incl. PRs #303/#304 at the time), of which **five are
+code** — #38 (no PR, no motion: the at-risk one), #166 (split from #279), #12 (#214), #180
+(only as #38's seam), #72 — and **seven close on one device pass**.
+
+### Docs and artifacts
+
+- **Tester run sheet** (artifact, `db` — org-internal):
+  <https://claude.ai/code/artifact/bccb86d0-2523-49c3-838a-d38cf6f26ee0>. Corrected the
+  same day: there is no About screen (build stamp = the Books footer line), and #168's Back
+  fix is now a confirm-in-the-shell item, not a known rough edge.
+- **Mockups vs. build audit** (artifact + #305):
+  <https://claude.ai/code/artifact/a72e0d5d-4002-4ab6-a52f-eb722da0f8c1>. 21 match, 5
+  changed by Tim on 27 Aug, 4 tracked, 4 new — the mockups themselves are not in this repo;
+  the recorder's "dimmed list" is opaque; dark-by-default lives in a CSS comment, not an ADR.
+- Claude Code status line: branch · PR · project version · model · 5h/7d · context.
+
+### Environment (this Mac)
+
+Homebrew and Docker's socket belong to another account; node 22.23.2 is user-local
+(`~/.local/opt`), bundler 2.6.9 in `~/.local/gems` under Homebrew Ruby 4.0.6;
+`xcode-select` still points at CommandLineTools (a manual archive needs Seth's `sudo`).
+
+### Blockers / needs a human
+
+- **Seth (other login):** review + merge **#307** → dispatch `develop` + `allow_any_ref` →
+  read the run. APK: `npm run build && npx cap sync android && cd android && ./gradlew
+assembleDebug`. Then the device pass on both, via the run sheet.
+- **Tim:** Q6 (archive / manifest) and #116; confirm the Q1/Q2/Q5/Q7 defaults stand for V1.
+- **Benjamin:** #272 — zip → multi-file audio for Share Book on Android.
+- **Elsy:** which build facilitators install (0.2.0 on 30 Sept or 0.3.0 on 9 Oct); the
+  tester roster; internal group vs a public link (Beta App Review lead time).
+- **Ben:** revive #214 and #235 for review; park the other 09-04 drafts with a line each.
+
+### Next steps
+
+1. #307 → merge → dispatch → iterate on `develop` until the upload succeeds → promote
+   v0.1.15 → staging → clean dispatch from `staging`.
+2. APK + device pass → run sheet → close #245 #263 #58 #59 #108 #269 #283.
+3. #38 owner and smallest slice; #166 split; #72 dashboard; #244 → promotion-PR body;
+   #243 → Tim.
+4. AGENTS.md DRI block (Birch → Elsy); commit the five mockups to `docs/design/` (#305).
+
+---
+
 ## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
 
 **A build day, both PRs authored + merged to `develop`.** `staging` still v0.1.13,
