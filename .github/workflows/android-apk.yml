@@ -39,7 +39,10 @@ jobs:
   # never reaches the Gradle step.
   preflight:
     name: Preflight (ref + secrets)
-    runs-on: ubuntu-latest
+    # Pinned to the image whose contents this lane was checked against (see the
+    # header); `ubuntu-latest` retargets silently. Same reason the iOS lane pins
+    # macos-15.
+    runs-on: ubuntu-24.04
     permissions: {}
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -47,13 +50,20 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       REF: ${{ github.ref_name }}
+      # ref_name drops the branch-or-tag distinction: a TAG named `staging`
+      # would read as "staging". Require the ref to be a branch as well (#320
+      # tracks the same gap in the iOS lane).
+      REF_TYPE: ${{ github.ref_type }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
       - name: Require staging/main (or an explicit override)
         run: |
           set -euo pipefail
           if [ "$ALLOW_ANY" = "true" ]; then
-            echo "allow_any_ref set — building '$REF'."
+            echo "allow_any_ref set — building '$REF' ($REF_TYPE)."
+          elif [ "$REF_TYPE" != "branch" ]; then
+            echo "::error::Refusing to build a tester APK from $REF_TYPE '$REF'. Tester builds come from the staging or main BRANCH; set allow_any_ref for anything else."
+            exit 1
           elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
             echo "::error::Refusing to build a tester APK from '$REF'. Dispatch from staging or main, or set allow_any_ref."
             exit 1
@@ -76,7 +86,7 @@ jobs:
   build:
     name: Build release APK
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -99,6 +109,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      # Fail closed on the SDK facts the lane relies on, before npm ci spends
+      # minutes — the Android counterpart of the iOS lane's Xcode 26 check.
+      # compileSdk 36 comes from android/variables.gradle.
+      - name: Assert the Android SDK this project compiles against
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME is unset on this runner image}"
+          test -d "$ANDROID_HOME/platforms/android-36" \
+            || { echo "::error::Android SDK Platform 36 not found under $ANDROID_HOME/platforms. Installed:"; ls "$ANDROID_HOME/platforms" || true; exit 1; }
+          java -version 2>&1 | head -1
+          echo "ANDROID_HOME=$ANDROID_HOME, platform android-36 present."
 
       - name: Install dependencies
         run: npm ci
@@ -179,7 +201,7 @@ jobs:
       # §10 names. Fail instead (second layer; the test -f above is the first).
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: android-apk
+          name: android-apk-${{ github.sha }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14

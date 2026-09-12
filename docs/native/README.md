@@ -47,11 +47,14 @@ The two platforms have very different fastest routes:
   # → android/app/build/outputs/apk/debug/app-debug.apk
   ```
 
-  Send that APK to a tester and follow the sideload steps in
+  Install that APK **only on a developer's own device — one that will never
+  receive a §5a release build** — and follow the sideload steps in
   [§5](#5-android--apk-sideload) step 4 (enable _Install unknown apps_, open the
-  file). The signed-**release** path (a keystore + `signingConfigs`, §5 steps
-  1–3) is the durable distribution route and can follow later — it is **not**
-  needed to hit Monday's bar.
+  file). Testers get release-signed builds from the CI lane
+  ([§5a](#5a-android--apk-via-ci-automated-no-mac-step)) once the keystore and
+  its four secrets exist; the debug APK proves the toolchain and the WebView,
+  nothing more. The signed-**release** path (§5 steps 1–3) is the durable
+  distribution route.
 
   > **The debug APK is for the developer's own proof, not for anyone who will
   > later receive a release build.** Android ties app identity to the signing
@@ -344,7 +347,10 @@ for the audio store (PR #265).
    `signingConfigs.release` block reads four **environment variables**:
    `ANDROID_KEYSTORE_PATH`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
    `ANDROID_KEY_PASSWORD`. Export them in your shell before running
-   `assembleRelease`. They are read with `System.getenv`, so entries in
+   `assembleRelease`, with `ANDROID_KEYSTORE_PATH` **absolute** — Gradle
+   resolves a relative path against `android/app/`, not your shell's cwd, and
+   the guard only checks that the variable is set, not that the file is there.
+   They are read with `System.getenv`, so entries in
    `~/.gradle/gradle.properties` do **not** work — those become Gradle project
    properties, not env vars, and the guard below would report all four as
    missing. The build fails loudly if any is unset, so it cannot silently
@@ -396,8 +402,9 @@ build: never hand one to a tester once the release keystore exists.
 **Tester distribution:** workflow artifacts require a GitHub login to download,
 and the lane attaches the APK **only** as a run artifact — nothing creates a
 GitHub release or pre-release today (the repo's first tag is the v0.2.0
-promotion). So the channel is: a person with repository access downloads
-`android-apk` from the run, and shares the `.apk` through the team drive; §5
+promotion). So the channel is: a person with repository access downloads the
+`android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
+the team drive; §5
 step 4 covers installation on the phone. Attaching the APK to a release is a
 follow-up once a release step exists, not a documented path.
 
@@ -466,7 +473,7 @@ Two operational notes:
   tester's native app runs identical web code to the PWA **at that ref** — identical
   to staging only when the workflow is dispatched from `staging`. The lane's ref
   guard refuses anything but `staging`/`main` unless explicitly overridden, so build
-  tester IPAs from `staging` or `main`, not `develop`.
+  tester IPAs and APKs from `staging` or `main`, not `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the
