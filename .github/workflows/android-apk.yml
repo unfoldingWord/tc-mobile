@@ -1,0 +1,158 @@
+name: Android APK
+
+# Manual only. This is a NATIVE build (Capacitor → APK), not a web deploy:
+# it produces a signed release APK on an ubuntu runner and uploads it as a
+# workflow artifact. It never runs on push/PR, so it does not collide with
+# Cloudflare Workers Builds (which owns the PWA deploy — AGENTS.md).
+#
+# Run it from the Actions tab when a tester build is wanted; `workflow_dispatch`
+# builds whatever ref you pick there.
+#
+# One-time setup: create the release keystore (docs/native/README.md §5 step 1)
+# and set the four GitHub secrets below. The Android SDK and a JDK are on the
+# ubuntu-latest runner image — no install step needed. (Inference, not yet
+# verified; the first dispatch is the check, exactly as for the iOS lane.)
+on:
+  workflow_dispatch:
+    inputs:
+      allow_any_ref:
+        description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  # One APK build at a time; never cancel an in-flight signing step.
+  group: android-apk
+  cancel-in-progress: false
+
+jobs:
+  # A cheap gate BEFORE any billable work. Refuse a non-staging/main ref
+  # (the dispatch picker defaults to develop) and a missing secret here — not
+  # partway through a Gradle build. An unset GitHub secret expands to "", so
+  # treat empty as missing. The build job `needs:` this, so a failure here
+  # never reaches the Gradle step.
+  preflight:
+    name: Preflight (ref + secrets)
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      REF: ${{ github.ref_name }}
+      ALLOW_ANY: ${{ inputs.allow_any_ref }}
+    steps:
+      - name: Require staging/main (or an explicit override)
+        run: |
+          set -euo pipefail
+          if [ "$ALLOW_ANY" = "true" ]; then
+            echo "allow_any_ref set — building '$REF'."
+          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
+            echo "::error::Refusing to build a tester APK from '$REF'. Dispatch from staging or main, or set allow_any_ref."
+            exit 1
+          fi
+
+      - name: Require all four secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD \
+                      ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::secret $name is unset or empty"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Ref and all four secrets present."
+
+  build:
+    name: Build release APK
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build
+
+      - name: Sync dist/ into the Android project
+        run: npx cap sync android
+
+      # Mirrors the iOS lane's bundle guard. This is the first path that puts
+      # dist/ on testers' devices, and workflow_dispatch can build a ref that
+      # never passed ci.yml's build job. Re-assert the cheap ship-blockers here —
+      # a missing service worker or manifest, a leaked e2e harness — plus that
+      # cap sync actually copied the bundle (android/app/src/main/assets/public
+      # is gitignored; a sync that exits 0 without it would install a blank view).
+      - name: Guard the synced bundle
+        run: |
+          set -euo pipefail
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          for tok in "e2e-harness" "__e2e"; do
+            if grep -rq "$tok" dist/; then
+              echo "::error::e2e harness ($tok) leaked into dist/"
+              exit 1
+            fi
+          done
+          test -f android/app/src/main/assets/public/index.html \
+            || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
+          echo "Bundle built, clean, and synced into android/."
+
+      # The keystore never touches the repo. Decoded here from a secret into a
+      # gitignored path (android/*.jks). Same Ruby decode technique as the iOS
+      # lane: cross-platform, tolerates wrapped secrets, keeps the secret out of
+      # process arguments and shell history.
+      - name: Write the signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("android/tc-mobile-release.jks", Base64.decode64(ENV.fetch("ANDROID_KEYSTORE_BASE64")))'
+
+      # versionCode is a unix timestamp — unique and strictly increasing with no
+      # round-trip to any external service. Android refuses a downgrade, so every
+      # build that reaches a tester needs a higher code than the last.
+      # The signing env vars are read by android/app/build.gradle's signingConfigs
+      # block, which fails loudly via gradle.taskGraph.whenReady if any are unset.
+      - name: Build the release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/tc-mobile-release.jks
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew assembleRelease -PversionCode="$(date +%s)" --no-daemon
+
+      - name: Remove the decoded keystore
+        # Runner state is ephemeral, but do not leave decoded secrets on disk
+        # between steps once the build is done.
+        if: always()
+        run: rm -f android/tc-mobile-release.jks
+
+      # Attach the APK to this run. GitHub requires a login to download workflow
+      # artifacts — for tester distribution, attach the APK to a GitHub
+      # pre-release on the staging promotion, or share via a team drive.
+      # (docs/native/README.md §5a)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14

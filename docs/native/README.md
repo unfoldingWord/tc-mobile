@@ -327,9 +327,12 @@ for the audio store (PR #265).
    Store it **outside** the repo and record the passwords in the team secret
    store. As a backstop, `android/.gitignore` ignores `*.jks`/`*.keystore` so a
    keystore accidentally dropped inside `android/` is not committed.
-2. Wire release signing in `android/app/build.gradle` (`signingConfigs` +
-   `buildTypes.release`), reading passwords from
-   `~/.gradle/gradle.properties` or env vars — **never commit them**.
+2. Wire release signing is **already in `android/app/build.gradle`** — the
+   `signingConfigs.release` block reads four env vars: `ANDROID_KEYSTORE_PATH`,
+   `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Set
+   them in your shell (or `~/.gradle/gradle.properties`) before running
+   `assembleRelease`. The build fails loudly if any are unset, so it cannot
+   silently produce an unsigned APK. **Never commit the keystore or passwords.**
 3. Build a signed APK:
    ```bash
    npx cap sync android
@@ -344,6 +347,54 @@ for the audio store (PR #265).
 
 ---
 
+## 5a. Android → APK via CI (automated, no Mac step)
+
+[`.github/workflows/android-apk.yml`](../../.github/workflows/android-apk.yml)
+builds the Android app on an ubuntu runner and uploads the APK as a workflow
+artifact. It is **manual-trigger only** (`workflow_dispatch`): run it from
+**Actions → Android APK → Run workflow**, choosing the branch to build. It
+never runs on push/PR.
+
+**What a run does:** `npm ci` → `npm run build` → `npx cap sync android` →
+`./gradlew assembleRelease -PversionCode=$(date +%s)` → upload
+`app-release.apk` as a workflow artifact (14-day retention). The APK is signed
+with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
+
+**`versionCode`** is the run's unix timestamp — unique and strictly increasing
+with no external round-trip. Android refuses a `versionCode` downgrade, so
+every build that reaches a tester must carry a higher code than the last.
+
+**Tester distribution:** workflow artifacts require a GitHub login to download.
+For field testers without a GitHub account, attach the APK to the GitHub
+pre-release created on each `staging → main` promotion, or drop it on a shared
+drive (README §5 step 4 covers installation).
+
+### One-time setup
+
+1. **Create the release keystore** (§5 step 1) and store it in the team secret
+   store.
+2. **Four GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+
+   | Secret                    | Value                                                                         |
+   | ------------------------- | ----------------------------------------------------------------------------- |
+   | `ANDROID_KEYSTORE_BASE64` | the `.jks` file, base64-encoded (`base64 -i tc-mobile-release.jks \| pbcopy`) |
+   | `ANDROID_STORE_PASSWORD`  | keystore (store) password                                                     |
+   | `ANDROID_KEY_ALIAS`       | key alias (e.g. `tc-mobile`)                                                  |
+   | `ANDROID_KEY_PASSWORD`    | key password                                                                  |
+
+   The keystore is decoded to `android/tc-mobile-release.jks` at build time
+   (gitignored) and deleted after the APK is built. **Never commit it.**
+
+**First dispatch:** the preflight checks the ref and all four secrets before any
+Gradle work. The `build.gradle` signing config also fails loudly if the env vars
+are unset — two layers. The Ubuntu runner image is assumed to have the Android
+SDK and JDK preinstalled (`ANDROID_HOME`, `JAVA_HOME`); if the first dispatch
+fails on a missing SDK platform, add
+`$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36"` as
+a step before `cap sync android`.
+
+---
+
 ## 6. Versioning
 
 `package.json` `version` is the **web/PWA** build number and moves only in the
@@ -355,12 +406,9 @@ native builds carry their **own** version fields:
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).
 - **Android:** `versionName` (user-facing) + `versionCode` (integer, must
-  increase every upload).
-
-These are **not** auto-synced from `package.json` today, and nothing in this PR
-changes that. For the training, set them by hand per build. If we want one
-source of truth later, a small `cap sync`-time script can stamp them from
-`package.json` — deferred, not built (avoids shipping an unused stub).
+  increase every install). The CI lane (§5a) stamps `versionCode` with a unix
+  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` uses
+  `1` unless you pass `-PversionCode=<N>` explicitly.
 
 ---
 
@@ -368,12 +416,13 @@ source of truth later, a small `cap sync`-time script can stamp them from
 
 **They do not collide.** Cloudflare Workers Builds deploys the PWA by running
 `wrangler deploy` (serving `./dist`) on pushes to `develop`/`staging`/`main`
-(AGENTS.md → _Cloudflare Workers Builds owns deployment_). The native TestFlight
-build ([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step)) runs on a macOS
-runner, but **only on manual dispatch** (`ios-testflight.yml`, `workflow_dispatch`)
-— never on push/PR — so it is not a Workers Builds trigger and produces no web
-deploy. `cap sync` only copies `dist/` into the native projects; the archive it
-uploads goes to App Store Connect, not Cloudflare.
+(AGENTS.md → _Cloudflare Workers Builds owns deployment_). Both native CI lanes
+([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step),
+[§5a](#5a-android--apk-via-ci-automated-no-mac-step)) are **manual-dispatch
+only** (`workflow_dispatch`) — never push/PR — so neither is a Workers Builds
+trigger and neither produces a web deploy. `cap sync` only copies `dist/` into
+the native projects; the IPA goes to App Store Connect and the APK becomes a
+workflow artifact, not a Cloudflare deploy.
 
 Two operational notes:
 
