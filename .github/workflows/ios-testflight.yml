@@ -105,10 +105,12 @@ jobs:
       # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
       # Swift package through xcodebuild, so it must use the same toolchain gym
       # archives with, or SPM resolves against one Xcode and the archive runs on
-      # another. Use the image's default Xcode (a recent stable, symlinked at
-      # /Applications/Xcode.app) — no dynamic version-sort (BSD `sort` has no
-      # `-V`), no hardcoded `Xcode_XX.app` that drifts as the image updates, and
-      # no third-party action, keeping the "actions/* pinned by SHA only"
+      # another. App Store Connect requires the iOS 26 SDK, so this pins Xcode 26
+      # explicitly rather than the image default: /Applications/Xcode.app is 16.x
+      # on macos-15 and Apple rejects its uploads. The step below globs the
+      # versioned Xcode_26*.app and fails closed if none is present (BSD `sort`
+      # has no `-V`, so it sorts lexicographically — fine within the 26.x range).
+      # No third-party action, keeping the "actions/* pinned by SHA only"
       # property this repo's workflows hold (see ci.yml).
       - name: Select Xcode
         run: |

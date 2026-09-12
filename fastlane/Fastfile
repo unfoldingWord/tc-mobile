@@ -40,12 +40,18 @@ platform :ios do
     # after ~20 min of billed macOS time. Actions sets CI=true.
     setup_ci if ENV["CI"]
 
-    # Import the Distribution certificate into the CI keychain. The .p12 is
-    # decoded from a secret into fastlane/dist_cert.p12 by the workflow step
-    # before fastlane runs. MATCH_KEYCHAIN_NAME / MATCH_KEYCHAIN_PASSWORD are
-    # set by setup_ci above; the fallbacks are for local non-CI runs.
+    # The workflow decodes both signing credentials from secrets into the
+    # fastlane/ directory before this lane runs. Resolve them by absolute path
+    # via __dir__ (the absolute fastlane/ path) so they load regardless of
+    # Fastlane's working directory — the same pattern key_path uses below.
+    cert_path = File.expand_path("dist_cert.p12", __dir__)
+    profile_path = File.expand_path("dist_profile.mobileprovision", __dir__)
+
+    # Import the Distribution certificate into the CI keychain.
+    # MATCH_KEYCHAIN_NAME / MATCH_KEYCHAIN_PASSWORD are set by setup_ci above;
+    # the fallbacks are for local non-CI runs.
     import_certificate(
-      certificate_path: "fastlane/dist_cert.p12",
+      certificate_path: cert_path,
       certificate_password: ENV.fetch("IOS_DIST_CERT_PASSWORD"),
       keychain_name: ENV.fetch("MATCH_KEYCHAIN_NAME", "fastlane_tmp_keychain"),
       keychain_password: ENV.fetch("MATCH_KEYCHAIN_PASSWORD", ""),
@@ -57,23 +63,24 @@ platform :ios do
     # xcodebuild splits into a stray build-action argument, failing with
     # "Unknown build action 'Profiles/…'". Parse the UUID directly from the
     # .mobileprovision CMS envelope so PROVISIONING_PROFILE_SPECIFIER and the
-    # export_options map both receive a clean UUID string.
+    # export_options map both receive a clean UUID string. Open3 (no shell)
+    # keeps stderr separate and lets us check the exit status, so a decode
+    # failure raises a clear error here instead of a NoMethodError on a nil
+    # parse below.
     require "plist"
-    require "shellwords"
-    # Fastlane chdir-s to the fastlane/ directory before running the lane, so
-    # a relative "fastlane/dist_profile.mobileprovision" resolves to
-    # fastlane/fastlane/… and security cms returns nothing. __dir__ is the
-    # absolute fastlane/ path, giving the correct file — same pattern as key_path.
-    profile_abs_path = File.expand_path("dist_profile.mobileprovision", __dir__)
-    profile_plist = `/usr/bin/security cms -D -i #{profile_abs_path.shellescape} 2>/dev/null`
-    profile_uuid = Plist.parse_xml(profile_plist)["UUID"]
+    require "open3"
+    profile_plist, cms_err, cms_status =
+      Open3.capture3("/usr/bin/security", "cms", "-D", "-i", profile_path)
+    unless cms_status.success?
+      UI.user_error!("security cms could not decode the provisioning profile: #{cms_err.strip}")
+    end
+    parsed_profile = Plist.parse_xml(profile_plist)
+    profile_uuid = parsed_profile && parsed_profile["UUID"]
     UI.user_error!("Could not parse UUID from provisioning profile") unless profile_uuid
 
     # Install the provisioning profile into ~/Library/MobileDevice/Provisioning
     # Profiles/ so xcodebuild can find it by the UUID extracted above.
-    install_provisioning_profile(
-      path: "fastlane/dist_profile.mobileprovision",
-    )
+    install_provisioning_profile(path: profile_path)
 
     key_id = ENV.fetch("ASC_KEY_ID")
     issuer_id = ENV.fetch("ASC_ISSUER_ID")
