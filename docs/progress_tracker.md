@@ -102,6 +102,63 @@ assembleDebug`. Then the device pass on both, via the run sheet.
    #243 → Tim.
 4. AGENTS.md DRI block (Birch → Elsy); commit the five mockups to `docs/design/` (#305).
 
+### 2026-09-12 (afternoon) — TestFlight signing chain: #307 merged & verified, #309 signing fixes, manual signing (Option B) decided
+
+**Continues the morning:** executed the "merge #307 → dispatch → iterate" plan and drove the
+TestFlight lane up four dispatches, each clearing the prior blocker and exposing the next
+macOS-only one, until it now reaches Apple's real signing service. Diagnosed the wall as a
+signing-**strategy** problem and decided **Option B (manual signing)**. `main` still
+`3464a30`; `staging` still v0.1.14; no promotion.
+
+**#307 (CFPropertyList) — merged (squash `b31f3f0`), verified live.** Dual review, 3 rounds:
+George R1 P2 = the morning's lock-only pin wouldn't survive Dependabot / a local re-resolve
+(reproduced — container Ruby 3.1.2 re-picks 3.0.9 without a Gemfile pin) → pinned
+`CFPropertyList 3.0.8` in the Gemfile + regenerated lock + scoped Dependabot ignore; Frank R2
+P2 (unversioned ignore) → scoped to `3.0.9`; George R3 P3 (stale `--frozen` doc) → fixed.
+Both clean at `95e4ca1`. A dispatch confirmed **Install fastlane now passes.**
+
+**TestFlight dispatch ladder** (feature branch, `allow_any_ref`):
+
+| #   | Run         | Reached                | Result                                                           |
+| --- | ----------- | ---------------------- | ---------------------------------------------------------------- |
+| 1   | 34697273957 | preflight              | ref guard refused `develop` (by design)                          |
+| 2   | 34697406384 | `build_app` archive    | ❌ forced `Apple Distribution` vs automatic style                |
+| 3   | 34698062609 | `-exportArchive`       | ❌ doubled `-authenticationKeyPath` (gym auto-injects on export) |
+| 4   | 34698763222 | archive → Apple portal | ❌ dist/dev cert private key absent on the ephemeral runner      |
+
+**#309 (open, held, reviewed clean at `69ecfc9`)** — fixes for dispatches 2 & 3: (a) drop the
+manual `CODE_SIGN_IDENTITY="Apple Distribution"` (conflicts with the target's
+`CODE_SIGN_STYLE = Automatic`, `pbxproj:302,324`); (b) split archive vs export xcargs so the
+API-key auth isn't passed twice on export. Both empirically validated (each cleared its
+step). **Held, not merged** — dispatch 4 revealed the strategy wall, so #309 folds into the
+Option B rework rather than landing on its own.
+
+**The wall (dispatch 4) → Option B, manual signing.** Automatic signing can't work on
+throwaway CI runners: the cert's private key lives in a Mac keychain and never reaches the
+ephemeral runner, so each run mints a new machine-bound cert and eventually jams. Fix = hand
+CI the identity as files. **Seth started the Apple side on the Mac (`excalibur`):** generated
+CSR + key via `openssl` (LibreSSL — no `-legacy` needed), created the **Apple Distribution**
+cert (`uw_distribution.cer`) under the uw team, and confirmed **no other active Distribution
+certs** on the team → zero collision risk with his other App Store apps / Expo pipelines.
+
+### Blockers / needs a human (afternoon)
+
+- **Seth (Mac browser session, next):** bundle the `.p12` (`openssl pkcs12 -export` — command
+  given); create the **App Store provisioning profile** for `org.unfoldingword.tcmobile`
+  tied to the new Distribution cert; set three GitHub secrets —
+  `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD`, `IOS_PROVISION_PROFILE_BASE64`. Keep
+  the `.p12` + key in 1Password (`uw-devops`); never in the repo or chat.
+
+### Next steps (afternoon)
+
+1. Mac session finishes the three secrets (above).
+2. **Then (code, designed, not yet written):** rework Fastfile + workflow for manual signing
+   — import the `.p12` into the `setup_ci` keychain, install the profile,
+   `CODE_SIGN_STYLE=Manual` + `CODE_SIGN_IDENTITY="Apple Distribution"` + profile specifier;
+   API key for upload only. Extends #309's branch → dual review → dispatch
+   `fix/ios-signing-automatic` with `allow_any_ref` → on green, merge → promote v0.1.15.
+3. Android APK + device pass (unchanged from the morning plan).
+
 ---
 
 ## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
