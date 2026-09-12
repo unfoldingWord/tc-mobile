@@ -60,18 +60,26 @@ platform :ios do
     # (`xcodebuild -exportArchive`) — feeding `xcargs` to the first and
     # `export_xcargs` to the second. BOTH need the API-key authentication or the
     # export phase signs against a runner keychain with no logged-in account and
-    # fails to package the IPA. The project inherits `CODE_SIGN_IDENTITY = "iPhone
-    # Developer"` (project-level, pbxproj) and sets no team, so override the
-    # identity to Apple Distribution for the App Store export and inject the team
-    # the project omits. The API key lets these create/download the distribution
-    # certificate and profile on the fly (automatic signing).
+    # fails to package the IPA. The project's target uses `CODE_SIGN_STYLE =
+    # Automatic` (pbxproj) and sets no team, so inject the team the project omits
+    # and let Xcode resolve the identity: with automatic signing the archive
+    # phase self-signs and the export phase, driven by `export_options` below
+    # (method: app-store, signingStyle: automatic), selects the distribution
+    # identity. `-allowProvisioningUpdates` + the API key let it create/download
+    # the distribution certificate and profile on the fly.
+    #
+    # Do NOT also force `CODE_SIGN_IDENTITY = "Apple Distribution"` here: a manual
+    # identity conflicts with the automatic style and xcodebuild aborts the
+    # archive ("App has conflicting provisioning settings … a conflicting code
+    # signing identity Apple Distribution has been manually specified"). The
+    # export method, not a hand-set identity, is what makes this a distribution
+    # build.
     signing_xcargs = [
       "-allowProvisioningUpdates",
       "-authenticationKeyPath", key_path,
       "-authenticationKeyID", key_id,
       "-authenticationKeyIssuerID", issuer_id,
       "DEVELOPMENT_TEAM=#{team_id}",
-      'CODE_SIGN_IDENTITY="Apple Distribution"',
     ].join(" ")
 
     build_app(
