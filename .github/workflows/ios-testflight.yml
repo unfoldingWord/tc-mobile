@@ -147,16 +147,25 @@ jobs:
           ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
 
       - name: Install fastlane
-        # `--frozen` fails the run if Gemfile.lock does not satisfy the Gemfile
+        # `frozen` fails the run if Gemfile.lock does not satisfy the Gemfile
         # instead of silently re-resolving, so every run installs exactly the
-        # locked gem set. Bundler is pinned to the lock's `BUNDLED WITH` so it
-        # never rewrites the lock underneath us. Install into vendor/bundle (not
-        # the system gem dir, which is often not writable on the runner).
+        # locked gem set. It is set through `bundle config` rather than the
+        # `--frozen` flag: bundler 2.6 deprecates the flag because it "relies on
+        # being remembered across bundler invocations", which a future runner
+        # image could stop doing without any change here — the config form is
+        # explicit per checkout. The first real dispatch (run 34694213885,
+        # 2026-09-12) proved the guard works: it refused a lock resolved under a
+        # pre-3.2 Ruby (CFPropertyList 3.0.9, `ruby < 3.2`) on the runner's
+        # 3.3.12 instead of quietly re-resolving. Bundler is pinned to the lock's
+        # `BUNDLED WITH` so it never rewrites the lock underneath us. Install
+        # into vendor/bundle (not the system gem dir, which is often not
+        # writable on the runner).
         run: |
           set -euo pipefail
           gem install bundler -v 2.6.9 --no-document
           bundle _2.6.9_ config set --local path vendor/bundle
-          bundle _2.6.9_ install --frozen --jobs 4 --retry 3
+          bundle _2.6.9_ config set --local frozen true
+          bundle _2.6.9_ install --jobs 4 --retry 3
 
       - name: Archive and upload to TestFlight
         # Same pinned bundler as the install step, so both invocations agree.
