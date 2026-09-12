@@ -2,17 +2,27 @@
 #
 # The `beta` lane archives the SAME web build the PWA ships (`dist/`, already
 # copied into ios/ by `npx cap sync ios` before this runs) and uploads it to
-# TestFlight. Signing is App-Store-Connect-managed: an API key (not an Apple ID
-# + password, and not `match`/a certs repo) authenticates both the provisioning
-# updates during archive and the upload. That is why there is no second repo and
-# no committed certificate here.
+# TestFlight. Signing is manual: a Distribution certificate (.p12) and an App
+# Store provisioning profile (.mobileprovision) are decoded from secrets by the
+# workflow, imported into a temporary keychain, and passed to xcodebuild
+# directly. The API key is used only for the upload step — it does not touch
+# signing. There is no `match`/certs repo.
+#
+# Why manual? Automatic signing (`-allowProvisioningUpdates` + API key) creates
+# machine-bound keys in the runner's ephemeral keychain, which are discarded at
+# the end of each run and eventually hit Apple's cert-per-machine limit. Manual
+# signing hands CI a stable identity that lives in a secrets vault and never
+# changes between runs.
 #
 # Prerequisites the pipeline cannot create for you (docs/native/README.md §4a):
-#   • the App Store Connect API key must have App Manager (or Admin) role, so
-#     `-allowProvisioningUpdates` may create the distribution cert + profile;
-#   • the app record for the bundle id must already exist in App Store Connect
-#     (create it once in the UI, or with a first manual Xcode upload) — pilot
-#     uploads to an existing app, it does not create one.
+#   • an Apple Distribution certificate (.p12) in GitHub secret
+#     IOS_DIST_CERT_P12_BASE64, its export password in IOS_DIST_CERT_PASSWORD;
+#   • an App Store provisioning profile (.mobileprovision) tied to that cert,
+#     in GitHub secret IOS_PROVISION_PROFILE_BASE64;
+#   • an App Store Connect API key (App Manager role) for upload:
+#     ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64;
+#   • APPLE_TEAM_ID;
+#   • the app record for org.unfoldingword.tcmobile in App Store Connect.
 #
 # Everything below runs on the macOS runner or a Mac; nothing here was executed
 # in the Linux container this was authored in.
@@ -23,12 +33,54 @@ platform :ios do
   desc "Archive dist/ and upload to TestFlight"
   lane :beta do
     # On a GitHub-hosted macOS runner, codesign needs an unlocked keychain of
-    # its own — the API key authenticates to App Store Connect but does not
-    # unlock the default login keychain for the distribution certificate that
-    # `-allowProvisioningUpdates` creates. `setup_ci` creates and unlocks a
-    # temporary keychain for the run; without it the archive/export fails with
-    # `errSecInternalComponent` after ~20 min of billed macOS. Actions sets CI=true.
+    # its own. `setup_ci` creates and unlocks a temporary keychain
+    # (`fastlane_tmp_keychain`) and sets MATCH_KEYCHAIN_NAME /
+    # MATCH_KEYCHAIN_PASSWORD; `import_certificate` below targets it by those
+    # env vars. Without this the archive fails with `errSecInternalComponent`
+    # after ~20 min of billed macOS time. Actions sets CI=true.
     setup_ci if ENV["CI"]
+
+    # The workflow decodes both signing credentials from secrets into the
+    # fastlane/ directory before this lane runs. Resolve them by absolute path
+    # via __dir__ (the absolute fastlane/ path) so they load regardless of
+    # Fastlane's working directory — the same pattern key_path uses below.
+    cert_path = File.expand_path("dist_cert.p12", __dir__)
+    profile_path = File.expand_path("dist_profile.mobileprovision", __dir__)
+
+    # Import the Distribution certificate into the CI keychain.
+    # MATCH_KEYCHAIN_NAME / MATCH_KEYCHAIN_PASSWORD are set by setup_ci above;
+    # the fallbacks are for local non-CI runs.
+    import_certificate(
+      certificate_path: cert_path,
+      certificate_password: ENV.fetch("IOS_DIST_CERT_PASSWORD"),
+      keychain_name: ENV.fetch("MATCH_KEYCHAIN_NAME", "fastlane_tmp_keychain"),
+      keychain_password: ENV.fetch("MATCH_KEYCHAIN_PASSWORD", ""),
+    )
+
+    # Extract the UUID from the provisioning profile before installing it.
+    # `install_provisioning_profile` returns the installed file path, not the
+    # UUID — and that path contains a space ("Provisioning Profiles/…") that
+    # xcodebuild splits into a stray build-action argument, failing with
+    # "Unknown build action 'Profiles/…'". Parse the UUID directly from the
+    # .mobileprovision CMS envelope so PROVISIONING_PROFILE_SPECIFIER and the
+    # export_options map both receive a clean UUID string. Open3 (no shell)
+    # keeps stderr separate and lets us check the exit status, so a decode
+    # failure raises a clear error here instead of a NoMethodError on a nil
+    # parse below.
+    require "plist"
+    require "open3"
+    profile_plist, cms_err, cms_status =
+      Open3.capture3("/usr/bin/security", "cms", "-D", "-i", profile_path)
+    unless cms_status.success?
+      UI.user_error!("security cms could not decode the provisioning profile: #{cms_err.strip}")
+    end
+    parsed_profile = Plist.parse_xml(profile_plist)
+    profile_uuid = parsed_profile && parsed_profile["UUID"]
+    UI.user_error!("Could not parse UUID from provisioning profile") unless profile_uuid
+
+    # Install the provisioning profile into ~/Library/MobileDevice/Provisioning
+    # Profiles/ so xcodebuild can find it by the UUID extracted above.
+    install_provisioning_profile(path: profile_path)
 
     key_id = ENV.fetch("ASC_KEY_ID")
     issuer_id = ENV.fetch("ASC_ISSUER_ID")
@@ -56,23 +108,24 @@ platform :ios do
     # user-facing version changes (docs/native §6).
     build_number = Time.now.to_i.to_s
 
-    # Signing / auth flags. gym runs xcodebuild TWICE — archive, then export
+    # Signing flags. gym runs xcodebuild TWICE — archive, then export
     # (`xcodebuild -exportArchive`) — feeding `xcargs` to the first and
-    # `export_xcargs` to the second. BOTH need the API-key authentication or the
-    # export phase signs against a runner keychain with no logged-in account and
-    # fails to package the IPA. The project inherits `CODE_SIGN_IDENTITY = "iPhone
-    # Developer"` (project-level, pbxproj) and sets no team, so override the
-    # identity to Apple Distribution for the App Store export and inject the team
-    # the project omits. The API key lets these create/download the distribution
-    # certificate and profile on the fly (automatic signing).
-    signing_xcargs = [
-      "-allowProvisioningUpdates",
-      "-authenticationKeyPath", key_path,
-      "-authenticationKeyID", key_id,
-      "-authenticationKeyIssuerID", issuer_id,
-      "DEVELOPMENT_TEAM=#{team_id}",
+    # `export_xcargs` to the second.
+    #
+    # The project's target has CODE_SIGN_STYLE = Automatic in the pbxproj, but
+    # that is overridden here by CODE_SIGN_STYLE=Manual so xcodebuild uses the
+    # certificate and profile we imported rather than trying to create them.
+    # DEVELOPMENT_TEAM is injected because the project sets none.
+    #
+    # For export, the export_options plist (signingStyle: manual,
+    # provisioningProfiles map) drives signing; xcargs only carries the team.
+    archive_xcargs = [
+      "CODE_SIGN_STYLE=Manual",
       'CODE_SIGN_IDENTITY="Apple Distribution"',
+      "PROVISIONING_PROFILE_SPECIFIER=#{profile_uuid}",
+      "DEVELOPMENT_TEAM=#{team_id}",
     ].join(" ")
+    export_xcargs = "DEVELOPMENT_TEAM=#{team_id}"
 
     build_app(
       project: "ios/App/App.xcodeproj",
@@ -83,13 +136,16 @@ platform :ios do
       output_directory: "build",
       output_name: "App.ipa",
       # CURRENT_PROJECT_VERSION is baked in at archive time, so it rides only on
-      # the archive xcargs; the shared signing flags go to both phases.
-      xcargs: "#{signing_xcargs} CURRENT_PROJECT_VERSION=#{build_number}",
-      export_xcargs: signing_xcargs,
+      # the archive xcargs.
+      xcargs: "#{archive_xcargs} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_xcargs: export_xcargs,
       export_options: {
         method: "app-store",
-        signingStyle: "automatic",
+        signingStyle: "manual",
         teamID: team_id,
+        provisioningProfiles: {
+          "org.unfoldingword.tcmobile" => profile_uuid,
+        },
       },
     )
 

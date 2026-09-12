@@ -6,16 +6,16 @@ which describes _what the pipeline does_. This file is the other half: the
 **human account work** §4a cannot do for you, written as a sit-down checklist
 with the answers pre-filled.
 
-> **Nothing in this file has been executed.** The pipeline (PR #296) was
-> authored on Linux with no Xcode and no Apple account. As of **2026-09-12**,
-> `gh secret list -R unfoldingWord/tc-mobile` returns exactly one secret,
-> `CLOUDFLARE_ACCOUNT_ID` — **none of the four App Store Connect secrets
-> exist**, so a dispatch today fails at the preflight gate. (That check covers
-> **repository** secrets only; listing org-level secrets returned HTTP 403 for
-> want of the `admin:org` scope, so if these were ever set at the organization
-> and granted to this repo, they would not appear.) Apple's web UI also changes
-> wording between releases: where this file names a menu item, treat it as a
-> strong hint, not a guarantee.
+> **Manual signing needs seven secrets, not four.** The lane was rewritten from
+> API-key automatic signing to a manual **Distribution certificate + App Store
+> profile** (PR #309): on top of the four App Store Connect / Team values it now
+> needs `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD` and
+> `IOS_PROVISION_PROFILE_BASE64` (§5.5, §8). The chain has since archived, signed
+> and uploaded a build to TestFlight — but `gh secret list` shows **names only**
+> and cannot confirm a value is still correct. (That check covers **repository**
+> secrets only; listing org-level secrets returns HTTP 403 without the
+> `admin:org` scope.) Apple's web UI also changes wording between releases: where
+> this file names a menu item, treat it as a strong hint, not a guarantee.
 
 ---
 
@@ -26,13 +26,13 @@ with the answers pre-filled.
 | An Apple ID with 2FA                                  | Every portal below requires it                        |                             |
 | The unfoldingWord Apple **Team**, enrolled and active | No signed iOS install exists without it               | **unverified — see §1**     |
 | Your **role** on that team                            | Decides whether you can mint the API key at all (§6)  |                             |
-| A password manager entry to hold the values           | The `.p8` downloads **once** and cannot be re-fetched | 1Password is on this Mac    |
+| A password manager entry to hold the values           | The `.p8` downloads **once** and cannot be re-fetched | any secure password manager |
 | Admin on `unfoldingWord/tc-mobile`                    | To set repository secrets                             | yes (`gh` is authenticated) |
 
 **Do not record any of the values below in this repo.** The Key ID, Issuer ID
-and Team ID are not catastrophic on their own, but the `.p8` is a signing
-credential. Put all four in 1Password and paste them into GitHub secrets from
-there.
+and Team ID are not catastrophic on their own, but the `.p8` API key and the
+Distribution `.p12` (§5.5) are signing credentials. Keep every value in a
+password manager and paste it into GitHub secrets from there.
 
 ---
 
@@ -129,7 +129,7 @@ week.
 | **Team ID** | a 10-character alphanumeric string, e.g. `A1B2C3D4E5` |
 
 That string becomes the `APPLE_TEAM_ID` secret (§8). It is **not** secret in the
-cryptographic sense, but store it with the others so the four stay together.
+cryptographic sense, but store it with the others so they all stay together.
 
 ---
 
@@ -216,15 +216,60 @@ Back out.
 
 ---
 
+## 5.5. Step D2 — the Distribution certificate and App Store profile
+
+Manual signing (the Fastfile does **not** use `-allowProvisioningUpdates`) needs
+two files you create by hand and hand to CI as secrets: an **Apple
+Distribution** certificate exported as a `.p12` **with its private key**, and an
+**App Store** provisioning profile bound to `org.unfoldingword.tcmobile` and that
+certificate. The same identity is reused on every run — that stability is the
+reason for manual over automatic signing (see the `fastlane/Fastfile` header).
+
+> **Verify these steps against what you actually did.** They describe the
+> standard Apple-portal flow, but Apple's wording shifts between releases and the
+> certificate can equally be minted from Xcode (_Settings → Accounts → Manage
+> Certificates → + → Apple Distribution_). What CI needs is fixed regardless of
+> route: a `.p12` **with the private key**, its export password, and a matching
+> **App Store** profile.
+
+### The Distribution certificate → `.p12`
+
+1. <https://developer.apple.com/account/resources/certificates> → **+** → **Apple
+   Distribution** (not _Apple Development_). It asks for a CSR: Keychain Access →
+   _Certificate Assistant → Request a Certificate From a Certificate Authority_,
+   "Saved to disk". Upload the CSR, download the resulting `.cer`, and
+   double-click it to install it into your **login** keychain.
+2. In **Keychain Access**, find the certificate, expand it so the **private key**
+   shows nested beneath it, select **both** rows, right-click → **Export 2
+   items** → **Personal Information Exchange (.p12)**. The export password you
+   set becomes `IOS_DIST_CERT_PASSWORD`. A `.p12` exported **without** the
+   private key cannot sign, and the failure is a late archive/export error, not
+   an obvious one.
+
+### The App Store provisioning profile
+
+3. <https://developer.apple.com/account/resources/profiles> → **+** →
+   **Distribution → App Store Connect**. App ID: **`org.unfoldingword.tcmobile`**
+   (registered in §4). Certificate: the **Distribution** certificate from step 1.
+   Name it (e.g. `tc-mobile App Store`) and **Download** the `.mobileprovision`.
+
+### Then base64-encode both for the secrets (§8)
+
+File the `.p12` and its password in a password manager **before** anything else
+— a `.p12` cannot be re-exported once the private key leaves the keychain.
+Then base64 both files into the GitHub secrets in §8.
+
+---
+
 ## 6. Step E — mint the App Store Connect API key
 
 **App Store Connect** → **Users and Access** → **Integrations** → **App Store
 Connect API** → **Team Keys** → **+**
 
-| Question          | Answer                             | Why                                                                                                                                                                                                                                                                                                                                     |
-| ----------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Name              | `tc-mobile CI (TestFlight)`        | Free text; name it so a future reader knows what revoking it breaks                                                                                                                                                                                                                                                                     |
-| **Access / role** | **App Manager** (Admin also works) | Required by `README.md` §4a and the Fastfile header. The archive runs `xcodebuild -allowProvisioningUpdates`, which **creates the distribution certificate and provisioning profile on the fly**. A `Developer`-role key cannot, and the failure surfaces late — in the export phase, as a signing error rather than a permissions one. |
+| Question          | Answer                             | Why                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Name              | `tc-mobile CI (TestFlight)`        | Free text; name it so a future reader knows what revoking it breaks                                                                                                                                                                                                                                                                                                                  |
+| **Access / role** | **App Manager** (Admin also works) | Required for the **upload** step. The key authenticates `upload_to_testflight`; it does **not** sign — signing is manual, from the Distribution `.p12` and the App Store profile ([§5.5](#55-step-d2--the-distribution-certificate-and-app-store-profile)). A `Developer`-role key cannot submit a build to TestFlight, and the failure surfaces at the upload step, not at signing. |
 
 Then **Download** the key. Three things about that download:
 
@@ -236,7 +281,8 @@ Then **Download** the key. Three things about that download:
    shown **once at the top of the Keys page**, shared by every key on the team —
    easy to close the page and then not know where to find it again.
 
-**Put the `.p8` in 1Password immediately**, before doing anything else with it.
+**Put the `.p8` in your password manager immediately**, before doing anything
+else with it.
 It is gitignored at `fastlane/AuthKey.p8` and the workflow deletes it after each
 run, but the copy in `~/Downloads` is the only one that exists until you file it.
 
@@ -259,20 +305,23 @@ cannot be added to an internal group — the mechanical reason Q3 matters.
 
 ---
 
-## 8. Step G — set the four GitHub secrets
+## 8. Step G — set the seven GitHub secrets
 
 _Settings → Secrets and variables → Actions_, or from a checkout:
 
 ```bash
-gh secret set ASC_KEY_ID    -R unfoldingWord/tc-mobile   # the 10-char Key ID
-gh secret set ASC_ISSUER_ID -R unfoldingWord/tc-mobile   # the Issuer UUID
-gh secret set APPLE_TEAM_ID -R unfoldingWord/tc-mobile   # the 10-char Team ID
-base64 -i ~/Downloads/AuthKey_XXXXXXXXXX.p8 | gh secret set ASC_KEY_P8_BASE64 -R unfoldingWord/tc-mobile
+gh secret set ASC_KEY_ID             -R unfoldingWord/tc-mobile   # the 10-char Key ID
+gh secret set ASC_ISSUER_ID          -R unfoldingWord/tc-mobile   # the Issuer UUID
+gh secret set APPLE_TEAM_ID          -R unfoldingWord/tc-mobile   # the 10-char Team ID
+gh secret set IOS_DIST_CERT_PASSWORD -R unfoldingWord/tc-mobile   # the .p12 export password (§5.5)
+base64 -i ~/Downloads/AuthKey_XXXXXXXXXX.p8   | gh secret set ASC_KEY_P8_BASE64 -R unfoldingWord/tc-mobile
+base64 -i ~/path/to/dist_cert.p12             | gh secret set IOS_DIST_CERT_P12_BASE64 -R unfoldingWord/tc-mobile
+base64 -i ~/path/to/tc-mobile.mobileprovision | gh secret set IOS_PROVISION_PROFILE_BASE64 -R unfoldingWord/tc-mobile
 ```
 
-The first three prompt for the value on stdin, so nothing lands in shell
-history. The names must match **exactly** — the preflight job checks these four
-literal strings and treats an unset secret and an empty one the same way.
+The stdin-prompt forms (no value on the command line) keep the value out of
+shell history. The names must match **exactly** — the preflight job checks these
+seven literal strings and treats an unset secret and an empty one the same way.
 
 Verify before dispatching:
 
@@ -280,7 +329,7 @@ Verify before dispatching:
 gh secret list -R unfoldingWord/tc-mobile
 ```
 
-You are looking for all four alongside the pre-existing `CLOUDFLARE_ACCOUNT_ID`.
+You are looking for all seven alongside the pre-existing `CLOUDFLARE_ACCOUNT_ID`.
 `gh secret list` shows **names only** — it cannot tell you a value is correct,
 only that something is set. The first dispatch is the first test of the values.
 
@@ -342,23 +391,24 @@ target).
 
 ## 11. When it fails — reading the error
 
-| Symptom                                                           | Almost certainly                                                                                         |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Preflight fails in ~30s naming a secret                           | That secret is unset **or empty** — §8                                                                   |
-| Preflight refuses the ref                                         | §9 — dispatch `develop` with `allow_any_ref`, or promote first                                           |
-| `org.unfoldingword.tcmobile` missing from the New App dropdown    | §4 was skipped — the identifier is not registered                                                        |
-| "The App Name you entered is already being used"                  | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form |
-| Upload rejected, "no app record" / "cannot find app"              | §5 was skipped, or the bundle id does not match exactly                                                  |
-| Signing/provisioning failure in the **export** phase, late in run | The API key's role is too low — §6 wants **App Manager**                                                 |
-| `errSecInternalComponent` after ~20 min                           | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand |
-| Green run, no tester ever receives it                             | §7's _Automatically distribute new builds_ is off                                                        |
-| Build uploaded but never appears                                  | Processing rejection — check email; the lane cannot see this                                             |
+| Symptom                                                             | Almost certainly                                                                                                                                                                                                 |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Preflight fails in ~30s naming a secret                             | That secret is unset **or empty** — §8                                                                                                                                                                           |
+| Preflight refuses the ref                                           | §9 — dispatch `develop` with `allow_any_ref`, or promote first                                                                                                                                                   |
+| `org.unfoldingword.tcmobile` missing from the New App dropdown      | §4 was skipped — the identifier is not registered                                                                                                                                                                |
+| "The App Name you entered is already being used"                    | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form                                                                                                         |
+| Upload rejected, "no app record" / "cannot find app"                | §5 was skipped, or the bundle id does not match exactly                                                                                                                                                          |
+| Signing/provisioning failure in the **archive** or **export** phase | A manual-signing credential is wrong (§5.5): a `.p12` exported without its private key, or a profile not bound to `org.unfoldingword.tcmobile` **and** that certificate. Not the API key — the key only uploads. |
+| Upload rejected for permissions after a clean archive               | The API key's role is too low — §6 wants **App Manager**                                                                                                                                                         |
+| `errSecInternalComponent` after ~20 min                             | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand                                                                                                         |
+| Green run, no tester ever receives it                               | §7's _Automatically distribute new builds_ is off                                                                                                                                                                |
+| Build uploaded but never appears                                    | Processing rejection — check email; the lane cannot see this                                                                                                                                                     |
 
 ---
 
 ## 12. Worksheet
 
-Fill this in **in 1Password**, not in this file.
+Fill this in **in a password manager**, not in this file.
 
 ```
 Apple Developer Program enrolled?    yes / no        (Q1)
@@ -367,11 +417,14 @@ Team ID                              ________        -> APPLE_TEAM_ID
 Bundle ID registered?                yes / no        (§4)
 App Store Connect app record name    translationCore Mobile   (§5, decided)
 SKU                                  ________        (§5)
+Dist cert + .p12 (private key incl)? yes / no        -> IOS_DIST_CERT_P12_BASE64 (§5.5)
+.p12 export password filed?          yes / no        -> IOS_DIST_CERT_PASSWORD   (§5.5)
+App Store profile downloaded?        yes / no        -> IOS_PROVISION_PROFILE_BASE64 (§5.5)
 API Key ID                           ________        -> ASC_KEY_ID
 API Issuer ID                        ________        -> ASC_ISSUER_ID
-.p8 filed in 1Password?              yes / no        -> ASC_KEY_P8_BASE64
+.p8 filed in a password manager?     yes / no        -> ASC_KEY_P8_BASE64
 Internal group auto-distribute on?   yes / no        (§7 — the quiet failure)
-Four secrets set?                    yes / no        (§8)
+Seven secrets set?                   yes / no        (§8)
 First dispatch ref + allow_any_ref   ________        (§9)
 ```
 
@@ -384,7 +437,7 @@ recommends proving the chain with **one manual Xcode archive** before trusting
 CI, since none of this has ever executed. That needs a working local toolchain,
 and as of **2026-09-12 this Mac does not have one**:
 
-| Check          | State on `excalibur.local`, 2026-09-12                                                                                                                                                                                 |
+| Check          | State on the build Mac, 2026-09-12                                                                                                                                                                                     |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `node` / `npm` | **absent** — not in Homebrew, no nvm/mise/asdf/volta, nothing on `PATH`. `node_modules/` (2026-09-10, Mach-O arm64) proves it was here recently; `PATH` still references `/pkg/env/global/bin`, which no longer exists |
 | `xcode-select` | points at `/Library/Developer/CommandLineTools`, so `xcodebuild` errors out. Xcode **26.6** and Xcode-beta **27.0** are both installed                                                                                 |
