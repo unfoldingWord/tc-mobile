@@ -59,7 +59,13 @@ platform :ios do
     # .mobileprovision CMS envelope so PROVISIONING_PROFILE_SPECIFIER and the
     # export_options map both receive a clean UUID string.
     require "plist"
-    profile_plist = `/usr/bin/security cms -D -i fastlane/dist_profile.mobileprovision 2>/dev/null`
+    require "shellwords"
+    # Fastlane chdir-s to the fastlane/ directory before running the lane, so
+    # a relative "fastlane/dist_profile.mobileprovision" resolves to
+    # fastlane/fastlane/… and security cms returns nothing. __dir__ is the
+    # absolute fastlane/ path, giving the correct file — same pattern as key_path.
+    profile_abs_path = File.expand_path("dist_profile.mobileprovision", __dir__)
+    profile_plist = `/usr/bin/security cms -D -i #{profile_abs_path.shellescape} 2>/dev/null`
     profile_uuid = Plist.parse_xml(profile_plist)["UUID"]
     UI.user_error!("Could not parse UUID from provisioning profile") unless profile_uuid
 
