@@ -51,8 +51,8 @@ smoke, then promote v0.1.15 once the chain is proven.
 
 ### Triage — DRI-approved and applied
 
-Every open issue read against its milestone and the 09-08 sprint plan
-([board](https://claude.ai/code/artifact/ebe10d00-20b6-4808-b9dd-f83685f3918c)).
+Every open issue read against its milestone and the 09-08 sprint plan (the
+org-internal board).
 **Left the gate → v0.3.0**, each with a comment: #246, #253, #33 (Template Library — Tim
 retagged it v1-desired on 09-08; the milestone never followed), #115, #116 (hang on Q6),
 #290, #291, #305. **Orphans → v1.0.0:** #273, #276, #280. **Dependabot majors closed** as
@@ -66,12 +66,10 @@ code** — #38 (no PR, no motion: the at-risk one), #166 (split from #279), #12 
 
 ### Docs and artifacts
 
-- **Tester run sheet** (artifact, `db` — org-internal):
-  <https://claude.ai/code/artifact/bccb86d0-2523-49c3-838a-d38cf6f26ee0>. Corrected the
+- **Tester run sheet** (org-internal artifact, not in this repo). Corrected the
   same day: there is no About screen (build stamp = the Books footer line), and #168's Back
   fix is now a confirm-in-the-shell item, not a known rough edge.
-- **Mockups vs. build audit** (artifact + #305):
-  <https://claude.ai/code/artifact/a72e0d5d-4002-4ab6-a52f-eb722da0f8c1>. 21 match, 5
+- **Mockups vs. build audit** (org-internal artifact + #305). 21 match, 5
   changed by Tim on 27 Aug, 4 tracked, 4 new — the mockups themselves are not in this repo;
   the recorder's "dimmed list" is opaque; dark-by-default lives in a CSS comment, not an ADR.
 - Claude Code status line: branch · PR · project version · model · 5h/7d · context.
