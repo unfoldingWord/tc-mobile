@@ -1,7 +1,7 @@
 # Moving tC Mobile into the unfoldingWord org
 
 **Status:** plan, pending approval. Not yet executed.
-**Date:** 2026-08-27 · **DRI:** Seth Stoll · **Requirements:** Tim Jore
+**Date:** 2026-08-27 · **DRI:** Seth Stoll · **Requirements:** the requirements owner
 
 ## Bottom line
 
