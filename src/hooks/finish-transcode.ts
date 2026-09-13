@@ -30,7 +30,7 @@
  * from where they stand nothing has changed, and there is no action to offer.
  */
 
-import { withEncoder } from "./mp3-codec";
+import { EncoderStalledError, withEncoder } from "./mp3-codec";
 import { computePeaks } from "@/lib/audio/peaks";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
@@ -76,22 +76,31 @@ export function requestTranscodeSweep(): Promise<void> {
  */
 async function runSweeps(): Promise<void> {
   try {
+    let stalled = false;
     do {
       requestedDuringRun = false;
-      await sweepOnce();
-    } while (requestedDuringRun);
+      stalled = await sweepOnce();
+      // A stall ends the RUN, not just the pass. Breaking out of `sweepOnce`
+      // alone left the coalescing flag set, so a Finished transition that
+      // landed during the 15 s stall window sent the loop straight back at the
+      // same wedged worker — another window on the lane with every queued Share
+      // behind it, for a worker we already know is not answering (Frank R3 P2,
+      // #290). The retry belongs to the next launch or the next transition,
+      // once the page and its worker are healthy again.
+    } while (requestedDuringRun && !stalled);
   } finally {
     running = null;
   }
 }
 
-async function sweepOnce(): Promise<void> {
+/** One pass. Resolves `true` when it stopped because the encoder is wedged. */
+async function sweepOnce(): Promise<boolean> {
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
   } catch (cause) {
     console.error("Could not list segments awaiting transcode", cause);
-    return;
+    return false;
   }
   for (const { segmentId, clipId } of owed) {
     try {
@@ -122,6 +131,20 @@ async function sweepOnce(): Promise<void> {
         segmentId,
         cause
       );
+      // A STALLED encoder is not a per-segment failure — it is the whole worker
+      // being wedged (#166), and the next segment would only re-arm the same
+      // silence deadline and stall again: N segments × the timeout, blocking
+      // every Share queued behind the lane that whole time. Stop the sweep; its
+      // PCM is kept and the next launch's sweep (or the next transition's
+      // request) retries once the page — and its worker — are healthy again.
+      // A plain per-segment error keeps the loop going to the next segment.
+      if (cause instanceof EncoderStalledError) return true;
+      // TODO(#166/#188): the stall (and repeated plain failures) still say nothing
+      // to the translator or maintainer. Count consecutive sweep failures in the
+      // module state and surface ONE state-in-place indicator after N (the Books
+      // screen). Its presentation goes through the failure sink / strings owned by
+      // #188 — wire it there, not here.
     }
   }
+  return false;
 }

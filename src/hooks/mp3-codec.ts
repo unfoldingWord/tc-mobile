@@ -8,8 +8,17 @@
  * worker, kept alive for reuse (#182) and serialised by `withEncoder`; an abort
  * terminates it — a real stop, the encode ends mid-loop and its memory goes with
  * the worker — then re-warms a fresh one, and a worker that dies is dropped by a
- * durable `error` listener and rebuilt on the next encode. Decoding is
- * `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio boundary.
+ * durable `error` listener and rebuilt on the next encode. Every encode is also
+ * bounded by a SILENCE deadline (#166): the worker posts a throttled progress
+ * heartbeat as it encodes, and a worker that goes quiet — no progress, no done,
+ * no error — past `ENCODER_SILENCE_TIMEOUT_MS` is judged stalled (killed under
+ * memory pressure, a chunk that never loads), then terminated and re-warmed the
+ * same way an abort is, so the encode rejects with an `EncoderStalledError` and
+ * the lane is released instead of held for the life of the page. It measures
+ * silence, NOT elapsed wall-clock, so an iOS lock/background freeze — which
+ * suspends page and worker together — cannot false-kill a suspended encode.
+ * Decoding is `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio
+ * boundary.
  *
  * ONE lane. A Finished transcode and a Share are each "one chapter or segment
  * of PCM at a time" on their own, but nothing stopped them running together —
@@ -42,10 +51,65 @@ export interface EncodeRequest {
   readonly length: number;
 }
 
-/** The one message the worker answers with. */
+/**
+ * The messages the worker sends back. `progress` is a liveness HEARTBEAT (#166),
+ * throttled by the worker (`mp3.worker.ts`): it carries no result and the encode
+ * keeps waiting, but each one tells the client the worker is still alive so a
+ * long encode is not judged stalled. `done`/`error` settle the encode.
+ */
 export type EncodeResponse =
+  | { readonly kind: "progress"; readonly fraction: number }
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The encoder stopped working: a worker that neither answered nor errored within
+ * its deadline, so the lane was released and a fresh worker warmed (#166). A
+ * DISTINCT type — killed under memory pressure, or a chunk that never loaded — so
+ * a caller can tell a wedged encoder from a one-off encode error and surface "the
+ * encoder has stopped working" rather than treat it as a transient failure.
+ */
+export class EncoderStalledError extends Error {
+  constructor(timeoutMs: number) {
+    super(
+      `The MP3 encoder did not respond within ${timeoutMs} ms; it was restarted`
+    );
+    this.name = "EncoderStalledError";
+  }
+}
+
+/**
+ * How long the worker may stay SILENT — no progress heartbeat, no done, no error
+ * — before the encode is judged stalled (#166).
+ *
+ * A heartbeat, not a wall-clock budget: `mp3.worker.ts` posts throttled progress
+ * as it encodes and each one resets this window, so a long or a slow-but-
+ * progressing encode never trips — only a worker that has stopped answering
+ * entirely does (which never returns, so any finite window catches it). Fixed,
+ * not proportional to the audio's length: once silence is what's measured, length
+ * no longer matters. Generous enough to absorb a slow device's scheduling and the
+ * worker's own progress-throttle interval.
+ */
+export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
+
+/**
+ * Is the page currently hidden (locked, backgrounded)? Guarded so the encoder
+ * also runs under Node tests and inside a Worker, where `document` is absent.
+ * DOM, which is why the deadline lives in `hooks/` and never in `lib/`.
+ */
+function pageHidden(): boolean {
+  return typeof document !== "undefined" && document.hidden;
+}
+
+/**
+ * Call `onChange` on every visibility transition (both directions). Returns an
+ * unsubscribe. A no-op where `document` is absent (Node, Worker).
+ */
+function subscribeVisibility(onChange: () => void): () => void {
+  if (typeof document === "undefined") return () => {};
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
 
 /** The tail of the lane: resolves when the job currently holding it is done. */
 let lane: Promise<void> = Promise.resolve();
@@ -162,6 +226,18 @@ function dropEncoderWorker(): void {
 }
 
 /**
+ * Terminate a wedged/aborted worker and re-establish a warm one — the recovery an
+ * abort and a stall SHARE (`encodeInWorker`). `terminate()` is the only thing
+ * that stops an in-flight encode NOW, and re-warming restores the reusable handle
+ * so the next encode does not depend on a chunk URL a service-worker update may
+ * have purged (R2). A stalled worker is recovered exactly as an abort is (#166).
+ */
+function recoverEncoderWorker(): void {
+  dropEncoderWorker();
+  warmEncoder();
+}
+
+/**
  * Warm the encoder worker so a later encode does not depend on a chunk URL a
  * service-worker update may have purged (#182).
  *
@@ -200,6 +276,16 @@ export function warmEncoder(): void {
  * cannot start (e.g. its chunk is not in the offline cache), and with a plain
  * error where `Worker` does not exist at all (see the header: no inline fallback,
  * on purpose).
+ *
+ * Every encode is bounded by a SILENCE deadline (#166). The worker posts a
+ * throttled progress heartbeat while it encodes; each message — progress, done or
+ * error — resets the window. A worker silent past `ENCODER_SILENCE_TIMEOUT_MS`
+ * while the page is VISIBLE is judged stalled and torn down through the SAME
+ * teardown an abort uses (terminate + re-warm), rejecting with an
+ * {@link EncoderStalledError} so the lane is released rather than held for the life
+ * of the page. Silence rather than elapsed time is what makes an iOS lock/
+ * background freeze safe: the freeze suspends page and worker together, so the
+ * timer is not judged while `document.hidden`, and a resume grants a fresh window.
  */
 function encodeInWorker(
   samples: Int16Array,
@@ -228,32 +314,155 @@ function encodeInWorker(
       reject(cause);
       return;
     }
-    // Detach THIS job's handlers on settle, leaving the worker warm for reuse.
-    // Dropping a dead worker is the durable `error` listener's job (see
-    // `encoderWorker`); an abort drops and re-warms it (below).
+
+    // The silence heartbeat (#166). `lastMessageAt` is the last sign of life from
+    // the worker; the timer measures how long it has been quiet, NOT how long the
+    // encode has run — so a page freeze, which stops the worker too, cannot make
+    // a suspended encode look stalled.
+    let lastMessageAt = Date.now();
+    // Set the instant the page HIDES — before any freeze can suspend JS — and
+    // cleared only when a fresh window is granted (a resume, or a heartbeat). It
+    // makes the resume safe against event ORDERING (Frank R2 P2): an overdue timer
+    // that runs on restoration BEFORE the `visibilitychange` handler would see
+    // `document.hidden` already false and a stale `lastMessageAt`, and wrongly
+    // trip. Because this latch was set at hide time, `onStall` grants a fresh
+    // window instead of trusting the un-measurable elapsed silence, whichever of
+    // the two runs first. SEEDED from the current state: an encode that begins
+    // while the page is ALREADY hidden gets no hide transition, so the latch would
+    // otherwise stay false and the same resume race would trip it (Frank R2 P2 #2).
+    let mightHaveFrozen = pageHidden();
+    let stallTimer: ReturnType<typeof setTimeout>;
+    /**
+     * This job is over — resolved, rejected, aborted or torn down.
+     *
+     * `clearTimeout` cannot un-queue a callback the platform has ALREADY
+     * dispatched, so a stall timer that came due in the same turn as `done`
+     * still runs after `release()`. Without this flag it read a stale
+     * `lastMessageAt`, judged the finished encode stalled, and tore down the
+     * shared worker that the NEXT encode was by then using — losing a whole
+     * Share Book, which runs every chapter through one `withEncoder` turn
+     * (George R3 P2). Every callback below is a no-op once it is set, and
+     * `armStall` refuses to arm, so a settled job owns nothing.
+     */
+    let settled = false;
+    const armStall = (ms: number) => {
+      if (settled) return;
+      // Clear first: every arm REPLACES the pending window rather than adding
+      // a second timer, which is what lets a heartbeat reset the deadline.
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(onStall, ms);
+    };
+    // Both directions: hiding arms the freeze latch (before suspension), showing
+    // grants a fresh window. (visibilitychange is DOM — hooks/.)
+    const stopVisibility = subscribeVisibility(() => {
+      if (pageHidden()) {
+        mightHaveFrozen = true;
+      } else {
+        mightHaveFrozen = false;
+        lastMessageAt = Date.now();
+      }
+    });
+
+    // Detach THIS job's handlers and stop its heartbeat on settle, leaving the
+    // worker warm for reuse. Dropping a dead worker is the durable `error`
+    // listener's job (see `encoderWorker`); an abort and a stall drop + re-warm.
     const release = () => {
+      settled = true;
+      clearTimeout(stallTimer);
+      stopVisibility();
       signal?.removeEventListener("abort", onAbort);
       worker.onmessage = null;
       worker.onerror = null;
     };
-    const onAbort = () => {
-      // Stop the in-flight encode NOW — only terminate can — then re-warm, so a
-      // cancelled share does not leave the next encode depending on a chunk URL a
-      // service-worker update may have purged (R2).
+    // An abort and a stall are the SAME recovery: stop the in-flight encode NOW
+    // (only terminate can) and re-warm. Only the rejection reason differs.
+    const teardownAndRecover = () => {
       release();
-      dropEncoderWorker();
-      warmEncoder();
+      recoverEncoderWorker();
+    };
+    const onAbort = () => {
+      // Already finished: an abort that lands after the result is not this
+      // job's to act on, and tearing down here would hit a later job's worker.
+      if (settled) return;
+      teardownAndRecover();
       reject(abortReason(signal!));
     };
+    function onStall(): void {
+      // Dispatched before this job settled, running after it. Nothing to judge
+      // and, above all, nothing to terminate (George R3 P2).
+      if (settled) return;
+      // A hidden page cannot be judged — its worker is frozen too — so never trip
+      // while hidden; re-arm and wait for the resume (which resets the window).
+      if (pageHidden()) {
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // Resumed after a possible freeze: the elapsed silence spans a suspension
+      // we cannot measure, so grant a fresh window rather than trust it — even
+      // when this overdue timer beat the `visibilitychange` handler to the resume
+      // (Frank R2 P2). One fresh window per freeze; a worker still silent after it
+      // trips on the next pass.
+      if (mightHaveFrozen) {
+        mightHaveFrozen = false;
+        lastMessageAt = Date.now();
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // Late but not yet silent enough (a heartbeat landed just before): re-arm
+      // for the remainder rather than trip.
+      const silence = Date.now() - lastMessageAt;
+      if (silence < ENCODER_SILENCE_TIMEOUT_MS) {
+        armStall(ENCODER_SILENCE_TIMEOUT_MS - silence);
+        return;
+      }
+      // Silent past the window while visible: the worker has stopped. Recover it
+      // the same way an abort does, then reject. The recovery is GUARDED so a
+      // terminate that itself throws still lets us reject and release the lane —
+      // never a hung lane (P3b) — with the failure logged to a channel rather than
+      // swallowed.
+      try {
+        teardownAndRecover();
+      } catch (recoverError) {
+        console.error(
+          "Recovering the encoder after a stall failed",
+          recoverError
+        );
+      }
+      reject(new EncoderStalledError(ENCODER_SILENCE_TIMEOUT_MS));
+    }
     signal?.addEventListener("abort", onAbort, { once: true });
 
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
-      release();
+      if (settled) return;
       const response = event.data;
+      // A progress heartbeat is a sign of life, not a result: reset the silence
+      // window and keep waiting for done/error. The freeze latch is cleared
+      // only while the page is VISIBLE — a beat then means the worker is running
+      // now. A beat delivered while HIDDEN (queued just before an iOS freeze;
+      // Android keeping the worker briefly alive) says nothing about the
+      // suspension that may still follow it, and clearing the latch there would
+      // let the overdue timer trip on the resume-order race the latch exists to
+      // close (George R1 F1). The hide handler set it; only a visible resume,
+      // or `onStall` granting its one fresh window, may drop it.
+      if (response.kind === "progress") {
+        lastMessageAt = Date.now();
+        if (!pageHidden()) mightHaveFrozen = false;
+        // RESET the window rather than leave the old timer running. Without
+        // this the deadline fired on a fixed ~15 s grid for the whole encode
+        // and re-armed for the remainder — the right verdict, but a live timer
+        // racing `done` over and over. Re-arming means a progressing encode
+        // never reaches `onStall`, so only the final window can race at all.
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      release();
       if (response.kind === "done") resolve(new Uint8Array(response.mp3));
       else reject(new Error(`MP3 encoding failed: ${response.message}`));
     };
     worker.onerror = (event) => {
+      // A worker error after this job settled belongs to whoever owns the
+      // worker now; the durable listener drops a dead handle either way.
+      if (settled) return;
       // Reject this in-flight job; the durable listener drops the dead worker.
       release();
       // `ErrorEvent.error` is the thrown value when the script threw; a script
@@ -265,12 +474,26 @@ function encodeInWorker(
       );
     };
 
+    armStall(ENCODER_SILENCE_TIMEOUT_MS);
+
     const request: EncodeRequest = {
       buffer: samples.buffer as ArrayBuffer,
       byteOffset: samples.byteOffset,
       length: samples.length,
     };
-    worker.postMessage(request, [request.buffer]);
+    try {
+      worker.postMessage(request, [request.buffer]);
+    } catch (cause) {
+      // A synchronous `postMessage` failure (a detached buffer, an
+      // InvalidStateError) rejects this promise — but the executor throw would
+      // NOT unwind the timer and listeners armed just above. Left armed, the
+      // stall timer fires ~15 s later and terminates whatever worker is current
+      // by THEN — an unrelated encode's (Frank R2 P2). Release this job first,
+      // then reject. The worker itself is left warm: the message failed, not the
+      // worker.
+      release();
+      reject(cause);
+    }
   });
 }
 
