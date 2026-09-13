@@ -16,6 +16,21 @@ describe("floatToInt16", () => {
     expect(out[2]).toBe(-32767);
   });
 
+  it("rounds to the nearest step rather than truncating toward zero", () => {
+    // Truncation would halve the precision of every sample that is not exactly
+    // on a step, and the round-trip test below cannot see it: its tolerance is
+    // one whole step, which truncation stays inside. 0.25 * 32767 is 8191.75,
+    // so rounding answers 8192 and truncation 8191.
+    expect(floatToInt16(Float32Array.from([0.25]))[0]).toBe(8192);
+    expect(floatToInt16(Float32Array.from([-0.25]))[0]).toBe(-8192);
+    // An exact half-step is not symmetric, and that is `Math.round`, not a
+    // decision this module made: 0.5 * 32767 is 16383.5, which rounds up to
+    // 16384, while -16383.5 rounds toward +Infinity to -16383. Pinned so the
+    // asymmetry reads as observed behaviour rather than a bug to "fix".
+    expect(floatToInt16(Float32Array.from([0.5]))[0]).toBe(16384);
+    expect(floatToInt16(Float32Array.from([-0.5]))[0]).toBe(-16383);
+  });
+
   it("clips rather than wrapping on out-of-range input", () => {
     const out = floatToInt16(Float32Array.from([2, -2]));
     expect(out[0]).toBe(32767);
@@ -37,5 +52,23 @@ describe("frame/ms conversion", () => {
   it("round-trips a whole second", () => {
     expect(framesToMs(CANONICAL_SAMPLE_RATE)).toBe(1000);
     expect(msToFrames(1000)).toBe(CANONICAL_SAMPLE_RATE);
+  });
+});
+
+describe("int16ToFloat — the asymmetry of Int16", () => {
+  it("keeps the most negative representable sample inside [-1, 1]", () => {
+    // floatToInt16 stores -32768 for any input at or below -1, so a clipped
+    // take round-trips through int16ToFloat on every play. -32768 / 32767 is
+    // -1.0000305, and this feeds copyToChannel.
+    const out = int16ToFloat(Int16Array.of(-32768, 32767, 0));
+    expect(out[0]).toBe(-1);
+    expect(out[1]).toBeCloseTo(1, 5);
+    expect(out[2]).toBe(0);
+  });
+
+  it("clamps a clipped round trip end to end", () => {
+    const back = int16ToFloat(floatToInt16(Float32Array.of(-2, 2)));
+    expect(back[0]).toBeGreaterThanOrEqual(-1);
+    expect(back[1]!).toBeLessThanOrEqual(1);
   });
 });

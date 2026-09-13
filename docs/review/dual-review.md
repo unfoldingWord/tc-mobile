@@ -40,12 +40,107 @@ scripts/review/george.sh [base]    # Reviewer B — deep-tree
 scripts/review/both.sh [base]      # both, sequentially
 ```
 
-`base` defaults to `main`. Reports are written to `.review/` (git-ignored).
+`base` defaults to `origin/develop` — work is cut from `develop`, so an omitted
+base reviews only the branch's own change rather than its whole divergence from
+`main`. Reports are written to `.review/` (git-ignored).
 
-## Traps, each of which cost a dead run on bt-servant-admin-portal
+## Merge policy
 
-These are not theoretical. They were paid for across 13 review rounds there and
-are handled in the scripts.
+This repo is **solo** — there is no second human reviewer to wait on, so Frank
+and George _are_ the review. Once they are clean, merge is an admin merge.
+
+| Change                                                                             | Bar to merge                                                                                                                                                          |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application code                                                                   | **Both reviewers clean @ the current head SHA**, CI green, then admin merge                                                                                           |
+| Documentation and content                                                          | CI green, then admin merge                                                                                                                                            |
+| Process/meta artifacts — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
+
+**P1 and P2 block. P3 goes to an issue** unless the fix is trivial enough to
+just do.
+
+**Capped is not clean.** Hitting the round cap with findings open is an
+escalation: it blocks merge until the residual findings are named and
+explicitly accepted, recorded on the PR.
+
+## Merging multiple lanes
+
+When several lanes are in flight, **merge them one at a time, in a deliberate
+order, pre-flighting each.**
+
+The reason is mechanical: a reviewer's clean statement names a head SHA, and
+merging lane A moves lane B's base. B's green checks and both its sign-offs now
+describe a commit that is no longer what would land.
+
+The loop, per lane:
+
+1. Pick the next lane — prefer the one others depend on, and lanes touching
+   shared files before lanes that do not.
+2. **Pre-flight:** mergeable, CI green, both reviewers clean @ the _current_
+   head.
+3. Merge.
+4. **Re-base and re-check every remaining lane.** If a lane's diff changed
+   materially, its reviews are stale — re-run both.
+
+Lanes that touch the same files should not be in flight simultaneously in the
+first place; the lane brief is where that is prevented (see the
+`batch-pipeline` skill's file-ownership check).
+
+## The triage comment — mandatory, every round
+
+**One triage comment per round, on the PR.** No exceptions, including a round
+where both reviewers found nothing.
+
+```bash
+scripts/review/both.sh <base>        # run both reviewers
+scripts/review/triage.sh <round> <pr>  # build the comment, then post it
+```
+
+`triage.sh` extracts every finding from both reports, attributes each to the
+lens that raised it, pulls both verdicts, and stamps the head SHA. You fill in
+the disposition for each — **FIXED** with a commit, **REFUTED** with file:line
+evidence, or **DEFERRED** with a tracking issue — and post it.
+
+Why it is not optional: _"the agent addressed it"_ with nothing posted on the
+PR is not verifiable later. The comment is the audit trail. **Never silently
+ignored, never silently fixed.**
+
+### Rules the comment has to satisfy
+
+- **Every finding gets a disposition.** Not a summary — a line per finding.
+- **Attribute each to its source**, so the trail shows which lens caught what.
+- **Name the head SHA.** Dual sign-off is defined against the current head:
+  any push after a clean statement invalidates **both** reviewers until each
+  re-posts.
+- **A clean round still gets a comment** — `round N clean (Frank + George) @
+<sha>`. Silence is not sign-off.
+- **Never write "Frank + George" when only one has posted.** Say so per
+  reviewer.
+- **Low-severity findings are deferred to an issue, not dropped** — unless the
+  fix is trivial enough to just do, in which case it is FIXED like any other.
+
+### Convergences are worth calling out
+
+Findings both lenses raise independently are historically the highest-confidence
+class in a round. The triage template has a section for them; use it.
+
+### Capped is not clean
+
+**The cap is 4 rounds.** Hitting it with findings still open is an
+**escalation, not an approval**. It blocks merge until the residual findings are
+named and explicitly accepted. "We ran out of rounds" is never sign-off.
+
+**At the cap, ask rather than stop.** Report which shape the round has, using
+the distinction the section above already draws: a **chain** (Frank's pattern —
+roughly one finding per round, each a refinement of the previous fix) is
+converging and often deserves one more round; **siblings** (George's pattern —
+new instances of the same defect class) mean the fix approach is wrong and
+another round will not help. The round number cannot tell those apart. A person
+reading the last round's findings can, so the decision is theirs.
+
+## Traps, each of which cost a dead run
+
+These are not theoretical. They were paid for across many review rounds on an
+earlier project and are handled in the scripts.
 
 ### Codex (Frank)
 
@@ -91,9 +186,10 @@ stop fixing case by case and open a follow-up issue for a systematic pass.
 
 ### Why both, always
 
-On bt-servant-admin-portal, Codex posted clean four times where Grok found a
-real authorization gap in untouched code. **The asymmetry is the point — never
-run one as a fallback for the other.**
+The two lenses have already diverged in practice: the diff-local pass has come
+back clean where the deep-tree pass found a real authorization gap in untouched
+code. **The asymmetry is the point — never run one as a fallback for the
+other.**
 
 ## Guard design notes
 
@@ -110,18 +206,16 @@ Two guards exist, and both were wrong on the first attempt:
 
 ## Provenance
 
-The George preamble is reproduced from the prompts bt-servant-admin-portal
-actually used, recovered from the local Grok session store. Frank's was not
-recoverable from the Codex session store, so it is reconstructed from the lens
-description inside George's prompt ("Reviewer A covers the diff-local lens; do
-not spend your effort on style or diff-local nits") and adapted to this repo.
-Treat Frank's as a faithful reconstruction rather than a verbatim copy.
+The George preamble carries over the prompt an earlier project used. Frank's was
+reconstructed from the lens description inside George's prompt ("Reviewer A
+covers the diff-local lens; do not spend your effort on style or diff-local
+nits") and adapted to this repo. Treat Frank's as a faithful reconstruction
+rather than an exact copy.
 
 ## A known review-noise item
 
 Each agent reads its **own** instruction file — Claude reads `CLAUDE.md`, Codex
-reads `AGENTS.md`. In bt-servant-admin-portal those files name different commit
-authors, and Frank has flagged the mismatch on review. Declining, with an
-explicit reference to the instruction file the authoring agent follows, is the
-correct response. This repo's `CLAUDE.md` simply defers to `AGENTS.md`, so the
-conflict should not arise here.
+reads `AGENTS.md`. Where those two files disagree, Frank flags the mismatch on
+review. Declining, with an explicit reference to the instruction file the
+authoring agent follows, is the correct response. This repo's `CLAUDE.md` simply
+defers to `AGENTS.md`, so the conflict should not arise here.

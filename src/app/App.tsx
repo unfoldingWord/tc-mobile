@@ -1,148 +1,311 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Control } from "@/components/control";
-import { SectionBrowser } from "@/components/section-browser";
-import { SectionView } from "@/components/section-view";
-import { playSamples, type PlaybackHandle } from "@/hooks/audio-io";
-import { useObsChapter } from "@/hooks/use-chapter";
-import { useRecorder } from "@/hooks/use-recorder";
-import { getClip } from "@/lib/storage/clips";
-import { getDb } from "@/lib/storage/db";
-import { firstUnrecorded, recordedCount } from "@/types/view";
-import type { SectionCard } from "@/types/view";
+import { BooksScreen } from "@/components/books-screen";
+import { BuildStamp } from "@/components/build-stamp";
+import { Recorder, type RecorderHandle } from "@/components/recorder";
+import { SaveFailed } from "@/components/save-failed";
+import {
+  SegmentsScreen,
+  type SegmentsScreenHandle,
+} from "@/components/segments-screen";
+import { requestTranscodeSweep } from "@/hooks/finish-transcode";
+import { warmEncoder } from "@/hooks/mp3-codec";
+import { useAudioSession } from "@/hooks/use-audio-session";
+import { useSaveTake } from "@/hooks/use-save-take";
+import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
+import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
- * Phase-1 prototype.
+ * The pivot app: Books → Segments → Recorder (a sheet over Segments).
  *
- * Story picker → section browser → section view. The browser's layout and tap
- * behaviour both follow one rule: a chapter with artwork is browsed by
- * picture, a chapter without one is browsed by sound.
+ *   Books      no chapter selected — the home screen (G2: empty on first run)
+ *   Segments   a chapter selected
+ *   Recorder   a segment being recorded — layered over the dimmed Segments list
+ *
+ * This screen holds no audio of its own. Every sound belongs to
+ * `useAudioSession`, and every screen change goes through a handler that calls
+ * `leave()` first, so "leaving ends what was sounding" is one call in one place
+ * — which is also what makes "only one row plays" and "opening the recorder
+ * stops playback" fall out for free rather than needing their own stop calls.
+ *
+ * The unsaved-take machinery (`useSaveTake`) is mounted here, above the sheet
+ * that produces a take, so a finished recording survives the recorder closing
+ * and the recovery screen has something to render when a save fails.
  */
 export function App() {
-  const [storyNumber, setStoryNumber] = useState(1);
-  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [referencePlaying, setReferencePlaying] = useState(false);
+  const [chapterId, setChapterId] = useState<ChapterId | null>(null);
+  const [recorder, setRecorder] = useState<{
+    segmentId: SegmentId;
+    ordinal: number;
+  } | null>(null);
 
-  const { chapter, loading, error, saveTake } = useObsChapter(storyNumber);
-  const recorder = useRecorder();
+  const segmentsRef = useRef<SegmentsScreenHandle>(null);
+  // System-Back handling (#168). The recorder sheet, Segments and Books each
+  // push one history entry, so a standalone-PWA Back gesture is a `popstate` we
+  // route in-app instead of leaving the app — which on the recorder fired
+  // `pagehide` → `leave()` and dropped the in-progress take (#58).
+  const recorderRef = useRef<RecorderHandle>(null);
+  // A recorder Back is running its async commit (stop → decode → save). While it
+  // is, EVERY further popstate re-arms the protective entry instead of routing,
+  // so a second Back cannot escape the recorder and drop the uncommitted take
+  // (Frank R1 F1). Cleared when the commit settles.
+  const committing = useRef(false);
+  // Ignore exactly one popstate: the one our own `history.back()` fires to
+  // consume an entry (a programmatic close, or the forward-trap re-assertion).
+  const suppressPop = useRef(false);
+  // An in-app Back is in flight (its `history.back()` has not yet come back as a
+  // popstate). A synchronous latch so a rapid double-tap on the on-screen Back
+  // issues only ONE traversal — the tap-level guard `onClick={close}` used to get
+  // from `closing.current` before Back was rerouted through history (George R2
+  // G3). Cleared as each popstate lands.
+  const backRequested = useRef(false);
+  // A monotonic id stamped on every entry, so the handler can tell Back from
+  // Forward by comparing the destination index to where we were (F2). Only ever
+  // increments; the live stack is strictly increasing in it (see `navDirection`).
+  const nextIndex = useRef(0);
+  const navIndex = useRef(0);
 
-  const playbackRef = useRef<PlaybackHandle | null>(null);
-  const referenceRef = useRef<HTMLAudioElement | null>(null);
-
-  const stopPlayback = useCallback(() => {
-    playbackRef.current?.stop();
-    playbackRef.current = null;
-    setPlayingId(null);
+  const pushHistoryEntry = useCallback(() => {
+    // A marker entry whose only job is to be there for Back to consume, carrying
+    // the monotonic index that tells Back from Forward. Routing reads live React
+    // state for the screen, so the entry needs nothing more than its index.
+    const index = ++nextIndex.current;
+    window.history.pushState({ tc: true, index }, "");
+    navIndex.current = index;
   }, []);
 
-  const stopReference = useCallback(() => {
-    referenceRef.current?.pause();
-    setReferencePlaying(false);
+  // Stamp the entry the app loaded on, so its index is known (0) and a Back from
+  // Segments to it reads as a Back, not an untracked jump.
+  useEffect(() => {
+    window.history.replaceState({ tc: true, index: 0 }, "");
+    navIndex.current = 0;
+    nextIndex.current = 0;
   }, []);
 
-  useEffect(
-    () => () => {
-      playbackRef.current?.stop();
-      referenceRef.current?.pause();
+  const goBack = useCallback(() => {
+    // Every in-app Back — the Segments list's, the recorder's on-screen Back —
+    // goes through the browser so there is ONE Back path (the popstate handler).
+    // That is what gives the on-screen recorder Back the same commit-window
+    // protection as the system gesture, and removes the state-transition effects
+    // whose async re-arm desynced depth (Frank R1 F1).
+    //
+    // Latch so a same-frame double-tap issues one traversal, not two — the second
+    // `history.back()` would otherwise be coalesced into a single 2→0 jump that
+    // mis-shapes the stack (George R2 G3). The latch clears as the popstate lands.
+    if (backRequested.current) return;
+    backRequested.current = true;
+    window.history.back();
+  }, []);
+  // Which segment a held take belongs to, for the recovery screen — captured
+  // when the recorder opened, so it survives the sheet closing on a failed
+  // save. State, not a ref, because the recovery screen reads it during render.
+  const [recordingOrdinal, setRecordingOrdinal] = useState<number | null>(null);
+  // The cut/paste clipboard (B5), held here so it survives the recorder sheet
+  // remounting per segment — G3: it reaches across a chapter and is lost on
+  // close. Cleared on every chapter change so it never carries audio from one
+  // chapter into another; lost on page close naturally (never persisted).
+  const [clipboard, setClipboard] = useState<Int16Array | null>(null);
+
+  const audio = useAudioSession();
+  const { leave, primeAudioContext } = audio;
+
+  // Transcode on Finished (B8, D3) is a background sweep. Each Finished
+  // transition asks for one; this catch-all at launch covers anything left over
+  // — a sweep the page was discarded in the middle of, or every finished
+  // segment on a device that just upgraded to the v4 schema. Idempotent, so
+  // asking here costs nothing when there is nothing owed.
+  useEffect(() => {
+    // Keep the encoder worker warm from launch, while this build's precache
+    // still holds its chunk — so a Finished transcode or a Share after a
+    // service-worker update does not depend on a purged chunk URL (#182).
+    warmEncoder();
+    void requestTranscodeSweep();
+  }, []);
+  const {
+    pendingTake,
+    saveRecording,
+    saveEditedSegment,
+    retryPendingTake,
+    discardPendingTake,
+  } =
+    // A landed save leaves the row reading as unrecorded until the screen
+    // rebuilds, which is the window a second take is lost in — so reload then.
+    useSaveTake({ onSaved: () => segmentsRef.current?.reload() });
+
+  const openChapter = useCallback(
+    (id: ChapterId) => {
+      leave();
+      pushHistoryEntry(); // Books → Segments: a Back now returns here
+      setClipboard(null); // chapter-scoped (G3)
+      setRecorder(null);
+      setChapterId(id);
     },
-    []
+    [leave, pushHistoryEntry]
   );
 
-  const playSection = useCallback(
-    async (section: SectionCard) => {
-      stopReference();
-      if (playingId === section.sectionId) {
-        stopPlayback();
+  const backToBooks = useCallback(() => {
+    leave();
+    setClipboard(null); // chapter-scoped (G3)
+    setRecorder(null);
+    setChapterId(null);
+  }, [leave]);
+
+  const openRecorder = useCallback(
+    (segmentId: SegmentId, ordinal: number) => {
+      // Opening the recorder stops any row that was playing — the same single
+      // `leave()` every navigation makes.
+      leave();
+      pushHistoryEntry(); // Segments → Recorder: Back becomes the commit
+      // Resume the audio context in THIS tap (#184): the sheet loads and decodes
+      // the segment one commit later, after this gesture's activation is spent,
+      // so an iOS `"interrupted"` context would otherwise meet the first decode
+      // un-resumed — the very trip the #155/#137 recovery panel exists to soften.
+      // Priming it here spares the common transient case that failed open.
+      primeAudioContext();
+      setRecordingOrdinal(ordinal);
+      setRecorder({ segmentId, ordinal });
+    },
+    [leave, primeAudioContext, pushHistoryEntry]
+  );
+
+  const closeRecorder = useCallback(
+    (dirty: boolean) => {
+      // The recorder has already stopped and committed any take before this
+      // fires; `leave()` here only releases the floor and ends playback. Reload
+      // only when something actually changed — a take committed or the finished
+      // flag toggled — so a look-and-close does not pay for peak recomputation.
+      leave();
+      if (dirty) segmentsRef.current?.reload();
+      setRecorder(null);
+      // Keep history in step. A popstate-driven close is `committing`: the
+      // browser already popped the entry and the handler pops the protective
+      // one it re-armed, so leave history alone. A programmatic close (erase,
+      // which calls `onExit` directly with no popstate) still has its entry on
+      // the stack — consume it, suppressing the popstate that `back()` fires.
+      if (!committing.current) {
+        suppressPop.current = true;
+        window.history.back();
+      }
+    },
+    [leave]
+  );
+
+  // A held take whose save has failed takes over the screen with retry/discard
+  // (the `SaveFailed` early return below). Computed here so the popstate handler
+  // can see it: that screen is a modal, NOT a navigation level, so Back must not
+  // route `to-books` under it (George R2 G2).
+  const recovery = pendingTake && pendingTake.attempts > 0 ? pendingTake : null;
+  const recovering = recovery !== null;
+
+  // Route the system Back gesture (#168), and its Forward sibling. Every screen
+  // pushed one indexed history entry, so a gesture arrives as a `popstate` here
+  // instead of exiting the app. The whole decision is the pure `popAction`, so
+  // the two rules that matter are unit-tested: Back on the recorder runs the
+  // COMMIT path (never a take-dropping unmount, #58), and a second Back during
+  // that commit re-arms rather than escaping (Frank R1 F1).
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      // A Back gesture landed, so the in-flight in-app Back (if any) is done —
+      // release the double-tap latch (G3).
+      backRequested.current = false;
+      const state = event.state as { index?: number } | null;
+      const toIndex = state?.index ?? 0;
+      // Our own `history.back()` (a programmatic close, or the forward trap)
+      // fired this; the move is already accounted for. Keep the index truthful.
+      if (suppressPop.current) {
+        suppressPop.current = false;
+        navIndex.current = toIndex;
         return;
       }
-      stopPlayback();
-
-      const db = await getDb();
-      const segment = await db.get("segments", section.segmentId);
-      if (!segment?.activeTakeId) return;
-      const take = await db.get("takes", segment.activeTakeId);
-      const clip = take ? await getClip(take.clipId) : undefined;
-      if (!clip) return;
-
-      setPlayingId(section.sectionId);
-      playbackRef.current = await playSamples(clip.samples, {
-        onEnded: stopPlayback,
-      });
-    },
-    [playingId, stopPlayback, stopReference]
-  );
-
-  const startRecording = useCallback(async () => {
-    stopPlayback();
-    stopReference();
-    await recorder.start();
-  }, [recorder, stopPlayback, stopReference]);
-
-  const stopRecording = useCallback(
-    async (section: SectionCard) => {
-      const samples = await recorder.stop();
-      if (samples && samples.length > 0)
-        await saveTake(section.segmentId, samples);
-    },
-    [recorder, saveTake]
-  );
-
-  const toggleReference = useCallback(() => {
-    if (!chapter?.referenceAudioUrl) return;
-    stopPlayback();
-    referenceRef.current ??= new Audio();
-    const el = referenceRef.current;
-    if (referencePlaying) {
-      el.pause();
-      setReferencePlaying(false);
-      return;
-    }
-    if (el.src !== chapter.referenceAudioUrl)
-      el.src = chapter.referenceAudioUrl;
-    el.onended = () => setReferencePlaying(false);
-    void el
-      .play()
-      .then(() => setReferencePlaying(true))
-      .catch(() => setReferencePlaying(false));
-  }, [chapter, referencePlaying, stopPlayback]);
-
-  if (loading && !chapter) return <Splash message="Loading" />;
-  if (error) return <Splash message={error} tone="error" />;
-  if (!chapter) return <Splash message="No chapter" />;
-
-  const openSection =
-    chapter.sections.find((s) => s.sectionId === openSectionId) ?? null;
-  const next = firstUnrecorded(chapter);
-  const done = recordedCount(chapter);
-
-  if (openSection) {
-    const i = chapter.sections.indexOf(openSection);
-    const step = (delta: number) => () => {
-      stopPlayback();
-      stopReference();
-      setOpenSectionId(chapter.sections[i + delta]?.sectionId ?? null);
+      const direction = navDirection(navIndex.current, toIndex);
+      navIndex.current = toIndex;
+      const screen = screenFor(chapterId !== null, recorder !== null);
+      switch (popAction(direction, screen, committing.current, recovering)) {
+        case "trap-recovery":
+          // The `SaveFailed` recovery screen is a modal, not a navigation level
+          // (George R2 G2), and the only in-memory copy of the held take lives in
+          // React state behind it. RE-ARM to absorb the gesture — the same push
+          // `rearm-during-commit` uses — never `history.back()`: the browser has
+          // already popped one entry toward root, and a second back() walks toward
+          // the document unload that drops the take (Frank R3 G-R3-1). Retry /
+          // Discard on the panel are the only ways out.
+          pushHistoryEntry();
+          return;
+        case "rearm-during-commit":
+          // A commit owns the stack. The browser just popped the protective
+          // entry; re-push it so the recorder stays trapped, and ignore the
+          // gesture — the in-flight commit is the only thing that may leave.
+          pushHistoryEntry();
+          return;
+        case "trap-forward":
+          // Forward is not a navigation this app redoes; cancel it so the UI
+          // stays put and history does not desync (F2).
+          suppressPop.current = true;
+          window.history.back();
+          return;
+        case "ignore":
+          return;
+        case "commit-close-recorder": {
+          const handle = recorderRef.current;
+          if (!handle) return;
+          // The browser already popped the recorder's entry. Re-arm SYNCHRONOUSLY
+          // — before the async commit — so the stop → decode → save window is
+          // never a moment with no entry protecting the recorder (F1). Run the
+          // same `close()` the on-screen Back runs; on exit consume the single
+          // protective entry, on decline leave it (the sheet stays open).
+          pushHistoryEntry();
+          committing.current = true;
+          void handle
+            .requestClose()
+            .then((exited) => {
+              if (exited) {
+                suppressPop.current = true;
+                window.history.back();
+              }
+            })
+            .catch((cause: unknown) => {
+              // `close()` never rejects by contract (its own `.catch` still calls
+              // `onExit`), but the synchronous prelude or an `onExit` throw could —
+              // and if `committing` never cleared, EVERY later Back would re-arm and
+              // the recorder would be trapped forever (George R2 G4). Surface it.
+              console.error("Recorder close rejected", cause);
+            })
+            .finally(() => {
+              committing.current = false;
+            });
+          return;
+        }
+        case "to-books":
+          backToBooks();
+          return;
+        case "exit-app":
+          // The Books shelf pushed no entry, so this popstate is the browser
+          // already leaving. Nothing to do — and nothing is lost at the shelf.
+          return;
+      }
     };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [chapterId, recorder, recovering, backToBooks, pushHistoryEntry]);
+
+  // Ahead of everything: a held take whose save has failed keeps the microphone
+  // and any sound off under the modal with no control to reach them. (`recovery`
+  // and `recovering` are computed above, so the popstate handler can see them.)
+  useEffect(() => {
+    if (recovering) leave();
+  }, [recovering, leave]);
+
+  if (recovery) {
     return (
-      <main className="app-shell mx-auto h-full max-w-md">
-        <SectionView
-          chapter={chapter}
-          section={openSection}
-          recording={recorder.state === "recording"}
-          elapsedMs={recorder.elapsedMs}
-          playing={playingId === openSection.sectionId}
-          referencePlaying={referencePlaying}
-          onBack={() => {
-            stopPlayback();
-            stopReference();
-            setOpenSectionId(null);
-          }}
-          onPrev={i > 0 ? step(-1) : null}
-          onNext={i < chapter.sections.length - 1 ? step(1) : null}
-          onRecord={() => void startRecording()}
-          onStop={() => void stopRecording(openSection)}
-          onPlay={() => void playSection(openSection)}
-          onToggleReference={toggleReference}
+      <main className="app-shell grid h-full place-items-center">
+        <SaveFailed
+          state={recovery.state}
+          kind={recovery.kind}
+          editOnly={recovery.editOnly}
+          ordinal={recordingOrdinal}
+          attempts={recovery.attempts}
+          onRetry={retryPendingTake}
+          onDiscard={discardPendingTake}
         />
       </main>
     );
@@ -150,90 +313,48 @@ export function App() {
 
   return (
     <main className="app-shell mx-auto h-full max-w-md">
-      <div className="flex items-center gap-[14px] px-[4px] py-[2px]">
-        <Control
-          icon="prev"
-          label="Previous story"
-          variant="quiet"
-          disabled={storyNumber <= 1}
-          onClick={() => setStoryNumber((n) => Math.max(1, n - 1))}
-        />
-        <span className="t-title flex-1 text-center">{chapter.ordinal}</span>
-        <Control
-          icon="next"
-          label="Next story"
-          variant="quiet"
-          disabled={storyNumber >= 50}
-          onClick={() => setStoryNumber((n) => Math.min(50, n + 1))}
-        />
-      </div>
-
-      <div className="flex items-center gap-[10px] px-[6px]">
-        <span
-          className="h-[5px] flex-1 overflow-hidden rounded-[3px]"
-          style={{ background: "var(--s-raised)" }}
-          role="progressbar"
-          aria-valuenow={done}
-          aria-valuemin={0}
-          aria-valuemax={chapter.sections.length}
-          aria-label={`${done} of ${chapter.sections.length} sections recorded`}
-        >
-          <span
-            className="block h-full rounded-[3px]"
-            style={{
-              width: `${(done / chapter.sections.length) * 100}%`,
-              background: "var(--s-voice)",
-            }}
+      {/* The recorder sheet is aria-modal, but the screen behind it stays
+          mounted so close can reload() it. `inert` takes that whole background
+          out of the focus and pointer tree while the sheet is open, so an
+          AT/keyboard/switch user cannot reach the list's Back or a row's Record
+          — both call leave() → cancel(), which silently drops the in-progress
+          take with no recovery screen (G8). `display: contents` (the `contents`
+          utility) keeps this wrapper layout-transparent; inertness still
+          propagates to its flat-tree descendants. */}
+      <div className="contents" inert={recorder !== null || undefined}>
+        {chapterId === null ? (
+          <BooksScreen onOpenChapter={openChapter} />
+        ) : (
+          <SegmentsScreen
+            ref={segmentsRef}
+            chapterId={chapterId}
+            audio={audio}
+            onBack={goBack}
+            onOpenRecorder={openRecorder}
           />
-        </span>
-        <span className="t-count">
-          {done} / {chapter.sections.length}
-        </span>
+        )}
       </div>
 
-      {recorder.error && (
-        <p
-          className="rounded-[10px] p-[12px] text-[13px]"
-          style={{ background: "var(--p-red-950)", color: "var(--p-red-100)" }}
-        >
-          {recorder.error}
-        </p>
-      )}
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <SectionBrowser
-          chapter={chapter}
-          nextSectionId={next?.sectionId ?? null}
-          playingSectionId={playingId}
-          onOpen={(s) => {
-            stopPlayback();
-            setOpenSectionId(s.sectionId);
-          }}
-          onQuickAction={(s) => {
-            if (s.durationMs === null) {
-              setOpenSectionId(s.sectionId);
-              void startRecording();
-            } else {
-              void playSection(s);
-            }
-          }}
+      {recorder && (
+        // Keyed on the segment: opening the sheet on a different segment (via a
+        // list Record that was reachable before `inert`, or any future path)
+        // must REMOUNT, not reuse the prior segment's loaded `view.samples` —
+        // splicing those into the new segment's save would write one segment's
+        // audio into another (G8).
+        <Recorder
+          key={recorder.segmentId}
+          ref={recorderRef}
+          segmentId={recorder.segmentId}
+          audio={audio}
+          saveRecording={saveRecording}
+          saveEditedSegment={saveEditedSegment}
+          clipboard={clipboard}
+          onClipboardChange={setClipboard}
+          onExit={closeRecorder}
+          onRequestBack={goBack}
         />
-      </div>
-    </main>
-  );
-}
-
-function Splash({ message, tone }: { message: string; tone?: "error" }) {
-  return (
-    <main className="app-shell grid h-full place-items-center">
-      <p
-        className="text-[13px]"
-        style={{
-          color: tone === "error" ? "var(--s-live)" : "var(--s-ink-muted)",
-        }}
-      >
-        {message}
-      </p>
+      )}
+      <BuildStamp />
     </main>
   );
 }

@@ -1,5 +1,45 @@
 # Section-by-section screen — Pass A (UX)
 
+**Status:** **Superseded as a specification, 2026-08-24** · **Date:** 2026-08-22,
+approved at Gate 1 the same day
+
+> **Do not build from this document.** The plan of record is
+> [`pivot-plan.md`](pivot-plan.md). The product mockups (22 Aug 2026) replaced
+> this screen, and the UI it specifies is being deleted rather than evolved
+> (#25).
+>
+> It is kept, unrewritten, as the dated record of how the screen was reasoned
+> about and what Gate 1 approved. Its reasoning is why several later decisions
+> went the way they did, and that only reads if the argument survives intact.
+
+**What is overturned.** Named in `pivot-plan.md` as C1 through C4:
+
+- **C3 — the `Book → Chapter → Section → Segment` hierarchy** this document
+  designs against. ADR 0004 removed the Section level; a segment is the unit of
+  work.
+- **C1 — derived-only status.** "The thing cut: #6" argues against asking the
+  translator to mark anything. The mockups specify an explicit per-segment
+  Complete toggle, counted as a chapter roll-up.
+- **C4 — take-based capture**, record and judge and keep or redo. A2 puts takes
+  out of Phase 1; there is one editable waveform per segment.
+- **C2 — "the row has exactly one control"** (A1, Plain boxes). Overturned by
+  G5: the Segments screen ships a transport button and a `⋮` overflow menu. The
+  fifty-row argument for it below is on the record and was decided against, not
+  overlooked.
+
+**What still stands.** The A0 sentence and the case that a non-reading translator
+navigates by sound, waveform shape and position rather than by text. The finding
+that **artwork is an enhancement, not a dependency** — D6 reaches the same
+conclusion from the other direction. And three of the four items under "Not
+decided here" are still open: wordless confirmation of a destructive action, which
+G4 and G5 have now given two call sites; spoken prompts, now Q7 in the plan's
+standing register; and the fact that Bible pericopes have no non-textual identity.
+The fourth, telling two takes apart, is moot under A2.
+
+**One paragraph here is newer than the rest.** The licensing note in the Gate 1
+revision was corrected in place by PR #22 — OBS-derived recordings **are** CC
+BY-SA, settled 2026-08-23, #15 closed. That correction is deliberate. Leave it.
+
 > Process: `ux-then-ui`. This document is the **Gate 1 artifact**: the job list
 > and state inventory, as words and plain boxes, with **zero styling**.
 > Nothing here decides how anything looks.
@@ -32,15 +72,15 @@ Three claims verified against artifacts before designing, not taken from the bri
    English text labels and an English `<h1>`.
 3. **The spec is explicit:** "low/no text (icon driven)",
    "Section-by-section (UX), vertical scroll", "granular to section: editing,
-   re-recording" (`docs/spec-transcription.md` lines 21, 33–34).
+   re-recording" (the 19 Aug 2026 requirements notes).
 
 ### The correction the premise check produced
 
 The brief assumed OBS artwork could carry row identity. **It cannot, in Phase 1.**
-Tim's own scoping says tC Mobile "initially wants to be only a simple audio
-editor" and that "later phases may include resources and pre-structured content
-(e.g., OBS)." So Phase 1 ships a **blank** notebook: no stories, no artwork, no
-pre-made sections.
+The requirements owner's own scoping has Phase 1 as a simple audio editor only,
+with resources and pre-structured content (e.g., OBS) left to later phases. So
+Phase 1 ships a **blank** notebook: no stories, no artwork, no pre-made
+sections.
 
 That removes the one non-textual identifier we thought we had, and it changes
 the central design question of this screen.
@@ -52,9 +92,10 @@ the central design question of this screen.
 > by text, whose progress is announced in words, and whose destructive moments
 > are confirmed with a sentence.**
 
-**X, from evidence:** an oral communicator in a church network like the Nukak —
-"functionally monolingual and almost entirely oral" (Tim Jore, Zulip) — holding
-a shared Android phone in a workshop, recording their own translation.
+**X, from evidence:** an oral communicator in the church network of an oral-only
+people group — functionally monolingual and almost entirely oral, as described
+in internal discussion — holding a shared Android phone in a workshop, recording
+their own translation.
 
 **Why this failure and not another:** it is the one the whole field commits.
 All twelve reference screens reviewed on Mobbin are navigable **only by
@@ -133,10 +174,12 @@ slot was specified before we knew we would have pictures.
    screen's job list**: it changes the recording surface, not the list, and
    folding it in here would widen the gate mid-review.
 
-**Also flagged by ADR 0006 and not resolved:** a recorded translation of an OBS
-story is arguably a derivative work, making it CC BY-SA. The data model cannot
-distinguish an OBS-derived recording from a user-authored one. That is a
-licensing decision for Tim, not an engineering one.
+**Also flagged by ADR 0006 — decided since this note was written.** A recorded
+translation of an OBS story is a derivative work, making it CC BY-SA: settled
+2026-08-23, #15 closed. The data model still cannot distinguish an OBS-derived
+recording from a user-authored one, and the export path carries none of it.
+That remainder is **engineering work, not a question for the requirements
+owner** — see ADR 0006.
 
 ## A1 — The job list
 
@@ -250,7 +293,7 @@ Deliberately left open rather than quietly resolved:
 - **How a destructive action is confirmed without words.** Real and unsolved.
 - **Whether spoken prompts, recorded once by a facilitator in the local
   language, should carry the instructional load instead of icons.** Floated as
-  "O1" in the Zulip thread; not decided; would change this screen.
+  "O1" in internal discussion; not decided; would change this screen.
 - **Bible pericopes have no non-textual identity.** OBS eventually has artwork;
   pericopes never will. Unsolved, and it does not block Phase 1.
 

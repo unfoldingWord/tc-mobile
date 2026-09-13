@@ -1,6 +1,6 @@
 # 0004 — Address sections with Scripture Burrito scope strings
 
-**Status:** Accepted (narrow part) · Proposed (broad part, needs Tim's decision)
+**Status:** Accepted (narrow part) · **Rejected** (broad part) · Amended 2026-08-23
 **Date:** 2026-08-22
 
 ## Accepted: scope strings, not a bespoke chapter/section pair
@@ -19,16 +19,16 @@ The grammar is parsed in one place, `src/lib/scripture/scope.ts`, and
 unit-tested, because a malformed scope must fail loudly rather than become a
 plausible-looking wrong reference.
 
-## Proposed: make "Section" a pluggable division scheme — NEEDS A DECISION
+## Rejected: make "Section" a pluggable division scheme
 
-Tim's inception notes sketch a fixed hierarchy:
+The requirements owner's inception notes sketch a fixed hierarchy:
 
 ```
 Book → Chapter → Section → Segment → Take
 ```
 
-This repo implements that hierarchy faithfully, because it is Tim's spec and
-changing it is his call, not ours.
+This repo implements that hierarchy faithfully, because it is the requirements
+owner's spec and changing it is that owner's call, not engineering's.
 
 **However**, Shema Studio — which has already shipped essentially all of tC
 Mobile's v1 feature list — models it differently, and the difference looks
@@ -42,7 +42,7 @@ pericope" as section types. A fixed `Chapter → Section` parent-child forces
 those to be two different shapes. A division scheme layered over the book makes
 them one shape with two schemes — and maps directly onto burrito scope strings.
 
-**What we would change if Tim agrees:**
+**What we would change if the requirements owner agreed:**
 
 ```
 Project (division scheme)
@@ -53,5 +53,39 @@ Project (division scheme)
       └─ Take[]
 ```
 
-**Decision needed from Tim before this is built out.** The current model is not
-wrong for Phase 1 — it just makes the OBS-vs-pericope case more work later.
+**Decided 2026-08-22 by the requirements owner: no.** Asked directly what
+divides a book that is not OBS, the answer was that Scripture passages fit the
+Book → Chapter → Segment (→ Take) taxonomy, either tied to the biblical canon or
+as a collection of stories.
+
+And, on whether segments carry references at all: a segment is not wired to a
+Scripture reference, an OBS frame or anything else, but it can accommodate them.
+The structure is generic, intended to shape the UI for any resource that can use
+the Book → Chapter → Segment (→ Take) taxonomy. This is not an "OBS recorder" or
+"Scripture recorder" app; it is an "audio notebook and pencil" app that needs
+just enough structure to accommodate both OBS and Scripture.
+
+One generic taxonomy, no second dimension. A pluggable division scheme solves a
+problem this product does not have: OBS frames and Bible pericopes are both
+just segments, and the difference between them is what a template puts in them,
+not a different shape.
+
+**What this changes in the accepted half.** Scope strings stay — they are still
+the right way to say "this segment is Ruth 2:1-13" when something knows that.
+But they become **optional metadata**, not the addressing model. A segment
+created by hand carries no reference and is identified by its ordinal within
+its chapter. `SectionRef` should therefore be nullable on the segment rather
+than required, and export must be correct for a book that has no references at
+all.
+
+**The consequence, stated rather than discovered later:** a book the user made
+up exports as ordered audio with no scripture addressing. Only a
+template-derived book carries references that another tool could resolve. That
+is the right trade for an audio notebook, and it is also the quiet resolution of
+the interop question — worth naming here so nobody later mistakes it for an
+oversight.
+
+**Also settled by the same conversation:** the `Section` layer is removed
+entirely. The 19 Aug spec had `Chapter → Section → Segment`; the 22 Aug mockups
+have `Chapter → Segment`. Section was the OBS-story / pericope layer, and it
+goes with the OBS framing. See `docs/design/pivot-plan.md`.

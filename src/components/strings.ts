@@ -1,0 +1,271 @@
+/**
+ * Every visible and accessible string these screens show, in one flat table.
+ *
+ * On a screen built for people who may not read, the `aria-label` is not a
+ * courtesy — it is the entire text layer a screen reader speaks and the only
+ * place a future spoken-prompt layer can attach. Routing every string through
+ * one record keeps that layer attachable and keeps wording out of the markup,
+ * where it would otherwise be edited in a dozen places. This is a table, not a
+ * provider: parameterised labels are small pure functions, nothing more.
+ */
+import { filenameSafe } from "@/lib/utils";
+
+export const strings = {
+  // ── Books screen (B2) ────────────────────────────────────────────────────
+  newBook: "New book",
+  menuOpen: "Open menu",
+  menuTitle: "Menu",
+  menuClose: "Close menu",
+  booksEmpty: "Start your first book",
+  booksEmptyTeach:
+    "A book holds the chapters you record — and everything stays on this phone.",
+  loadingBooks: "Loading your books.",
+  tryAgain: "Try again",
+  bookRow: (name: string, chapters: number, expanded: boolean): string =>
+    `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
+      expanded ? "expanded" : "collapsed"
+    }`,
+  addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
+  openChapter: (heading: string): string => `Open ${heading}`,
+  chapterName: (n: number): string => `Chapter ${n}`,
+  /**
+   * The chapter's display heading: the facilitator's passage label when set
+   * (#264), otherwise the default "Chapter {number}". One place both the Books
+   * row and the Segments breadcrumb resolve the name, so they never diverge.
+   */
+  chapterHeading: (name: string | null, n: number): string =>
+    name ?? `Chapter ${n}`,
+
+  // ── Rename (#264) — book and chapter, from their ≡ menus ──────────────────
+  renameBook: "Rename book",
+  renameChapter: "Rename chapter",
+  // The inline text field's accessible name (the whole text layer of the input)
+  // and its placeholder.
+  bookNameField: "Book name",
+  chapterNameField: "Chapter name",
+  // The check control that commits the typed name.
+  saveName: "Save name",
+
+  // ── Segments screen (B3) ─────────────────────────────────────────────────
+  backToBooks: "Back to books",
+  addSegment: "Add segment",
+  // Shown while the chapter list rebuilds after any change — a save landed, an
+  // edit, a finished toggle, or an erase. Neutral on purpose: the recorder-path
+  // erase reaches here too, where "Saving your recording." claimed a save that
+  // never happened, and even after a real save the write is already done by the
+  // time this shows — the list is recomputing peaks, not saving (#77).
+  updating: "Updating the chapter.",
+  loadingChapter: "Loading the chapter.",
+  segmentsEmpty: "Add the first segment",
+  segmentsEmptyTeach:
+    "A segment is one passage of the chapter — record it, play it back, record it again.",
+  playSegment: (n: number): string => `Play segment ${n}`,
+  pauseSegment: (n: number): string => `Pause segment ${n}`,
+  recordSegment: (n: number): string => `Record segment ${n}`,
+  editSegment: (n: number): string => `Edit segment ${n}`,
+  editSegmentFinished: (n: number): string => `Edit segment ${n}, finished`,
+  openSegment: (n: number): string => `Open segment ${n}`,
+  scrubSegment: (n: number): string => `Position in segment ${n}`,
+  markFinished: (n: number): string => `Mark segment ${n} finished`,
+  markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+
+  // ── Recorder sheet (B4) ──────────────────────────────────────────────────
+  closeRecorder: "Close recorder",
+  recorderBreadcrumb: (
+    book: string,
+    chapter: number,
+    segment: number
+  ): string => `${book} > ${strings.chapterName(chapter)} > ${segment}`,
+  record: "Record",
+  pause: "Pause",
+  resume: "Resume",
+  zoomWhole: "Zoom: whole segment",
+  zoomQuarter: "Zoom: quarter view",
+  micNeededTitle: "Microphone access is needed to record",
+  micRetry: "Try again",
+  micBack: "Go back",
+  finishedWriteFailed: "Could not save the finished mark.",
+  // The recorder's commit-window status (#39). "saving": a take is committing
+  // (stop → decode → the IndexedDB write, spanned by `isClosing`, not just the
+  // `processing` state). "interrupted": the mic was lost mid-take (#59) and the
+  // frozen take is held in memory until the recorder is closed — so the copy
+  // names the real control, "Close recorder" (nothing is named "Back"), the
+  // same wording #139 rewrites `previewUnavailable` to.
+  recorderSaving: "Saving…",
+  recorderInterrupted: 'Recording finished. Use "Close recorder" to save it.',
+
+  // ── Recorder load failure (#137) ──────────────────────────────────────────
+  // A finished segment's stored MP3 could not be decoded when the sheet opened
+  // — most often a transient iOS "interrupted" AudioContext (#106), not a
+  // corrupt clip. The sheet is a full panel, not a blank: the recording is
+  // untouched, "Try again" resumes the context and re-decodes, and Back returns
+  // to the Segments list, where the row's Erase (which does not decode) works.
+  loadFailedTitle: "This recording could not be opened",
+  loadFailedBody:
+    "Your recording is safe. Try again, or go back to erase it from the list.",
+  loadRetry: "Try again",
+  loadBack: "Go back",
+  // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
+  // again" is in flight, so the tap has visible feedback (a slow decode is not
+  // instant) and the panel does not flicker to the disabled sheet and back.
+  // Try again relabels and goes busy in place rather than unmounting (#137 G2).
+  loadRetrying: "Opening your recording…",
+
+  // ── Recorder save-decode failure (#165) ───────────────────────────────────
+  // After Stop the captured audio could not be decoded — most often a transient
+  // iOS "interrupted" AudioContext (#106), not corrupt bytes. The take exists
+  // ONLY as the held container bytes, so this panel never offers a plain
+  // discard: Try again re-decodes on a fresh gesture (resuming the context), and
+  // Share hands the raw bytes to the OS so the recording leaves the phone in some
+  // form rather than none. "yet" because a retry commonly succeeds.
+  takeRecoverTitle: "This recording could not be saved yet",
+  takeRecoverBody:
+    "Your recording is still here. Try again, or share it to keep it safe.",
+  takeRecoverRetry: "Try again",
+  // Shown in place of the Try again label and as a busy Notice while a re-decode
+  // is in flight — the same in-place busy shape as `loadRetrying` (#137 G2).
+  takeRecoverRetrying: "Saving your recording…",
+  takeRecoverShare: "Share the recording",
+  // The share sheet is missing or refused these bytes.
+  takeShareUnavailable: "Sharing is not available on this device.",
+  takeShareFailed: "Could not share the recording. Try again.",
+  // A re-decode failed AGAIN (kept under Try again, not the Share slot — George
+  // R1 G6). A thrown save on a recovered take reads here too, distinct from a
+  // share failure: the recording is still held, so this says "save", not "share".
+  takeRetryFailed: "Could not save the recording. Try again.",
+  // The held bytes went to the OS share sheet. Shown once a share succeeds, with
+  // the Done exit — the recording is off the phone, so leaving loses nothing.
+  takeRecoverShared: "Recording shared.",
+  takeRecoverDone: "Done",
+  // The two-tap discard on the recovery panel (George R1 G1 / Frank F2): the
+  // panel is otherwise a dead end when the decode never succeeds. Same armed
+  // second-tap shape as the SaveFailed screen — a stray tap never deletes.
+  takeRecoverDiscard: "Delete this recording",
+  takeRecoverDiscardArmed: "Tap again to delete this recording for good",
+  takeRecoverDiscardHint: "Tap again to delete it.",
+
+  // ── Recorder mode split (#89) ────────────────────────────────────────────
+  // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
+  // the action is stop (D4), so the label says "Stop playing".
+  playRecording: "Play recording",
+  stopPlayback: "Stop playing",
+  // The record-menu "Edit" row — distinct from `editSegment(n)`, the Segments
+  // list's per-row label.
+  enterEdit: "Edit recording",
+  // The edit-menu row and the "Editing" pill's spoken action.
+  doneEditing: "Done editing",
+  // The pill's visible text — the mode marker for a sighted non-reader (D2).
+  modepillEditing: "Editing",
+
+  // ── Waveform editing (B5) ────────────────────────────────────────────────
+  selectStart: "Select a span to edit",
+  selectStop: "Close the selection",
+  cut: "Cut the selection",
+  paste: "Paste at the line",
+  undo: "Undo",
+  redo: "Redo",
+  recorderMenuTitle: "More",
+  recorderMenuOpen: "More actions",
+  selectionStartHandle: "Selection start",
+  selectionEndHandle: "Selection end",
+  editFailed: "That edit could not be applied. Try a shorter selection.",
+  clearFailed: "Could not clear the audio. Try again.",
+  // Same rule as `blockedByTake`: name the control, do not invent "Back".
+  previewUnavailable:
+    'Can\'t preview this yet. Use "Close recorder" to save it, then play it.',
+
+  // ── Disabled-row reasons (#135) ──────────────────────────────────────────
+  // Appended to a disabled ≡-menu row's accessible name so the grey carries its
+  // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
+  // hand. Short and literal, like `previewUnavailable`.
+  // Names both steps in the order the overlay allows — while this menu is open
+  // the recorder sheet is inert, so the sheet's control is out of reach until the
+  // menu closes — and names them by the accessible names those two controls
+  // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
+  // Back", which matches NO control in the product: a screen-reader user hunting
+  // for "Back" finds nothing, and the one live chevron dismisses the menu
+  // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
+  blockedByTake:
+    'Use "Close menu", then "Close recorder", to save the recording.',
+  // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
+  // resolves. No audio exists yet, so this must NOT promise a save — and must
+  // not send anyone to a control that would abandon the in-flight start.
+  micStarting: "The microphone is still starting.",
+  nothingRecorded: "Nothing recorded yet.",
+  nothingStored: "Nothing saved to erase.",
+
+  // ── Live waveform (#120) ─────────────────────────────────────────────────
+  liveWaveform: "Live recording waveform",
+
+  // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
+  vuMeterLabel: "Recording level",
+  vuMeterUnavailable: "Level meter unavailable on this device",
+  vuShow: "Show the level meter",
+  vuHide: "Hide the level meter",
+  eraseSegment: "Erase recording",
+  segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  eraseConfirmTitle: "Erase this recording?",
+  eraseConfirm: "Erase",
+  eraseCancel: "Cancel",
+  eraseFailed: "Could not erase the recording. Try again.",
+
+  // ── Share (B7) ───────────────────────────────────────────────────────────
+  chapterMenuOpen: "More actions for this chapter",
+  chapterMenuTitle: "Chapter",
+  shareChapter: "Share chapter",
+  // Tap 2 of the two-gesture flow: the File is encoded and armed, this hands it
+  // to the OS share sheet. A distinct, primary action so the tap is deliberate.
+  shareSend: "Share now",
+  sharePreparing: "Preparing the chapter to share.",
+  shareNothing: "Record a segment before sharing this chapter.",
+  shareFailed: "Could not share this chapter. Try again.",
+  // Neutral on the cause: `missing` counts every segment whose audio did not
+  // resolve — never-recorded, but also a dangling take or a half-missing clip —
+  // so "no recording yet" would misdescribe a hole the translator never left.
+  shareMissing: (n: number): string =>
+    n === 1
+      ? "1 segment could not be included."
+      : `${n} segments could not be included.`,
+  // The book name is free text since #264, so sanitise it into the filename —
+  // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
+  // The chapter is an ordinal, always safe.
+  shareFilename: (book: string, chapter: number): string =>
+    `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
+
+  // Share Book — the book-level ≡ menu and its zip-of-chapter-MP3s share. Names
+  // each book so AT users can tell one shelf row's menu from the next.
+  bookMenuOpen: (book: string): string => `More actions for ${book}`,
+  bookMenuTitle: "Book",
+  shareBook: "Share book",
+  shareBookPreparing: "Preparing the book to share.",
+  shareBookNothing: "Record a segment before sharing this book.",
+  shareBookFailed: "Could not share this book. Try again.",
+  // `missing` here counts whole chapters left out of the zip — a chapter with no
+  // resolvable audio at all. A chapter that is merely partial still ships (its
+  // own gaps are the chapter share's concern), so this speaks in chapters.
+  shareBookMissing: (n: number): string =>
+    n === 1
+      ? "1 chapter could not be included."
+      : `${n} chapters could not be included.`,
+  // Sanitised like shareFilename: the book name is the .zip File name and must
+  // not carry a path separator or a reserved character (G3).
+  shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+
+  // ── Root error boundary (#167) ───────────────────────────────────────────
+  // The whole text layer of the crash screen. Says that something failed and
+  // nothing more: the cause goes to the failure sink for a maintainer to read,
+  // never to a translator. It is also the screen's accessible name.
+  appFailed: "Something went wrong.",
+  // The one action, named for what it actually does. NOT `tryAgain`: on the
+  // Books shelf that label means "run the load that just failed again", and
+  // here the button reloads the document — the app starts over from disk, and
+  // anything that lived only in memory is already gone. A screen reader speaks
+  // the label and nothing else, so the two must not share one.
+  appReload: "Restart the app",
+  // Said once, under the mark: what the button is about to do. No cause text —
+  // a stack-shaped string in a language the reader may not speak is worse than
+  // the glyph alone. It does NOT claim the in-progress work survived: a render
+  // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
+  // "everything you saved is still here" line would over-promise (George, r2).
+  appReloadTeach: "The app will start again.",
+} as const;

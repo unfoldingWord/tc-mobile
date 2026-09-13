@@ -16,10 +16,10 @@ device.
 
 ## Rationale
 
-Every backend dependency is a thing that can be unavailable in a field setting
-in East Africa, which is precisely where this has to work. A static deployment
-is also the fastest route to the thing Tim actually asked for: an HTTPS URL he
-can open on a phone.
+Every backend dependency is a thing that can be unavailable in a field setting,
+which is precisely where this has to work. A static deployment is also the
+fastest route to the thing the requirements owner actually asked for: an HTTPS
+URL that opens on a phone.
 
 ## Consequences
 
@@ -27,9 +27,13 @@ can open on a phone.
   translator's work. That is why `tests/storage.test.ts` exercises the
   repository against `fake-indexeddb` rather than trusting on-device spot
   checks, and why `putClip` writes metadata and samples in one transaction.
-- Sharing audio off the device is via the Web Share API / file download, not an
-  upload. Phone-to-phone matters more than cloud here.
+- Sharing audio off the device **will be** via the Web Share API / file
+  download, not an upload — phone-to-phone matters more than cloud here. That
+  decision stands; the path does not exist yet (#18), and no code calls
+  `navigator.share` or writes a file today.
 - Phase 2 sync (versioning, republishing, comments) will need this decision
-  revisited. Two prior-art patterns are worth reading first: Shema's typed
-  `.shema` bundles and tcorePSA's HLC event journal
+  revisited. Worth reading first: Shema's typed `.shema` bundles, tC4's
+  `BURRITO-SPEC.md` §8, and the uW Scripture Burrito prototype's HLC event
+  journal _draft_ — read-only,
+  and not reusable: one operation, no export, no fold, no merge, no licence
   (docs/research/prior-art.md §1, §3).

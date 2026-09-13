@@ -1,21 +1,35 @@
 # tC Mobile
 
 **translationCore Mobile** — an offline-first PWA that aims to be the
-"world's simplest mobile audio notebook and editor" for oral communities doing
-Bible translation.
-
-> **Status: scaffold.** The audio core, storage layer, and build/deploy pipeline
-> are working and tested. The UI is a deliberately disposable vertical slice
-> that proves the pipeline end to end on a real phone. See
-> [`docs/spec-transcription.md`](docs/spec-transcription.md) for the source
-> requirements and [`docs/decisions/`](docs/decisions/) for what was decided
-> and why.
+"world's simplest mobile audio notebook and pencil" editor for oral communities doing
+translation.
 
 ## Why this exists
 
 There is no pathway for translation production in communities that cannot use
 text-based modalities. Oral communicators have no "pencil and paper." This is
 an attempt at one.
+
+## Where the model came from
+
+The product mockups of 22 Aug 2026 — which arrived about an hour after work
+began — set the domain model the app uses today. The initial scaffold was
+replaced rather than evolved:
+
+```
+was:  Project -> Chapter -> Section -> Segment -> Take
+now:  Book    -> Chapter ->            Segment  (-> Take, hidden, 1:1)
+```
+
+A segment is the unit of work — one recording, edited in place.
+
+The issues and the docs call that replacement **the pivot**, and the word is
+load-bearing: it names the umbrella issue, the batch numbering, and the
+`@pivotpending` tag in the source.
+[`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record,
+[#25](https://github.com/unfoldingWord/tc-mobile/issues/25) is the umbrella
+issue, and the work is nine batches, B0–B8 — all landed except the Template
+Library half of B7.
 
 ## Run it
 
@@ -33,39 +47,35 @@ http://localhost:5173`).
 ## Verify
 
 ```bash
-npm run verify   # format:check + lint + typecheck + test + build
+npm run verify   # format:check + lint + knip + typecheck + test + build
 ```
 
-Individually: `npm run lint`, `npm run typecheck`, `npm test`,
+Individually: `npm run lint`, `npm run knip`, `npm run typecheck`, `npm test`,
 `npm run format`, `npm run build`.
 
 ## Branches and deployment
 
 ```
-feature branch  ->  develop  ->  main
-                    (default)     (release)
+feature  ->  develop  ->  staging  ->  main
+             (default)    (staging)    (production)
 ```
 
-`develop` is the default branch. `main` is the release branch, and the
-`develop` -> `main` PR is the production gate.
+| Branch                 | Purpose               | Deploys to                         |
+| ---------------------- | --------------------- | ---------------------------------- |
+| `feature/*`, `develop` | dev and local testing | a preview version with its own URL |
+| `staging`              | what testers use      | `tc-mobile-staging`                |
+| `main`                 | production            | `tc-mobile`                        |
 
-**Cloudflare Workers Builds deploys** straight from the repo — there are no
-deploy workflows in `.github/`.
-
-| Branch    | Result                                                            |
-| --------- | ----------------------------------------------------------------- |
-| `main`    | Production worker `tc-mobile`                                     |
-| any other | A preview version with its own URL                                |
-| staging   | `tc-mobile-staging`, deployed manually during the prototype phase |
+Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
-```bash
-npm run deploy:staging   # manual, during prototyping
-```
-
-Account: **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The API token
-lives in Cloudflare's build settings, not a GitHub secret.
+**Cloudflare Workers Builds deploys** the PWA straight from the repo — no
+Actions workflow deploys the web app. (The one deploy workflow in `.github/` is
+the manual iOS TestFlight lane, run by hand — a native build, not a web deploy.)
+Workers Builds is configured per Worker, so the repo is connected twice:
+`tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
+`--env staging`.
 
 ### Testing on a phone
 
@@ -73,18 +83,21 @@ Open a deployed URL on the device. It is HTTPS, which matters —
 `getUserMedia` refuses to run outside a secure context, so a LAN address like
 `http://192.168.x.x` **cannot record audio** no matter what else is correct.
 
-Add it to the home screen to exercise the installed PWA (standalone display,
-safe-area insets, and the iOS share-sheet export path all behave differently
-there than in a browser tab).
+Add it to the home screen to exercise the installed PWA (standalone display and
+safe-area insets behave differently there than in a browser tab). There is no
+share-sheet export path yet — see #18.
 
 ### CI
 
-`ci.yml` only: full-history secret scan, format, lint, typecheck, test, build,
+`ci.yml`: full-history secret scan, format, lint, knip, typecheck, test, build,
 and a check that the PWA service worker and manifest were emitted. It deploys
-nothing.
+nothing. (`.github/` also holds the two manual native lanes, run by hand and
+never on push/PR: `ios-testflight.yml`, a TestFlight upload, and
+`android-apk.yml`, a signed release APK attached to the run as an artifact.
+They are the only workflows that ship a binary, and never to Cloudflare.)
 
-The repo is `sethstoll3/tc-mobile` — **private and personal for now**, pending
-the tech-lead approval and recorded DRI an org repo requires.
+The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
+prepared to be made public.
 
 ## Architecture
 
@@ -104,10 +117,10 @@ src/
 └── app/         Screens                   (imports: everything)
 ```
 
-The split is load-bearing. Tim has said the UI "needs lots of changes, but I
-don't know what they are yet," so the durable investment is the audio core and
-the data model — and keeping them DOM-free is what lets the disposable layer be
-rewritten without risking them.
+The split is deliberate. The requirements owner said from the start that the UI
+would need extensive changes that were not yet specified — the pivot is that
+rewrite arriving. Keeping `lib/` DOM-free is what lets the UI layer be replaced
+without touching the audio core.
 
 ## Audio pipeline
 
@@ -116,7 +129,7 @@ MediaRecorder (webm/opus on Android, mp4/aac on iOS)
    → decodeAudioData + OfflineAudioContext resample
    → canonical mono 16-bit PCM @ 44.1 kHz     ← everything internal is this
    → edit: cut / insert / paste / concat      (pure Int16Array functions)
-   → export: MP3 (lamejs) or WAV
+   → export: MP3 (lamejs) or WAV                (encoder only — not wired, #18)
 ```
 
 See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
@@ -124,21 +137,38 @@ See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
 
 ## Content — Open Bible Stories
 
-Fifty OBS stories (598 illustrated frames) ship as beta content so testers get
-real, ordered, illustrated chapters with zero setup. OBS maps onto the domain
-model directly: **story → Chapter, frame → Section**, and the frame artwork
-gives each section a non-textual identity — which is the core problem this app
-has to solve for people who cannot read.
+Fifty OBS stories (598 illustrated frames) are bundled as beta content. Before
+the pivot they mapped onto the domain model directly — a story a Chapter, a
+frame a Section, one Section per frame built by `src/hooks/use-chapter.ts`.
+`Section` is gone from the model as of B1–B4, and so is that loader: the pivot
+screens (Books → Segments → Recorder) start from an **empty Books shelf** (G2),
+and the bundled OBS catalog is **not yet imported** into the Book model — that
+wiring is later pivot work.
 
 ```bash
 node scripts/build-obs-catalog.mjs   # refresh src/data/obs-catalog.json from Door43
+node scripts/build-obs-thumbs.mjs    # rebuild public/obs/thumbs/ from the 360px frames
 ```
 
-Story text and frame metadata are bundled (230 KB). **Artwork is not** — 44 MB
-for all 598 frames at 360px — so it is fetched per story on demand into
-IndexedDB and is offline-forever once downloaded. Narration MP3s (~1 MB/story)
-are an optional per-story download. See
-[ADR 0006](docs/decisions/0006-obs-content.md).
+Story text and frame metadata are bundled (230 KB), and so are the 128px
+thumbnails — 598 of them for 2.5 MB. They ship in the build but are **excluded
+from the service-worker precache until a screen reads them** (#177): no shipped
+screen draws them yet, so precaching 2.5 MB of unused pictures only delayed
+offline-readiness. `jpg` is restored to the precache when the Template Library
+(#33) wires a reader — imports/calls `thumbUrl`, or otherwise references the
+`/obs/thumbs/` path — the bundle-and-precache decision itself stands (ADR 0006,
+2026-09-04 amendment).
+**The 360px frames are not bundled**, and after B0 (#26) they are **not cached
+either**: the on-demand IndexedDB fetch for full-size artwork is gone. The
+pre-pivot recording view that rendered a frame's CDN `<img>` is gone too, removed
+with the rest of the pre-pivot UI in B2–B4.
+
+Two things about this content changed with the pivot. Artwork is an optional
+per-segment illustration rather than the thing that decides the browse layout
+(D6), and no _mockup_ screen draws it — so B0 removed the media cache outright
+(Q4 answered no; #1 closed as moot). Reference audio is out of Phase 1 (D5), so
+the narration path — the `narrationUrl` helper and the reference control — is
+gone too. See [ADR 0006](docs/decisions/0006-obs-content.md).
 
 ### Attribution
 
@@ -149,30 +179,34 @@ Artwork is © [Sweet Publishing](https://www.sweetpublishing.com) under
 own source is MIT; the OBS content and this code are separate works in mere
 aggregation.
 
-> ⚠️ **Open licensing question.** The OBS licence treats a _translation_ as a
-> derivative work, which would make recordings produced against OBS content
-> CC BY-SA and require removing the unfoldingWord® trademark from them. That is
-> a decision for Tim and uW licensing, and **nothing in the export path
-> implements it yet** — ADR 0006.
+> **Settled, not yet implemented.** The OBS licence treats a _translation_ as a
+> derivative work, so recordings produced against OBS content **are** CC BY-SA
+> and must not carry the unfoldingWord® trademark. The requirements owner
+> confirmed that reading on 2026-08-23 (#15 closed). **Nothing in the export
+> path implements it yet** —
+> there is no export path at all (#18) — and the data model still cannot tell an
+> OBS-derived recording from a user-authored one. ADR 0006.
 
 ## Prior art
 
 Read [`docs/research/prior-art.md`](docs/research/prior-art.md) before designing
 anything. In short: **Shema Studio has already shipped essentially this entire
-v1 feature list** (its source is not public — someone needs to ask Han Chung),
-and **Benjamin Wright's `tcorePSA` already proved this exact stack** —
-Vite + PWA + IndexedDB — on low-end Android inside uW.
+v1 feature list** (its source is not public — someone needs to ask the Shema
+Studio developer), and **a uW Scripture Burrito prototype already proved this
+exact stack** — Vite + PWA + IndexedDB — on low-end Android inside uW.
 
 ## Docs
 
-|                                                            |                                                                 |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| [`docs/spec-transcription.md`](docs/spec-transcription.md) | Tim's handwritten inception notes, transcribed                  |
-| [`docs/research/prior-art.md`](docs/research/prior-art.md) | Shema Studio, passage-recorder-app, tcorePSA, Scripture Burrito |
-| [`docs/decisions/`](docs/decisions/)                       | ADRs                                                            |
-| [`AGENTS.md`](AGENTS.md)                                   | Contributor and agent guide                                     |
+|                                                            |                                                       |
+| ---------------------------------------------------------- | ----------------------------------------------------- |
+| [`docs/design/pivot-plan.md`](docs/design/pivot-plan.md)   | **The plan of record** for the pivot — #25            |
+| [`docs/design/`](docs/design/)                             | Screen design passes and design notes                 |
+| [`docs/research/prior-art.md`](docs/research/prior-art.md) | Shema Studio, passage-recorder-app, Scripture Burrito |
+| [`docs/decisions/`](docs/decisions/)                       | ADRs                                                  |
+| [`AGENTS.md`](AGENTS.md)                                   | Contributor and agent guide                           |
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE). Note the LGPL dependency flagged in
-[ADR 0003](docs/decisions/0003-mp3-encoder.md).
+MIT — see [`LICENSE`](LICENSE). One LGPL-3.0 dependency, lamejs: **settled
+2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md). The
+notice and attribution obligations that come with keeping it are #36.

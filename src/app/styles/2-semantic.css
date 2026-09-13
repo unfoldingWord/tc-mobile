@@ -35,6 +35,11 @@
     --s-voice-ink: #1a1206;
     --s-voice-quiet: var(--p-amber-950);
 
+    /* A finished segment. Mirrors the voice role: a fill, its ink, a quiet wash. */
+    --s-done: var(--p-green-500);
+    --s-done-ink: #06210f;
+    --s-done-quiet: var(--p-green-950);
+
     /* Semantic, never decorative. */
     --s-live: var(--p-red-500);
     --s-live-ink: #ffffff;
@@ -62,6 +67,11 @@
     --s-voice: var(--p-amber-600);
     --s-voice-ink: #ffffff;
     --s-voice-quiet: var(--p-amber-100);
+
+    /* Darker green fill on white, same as voice does — keeps contrast on light. */
+    --s-done: var(--p-green-600);
+    --s-done-ink: #ffffff;
+    --s-done-quiet: var(--p-green-100);
 
     --s-live: var(--p-red-600);
     --s-live-ink: #ffffff;

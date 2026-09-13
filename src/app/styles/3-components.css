@@ -26,11 +26,21 @@
     --c-control-xl: 68px;
 
     --c-row-radius: var(--p-radius-lg);
+    /* The disabled-row hint badge (#135). The badge's geometry is named once,
+       here, so `.control-hint` below and anything that has to line up with it
+       read one source rather than repeating the numbers (Frank, round 1). */
+    --c-hint-size: 18px;
+    --c-hint-radius: var(--p-radius-full);
     --c-tile-sm: 48px;
     --c-tile-lg: 56px;
 
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
+
+    /* The waveform stroke. Defaults to the voice accent; a finished row remaps
+       it to done (green) and the canvas reads it back — no prop drilling, and
+       the recorder's waveform (never under `.row--finished`) stays amber. */
+    --c-wave-stroke: var(--s-voice);
   }
 
   /* --- the shell ------------------------------------------------------- */
@@ -44,6 +54,18 @@
     flex-direction: column;
     gap: var(--c-gap-items);
     padding: var(--p-space-4) var(--p-space-3);
+  }
+
+  /* Build identity, pinned to the bottom of the shell (flex `margin-top:auto`)
+     and muted — tester metadata, never competing with the screen. */
+  .build-stamp {
+    margin-top: auto;
+    padding-top: var(--p-space-3);
+    text-align: center;
+    font-size: var(--p-text-xs);
+    color: var(--s-ink-faint);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
   }
 
   /* --- controls --------------------------------------------------------- */
@@ -71,11 +93,44 @@
     outline: var(--c-focus-ring);
     outline-offset: var(--c-focus-offset);
   }
-  .control:disabled {
-    /* Desaturate rather than fade, so the glyph stays legible. */
-    filter: saturate(0.15);
+  /* `aria-disabled` rows are inert but focusable (#135) — every rule that paints
+     "inert" must match BOTH spellings, or a hinted row would look live. */
+  .control:disabled,
+  .control[aria-disabled="true"] {
     cursor: default;
     transform: none;
+    /* No hover punch on an inert control: the base .control:hover brightness
+       would otherwise still brighten a disabled button (George R1 P2). */
+    filter: none;
+  }
+  /* Monochrome quiet glyphs (select/undo/cut): saturate() barely moves an
+     already-grey glyph, so dim to read as inactive. Precedent: the row
+     ordinal's disabled:opacity-50. */
+  .control--quiet:disabled,
+  .control--quiet[aria-disabled="true"] {
+    opacity: 0.4;
+  }
+  /* A disabled quiet control must not pick up the hover surface/ink — on a
+     client with sticky :hover after a tap (iOS Safari), a dead tap would leave
+     the disabled Cut/Select/Undo looking live (George R2 P3). Higher specificity
+     than .control--quiet:hover, so it wins regardless of source order. */
+  .control--quiet:disabled:hover,
+  .control--quiet[aria-disabled="true"]:hover {
+    background: transparent;
+    color: var(--s-ink-muted);
+  }
+  /* A COLOURED control (live-red record, play, primary) must drain its chroma
+     when inert — a 40%-opaque red still reads as armed/live, and red is "the
+     live recording moment, and nothing else" (1-primitives). Desaturate so it
+     reads grey-inert instead. */
+  .control--record:disabled,
+  .control--play:disabled,
+  .control--primary:disabled,
+  .control--record[aria-disabled="true"],
+  .control--play[aria-disabled="true"],
+  .control--primary[aria-disabled="true"] {
+    filter: saturate(0.12);
+    opacity: 0.55;
   }
 
   .control--record {
@@ -103,8 +158,32 @@
     width: var(--c-control-xl);
     height: var(--c-control-xl);
   }
+  /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
+     the button so the badge escapes the inert control's opacity — the mark must
+     read at full ink while the control it explains is dimmed. `alert`, a state
+     mark: it says "blocked, look here" and names no control, which is all a glyph
+     can honestly do inside an overlay that inerts the sheet behind it. */
+  .control-hinted {
+    position: relative;
+    display: inline-grid;
+    width: fit-content;
+  }
+  .control-hint {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    display: grid;
+    place-items: center;
+    width: var(--c-hint-size);
+    height: var(--c-hint-size);
+    border-radius: var(--c-hint-radius);
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border: 1px solid var(--s-edge);
+    pointer-events: none;
+  }
 
-  /* --- rows and cells ---------------------------------------------------- */
+  /* --- rows ------------------------------------------------------------- */
   .row {
     display: flex;
     align-items: center;
@@ -115,44 +194,26 @@
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
   }
-  .row--active {
-    background: var(--s-raised);
-  }
-  .row--next {
-    background: var(--s-raised);
-    border-color: var(--s-edge);
-  }
-
-  .cell {
-    position: relative;
-    display: block;
-    aspect-ratio: 1;
-    border-radius: var(--c-row-radius);
-    overflow: hidden;
-    background: var(--s-surface);
-    border: none;
-    padding: 0;
-    cursor: pointer;
-  }
-  .cell:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: var(--c-focus-offset);
-  }
-  .cell--next {
-    outline: 2px solid var(--s-live);
-    outline-offset: -2px;
-  }
 
   /* --- type roles -------------------------------------------------------- */
   .t-count {
     font-size: var(--p-text-sm);
     font-weight: var(--p-weight-medium);
     color: var(--s-ink-muted);
+    /* A numeric role declares its own tabular figures rather than depending on
+       inheriting them from `.app-shell` — so a count rendered in a portaled
+       surface (a menu, a future relocated sheet) can't silently regress to
+       proportional. Redundant in today's in-shell tree; hardening, not a fix. */
+    font-variant-numeric: tabular-nums;
   }
   .t-ordinal {
     font-size: var(--p-text-xs);
     font-weight: var(--p-weight-strong);
     line-height: 1;
+    /* The third numeric role: self-sufficient tabular figures like `.t-count`
+       (a 9→10 segment ordinal shifts width otherwise, and the row could be
+       reused in a portaled surface out of `.app-shell`'s inheritance). */
+    font-variant-numeric: tabular-nums;
   }
   .t-title {
     font-size: var(--p-text-lg);
@@ -163,6 +224,8 @@
     font-size: var(--p-text-xl);
     font-weight: var(--p-weight-strong);
     letter-spacing: -0.02em;
+    /* Self-sufficient tabular figures on the live clock (see `.t-count`). */
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -194,5 +257,472 @@
     .rec-dot {
       animation: none;
     }
+  }
+}
+
+@layer components {
+  /* --- the scrub track + draggable dot (B3) ------------------------------ */
+  .scrub {
+    position: relative;
+    display: flex;
+    align-items: center;
+    /* The short waveform gets a full ≥44px vertical hit area (§3.4). */
+    min-height: var(--c-control-md);
+    cursor: pointer;
+    /* Let a vertical drag scroll the list; a horizontal drag scrubs. */
+    touch-action: pan-y;
+  }
+  .scrub:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-radius: var(--p-radius-sm);
+  }
+  .scrub-dot {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    border-radius: var(--p-radius-full);
+    background: var(--s-ink);
+    /* A ring in the floor colour so the dot reads over the amber bars. */
+    border: 2px solid var(--s-floor);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  /* --- the menu shell (hamburger drawer) --------------------------------- */
+  .menu-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    justify-content: flex-end;
+    /* Above the recorder sheet (z 60): the menu is portalled to <body>, so it no
+       longer inherits the recorder scrim's stacking context and must out-rank it
+       explicitly, or a recorder menu paints behind the inert sheet — unreachable
+       by touch (George R-B6). */
+    z-index: 80;
+  }
+  .menu-panel {
+    width: min(320px, 84vw);
+    height: 100%;
+    background: var(--s-surface);
+    border-left: 1px solid var(--s-edge);
+    /* A full-height fixed overlay (`.menu-scrim` is `position: fixed; inset: 0`)
+       escapes the body's `env(safe-area-inset-*)` padding, so this drawer paints
+       under the status-bar clock and over the home indicator. Restore all four
+       insets — the same four-sided contract `body` carries — not just top/bottom:
+       the drawer docks flush right (`.menu-scrim` justify-flex-end) with Close in
+       the top-right, so in landscape with the notch on the right the right inset
+       (~47-59px) would otherwise bury the Close target. Portrait left/right insets
+       are 0, so this is a no-op on the reported clock overlap. */
+    padding: calc(var(--p-space-5) + env(safe-area-inset-top))
+      calc(var(--p-space-4) + env(safe-area-inset-right))
+      calc(var(--p-space-5) + env(safe-area-inset-bottom))
+      calc(var(--p-space-4) + env(safe-area-inset-left));
+    display: flex;
+    flex-direction: column;
+    gap: var(--c-gap-items);
+    overflow-y: auto;
+  }
+
+  /* --- inline name edit (#264) ------------------------------------------- */
+  /* The rename field + its commit control, shown inside a ≡ menu. The input
+     sits on the raised surface with an edged outline so it reads as a fillable
+     field against the menu panel, and gains the focus ring every control uses. */
+  .name-edit {
+    display: flex;
+    align-items: center;
+    gap: var(--c-gap-parts);
+  }
+  .name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-md);
+    font-family: inherit;
+    /* 16px, not --p-text-md (13px): iOS Safari auto-zooms a focused <input>
+       under 16px and ignores index.html's user-scalable=no for it, so a smaller
+       field zooms the sheet on focus and does not reset cleanly (G5). This is the
+       app's first text field, so the viewport policy never had to coexist with
+       one. No token is exactly 16px (--p-text-lg is 21px, too large for a field),
+       so the floor is set here on the input itself. */
+    font-size: 16px;
+  }
+  .name-input::placeholder {
+    color: var(--s-ink-faint);
+  }
+  .name-input:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-color: var(--s-focus);
+  }
+
+  /* --- the erase confirm dialog (B6) ------------------------------------- */
+  /* A centred sheet, not the side drawer: it sits above the recorder sheet
+     (z 60) and the menu (z 80) because it can be raised from either. */
+  .confirm-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--p-space-5);
+    z-index: 90;
+  }
+  .confirm-panel {
+    width: min(320px, 84vw);
+    background: var(--s-surface);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-lg);
+    padding: var(--p-space-6) var(--p-space-5);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--c-gap-items);
+    text-align: center;
+  }
+  /* The subject glyph, tinted destructive so the dialog reads as "delete"
+     before a word is parsed. */
+  .confirm-glyph {
+    color: var(--s-live);
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--c-gap-items);
+  }
+}
+
+@layer components {
+  /* --- the recorder sheet (B4) ------------------------------------------ */
+  /* A sheet over the dimmed Segments list: the scrim IS the dimming, and the
+     sheet sits on top of it. The list stays mounted behind, so closing the
+     sheet returns to it in place. */
+  .recorder-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    align-items: stretch;
+    z-index: 60;
+  }
+  .recorder-sheet {
+    width: 100%;
+    height: 100%;
+    background: var(--s-floor);
+    display: flex;
+    flex-direction: column;
+    gap: var(--c-gap-items);
+    /* `.recorder-scrim` is `position: fixed; inset: 0`, so it covers the whole
+       viewport and does not inherit the body's `env(safe-area-inset-*)` padding.
+       Without re-adding the top inset here the header (Back, ≡) lands under the
+       status-bar clock and cannot be tapped; the bottom inset clears the home
+       indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
+    padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
+      calc(var(--p-space-4) + env(safe-area-inset-bottom));
+  }
+  /* The waveform stage. `position: relative` anchors the recording indicator;
+     the centerline itself is drawn on the canvas so it stays pixel-aligned
+     with the bars at any zoom. */
+  .recorder-stage {
+    position: relative;
+    display: flex;
+    /* Column, so the always-mounted Cut (George R2 P2) stacks UNDER the canvas
+       (mockup 4, matching .recorder-cut's padding-top) instead of sitting beside
+       it as a row sibling — which narrowed the full-width canvas and pushed the
+       CENTER_FRACTION=0.5 line off the stage's true centre. */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    background: var(--s-surface);
+    border-radius: var(--c-row-radius);
+    overflow: hidden;
+  }
+  .recorder-canvas {
+    position: relative;
+    width: 100%;
+    /* A horizontal drag pans the waveform; let a vertical gesture do nothing
+       here rather than fighting the pan. */
+    touch-action: none;
+    cursor: grab;
+  }
+  .recorder-canvas:active {
+    cursor: grabbing;
+  }
+  /* Selection frame (B5): a translucent band over the picked span with a grab
+     handle at each edge, laid over the canvas. The overlay is pointer-
+     transparent so only the handles take a drag; the band and handles use the
+     voice accent — this is an edit of the audio that exists. */
+  .selection-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .selection-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--s-voice) 20%, transparent);
+    border-inline: 2px solid var(--s-voice);
+  }
+  .selection-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+    /* A thin bar centred in a wide, finger-sized target. */
+    background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
+      100% no-repeat;
+  }
+  .selection-handle:focus-visible {
+    outline: 2px solid var(--s-focus);
+    outline-offset: -2px;
+  }
+  /* The paste marker rides the centerline when the clipboard is full. */
+  .paste-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    padding: var(--p-space-2);
+    color: var(--s-voice);
+    background: var(--s-raised);
+    border: 1px solid var(--s-voice);
+    border-radius: 999px;
+    pointer-events: auto;
+  }
+  .recorder-cut {
+    padding-top: var(--p-space-2);
+    color: var(--s-voice);
+  }
+  .recorder-status {
+    position: absolute;
+    top: var(--p-space-3);
+    left: var(--p-space-3);
+    color: var(--s-ink);
+  }
+  .recorder-toolbar {
+    gap: var(--c-gap-items);
+    padding-bottom: var(--p-space-3);
+  }
+  /* Record mode: the centered hero pair (Record + Play). */
+  .recorder-toolbar.pair {
+    justify-content: center;
+    gap: var(--c-gap-blocks);
+  }
+  /* The record hero at xl (68px), scoped to the pair so the global 52px record
+     variant and the erase-confirm button are untouched — beats the bare
+     .control--record by specificity only inside the pair. */
+  .recorder-toolbar.pair .control--record {
+    width: var(--c-control-xl);
+    height: var(--c-control-xl);
+  }
+  /* Play one step smaller than the hero (52px): the bare .control--play is the
+     44px md box, the pair bumps it. */
+  .recorder-toolbar.pair .control--play {
+    width: var(--c-control-lg);
+    height: var(--c-control-lg);
+  }
+  /* Edit mode: the spread editing toolbar. */
+  .recorder-toolbar.edit {
+    justify-content: space-between;
+  }
+
+  /* The edit-mode marker + Done affordance (D2, #89), in the header-right slot.
+     `--s-voice` (amber) is the audio-edit accent the selection band and paste
+     marker already use, so the pill reads as "you are in the edit context". */
+  .modepill {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    /* The 44px touch floor — this pill IS the Done control (D2), and the header
+       menu button it swaps with, plus the checkbox it replaced, both sat at
+       --c-control-md. A ~20px text pill next to a 44px Back that commits is too
+       easy to miss (George R3). */
+    min-height: var(--c-control-md);
+    padding: var(--p-space-1) var(--p-space-3);
+    border: none;
+    border-radius: var(--p-radius-full);
+    font-size: var(--p-text-sm);
+    font-weight: var(--p-weight-strong);
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    color: var(--s-voice);
+    background: color-mix(in srgb, var(--s-voice) 15%, transparent);
+    transition: filter var(--p-dur-base) var(--p-ease);
+  }
+  .modepill:hover {
+    filter: brightness(1.12);
+  }
+  .modepill:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .modepill:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .modepill {
+      transition: none;
+    }
+  }
+}
+
+@layer components {
+  /* --- the VU level strip (B6, mockup 3) --------------------------------- */
+  /* A pull-model meter: the component polls the live tap on its own rAF and
+     writes width + zone straight to the DOM, so the recorder does not re-render
+     per frame. The zones are named green/yellow/red. `--s-done` is green now,
+     but it is the FINISHED role, not a level, so the good-level zone stays the
+     amber voice accent on purpose (do not point it at --s-done; George R3 P3).
+     Red is the live recording moment — which is exactly
+     when this strip shows — so each zone is spent in the palette's own roles:
+     the amber "voice" accent for a good level, warn for hot, live red at clip. */
+  .vu-meter {
+    width: 100%;
+    flex: none;
+  }
+  .vu-meter__track {
+    width: 100%;
+    height: var(--p-space-3);
+    background: var(--s-raised);
+    border-radius: var(--p-radius-full);
+    overflow: hidden;
+  }
+  /* Grows from the left as the effect writes scaleX each frame. Starts empty so
+     there is no full-width flash before the first frame lands. No transition —
+     the bar must track the live level, not lag it. */
+  .vu-meter__fill {
+    height: 100%;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: left center;
+    border-radius: inherit;
+    background: var(--s-voice);
+  }
+  .vu-meter__fill[data-zone="green"] {
+    background: var(--s-voice);
+  }
+  .vu-meter__fill[data-zone="yellow"] {
+    background: var(--s-warn);
+  }
+  .vu-meter__fill[data-zone="red"] {
+    background: var(--s-live);
+  }
+  /* Meter unavailable: either the level tap could not be wired at open time (the
+     static "tap never wired" failure), or — per frame, mid-take — the shared
+     audio context went `suspended`/`interrupted` so the analyser reads zeros
+     (#76). A hatched, dimmed track reads as "not working" rather than "no sound"
+     — so an empty strip is not mistaken for a dead microphone (Frank R-B6). The
+     fill stays empty. */
+  .vu-meter[data-state="unavailable"] {
+    opacity: 0.55;
+  }
+  .vu-meter[data-state="unavailable"] .vu-meter__track {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--s-raised),
+      var(--s-raised) 4px,
+      var(--s-edge) 4px,
+      var(--s-edge) 8px
+    );
+  }
+}
+
+@layer components {
+  /* --- the segment-row left zone (#79) ----------------------------------- */
+  /* One button spanning the status slot and the ordinal: tapping anywhere in
+     the left space opens the segment in the recorder/editor. Replaces the old
+     finished-checkbox + ordinal-button pair. */
+  .row-open {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    flex: none;
+    min-width: var(--c-control-md);
+    min-height: var(--c-control-md);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--s-ink-muted);
+    text-align: left;
+  }
+  .row-open:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-radius: var(--p-radius-md);
+  }
+  .row-open:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* The status slot: a fixed 22px box that reserves space so ordinals stay
+     left-aligned down the list. Holds the green check-circle only on a finished
+     row (the fill is applied by `.row--finished .row-status`). */
+  .row-status {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: var(--p-radius-full);
+  }
+
+  /* --- the record button's footprint on an empty row (#82) --------------- */
+  /* An empty row has no trailing menu; this inert spacer reserves the menu's
+     width so the record button lands on the same axis as a recorded row's play
+     button, and the flex-1 waveform gets identical width in both. */
+  .row-menu-spacer {
+    width: var(--c-control-sm);
+    flex: none;
+  }
+
+  /* #82: inside a row the record button matches the play button's 44px box, so
+     the transport column reads uniform down the list. Scoped to `.row` on
+     purpose — the recorder's own big red button and the erase-confirm button
+     both keep `--c-control-lg`. */
+  .row .control--record {
+    width: var(--c-control-md);
+    height: var(--c-control-md);
+  }
+
+  /* The menu's Finished entry shows green while already finished. A standalone
+     class, not a `.row--finished` descendant: the menu is portalled to <body>,
+     outside the row, so inheritance cannot reach it. */
+  .control.is-done {
+    color: var(--s-done);
+  }
+
+  /* --- a finished row (#81) ---------------------------------------------- */
+  /* The whole row goes green: waveform stroke, play button, a quiet surface
+     wash and border. `color-mix` is already the technique the selection band
+     uses, so it is accepted here. */
+  .row--finished {
+    --c-wave-stroke: var(--s-done);
+    background: color-mix(in srgb, var(--s-done) 8%, var(--s-surface));
+    border-color: color-mix(in srgb, var(--s-done) 35%, transparent);
+  }
+  .row--finished .row-status {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  .row--finished .control--play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
   }
 }

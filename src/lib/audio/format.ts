@@ -15,7 +15,7 @@
 export const CANONICAL_SAMPLE_RATE = 44_100;
 export const CANONICAL_CHANNELS = 1;
 
-const INT16_MAX = 32_767;
+export const INT16_MAX = 32_767;
 const INT16_MIN = -32_768;
 
 /** Convert normalised float samples in [-1, 1] to 16-bit PCM, with clipping. */
@@ -32,11 +32,19 @@ export function floatToInt16(input: Float32Array): Int16Array<ArrayBuffer> {
   return out;
 }
 
-/** Convert 16-bit PCM back to normalised floats in [-1, 1]. */
+/**
+ * Convert 16-bit PCM back to normalised floats in [-1, 1].
+ *
+ * The floor is clamped for the same reason `computePeaks` clamps it: Int16 is
+ * asymmetric, so -32768 over INT16_MAX is -1.0000305. `floatToInt16` stores
+ * -32768 for any input at or below -1, so a clipped take round-trips through
+ * here on every play — this feeds `copyToChannel` in hooks/audio-io.ts, where
+ * out-of-range sample handling is implementation-defined.
+ */
 export function int16ToFloat(input: Int16Array): Float32Array<ArrayBuffer> {
   const out = new Float32Array(input.length);
   for (let i = 0; i < input.length; i++) {
-    out[i] = input[i]! / INT16_MAX;
+    out[i] = Math.max(-1, input[i]! / INT16_MAX);
   }
   return out;
 }

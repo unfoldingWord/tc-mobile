@@ -1,0 +1,52 @@
+{
+  /*
+   * The DOM-free half of "lib/ must stay free of DOM, Web Audio and
+   * MediaRecorder" — AGENTS.md's rule that matters most.
+   *
+   * `no-restricted-globals` in eslint.config.mjs catches VALUE references and
+   * gives a good message. It cannot catch a TYPE position, and enumerating the
+   * DOM surface by hand is a losing game: the first version of that list
+   * omitted `AudioBuffer` and `HTMLAudioElement`, both already used at the
+   * browser boundary.
+   *
+   * This compiles src/lib and src/types with no DOM lib, so the DOM and Web
+   * Audio surface is absent by construction rather than by enumeration.
+   *
+   * IT IS NOT A COMPLETE DOM BOUNDARY, and the residual is named here rather
+   * than left to be discovered. `"types": ["node"]` is a blanket, and Node 22
+   * ships web globals of its own: @types/node/web-globals declares `Navigator`,
+   * `Storage`, `fetch`, `AbortController`, `DOMException`, `Event`/`EventTarget`
+   * and the stream types, and `Blob` comes from the same package. So
+   * `function f(n: Navigator)` inside lib/ compiles here and is caught by
+   * nothing.
+   *
+   * That is a deliberate line, not an oversight: everything on that list exists
+   * in plain Node and in a Worker, which is the property AGENTS.md's rule
+   * actually protects — the audio core stays runnable and testable outside a
+   * browser. `lib/storage` types its records on `Blob` today.
+   *
+   * What IS caught: AudioContext, OfflineAudioContext, AudioBuffer,
+   * MediaRecorder, MediaStream, document, window, HTMLAudioElement — in value
+   * AND type position. tests/lib-boundary.test.ts asserts both halves of that
+   * sentence, so the residual cannot drift silently.
+   *
+   * Deliberately not a project reference: tsconfig.app.json already includes
+   * these files, and overlapping composite inputs buy complexity for nothing
+   * here. It is a separate `npm run typecheck:lib` in verify and in CI.
+   */
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/lib/**/*.ts", "src/types/**/*.ts"]
+}

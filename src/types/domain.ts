@@ -1,36 +1,41 @@
 /**
- * Domain model for tC Mobile.
+ * Domain model for tC Mobile (post-pivot).
  *
- * Mirrors the hierarchy in the inception notes (docs/spec-transcription.md):
+ * The pivot (docs/design/pivot-plan.md) collapsed the tree:
  *
- *   Project (Book)  = collection of Chapters
- *     Chapter       = ordered collection of Sections (stories, pericopes)
- *       Section     = the unit of work — "the work happens here"
- *         Segment   = contiguous speech unit (OBS frame, verse span)
- *           Take    = one recorded attempt at a Segment
+ *   was:  Project → Chapter → Section → Segment → Take
+ *   now:  Book    → Chapter →           Segment (→ Take, hidden, 1:1)
  *
- * The note left the top-level name open ("Resource? Collection? Project?").
- * `Project` is used here as a placeholder; it is a rename away from any of
- * them because nothing outside this file depends on the word.
+ *   Book      = a user-created, named collection of Chapters
+ *     Chapter = ordered collection of Segments
+ *       Segment = the unit of work — one recording, edited in place
+ *         Take  = the one recording behind a segment (hidden, 1:1)
  *
- * Every recording is born addressed to a Segment, which is what makes
+ * Section is gone: a Segment hangs off a Chapter directly and is where the
+ * work happens. A Take is 1:1 with its Segment — re-recording REPLACES it, it
+ * does not stack (A2/D1; the pre-pivot many-takes array leaked PCM, #2/D3).
+ *
+ * Every recording is still born addressed to a Segment, which is what keeps
  * downstream STT / checking / publishing possible. Audio is never stored as
  * an unaddressed voice memo.
  */
 
-export type ProjectId = string & { readonly __brand: "ProjectId" };
+export type BookId = string & { readonly __brand: "BookId" };
 export type ChapterId = string & { readonly __brand: "ChapterId" };
-export type SectionId = string & { readonly __brand: "SectionId" };
 export type SegmentId = string & { readonly __brand: "SegmentId" };
 export type TakeId = string & { readonly __brand: "TakeId" };
 export type ClipId = string & { readonly __brand: "ClipId" };
 
 /**
- * Where a section sits in canonical scripture addressing.
+ * Optional canonical-scripture addressing for a segment (was `SectionRef`).
  *
- * `scope` deliberately uses the Scripture Burrito ingredient-scope grammar
- * rather than a bespoke chapter/section pair, because that is what the audio
- * interchange standard actually keys on and it costs nothing to adopt now:
+ * A1: a segment is generic, and a Scripture/OBS reference is optional metadata
+ * a template attaches — so a segment with no reference is the normal case, and
+ * this sits `| null` on the segment. Nothing writes it non-null this lane;
+ * B7's OBS/template import (#33) is the writer.
+ *
+ * `scope` uses the Scripture Burrito ingredient-scope grammar rather than a
+ * bespoke pair, because that is what the audio interchange standard keys on:
  *
  *   ""          whole book
  *   "2"         whole chapter
@@ -38,20 +43,26 @@ export type ClipId = string & { readonly __brand: "ClipId" };
  *   "2:1-13"    verse range within a chapter
  *   "2:1-3:4"   cross-chapter span
  *
- * Section-granular scopes like "2:1-13" are already emitted by shipping
- * software (SIL's Audio Project Manager splits Ruth 2 into "2:1-13" and
- * "2:14-22"), so tC Mobile's section granularity is on the standard's happy
- * path. See docs/research/prior-art.md §4.
+ * See docs/research/prior-art.md §4.
+ *
+ * @pivotpending Written by B7's OBS/template import (#33); no reader consumes
+ * it as an export this lane, so it is tagged rather than left to fail CI. The
+ * type itself is live — `Segment.reference` is typed on it.
  */
-export interface SectionRef {
+export interface SegmentRef {
   /** USFM book code where known, e.g. "RUT", or "OBS" for Open Bible Stories. */
   readonly book: string;
   /** Scripture Burrito scope string. Empty string means the whole book. */
   readonly scope: string;
 }
 
-export interface Project {
-  readonly id: ProjectId;
+export interface Book {
+  readonly id: BookId;
+  /**
+   * User-facing. Auto-named "Book NNN" on create (B2), renamed in place by the
+   * facilitator for the passage being translated — "Mark" (#264). Always
+   * non-empty: a rename to blank keeps the current name.
+   */
   readonly name: string;
   /** BCP-47 tag of the language being recorded, when known. */
   readonly languageCode: string | null;
@@ -62,35 +73,42 @@ export interface Project {
 
 export interface Chapter {
   readonly id: ChapterId;
-  readonly projectId: ProjectId;
+  readonly bookId: BookId;
+  /** 1-based, unique within its book (max existing + 1 on create). */
   readonly number: number;
-  /** Ordered. Order is the source of truth for export concatenation. */
-  readonly sectionIds: readonly SectionId[];
-}
-
-export interface Section {
-  readonly id: SectionId;
-  readonly chapterId: ChapterId;
-  readonly ref: SectionRef;
   /**
-   * Optional human label. Deliberately optional: the primary UI path is
-   * text-free, so a section is identified by image/number/audio prompt, not
-   * by reading this.
+   * Optional passage label the facilitator sets in place — "Mark 6" (#264).
+   * `null` is the default: the UI then shows "Chapter {number}". Clearing the
+   * name reverts to `null`. Every row carries the field (the v5 backfill stamps
+   * pre-#264 chapters `null`), so a reader never meets `undefined`.
    */
-  readonly label: string | null;
-  /** Ordered. A section always has at least one segment. */
+  readonly name: string | null;
+  /**
+   * Ordered — segments hang off the chapter directly (no Section). This array
+   * is the source of truth for export concatenation order.
+   */
   readonly segmentIds: readonly SegmentId[];
 }
 
 export interface Segment {
   readonly id: SegmentId;
-  readonly sectionId: SectionId;
-  /** 1-based position within the section. */
-  readonly index: number;
-  readonly takeIds: readonly TakeId[];
+  /** Hangs off the chapter directly; no Section. */
+  readonly chapterId: ChapterId;
   /**
-   * The take that represents this segment in playback and export.
-   * `null` means the segment has been created but not yet recorded.
+   * 1-based ordinal. A denormalised mirror of this segment's position in
+   * `Chapter.segmentIds` (D-IDX): the array is the truth for order; this is
+   * the display digit. The invariant holds while creation is append-only; a
+   * future reorder/delete batch must renumber or drop this field.
+   */
+  readonly index: number;
+  /** A1: null is the normal case. B7 (#33) is the writer. */
+  readonly reference: SegmentRef | null;
+  /**
+   * The one take behind this segment, or `null` ⇒ never recorded.
+   *
+   * 1:1 per D1/A2 — there is no take history. Re-recording REPLACES the take
+   * (see `addTake` in `storage/books.ts`). A stacked `takeIds[]` was the
+   * pre-pivot model A2 removed; it leaks unreachable PCM (#2/D3).
    */
   readonly activeTakeId: TakeId | null;
   readonly status: RecordingStatus;
@@ -98,13 +116,14 @@ export interface Segment {
 
 /**
  * Progress of a segment, using the vocabulary Shema Studio already ships
- * (docs/research/prior-art.md §1). Carried now rather than added later
- * because phase 2 needs it for progress display and versioning, and
- * retrofitting a status onto existing records is a migration.
+ * (docs/research/prior-art.md §1). The 5-value enum STAYS for Phase 2; the
+ * pivot UI is binary over it (`isFinished` in `storage/books.ts`): only
+ * "affirmed" reads as finished, and the toggle writes "affirmed"/"draft".
  */
 export type RecordingStatus =
   "not-started" | "partly-recorded" | "draft" | "refined" | "affirmed";
 
+/** Hidden, 1:1 with its segment. One recording per segment. */
 export interface Take {
   readonly id: TakeId;
   readonly segmentId: SegmentId;

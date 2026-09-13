@@ -13,6 +13,7 @@ import {
   floatToInt16,
   int16ToFloat,
 } from "@/lib/audio/format";
+import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
 /**
  * Candidate capture formats, best first.
@@ -79,14 +80,215 @@ let sharedContext: AudioContext | null = null;
  * suspended until a user gesture, so creating one per playback both leaks and
  * silently fails. One context, resumed on demand, avoids both.
  */
-export function getAudioContext(): AudioContext {
+function getAudioContext(): AudioContext {
   sharedContext ??= new (getAudioContextCtor())();
   return sharedContext;
 }
 
+/**
+ * Which AudioContext states need a `resume()` to become audible.
+ *
+ * Pure and exported so the one bit of logic that decides audibility is unit-
+ * tested without a Web Audio mock (the rest of this module is browser-only).
+ *
+ * The states are the standard three — `"suspended" | "running" | "closed"` —
+ * plus WebKit's non-standard fourth, `"interrupted"`, entered on an OS audio
+ * interruption (a call, Siri, a route change) and on backgrounding. A context
+ * left `"interrupted"` plays every subsequent source SILENTLY with no error and
+ * no rejection, for the life of the page — the iOS silent-playback report. So
+ * the rule is "anything that is not already running and is still openable needs
+ * a resume", which is every state but `"running"` and `"closed"`. Compared as
+ * strings, not against the DOM `AudioContextState` union, because `"interrupted"`
+ * is not in it.
+ */
+export function contextNeedsResume(state: string): boolean {
+  return state !== "running" && state !== "closed";
+}
+
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext();
-  if (ctx.state === "suspended") await ctx.resume();
+  if (contextNeedsResume(ctx.state)) await ctx.resume();
+}
+
+/**
+ * Whether the shared context needs a user gesture to be audible RIGHT NOW. The
+ * recorder checks this before auto-playing a preview it decoded outside the tap
+ * (#101): a context left `"interrupted"` by a route change or backgrounding
+ * during the decode would sound that preview silently (George R9). Reads the live
+ * state, so it must be called at the decision point, not cached.
+ */
+export function audioContextNeedsResume(): boolean {
+  return contextNeedsResume(getAudioContext().state);
+}
+
+/** A live level tap on a capture stream, for the recorder's VU meter. */
+export interface LevelTap {
+  /**
+   * The current raw capture amplitude in [0, 1] (RMS of the latest frame), the
+   * domain `@/lib/audio/meter`'s `toDisplayLevel` maps from. Returns 0 once the
+   * tap is closed, so a stale read after teardown is silent, not a throw.
+   */
+  read: () => number;
+  /**
+   * The analyser's latest time-domain frame (the same reused buffer `read()`
+   * measures its RMS from), or `null` once the tap is disconnected. The
+   * live-waveform scope reduces this to one column per animation frame (#120),
+   * while `read()` stays the VU meter's RMS pull. Returns the REUSED buffer, so
+   * copy what you need synchronously (as `reduceFrame` does) — the next call
+   * overwrites it. Reading the frame here rather than opening a second tap keeps
+   * the scope and the meter on ONE analyser (iOS caps `AudioContext`s).
+   */
+  readFrame: () => Float32Array | null;
+  /**
+   * Whether this LIVE tap's `read()` can be trusted RIGHT NOW — false once the
+   * tap is disconnected, or while the shared `AudioContext` is not `"running"`
+   * (iOS `"suspended"`/`"interrupted"` after backgrounding or an interruption).
+   * In that state the analyser reads all-zeros with no error, so `read()` returns
+   * a level indistinguishable from a dead microphone; the VU meter pulls THIS per
+   * frame to hatch "unavailable" instead of resting empty (#76), mirroring the way
+   * `readFrame()` returns null so the live scope freezes. Reads the LIVE context
+   * state, so it must be called at the decision point (the meter's own frame
+   * clock), never cached.
+   */
+  available: () => boolean;
+  /**
+   * Disconnect the graph so `read()` returns 0, but LEAVE the cloned capture
+   * tracks live. Safe to call inside the MediaRecorder flush window (between
+   * `stop()` and `onstop`): stopping any capture track there can truncate the
+   * final `dataavailable`. Idempotent.
+   */
+  disconnect: () => void;
+  /**
+   * Full teardown: disconnect the graph (if not already) AND stop the cloned
+   * capture tracks. Use once the flush window is safely past (`stop()`), or where
+   * the take is being abandoned outright (cancel/leave). NOT on the #59
+   * interruption path, which freezes to `processing` and recovers the chunks via
+   * `stop()` — there the graph is only `disconnect()`ed. Never closes the shared
+   * context, which outlives it.
+   */
+  close: () => void;
+}
+
+/**
+ * Open a read-only level tap on a live capture stream.
+ *
+ * The Web Audio graph stays inside this boundary; the meter math is imported
+ * from `lib/`, so the pure part is unit-tested and this file only wires the
+ * `AnalyserNode`. Two WebKit-driven decisions, both owed an iOS on-device check
+ * (George R-B6):
+ *
+ *   - The tap reads a CLONE of the capture stream, not the stream MediaRecorder
+ *     owns. Some WebKit builds have produced silent or truncated takes when an
+ *     analyser's `MediaStreamSource` shares the recorder's stream. The clone
+ *     carries the same microphone input, so the meter is unaffected, but the
+ *     recorder is fully isolated from the graph — the meter can never cost a
+ *     recording, which is the one thing it must never do.
+ *   - The graph terminates at `destination` through a SILENCED gain. WebKit does
+ *     not pull an `AnalyserNode` unless the graph reaches `destination` (Chrome
+ *     pulls a dangling analyser; Safari returns zeros), so a mic-only connection
+ *     leaves the strip dead on iOS. `gain = 0` keeps the graph live with no
+ *     audible monitor — no feedback, because nothing reaches the speaker.
+ *
+ * The analyser reads the time-domain frame into one reused buffer, so a
+ * per-frame `read()` allocates nothing.
+ */
+export function createLevelTap(stream: MediaStream): LevelTap {
+  const ctx = getAudioContext();
+  const tapStream = stream.clone();
+
+  // Disconnect one node, tolerating a node that was never connected — Web Audio
+  // throws on a redundant disconnect and there is nothing to do about it. Each
+  // node is torn down independently so one failure does not skip the rest.
+  const disconnect = (node: AudioNode | undefined) => {
+    if (!node) return;
+    try {
+      node.disconnect();
+    } catch {
+      // Already disconnected / never connected — nothing to do.
+    }
+  };
+  // Stop the cloned tracks; the recorder's own stream is left untouched.
+  const stopClone = () => tapStream.getTracks().forEach((t) => t.stop());
+
+  let source: MediaStreamAudioSourceNode | undefined;
+  let analyser: AnalyserNode | undefined;
+  let sink: GainNode | undefined;
+  try {
+    source = ctx.createMediaStreamSource(tapStream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    // source -> analyser -> gain(0) -> destination. The silenced gain terminates
+    // the graph so WebKit processes the analyser, without monitoring the mic.
+    sink = ctx.createGain();
+    sink.gain.value = 0;
+    source.connect(analyser);
+    analyser.connect(sink);
+    sink.connect(ctx.destination);
+  } catch (cause) {
+    // Own-before-fallible: the clone was taken before these fallible calls, so a
+    // throw here must not leak a hot microphone. Tear down whatever was built,
+    // stop the cloned tracks, and rethrow for the caller's meterless fallback.
+    disconnect(source);
+    disconnect(analyser);
+    disconnect(sink);
+    stopClone();
+    throw cause;
+  }
+
+  if (!source || !analyser || !sink) {
+    // Unreachable — the catch above rethrows on any failure — but this satisfies
+    // definite-assignment and cleans up if a node came back falsy.
+    disconnect(source);
+    disconnect(analyser);
+    disconnect(sink);
+    stopClone();
+    throw new Error("Level tap graph did not initialise");
+  }
+
+  const graph = analyser;
+  const frame = new Float32Array(graph.fftSize);
+  let disconnected = false;
+
+  // Tear down only this tap's own nodes; the shared context stays open for
+  // playback and the next recording. Idempotent.
+  const disconnectGraph = () => {
+    if (disconnected) return;
+    disconnected = true;
+    disconnect(source);
+    disconnect(analyser);
+    disconnect(sink);
+  };
+
+  return {
+    read: () => {
+      if (disconnected) return 0;
+      graph.getFloatTimeDomainData(frame);
+      return rmsLevel(frame);
+    },
+    readFrame: () => {
+      // An interrupted/suspended context (iOS backgrounding or a call — #76,
+      // the same state #107 resumes) makes the analyser read all-zeros with no
+      // error, and nothing resumes it mid-take. Return null rather than a silent
+      // frame so the live scope freezes its last frame instead of scrolling the
+      // shown speech off into a flat line a non-reader takes for a dead mic
+      // (George R5). NOT an all-zero-frame check — that would freeze on real
+      // silence too.
+      if (disconnected || contextNeedsResume(ctx.state)) return null;
+      graph.getFloatTimeDomainData(frame);
+      return frame;
+    },
+    // The meter's per-frame trust signal (#76). A disconnected tap has no live
+    // reading; a live tap on a non-"running" context reads zeros. `meterReadable`
+    // is the pure decision, unit-tested in Node — this only supplies the live
+    // context state and the disconnected flag the browser owns.
+    available: () => !disconnected && meterReadable(ctx.state),
+    disconnect: disconnectGraph,
+    close: () => {
+      // Disconnect the graph (if not already), THEN stop the cloned tracks.
+      disconnectGraph();
+      stopClone();
+    },
+  };
 }
 
 /**
@@ -101,6 +303,26 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
   const arrayBuffer = await blob.arrayBuffer();
   const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
   return toCanonical(decoded);
+}
+
+/**
+ * Decode a stored MP3 clip (a finished segment's audio, B8/D3) back to canonical
+ * PCM, for playback, export, or editing. The same `decodeAudioData` path a
+ * captured take goes through — the browser's decoder is the only MP3 decoder
+ * the app has (lamejs encodes only), which is why `lib/` takes decoding as an
+ * injected function rather than doing it.
+ *
+ * NOT the clip as recorded: the decode carries the encoder's priming at its
+ * head (1105 samples on a decoder that trims nothing — measured in Chromium)
+ * and granule padding at its tail. EVERY consumer must pass the result through
+ * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
+ * `frameCount` — the chapter export, playback and the recorder's edit buffer
+ * all do — or the recording plays late and, once saved, loses its last ~25 ms.
+ */
+export async function decodeMp3ToCanonical(
+  mp3: Uint8Array<ArrayBuffer>
+): Promise<Int16Array> {
+  return decodeToCanonical(new Blob([mp3], { type: "audio/mpeg" }));
 }
 
 async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
@@ -135,7 +357,7 @@ async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
 }
 
 /** Wrap canonical PCM in an AudioBuffer for playback. */
-export function toAudioBuffer(
+function toAudioBuffer(
   samples: Int16Array,
   sampleRate: number = CANONICAL_SAMPLE_RATE
 ): AudioBuffer {
@@ -159,9 +381,40 @@ export interface PlaybackHandle {
 /** Play canonical PCM, optionally from an offset. Returns a stop handle. */
 export async function playSamples(
   samples: Int16Array,
-  options: { offsetSeconds?: number; onEnded?: () => void } = {}
+  options: {
+    offsetSeconds?: number;
+    onEnded?: () => void;
+    /**
+     * Re-checked AFTER the resume await, just before any node is built. A play
+     * claim can be superseded (a Stop, a competing take, a mic claim) during
+     * `resumeAudioContext` — which on iOS is a real await that also un-suspends a
+     * suspended/interrupted context. Without this the source starts and is only
+     * then stopped by the caller's `settle`, a sub-perceptible start-then-stop,
+     * worst case an audible click on iOS after the resume. Bailing here means
+     * nothing ever sounds.
+     *
+     * REQUIRED, not optional: every playback claims the floor and holds a token,
+     * so there is always a supersession predicate to pass. An optional callback
+     * that a future caller forgot would silently restore the #104 start-then-stop
+     * (the sink would wait out `resume()` and start a source `settle` then kills).
+     * A caller with genuinely no token passes `() => true`. Both `playTake` and
+     * `playBuffer` pass `() => session.isCurrent(token)`, so the guard lives once
+     * in the shared sink (#104, George R1).
+     */
+    isStillCurrent: () => boolean;
+  }
 ): Promise<PlaybackHandle> {
   await resumeAudioContext();
+
+  if (!options.isStillCurrent()) {
+    // Superseded during the resume await. Return an inert handle before building
+    // any node — nothing is created, nothing reaches `ctx.destination`, nothing
+    // sounds. The caller's `settle` stops it (a no-op) and discards it; `onEnded`
+    // is deliberately not called, since nothing started and the newer claim owns
+    // the UI state now.
+    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+  }
+
   const ctx = getAudioContext();
   const buffer = toAudioBuffer(samples);
   const source = ctx.createBufferSource();
