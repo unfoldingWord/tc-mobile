@@ -309,8 +309,10 @@ cannot be added to an internal group — the mechanical reason Q3 matters.
 
 The environment must exist first, with required reviewers (README §4a step 4).
 Then _Settings → Environments → release-signing → Environment secrets_, or from
-a checkout — note `--env` on every line; a repository secret of the same name
-is **ignored** by the environment-scoped job:
+a checkout — note `--env` on every line. When both exist, the environment copy
+takes precedence for the gated job, but a repository secret of the same name
+stays readable by **any** workflow in the repository — so the repository-level
+copies must be deleted once the environment copies are verified (below):
 
 ```bash
 E="--env release-signing -R unfoldingWord/tc-mobile"
@@ -334,8 +336,20 @@ Verify before dispatching:
 gh secret list --env release-signing -R unfoldingWord/tc-mobile
 ```
 
-You are looking for all seven. (`CLOUDFLARE_ACCOUNT_ID` stays a repository
-secret; it is not a signing secret.)
+You are looking for all seven. Then remove the repository-level copies these
+seven replaced — an ungated workflow can still read them, which is the #321
+bypass:
+
+```bash
+for n in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
+         IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
+  gh secret delete "$n" -R unfoldingWord/tc-mobile
+done
+gh secret list -R unfoldingWord/tc-mobile
+```
+
+The repository list should now show only `CLOUDFLARE_ACCOUNT_ID`, which stays a
+repository secret; it is not a signing secret.
 `gh secret list` shows **names only** — it cannot tell you a value is correct,
 only that something is set. The first dispatch is the first test of the values.
 

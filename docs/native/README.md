@@ -295,8 +295,14 @@ change.
    jobs declare `environment: release-signing`, so every dispatch pauses for
    one approval before any secret is read.
 5. **Environment secrets** (_Settings → Environments → release-signing →
-   Environment secrets_), **not** repository secrets — a repository secret of
-   the same name is ignored by an environment-scoped job:
+   Environment secrets_), **not** repository secrets. When both exist, the
+   environment copy takes precedence for the gated job — but a repository
+   secret stays readable by **any** workflow in the repository, gated or not,
+   so a leftover repository copy is the bypass #321 closes. Migrating from
+   repository secrets: set and verify every environment secret first, then
+   delete each repository copy with `gh secret delete <NAME>` (the loop is in
+   `ios-credentials.md` §8). Afterwards `gh secret list` at repository level
+   should show only `CLOUDFLARE_ACCOUNT_ID`, which is not a signing secret:
 
    | Secret                         | Value                                                                      |
    | ------------------------------ | -------------------------------------------------------------------------- |
@@ -434,7 +440,11 @@ follow-up once a release step exists, not a documented path.
 2. **Four environment secrets** in the `release-signing` environment (§4a
    step 4 creates it; _Settings → Environments → release-signing →
    Environment secrets_). Not repository secrets — the build job is
-   environment-scoped and pauses for a reviewer before reading them (#321):
+   environment-scoped and pauses for a reviewer before reading them (#321). A
+   repository secret of the same name is still readable by an ungated
+   workflow, so if any of these four ever existed at repository level, delete
+   that copy (`gh secret delete <NAME> -R unfoldingWord/tc-mobile`) once the
+   environment copy is verified:
 
    | Secret                    | Value                                                                         |
    | ------------------------- | ----------------------------------------------------------------------------- |
