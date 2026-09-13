@@ -21,13 +21,13 @@ with the answers pre-filled.
 
 ## 0. What you need in hand before you start
 
-| Thing                                                 | Why                                                   | Have it?                    |
-| ----------------------------------------------------- | ----------------------------------------------------- | --------------------------- |
-| An Apple ID with 2FA                                  | Every portal below requires it                        |                             |
-| The unfoldingWord Apple **Team**, enrolled and active | No signed iOS install exists without it               | **unverified — see §1**     |
-| Your **role** on that team                            | Decides whether you can mint the API key at all (§6)  |                             |
-| A password manager entry to hold the values           | The `.p8` downloads **once** and cannot be re-fetched | any secure password manager |
-| Admin on `unfoldingWord/tc-mobile`                    | To set repository secrets                             | yes (`gh` is authenticated) |
+| Thing                                                 | Why                                                                                             | Have it?                    |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------- |
+| An Apple ID with 2FA                                  | Every portal below requires it                                                                  |                             |
+| The unfoldingWord Apple **Team**, enrolled and active | No signed iOS install exists without it                                                         | **unverified — see §1**     |
+| Your **role** on that team                            | Decides whether you can mint the API key at all (§6)                                            |                             |
+| A password manager entry to hold the values           | The `.p8` downloads **once** and cannot be re-fetched                                           | any secure password manager |
+| Admin on `unfoldingWord/tc-mobile`                    | To set the `release-signing` environment secrets, and to delete leftover repository copies (§8) | yes (`gh` is authenticated) |
 
 **Do not record any of the values below in this repo.** The Key ID, Issuer ID
 and Team ID are not catastrophic on their own, but the `.p8` API key and the
@@ -336,20 +336,28 @@ Verify before dispatching:
 gh secret list --env release-signing -R unfoldingWord/tc-mobile
 ```
 
-You are looking for all seven. Then remove the repository-level copies these
-seven replaced — an ungated workflow can still read them, which is the #321
-bypass:
+You are looking for all seven.
+
+**Then — and only after the yml carrying `environment: release-signing` is on
+every ref you still dispatch** (`staging`, and `main` once it has the lane) —
+remove the repository-level copies. An ungated workflow can still read them,
+which is the #321 bypass; but the pre-#321 yml on `staging` has no environment
+and runs **on** those copies, so deleting them before the promotion takes the
+live tester lane down with `secret ASC_KEY_ID is unset or empty` in preflight.
+One loop, all eleven signing names (the four Android names are harmless to
+delete if they never existed):
 
 ```bash
 for n in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
-         IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
+         IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64 \
+         ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
   gh secret delete "$n" -R unfoldingWord/tc-mobile
 done
 gh secret list -R unfoldingWord/tc-mobile
 ```
 
-The repository list should now show only `CLOUDFLARE_ACCOUNT_ID`, which stays a
-repository secret; it is not a signing secret.
+The repository list should now contain **no signing name**. `CLOUDFLARE_ACCOUNT_ID`
+stays; it is not a signing secret.
 `gh secret list` shows **names only** — it cannot tell you a value is correct,
 only that something is set. The first dispatch is the first test of the values.
 
@@ -377,6 +385,19 @@ except `staging` or `main` unless you tick **`allow_any_ref`** — but as of
   "build tester IPAs from `staging` or `main`". A promotion is owed anyway.
 
 Do not spend a dispatch discovering that `staging` has no workflow file to run.
+
+**The run will stop and wait — that is the gate working.** After the preflight
+goes green, the _Build and upload to TestFlight_ job sits yellow in **Waiting**
+until a required reviewer acts: open the run, click **Review deployments**,
+tick `release-signing`, then **Approve and deploy** (or **Reject**, which fails
+the run). Until then no secret has been read and no macOS minute billed — but
+the secret-presence check now runs **after** approval, on the macOS runner, so
+check §8's `gh secret list --env release-signing` before approving rather than
+after. Do not re-dispatch a waiting run: the workflow's concurrency group has
+`cancel-in-progress: false`, so a second dispatch queues behind the first and a
+third replaces the second — reject the stale run instead. (Whether a waiting
+job counts as "in progress" for the concurrency group is not stated in GitHub's
+docs; treat it as if it does.)
 
 ---
 
@@ -411,18 +432,19 @@ target).
 
 ## 11. When it fails — reading the error
 
-| Symptom                                                             | Almost certainly                                                                                                                                                                                                 |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Preflight fails in ~30s naming a secret                             | That secret is unset **or empty** — §8                                                                                                                                                                           |
-| Preflight refuses the ref                                           | §9 — dispatch `develop` with `allow_any_ref`, or promote first                                                                                                                                                   |
-| `org.unfoldingword.tcmobile` missing from the New App dropdown      | §4 was skipped — the identifier is not registered                                                                                                                                                                |
-| "The App Name you entered is already being used"                    | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form                                                                                                         |
-| Upload rejected, "no app record" / "cannot find app"                | §5 was skipped, or the bundle id does not match exactly                                                                                                                                                          |
-| Signing/provisioning failure in the **archive** or **export** phase | A manual-signing credential is wrong (§5.5): a `.p12` exported without its private key, or a profile not bound to `org.unfoldingword.tcmobile` **and** that certificate. Not the API key — the key only uploads. |
-| Upload rejected for permissions after a clean archive               | The API key's role is too low — §6 wants **App Manager**                                                                                                                                                         |
-| `errSecInternalComponent` after ~20 min                             | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand                                                                                                         |
-| Green run, no tester ever receives it                               | §7's _Automatically distribute new builds_ is off                                                                                                                                                                |
-| Build uploaded but never appears                                    | Processing rejection — check email; the lane cannot see this                                                                                                                                                     |
+| Symptom                                                               | Almost certainly                                                                                                                                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run sits yellow in **Waiting** on the TestFlight job                  | Nobody has approved it — §9. A stale waiting run holds the lane; reject it rather than dispatching again                                                                                                         |
+| The TestFlight job's first step fails naming a secret, after approval | That **environment** secret is unset **or empty** — §8. Preflight no longer sees secrets, so this costs one approval and a macOS start; a repository-level copy does not count                                   |
+| Preflight refuses the ref                                             | §9 — dispatch `develop` with `allow_any_ref`, or promote first                                                                                                                                                   |
+| `org.unfoldingword.tcmobile` missing from the New App dropdown        | §4 was skipped — the identifier is not registered                                                                                                                                                                |
+| "The App Name you entered is already being used"                      | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form                                                                                                         |
+| Upload rejected, "no app record" / "cannot find app"                  | §5 was skipped, or the bundle id does not match exactly                                                                                                                                                          |
+| Signing/provisioning failure in the **archive** or **export** phase   | A manual-signing credential is wrong (§5.5): a `.p12` exported without its private key, or a profile not bound to `org.unfoldingword.tcmobile` **and** that certificate. Not the API key — the key only uploads. |
+| Upload rejected for permissions after a clean archive                 | The API key's role is too low — §6 wants **App Manager**                                                                                                                                                         |
+| `errSecInternalComponent` after ~20 min                               | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand                                                                                                         |
+| Green run, no tester ever receives it                                 | §7's _Automatically distribute new builds_ is off                                                                                                                                                                |
+| Build uploaded but never appears                                      | Processing rejection — check email; the lane cannot see this                                                                                                                                                     |
 
 ---
 

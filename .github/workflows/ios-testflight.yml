@@ -172,7 +172,7 @@ jobs:
         # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
         # wrapped secret. Reading the secret from ENV keeps it out of the process
         # arguments and the shell history.
-        # The preflight job already failed the run if this secret is unset/empty.
+        # The first step of this job already failed the run if this secret is unset/empty.
         run: |
           set -euo pipefail
           ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'

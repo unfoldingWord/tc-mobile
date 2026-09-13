@@ -288,21 +288,41 @@ change.
    reaches no one until it is assigned to a group by hand.
 4. **The `release-signing` environment** (_Settings → Environments → New_):
    name it exactly `release-signing`, add **required reviewers** (the DRI at
-   minimum), and leave the deployment-branch rule at "all branches" — the
-   in-yml ref guard handles branches; the reviewer is the actor guard (#321).
-   Environment protection rules are free on a **public** repository; on a
-   private one they need a Team/Enterprise plan. Both native lanes' signing
-   jobs declare `environment: release-signing`, so every dispatch pauses for
-   one approval before any secret is read.
+   minimum), and **untick _Allow administrators to bypass configured
+   protection rules_** — with it on (GitHub's default), any repository admin
+   can click _Start all waiting jobs_ and no reviewer is consulted, which is
+   the #321 hole under a different door. Leave _Prevent self-review_ off: the
+   DRI both dispatches and approves. Leave the deployment-branch rule at "all
+   branches" — the in-yml ref guard handles branches; the reviewer is the actor
+   guard (#321). A settings-side branch list would be the one ref guard a
+   rewritten yml cannot remove, but it would also block the `allow_any_ref`
+   proving dispatches from feature branches; recorded here so the trade-off is
+   not re-litigated.
+
+   **Plan trap.** On GitHub Free, Pro and Team, required reviewers exist
+   **only on public repositories**, and the unfoldingWord org is on Free. If
+   this repository is ever made private again, GitHub ignores the protection
+   rules **and the environment secrets**: the gate is silently gone, and both
+   lanes fail at the presence check naming a secret that is in fact set.
+   Nothing in a run explains why — this paragraph is the explanation.
+
+   Both native lanes' signing jobs declare `environment: release-signing`, so
+   every dispatch pauses for one approval before any secret is read.
+
 5. **Environment secrets** (_Settings → Environments → release-signing →
    Environment secrets_), **not** repository secrets. When both exist, the
    environment copy takes precedence for the gated job — but a repository
    secret stays readable by **any** workflow in the repository, gated or not,
    so a leftover repository copy is the bypass #321 closes. Migrating from
-   repository secrets: set and verify every environment secret first, then
-   delete each repository copy with `gh secret delete <NAME>` (the loop is in
-   `ios-credentials.md` §8). Afterwards `gh secret list` at repository level
-   should show only `CLOUDFLARE_ACCOUNT_ID`, which is not a signing secret:
+   repository secrets, **in this order**: set and verify every environment
+   secret; promote the yml that carries `environment: release-signing` to
+   **every ref you still dispatch** (`staging`, and `main` once it has the
+   lane); only then delete the repository copies (all eleven signing names in
+   one loop — `ios-credentials.md` §8). Deleting earlier breaks the live
+   tester lane: the pre-#321 yml on `staging` has no environment, cannot see
+   environment secrets, and runs on the repository copies until the promotion
+   replaces it. Afterwards `gh secret list` at repository level should show
+   **no signing name** — `CLOUDFLARE_ACCOUNT_ID` is not one:
 
    | Secret                         | Value                                                                      |
    | ------------------------------ | -------------------------------------------------------------------------- |
@@ -443,8 +463,9 @@ follow-up once a release step exists, not a documented path.
    environment-scoped and pauses for a reviewer before reading them (#321). A
    repository secret of the same name is still readable by an ungated
    workflow, so if any of these four ever existed at repository level, delete
-   that copy (`gh secret delete <NAME> -R unfoldingWord/tc-mobile`) once the
-   environment copy is verified:
+   that copy — the eleven-name loop in `ios-credentials.md` §8 — once the
+   environment copy is verified **and** the gated yml is on every ref you
+   still dispatch (§4a step 5 has the order and the reason):
 
    | Secret                    | Value                                                                         |
    | ------------------------- | ----------------------------------------------------------------------------- |
