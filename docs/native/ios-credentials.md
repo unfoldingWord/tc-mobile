@@ -392,7 +392,10 @@ Do not spend a dispatch discovering that `staging` has no workflow file to run.
 goes green, the _Build and upload to TestFlight_ job sits yellow in **Waiting**
 until a required reviewer acts: open the run, click **Review deployments**,
 tick `release-signing`, then **Approve and deploy** (or **Reject**, which fails
-the run). Until then no secret has been read and no macOS minute billed — but
+the run). **Before approving, read the yml on the dispatched ref** — the run
+executes that copy, and a branch can keep `environment: release-signing` while
+adding a step that reads the secrets; approve only the committed lane. Until
+then no secret has been read and no macOS minute billed — but
 the secret-presence check now runs **after** approval, on the macOS runner, so
 check §8's `gh secret list --env release-signing` before approving rather than
 after. Do not re-dispatch a waiting run: the workflow's concurrency group has

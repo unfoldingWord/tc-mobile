@@ -309,6 +309,14 @@ change.
    Both native lanes' signing jobs declare `environment: release-signing`, so
    every dispatch pauses for one approval before any secret is read.
 
+   **What the approval is.** GitHub runs the workflow file **on the dispatched
+   ref**, and any push-access branch can rewrite it while keeping
+   `environment: release-signing` on the job — so a branch can add a step that
+   reads the secrets, and the pause is the only thing between it and them.
+   Before _Approve and deploy_, open `.github/workflows/<lane>.yml` **on the
+   ref the run shows** and confirm it is the committed lane; reject anything
+   else. Approving without reading is the #321 hole with a rubber stamp on it.
+
 5. **Environment secrets** (_Settings → Environments → release-signing →
    Environment secrets_), **not** repository secrets. When both exist, the
    environment copy takes precedence for the gated job — but a repository
@@ -447,7 +455,10 @@ build: never hand one to a tester once the release keystore exists.
 **Tester distribution:** workflow artifacts require a GitHub login to download,
 and the lane attaches the APK **only** as a run artifact — nothing creates a
 GitHub release or pre-release today (the repo's first tag is the v0.2.0
-promotion). So the channel is: a person with repository access downloads the
+promotion). The repo is public, so "a GitHub login" means **any** signed-in
+GitHub user can fetch the artifact for as long as it is retained; it is a
+convenience, not a private channel (the keystore is not in the APK — this is an
+access-boundary note, not a signing leak). So the channel is: a team member downloads the
 `android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
 the team drive; §5
 step 4 covers installation on the phone. Attaching the APK to a release is a

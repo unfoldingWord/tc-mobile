@@ -14,11 +14,14 @@
 # signing hands CI a stable identity that lives in a secrets vault and never
 # changes between runs.
 #
-# Prerequisites the pipeline cannot create for you (docs/native/README.md §4a):
-#   • an Apple Distribution certificate (.p12) in GitHub secret
-#     IOS_DIST_CERT_P12_BASE64, its export password in IOS_DIST_CERT_PASSWORD;
+# Prerequisites the pipeline cannot create for you (docs/native/README.md §4a).
+# All seven names below are secrets of the `release-signing` GitHub
+# ENVIRONMENT (required reviewers, #321) — set with `--env release-signing`,
+# never as repository secrets (docs/native/ios-credentials.md §8):
+#   • an Apple Distribution certificate (.p12) in IOS_DIST_CERT_P12_BASE64,
+#     its export password in IOS_DIST_CERT_PASSWORD;
 #   • an App Store provisioning profile (.mobileprovision) tied to that cert,
-#     in GitHub secret IOS_PROVISION_PROFILE_BASE64;
+#     in IOS_PROVISION_PROFILE_BASE64;
 #   • an App Store Connect API key (App Manager role) for upload:
 #     ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64;
 #   • APPLE_TEAM_ID;
