@@ -305,31 +305,37 @@ cannot be added to an internal group — the mechanical reason Q3 matters.
 
 ---
 
-## 8. Step G — set the seven GitHub secrets
+## 8. Step G — set the seven secrets in the `release-signing` environment
 
-_Settings → Secrets and variables → Actions_, or from a checkout:
+The environment must exist first, with required reviewers (README §4a step 4).
+Then _Settings → Environments → release-signing → Environment secrets_, or from
+a checkout — note `--env` on every line; a repository secret of the same name
+is **ignored** by the environment-scoped job:
 
 ```bash
-gh secret set ASC_KEY_ID             -R unfoldingWord/tc-mobile   # the 10-char Key ID
-gh secret set ASC_ISSUER_ID          -R unfoldingWord/tc-mobile   # the Issuer UUID
-gh secret set APPLE_TEAM_ID          -R unfoldingWord/tc-mobile   # the 10-char Team ID
-gh secret set IOS_DIST_CERT_PASSWORD -R unfoldingWord/tc-mobile   # the .p12 export password (§5.5)
-base64 -i ~/Downloads/AuthKey_XXXXXXXXXX.p8   | gh secret set ASC_KEY_P8_BASE64 -R unfoldingWord/tc-mobile
-base64 -i ~/path/to/dist_cert.p12             | gh secret set IOS_DIST_CERT_P12_BASE64 -R unfoldingWord/tc-mobile
-base64 -i ~/path/to/tc-mobile.mobileprovision | gh secret set IOS_PROVISION_PROFILE_BASE64 -R unfoldingWord/tc-mobile
+E="--env release-signing -R unfoldingWord/tc-mobile"
+gh secret set ASC_KEY_ID             $E   # the 10-char Key ID
+gh secret set ASC_ISSUER_ID          $E   # the Issuer UUID
+gh secret set APPLE_TEAM_ID          $E   # the 10-char Team ID
+gh secret set IOS_DIST_CERT_PASSWORD $E   # the .p12 export password (§5.5)
+base64 -i ~/Downloads/AuthKey_XXXXXXXXXX.p8   | gh secret set ASC_KEY_P8_BASE64 $E
+base64 -i ~/path/to/dist_cert.p12             | gh secret set IOS_DIST_CERT_P12_BASE64 $E
+base64 -i ~/path/to/tc-mobile.mobileprovision | gh secret set IOS_PROVISION_PROFILE_BASE64 $E
 ```
 
 The stdin-prompt forms (no value on the command line) keep the value out of
-shell history. The names must match **exactly** — the preflight job checks these
-seven literal strings and treats an unset secret and an empty one the same way.
+shell history. The names must match **exactly** — the TestFlight job's first
+step checks these seven literal strings and treats an unset secret and an empty
+one the same way.
 
 Verify before dispatching:
 
 ```bash
-gh secret list -R unfoldingWord/tc-mobile
+gh secret list --env release-signing -R unfoldingWord/tc-mobile
 ```
 
-You are looking for all seven alongside the pre-existing `CLOUDFLARE_ACCOUNT_ID`.
+You are looking for all seven. (`CLOUDFLARE_ACCOUNT_ID` stays a repository
+secret; it is not a signing secret.)
 `gh secret list` shows **names only** — it cannot tell you a value is correct,
 only that something is set. The first dispatch is the first test of the values.
 

@@ -286,7 +286,17 @@ change.
    Then create an **internal tester group** (TestFlight → Internal Testing) and
    enable **_Automatically distribute new builds_** on it, or an uploaded build
    reaches no one until it is assigned to a group by hand.
-4. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+4. **The `release-signing` environment** (_Settings → Environments → New_):
+   name it exactly `release-signing`, add **required reviewers** (the DRI at
+   minimum), and leave the deployment-branch rule at "all branches" — the
+   in-yml ref guard handles branches; the reviewer is the actor guard (#321).
+   Environment protection rules are free on a **public** repository; on a
+   private one they need a Team/Enterprise plan. Both native lanes' signing
+   jobs declare `environment: release-signing`, so every dispatch pauses for
+   one approval before any secret is read.
+5. **Environment secrets** (_Settings → Environments → release-signing →
+   Environment secrets_), **not** repository secrets — a repository secret of
+   the same name is ignored by an environment-scoped job:
 
    | Secret                         | Value                                                                      |
    | ------------------------------ | -------------------------------------------------------------------------- |
@@ -421,7 +431,10 @@ follow-up once a release step exists, not a documented path.
 
 1. **Create the release keystore** (§5 step 1) and store it in the team secret
    store.
-2. **Four GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+2. **Four environment secrets** in the `release-signing` environment (§4a
+   step 4 creates it; _Settings → Environments → release-signing →
+   Environment secrets_). Not repository secrets — the build job is
+   environment-scoped and pauses for a reviewer before reading them (#321):
 
    | Secret                    | Value                                                                         |
    | ------------------------- | ----------------------------------------------------------------------------- |
@@ -433,9 +446,10 @@ follow-up once a release step exists, not a documented path.
    The keystore is decoded to `android/tc-mobile-release.jks` at build time
    (gitignored) and deleted after the APK is built. **Never commit it.**
 
-**First dispatch:** the preflight checks the ref and all four secrets before any
-Gradle work. The `build.gradle` signing config also fails loudly if the env vars
-are unset — two layers. What the runner provides was checked against the
+**First dispatch:** the preflight checks the ref; the build job then waits for
+the environment reviewer and, once approved, checks all four secrets as its
+first step, before checkout. The `build.gradle` signing config also fails
+loudly if the env vars are unset — three layers. What the runner provides was checked against the
 `ubuntu-24.04` image notes (actions/runner-images, 2026-09-12), not observed on
 a live run: Android SDK Platform 36 and Build-tools 36.0.0 under `ANDROID_HOME`,
 and Ruby for the keystore decode — so no `sdkmanager` step is needed. The JDK is
