@@ -48,7 +48,10 @@ named roster for that group yet, so honestly:
 - **D2 — Public vs private.** uW default is **public**; tC Mobile is private and
   `AGENTS.md` documents _why_ (it sidesteps the very approval gate this plan
   closes). Once approved, the private reason expires — decide public, or
-  re-justify private and record it.
+  re-justify private and record it. **Decided: public, flipped 2026-09-13
+  (#250).** A later flip back to private would also disable the native lanes'
+  signing gate and its environment secrets (#321; `docs/native/README.md` §4a
+  step 4) — not a free change.
 
 ## What a GitHub _transfer_ carries — and what it doesn't
 

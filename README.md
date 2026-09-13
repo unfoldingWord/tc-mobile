@@ -96,8 +96,10 @@ never on push/PR: `ios-testflight.yml`, a TestFlight upload, and
 `android-apk.yml`, a signed release APK attached to the run as an artifact.
 They are the only workflows that ship a binary, and never to Cloudflare.)
 
-The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
-prepared to be made public.
+The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org, **public since
+2026-09-13**. Keep it public: the native lanes' signing gate (a GitHub
+environment with required reviewers, #321) exists only on public repositories
+for this org's plan — `docs/native/README.md` §4a step 4 has the detail.
 
 ## Architecture
 

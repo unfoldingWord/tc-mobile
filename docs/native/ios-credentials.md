@@ -11,10 +11,12 @@ with the answers pre-filled.
 > profile** (PR #309): on top of the four App Store Connect / Team values it now
 > needs `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD` and
 > `IOS_PROVISION_PROFILE_BASE64` (§5.5, §8). The chain has since archived, signed
-> and uploaded a build to TestFlight — but `gh secret list` shows **names only**
-> and cannot confirm a value is still correct. (That check covers **repository**
-> secrets only; listing org-level secrets returns HTTP 403 without the
-> `admin:org` scope.) Apple's web UI also changes wording between releases: where
+> and uploaded a build to TestFlight — but `gh secret list --env release-signing`
+> shows **names only** and cannot confirm a value is still correct. The signing
+> secrets live in the `release-signing` **environment** (§8, #321); a bare
+> `gh secret list` shows repository secrets, and a signing name appearing there
+> is a leftover to delete, not a success. (Listing org-level secrets returns
+> HTTP 403 without the `admin:org` scope.) Apple's web UI also changes wording between releases: where
 > this file names a menu item, treat it as a strong hint, not a guarantee.
 
 ---
