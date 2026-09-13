@@ -11,6 +11,107 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-13 — v0.2.0 on production, the repository public, the Android lane merged and a debug APK built on the Mac
+
+**Branches:** merged to **`develop`**: #319 (Android APK lane, `0dd30cc`), #323 (public-name
+scrub), #324 (v0.1.16), #326 (org links), #327 (v0.2.0), #331 (AGENTS.md "public"). **`develop`
+→ `staging`** twice: #325 (`0330d29`, served `0.1.16`) and #328 (`46f1f9b`, served `0.2.0`).
+**`staging` → `main`: #329** (merge `7c560ce`) — **production serves `0.2.0` / `7c560ce`**
+(`index-oXapchKA.js`, ~180 s after merge), the first deploy of `main` since the org transfer.
+**Tagged `v0.2.0`** — the repo's first tag. **Open:** #330 (#321 environment gate). **Closed:**
+#244, #250, #72. **Release:** pre-release `android-debug-v0.1.15` carrying `app-debug.apk`.
+Mac session (`excalibur`); a container session ran the #319 review rounds in parallel.
+
+### Android lane (#318 steps 3/4/6) → #319, merged after four rounds
+
+`android/app/build.gradle`: `signingConfigs.release` from four env vars, wired only when all
+four are set, and a `gradle.taskGraph.whenReady` guard that throws with the missing names
+when `assembleRelease`/`bundleRelease` is in the graph — `assembleDebug` untouched;
+`versionCode` takes `-PversionCode=<N>` (CI stamps a unix timestamp, local defaults to 1).
+`android-apk.yml` mirrors the iOS lane: ubuntu preflight, bundle guard, Ruby base64 decode
+of the keystore into a gitignored path, `assembleRelease --no-daemon`, 14-day artifact,
+keystore removed. **Round 1 at `8b23e33`:** Frank 1 P2, George 1 P1 + 4 P2, reviewer +2 —
+the P1 was the JDK (the image defaults to 17; Capacitor's generated Gradle compiles at 21),
+fixed with a pinned `setup-java` and a toolchain assertion; `ubuntu-24.04` pinned; the
+docs' `gradle.properties` claim corrected (the file reads env vars only); the debug-vs-release
+signing-key trap (uninstall wipes IndexedDB) written into README §0/§5a; upload set to
+fail when no APK exists. Four rounds, DRI-accepted at the polish tail with #321 open.
+
+**Local toolchain, first time on this Mac:** `JAVA_HOME` pointed at a deleted JDK 17 →
+Temurin 21 via Homebrew; no Android SDK → Android Studio via Homebrew; its wizard installed
+only platform `android-37.0`, so **platform 36 was added by hand** (`variables.gradle` pins
+`compileSdkVersion = 36`). `npm ci && npm run build && npx cap sync android && cd android &&
+./gradlew assembleDebug` → **BUILD SUCCESSFUL in 46 s**. `cap sync` must run from the repo
+root (from `android/` it reports "platform has not been added"). The phone never enumerated
+over USB — `system_profiler SPUSBDataType` showed nothing at all, so a charge-only cable, not
+ADB — hence the pre-release: open the release URL on the phone, tap the asset. **#245 is
+still unrun.**
+
+### Public flip (#250) — done
+
+Name scrub as two lanes, no Frank/George: a fork swept the six surnames and the account ID
+(2 files); a **fresh adversarial agent** over the whole tree then found what the list missed —
+one surname the sweep did not know, internal governance docs cited by path and quoted, and
+two sentences the first pass had mangled — plus three `claude.ai` artifact links to private
+material (DRI: remove). All fixed in #323. **39 `cloudflare-workers-and-pages[bot]` comments
+deleted** (every one carried the account ID; zero in review threads). Cloudflare's docs have
+**no opt-out for the PR comment** — it is bound to non-production branch builds — so the DRI
+chose to keep preview builds and accept the recurring comment, recorded on #250. Frank and
+George are tool aliases and stay; `bt-servant-*` names stay (public repos). Flipped after
+`main` served the scrubbed tree: `visibility: public`, anonymous fetch of `main` 200.
+
+### v0.2.0 gate (#244) — reopened, run, closed
+
+DRI reversed the 09-12 hold. The gate is **thin by definition**: Tim's 09-12 note on #243
+says v1 = the October training build = **v0.3.0**, so the 18 `v1-required` items moved
+there, one comment each (#283 #272 #269 #263 #262 #245 #180 #166 #108 #59 #58 #38 #12
+#318 #243 #320 #311 #270). Pre-flight: prod Worker read from the dashboard (org repo, branch
+`main`, `npx wrangler deploy`). **#72 item 1 proven** — exactly one `tc-mobile` build today,
+on the `main` push; none on five non-`main` pushes. Prod's exclude paths are only
+`node_modules/**, .git/` (staging has `docs/**, *.md, .github/**`): hygiene, a docs push to
+`main` burns a build. Accepted risk, on the PR: `main` ships with #59/#38 open; nobody is
+handed the production URL before v0.3.0. Milestone v0.2.0 now holds **#321 only**.
+
+### Account switch: `sethstoll3` → `sethstoll`
+
+New account made org owner; **35 open items reassigned across five uW repos**, 0 left on the
+old handle; `sethstoll3` removed. Workers Builds survived it — the staging promotion after
+the removal built and served (#328). Two findings on the way: **branch pushes never trigger
+a Workers Build** here even before the change (`a0251af`, `package.json` to `develop`, had no
+check-run), only production-branch pushes do, so the `develop` probe is meaningless and the
+promotion is the test; and a Markdown-only PR is invisible to staging by its own exclude
+paths. `gh` now runs as `sethstoll`; `wrangler` on this Mac is authenticated to ORO LABS
+only and cannot see the uW Workers — the served bundle is the deploy proof.
+
+### #321 — environment gate, PR #330, inert until the secrets move
+
+Environment **`release-signing`** created with `sethstoll` as required reviewer (free on a
+public repo). #330 puts `environment: release-signing` on both lanes' **signing job only** —
+preflight keeps the ref guard and holds no secrets, the presence check becomes the gated
+job's first step before checkout — so a dispatch costs one approval, not two. Docs: README
+§4a/§5a and `ios-credentials.md` §8 (`gh secret set … --env release-signing`). Merge order on
+the PR: environment → eleven secrets in → merge → delete the repo-level copies → one
+dispatch from `staging` to see pause → approve → green.
+
+### Blockers / needs a human
+
+- **Seth:** the eleven signing secrets into `release-signing` (values are in the secret
+  store); review mode for #330 (Frank + George, or an exemption recorded on the PR); then
+  merge, delete the repo copies, prove with an iOS dispatch, close #321 and the milestone.
+- **Seth:** the Android release keystore (#318 step 2) and its four secrets; a data cable or
+  a cloud link so the debug APK reaches a phone (#245).
+- **Still owed from 09-12:** a tester confirming a TestFlight build arrived; #263 on a device.
+
+### Next steps
+
+1. Land and prove #330 (one dispatch from `staging`).
+2. #245 with the published debug APK, then the keystore and the first `android-apk`
+   dispatch from `staging`.
+3. #263 — the WKWebView / Android WebView mic go/no-go.
+4. Dashboard hygiene: prod exclude paths to match staging.
+
+---
+
 ## 2026-09-12 — the first native build attempted: Apple credentials done, v0.1.14 promoted, TestFlight dispatch failed at Install fastlane; triage cuts the gate to 20
 
 **Branches:** merged to **`develop`**: #301 (EOD 09-11), #303 (credentials runbook), #304
