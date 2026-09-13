@@ -426,8 +426,8 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 ## DRI
 
-**Seth Stoll** is building this. **Tim** (the requirements owner) owns the requirements.
-**Birch** (the project manager) — and demoed translationCore4, so the
+**Seth Stoll** is building this. **Tim** owns the requirements.
+**Birch** is the project manager — and demoed translationCore4, so the
 tC Mobile / tC4 convergence question runs through the same person.
 
 Route questions accordingly: requirements to Tim, scheduling and tC4 to Birch,

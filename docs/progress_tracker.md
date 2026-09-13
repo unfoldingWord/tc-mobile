@@ -460,7 +460,7 @@ PRs**, so this entry follows 2026-09-03 in the committed tracker with a gap.
 - **V1 = end of September**, in **three one-week sprints**. **Sprint 1 (→ Mon 2026-09-14):
   installable apps** — wrap the PWA with Capacitor → **iOS TestFlight + Android APK** so the
   Nairobi testers (**Caleb, Javi**) hit real devices early.
-- **Team:** **Elsy Lambert** PM (not Birch — AGENTS.md DRI block is stale), **Tim** product owner,
+- **Team:** **Elsy** PM (not Birch — AGENTS.md DRI block is stale), **Tim** product owner,
   **Seth** dev lead. Weekly sync, same time.
 - **V1-required / v1-desired** labels are the must-have axis (they already existed); 25 v1-required
   issues, all in the `v0.2.0` gate. **Template Library retagged non-blocking** (v2-required →
