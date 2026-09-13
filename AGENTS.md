@@ -282,11 +282,12 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 No Actions workflow deploys the **PWA**. The four web-deploy workflows were
 deleted to remove a real collision: Cloudflare and Actions would otherwise both
 deploy on the same triggers, to different targets — two preview deploys per PR
-and two deployments per merge. The only deploy workflow in `.github/` is the
-**manual** iOS TestFlight lane (`ios-testflight.yml`) — a native build to App
-Store Connect, `workflow_dispatch`-only, so it never fires on push/PR and is not
-a Workers Builds trigger (#262, `docs/native/README.md` §4a). Do not add a
-push/PR deploy job.
+and two deployments per merge. The only deploy workflows in `.github/` are the
+two **manual** native lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
+native build to App Store Connect, `docs/native/README.md` §4a) and the Android
+APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
+§5a). Both are `workflow_dispatch`-only, so they never fire on push/PR and are
+not Workers Builds triggers (#262, #318). Do not add a push/PR deploy job.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -302,12 +303,13 @@ push to `develop` triggers two preview builds of the same commit.
 Add `docs/**` and `*.md` to Cloudflare's **Exclude paths** on both, or every
 documentation commit burns a build.
 
-Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The
+Cloudflare account **unfoldingWord**. The
 API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
-TestFlight lane authenticates to App Store Connect with its own secrets, not
-Cloudflare's). Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the
-manual `ios-testflight.yml`.
+TestFlight lane authenticates to App Store Connect with its own secrets, and
+the Android lane signs with its own keystore secrets — neither is Cloudflare's).
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
+native lanes, `ios-testflight.yml` and `android-apk.yml`.
 
 ## Device testing — the HTTPS caveat
 
@@ -407,10 +409,10 @@ Full process, and the traps that make a failed run look like a clean pass, in
    A4 settled the share shape instead: Share Chapter is one concatenated MP3 to
    the OS share sheet, Share Book is a zip of chapter MP3s. B7 (#33) builds
    both. Burrito comes back only if a later phase asks for it, so the "talk to
-   Benjamin Wright first" next action is retired; the background is still
+   Benjamin first" next action is retired; the background is still
    `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
-   public repo. Someone needs to ask Han Chung.
+   public repo. Someone needs to ask Han.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
    Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
    and the narration path and superseded ADR 0007 — both are gone from `src/`.
@@ -424,13 +426,13 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 ## DRI
 
-**Seth Stoll** is building this. **Tim Jore** owns the requirements.
-**Birch Champeon** is the project manager — and demoed translationCore4, so the
+**Seth Stoll** is building this. **Tim** owns the requirements.
+**Birch** is the project manager — and demoed translationCore4, so the
 tC Mobile / tC4 convergence question runs through the same person.
 
 Route questions accordingly: requirements to Tim, scheduling and tC4 to Birch,
-Scripture Burrito and the event journal to **Benjamin Wright**, OBS content and
-audio to **Rich Mahn**, Shema Studio to **Han Chung** (via Birch, who is already
+Scripture Burrito and the event journal to **Benjamin**, OBS content and
+audio to **Rich**, Shema Studio to **Han** (via Birch, who is already
 helping him add OBS support).
 
 **The repository lives at `unfoldingWord/tc-mobile`, private,** since Seth
@@ -448,6 +450,6 @@ deployed build** — confirm the served bundle's version string on the staging
 URL, not the merge. The AGENTS.md rule that the Cloudflare account is
 unfoldingWord was already true; only the GitHub side moved.
 
-Other contributors now push here (Jesse Griffin, `jag3773`, from 2026-09-02),
+Other contributors now push here (Jesse, `jag3773`, from 2026-09-02),
 which is what the version/milestone scheme above and the reviewer/author split
 in the review section exist for.

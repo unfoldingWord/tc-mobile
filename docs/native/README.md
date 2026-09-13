@@ -14,10 +14,13 @@ just the native shell and the pipeline to produce installable builds.
 > in a Linux CI container with **no Xcode and no Android Studio**. The native
 > _projects_ were generated and the web bundle synced into them (`cap add`,
 > `cap sync` both run without native SDKs), but **no `.ipa`, `.aab`, or `.apk`
-> was built, signed, or run on any device or simulator.** Every step in
-> [§4](#4-ios--testflight) and [§5](#5-android--apk-sideload) requires a Mac
-> with the native toolchains and is Seth's to run. Nothing below has been
-> verified on a device.
+> was built, signed, or run on any device or simulator.** The local steps in
+> [§4](#4-ios--testflight) and [§5](#5-android--apk-sideload) require a Mac
+> with the native toolchains and are Seth's to run; the CI lanes in
+> [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) and
+> [§5a](#5a-android--apk-via-ci-automated-no-mac-step) run on GitHub-hosted
+> runners instead (the iOS lane is proven end to end, the Android lane has not
+> yet been dispatched). Nothing below has been verified on a device.
 
 ---
 
@@ -44,11 +47,24 @@ The two platforms have very different fastest routes:
   # → android/app/build/outputs/apk/debug/app-debug.apk
   ```
 
-  Send that APK to a tester and follow the sideload steps in
+  Install that APK **only on a developer's own device — one that will never
+  receive a §5a release build** — and follow the sideload steps in
   [§5](#5-android--apk-sideload) step 4 (enable _Install unknown apps_, open the
-  file). The signed-**release** path (a keystore + `signingConfigs`, §5 steps
-  1–3) is the durable distribution route and can follow later — it is **not**
-  needed to hit Monday's bar.
+  file). Testers get release-signed builds from the CI lane
+  ([§5a](#5a-android--apk-via-ci-automated-no-mac-step)) once the keystore and
+  its four secrets exist; the debug APK proves the toolchain and the WebView,
+  nothing more. The signed-**release** path (§5 steps 1–3) is the durable
+  distribution route.
+
+  > **The debug APK is for the developer's own proof, not for anyone who will
+  > later receive a release build.** Android ties app identity to the signing
+  > key: a phone that installed a debug-signed APK **cannot update** to a
+  > release-signed one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, whatever the
+  > `versionCode`). The only way forward is uninstall — and because backups are
+  > off (§5) and IndexedDB is the system of record, **uninstall deletes every
+  > recording on that phone.** Once the release keystore exists, testers get
+  > release-signed builds only (§5a), and every one of them is signed with the
+  > same keystore.
 
 - **iOS — gated on the Apple Developer account (the long pole).** There is no
   debug-APK equivalent: every install onto an iPhone requires a signing identity
@@ -60,8 +76,13 @@ The two platforms have very different fastest routes:
   but is not the TestFlight path testers use; TestFlight still needs the paid
   membership.
 
-If only one platform is ready on Monday, ship that one. Android via the debug
-APK is the route with no human/paid dependency, so it is the safest to count on.
+If only one platform is ready on Monday, ship that one. Android has no human or
+paid dependency, so it is the safest to count on — but **what ships to testers is
+the release-signed CI APK ([§5a](#5a-android--apk-via-ci-automated-no-mac-step))
+once the keystore and its four secrets exist.** The debug APK above proves the
+toolchain and the WebView on a developer's own device; it never goes to a phone
+that will later receive a release build (see the callout under the Android
+route).
 
 ### 0.1 Human / paid gates
 
@@ -129,7 +150,11 @@ npx cap sync           # copy dist/ into ios/ and android/, refresh native deps
 `cap sync` = `cap copy` (web assets + config) + `cap update` (native deps).
 Both `cap add` and `cap sync` run **without** Xcode/Android Studio (verified in
 this container). Everything past sync — `cap open`, archive, gradle assemble,
-signing, upload — needs the native toolchains on a Mac.
+signing, upload — needs the native toolchains: **locally that is a Mac** with
+Xcode and Android Studio (§3), which is what the team runs; **in CI it is the two
+manual lanes**, [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) for
+TestFlight and [§5a](#5a-android--apk-via-ci-automated-no-mac-step) for the
+APK, which need no Mac at all.
 
 Convenience scripts are in `package.json` (added for the Monday prep, #262):
 
@@ -327,20 +352,97 @@ for the audio store (PR #265).
    Store it **outside** the repo and record the passwords in the team secret
    store. As a backstop, `android/.gitignore` ignores `*.jks`/`*.keystore` so a
    keystore accidentally dropped inside `android/` is not committed.
-2. Wire release signing in `android/app/build.gradle` (`signingConfigs` +
-   `buildTypes.release`), reading passwords from
-   `~/.gradle/gradle.properties` or env vars — **never commit them**.
-3. Build a signed APK:
+2. Release signing is **already wired in `android/app/build.gradle`** — the
+   `signingConfigs.release` block reads four **environment variables**:
+   `ANDROID_KEYSTORE_PATH`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+   `ANDROID_KEY_PASSWORD`. Export them in your shell before running
+   `assembleRelease`, with `ANDROID_KEYSTORE_PATH` **absolute** — Gradle
+   resolves a relative path against `android/app/`, not your shell's cwd, and
+   the guard only checks that the variable is set, not that the file is there.
+   They are read with `System.getenv`, so entries in
+   `~/.gradle/gradle.properties` do **not** work — those become Gradle project
+   properties, not env vars, and the guard below would report all four as
+   missing. The build fails loudly if any is unset, so it cannot silently
+   produce an unsigned APK. **Never commit the keystore or passwords.**
+3. Build a signed APK — **always with a `versionCode`**, the same unix
+   timestamp the CI lane uses:
    ```bash
    npx cap sync android
-   cd android && ./gradlew assembleRelease
+   cd android && ./gradlew assembleRelease -PversionCode="$(date +%s)"
    # → android/app/build/outputs/apk/release/app-release.apk
    ```
-   (`npx cap open android` opens Android Studio if you prefer _Build → Generate
-   Signed Bundle / APK_. Use **APK**, not AAB, for sideload.)
+   Without `-PversionCode` the build defaults to `versionCode 1`. Android
+   refuses a downgrade, so after **any** CI APK (§5a) a `1` can never install
+   over it — the tester's only way forward would be uninstall, which wipes
+   their recordings. (`npx cap open android` opens Android Studio if you prefer
+   _Build → Generate Signed Bundle / APK_; set the version code there too. Use
+   **APK**, not AAB, for sideload.)
 4. **Testers install:** enable _Install unknown apps_ for the browser/file
    app on the device, then open the APK to install. Distribute the file via a
    link the testers can reach (e.g. a shared drive).
+
+---
+
+## 5a. Android → APK via CI (automated, no Mac step)
+
+[`.github/workflows/android-apk.yml`](../../.github/workflows/android-apk.yml)
+builds the Android app on an ubuntu runner and uploads the APK as a workflow
+artifact. It is **manual-trigger only** (`workflow_dispatch`): run it from
+**Actions → Android APK → Run workflow**, choosing the branch to build. It
+never runs on push/PR.
+
+**What a run does:** `npm ci` → `npm run build` → `npx cap sync android` →
+`./gradlew assembleRelease -PversionCode=$(date +%s)` → upload
+`app-release.apk` as a workflow artifact (14-day retention). The APK is signed
+with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
+
+**`versionCode`** is the run's unix timestamp — unique and strictly increasing
+with no external round-trip. Android refuses a `versionCode` downgrade, so
+every build that reaches a tester must carry a higher code than the last. A
+local `assembleRelease` must pass the same `-PversionCode="$(date +%s)"` (§5
+step 3); the committed default of `1` never installs over a CI build.
+
+**One keystore, forever.** Every APK a tester receives must be signed with the
+same release keystore — a phone cannot update across signing keys, and the
+forced uninstall wipes IndexedDB, i.e. every recording (§0). A debug-signed APK
+(§0's Monday route) is therefore a dead end for anyone who will later get a CI
+build: never hand one to a tester once the release keystore exists.
+
+**Tester distribution:** workflow artifacts require a GitHub login to download,
+and the lane attaches the APK **only** as a run artifact — nothing creates a
+GitHub release or pre-release today (the repo's first tag is the v0.2.0
+promotion). So the channel is: a person with repository access downloads the
+`android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
+the team drive; §5
+step 4 covers installation on the phone. Attaching the APK to a release is a
+follow-up once a release step exists, not a documented path.
+
+### One-time setup
+
+1. **Create the release keystore** (§5 step 1) and store it in the team secret
+   store.
+2. **Four GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+
+   | Secret                    | Value                                                                         |
+   | ------------------------- | ----------------------------------------------------------------------------- |
+   | `ANDROID_KEYSTORE_BASE64` | the `.jks` file, base64-encoded (`base64 -i tc-mobile-release.jks \| pbcopy`) |
+   | `ANDROID_STORE_PASSWORD`  | keystore (store) password                                                     |
+   | `ANDROID_KEY_ALIAS`       | key alias (e.g. `tc-mobile`)                                                  |
+   | `ANDROID_KEY_PASSWORD`    | key password                                                                  |
+
+   The keystore is decoded to `android/tc-mobile-release.jks` at build time
+   (gitignored) and deleted after the APK is built. **Never commit it.**
+
+**First dispatch:** the preflight checks the ref and all four secrets before any
+Gradle work. The `build.gradle` signing config also fails loudly if the env vars
+are unset — two layers. What the runner provides was checked against the
+`ubuntu-24.04` image notes (actions/runner-images, 2026-09-12), not observed on
+a live run: Android SDK Platform 36 and Build-tools 36.0.0 under `ANDROID_HOME`,
+and Ruby for the keystore decode — so no `sdkmanager` step is needed. The JDK is
+the one thing the image gets **wrong** for this project: its default is Java 17,
+while Capacitor's generated `android/app/capacitor.build.gradle` compiles at
+Java 21, so the lane pins JDK 21 with `actions/setup-java` before `cap sync`.
+The lane has not been dispatched yet; the first run is the end-to-end proof.
 
 ---
 
@@ -355,12 +457,10 @@ native builds carry their **own** version fields:
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).
 - **Android:** `versionName` (user-facing) + `versionCode` (integer, must
-  increase every upload).
-
-These are **not** auto-synced from `package.json` today, and nothing in this PR
-changes that. For the training, set them by hand per build. If we want one
-source of truth later, a small `cap sync`-time script can stamp them from
-`package.json` — deferred, not built (avoids shipping an unused stub).
+  increase every install). The CI lane (§5a) stamps `versionCode` with a unix
+  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` must
+  pass the same, because the committed default is `1`, and once any CI APK is
+  on a phone a `1` is a downgrade that Android refuses (§5 step 3).
 
 ---
 
@@ -368,12 +468,13 @@ source of truth later, a small `cap sync`-time script can stamp them from
 
 **They do not collide.** Cloudflare Workers Builds deploys the PWA by running
 `wrangler deploy` (serving `./dist`) on pushes to `develop`/`staging`/`main`
-(AGENTS.md → _Cloudflare Workers Builds owns deployment_). The native TestFlight
-build ([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step)) runs on a macOS
-runner, but **only on manual dispatch** (`ios-testflight.yml`, `workflow_dispatch`)
-— never on push/PR — so it is not a Workers Builds trigger and produces no web
-deploy. `cap sync` only copies `dist/` into the native projects; the archive it
-uploads goes to App Store Connect, not Cloudflare.
+(AGENTS.md → _Cloudflare Workers Builds owns deployment_). Both native CI lanes
+([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step),
+[§5a](#5a-android--apk-via-ci-automated-no-mac-step)) are **manual-dispatch
+only** (`workflow_dispatch`) — never push/PR — so neither is a Workers Builds
+trigger and neither produces a web deploy. `cap sync` only copies `dist/` into
+the native projects; the IPA goes to App Store Connect and the APK becomes a
+workflow artifact, not a Cloudflare deploy.
 
 Two operational notes:
 
@@ -381,7 +482,7 @@ Two operational notes:
   tester's native app runs identical web code to the PWA **at that ref** — identical
   to staging only when the workflow is dispatched from `staging`. The lane's ref
   guard refuses anything but `staging`/`main` unless explicitly overridden, so build
-  tester IPAs from `staging` or `main`, not `develop`.
+  tester IPAs and APKs from `staging` or `main`, not `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the

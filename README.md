@@ -91,9 +91,10 @@ share-sheet export path yet — see #18.
 
 `ci.yml`: full-history secret scan, format, lint, knip, typecheck, test, build,
 and a check that the PWA service worker and manifest were emitted. It deploys
-nothing. (`.github/` also holds `ios-testflight.yml` — a manual, native TestFlight
-upload run by hand; it is the only workflow that ships a binary, and never to
-Cloudflare.)
+nothing. (`.github/` also holds the two manual native lanes, run by hand and
+never on push/PR: `ios-testflight.yml`, a TestFlight upload, and
+`android-apk.yml`, a signed release APK attached to the run as an artifact.
+They are the only workflows that ship a binary, and never to Cloudflare.)
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
 prepared to be made public.
