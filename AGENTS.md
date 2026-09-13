@@ -435,8 +435,8 @@ Scripture Burrito and the event journal to **Benjamin**, OBS content and
 audio to **Rich**, Shema Studio to **Han** (via Birch, who is already
 helping him add OBS support).
 
-**The repository lives at `unfoldingWord/tc-mobile`, private,** since Seth
-transferred it from `sethstoll3/tc-mobile` on 2026-09-02. GitHub redirects the
+**The repository lives at `unfoldingWord/tc-mobile`, public since 2026-09-13,**
+transferred there by Seth from `sethstoll3/tc-mobile` on 2026-09-02. GitHub redirects the
 old name, so existing clones keep working — but repoint them
 (`git remote set-url origin https://github.com/unfoldingWord/tc-mobile.git`)
 and use `--repo unfoldingWord/tc-mobile` with `gh` rather than relying on the
