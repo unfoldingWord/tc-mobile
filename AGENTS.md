@@ -26,7 +26,7 @@ A segment is the unit of work: one recording per segment, edited in place. The
 pre-pivot UI is **replaced, not evolved**.
 
 [`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record.
-[#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
+[#25](https://github.com/unfoldingWord/tc-mobile/issues/25) is the umbrella issue,
 and the work is nine batches, B0–B8 (#26–#34).
 
 **B0–B6 and B8 have landed, and B7's Share half; B7's Template Library has

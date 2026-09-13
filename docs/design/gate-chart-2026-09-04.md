@@ -58,7 +58,7 @@ by one of the 67 open issues.
 
 ## Who is on which path (observed, 2026-09-02 → 2026-09-04)
 
-- **The maintainer (@sethstoll3)** — orchestrator since 2026-09-04: merge
+- **The maintainer (@sethstoll)** — orchestrator since 2026-09-04: merge
   trains, releases, Cloudflare, the review harness, EOD entries, routing
   decisions to the requirements owner. Owns the gate.
 - **@jag3773** — recorder and audio lane by assignment (#166, #168, #58, #106,
