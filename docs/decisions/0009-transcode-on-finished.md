@@ -190,12 +190,11 @@ message handler is stateless (a fresh `encodeMp3` per message), and
 `withEncoder` serialises every encode onto one lane, so the shared worker never
 carries two jobs at once. **Abort still stops the in-flight encode now** — only
 `terminate()` can — so an abort drops the worker and immediately **re-warms** a
-fresh one (round-1 R2). The re-warm rebuilds from the hashed chunk URL, so it
-restores the warm worker only while that chunk is still fetchable: a cancel after
-a service-worker update has purged the chunk still degrades to the next encode's
-failure. Closing that post-purge-abort window fully means snapshotting the worker
-to a purge-immune source (`?worker&url` → `blob:`), which is browser-only to
-verify and is tracked in **#192**. A worker that dies
+fresh one (round-1 R2). The re-warm rebuilt from the hashed chunk URL, so it
+restored the warm worker only while that chunk was still fetchable: a cancel after
+a service-worker update had purged the chunk still degraded to the next encode's
+failure. That post-purge-abort window is closed by the **#192** amendment below.
+A worker that dies
 on its own — a script-load failure, which `new Worker` reports asynchronously as
 an `error` event, or a crash between encodes — is caught by a **durable `error`
 listener** attached at construction that drops the dead handle, so the next
@@ -223,3 +222,84 @@ dispatch is spec-derived, not device-verified. Still browser-boundary and
 unverified on a device: the purge → cache-miss interaction itself needs a device
 with two deployed builds. The "What is verified" section above is otherwise
 unchanged by this amendment.
+
+### 2026-09-11 (#192) — every worker is built from a blob snapshot of the chunk
+
+The #182 amendment above left one window open, and named it. A warm worker holds
+its code and never re-fetches, but **abort terminates the worker** — only
+`terminate()` stops an in-flight encode — and the rebuild that follows went back
+to `new Worker(new URL("./mp3.worker.ts", import.meta.url))`, i.e. the hashed
+chunk URL a service-worker update purges. The abort can come hours after the
+update (the translator opens Share and cancels), so the rebuild cannot race the
+purge: the encoder was then dead for the rest of the page's life, and both egress
+paths — the Finished sweep's storage relief (#12) and Share — failed silently.
+
+**Amended:** `mp3-codec.ts` takes a **blob snapshot** of the worker chunk at
+warmup, while the running build's precache still holds it, and builds **every**
+worker from it — warm, post-abort and post-crash alike. A `blob:` URL is backed
+by an in-memory copy, so no cache eviction can reach it.
+
+Two mechanics are load-bearing and were verified against `dist/`, not assumed:
+
+1. **The chunk URL must come from `?worker&url`.** A bare
+   `new URL("./mp3.worker.ts", import.meta.url)` used anywhere other than inside
+   a `new Worker(...)` literal makes Vite inline the raw `.ts` **source** as a
+   `data:video/mp2t;base64,…` URI, which is un-runnable. Only `?worker&url`
+   yields the built chunk's URL.
+2. **It must be the module's only reference to the worker file.** Two forms would
+   emit two chunks and duplicate lamejs — the defect round-1 George G2 caught.
+   Verified: the build emits exactly one `assets/mp3.worker-<hash>.js`, at the
+   same hash as before this change, lamejs appears in that chunk and nowhere
+   else, the app bundle references it by real URL (no `data:` inlining), and it
+   is still in the Workbox precache manifest — which is what makes the snapshot's
+   `fetch` succeed offline.
+
+`{ type: "module" }` is correct for the blob: Vite emits the chunk as a
+zero-import IIFE, which is valid module source.
+
+**A snapshot that cannot run must not brick the encoder.** Node has no `Worker`
+and no real blob worker, and the browsers that matter here — iOS Safari, the
+Android WebView — are not the one CI runs. So the path ships with a self-healing
+guard rather than on faith. A snapshot-built worker that errors
+**without ever having answered a message** is read as a bad snapshot (wrong
+format, truncated fetch, a CSP that forbids blob workers): the snapshot is
+revoked and discarded, and the next rebuild falls back to the chunk URL, so the
+codec degrades to #182's behaviour instead of losing the encoder entirely. A
+worker that has answered at least once has **proven** the blob runs, so a later
+crash — an OOM mid-encode — keeps it; discarding there would re-expose #192 after
+one ordinary crash. The snapshot is production-only: in dev the chunk is served
+as an unbundled module with live imports, so a blob copy would resolve nothing,
+and dev has no service worker purging assets out from under the page.
+
+Everything about the snapshot is best-effort. A failed fetch, an absent `fetch`,
+`Blob` or `createObjectURL`, and a synchronous `new Worker` throw all leave the
+codec on the direct chunk URL. Nothing is logged: a snapshot that could not be
+taken is not a condition the translator or the sweep can act on.
+
+Unit-tested in Node (`tests/mp3-codec.test.ts`) by stubbing `fetch`, `Blob` and
+the object-URL pair. What those tests pin is the **decision** — which URL each
+worker is built from, when the snapshot is taken, and when a snapshot is thrown
+away — not that a real blob worker runs the real chunk; that is the Chromium
+smoke's job, below. Mutation-proven: building always from the chunk URL kills
+four tests; dropping the production gate, the once-only fetch guard, the
+discard-on-unproven-error guard, or the `proven` condition each kills exactly
+the test named for it.
+
+**Verified in a real browser**, which #192 did not expect to be possible — the
+issue was written before the headless-Chromium smoke (#251) landed.
+`e2e/browser-boundary-smoke.spec.ts` loads the app, waits for BOTH chunk
+requests (the warm worker's script load and the snapshot's own `fetch`), then
+fails every later request for the hashed chunk — the purge, simulated the only
+way a test can — aborts an in-flight encode to force the rebuild, and encodes.
+A real MP3 comes back from a worker built entirely from the blob, and the
+rebuild issued no new chunk request. The gate fails in the other state, which
+is what makes it a gate (#270): with the snapshot ignored and the rebuild back
+on the chunk URL, the spec fails with `The MP3 encoder worker failed to start`
+— the bug's own symptom.
+
+**Still not device-verified, and the distinction matters.** What Chromium now
+proves is that a blob-built worker runs the real chunk and that a rebuild does
+not touch the network. What it does NOT prove is the trigger: the real
+`cleanupOutdatedCaches` purge chain still needs a device with **two deployed
+builds** to observe, and iOS Safari and Android WebView have run none of this.
+Folded into the on-device pass (#245 / #263).

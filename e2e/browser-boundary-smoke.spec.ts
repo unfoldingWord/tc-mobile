@@ -55,6 +55,13 @@ declare global {
         fittedTailRms: number;
         sourceRms: number;
       }>;
+      encodeAfterAbortRebuild: (frameCount: number) => Promise<{
+        aborted: boolean;
+        chunkRequestsBefore: number;
+        chunkRequestsAfter: number;
+        mp3Length: number;
+      }>;
+      workerSnapshotFetched: () => boolean;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
       versionChangeFired?: boolean;
@@ -214,5 +221,46 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
       // even though nothing here awaits that completion.
       await context.close();
     }
+  });
+});
+
+test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => {
+  test("an abort-driven rebuild still encodes after the chunk URL is unreachable", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    // Wait for `captureWorkerSnapshot`'s OWN fetch of the chunk to land. Purging
+    // before the snapshot exists would leave nothing to rebuild from, and the
+    // assertion below would fail for a reason that has nothing to do with the
+    // fix. Asked of the page's resource timeline rather than Playwright's
+    // request events, so the whole test reads one clock.
+    await expect
+      .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotFetched()), {
+        timeout: 10_000,
+      })
+      .toBe(true);
+
+    // The purge. The harness build is served over HTTP with no service worker
+    // evicting anything, so it is simulated the only way a test can: every
+    // later request for the hashed chunk fails, exactly as a
+    // `cleanupOutdatedCaches` eviction leaves it for an offline page.
+    await page.route(/assets\/mp3\.worker-.*\.js$/, (route) => route.abort());
+
+    const result = await page.evaluate(
+      async () => await window.__e2e!.encodeAfterAbortRebuild(44_100)
+    );
+
+    // The abort really terminated an in-flight encode. Without this the warm
+    // worker was never dropped, no rebuild happened, and the MP3 below would be
+    // the ORIGINAL worker's — green for the wrong reason (#270: a gate has to be
+    // able to fail).
+    expect(result.aborted).toBe(true);
+    // The rebuild fetched nothing. A worker built from the chunk URL would have
+    // issued another request — and the route would have failed it.
+    expect(result.chunkRequestsAfter).toBe(result.chunkRequestsBefore);
+    // And a real MP3 came back, so the blob worker genuinely ran the encoder.
+    expect(result.mp3Length).toBeGreaterThan(0);
   });
 });
