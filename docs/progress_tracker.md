@@ -82,6 +82,91 @@ the APK. Row posted on #245.
    tester on the TestFlight build.
 4. Rewrite the AGENTS.md Testing bullet from the #245 evidence once the protocol is past step 2.
 
+### 2026-09-14 (late) — the first external tester's report triaged into four issues and seven evidence rows; the storage-location question answered; #336 (share inside the APK) is the new critical path
+
+Container session, alongside the Mac session above (which built and device-proved #334; the
+diagnosis, PR, and both review rounds ran here). **Branches:** `fix/android-modify-audio-settings`
+unchanged at `123273b`; `docs/eod-2026-09-14-late` (this entry, stacked on #335 → #333).
+**Filed:** #336, #337, #338, #339. **Commented:** #245 (row 3), #263, #269, #284, #286, #91, #316,
+#248, #336. **No merges, no closes.** `/sod` found the repo clean and green, #330 untouched
+overnight, and the `release-signing` environment still at 2 of 7 iOS secrets.
+
+### The storage-location question (team chat)
+
+A team member asked whether recordings should live in a common Android folder so the
+debug→release signing-key uninstall does not wipe them. Answer sent, grounded in the tree: the
+wipe is a **signing-key problem**, solved by creating the release keystore once (#318 step 2) so
+every tester build updates in place; **not** a storage-location problem. Moving recordings out
+of IndexedDB needs a native file-system plugin (none installed), an import path, and on Android
+11+ a reinstalled app cannot read files it did not create without a picker. Share Chapter /
+Share Book is today's user-driven export. The requirements owner separately asked that
+recordings go to the **MicroSD card** in future releases — captured with the constraints as
+**#339** (v1.0.0, "mirror finished MP3s" as the proposed shape).
+
+### First external tester — Android APK `android-debug-v0.2.0-pr334`
+
+Everything in the foreground path worked cold: rename book, create segments, record, erase
+part of a segment, delete a segment, second book, playback in list and single-segment views.
+The tester self-corrected on two non-features (reorder segments, renumber on delete) and
+called both "the app is right". **Failed:** Share Chapter **and** Share Book, both with the
+"Could not share … Try again." copy. **Confusing:** the eye / crossed-eye (the level-meter
+toggle), the two arrow icons (the zoom toggle) read as state not action, no way to audition a
+selection before erasing, and insert-in-the-middle exists but was not discoverable. First
+question asked: does anything talk to a server.
+
+Triage, deduped against every open and closed issue (a fresh agent, 40+ queries):
+
+| Item                                                       | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Both shares fail in the APK                                | **#336** new, v0.3.0. Distinct from #272 (Chrome: Chapter worked, Book failed). Hypothesis: `share-flow.ts` gates on `typeof navigator.share === "function"` and the System WebView lacks it. **Contradicted the same day** by the PM's "Share works now" on an emulator → cause is likely WebView-version-dependent; downgraded to medium, measurement first (WebView version + `typeof navigator.share` on a failing phone), then the Capacitor Share plugin behind the existing hook. |
+| Delete a book                                              | **#337** new, v0.3.0, scope question for the requirements owner (practice books pile up at the training; only uninstall clears them).                                                                                                                                                                                                                                                                                                                                                    |
+| Reorder books                                              | **#338** new, v1.0.0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| MicroSD / external storage                                 | **#339** new, v1.0.0 (above).                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Audition the selection before erase                        | evidence on **#284**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Eye icon; cancel-an-edit discoverability                   | evidence on **#286** (what the control is: `recorder.tsx` ~2036, glyph shows the action; tester suggests an ear/level glyph).                                                                                                                                                                                                                                                                                                                                                            |
+| Zoom arrows "reversed"; selection edges off-screen on zoom | evidence on **#91** (`recorder.tsx` ~1918).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Insert mid-clip not discoverable                           | evidence on **#316** — the tester's guess was right; Record inserts at the centerline.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "Is there a server?"                                       | evidence on **#248** — the runbook needs one sentence: everything is on the phone (ADR 0005; no `fetch`/XHR/WebSocket in `src/`; `allowBackup=false`); the flip side is that Share is the only copy.                                                                                                                                                                                                                                                                                     |
+| List-row playback audible                                  | counter-evidence on **#269** (observed silent in Chrome 09-08; tester heard it in the WebView; explicit re-test needed).                                                                                                                                                                                                                                                                                                                                                                 |
+| The whole run                                              | **#245 row 3**: a second Android device passing the foreground path, share excepted.                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+No tester or team-member name went into the public repo.
+
+### Tooling notes (container)
+
+A fresh worktree resolves `node_modules` upward to the main checkout's, which was installed on
+the Mac and lacks the Linux rollup binary — `npm ci` in the worktree before the first push.
+The worktree guard rejects heredocs whose text mentions "git" and any loop or pipeline around
+`gh`; write bodies with the file tool, then one plain `gh … --body-file` per call. Frank and
+George both ran first try on every round today (7 KB prompts); the stall pattern is size-bound.
+
+### Blockers / needs a human (late)
+
+- **Seth:** the go to merge #334 (device-proven), then #333 → #335 → this PR, and #322.
+- **Seth:** #330 round 5 vs merge; the five iOS secrets; the Android keystore (#318 step 2).
+- **Requirements owner:** #337 in or out of v0.3.0; #339 priority; #336 confirms whether the
+  training's borrowed phones can be assumed to run a current WebView.
+- **A failing-share phone with USB** for #336 step 2 (`chrome://inspect`), or a temporary build
+  stamp that prints `typeof navigator.share` in the Books footer.
+
+### Lanes queued for 2026-09-15
+
+Each lane is independent and can start from `develop` in its own worktree. Merge order matters
+only where marked.
+
+| Lane                                   | Owner                                        | Issue                                                                                                                                                                                                                                                 | Entry point                                                                                                                                                                                                                                                           | Bar                                                 |
+| -------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **L1 — land and promote**              | Seth (merges) + agent (release PR)           | #334, #333, #335, this PR, #322 → `chore(release): v0.2.1` develop→staging → re-cut `android-debug-*` from the promoted tree → resume #245 from step 2 on the Galaxy A17 (list-row playback for #269, share for #336/#272, background, call, restart) | `gh pr merge` one at a time, rebase the next; the served-bundle check on staging                                                                                                                                                                                      | **First.** Everything else re-bases on it.          |
+| **L2 — #336 share in the APK**         | agent, device proof by Seth                  | #336 (then #272)                                                                                                                                                                                                                                      | measure first: WebView version on both devices + `typeof navigator.share`; if old WebViews lack it, `@capacitor/share` + `@capacitor/filesystem` behind `share-flow.ts`'s existing boundary, `Capacitor.isNativePlatform()` branch, Node test of the branch selection | T2; dual review; device pass required               |
+| **L3 — #314 New Book asks for a name** | agent                                        | #314 (Elsy: "take this one next")                                                                                                                                                                                                                     | Books screen `+` → name modal, pre-filled placeholder, one transaction                                                                                                                                                                                                | T3 UI + T1 storage call already exists; dual review |
+| **L4 — recorder glyphs**               | agent                                        | #286 + #91 (tester-backed)                                                                                                                                                                                                                            | level-meter toggle: ear/level glyph, unambiguous state; zoom toggle: glyph readable one way, keep the selection in view across a zoom                                                                                                                                 | T3; dual review; cheap, ships before the training   |
+| **L5 — signing and secrets**           | Seth (manual) with an agent-prepared runbook | #330 → #321; #318 step 2                                                                                                                                                                                                                              | five iOS secrets into `release-signing`; keystore via `keytool`; four Android secrets; first `android-apk` dispatch from `staging` after L1                                                                                                                           | environment-gated dispatch proven                   |
+| **L6 — tester-facing docs**            | agent                                        | #248                                                                                                                                                                                                                                                  | runbook: the on-device sentence, install steps for the pre-release, a **known problems** list (#336 share, #337 no delete-book, #284), how to report                                                                                                                  | docs, merge on green                                |
+| **L7 — housekeeping**                  | agent                                        | #297, #298 (Dependabot), #271 (contributor docs)                                                                                                                                                                                                      | changelogs + suite for each, verdict on the PR                                                                                                                                                                                                                        | docs/deps, merge on green                           |
+
+Decisions L1–L7 do not need, but the week does: #337 scope and #339 priority from the
+requirements owner; whether #263's iOS half gets a TestFlight tester this week.
+
 ---
 
 ## 2026-09-13 — v0.2.0 on production, the repository public, the Android lane merged and a debug APK built on the Mac
