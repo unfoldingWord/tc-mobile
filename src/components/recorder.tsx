@@ -17,6 +17,7 @@ import { recorderStatusKind } from "./processing-status";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
+import { liveScopeShown } from "./recorder-stage";
 import {
   editRowReason,
   eraseRowReason,
@@ -1709,27 +1710,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
                 >
-                  {(recording ||
-                    paused ||
-                    state === "processing" ||
-                    isClosing) &&
-                  !audio.meterFailed &&
-                  !hasAudio &&
-                  !previewShown ? (
-                    // A FIRST take with a working tap: the dedicated live scope
-                    // grows from the head and scrolls R→L (#120), sidestepping
-                    // Waveform's `!recorded` dotted rule. It stays mounted for the
-                    // WHOLE take-in-flight window — recording, paused, processing,
-                    // AND the F8 close (`isClosing`, the stop→decode→save wait,
-                    // where `stop()` has already flipped state to idle but the PCM
-                    // is not in `working` yet, so `hasAudio` is still false). That
-                    // whole predicate is `takeActive && state !== "requesting"`:
-                    // without `isClosing` the frozen take snapped back to the empty
-                    // dotted rule for the multi-MB IndexedDB write and read as
-                    // discarded (George R2/R4). `active` goes false off "recording"
-                    // (pause/processing/close), freezing the last frame (R-B6). A
-                    // punch-in/append (`hasAudio`) keeps Waveform instead, so the
-                    // existing clip and the #110 insert centerline stay visible.
+                  {liveScopeShown({
+                    recording,
+                    paused,
+                    processing: state === "processing",
+                    isClosing,
+                    hasAudio,
+                    meterFailed: audio.meterFailed,
+                    previewShown: previewShown !== null,
+                  }) ? (
+                    // The dedicated live scope drives the stage while a take is in
+                    // flight — `liveScopeShown` (recorder-stage.ts) owns the rule,
+                    // including the #283 append case (a 2nd take now grows live
+                    // instead of waiting for re-entry). It grows from the head and
+                    // scrolls R→L (#120), sidestepping Waveform's `!recorded`
+                    // dotted rule. `active` goes false off "recording"
+                    // (pause/processing/close), freezing the last frame (R-B6).
                     <LiveScope
                       readScope={audio.readScope}
                       peekScope={audio.peekScope}
@@ -1739,8 +1735,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       label={strings.liveWaveform}
                     />
                   ) : (
-                    // Idle / edit / playback, a punch-in/append capture, and the
-                    // tap-failed fallback: `capturing` keeps the #110 record
+                    // Idle / edit / playback, a prepared preview (of any take),
+                    // and the tap-failed fallback. A live take-in-flight is NOT
+                    // here anymore — an append grows on `LiveScope` too now
+                    // (#283); this branch is reached mid-take only via a preview
+                    // or a failed tap. `capturing` keeps the #110 record
                     // centerline over the existing audio (or the dotted first-take
                     // rule when the tap failed), not a blank stage (George R1/R2).
                     <Waveform
