@@ -11,6 +11,79 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-14 — first Capacitor build to record on Android: the v0.1.15 APK refused the mic, one manifest line fixes it (#334), proven on the Galaxy A17
+
+**Branches:** `fix/android-modify-audio-settings` (PR #334, `8ea924e` → `123273b`), **review-clean
+after two rounds, CI green, not merged** — awaits the DRI's go. `docs/eod-2026-09-14` (this entry,
+stacked on #333). **No merges, no closes.** **Release:** pre-release **`android-debug-v0.2.0-pr334`**
+(`app-debug.apk`, 7 149 619 bytes, target `123273b`) supersedes `android-debug-v0.1.15`, which
+cannot record on any Android device. **Issues:** #245 rows 1 and 2, #263 first WebView finding.
+Mac session (`excalibur`).
+
+### #245 row 1 — the v0.1.15 debug APK cannot record
+
+Samsung Galaxy A17 5G (128 GB / 4 GB), installed from the release page. Launch OK; first Record
+raised the OS microphone prompt, allowed, Settings shows Microphone allowed — and Record still
+showed the app's permission panel, Retry the same. **Cause, read from Capacitor 8.5.1's
+`BridgeWebChromeClient.java`:** for the WebView's `AUDIO_CAPTURE` request it asks Android for
+**both** `MODIFY_AUDIO_SETTINGS` and `RECORD_AUDIO` and calls `request.deny()` unless every
+entry is granted; Android returns `false` for an undeclared permission without a prompt. Our
+manifest declared `RECORD_AUDIO` only, so the WebView was denied, `getUserMedia` rejected
+`NotAllowedError`, and `classifyMicRefusal` rendered the panel. The OS grant was real; the
+refusal was one layer down — the "wrapper differs from the PWA" case #263 exists for (the same
+bundle records in Chrome on the same phone, 09-08/09-09).
+
+### #334 — `MODIFY_AUDIO_SETTINGS` declared; two rounds, both lenses clean
+
+One `uses-permission` line (normal protection, granted at install, no prompt; iOS untouched) plus
+README §5. **Round 1 at `8ea924e`:** Frank clean, and independently re-read the Capacitor
+source; George 1 P3 — the README banner "nothing below has been verified on a device"
+contradicted the new dated observation — FIXED `123273b`. **Round 2 at `123273b`:** both
+clean, first try each. George's deep-tree reads: `cap sync` does not rewrite the app manifest;
+`use-recorder.ts` holds the single `getUserMedia` call site; no debug/release overlay can drop
+the line. **Residuals, explicitly not findings:** post-Deny `permissions.query` inside the
+WebView unknown → #263; AGENTS.md Testing still says "Android has never been run at all" →
+#245, rewritten once the protocol runs.
+
+### #245 row 2 — the rebuilt APK records
+
+Built on the Mac from `123273b` (`npm ci && npm run build && npx cap sync android && cd android
+&& ./gradlew assembleDebug`; the main checkout had to go **detached** because a container
+worktree still holds the branch name — same SHA, same bytes). `aapt2 dump permissions` on the
+APK lists `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS`. `adb devices` listed nothing, so the
+release-page route again: pre-release `android-debug-v0.2.0-pr334`, downloaded on the phone,
+installed over v0.1.15 in place (same debug keystore, no uninstall). **Record: PASS** — the
+panel is gone, recording works. That is the first Capacitor build to record on Android. Only
+the Record step was run; playback, edit, background, interruption and share remain unrun on
+the APK. Row posted on #245.
+
+### Inputs from Elsy today
+
+- **#314** (New Book asks for a name): "please take this one next" — next feature after #334.
+- **#272** (Android Share Book fails): "Share works now." Device and build not stated; #272
+  stays open until the evidence row on #245 reaches the share step.
+
+### Blockers / needs a human
+
+- **Seth:** the explicit go to merge #334 (review-clean at `123273b`, device-proven), then a
+  `chore(release)` patch promotion `develop → staging`, and re-cut the `android-debug-*`
+  pre-release from the promoted tree so the protocol runs on a promoted build.
+- **Seth:** #330 round 5 vs merge, and the five remaining iOS secrets (carried from 09-13 late).
+- **Tracker PRs #333 and #322** are green and clean; this entry is stacked on #333.
+- **Still owed:** a tester confirming a TestFlight build arrived; the Android keystore (#318
+  step 2).
+
+### Next steps
+
+1. Merge #334 → promote → re-cut the pre-release → resume #245 from step 2 (playback, edit,
+   background, call interruption, restart persistence, share) on the Galaxy A17.
+2. #314 per Elsy.
+3. #263: run the Android half of the checklist on the promoted APK; the iOS half still needs a
+   tester on the TestFlight build.
+4. Rewrite the AGENTS.md Testing bullet from the #245 evidence once the protocol is past step 2.
+
+---
+
 ## 2026-09-13 — v0.2.0 on production, the repository public, the Android lane merged and a debug APK built on the Mac
 
 **Branches:** merged to **`develop`**: #319 (Android APK lane, `0dd30cc`), #323 (public-name
