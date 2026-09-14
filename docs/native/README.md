@@ -20,7 +20,11 @@ just the native shell and the pipeline to produce installable builds.
 > [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) and
 > [§5a](#5a-android--apk-via-ci-automated-no-mac-step) run on GitHub-hosted
 > runners instead (the iOS lane is proven end to end, the Android lane has not
-> yet been dispatched). Nothing below has been verified on a device.
+> yet been dispatched). **No Capacitor build has yet recorded audio on a
+> device.** The only on-device observation so far is a _failure_: the
+> 2026-09-14 debug APK on Android installed, prompted for the microphone, and
+> was refused by the WebView (§5, the `MODIFY_AUDIO_SETTINGS` paragraph). The
+> fix for that has not been run on a device either; §8 still applies in full.
 
 ---
 
