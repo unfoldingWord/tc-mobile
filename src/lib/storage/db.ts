@@ -141,6 +141,27 @@ function isVersionError(cause: unknown): boolean {
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 
 /**
+ * The `openDB` call that is still in flight, or null when none is.
+ *
+ * `getDb()`'s promise is NOT this one: a blocked open rejects there while the
+ * open itself stays queued, and settles only when the other copy closes. So
+ * this is the only handle on the connection that open will eventually receive,
+ * and `closeDb()` needs it — without it that connection is orphaned, open, and
+ * holding the database against the next upgrade or delete.
+ */
+let pendingOpen: Promise<IDBPDatabase<TcMobileDb>> | null = null;
+
+/**
+ * How many `closeDb()` calls have begun.
+ *
+ * An open that was already in flight when one began hands its connection to
+ * that close, not to the cache: `closeDb` frees the cache slot before it waits,
+ * and a connection dropping itself into that freed slot would be a connection
+ * the close is about to close — dead the moment the next read is handed it.
+ */
+let closeGeneration = 0;
+
+/**
  * Open the database, wiring the three lifecycle callbacks `idb` only attaches
  * when supplied, and settling on the FIRST of {open resolves, open rejects,
  * `blocked` fires}. `blocked` is the reason for the manual race: `idb`'s open
@@ -149,8 +170,25 @@ let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
  */
 function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   let settled = false;
-  return new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
-    void openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+
+  // Which close this open began under. `pendingOpen` is set below without an
+  // await in between, so a later `closeDb()` is guaranteed to have snapshotted
+  // this open — and to be waiting to close whatever it produces.
+  const bornAt = closeGeneration;
+
+  /**
+   * The promise THIS attempt owns in `dbPromise`, and the identity every
+   * invalidation below is checked against. A later `getDb()` may already have
+   * installed its own live connection there; clearing the cache unconditionally
+   * would drop it and leave that connection open with nothing holding it.
+   */
+  let handle: Promise<IDBPDatabase<TcMobileDb>>;
+  const invalidate = (): void => {
+    if (dbPromise === handle) dbPromise = null;
+  };
+
+  const raced = new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
+    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         // One-time destructive recreate to the pivot schema (v3). See the header
         // for why append-only is waived here. Gated on `oldVersion < 3` so this
@@ -233,38 +271,58 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       terminated() {
         // The browser abnormally closed the connection (resource pressure, a
         // discarded tab). Drop the handle so the next getDb reopens a live one —
-        // recoverable without a page reload.
-        dbPromise = null;
+        // recoverable without a page reload. Identity-checked: a `terminated`
+        // from a superseded connection must not drop the live one.
+        invalidate();
       },
-    }).then(
+    });
+
+    pendingOpen = opening;
+
+    void opening.then(
       (db) => {
+        if (pendingOpen === opening) pendingOpen = null;
         if (settled) {
           // `blocked` already rejected this open; the connection finally came
-          // through once the other copy closed. Close it so it does not linger
-          // as an orphan holding the database open.
-          db.close();
+          // through once the other copy closed. Keep it if nothing has taken
+          // the cache in the meantime — recovery then costs the one Try again
+          // the person already made, not a second one. If a later attempt got
+          // there first, or a `closeDb()` began after this open did and is
+          // waiting to close what it produces, close this one rather than leave
+          // it an orphan holding the database open.
+          if (dbPromise === null && closeGeneration === bornAt) {
+            handle = Promise.resolve(db);
+            dbPromise = handle;
+          } else {
+            db.close();
+          }
           return;
         }
         settled = true;
         resolve(db);
       },
       (cause) => {
+        if (pendingOpen === opening) pendingOpen = null;
         if (settled) return;
         settled = true;
         reject(cause);
       }
     );
   });
+
+  handle = raced.catch((cause: unknown) => {
+    // Never cache a rejected open: one failed attempt must not poison every
+    // later call. Clear the handle — identity-checked, so a concurrent getDb
+    // that already installed a live connection keeps it — so the next call, a
+    // Notice's Try again or the next storage read, reopens from scratch.
+    invalidate();
+    throw isVersionError(cause) ? new DatabaseDowngradeError() : cause;
+  });
+  return handle;
 }
 
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
-  dbPromise ??= openDatabase().catch((cause: unknown) => {
-    // Never cache a rejected open: one failed attempt must not poison every
-    // later call. Clear the handle so the next call — a Notice's Try again, or
-    // the next storage read — reopens from scratch.
-    dbPromise = null;
-    throw isVersionError(cause) ? new DatabaseDowngradeError() : cause;
-  });
+  dbPromise ??= openDatabase();
   return dbPromise;
 }
 
@@ -274,11 +332,35 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
  * Closing matters: an open connection blocks `indexedDB.deleteDatabase`
  * indefinitely, so clearing the cached promise alone is not enough to let a
  * test (or a future "delete all data" action) actually remove the database.
+ *
+ * An open that is still in flight is awaited first. An IndexedDB open request
+ * cannot be cancelled, so the alternative is to return while a connection is
+ * still on its way and leave it open with nothing holding it. The cost is that
+ * this waits as long as that open does: an open blocked by another copy of the
+ * app settles only once that copy closes.
+ *
+ * It closes exactly what existed when it was called — the cached handle and the
+ * open already in flight, both snapshotted before that wait. A `getDb()` during
+ * the wait installs a connection of its own, and closing THAT would hand the app
+ * a dead handle it has no reason to expect.
  */
 export async function closeDb(): Promise<void> {
-  const pending = dbPromise;
-  if (!pending) return;
+  closeGeneration += 1;
+
+  // Snapshot both before awaiting anything, and free the cache slot now: what
+  // arrives during the wait belongs to whoever asked for it, not to this call.
+  const cached = dbPromise;
+  const opening = pendingOpen;
   dbPromise = null;
-  const db = await pending.catch(() => null);
-  db?.close();
+
+  // A failed open is the caller's to see through `getDb()`, not this
+  // function's: closeDb closes what exists and reports nothing.
+  const connections = await Promise.all([
+    cached?.catch(() => null) ?? null,
+    opening?.catch(() => null) ?? null,
+  ]);
+  // The two are the same connection on the ordinary path (the cached handle IS
+  // this open's), and two different ones after a blocked open. `close()` is
+  // idempotent, so closing both needs no bookkeeping to tell those apart.
+  for (const db of connections) db?.close();
 }
