@@ -43,4 +43,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Capacitor's BridgeWebChromeClient answers the WebView's AUDIO_CAPTURE
+         request by asking Android for BOTH RECORD_AUDIO and MODIFY_AUDIO_SETTINGS
+         and grants getUserMedia only if every one comes back true. An undeclared
+         permission is refused without a prompt, so without this line the WebView
+         is denied the microphone even after the user has allowed it in Settings
+         (Galaxy A17, 2026-09-14). Normal-protection: no runtime prompt. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>
