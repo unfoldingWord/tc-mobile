@@ -5,8 +5,14 @@ import { cn } from "@/lib/utils";
 
 interface PlayheadOverlayProps {
   /**
-   * The sounding position in milliseconds, or `null` when nothing is sounding (a
-   * HIDE sentinel distinct from 0, the clip start). A PULL (D-LEVEL-PULL, like
+   * The sounding position in milliseconds **within the drawn buffer**, or `null`
+   * when nothing is sounding (a HIDE sentinel distinct from 0, the clip start).
+   * Usually the two are the same thing; they part company for an edit-mode
+   * audition (#284), which sounds a view of the middle of the buffer that stays
+   * drawn, and the recorder adds that view's offset before this is read. The line
+   * belongs over the audio the eye can see, so this overlay is deliberately given
+   * one coordinate system — the drawn one — and knows nothing of selections. A
+   * PULL (D-LEVEL-PULL, like
    * `VuMeter`'s `readLevel` and `LiveScope`'s `readScope`): this overlay polls it
    * on its own `requestAnimationFrame` clock and moves the line by DOM, so buffer
    * playback never lifts into React state and nothing re-renders per frame — the
@@ -19,7 +25,7 @@ interface PlayheadOverlayProps {
    * paused or idle waveform.
    */
   active: boolean;
-  /** Duration of the sounding buffer, for the position fraction. */
+  /** Duration of the DRAWN buffer, for the position fraction. */
   durationMs: number;
   /**
    * The recorder viewport the bars are drawn through (`Waveform`'s `view`), so
@@ -113,8 +119,17 @@ export function PlayheadOverlay({
       // declared in `style` would be reset by React on any parent re-render
       // during a preview (VuMeter keeps its live `transform` out of JSX for the
       // same reason). `background` is static, so it stays in `style` safely.
+      // `z-[1]` so the line is painted ABOVE the selection overlay (#284 /
+      // George R5). Neither node set a z-index, so document order decided it and
+      // this one is mounted first: on the flow this PR exists for — tighten the
+      // frame to a word, then audition it — the band is a couple of pixels wide
+      // and its two 24px handles cover the line completely, so the one cue that
+      // says "this highlight is what you are hearing" never appeared. Stated
+      // here rather than fixed by reordering the JSX, so the invariant survives
+      // whatever is mounted next to it; the line is `pointer-events-none`, so
+      // lifting it does not take the handles' drags.
       className={cn(
-        "pointer-events-none absolute top-0 bottom-0 w-[2px] opacity-0",
+        "pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px] opacity-0",
         className
       )}
       style={{ background: "var(--s-ink)" }}
