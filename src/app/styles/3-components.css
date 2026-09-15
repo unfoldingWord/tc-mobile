@@ -708,6 +708,32 @@
     color: var(--s-done);
   }
 
+  /* A two-state TOGGLE that is on: the recorder menu's level-meter row (#286)
+     and the edit toolbar's zoom (#91). The same green the Finished row uses,
+     because that is the one "yes, this is so" mark the product has already
+     taught — and the first external tester asked for exactly that consistency
+     ("make the edit icon green for edit mode, just like the check icon turns
+     green"). A wash behind it as well as the ink, so the mark survives on the
+     toolbar, where a bare colour change on a small monochrome glyph is easy to
+     miss. Paints only; the box does NOT change size — a toggle that grows on tap
+     reflows the toolbar around it, and the control this is next to is the one
+     the tester was already unsure about. Renders on `aria-pressed="true"`
+     controls, which is `Control`'s `pressed` prop and nothing else. */
+  .control.is-on {
+    color: var(--s-done);
+    background: var(--s-done-quiet);
+  }
+  /* Beat `.control--quiet:hover`, which would otherwise repaint an ON quiet
+     toggle back to the neutral surface — including the sticky :hover an iOS
+     Safari tap leaves behind, i.e. right after the tap that turned it on. The
+     inert spellings are excluded so this can never out-rank the rule that paints
+     a disabled quiet control grey (unreachable today — neither toggle disables —
+     but a live-looking inert control is the exact defect that rule exists for). */
+  .control--quiet.is-on:not(:disabled):not([aria-disabled="true"]):hover {
+    color: var(--s-done);
+    background: var(--s-done-quiet);
+  }
+
   /* --- a finished row (#81) ---------------------------------------------- */
   /* The whole row goes green: waveform stroke, play button, a quiet surface
      wash and border. `color-mix` is already the technique the selection band

@@ -132,6 +132,82 @@ export function panAfterCut(pan: number, range: SampleRange): number {
 }
 
 /**
+ * Where the pan must sit, at `zoom`, for `selection` to stay on screen (#91).
+ *
+ * The zoom toggle used to change only the zoom, leaving the pan untouched. The
+ * window then shrank around a pan that had nothing to do with the span being
+ * edited, and the selection walked off the viewport — the first external tester
+ * reported it as the control "extending the selection off screen" and could not
+ * tell whether the button acted on the view or on the selection. Re-centring the
+ * pan is what makes the answer "on the view, and the selection stays put".
+ *
+ * Three cases:
+ *
+ * 1. **No selection** — nothing to keep in view; the pan is returned clamped and
+ *    otherwise untouched, so a plain zoom still behaves as it always has.
+ * 2. **Wider than the window** — it cannot all fit, so the START edge is pinned
+ *    to the left of the viewport. The start is where a translator reaches first,
+ *    and the end is one pan away; showing neither edge is the failure mode.
+ * 3. **Otherwise** — the span fits, so every pan in `[panAtEndEdge,
+ *    panAtStartEdge]` shows all of it, and the current pan is clamped into that
+ *    interval. That single clamp covers both of the cases the UI cares about: a
+ *    span already on screen is inside the interval and comes back **unchanged**
+ *    (moving a pan that did not need to move is its own lie about what the
+ *    control did), and a span off one edge travels the MINIMUM distance that
+ *    brings it in, landing against the edge it came in over rather than jerking
+ *    to the centre.
+ *
+ * `selection` is the RAW picked span (`SegmentEditor.selection` is unclamped —
+ * only its own `canCut` reader clamps), so both edges are clamped to
+ * `[0, length]` here before anything is computed. The result is always within
+ * `[0, length]`: the pan is also the record insertion offset, and there is no
+ * such thing as inserting before the start or after the end.
+ *
+ * Clamping the admissible interval to the clip cannot invert it — clamping is
+ * monotone and the raw interval is non-empty whenever the span fits — so the
+ * final `min`/`max` always names a pan that really does show the span. At
+ * `zoom` 1 the window spans the whole clip, so the span ALWAYS fits and nothing
+ * can be left off screen on the way back out.
+ */
+export function panForZoom(
+  length: number,
+  pan: number,
+  zoom: number,
+  centerFraction: number,
+  selection: SampleRange | null
+): number {
+  // The same clamp `viewportWindow` applies to `centerlineSample`, for the same
+  // reason: this value is the record insertion offset as well as the pan.
+  const clampPan = (p: number) => Math.max(0, Math.min(p, length));
+  // Nothing picked: a plain zoom, and the pan is only clamped (a `panState` set
+  // before a cut can be stale past the new end — the same reason the recorder
+  // clamps it before drawing).
+  if (selection === null) return clampPan(pan);
+
+  const lo = clampPan(Math.min(selection.start, selection.end));
+  const hi = clampPan(Math.max(selection.start, selection.end));
+  const visible = length / zoom;
+
+  // The pan that puts the span's START on the left edge of the viewport
+  // (`start = pan - centerFraction * visible`), and the one that puts its END on
+  // the right edge (`end = pan + (1 - centerFraction) * visible`).
+  const panAtStartEdge = lo + centerFraction * visible;
+  const panAtEndEdge = hi - (1 - centerFraction) * visible;
+
+  // ONE clamp, on every path. The intermediates above are deliberately left
+  // raw: with `lo`/`hi` already inside the clip, clamping each of them would add
+  // branches no input can reach — which mutation testing shows to be untestable
+  // rather than safe. There is no empty-segment guard either, for the same
+  // reason: at `length` 0 every term above is already 0 and this returns 0,
+  // matching `viewportWindow`, which likewise carries no divide-by-zero guard.
+  return clampPan(
+    hi - lo >= visible
+      ? panAtStartEdge
+      : Math.max(panAtEndEdge, Math.min(pan, panAtStartEdge))
+  );
+}
+
+/**
  * The view window for the live capture scope: the ring's clip-fractions [0,1]
  * mapped onto screen [0, headFraction], so the newest column sits toward the
  * head and history runs left, with the head's right left blank.

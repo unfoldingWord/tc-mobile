@@ -33,7 +33,7 @@ import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { computePeaks } from "@/lib/audio/peaks";
-import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
+import { panAfterCut, panForZoom, viewportWindow } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
@@ -858,6 +858,27 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setMode("record");
       setMenuOpen(false);
     }, [editor]);
+
+    // Zoom, keeping the picked span on screen (#91).
+    //
+    // Changing the zoom alone shrinks the window around a pan that has nothing
+    // to do with the span being edited, so the selection walks off the viewport
+    // — the first external tester read that as the control acting on the
+    // selection rather than on the view. `panForZoom` answers where the pan has
+    // to be for the span to survive the change; the geometry is pure and lives
+    // in `lib/audio/viewport` with the rest of the window math, tested there.
+    //
+    // The pan is only written when there IS a selection. A resting `panState` of
+    // null follows the end of the buffer as it grows (the append view), and
+    // pinning it to an absolute value on every zoom would quietly retire that.
+    const onToggleZoom = useCallback(() => {
+      const next = zoom === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE;
+      const span = editor.selectionActive ? editor.selection : null;
+      if (span !== null) {
+        setPanState(panForZoom(length, pan, next, CENTER_FRACTION, span));
+      }
+      setZoom(next);
+    }, [zoom, editor.selectionActive, editor.selection, length, pan]);
 
     const onToggleSelection = useCallback(() => {
       if (editor.selectionActive) {
@@ -1915,19 +1936,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // here (out of the menu); the menu opener lives at the end.
                 <div className="recorder-toolbar edit flex items-center px-[16px]">
                   <Control
+                    // The magnifier carries the ACTION (+ widens, − narrows) and
+                    // `pressed` carries the STATE — quarter view is the non-
+                    // default one, so that is the "on". Splitting the two is the
+                    // #91 fix: the old facing-arrow pair asked one glyph to do
+                    // both, and the first external tester read it the other way
+                    // round and asked whether the icons were reversed.
                     icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
                       zoom === ZOOM_WHOLE
-                        ? strings.zoomQuarter
-                        : strings.zoomWhole
+                        ? strings.zoomAtWhole
+                        : strings.zoomAtQuarter
                     }
+                    pressed={zoom === ZOOM_QUARTER}
                     variant="quiet"
                     size={24}
-                    onClick={() =>
-                      setZoom((z) =>
-                        z === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE
-                      )
-                    }
+                    onClick={onToggleZoom}
                   />
                   <Control
                     icon="selection"
@@ -2034,8 +2058,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 onClick={onToggleFinished}
               />
               <Control
-                icon={vuVisible ? "eye-off" : "eye"}
-                label={vuVisible ? strings.vuHide : strings.vuShow}
+                // One unchanging glyph naming the THING — the level strip —
+                // with the state carried by `pressed`, which paints the same
+                // green the Finished row above it uses and sets `aria-pressed`
+                // (#286). The eye/eye-off pair it replaced did the opposite: it
+                // showed the action and left the state to be inferred, and the
+                // first external tester "never quite figured out" what it was
+                // attached to. `levels` echoes the strip's own rising fill, so
+                // the row and the thing it controls look like each other.
+                icon="levels"
+                label={vuVisible ? strings.vuShown : strings.vuHidden}
+                pressed={vuVisible}
                 variant="quiet"
                 // Close the menu so the change to the strip behind it is visible.
                 onClick={() => {
