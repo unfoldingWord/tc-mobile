@@ -168,19 +168,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, []);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
-  const closeBookMenu = useCallback(
-    (resetShare: boolean) => {
-      bookMenuSession.current += 1;
-      setShareMenuBookId(null);
-      setRenamingBook(false);
-      if (resetShare) bookShare.reset();
-    },
-    [bookShare]
-  );
-  const onCloseShareMenu = useCallback(
-    () => closeBookMenu(true),
-    [closeBookMenu]
-  );
+  const onCloseShareMenu = useCallback(() => {
+    bookMenuSession.current += 1;
+    setShareMenuBookId(null);
+    setRenamingBook(false);
+    bookShare.reset();
+  }, [bookShare]);
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -239,19 +232,30 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Arm the confirm from the ≡ menu, closing the menu first — the same shape as
   // the Segments row menu, where Erase closes the row menu and the screen owns
   // the target. `shareMenuBookId` is read BEFORE the close clears it.
+  // Arm the confirm from the ≡ menu, closing the menu through the ONE close path
+  // — which resets the share.
+  //
+  // Round 4 tried to keep an armed zip alive across the confirm, so Cancel would
+  // not cost a whole-book encode (George R4 P2-3). That broke the invariant the
+  // unchanged share hook is written on: `useBookShare` is one screen-level flow
+  // with NO owning bookId, and its `preparing`/`ready` state is only ever safe
+  // because every menu close resets it. With it kept alive, opening ANOTHER
+  // book's ≡ rendered that book's menu off the first book's flow — "Share now"
+  // there would hand Practice's archive to the share sheet from Mark's menu
+  // (Frank R5 P2 and George R5 P2-1, raised independently), and resetting at
+  // confirm-time instead threw away a ready zip of a book still on disk whenever
+  // the delete then failed (George R5 P2-2).
+  //
+  // Two new P2s from one accommodation is the siblings signal, not a chain: the
+  // approach is wrong, not the details. So this returns to the behaviour that
+  // stood clean through rounds 1-3, and giving the share flow an owning bookId —
+  // which is what would make R4 P2-3 safely fixable — is #363, its own change to
+  // its own unchanged code.
   const onArmDelete = useCallback(() => {
     const bookId = shareMenuBookId;
-    // Close the menu WITHOUT resetting the share. On Segments the two live on
-    // different menus (Erase on the row, Share on the chapter), so closing one
-    // never touched the other; here they share the book's ≡, and resetting on
-    // the way to the confirm would abort the encoder and drop a stashed zip
-    // before the translator has agreed to anything — so Cancel would silently
-    // cost them a whole-book encode (George R4 P2-3). The reset happens on a
-    // CONFIRMED delete instead, where it is needed to keep an in-flight export
-    // from racing the T1 walk.
-    closeBookMenu(false);
+    onCloseShareMenu();
     setDeleteTargetId(bookId);
-  }, [closeBookMenu, shareMenuBookId]);
+  }, [onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // Where focus goes once this row unmounts, decided while the row is still on
@@ -261,10 +265,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // the same hole the new-book hand-off above closes.
     const index = books.findIndex((b) => b.bookId === deleteTargetId);
     const neighbour = books[index + 1] ?? books[index - 1] ?? null;
-    // NOW the share goes: the translator has confirmed, so an armed zip is
-    // worthless and an encode still running would be reading a tree this walk
-    // is about to delete. Arming the confirm deliberately does not do this.
-    bookShare.reset();
+    // No share reset here: arming the confirm already closed the menu through
+    // `onCloseShareMenu`, which reset it. Resetting again at confirm time is what
+    // George R5 P2-2 caught — the store write is fallible, so on a failed delete
+    // it would discard a ready zip of a book that is still on disk.
     void (async () => {
       const result = await deleteBook(deleteTargetId);
       // A double-tap's second call is refused, not answered: the first delete is
@@ -283,10 +287,20 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         // `[books]` effect below can consume this. The later reload is a second
         // chance at it, so a race here costs a frame, not the focus.
         pendingFocus.current = neighbour?.bookId ?? EMPTY_STATE_NODE;
+      } else {
+        // Failed. The row is still there, but unmounting the confirm takes the
+        // focused Cancel with it, and `pendingFocus` cannot help: it is consumed
+        // by the `[books]` effect, and `books` does not change on a failure. So
+        // focus the surviving row directly, or a keyboard or switch user is left
+        // on the document with only a Notice they may not notice (George R5 P3).
+        nodes.current
+          .get(deleteTargetId)
+          ?.querySelector<HTMLElement>("button.control")
+          ?.focus();
       }
       setDeleteTargetId(null);
     })();
-  }, [books, bookShare, deleteBook, deleteTargetId]);
+  }, [books, deleteBook, deleteTargetId]);
 
   // `deleteFailed` only ever RELABELS the hook's current error — they are one
   // state there, so the label cannot outlive what it labels. A *reload* no
