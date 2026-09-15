@@ -35,7 +35,12 @@ import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
 import { framesToMs } from "@/lib/audio/format";
 import { computePeaks } from "@/lib/audio/peaks";
-import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
+import {
+  effectivePan,
+  panAfterCut,
+  panForZoom,
+  viewportWindow,
+} from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks, SampleRange } from "@/types/audio";
@@ -197,6 +202,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // sheet mounts fresh on every open, so `null` is the open state, and a drag
     // is what replaces it with an absolute sample position.
     const [panState, setPanState] = useState<number | null>(null);
+    // Where the zoom moved the view to keep an open selection on screen (#91).
+    // A VIEW value only — see `viewPan` below for why it must never be
+    // `panState`. Cleared when a selection opens (a fresh span has not been
+    // zoomed yet), when a drag takes the pan over, and on leaving edit.
+    const [zoomPan, setZoomPan] = useState<number | null>(null);
     const [zoom, setZoom] = useState(ZOOM_WHOLE);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -380,12 +390,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const displayedFinished =
       finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
-    // Clamp to the current length: an edit (a cut) can shorten `working` past a
-    // `panState` set before it, and a stale pan beyond the end would sit the record
-    // offset at the new end rather than where the translator was looking (George
-    // R4). `viewportWindow` also clamps `centerlineSample`, so drawing was already
-    // safe; this keeps the offset honest too.
-    const pan = Math.min(panState ?? length, length);
+    // Which pan is drawn — and, in record mode, spliced at. The gate that keeps
+    // the zoom's view fit out of the record insertion offset (the round-1 P1)
+    // lives in `effectivePan`, pure and table-tested, rather than as an
+    // expression here where nothing could reach it: the George stand-in showed
+    // that reintroducing the P1 at the setter left all 512 tests green. Its
+    // docblock carries the full reasoning, including the upper-only clamp, which
+    // is what a cut shortening `working` past an older `panState` needs.
+    const pan = effectivePan({
+      mode,
+      selectionActive: editor.selectionActive,
+      zoomPan,
+      panState,
+      length,
+    });
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
     // The prepared preview, shown on the stage across the whole take-in-flight
@@ -535,6 +553,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setPanState(
           Math.max(0, Math.min(panAtDragStart.current + delta, length))
         );
+        // A real drag is the translator choosing this view deliberately, so the
+        // pan becomes the REAL one — insertion offset included — and the zoom's
+        // view-only fit is handed over rather than continuing to override it.
+        // `panAtDragStart` was captured from the DRAWN pan, so the value written
+        // above continues from where the waveform already was and the handover is
+        // seamless. Done on the first MOVE rather than on pointerdown: a bare tap
+        // on the stage is not a pan and must not adopt a view fit as the splice
+        // point.
+        setZoomPan(null);
       },
       [
         dragging,
@@ -992,9 +1019,36 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       audio.stopBuffer();
       editor.closeSelection();
       setZoom(ZOOM_WHOLE);
+      // The zoom's view pan is edit-only, exactly as the zoom itself is. The
+      // `viewPan` gate already makes it inert here (mode leaves "edit"), so this
+      // only drops a value that can no longer be read — but leaving it set would
+      // make the next edit session's behaviour depend on the last one's.
+      setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
     }, [audio, editor]);
+
+    // Zoom, keeping the picked span on screen (#91).
+    //
+    // Changing the zoom alone shrinks the window around a pan that has nothing
+    // to do with the span being edited, so the selection walks off the viewport
+    // — the first external tester read that as the control acting on the
+    // selection rather than on the view. `panForZoom` answers where the pan has
+    // to be for the span to survive the change; the geometry is pure and lives
+    // in `lib/audio/viewport` with the rest of the window math, tested there.
+    //
+    // It writes `zoomPan`, never `panState`: this is a view fit, and `panState`
+    // is the record insertion offset (see `viewPan`). With no selection open
+    // there is nothing to keep in view and the pan is left alone entirely, so a
+    // plain zoom behaves exactly as it did before.
+    const onToggleZoom = useCallback(() => {
+      const next = zoom === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE;
+      const span = editor.selectionActive ? editor.selection : null;
+      if (span !== null) {
+        setZoomPan(panForZoom(length, pan, next, CENTER_FRACTION, span));
+      }
+      setZoom(next);
+    }, [zoom, editor.selectionActive, editor.selection, length, pan]);
 
     // Every edit action stops an audition first (#284), through the ONE stop path
     // the sheet already uses (`stopBuffer`, a no-op when nothing is sounding).
@@ -1002,13 +1056,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // rematerialises `working`, and the sounding view is a window onto the buffer
     // as it was — audio the segment no longer contains, under a waveform that has
     // already changed shape, with a playhead travelling over samples that moved.
-    // Moving the span the audition was OF is the same class.
+    // Moving the span the audition was OF is the same class. (Zoom above needs no
+    // stop: it is one of the window controls `stage.windowControlsInert` holds
+    // inert while a buffer sounds — see `recorder-stage.ts`.)
     const onToggleSelection = useCallback(() => {
       audio.stopBuffer();
       if (editor.selectionActive) {
         editor.closeSelection();
         return;
       }
+      // A fresh span has not been zoomed yet, so drop any view pan a PREVIOUS
+      // selection's zoom left behind — otherwise re-opening a selection later
+      // would jump the view to where an earlier one had been fitted (#91).
+      setZoomPan(null);
       // Seed a grabbable span around the centerline (~30% of the visible window),
       // so the frame opens with handles under the finger rather than collapsed.
       const half = win.visibleSamples * 0.15;
@@ -1050,6 +1110,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       }
     }, [audio, editor]);
 
+    // Paste at the drawn centerline — which is ALSO the record insertion offset,
+    // and that is not a coincidence to leave unstated (George stand-in P3).
+    //
+    // `win` is built from `effectivePan`, so with a selection open the line sits
+    // at the zoom's VIEW pan while `panState` is elsewhere. Pasting there would
+    // insert before the record offset and shift every later sample under it —
+    // and `panAfterCut` has no paste companion to correct for that, so the next
+    // take would splice wrong: the round-1 P1's consequence class, by a different
+    // route. It cannot happen today, because the only entry point is the paste
+    // marker below, which renders on `!editor.selectionActive` — the exact
+    // negation of the condition that makes the view pan live. So whenever this
+    // runs, `win.centerlineSample` IS the `panState` line.
+    //
+    // That safety is a render gate ~900 lines away, not a local property. A
+    // second paste entry point, or a "paste replaces the selection" feature,
+    // would flip it — and would have to take the pan from `panState` rather than
+    // from `win`.
     const onPaste = useCallback(() => {
       audio.stopBuffer();
       editor.paste(win.centerlineSample);
@@ -2126,22 +2203,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     onClick={onAuditionButton}
                   />
                   <Control
+                    // The magnifier carries the ACTION (+ widens, − narrows) and
+                    // `pressed` carries the STATE — quarter view is the non-
+                    // default one, so that is the "on". Splitting the two is the
+                    // #91 fix: the old facing-arrow pair asked one glyph to do
+                    // both, and the first external tester read it the other way
+                    // round and asked whether the icons were reversed.
                     icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
                       zoom === ZOOM_WHOLE
-                        ? strings.zoomQuarter
-                        : strings.zoomWhole
+                        ? strings.zoomAtWhole
+                        : strings.zoomAtQuarter
                     }
+                    pressed={zoom === ZOOM_QUARTER}
                     variant="quiet"
                     size={24}
                     // A window control: it rebuilds the window under a line that
-                    // is already travelling. `recorder-stage.ts` carries the class.
+                    // is already travelling — and since #91 it also moves the pan
+                    // to keep the picked span in view, which is a second reason it
+                    // cannot run under a sounding audition. `recorder-stage.ts`
+                    // carries the class.
                     disabled={stage.windowControlsInert}
-                    onClick={() =>
-                      setZoom((z) =>
-                        z === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE
-                      )
-                    }
+                    onClick={onToggleZoom}
                   />
                   <Control
                     icon="selection"
@@ -2258,8 +2341,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 onClick={onToggleFinished}
               />
               <Control
-                icon={vuVisible ? "eye-off" : "eye"}
-                label={vuVisible ? strings.vuHide : strings.vuShow}
+                // One unchanging glyph naming the THING — the level strip —
+                // with the state carried by `pressed`, which paints the same
+                // green the Finished row above it uses and sets `aria-pressed`
+                // (#286). The eye/eye-off pair it replaced did the opposite: it
+                // showed the action and left the state to be inferred, and the
+                // first external tester "never quite figured out" what it was
+                // attached to. `levels` echoes the strip's own rising fill, so
+                // the row and the thing it controls look like each other.
+                icon="levels"
+                label={vuVisible ? strings.vuShown : strings.vuHidden}
+                pressed={vuVisible}
                 variant="quiet"
                 // Close the menu so the change to the strip behind it is visible.
                 onClick={() => {

@@ -729,10 +729,36 @@
     height: var(--c-control-md);
   }
 
-  /* The menu's Finished entry shows green while already finished. A standalone
-     class, not a `.row--finished` descendant: the menu is portalled to <body>,
-     outside the row, so inheritance cannot reach it. */
-  .control.is-done {
+  /* The "yes, this is so" mark, in one weight for both of the things that wear
+     it. A standalone class rather than a `.row--finished` descendant: the menu
+     is portalled to <body>, outside the row, so inheritance cannot reach it.
+
+     `.is-done` — the menu's Finished entry, green while already finished.
+     `.is-on`   — a two-state TOGGLE that is on: the recorder menu's level-meter
+                  row (#286) and the edit toolbar's zoom (#91). The first
+                  external tester asked for exactly this consistency ("make the
+                  edit icon green for edit mode, just like the check icon turns
+                  green").
+
+     INK ONLY, and identical for both. An earlier draft gave `.is-on` a
+     `--s-done-quiet` wash as well, to survive on the toolbar — but the level
+     meter is ON BY DEFAULT, so every open of the record menu painted a filled
+     green chip next to the ink-only Finished check, making the meaningful green
+     the weaker of two in one dialog (George R1 P3). A wash is also not available
+     as a neutral alternative: `--s-raised` and `--s-surface` are the same colour
+     in the light theme, so a non-colour "filled" mark is invisible there. Equal
+     weight it is; Finished is told apart by its check glyph, not by loudness.
+
+     Paints only — the box does NOT change size. A toggle that grows on tap
+     reflows the toolbar around it, and the control next to this one is already
+     the one the tester was unsure about. Applied on `aria-pressed="true"`, which
+     is `Control`'s `pressed` prop and nothing else.
+
+     Both sit after `.control--quiet:hover`, so at equal specificity they win the
+     colour back from it — including the sticky :hover an iOS Safari tap leaves
+     behind, right after the tap that turned the toggle on. */
+  .control.is-done,
+  .control.is-on {
     color: var(--s-done);
   }
 

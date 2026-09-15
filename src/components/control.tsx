@@ -43,6 +43,22 @@ interface ControlProps {
    * recorder-row type (George, round 2). `RowHint` is assignable to it.
    */
   hint?: { readonly icon?: IconName; readonly label: string } | null;
+  /**
+   * This control is a two-state TOGGLE, and this is its state (#286, #91).
+   *
+   * Sets `aria-pressed` and paints the `is-on` mark while true. Both halves
+   * matter and neither replaces the other: `aria-pressed` is the only machine-
+   * readable statement that the control has a state at all, and the mark is the
+   * only one a sighted non-reader can use. Omit it entirely for a plain action
+   * button — an absent `aria-pressed` and a `false` one say different things, so
+   * this must not default.
+   *
+   * The failure it exists for: a toggle whose glyph shows what a tap WILL do is
+   * read as what the control currently IS. The first external tester did exactly
+   * that on both the level meter and the zoom, so the glyph is no longer asked
+   * to carry the state by itself.
+   */
+  pressed?: boolean;
 }
 
 const VARIANT_CLASS: Record<ControlVariant, string> = {
@@ -64,6 +80,7 @@ export function Control({
   autoFocus,
   busy,
   hint,
+  pressed,
 }: ControlProps) {
   const shownHint = disabled && hint ? hint : null;
   const name = shownHint ? `${label}. ${shownHint.label}` : label;
@@ -87,10 +104,18 @@ export function Control({
       disabled={Boolean(disabled && !softDisabled && !busy)}
       aria-disabled={softDisabled || undefined}
       aria-busy={busy || undefined}
+      // `false` is meaningful here — it says "this is a toggle and it is off" —
+      // so only an ABSENT `pressed` drops the attribute.
+      aria-pressed={pressed}
       autoFocus={autoFocus}
       aria-label={name}
       title={name}
-      className={cn("control", VARIANT_CLASS[variant], className)}
+      className={cn(
+        "control",
+        VARIANT_CLASS[variant],
+        pressed ? "is-on" : undefined,
+        className
+      )}
     >
       <Icon name={icon} size={size} />
     </button>
