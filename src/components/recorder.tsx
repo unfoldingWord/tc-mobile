@@ -977,9 +977,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // different sounds over different views: leaving edit mode mid-audition
       // would drop the translator into the record bar with a selection's worth
       // of audio still playing and the Play glyph showing a stop for a sound the
-      // mode no longer explains. This is also what makes "a record never starts
-      // over an audition" true — every route from edit to record passes here, and
-      // record-mode Record is already disabled while a buffer sounds.
+      // mode no longer explains. This is also most of what makes "a record never
+      // starts over an audition" true, together with record-mode Record being
+      // disabled while a buffer sounds.
+      //
+      // It is not quite EVERY route, and the exception is worth naming rather
+      // than leaving for a later author to trip over (George R5 P3): the
+      // permission panel's `onRetryRecord` also sets record mode, and it neither
+      // stops playback nor closes the frame. It is not a hole today — it is
+      // reachable only while `denied`, which requires `!hasAudio`, and with no
+      // audio there is nothing to audition and Select is disabled — so nothing is
+      // added there for a state that cannot occur. If that gate ever widens, this
+      // is the sentence that says so.
       audio.stopBuffer();
       editor.closeSelection();
       setZoom(ZOOM_WHOLE);

@@ -76,12 +76,15 @@ describe("stageView", () => {
   });
 
   it("plays in place only in EDIT mode, never on a stale record-mode span", () => {
-    // A selection can survive into record mode: the permission panel's Retry
-    // (`onRetryRecord`) flips the mode and starts the mic without closing the
-    // frame, unlike every other route out of edit. Playing in place on that
-    // stale flag would hand a record-mode play the pan window — the exact defect
-    // the whole-clip swap exists to prevent. Mutation found this: dropping the
-    // mode test from the in-place rule left the suite green until this case.
+    // Playing in place is an EDIT-mode idea: a record-mode play must always get
+    // the whole-clip view, whatever the selection flag says. This input is not
+    // reachable in the app today — the one other `setMode("record")` call site
+    // (`onRetryRecord`) does leave the frame open, but it only runs while
+    // `denied`, which requires `!hasAudio`, and Select needs audio — so no frame
+    // can be open there. It is pinned anyway because this is a pure function:
+    // it is asked questions by its type, not by today's call sites, and the
+    // answer for this one is the whole-clip view. Mutation is what surfaced it —
+    // dropping `mode === "edit"` from the in-place rule left the suite green.
     expect(
       stageView({
         ...base,

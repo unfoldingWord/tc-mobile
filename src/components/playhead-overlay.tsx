@@ -119,8 +119,17 @@ export function PlayheadOverlay({
       // declared in `style` would be reset by React on any parent re-render
       // during a preview (VuMeter keeps its live `transform` out of JSX for the
       // same reason). `background` is static, so it stays in `style` safely.
+      // `z-[1]` so the line is painted ABOVE the selection overlay (#284 /
+      // George R5). Neither node set a z-index, so document order decided it and
+      // this one is mounted first: on the flow this PR exists for — tighten the
+      // frame to a word, then audition it — the band is a couple of pixels wide
+      // and its two 24px handles cover the line completely, so the one cue that
+      // says "this highlight is what you are hearing" never appeared. Stated
+      // here rather than fixed by reordering the JSX, so the invariant survives
+      // whatever is mounted next to it; the line is `pointer-events-none`, so
+      // lifting it does not take the handles' drags.
       className={cn(
-        "pointer-events-none absolute top-0 bottom-0 w-[2px] opacity-0",
+        "pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px] opacity-0",
         className
       )}
       style={{ background: "var(--s-ink)" }}

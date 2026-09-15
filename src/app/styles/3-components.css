@@ -19,7 +19,13 @@
     --c-gap-blocks: var(--p-space-6);
     --c-gap-sections: var(--p-space-8);
 
-    /* Touch targets never go below 44px. */
+    /* Touch targets never go below 44px — with one standing exception, named
+       here rather than left as a claim the tokens contradict (George R5 P3):
+       `--c-control-sm` is 40px and is what `.control--quiet` uses, which is
+       every control in the recorder's edit toolbar. That predates the audition
+       Play (#284), which inherited it as a sixth 40px control and wrote the
+       40px arithmetic into the toolbar budget below. Whether that row should be
+       44px — and what then gives at 320px — is a design call, tracked in #362. */
     --c-control-sm: 40px;
     --c-control-md: 44px;
     --c-control-lg: 52px;
