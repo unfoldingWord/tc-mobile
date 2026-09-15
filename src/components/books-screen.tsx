@@ -380,8 +380,17 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               onCancel={() => setRenamingBook(false)}
             />
             {/* A failed rename speaks here — the screen's Notice is behind the
-                scrim — while the field stays up for another try. */}
-            {error && <Notice>{error}</Notice>}
+                scrim — while the field stays up for another try.
+
+                Never a DELETE's error, though: `deleteFailed` marks the current
+                error as the delete's, and that one already has a labelled home
+                on the shelf. Without the guard, failing a delete and then
+                opening Rename put the raw store message inside a rename field
+                nothing had submitted yet (George stand-in P3-2). The remaining
+                instances of that class — a failed create or add-chapter reaching
+                this panel the same way — are pre-existing and belong to #172,
+                which is about raw browser strings in Notices generally. */}
+            {error && !deleteFailed && <Notice>{error}</Notice>}
           </>
         ) : (
           <>

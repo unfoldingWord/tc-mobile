@@ -18,11 +18,11 @@ import {
   setSegmentFinished,
   saveTake,
 } from "@/lib/storage/books";
-import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
+import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
-import type { BookId, ClipId, SegmentId } from "@/types/domain";
+import type { BookId, ClipId, SegmentId, TakeId } from "@/types/domain";
 import { clearAllStores } from "./support";
 
 /**
@@ -327,5 +327,95 @@ describe("deleteBook", () => {
 
     expect(await getChapter(chapter.id)).toBeUndefined();
     expect(await getSegment(segment.id)).toBeUndefined();
+  });
+
+  it("removes a take row the segment's pointer has moved off, and its clip", async () => {
+    // The walk collects EVERY take row of a segment from the `segmentId` index,
+    // not just `segment.activeTakeId`. Nothing in `src/` produces a non-active
+    // take row today — `writeTakeInTx` deletes the prior take when it replaces
+    // one, and `clearSegmentTake` deletes it on erase — so this is a
+    // future-proofing guard, and without this case its mutation survives the
+    // whole suite (George stand-in P3-1). The failure it prevents is permanent:
+    // a stale row would outlive its segment, and because the clip delete is
+    // reference-counted against the SURVIVING take rows, that orphan would keep
+    // its audio alive on the device with nothing able to reach or free it.
+    const book = await createBook("Practice");
+    const chapter = await addChapter(book.id);
+    const segment = await addSegment(chapter.id);
+    const activeClip = newClipId();
+    await saveTake(segment.id, activeClip, samples(200), CANONICAL_SAMPLE_RATE);
+
+    // A second take row for the same segment, with its own audio, that the
+    // segment does NOT point at. Written directly, like the orphan fixture
+    // above, because no code path in the app produces this state.
+    const staleClip = newClipId();
+    await putClip(staleClip, samples(120), CANONICAL_SAMPLE_RATE);
+    const staleTakeId = crypto.randomUUID() as TakeId;
+    const db = await getDb();
+    await db.put("takes", {
+      id: staleTakeId,
+      segmentId: segment.id,
+      clipId: staleClip,
+      createdAt: Date.now(),
+      durationMs: 5,
+    });
+    // The pointer still names the active take, so a walk keyed on it alone
+    // would never see the row just written.
+    const storedSegment = await db.get("segments", segment.id);
+    expect(storedSegment?.activeTakeId).not.toBe(staleTakeId);
+    expect(await db.getAll("takes")).toHaveLength(2);
+
+    await deleteBook(book.id);
+
+    expect(await db.get("takes", staleTakeId)).toBeUndefined();
+    expect(await getClipMeta(staleClip)).toBeUndefined();
+    expect(await getClip(staleClip)).toBeUndefined();
+    // And the active one, so the case cannot pass by deleting the wrong take.
+    expect(await getClipMeta(activeClip)).toBeUndefined();
+    expect(await countAll()).toEqual({
+      books: 0,
+      chapters: 0,
+      segments: 0,
+      takes: 0,
+      clipMeta: 0,
+      clipData: 0,
+    });
+  });
+
+  it("reclaims an orphan tree whose book row is already gone", async () => {
+    // The walk keys on `chapters.index("bookId")`, which does not need the book
+    // row to exist — so the function collects the tree first and removes the
+    // book row only if it is there. With an early return on the missing book,
+    // a tree whose `books` row had gone could never be reclaimed by anything:
+    // `deleteBook` is the only reclamation path in the app, and it would no-op
+    // on exactly the state that needs it (George stand-in P3-3).
+    //
+    // Unreachable in the shipped app — `deleteBook` is the only writer that
+    // removes a `books` row and it is one atomic transaction — so this is the
+    // same class of guard as the shared-clip reference count, and it is pinned
+    // the same way rather than argued.
+    const book = await createBook("Practice");
+    const chapter = await addChapter(book.id);
+    const segment = await addSegment(chapter.id);
+    const clipId = newClipId();
+    await saveTake(segment.id, clipId, samples(200), CANONICAL_SAMPLE_RATE);
+
+    // Remove ONLY the book row, leaving the tree behind it intact.
+    const db = await getDb();
+    await db.delete("books", book.id);
+
+    await deleteBook(book.id);
+
+    expect(await getChapter(chapter.id)).toBeUndefined();
+    expect(await getSegment(segment.id)).toBeUndefined();
+    expect(await getClipMeta(clipId)).toBeUndefined();
+    expect(await countAll()).toEqual({
+      books: 0,
+      chapters: 0,
+      segments: 0,
+      takes: 0,
+      clipMeta: 0,
+      clipData: 0,
+    });
   });
 });
