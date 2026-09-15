@@ -229,7 +229,14 @@ describe("deleteBook", () => {
     });
   });
 
-  it("is idempotent: a second delete resolves and writes nothing", async () => {
+  it("is idempotent: a second delete resolves and leaves every stored row unchanged", async () => {
+    // Deliberately NOT named "writes nothing": what is asserted is that the
+    // database's contents are the same afterwards, not that no write request
+    // was issued. `deleteBook` does still call `books.delete(bookId)` for an
+    // absent key (a no-op in IndexedDB), and an implementation that deleted and
+    // recreated a row would satisfy everything below. Pinning "no requests"
+    // would mean instrumenting the transaction, which is not what idempotency
+    // costs the translator — the contents are (Frank R4 P3).
     const tree = await bookWithRecordings("Practice");
     const keeper = await bookWithRecordings("Mark");
 

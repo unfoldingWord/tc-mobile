@@ -147,17 +147,30 @@ export function useBooks() {
         const cards = await loadBookCards();
         if (stale()) return;
         setBooks(cards);
-        // A successful read clears a standing load or mutation error — the
-        // shelf it just drew IS the truth. It must NOT clear a DELETE failure:
-        // the delete's failure path re-arms this very load (so the shelf still
-        // refreshes), and clearing here would race that error off the screen
-        // every time, leaving a book that is still on disk with no signal that
-        // removing it failed (George R3 P1 scenario B).
+        // THE LOAD NEVER TOUCHES A STANDING DELETE FAILURE — in either
+        // direction. Success clears a load or mutation error, because the shelf
+        // it just drew IS the truth; it must not clear a delete failure,
+        // because the delete's failure path re-arms this very load and would
+        // race its own error off the screen (George R3 P1 scenario B).
         setFailure((prev) => (prev?.fromDelete ? prev : null));
         setLoaded(true);
       } catch (cause) {
         if (stale()) return;
-        report(cause);
+        // The other half of that rule. A delete failure re-arms this load, so
+        // when the underlying fault is shared — a blocked or broken IndexedDB —
+        // the load fails too, and reporting it plainly would overwrite the
+        // delete's slot: the translator would lose `deleteBookFailed` for a raw
+        // store string AND get no Retry, because `loaded` has already latched
+        // so `loadFailed` is false. The book is still on disk in that state, so
+        // the delete's copy is the one that has to survive (George R4 P2-1).
+        setFailure((prev) =>
+          prev?.fromDelete
+            ? prev
+            : {
+                message: cause instanceof Error ? cause.message : String(cause),
+                fromDelete: false,
+              }
+        );
       } finally {
         if (!stale()) setLoading(false);
       }
@@ -181,6 +194,13 @@ export function useBooks() {
     // does, never a silent unhandled rejection — the caller gets null.
     try {
       const book = await createNextBook();
+      // A write that SUCCEEDED clears the slot, including a standing delete
+      // failure. The load deliberately no longer does this (see the effect), so
+      // without it a failed delete's Notice would stand over a healthy shelf
+      // for the rest of the session — Frank R4 P2 and George R4 P2-2, raised
+      // independently by both lenses. Cleared before `reload()`, so the new
+      // read cannot re-assert anything about the old failure.
+      report(null);
       reload();
       return book;
     } catch (cause) {
@@ -193,6 +213,7 @@ export function useBooks() {
     async (bookId: BookId): Promise<Chapter | null> => {
       try {
         const chapter = await addChapterToBook(bookId);
+        report(null); // a successful write clears the slot — see `createBook`
         reload();
         return chapter;
       } catch (cause) {
@@ -211,6 +232,7 @@ export function useBooks() {
       // reaches the same Notice a load failure does.
       try {
         const book = await renameBookInStore(bookId, name);
+        report(null); // a successful write clears the slot — see `createBook`
         reload();
         return book;
       } catch (cause) {
