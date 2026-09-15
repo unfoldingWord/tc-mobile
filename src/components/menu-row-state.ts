@@ -127,12 +127,20 @@ export interface RowHint {
  *
  * **The glyph is `alert`, and the reason it is not a control glyph is the whole
  * history of this cue.** Round 1 badged the uncommitted-take row with `back`,
- * meaning the sheet's own commit control — which cannot be tapped, because the ≡
- * menu inerts the sheet while it is open, leaving the menu's own Close as the one
- * live back-chevron. The badge therefore marked the DISMISS control as the way
- * out. Round 2 then found that dropping the glyph entirely left the cue in the
- * accessible name only: invisible to the sighted tester who reported #135, and
- * skipped by Tab because the row was natively `disabled`.
+ * meaning the sheet's own commit control — which cannot be tapped, because at
+ * the time the ≡ menu inerted the whole sheet while it was open, leaving the
+ * menu's own Close as the one live back-chevron. The badge therefore marked the
+ * DISMISS control as the way out. Round 2 then found that dropping the glyph
+ * entirely left the cue in the accessible name only: invisible to the sighted
+ * tester who reported #135, and skipped by Tab because the row was natively
+ * `disabled`.
+ *
+ * (#368 narrowed the inert scope so a live take's transport is reachable
+ * mid-take, but the header — and so header Back — stays inert under any
+ * overlay regardless of `takeActive` (George R2 P2). So the premise above still
+ * holds in both states: header Back is never a reachable control while this row
+ * is visible, only the menu's own Close is, and the badge names no control for
+ * the same reason it always has.)
  *
  * So the badge is back, as a STATE mark rather than a direction: `alert` says
  * "blocked, look here" and names no control, which is the one thing a glyph in

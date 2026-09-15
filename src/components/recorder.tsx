@@ -1716,8 +1716,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           But an overlay never inerts the transport of a take that is ALREADY
           RUNNING. A translator mid-take must be able to stop the capture, and a
           drawer they opened for the level strip is not a reason to take that
-          away. Hence `&& !takeActive`, which is the whole of the scoping — and
-          it is a scoping, not a hole, because of what `takeActive` implies here:
+          away. Hence `&& !takeActive` here — plus the HEADER's own `inert`
+          below, which holds under any overlay and is what keeps the exemption
+          down to the transport rather than the whole sheet (George R2 P2).
+
+          The header is excluded because of its Back, whose accessible name is
+          "Close recorder" — and while an overlay is up `close()` does not close
+          the recorder: `overlayBlocksClose` makes it dismiss the overlay and
+          resolve false (:1136). Mid-take, with the sheet no longer inert, that
+          control would be newly reachable to AT under a name that promises a
+          save it will not perform, so a translator who activated it to stop and
+          save would leave the mic hot believing they had stopped. That is the
+          #97 hazard with the sign flipped — Back SAVING when it should not,
+          versus Back announcing a save it does not do — and the spoken name is
+          the contract, not this comment. The menu's own Close is the correctly
+          named dismiss, and it is right there. The ≡ goes inert with it: it is
+          in the header, and re-opening an already-open menu is a no-op.
+
+          What is exempt is therefore exactly Record/Pause and Play — and it is
+          a scoping, not a hole, because of what `takeActive` implies here:
 
           - `overlayUp && takeActive` can only be the ≡ menu in RECORD mode. The
             edit-mode opener is `disabled` on `isClosing`, and the Erase row
@@ -1726,18 +1743,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             only reachable at idle or mid-take, and at idle this gate is still
             inert, so Record is unreachable and `takeActive` cannot flip true.
             The exception is a fixed point, not a race.
-          - What that leaves live behind the scrim is exactly the transport:
-            Record/Pause, Play, the header Back and the ≡ itself. Every buffer
-            mutator is out of reach anyway — the paste marker, Cut, Select,
-            Undo/Redo and the selection handles all require `idleEditable` or
-            edit mode, both false while a take is live.
+          - What that leaves live behind the scrim is the transport and nothing
+            else: Record/Pause and Play. Every buffer mutator is out of reach
+            anyway — the paste marker, Cut, Select, Undo/Redo and the selection
+            handles all require `idleEditable` or edit mode, both false while a
+            take is live — and the header is inert in its own right.
           - Play mid-take is the paused preview, and it is its own stop: this is
             the one case George R5's "Play goes unreachable behind the scrim"
             does not apply to, and `openMenu` still stops playback for the idle
             case that it does.
-          - Back stays live and means "dismiss the overlay", not "save":
-            `close()` refuses while `overlayBlocksClose` and drops the menu
-            instead (:1118).
+          - Back is NOT live: see the header's own gate above. The system Back
+            still reaches `close()` through the imperative handle and still
+            dismisses the overlay there (:1136) — that path is unchanged, and it
+            carries no misleading name because it is a gesture, not a control.
 
           WHAT THIS ACTUALLY REACHES, stated narrowly because the first draft of
           this comment overclaimed it (George R1 P2). `inert` governs the
@@ -1763,7 +1781,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           className="recorder-sheet mx-auto max-w-md"
           inert={(overlayUp && !takeActive) || undefined}
         >
-          <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
+          {/* The other half of the rule above: the header is inert under ANY
+            overlay, `takeActive` or not, so the transport exemption cannot
+            expose a Back whose name ("Close recorder") is not what `close()`
+            would do while an overlay is up (George R2 P2). Redundant at idle,
+            where the sheet is already inert — deliberately so: this gate states
+            the header's own invariant rather than depending on the sheet's. */}
+          <header
+            className="flex items-center gap-[8px] px-[4px] py-[2px]"
+            inert={overlayUp || undefined}
+          >
             <Control
               icon="back"
               label={strings.closeRecorder}
