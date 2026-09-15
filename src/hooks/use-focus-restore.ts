@@ -28,9 +28,23 @@ export interface FocusRestore {
    * in the session can never resurrect a trigger the translator has left.
    *
    * @param suppressed another surface has deliberately taken focus in this same
-   *   commit (a full-body panel's `autoFocus`), so restore nothing.
+   *   commit (a full-body panel's `autoFocus`), so restore nothing. Consumes
+   *   the capture. To hold it instead — the surface is mid-transition and there
+   *   is no stable landing yet — do not call `restore` at all, and let the
+   *   effect run again when the transition settles.
    * @param fallback the named landmark to use when the trigger is gone, inert
-   *   or disabled. `null` means there is none, and focus is left alone.
+   *   or disabled. `null` means there is none, and focus is left alone — which
+   *   is the right answer far more often than it looks.
+   *
+   *   **The landmark must never be a destructive or exiting control.** This is
+   *   the contract, not a style note: the fallback runs on exactly the paths
+   *   where the trigger was torn down, which for a menu is every row that
+   *   changes mode — the common case, not the edge. A landmark that saves,
+   *   deletes or leaves is then armed under the next activation, which is the
+   *   hazard #97 exists to close, reintroduced by the fix for it (George R1 P1
+   *   on #368 caught precisely that: a "first focusable in the sheet" fallback
+   *   resolved to the recorder's Back, and Back is `close()`). Prefer the
+   *   control that owns the overlay; prefer `null` over anything dangerous.
    */
   restore: (options: {
     suppressed: boolean;

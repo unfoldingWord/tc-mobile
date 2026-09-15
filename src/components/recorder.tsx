@@ -869,8 +869,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // Open the ≡ menu. Stops buffer playback first: the menu is the one gateway to
     // every idle-time action reachable while a buffer sounds (Edit, Finished, VU,
-    // Erase), and opening it inerts the sheet — so Play, the only stop control,
-    // goes unreachable, and Erase locks a confirm behind that scrim (George R5).
+    // Erase), and opening it inerts the sheet AT IDLE — so Play, the only stop
+    // control, goes unreachable, and Erase locks a confirm behind that scrim
+    // (George R5). Mid-take the sheet is no longer inert (#75, the rule at the
+    // sheet `<div>`), so Play is reachable there and this stop is belt rather
+    // than the only exit; at idle — which is every path that reaches Erase or
+    // Edit — it is still the whole of the guarantee.
     // Stopping here closes that whole class at the boundary, like entering edit.
     // `abortPreview` extends it to an in-flight decode: without it, a decode that
     // resolves while the menu is up would start the preview behind the inert scrim
@@ -1132,9 +1136,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (overlayBlocksClose(menuOpen, confirmOpen, erase.erasing)) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
-        // un-inerts the sheet (its `inert` is driven by `confirmOpen`), exposing
-        // Record, whose new capture the erase's `onExit` then discards. Let the
-        // erase's own completion tear the confirm down.
+        // un-inerts the sheet, exposing Record, whose new capture the erase's
+        // `onExit` then discards. Let the erase's own completion tear the confirm
+        // down. The sheet's gate is now `overlayUp && !takeActive` (#75), not
+        // `confirmOpen` alone — but `overlayUp` folds in `erase.erasing`, and an
+        // erase is only ever reachable at idle, so R4-1 still holds exactly.
         const dismiss = overlayDismissal(menuOpen, confirmOpen, erase.erasing);
         if (dismiss.closeMenu) setMenuOpen(false);
         if (dismiss.closeConfirm) setConfirmOpen(false);
@@ -1654,14 +1660,39 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
     useLayoutEffect(() => {
       if (overlayUp) return;
+      // HOLD the capture through the commit window rather than spending it
+      // (George R1 P1 residual). Mid-commit the header's right-hand control is
+      // `disabled` and the mode may be about to flip, so there is no stable
+      // landing yet; an early return leaves the capture untouched and this
+      // effect runs again when `isClosing` clears. Distinct from `suppressed`,
+      // which CONSUMES because somebody else has taken focus for good.
+      if (isClosing) return;
       focusRestore.restore({
         suppressed: panelOwnsFocus,
-        // The same landmark the open edge uses (the effect above), so the sheet
-        // has one answer to "where does focus live here", not two.
-        fallback:
-          sheetRef.current?.querySelector<HTMLElement>("button") ?? null,
+        // The overlay-close landmark is the header's RIGHT-HAND control — the ≡
+        // in record mode, the "Editing" pill in edit mode — and deliberately
+        // NOT the sheet's first focusable, which is Back (George R1 P1). The
+        // open-edge effect above lands on Back on purpose: that is entering the
+        // dialog. Landing there on overlay CLOSE is the opposite, and recreates
+        // the exact hazard #97 was filed about — Back is `close()`, which SAVES,
+        // so a switch user's next activation after "Edit" would commit and exit
+        // the sheet instead. The paths that reach it are the ordinary ones: the
+        // menu's Edit row and its Done-editing row both unmount the captured
+        // trigger by flipping the mode, so the fallback is what runs.
+        //
+        // Both header controls always render (Back, then the ≡/pill ternary),
+        // so the right-hand slot is the last `button` in the header. Fewer than
+        // two means the header's shape changed under this: hand back nothing
+        // rather than guess and arm Back. Focus then stays on the document,
+        // which is where it sat before this PR — no worse, and never armed.
+        fallback: (() => {
+          const buttons =
+            sheetRef.current?.querySelectorAll<HTMLElement>("header button");
+          if (!buttons || buttons.length < 2) return null;
+          return buttons[buttons.length - 1] ?? null;
+        })(),
       });
-    }, [overlayUp, panelOwnsFocus, focusRestore]);
+    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore]);
 
     const markReason = markRowReason({
       hasView: view !== null,
@@ -1707,12 +1738,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             `close()` refuses while `overlayBlocksClose` and drops the menu
             instead (:1118).
 
-          This restores the transport for AT, switch and keyboard users. It does
-          NOT give a touch user their tap back: `.menu-scrim` is
-          `position: fixed; inset: 0; z-index: 80`, so a finger anywhere outside
-          the panel lands on the scrim and dismisses the menu — the extra gesture
-          #75 describes. Removing that costs a design call about the scrim, which
-          is not this change. */}
+          WHAT THIS ACTUALLY REACHES, stated narrowly because the first draft of
+          this comment overclaimed it (George R1 P2). `inert` governs the
+          accessibility tree and the focus/pointer tree, so what the exemption
+          restores is the AT path: VoiceOver's rotor and swipe, and a switch
+          device that scans the a11y tree, can reach Pause again. It does NOT
+          restore the other two:
+
+          - TOUCH is owned by the scrim, not by `inert`. `.menu-scrim` is
+            `position: fixed; inset: 0; z-index: 80` (`3-components.css:295`),
+            so a finger anywhere outside the panel lands on it and dismisses the
+            menu — the extra gesture #75 describes, unchanged.
+          - TAB is owned by `Menu`'s focus trap (`menu.tsx:121`), which wraps Tab
+            inside the panel on the premise that nothing behind it is reachable.
+            That premise is now false mid-take, but the trap is unchanged, so a
+            keyboard or Tab-driven switch user still cannot Tab to Pause. Escape
+            (or Close menu), then Pause, is their path — one keystroke, not a
+            deadlock. Letting Tab leave the panel mid-take, or putting the
+            transport in the menu, is tracked in #369; it changes a shared
+            component and does not belong in this lane. */}
         <div
           ref={sheetRef}
           className="recorder-sheet mx-auto max-w-md"

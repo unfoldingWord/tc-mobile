@@ -153,8 +153,11 @@ describe("rowHint — which reasons carry a cue", () => {
       icon: "alert",
       label: spoken(strings.blockedByTake),
     });
-    // While the ≡ menu is open the sheet is inert, so the menu must be closed
-    // BEFORE the sheet's own control is reachable. Order is the whole content of
+    // While the ≡ menu is open the sheet's control is behind the scrim, so the
+    // menu must be closed BEFORE it is reachable. (The sheet is also `inert`
+    // at idle; since #75 it is not mid-take, but the header Back reached that
+    // way only dismisses the menu — it does not save — so the two steps this
+    // cue names are still the order that saves.) Order is the whole content of
     // this cue; a string naming them the other way round is wrong, not just
     // clumsy (George, round 1).
     const said = strings.blockedByTake;
