@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   addChapter as addChapterToBook,
   chapterProgress,
   createNextBook,
+  deleteBook as deleteBookFromStore,
   getChapter,
   listBooks,
   renameBook as renameBookInStore,
@@ -49,6 +50,17 @@ async function loadBookCard(book: Book): Promise<BookCard> {
 }
 
 /**
+ * The outcome of a call to `deleteBook`.
+ *
+ * `"busy"` is distinct from `"failed"` on purpose, exactly as in
+ * `useEraseSegment`: a double-tap's second call is refused by the in-flight
+ * guard, and the caller must NOT treat that refusal as a result and dismiss its
+ * confirmation — the first call is still running and owns the outcome. Callers
+ * act on `"ok"`/`"failed"` and ignore `"busy"`.
+ */
+type DeleteBookResult = "ok" | "failed" | "busy";
+
+/**
  * The Books screen (B2): the book/chapter tree and its two creation actions.
  *
  * Expand/collapse is per-viewer UI state and stays in the component; this hook
@@ -65,6 +77,16 @@ export function useBooks() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  /** True while a book delete is in flight — the confirm dialog's `busy`. */
+  const [deleting, setDeleting] = useState(false);
+  /**
+   * The live in-flight guard, readable synchronously.
+   *
+   * `deleting` is last render's value; two taps in one frame both read it false.
+   * The ref answers for the current moment, so a second tap is refused before it
+   * can open a second delete transaction over the same tree.
+   */
+  const deletingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +157,38 @@ export function useBooks() {
     [reload]
   );
 
+  const deleteBook = useCallback(
+    async (bookId: BookId): Promise<DeleteBookResult> => {
+      // Refused, not failed: the first call owns the outcome, and a caller that
+      // treated this as a result would tear its confirm down mid-delete. Same
+      // distinction, and the same reason, as `useEraseSegment`'s `"busy"`.
+      if (deletingRef.current) return "busy";
+      deletingRef.current = true;
+      setDeleting(true);
+      try {
+        await deleteBookFromStore(bookId);
+        // reload() rather than dropping the row in place: the whole shelf is
+        // one read, an empty shelf has to reach the invite empty state, and the
+        // store is the only authority on what survived.
+        reload();
+        return "ok";
+      } catch (cause) {
+        // Never swallowed: the reason reaches `error` for a maintainer reading
+        // the screen Notice, while the screen shows `deleteBookFailed` to the
+        // translator. `console.error` is the sink, as in `performErase`.
+        console.error("Deleting a book failed", cause);
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return "failed";
+      } finally {
+        // Releases the guard rather than dropping state, so it is safe in
+        // `finally`; a guard left set would lock out every later delete.
+        deletingRef.current = false;
+        setDeleting(false);
+      }
+    },
+    [reload]
+  );
+
   return {
     books,
     loading,
@@ -144,5 +198,7 @@ export function useBooks() {
     createBook,
     addChapter,
     renameBook,
+    deleteBook,
+    deleting,
   };
 }

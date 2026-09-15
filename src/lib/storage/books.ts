@@ -166,6 +166,115 @@ export async function renameBook(
   return updated;
 }
 
+/**
+ * The stores a book delete touches: the tree, and both halves of every clip
+ * that goes with it.
+ */
+const DELETE_BOOK_STORES = [
+  "books",
+  "chapters",
+  "segments",
+  "takes",
+  "clipMeta",
+  "clipData",
+] as const;
+
+/**
+ * Delete a book and everything under it — chapters, segments, takes and the
+ * audio behind them (#337).
+ *
+ * The first external tester could not remove a practice book, and at the
+ * training the only way to clear one would be to uninstall the app, which takes
+ * every recording with it. This is the op that makes a trial book disposable.
+ *
+ * It is also the most destructive write in the product, so it holds the same
+ * three properties `clearSegmentTake` does, at a whole tree's scale:
+ *
+ *   - **ONE readwrite transaction** over all six stores. A delete that removed
+ *     the book in one transaction and its clips in another could be interrupted
+ *     between them and leave megabytes of audio no screen can ever reach and no
+ *     delete can ever free — the storage pressure #12 exists about. Strict
+ *     durability, like every other write that removes the only copy of a take
+ *     (#179).
+ *   - **Idempotent.** A missing book resolves without error and writes nothing,
+ *     so a second tap, a retry after a failed reload, or a stale confirm is a
+ *     true no-op rather than a throw the UI has to special-case.
+ *   - **Reference-counted clips.** A clip is deleted only when no take OUTSIDE
+ *     this book still points at it. Nothing shares a clip in the shipped app —
+ *     every save mints a fresh `newClipId()` UUID, so "content-addressed" names
+ *     the intent and not the current implementation — but this deletes many
+ *     clips at once, so an unconditional delete would, the day an import
+ *     dedupes, punch a book's worth of holes in another book's audio. Same
+ *     guard `clearSegmentTake` already holds; `addTake`'s is #68.
+ *
+ * **The walk goes by the parent links, not the ordering arrays.** `chapterIds`
+ * and `segmentIds` are denormalised order; `chapter.bookId` and
+ * `segment.chapterId` (both indexed) are what says a row belongs to this book.
+ * A row the array has lost — a half-written `addChapter` — is still this book's,
+ * and once the book is gone nothing could ever reach it again. Going by the
+ * index also means an id the array holds that points at ANOTHER book's chapter
+ * is left alone rather than deleted out from under it.
+ */
+export async function deleteBook(bookId: BookId): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(
+    DELETE_BOOK_STORES,
+    "readwrite",
+    // Strict durability: this removes the only copy of a whole book of takes.
+    { durability: "strict" }
+  );
+  const books = tx.objectStore("books");
+  const chapters = tx.objectStore("chapters");
+  const segments = tx.objectStore("segments");
+  const takes = tx.objectStore("takes");
+
+  const book = await books.get(bookId);
+  if (!book) {
+    // Already gone. Resolve without writing anything — see the idempotency note
+    // in the docblock. The transaction commits empty.
+    await tx.done;
+    return;
+  }
+
+  // Gather the whole tree first, by parent link, before deleting anything: the
+  // clip reference count below has to see every take of this book removed
+  // before it can ask what is left.
+  const ownedChapters = await chapters.index("bookId").getAll(bookId);
+  const doomedTakes: Take[] = [];
+  const doomedSegments: SegmentId[] = [];
+  for (const chapter of ownedChapters) {
+    const ownedSegments = await segments.index("chapterId").getAll(chapter.id);
+    for (const segment of ownedSegments) {
+      doomedSegments.push(segment.id);
+      // Every take row of the segment, not just `activeTakeId`: the index is the
+      // parent link, and a stale row the pointer has moved off would otherwise
+      // survive its segment and keep a clip alive forever.
+      doomedTakes.push(...(await takes.index("segmentId").getAll(segment.id)));
+    }
+  }
+
+  for (const take of doomedTakes) await takes.delete(take.id);
+  for (const segmentId of doomedSegments) await segments.delete(segmentId);
+  for (const chapter of ownedChapters) await chapters.delete(chapter.id);
+  await books.delete(bookId);
+
+  // The take rows are gone, so what `getAll` returns now is exactly the set of
+  // references that survive this delete. A clip nothing in that set names is
+  // unreachable audio and goes with the book; a clip something still names is
+  // another segment's only copy and stays.
+  const survivingClipIds = new Set(
+    (await takes.getAll()).map((take) => take.clipId)
+  );
+  const doomedClipIds = new Set(doomedTakes.map((take) => take.clipId));
+  for (const clipId of doomedClipIds) {
+    if (survivingClipIds.has(clipId)) continue;
+    await tx.objectStore("clipMeta").delete(clipId);
+    await tx.objectStore("clipData").delete(clipId);
+  }
+
+  await tx.done;
+}
+
 // ── Chapters ─────────────────────────────────────────────────────────────
 
 /**
