@@ -68,6 +68,28 @@ describe("auditionPlan", () => {
     expect(auditionPlan(1000, { start: 250, end: 250 }, 500)).toBeNull();
   });
 
+  it("refuses a span with a non-finite edge", () => {
+    // `NaN === NaN` is false, so an equality guard would let this through as a
+    // live plan whose `subarray(NaN, NaN)` sounds nothing — an enabled Play that
+    // visibly does nothing, which is the shape of control this issue exists to
+    // remove (Frank R1 F1).
+    expect(auditionPlan(1000, { start: Number.NaN, end: 400 }, 0)).toBeNull();
+    expect(auditionPlan(1000, { start: 100, end: Number.NaN }, 0)).toBeNull();
+  });
+
+  it("refuses a span shorter than the one sample that would sound", () => {
+    // Sample indices are floats here (a handle drag, or a keyboard nudge of
+    // `visibleSamples / 400` on a short clip), and both `subarray` and `slice`
+    // TRUNCATE. A span inside a single sample removes nothing and sounds
+    // nothing, so it must not leave a live control (George R1 P3-1).
+    expect(auditionPlan(1000, { start: 10.2, end: 10.9 }, 0)).toBeNull();
+    // ...while a span that straddles a sample boundary does sound that sample.
+    expect(auditionPlan(1000, { start: 10.2, end: 11.1 }, 0)?.range).toEqual({
+      start: 10.2,
+      end: 11.1,
+    });
+  });
+
   it("refuses a span that collapses once clamped", () => {
     // Both edges beyond the end (a span left over from a longer buffer) clamp
     // onto the same sample. Nothing to hear.
