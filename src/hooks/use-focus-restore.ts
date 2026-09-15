@@ -34,7 +34,11 @@ export interface FocusRestore {
    *   effect run again when the transition settles.
    * @param fallback the named landmark to use when the trigger is gone, inert
    *   or disabled. `null` means there is none, and focus is left alone — which
-   *   is the right answer far more often than it looks.
+   *   is the right answer far more often than it looks. A disconnected element
+   *   is treated the same as `null` (checked here, not in the caller): the
+   *   caller resolves this synchronously inside its own layout effect today,
+   *   so it is never stale in practice, but the guard costs nothing and this
+   *   file exists precisely to stop a stale-element `.focus()` no-op.
    *
    *   **The landmark must never be a destructive or exiting control.** This is
    *   the contract, not a style note: the fallback runs on exactly the paths
@@ -111,7 +115,16 @@ export function useFocusRestore(): FocusRestore {
         // Natively disabled only. An `aria-disabled` control keeps its place in
         // the Tab order here as it does everywhere else in this app (#135).
         focusable: trigger !== null && !trigger.hasAttribute("disabled"),
-        hasFallback: fallback !== null,
+        // Connectivity, not just non-null (Frank round 3 P2, on
+        // `recorder.tsx`'s header-button fallback): today's only caller
+        // resolves this inside the same `useLayoutEffect` that fires after
+        // React's mutation phase, so it is never stale in practice — but the
+        // table has no way to know that, and a disconnected fallback's
+        // `.focus()` is the exact silent no-op this whole module exists to
+        // catch for the trigger. Hardening the check here costs nothing today
+        // and stops a future caller from re-opening the gap this file was
+        // built to close.
+        hasFallback: fallback !== null && fallback.isConnected,
       });
       if (target === "none") return;
       if (target === "fallback") {
