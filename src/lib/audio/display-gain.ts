@@ -82,6 +82,15 @@ export const MAX_DISPLAY_GAIN = 20;
  *     with no audio draws the dotted never-recorded rule, and a committed take
  *     at idle must of course be fitted.
  *
+ * `capturing` itself must be the WHOLE take-in-flight window, not literal mic
+ * capture — recording, paused, `processing` (#59), and the `isClosing`
+ * stop→decode→save wait, during which `state` has already flipped to idle
+ * (`recorder.tsx`'s `takeActive`). Narrowing the caller's argument to
+ * `recording || paused` let this go false the instant Back was tapped on a
+ * paused first-take preview, while the very same preview stayed on stage —
+ * exactly the jump this flag exists to prevent (George R3 #2, the round-3
+ * re-run: a distinct finding from R3's `fitFrom` fix).
+ *
  * Lives here rather than inline in the recorder because it is the whole of the
  * decision, and nothing in `tests/` can mount a canvas to check it there.
  */
@@ -128,15 +137,19 @@ function loudestPeak(peaks: Peaks): number {
  * recompute the same number, and the waveform never breathes under the
  * translator's finger.
  *
- * `firstTakeInFlight` is narrow on purpose: a take being made (recording or
- * paused) on a segment that has **no committed audio yet**. It forces 1, and it
- * is not a nicety. A paused first take whose Play decode has landed unmounts the
- * live scope and mounts this drawer on the decoded preview instead
- * (`recorder.tsx`'s `previewShown`), and Resume swaps it straight back. Without
- * this the same in-flight take would jump from a thin absolute line to a
- * full-height fitted one at Pause+Play and collapse again on Resume — the
- * quiet-microphone-looks-healthy failure this module is careful not to cause,
- * arriving through the one path that is not the live scope (George R1 P2).
+ * `firstTakeInFlight` is narrow on purpose: a take being made — the WHOLE
+ * take-in-flight window (recording, paused, `processing`, the `isClosing`
+ * close wait, not just `recording || paused`; George R3 #2) — on a segment
+ * that has **no committed audio yet**. It forces 1, and it is not a nicety. A
+ * paused first take whose Play decode has landed unmounts the live scope and
+ * mounts this drawer on the decoded preview instead (`recorder.tsx`'s
+ * `previewShown`), and Resume swaps it straight back. Without this the same
+ * in-flight take would jump from a thin absolute line to a full-height fitted
+ * one at Pause+Play and collapse again on Resume — the quiet-microphone-looks-
+ * healthy failure this module is careful not to cause, arriving through the
+ * one path that is not the live scope (George R1 P2). Narrowing the caller's
+ * predicate to `recording || paused` reintroduces the same jump the moment
+ * Back is tapped while that preview is still on stage (George R3 #2).
  *
  * It is deliberately NOT "a take is in flight". A punch-in draws the segment's
  * ALREADY COMMITTED audio while capturing — `working` does not grow until the

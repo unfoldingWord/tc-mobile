@@ -1839,8 +1839,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // at close, so that canvas stays fitted (George R2 P2).
                       // The rule itself is pure and table-tested in
                       // `lib/audio/display-gain.ts`, not spelled out here.
+                      //
+                      // `takeActive`, NOT `recording || paused` (George R3 #2 —
+                      // the re-run, a distinct finding from the fitFrom fix
+                      // above). `previewShown` and `LiveScope`'s mount window are
+                      // both gated on the WHOLE take-in-flight span — recording,
+                      // paused, `processing` (#59), and the `isClosing` F8
+                      // stop→decode→save wait, during which `stop()` has already
+                      // flipped `state` to idle. Gating this flag on
+                      // `recording || paused` alone let it go false the moment
+                      // Back was tapped on a paused first-take preview: the same
+                      // peaks stayed on stage (`previewShown` is still set) but
+                      // suddenly read as fitted, jumping the preview from thin to
+                      // full height under the Saving notice — the exact
+                      // quiet-mic-looks-healthy failure this flag exists to
+                      // prevent, on the one window it was built for.
+                      // `hasAudio` still gates the punch-in case unchanged: once
+                      // there is committed audio, `isFirstTakeInFlight` is false
+                      // regardless of `takeActive`, so George R2 P2 stands.
                       firstTakeInFlight={isFirstTakeInFlight(
-                        recording || paused,
+                        takeActive,
                         hasAudio
                       )}
                       // Fit to the COMMITTED clip always, even on the punch-in
