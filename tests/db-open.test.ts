@@ -10,7 +10,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,

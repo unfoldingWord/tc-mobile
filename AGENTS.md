@@ -166,10 +166,19 @@ counter-example currently in the tree.
 
 **Errors have a channel before they have copy.** An unhandled rejection must
 reach an error boundary and a single sink — `console.error` is not a channel on
-a phone in a village. The _presentation_ is a separate question and is
-deliberately deferred: this UI is for people who may not read, so a text toast
-is close to useless. Prefer state-in-place — the control itself shows the
-condition — over a message bubble.
+a phone in a village. Both halves are now built: the boundary and the funnel
+(`hooks/report-failure.ts`, #188), and the funnel's durable destination
+(#205) — a bounded log in the same IndexedDB the recordings live in, marked
+state-in-place on the Books `≡` control and carried off the phone through the
+OS share sheet. `console.error` is kept beside it, not replaced by it: it is
+still the fastest read on a maintainer's desk, and the only one left if the
+durable write is what failed.
+
+The _presentation_ stays deliberately thin, and that is the standing rule, not
+a gap: this UI is for people who may not read, so a text toast is close to
+useless and raw browser exception text on screen is a defect (#172). Prefer
+state-in-place — the control itself shows the condition — over a message
+bubble, and let a log's entries LEAVE the phone rather than be rendered on it.
 
 **No sprawl, no duplicates, no stubs.** Nothing shipped that nothing uses;
 nothing stubbed "for later."

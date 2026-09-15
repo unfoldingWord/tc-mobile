@@ -1,0 +1,452 @@
+import "fake-indexeddb/auto";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  clearFailureLog,
+  flushFailureLog,
+  installFailureLog,
+} from "@/hooks/failure-log";
+import { reportFailure } from "@/hooks/report-failure";
+import * as failuresStore from "@/lib/storage/failures";
+import {
+  appendFailure,
+  clearFailures,
+  countFailures,
+  readFailures,
+} from "@/lib/storage/failures";
+import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import { clearAllStores } from "./support";
+
+/**
+ * The durable failure log (#205) — the store, and the sink that feeds it.
+ *
+ * Not covered here, and not claimed: the panel and the marker. There is no
+ * renderer in this suite (`vitest.config.ts` sets `environment: "node"`, and
+ * this repo has declined jsdom before), so `FailureLogPanel`, the `≡` marker on
+ * Books, and the share handoff are verified in a browser and recorded on the PR.
+ * What IS covered is everything they read: the ring, the order, the sink's
+ * ordering guarantee, and the sink's refusal to re-enter the funnel.
+ */
+
+const entry = (over: Partial<StoredFailure> = {}): StoredFailure => ({
+  at: 1_000,
+  context: "test",
+  message: "Error: boom",
+  ...over,
+});
+
+describe("the failure store", () => {
+  beforeEach(async () => {
+    await clearAllStores();
+  });
+
+  it("reads back an appended entry whole", async () => {
+    await appendFailure(entry({ stack: "at x", componentStack: "\n  in App" }));
+    expect(await readFailures()).toEqual([
+      {
+        at: 1_000,
+        context: "test",
+        message: "Error: boom",
+        stack: "at x",
+        componentStack: "\n  in App",
+      },
+    ]);
+  });
+
+  it("reads newest first", async () => {
+    await appendFailure(entry({ message: "first" }));
+    await appendFailure(entry({ message: "second" }));
+    await appendFailure(entry({ message: "third" }));
+    expect((await readFailures()).map((e) => e.message)).toEqual([
+      "third",
+      "second",
+      "first",
+    ]);
+  });
+
+  it("orders by insertion, NOT by the timestamp on the row", async () => {
+    // A phone that has been off for a week does not have a monotonic clock, and
+    // the store is deliberately keyed by insertion order rather than by `at`.
+    // Appending a row stamped in the past must not sort itself to the back.
+    await appendFailure(entry({ at: 9_000, message: "recorded first" }));
+    await appendFailure(entry({ at: 1, message: "recorded second" }));
+    expect((await readFailures()).map((e) => e.message)).toEqual([
+      "recorded second",
+      "recorded first",
+    ]);
+  });
+
+  it("keeps the log at its limit, dropping the oldest", async () => {
+    for (let i = 0; i < FAILURE_LOG_LIMIT + 5; i++) {
+      await appendFailure(entry({ message: `f${i}` }));
+    }
+    const rows = await readFailures();
+    expect(rows).toHaveLength(FAILURE_LOG_LIMIT);
+    // Newest kept, oldest five gone.
+    expect(rows[0]?.message).toBe(`f${FAILURE_LOG_LIMIT + 4}`);
+    expect(rows[rows.length - 1]?.message).toBe("f5");
+    expect(rows.some((e) => e.message === "f4")).toBe(false);
+  });
+
+  it("does not prune while the log is under its limit", async () => {
+    // The other half of the gate: a prune that ran unconditionally would eat
+    // the log one row at a time and every assertion above would still pass.
+    for (let i = 0; i < FAILURE_LOG_LIMIT; i++) {
+      await appendFailure(entry({ message: `f${i}` }));
+    }
+    expect(await countFailures()).toBe(FAILURE_LOG_LIMIT);
+    expect((await readFailures())[FAILURE_LOG_LIMIT - 1]?.message).toBe("f0");
+  });
+
+  it("converges a log left over-long by an older build", async () => {
+    // The prune is a loop, not a single delete, so a log written when the limit
+    // was higher (or by a build with no prune at all) comes back into range on
+    // the next append rather than staying over forever.
+    const db = await (await import("@/lib/storage/db")).getDb();
+    const tx = db.transaction("failures", "readwrite");
+    for (let i = 0; i < FAILURE_LOG_LIMIT + 10; i++) {
+      await tx.objectStore("failures").add(entry({ message: `old${i}` }));
+    }
+    await tx.done;
+
+    await appendFailure(entry({ message: "new" }));
+    expect(await countFailures()).toBe(FAILURE_LOG_LIMIT);
+    expect((await readFailures())[0]?.message).toBe("new");
+  });
+
+  it("counts without reading the rows", async () => {
+    expect(await countFailures()).toBe(0);
+    await appendFailure(entry());
+    await appendFailure(entry());
+    expect(await countFailures()).toBe(2);
+  });
+
+  it("empties the log, and clearing an empty log is a no-op", async () => {
+    await appendFailure(entry());
+    await clearFailures();
+    expect(await readFailures()).toEqual([]);
+    await clearFailures();
+    expect(await countFailures()).toBe(0);
+  });
+
+  it("appends a repeated failure twice rather than de-duplicating it", async () => {
+    // Deliberate, and documented in the module: a save that failed ten times is
+    // a different fact from one that failed once, and that count is the signal
+    // the log exists to carry.
+    await appendFailure(entry({ message: "same" }));
+    await appendFailure(entry({ message: "same" }));
+    expect(await countFailures()).toBe(2);
+  });
+});
+
+describe("the durable sink", () => {
+  let uninstall: (() => void) | null = null;
+  let logged: unknown[][];
+
+  beforeEach(async () => {
+    await clearAllStores();
+    logged = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args);
+    });
+    uninstall = installFailureLog();
+  });
+
+  afterEach(() => {
+    uninstall?.();
+    uninstall = null;
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Wait until the log holds exactly `expected` rows.
+   *
+   * Waits for the OUTCOME, not for a quiet poll (Frank #3, round 1). The
+   * previous version returned as soon as two consecutive reads matched, so an
+   * append that had not yet opened its transaction read 0 twice and `settle()`
+   * returned while the write was still in flight — the repo's "a test that
+   * passes while the code is broken" class, and it would have let the
+   * failed-write cases assert an empty log for the wrong reason. Asserting the
+   * count we expect means a write that never lands fails here, loudly, instead
+   * of passing quietly.
+   */
+  const settle = async (expected: number) => {
+    for (let i = 0; i < 500; i++) {
+      if ((await countFailures()) === expected) return;
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    throw new Error(
+      `the log never reached ${expected} rows (held ${await countFailures()})`
+    );
+  };
+
+  /**
+   * Wait for a `console.error` line matching `fragment`.
+   *
+   * The completion signal for a case where NOTHING lands in the store: a failed
+   * append is observable only through the terminal it falls back to, so this is
+   * what "the write finished failing" looks like. `settle(0)` cannot serve —
+   * the log reads 0 before the write starts as well as after it fails.
+   */
+  const logLine = async (fragment: string) => {
+    for (let i = 0; i < 500; i++) {
+      if (logged.some((args) => String(args[0]).includes(fragment))) return;
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    throw new Error(`no console.error containing ${fragment}`);
+  };
+
+  it("stores a reported failure as text, keeping the context", async () => {
+    reportFailure(new RangeError("out of range"), "unhandled-rejection");
+    await settle(1);
+
+    const rows = await readFailures();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.context).toBe("unhandled-rejection");
+    expect(rows[0]?.message).toBe("RangeError: out of range");
+    expect(rows[0]?.stack).toContain("RangeError");
+    expect(rows[0]?.at).toBeGreaterThan(0);
+  });
+
+  it("keeps a render throw's component tree", async () => {
+    reportFailure(new Error("render blew up"), "render", "\n  in Recorder");
+    await settle(1);
+    expect((await readFailures())[0]?.componentStack).toBe("\n  in Recorder");
+  });
+
+  it("omits stack entirely when the cause never had one", async () => {
+    // Same hazard as componentStack below: an explicit `stack: undefined`
+    // structured-clones as a present-but-undefined field, and
+    // `formatFailureLog` then writes the string "undefined" into a
+    // maintainer's file where a stack should be.
+    reportFailure("a thrown string has no stack", "uncaught-error");
+    await settle(1);
+    const row = await readFailures().then((r) => r[0]);
+    expect(row?.message).toBe("a thrown string has no stack");
+    expect(row && "stack" in row).toBe(false);
+  });
+
+  it("omits componentStack entirely when the report carried none", async () => {
+    // An explicit `componentStack: undefined` would structured-clone as a
+    // present-but-undefined field, which `formatFailureLog` then renders as the
+    // string "undefined" into a maintainer's file.
+    reportFailure(new Error("no tree"), "uncaught-error");
+    await settle(1);
+    const row = await readFailures().then((r) => r[0]);
+    expect(row && "componentStack" in row).toBe(false);
+  });
+
+  it("stores every failure of a cascade, none lost to the one before it", async () => {
+    reportFailure(new Error("one"), "a");
+    reportFailure(new Error("two"), "b");
+    reportFailure(new Error("three"), "c");
+    await settle(3);
+
+    expect((await readFailures()).map((e) => e.context).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("serialises the writes: the next append does not start until the last settles", async () => {
+    // WHY this is asserted on the CALLS and not on the stored order: the reason
+    // the lane exists is that IndexedDB does not promise two transactions
+    // opened in one tick commit in the order they were opened, and the log's
+    // whole read is insertion order. `fake-indexeddb` happens to commit them in
+    // order, so an assertion about the stored order would pass with the lane
+    // removed — a test that can never fail. What IS observable in Node is the
+    // property the lane actually provides: one append in flight at a time.
+    let release: (() => void) | undefined;
+    const first = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const spy = vi
+      .spyOn(failuresStore, "appendFailure")
+      .mockImplementationOnce(() => first)
+      .mockImplementation(() => Promise.resolve());
+
+    reportFailure(new Error("one"), "a");
+    reportFailure(new Error("two"), "b");
+    // Give the second report every chance to jump the queue.
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    release?.();
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1]?.[0]?.context).toBe("b");
+  });
+
+  it("keeps writing after a write that failed", async () => {
+    // A failed append must not poison the lane: the chain's rejection handler
+    // is what keeps the next failure storable.
+    const spy = vi
+      .spyOn(failuresStore, "appendFailure")
+      .mockRejectedValueOnce(new Error("disk full"));
+
+    reportFailure(new Error("lost"), "first");
+    // The failed append lands nothing, so the log's own count cannot say it
+    // finished — its terminal is what says so.
+    await logLine("could not store a failure");
+    spy.mockRestore();
+
+    reportFailure(new Error("kept"), "second");
+    await settle(1);
+
+    expect((await readFailures()).map((e) => e.context)).toEqual(["second"]);
+  });
+
+  it("swallows a failed log write instead of reporting it back into the funnel", async () => {
+    // The one place swallowing is correct: this function IS the destination of
+    // the failure channel. Reporting a failed append through `reportFailure`
+    // would append a row describing the failure to append a row, and on a full
+    // disk that recurses until the tab dies.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValue(
+      new Error("disk full")
+    );
+
+    reportFailure(new Error("boom"), "quota");
+    // Waiting on the log line, not on a count: an empty log reads 0 before the
+    // write starts as well as after it fails, so `settle(0)` would pass on a
+    // write that never ran at all.
+    await logLine("could not store a failure");
+
+    expect(await countFailures()).toBe(0);
+  });
+
+  it("bounds componentStack like the other two fields", async () => {
+    // George P3-C, round 2: React's tree does not come from the cause, so
+    // `describeCause` never sees it, and it was the one field that could be
+    // stored uncut — a deep tree next to a stack that HAD been cut, in the same
+    // database the recordings live in.
+    reportFailure(new Error("deep"), "render", "x".repeat(5000));
+    await settle(1);
+    const row = await readFailures().then((r) => r[0]);
+    expect(row?.componentStack?.length).toBeLessThan(2100);
+    expect(row?.componentStack?.endsWith("…[cut]")).toBe(true);
+  });
+
+  it("flushFailureLog resolves only after a queued write has landed", async () => {
+    // George P2-B, round 2. The crash screen's Restart awaits this before
+    // reloading: on a render throw no effect has run, so the queued write is
+    // often the `getDb` open itself, and reloading into it unloads mid-write.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = failuresStore.appendFailure;
+    vi.spyOn(failuresStore, "appendFailure").mockImplementationOnce(
+      async (entry) => {
+        await held;
+        await real(entry);
+      }
+    );
+
+    reportFailure(new Error("mid-flight"), "render");
+
+    let flushed = false;
+    const flush = flushFailureLog().then(() => {
+      flushed = true;
+    });
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    // Still held: a flush that resolved here would be no better than not
+    // waiting at all.
+    expect(flushed).toBe(false);
+    expect(await countFailures()).toBe(0);
+
+    release?.();
+    await flush;
+    expect(flushed).toBe(true);
+    // The row is on disk BEFORE the reload the caller does next.
+    expect(await countFailures()).toBe(1);
+  });
+
+  it("flushFailureLog never rejects, even after a failed write", async () => {
+    // The caller is `reload()`, which has no failure arm — a rejecting flush
+    // would leave the crash screen's Restart doing nothing at all.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValueOnce(
+      new Error("disk full")
+    );
+    reportFailure(new Error("boom"), "render");
+    await expect(flushFailureLog()).resolves.toBeUndefined();
+  });
+
+  it("stops storing once uninstalled", async () => {
+    uninstall?.();
+    uninstall = null;
+    reportFailure(new Error("after"), "gone");
+    // Nothing is queued, so there is no landing to wait for. Drain generously
+    // and assert the log stayed empty; a write that did start would land inside
+    // this window and fail the assertion.
+    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 1));
+    expect(await countFailures()).toBe(0);
+  });
+
+  it("clearFailureLog empties what the sink stored", async () => {
+    reportFailure(new Error("boom"), "a");
+    await settle(1);
+    await clearFailureLog();
+    expect(await countFailures()).toBe(0);
+  });
+
+  it("a clear cannot overtake an append still in flight", async () => {
+    // Frank #1 ≡ George #1, round 1. The clear used to call the store directly,
+    // in its own transaction concurrent with the lane: a clear issued while an
+    // append was in flight emptied the store FIRST and the append landed after
+    // it, so a log the person had explicitly discarded came back holding a row.
+    //
+    // Both operations are now on one lane, so this is deterministic: the append
+    // completes, then the clear empties what it wrote.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = failuresStore.appendFailure;
+    vi.spyOn(failuresStore, "appendFailure").mockImplementationOnce(
+      async (entry) => {
+        await held;
+        await real(entry);
+      }
+    );
+
+    reportFailure(new Error("mid-flight"), "a");
+    // The clear is issued while the append is still held — the exact overlap.
+    const cleared = clearFailureLog();
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    release?.();
+    await cleared;
+
+    expect(await countFailures()).toBe(0);
+  });
+
+  it("a failed clear rejects to the caller AND leaves a trace", async () => {
+    // The panel needs the rejection (so it does not report the log as
+    // discarded); a maintainer needs the line (nothing under `clearFailureLog`
+    // logs anything of its own). Frank #2 ≡ George #4, round 1.
+    reportFailure(new Error("boom"), "a");
+    await settle(1);
+
+    vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
+      new Error("connection closed")
+    );
+
+    await expect(clearFailureLog()).rejects.toThrow("connection closed");
+    expect(
+      logged.some((args) => String(args[0]).includes("could not clear the log"))
+    ).toBe(true);
+    // And the row is still there — a failed clear loses nothing.
+    expect(await countFailures()).toBe(1);
+  });
+
+  it("a failed clear does not poison the lane", async () => {
+    vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
+      new Error("connection closed")
+    );
+    await expect(clearFailureLog()).rejects.toThrow("connection closed");
+
+    reportFailure(new Error("after a failed clear"), "later");
+    await settle(1);
+  });
+});
