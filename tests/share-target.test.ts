@@ -64,11 +64,18 @@ interface Harness {
   readonly calls: BridgeCall[];
 }
 
-/** A session over a bridge that records every call; `fail` makes one reject. */
-function harness(fail?: { op: BridgeCall["op"]; cause: unknown }): Harness {
+/**
+ * A session over a bridge that records every call. Each `fails` entry makes that
+ * operation reject — more than one, because a cleanup and the failure it is
+ * cleaning up after can go wrong together.
+ */
+function harness(
+  ...fails: readonly { op: BridgeCall["op"]; cause: unknown }[]
+): Harness {
   const calls: BridgeCall[] = [];
   const maybeFail = (op: BridgeCall["op"]): void => {
-    if (fail?.op === op) throw fail.cause;
+    const fail = fails.find((candidate) => candidate.op === op);
+    if (fail !== undefined) throw fail.cause;
   };
   const bridge: NativeShareBridge = {
     rmdir: async ({ path, recursive }) => {
@@ -388,15 +395,19 @@ describe("the native share session", () => {
     expect((cause as DOMException).name).toBe("AbortError");
   });
 
-  it("survives a cleanup that cannot run — the share is what matters", async () => {
-    // rmdir rejects when the directory was never there (the first share after an
-    // install) as well as when it could not be removed. Neither is news, and
-    // neither may stop the file reaching the OS.
-    const { share, calls } = harness({
-      op: "rmdir",
-      cause: new Error("Directory does not exist"),
-    });
-    await share(mp3());
-    expect(calls.at(-1)?.op).toBe("share");
+  it("still reports the real failure when the cleanup fails too", async () => {
+    // Frank R5b P2. This case used to fail `rmdir` on a SUCCESSFUL share, which
+    // once exercised the pre-write sweep — but that sweep is gone, so `rmdir`
+    // now runs only after a failure and the old version asserted nothing at all.
+    // The live question is which error survives: a cleanup rejection replacing
+    // the share's would send a translator looking at the wrong thing.
+    const { share, calls } = harness(
+      { op: "share", cause: new Error("no activity found") },
+      { op: "rmdir", cause: new Error("permission denied") }
+    );
+    await expect(share(mp3())).rejects.toThrow("no activity found");
+    const own = dirOf(calls.find((call) => call.op === "write"));
+    // Attempted, and its failure swallowed rather than surfaced.
+    expect(calls.at(-1)).toEqual({ op: "rmdir", path: own, recursive: true });
   });
 });
