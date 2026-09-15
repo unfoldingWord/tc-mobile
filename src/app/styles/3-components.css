@@ -537,9 +537,31 @@
     width: var(--c-control-lg);
     height: var(--c-control-lg);
   }
-  /* Edit mode: the spread editing toolbar. */
+  /* Edit mode: the spread editing toolbar.
+
+     Six controls now (#284 added the audition Play), and the row has to survive
+     a 320px phone — a width this sheet's own `.menu-panel` and `.confirm-panel`
+     already treat as real. The budget at 320px is 272px: 320 less the sheet's
+     two 8px flanks and the toolbar's two 16px. Six 40px quiet controls plus five
+     14px `--c-gap-items` came to 310px, so the row overflowed and, `nowrap`
+     being the default, the last control — the ≡ that is edit mode's ONLY path to
+     Erase — hung off the right edge (George R4 P2-2).
+
+     Two changes, both at this layer:
+     - `--c-gap-parts` (6px) instead of `--c-gap-items` (14px). Six controls and
+       five gaps is 270px, inside the 272px budget. `space-between` still does
+       the spreading at any comfortable width, so the token only sets the floor.
+     - `wrap`, so the failure mode can never again be a control off-screen. It
+       still bites in one case this PR did not create: an OPEN selection frame
+       makes Select `--c-control-xl` (68px), for 298px, which overflowed at 320px
+       with five controls too. That case now takes a second line instead of
+       hiding the ≡.
+
+     Arithmetic, not observation: this has NOT been rendered at 320px. */
   .recorder-toolbar.edit {
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--c-gap-parts);
   }
 
   /* The edit-mode marker + Done affordance (D2, #89), in the header-right slot.
