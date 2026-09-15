@@ -3,12 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addChapter as addChapterToBook,
   chapterProgress,
-  createNextBook,
+  createBook as createBookInStore,
   deleteBook as deleteBookFromStore,
   getBook,
   getChapter,
   isStaleBookFailure,
   listBooks,
+  peekNextBookName,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import type { Book, BookId, Chapter } from "@/types/domain";
@@ -164,7 +165,9 @@ interface Failure {
  *
  * Expand/collapse is per-viewer UI state and stays in the component; this hook
  * owns only what is on disk. `createBook` and `addChapter` return what they
- * made so the screen can expand and scroll to it.
+ * made so the screen can expand and scroll to it; `peekBookName` reads the
+ * placeholder the New Book dialog pre-fills its field with (#314), without
+ * creating anything.
  */
 export function useBooks() {
   const [books, setBooks] = useState<BookCard[]>([]);
@@ -275,26 +278,43 @@ export function useBooks() {
     setReloadToken((t) => t + 1);
   }, []);
 
-  const createBook = useCallback(async (): Promise<Book | null> => {
-    // Auto-named from the count on disk (race-safe in storage), not from the
-    // stale render count. A failed write reaches the same Notice a load failure
-    // does, never a silent unhandled rejection — the caller gets null.
+  const createBook = useCallback(
+    async (name: string): Promise<Book | null> => {
+      // The name comes from the New Book field (#314). A blank one falls back to
+      // the "Book NNN" placeholder — derived on disk inside the write's own
+      // transaction, so it is race-safe and never the stale render count. A
+      // failed write reaches the same Notice a load failure does, never a silent
+      // unhandled rejection — the caller gets null.
+      try {
+        const book = await createBookInStore(name);
+        report(null); // a successful write clears the slot — see `deleteBook`
+        reload();
+        return book;
+      } catch (cause) {
+        report(cause);
+        return null;
+      }
+    },
+    [reload, report]
+  );
+
+  /**
+   * The placeholder to pre-fill the New Book field with (#314). Read-only, so a
+   * cancelled dialog leaves nothing behind.
+   *
+   * A failed read is NOT fatal to the flow: it surfaces on the same Notice
+   * channel and returns "", which opens the dialog on an empty field — and a
+   * blank confirm still derives the placeholder inside the write. So a
+   * transiently unreadable shelf costs the pre-fill, not the ability to create.
+   */
+  const peekBookName = useCallback(async (): Promise<string> => {
     try {
-      const book = await createNextBook();
-      // A write that SUCCEEDED clears the slot, including a standing delete
-      // failure. The load deliberately no longer does this (see the effect), so
-      // without it a failed delete's Notice would stand over a healthy shelf
-      // for the rest of the session — Frank R4 P2 and George R4 P2-2, raised
-      // independently by both lenses. Cleared before `reload()`, so the new
-      // read cannot re-assert anything about the old failure.
-      report(null);
-      reload();
-      return book;
+      return await peekNextBookName();
     } catch (cause) {
       report(cause);
-      return null;
+      return "";
     }
-  }, [reload, report]);
+  }, [report]);
 
   const addChapter = useCallback(
     async (bookId: BookId): Promise<Chapter | null> => {
@@ -423,6 +443,7 @@ export function useBooks() {
     deleteFailed: failure?.fromDelete ?? false,
     reload,
     createBook,
+    peekBookName,
     addChapter,
     renameBook,
     deleteBook,

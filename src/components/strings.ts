@@ -36,15 +36,26 @@ export const strings = {
   chapterHeading: (name: string | null, n: number): string =>
     name ?? `Chapter ${n}`,
 
-  // ── Rename (#264) — book and chapter, from their ≡ menus ──────────────────
+  // ── Naming (#264 rename, #314 New Book) ──────────────────────────────────
+  // One naming field serves both flows, so these strings are shared: the rename
+  // reached from a ≡ menu, and the New Book dialog the corner + now opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
   // The inline text field's accessible name (the whole text layer of the input)
   // and its placeholder.
   bookNameField: "Book name",
   chapterNameField: "Chapter name",
-  // The check control that commits the typed name.
+  // The check control that commits the typed name on a RENAME.
   saveName: "Save name",
+  // The New Book dialog's heading, and so its accessible name (#314). It says
+  // what the field is for, because the field arrives pre-filled and the one
+  // thing a non-reader has to understand is that the filled-in text is already
+  // a usable answer.
+  newBookTitle: "Name your new book",
+  // The same check control, on the New Book dialog. NOT `saveName`: nothing is
+  // being saved back onto an existing book here — this activation is what
+  // creates it, and the spoken label is the only thing that says so.
+  createBook: "Create book",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",

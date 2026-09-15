@@ -74,44 +74,95 @@ export function isFinished(status: RecordingStatus): boolean {
 
 // ── Books ──────────────────────────────────────────────────────────────────
 
+/**
+ * The placeholder name for a new book: the FIRST "Book NNN" not already on the
+ * shelf, three-digit padded ("Book 001", "Book 002" …).
+ *
+ * Pure, and the single definition of the placeholder — both callers go through
+ * it, so the name the New Book field is pre-filled with (`peekNextBookName`) and
+ * the name a blank confirm actually writes ({@link createBook}) cannot drift
+ * (#314).
+ *
+ * **First unused, not `count + 1`** (#360). The count-based namer this replaces
+ * assumed books are only ever added. Once a book can be deleted, deleting
+ * "Book 001" leaves one book and makes the next one "Book 002" as well — two
+ * identical rows. Names have never been unique keys (rename already allows two
+ * "Mark"s), but the delete confirm puts the book's name in its accessible name,
+ * so a duplicate leaves a destructive, irreversible dialog unable to say which
+ * book it is about to destroy — on a screen built for people who may not read,
+ * where discarding practice books is the normal training workflow.
+ *
+ * Matching is exact on the stored name. A facilitator's own name ("Mark")
+ * occupies no slot, and "Book 1" is not a string this ever writes, so neither
+ * blocks "Book 001". The loop is bounded by the number of names + 1: with N
+ * names, at most N of the first N + 1 candidates can be taken.
+ */
+export function nextBookName(existingNames: Iterable<string>): string {
+  const taken = new Set(existingNames);
+  for (let n = 1; ; n++) {
+    const candidate = `Book ${String(n).padStart(3, "0")}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * The placeholder {@link createBook} would fall back to, WITHOUT creating
+ * anything — what the New Book field is pre-filled with so a bare Confirm is
+ * obviously fine (#314).
+ *
+ * Read-only by construction: a `readonly` transaction cannot write, so this can
+ * never leave a book behind on a dialog the translator then cancels. It is a
+ * peek, not a reservation — the name it returns is only the name the write will
+ * derive if the shelf has not changed, which is why `createBook` re-derives
+ * inside its own transaction rather than trusting this.
+ */
+export async function peekNextBookName(): Promise<string> {
+  const db = await getDb();
+  const tx = db.transaction("books", "readonly");
+  const books = await tx.store.getAll();
+  await tx.done;
+  return nextBookName(books.map((b) => b.name));
+}
+
+/**
+ * Create a book, named by the translator (#314) or by the placeholder.
+ *
+ * The name is trimmed, exactly as {@link renameBook} trims it — one validation
+ * rule for the one naming field, wherever it is shown. A blank or
+ * whitespace-only name is not an error: it falls back to the "Book NNN"
+ * placeholder, which is what preserves the one-tap New Book the corner `+` used
+ * to be.
+ *
+ * The fallback is derived INSIDE the one readwrite transaction that writes the
+ * row, never from a screen's render state: two rapid blank confirms both reading
+ * an empty shelf from the same render would both persist "Book 001". IndexedDB
+ * serialises overlapping readwrite transactions, so deriving and putting in one
+ * transaction gives the second confirm the first's write — "Book 001", then
+ * "Book 002". That race-safety is the property `createNextBook` held before
+ * #314 split naming off from creating, and it is preserved here rather than
+ * moved to the caller.
+ *
+ * A supplied name is never made unique: a facilitator may deliberately have two
+ * books called "Mark", and {@link renameBook} has always allowed it.
+ */
 export async function createBook(
   name: string,
   languageCode: string | null = null,
   now: number = Date.now()
 ): Promise<Book> {
-  const book: Book = {
-    id: uuid() as BookId,
-    name,
-    languageCode,
-    chapterIds: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  const db = await getDb();
-  await db.put("books", book);
-  return book;
-}
-
-/**
- * Create a book auto-named "Book NNN" from the count already on disk, deriving
- * the name and writing inside ONE readwrite transaction.
- *
- * The count must come from storage, not from a screen's render state: two rapid
- * New Book taps both read `books.length === 0` from the same render and would
- * both persist "Book 001". IndexedDB serialises overlapping readwrite
- * transactions, so counting and putting in one transaction gives the second tap
- * the first's write — "Book 001", then "Book 002". The auto-name is a starting
- * label; a facilitator renames the book for the passage through {@link renameBook}
- * (#264).
- */
-export async function createNextBook(now: number = Date.now()): Promise<Book> {
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
-  const count = await tx.store.count();
+  const trimmed = name.trim();
+  // Read the shelf only when the name is actually blank — a typed name needs no
+  // placeholder, and `getAll` is the expensive half of this transaction.
+  const resolvedName =
+    trimmed === ""
+      ? nextBookName((await tx.store.getAll()).map((b) => b.name))
+      : trimmed;
   const book: Book = {
     id: uuid() as BookId,
-    name: `Book ${String(count + 1).padStart(3, "0")}`,
-    languageCode: null,
+    name: resolvedName,
+    languageCode,
     chapterIds: [],
     createdAt: now,
     updatedAt: now,
