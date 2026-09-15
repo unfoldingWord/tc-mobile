@@ -32,6 +32,7 @@ import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   effectivePan,
@@ -1830,6 +1831,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       height={200}
                       recorded={hasAudio || previewShown !== null}
                       capturing={recording || paused}
+                      // The #358 display fit is suppressed only for a take with
+                      // nothing committed behind it — the paused first take
+                      // whose decoded preview replaces `LiveScope` above. A
+                      // punch-in (`hasAudio`) draws the STORED clip while it
+                      // records, since `working` does not grow until the splice
+                      // at close, so that canvas stays fitted (George R2 P2).
+                      // The rule itself is pure and table-tested in
+                      // `lib/audio/display-gain.ts`, not spelled out here.
+                      firstTakeInFlight={isFirstTakeInFlight(
+                        recording || paused,
+                        hasAudio
+                      )}
                       playing={wholeView}
                       view={waveView}
                     />

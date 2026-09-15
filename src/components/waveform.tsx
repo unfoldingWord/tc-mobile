@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
@@ -35,6 +36,19 @@ interface WaveformProps {
    */
   capturing?: boolean;
   /**
+   * A take is being made on a segment with NO committed audio yet — the paused
+   * first take whose decoded preview this canvas draws while `LiveScope` is
+   * unmounted (#101). It suppresses the #358 display fit, so that preview reads
+   * at the same absolute level as the scope it replaced and Resume does not
+   * collapse it again (George R1 P2).
+   *
+   * Narrower than `capturing` on purpose. A punch-in draws the segment's already
+   * committed audio while recording, and un-fitting THAT is the #358 complaint
+   * all over again at the moment the translator is aiming at the centreline
+   * (George R2 P2). A row never sets it; a stored take is always fitted.
+   */
+  firstTakeInFlight?: boolean;
+  /**
    * A finished row repaints in the green (`--s-done`) role. The stroke colour
    * still comes from the inherited `--c-wave-stroke` (remapped by
    * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
@@ -63,6 +77,7 @@ export function Waveform({
   view = null,
   finished = false,
   capturing = false,
+  firstTakeInFlight = false,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -122,6 +137,22 @@ export function Waveform({
     }
 
     const buckets = peaks.min.length;
+    // Fit the take to the lane (#358). DISPLAY ONLY: the samples, the stored
+    // peaks, the MP3 and the export are untouched — this is a factor applied to
+    // the drawn height, never a gain on the audio (that is #359). Computed here
+    // rather than passed in so every call site — the recorder canvas and the
+    // Segments-list row — is scaled by the same rule, and recomputed from
+    // `peaks` alone so it is the same number on every repaint: panning and
+    // zooming change `view`, not the peaks, so the waveform does not breathe.
+    // 400 buckets in the recorder, 120 in a row — one extra pass over what the
+    // draw loop below already walks.
+    //
+    // `firstTakeInFlight` — NOT `capturing` — suppresses the fit, so an
+    // uncommitted take reads at the same absolute level as the `LiveScope` this
+    // canvas replaces mid-take, while committed audio that a punch-in is
+    // recording over stays fitted and aimable (George R1 P2, R2 P2; the prop's
+    // docblock carries both failures).
+    const gain = displayGain(peaks, firstTakeInFlight);
     ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible
@@ -132,8 +163,8 @@ export function Waveform({
       for (let i = 0; i < buckets; i++) {
         const x = ((i / buckets - view.startFraction) / span) * w;
         if (x < -barW || x > w) continue;
-        const top = mid - (peaks.max[i] ?? 0) * mid;
-        const bottom = mid - (peaks.min[i] ?? 0) * mid;
+        const top = mid - (peaks.max[i] ?? 0) * gain * mid;
+        const bottom = mid - (peaks.min[i] ?? 0) * gain * mid;
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
       drawCenterline();
@@ -145,14 +176,28 @@ export function Waveform({
     const barW = Math.max(1, w / buckets - 1);
     for (let i = 0; i < buckets; i++) {
       const x = (i / buckets) * w;
-      const top = mid - (peaks.max[i] ?? 0) * mid;
-      const bottom = mid - (peaks.min[i] ?? 0) * mid;
+      const top = mid - (peaks.max[i] ?? 0) * gain * mid;
+      const bottom = mid - (peaks.min[i] ?? 0) * gain * mid;
       ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
     }
     // `finished` is in the deps for its side effect only: it changes with the
     // `.row--finished` class, so listing it re-runs this draw (which re-reads
     // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
-  }, [peaks, playing, recorded, height, view, finished, capturing]);
+    // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on
+    // the Record and Back edges without `peaks` changing — the whole point of
+    // the flag is that the same peaks draw at a different scale either side of
+    // it, so a stale deps array would leave the canvas at the old scale until
+    // something else happened to invalidate it.
+  }, [
+    peaks,
+    playing,
+    recorded,
+    height,
+    view,
+    finished,
+    capturing,
+    firstTakeInFlight,
+  ]);
 
   return (
     <canvas
