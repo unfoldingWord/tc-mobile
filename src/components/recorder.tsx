@@ -26,6 +26,12 @@ import {
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { classifyShareError } from "@/hooks/share-flow";
+import {
+  capacitorShareBridge,
+  readShareEnvironment,
+  selectShareRoute,
+  shareFileNatively,
+} from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -1436,11 +1442,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       const file = new File([blob], `recording.${container.ext}`, {
         type: container.type,
       });
-      if (
-        typeof navigator.share !== "function" ||
-        (typeof navigator.canShare === "function" &&
-          !navigator.canShare({ files: [file] }))
-      ) {
+      // Same seam as Share Chapter / Share Book (#336): inside the Capacitor
+      // shell the WebView may expose no `navigator.share` at all, and this panel
+      // is the last-resort escape for bytes that would otherwise be lost (#165)
+      // — the one path that must not dead-end in the APK. The route is chosen
+      // synchronously, so the web branch below still calls `navigator.share`
+      // inside this gesture's activation; the native branch needs none (the
+      // chooser is started by the plugin, not the WebView).
+      const route = selectShareRoute(readShareEnvironment(), file);
+      if (route === "unsupported") {
         setHeldShareError(strings.takeShareUnavailable);
         return;
       }
@@ -1452,7 +1462,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // both settle arms.
       heldSharingRef.current = true;
       setHeldSharing(true);
-      void navigator.share({ files: [file] }).then(
+      const handedOver =
+        route === "native"
+          ? shareFileNatively(file, capacitorShareBridge)
+          : navigator.share({ files: [file] });
+      void handedOver.then(
         () => {
           heldSharingRef.current = false;
           setHeldSharing(false);
