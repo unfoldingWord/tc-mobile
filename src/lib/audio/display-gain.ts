@@ -156,11 +156,20 @@ function loudestPeak(peaks: Peaks): number {
  *   - **Below the target.** `DISPLAY_TARGET_PEAK / peak`, capped at
  *     `MAX_DISPLAY_GAIN`.
  *
- * Guarantees `value * gain` stays inside [-1, 1] for every bucket, which is why
- * the draw site needs no clamp of its own: above the target the gain is 1 and
- * the peaks were already in range; below it the fitted peak is exactly
- * `DISPLAY_TARGET_PEAK`; and under the cap the loudest peak is smaller than the
- * crossover, so `peak * MAX_DISPLAY_GAIN` is smaller than the target still.
+ * Guarantees `value * gain` stays inside [-1, 1] for every bucket **of
+ * `peaks` itself** — above the target the gain is 1 and the peaks were
+ * already in range; below it the fitted peak is exactly `DISPLAY_TARGET_PEAK`;
+ * and under the cap the loudest peak is smaller than the crossover, so
+ * `peak * MAX_DISPLAY_GAIN` is smaller than the target still.
+ *
+ * That guarantee does NOT extend to a *different* buffer drawn at this gain.
+ * A caller that fits from one array (`fitFrom`, `waveform.tsx`) but paints
+ * another — the punch-in Pause+Play preview, whose merged peaks can be louder
+ * than the committed clip the gain was frozen to (George R3 P2) — can produce
+ * `value * gain` outside [-1, 1] at the drawn buckets, even though this
+ * function's own contract holds for `peaks` alone. That caller clamps with
+ * `clampUnit` below; this function does not, because it cannot see the second
+ * buffer.
  */
 export function displayGain(
   peaks: Peaks | null,
@@ -176,4 +185,24 @@ export function displayGain(
   const fit = DISPLAY_TARGET_PEAK / peak;
   if (fit <= 1) return 1;
   return fit > MAX_DISPLAY_GAIN ? MAX_DISPLAY_GAIN : fit;
+}
+
+/**
+ * Confines a single drawn excursion to the canvas, [-1, 1].
+ *
+ * `displayGain`'s own invariant covers `value * gain` only when `value` comes
+ * from the same peaks the gain was fitted to. A drawer that fits from one
+ * buffer and paints another — `waveform.tsx`'s `fitFrom`, so a frozen gain
+ * survives the punch-in preview swap without re-jumping the committed clip's
+ * scale (George R3 P2) — can hand this a louder excursion than the fit
+ * anticipated, and without a clamp that bar would run past the canvas edge
+ * rather than merely look tall. Also rejects NaN (neither comparison is true,
+ * so it falls through to the final branch) by returning it unchanged rather
+ * than silently coercing it to a boundary — a NaN reaching the draw call is a
+ * bug to surface, not paper over.
+ */
+export function clampUnit(value: number): number {
+  if (value < -1) return -1;
+  if (value > 1) return 1;
+  return value;
 }

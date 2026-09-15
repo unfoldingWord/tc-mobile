@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { displayGain } from "@/lib/audio/display-gain";
+import { clampUnit, displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
@@ -49,6 +49,21 @@ interface WaveformProps {
    */
   firstTakeInFlight?: boolean;
   /**
+   * The peaks `displayGain` fits to, when they differ from `peaks` itself —
+   * the punch-in Pause+Play preview, which PAINTS the merged buffer (`#101`'s
+   * `previewShown.peaks`, insert included) but must FIT to the segment's
+   * already-committed clip, not the preview (George R3 P2). Undefined (not
+   * just omitted) falls back to `peaks`, which is every other call site: idle,
+   * a first take, and a row never pass this, so nothing changes for them.
+   *
+   * A frozen gain fitted to one buffer and applied to a louder one can push
+   * `value * gain` past the canvas edge — `displayGain`'s own [-1, 1]
+   * guarantee only covers the buffer it was fitted to — so the draw loops
+   * below clamp with `clampUnit` rather than assuming the invariant still
+   * holds.
+   */
+  fitFrom?: Peaks | null;
+  /**
    * A finished row repaints in the green (`--s-done`) role. The stroke colour
    * still comes from the inherited `--c-wave-stroke` (remapped by
    * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
@@ -78,6 +93,7 @@ export function Waveform({
   finished = false,
   capturing = false,
   firstTakeInFlight = false,
+  fitFrom,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -152,7 +168,13 @@ export function Waveform({
     // canvas replaces mid-take, while committed audio that a punch-in is
     // recording over stays fitted and aimable (George R1 P2, R2 P2; the prop's
     // docblock carries both failures).
-    const gain = displayGain(peaks, firstTakeInFlight);
+    //
+    // Fit from `fitFrom` when the caller supplied one — the punch-in Pause+Play
+    // preview paints the merged buffer but must fit to the committed clip, not
+    // the preview it is momentarily replacing (George R3 P2, `fitFrom`'s
+    // docblock). Every other call site leaves this undefined and fits the
+    // buffer it draws, same as before.
+    const gain = displayGain(fitFrom ?? peaks, firstTakeInFlight);
     ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible
@@ -163,8 +185,11 @@ export function Waveform({
       for (let i = 0; i < buckets; i++) {
         const x = ((i / buckets - view.startFraction) / span) * w;
         if (x < -barW || x > w) continue;
-        const top = mid - (peaks.max[i] ?? 0) * gain * mid;
-        const bottom = mid - (peaks.min[i] ?? 0) * gain * mid;
+        // Clamped: `gain` may be fitted from `fitFrom`, a different buffer
+        // than `peaks` (George R3 P2), so `displayGain`'s own [-1, 1]
+        // guarantee for `peaks` alone does not cover this product.
+        const top = mid - clampUnit((peaks.max[i] ?? 0) * gain) * mid;
+        const bottom = mid - clampUnit((peaks.min[i] ?? 0) * gain) * mid;
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
       drawCenterline();
@@ -176,8 +201,10 @@ export function Waveform({
     const barW = Math.max(1, w / buckets - 1);
     for (let i = 0; i < buckets; i++) {
       const x = (i / buckets) * w;
-      const top = mid - (peaks.max[i] ?? 0) * gain * mid;
-      const bottom = mid - (peaks.min[i] ?? 0) * gain * mid;
+      // Clamped for the same reason as the `view` loop above: `gain` may be
+      // fitted from a different buffer than `peaks` (`fitFrom`, George R3 P2).
+      const top = mid - clampUnit((peaks.max[i] ?? 0) * gain) * mid;
+      const bottom = mid - clampUnit((peaks.min[i] ?? 0) * gain) * mid;
       ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
     }
     // `finished` is in the deps for its side effect only: it changes with the
@@ -187,7 +214,10 @@ export function Waveform({
     // the Record and Back edges without `peaks` changing — the whole point of
     // the flag is that the same peaks draw at a different scale either side of
     // it, so a stale deps array would leave the canvas at the old scale until
-    // something else happened to invalidate it.
+    // something else happened to invalidate it. `fitFrom` is referenced there
+    // too: it can change (preview shown/cleared) while `peaks` also changes,
+    // and a stale value would fit the previous stage's committed clip to the
+    // current one's preview.
   }, [
     peaks,
     playing,
@@ -197,6 +227,7 @@ export function Waveform({
     finished,
     capturing,
     firstTakeInFlight,
+    fitFrom,
   ]);
 
   return (

@@ -64,11 +64,14 @@ interface LiveScopeProps {
  * beside it is absolute for the same reason.
  *
  * `Waveform` holds the same line rather than contradicting it: it suppresses
- * the fit whenever `capturing` is set, so the mid-take swaps between the two
- * canvases — this scope unmounting for a paused first take's decoded preview
- * (`recorder.tsx`'s `previewShown`), and remounting on Resume — do not change
- * the scale under the translator (George R1 P2). The re-fit lands once, when
- * the take is committed and capture is over.
+ * the fit whenever `firstTakeInFlight` is set — capturing AND nothing
+ * committed yet, not `capturing` alone, which a punch-in also sets over
+ * already-committed audio it must keep fitted (George R2 P2) — so the
+ * mid-take swaps between the two canvases — this scope unmounting for a
+ * paused first take's decoded preview (`recorder.tsx`'s `previewShown`), and
+ * remounting on Resume — do not change the scale under the translator (George
+ * R1 P2, R3 P2). The re-fit lands once, when the take is committed and
+ * capture is over.
  *
  * #358 also sketches a running-max scale during capture; that half is
  * deliberately NOT built here, pending the requirements owner's call and the

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DISPLAY_TARGET_PEAK,
   MAX_DISPLAY_GAIN,
+  clampUnit,
   displayGain,
   isFirstTakeInFlight,
 } from "@/lib/audio/display-gain";
@@ -197,6 +198,43 @@ describe("displayGain", () => {
     for (const stage of ["idle", "recording", "paused", "closing"]) {
       expect([stage, displayGain(committed, false)]).toEqual([stage, fitted]);
     }
+  });
+
+  it("keeps the committed gain, not the preview's, and clamps what it draws (George R3 P2)", () => {
+    // The punch-in Pause+Play preview PAINTS the merged buffer (`#101`) but
+    // must FIT to the committed clip alone — `waveform.tsx`'s `fitFrom`. A
+    // quiet committed take fitted to ~9x, with a louder insert spliced in for
+    // the preview: drawing the insert at the committed gain, unclamped, would
+    // run past the canvas edge, which is exactly what `clampUnit` exists to
+    // stop rather than merely look tall.
+    const committed = peaksWithPeak(0.1);
+    const committedGain = displayGain(committed, false);
+    expect(committedGain).toBeCloseTo(9, 6);
+
+    const louderInsert = 0.5;
+    const drawnAtCommittedGain = louderInsert * committedGain;
+    expect(drawnAtCommittedGain).toBeGreaterThan(1);
+    expect(clampUnit(drawnAtCommittedGain)).toBe(1);
+    expect(clampUnit(-drawnAtCommittedGain)).toBe(-1);
+
+    // ...and a value the frozen gain never pushes out of range is untouched.
+    expect(clampUnit(louderInsert * 1)).toBeCloseTo(0.5, 6);
+  });
+
+  it("clampUnit confines a value to [-1, 1] and leaves an in-range one alone", () => {
+    expect(clampUnit(1.5)).toBe(1);
+    expect(clampUnit(-1.5)).toBe(-1);
+    expect(clampUnit(1)).toBe(1);
+    expect(clampUnit(-1)).toBe(-1);
+    expect(clampUnit(0.42)).toBe(0.42);
+    expect(clampUnit(-0.42)).toBe(-0.42);
+    expect(clampUnit(0)).toBe(0);
+  });
+
+  it("passes a non-finite value through clampUnit rather than coercing it", () => {
+    // Neither comparison is true for NaN, so it falls to the final branch —
+    // surfacing the bug rather than silently drawing a boundary bar.
+    expect(Number.isNaN(clampUnit(Number.NaN))).toBe(true);
   });
 
   it("fits peaks taken from a real quiet PCM buffer", () => {

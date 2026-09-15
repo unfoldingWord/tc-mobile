@@ -1843,6 +1843,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         recording || paused,
                         hasAudio
                       )}
+                      // Fit to the COMMITTED clip always, even on the punch-in
+                      // Pause+Play branch above where `peaks` switches to
+                      // `previewShown.peaks` (the merged buffer, insert
+                      // included). Without this the gain re-derives from
+                      // whatever the insert's level happens to be, and a louder
+                      // insert shrinks the stored speech that filled the lane a
+                      // moment earlier — then Resume, which clears the preview,
+                      // pops it back (George R3 P2). When there is no preview
+                      // this is the same array as `peaks`, so idle and a first
+                      // take are unaffected.
+                      fitFrom={editor.peaks}
                       playing={wholeView}
                       view={waveView}
                     />
