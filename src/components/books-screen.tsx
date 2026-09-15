@@ -47,6 +47,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     renameBook,
     deleteBook,
     deleting,
+    deleteFailed,
   } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
@@ -80,10 +81,6 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Segments row menu, where Erase closes the row menu and the screen holds the
   // target. `null` means no confirm is up.
   const [deleteTargetId, setDeleteTargetId] = useState<BookId | null>(null);
-  // A delete that failed speaks in the screen's own Notice, in its own words:
-  // the confirm is gone by then, and the store's message is for a maintainer.
-  // Local because it is one screen's copy for one op, not hook state.
-  const [deleteFailed, setDeleteFailed] = useState(false);
   // A monotonic token for the current book-menu session. It advances whenever the
   // menu closes, switches to another book, or arms a share — every transition
   // after which a late-resolving rename must NOT run its close, or it would drop
@@ -249,7 +246,6 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // the same hole the new-book hand-off above closes.
     const index = books.findIndex((b) => b.bookId === deleteTargetId);
     const neighbour = books[index + 1] ?? books[index - 1] ?? null;
-    setDeleteFailed(false);
     void (async () => {
       const result = await deleteBook(deleteTargetId);
       // A double-tap's second call is refused, not answered: the first delete is
@@ -263,17 +259,19 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           next.delete(deleteTargetId);
           return next;
         });
+        // The hook drops the row in the same turn it commits, so this render
+        // already mounts the neighbour (or the empty-state CTA) and the
+        // `[books]` effect below can consume this. The later reload is a second
+        // chance at it, so a race here costs a frame, not the focus.
         pendingFocus.current = neighbour?.bookId ?? EMPTY_STATE_NODE;
-      } else {
-        setDeleteFailed(true);
       }
       setDeleteTargetId(null);
     })();
   }, [books, deleteBook, deleteTargetId]);
 
-  // A failed delete's own words win over the store's message underneath it. Both
-  // are set on failure — `error` carries the cause for a maintainer reading the
-  // Notice, this carries the line a screen reader speaks to a translator.
+  // `deleteFailed` only ever RELABELS the hook's current error — the hook sets
+  // and clears the two together — so a successful reload takes this line down
+  // with the error it labelled, and any later failure speaks for itself.
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
   return (
