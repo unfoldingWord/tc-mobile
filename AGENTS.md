@@ -151,6 +151,26 @@ added to `settle()` that left the winning clip permanently unstoppable (issue
 #2's exact symptom) while all eleven tests still passed. Line coverage would
 have read 100%.
 
+**A gate is tested in both states.** A CI step, a guard script or a smoke
+assertion makes two claims: it goes red on the state it exists to catch, and
+it stays green on every state the surrounding docs call legitimate, including
+the documented _next_ one. Proving only the first half is not a gate. Three
+tooling PRs in one week (#215, #232, #256; #270 has the details) each shipped
+the first half only: a deploy check whose default origin is staging, so a
+production promotion can PASS without production being fetched, and whose
+entry guard exits 0 with no output on a path containing a space; a CI grep that
+bans `obs/thumbs` in `dist/sw.js` unconditionally while the same PR's test says
+jpg must be restored once a reader lands; a smoke assertion comparing
+`fitToFrames(...).length` to the count `fitToFrames` guarantees by
+construction. Every PR body had a red-first section. The rigor landed on the
+pure core and skipped the boundary. So, for any gate: enumerate the legitimate
+states and run the gate on each; mutate the thing the assertion claims to catch,
+not a helper, and watch the gate itself die; test a gate script's entry path
+and defaults, not just its exported function; derive a CI path filter from what
+the suite imports, never from issue prose. And a review posted from the
+author's own session is an author self-check — never "independent", never
+"clean" (#215 carried one that missed all three P2s).
+
 **Never claim verification you did not perform.** No docblock, comment or PR
 body may state that something is tested, verified, or checked on-device unless
 it was. This has been the single most recurrent defect class in this repo's
