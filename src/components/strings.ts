@@ -161,6 +161,14 @@ export const strings = {
   selectStart: "Select a span to edit",
   selectStop: "Close the selection",
   cut: "Cut the selection",
+  // Edit-mode Play — the audition (#284). The glyph and the stop label are the
+  // record bar's (`playRecording` / `stopPlayback`); what is new is that the
+  // name says WHICH audio the tap will sound, because in edit mode that changes
+  // with the picked span. `auditionPlan`'s `source` chooses between these three,
+  // so the spoken name and the samples heard come from one decision:
+  // "selection" → below, "line" → below, "whole" → `playRecording`.
+  auditionSelection: "Play the selection",
+  auditionFromLine: "Play from the line",
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
