@@ -276,7 +276,7 @@ export function useShareFlow(): UseShareFlow {
         // branch's contract is unchanged, and the whole two-gesture flow exists
         // for it.
         await nativeShare.share(file);
-      } else {
+      } else if (route === "web") {
         // `navigator.share` is invoked synchronously here: an async function runs
         // to its first await, and this call IS that boundary, so no work precedes
         // it and the tap's user activation is still valid. Pass ONLY `files`:
@@ -285,6 +285,15 @@ export function useShareFlow(): UseShareFlow {
         // `share` still resolves — the File already carries its name (George
         // R-B7).
         await navigator.share({ files: [file] });
+      } else {
+        // Unreachable today: both of `prepare`'s gates reject `unsupported`
+        // before a File is ever armed, so `send` cannot see one. Spelled out
+        // anyway so the route is consumed exhaustively — the two-way branch this
+        // replaces sent `unsupported` to `navigator.share`, which on a browser
+        // that has none is the #336 dead-end (George stand-in R4 P3-2). Raising
+        // lands in the catch below as `failed`, the same outcome that branch
+        // produced by throwing a TypeError, so nothing observable moves.
+        throw new Error("No share route is available");
       }
       // Shared. If a newer run has taken over (a `reset` while the sheet was open
       // bumped the token and may have armed a NEW File), leave its state alone AND

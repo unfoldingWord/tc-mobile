@@ -109,6 +109,8 @@ export interface NativeShareBridge {
   share(options: { files: string[] }): Promise<void>;
 }
 
+type ShareRoute = "native" | "web" | "unsupported";
+
 /**
  * Which way this share goes. Called twice per share: once before the encode with
  * `file === null` (so a browser that cannot share at all does not pay for a
@@ -123,12 +125,39 @@ export interface NativeShareBridge {
 export function selectShareRoute(
   env: ShareEnvironment,
   file: File | null
-): "native" | "web" | "unsupported" {
+): ShareRoute {
   if (env.native) return "native";
   if (!env.webShare) return "unsupported";
   if (file !== null && env.canShareFiles !== null && !env.canShareFiles(file))
     return "unsupported";
   return "web";
+}
+
+/**
+ * Does a share that RESOLVED prove the file left the phone?
+ *
+ * On the web route, yes: `navigator.share` rejects a dismissed sheet with
+ * `AbortError`, so a resolve means the translator picked a target.
+ *
+ * On the native route, **no**, and the gap is not closeable from here.
+ * `SharePlugin.java`'s `activityResult` rejects a `RESULT_CANCELED` chooser
+ * only while `stopped` is false, and `handleOnStop` sets `stopped` the moment
+ * the activity stops — a notification, a call, any trip away and back. So a
+ * chooser the translator dismissed with Back can resolve as success. That flag
+ * cannot be tightened: it is the plugin's PRIMARY success signal, because
+ * `ACTION_SEND` targets usually never call `setResult`. `Share.share`'s
+ * `activityType` is no way out either — it is empty for a real share whenever
+ * the chosen component is not reported, so an empty value distinguishes
+ * nothing, which is why it is not threaded through this seam.
+ *
+ * What follows from it depends entirely on what the caller does with the news.
+ * Share Chapter and Share Book lose nothing to a false success — the audio is
+ * still in IndexedDB. The held-take rescue (#165) holds the ONLY copy of a
+ * recording, so it must not offer a one-tap exit that drops it on a signal that
+ * can be false (George stand-in R4 P2).
+ */
+export function resolveProvesDelivery(route: ShareRoute): boolean {
+  return route === "web";
 }
 
 /**
