@@ -9,7 +9,7 @@
  * the recorder owns only how to sound the range it is handed.
  */
 
-import { clampRange } from "./edit";
+import { clampRange, spansWholeSample } from "./edit";
 import type { SampleRange } from "@/types/audio";
 
 /**
@@ -29,8 +29,9 @@ export interface AuditionPlan {
  * Decide what edit-mode Play sounds, or `null` when there is nothing to hear.
  *
  * With a span picked, the audition is **exactly** the samples a cut would
- * remove: the same `clampRange` normalisation `useSegmentEditor.cut` runs, so
- * the preview and the scissors cannot disagree about what is selected. A
+ * remove: the same `clampRange` normalisation AND the same `spansWholeSample`
+ * emptiness test `useSegmentEditor.cut` runs, so the preview and the scissors
+ * cannot disagree about what is selected — in either direction. A
  * reversed span (a handle dragged past its partner — the editor deliberately
  * leaves those unordered so the handle stays under the finger) normalises here,
  * and a span from which no whole sample would be taken — collapsed, clamped
@@ -58,15 +59,14 @@ export function auditionPlan(
 
   if (selection !== null) {
     const range = clampRange(selection, workingLength);
-    // Empty is decided the way the audio is actually taken, not by comparing the
-    // two floats: both `subarray` (the audition) and `slice` (`sliceRange`, the
-    // cut) TRUNCATE their indices, so a span living inside one sample removes
-    // nothing and sounds nothing. A plain `start === end` also let `NaN` through
-    // — `NaN === NaN` is false — and a `subarray(NaN, NaN)` is empty, so either
-    // hole leaves a live control that visibly does nothing when tapped (Frank R1
-    // F1, George R1 P3-1). `!(a > b)` rejects the non-finite case with the same
-    // shape used below.
-    if (!(Math.trunc(range.end) > Math.trunc(range.start))) return null;
+    // "Is anything selected?" is asked in ONE place (`spansWholeSample`), which
+    // Cut and the scissors' enabled state ask too — so the audition and the edit
+    // it previews can never disagree about a span (Frank R3). It answers the
+    // question the way the audio is actually taken: `subarray` here and `slice`
+    // in `sliceRange` both TRUNCATE, so a span inside a single sample sounds
+    // nothing and removes nothing, and a non-finite edge (which `start === end`
+    // let through) is empty as well.
+    if (!spansWholeSample(range)) return null;
     return { range, source: "selection" };
   }
 
