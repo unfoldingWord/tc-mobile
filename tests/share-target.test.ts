@@ -218,10 +218,7 @@ describe("the native share session", () => {
 
     const write = calls.find((call) => call.op === "write");
     expect(write?.path).toMatch(
-      new RegExp(
-        `^${SHARE_CACHE_DIR}/[0-9a-f-]{36}/Genesis - Chapter 1\\.mp3$`,
-        "i"
-      )
+      new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f]{32}/Genesis - Chapter 1\\.mp3$`)
     );
     // Neither the share directory nor this share's own directory exists yet.
     expect(write?.recursive).toBe(true);
@@ -264,9 +261,7 @@ describe("the native share session", () => {
     expect(dirs).toHaveLength(2);
     expect(new Set(dirs).size).toBe(2);
     for (const dir of dirs)
-      expect(dir).toMatch(
-        new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f-]{36}$`, "i")
-      );
+      expect(dir).toMatch(new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f]{32}$`));
   });
 
   it("gives two concurrent shares separate directories, and neither removes the other's", async () => {

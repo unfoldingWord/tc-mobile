@@ -220,11 +220,8 @@ export function createNativeShareSession(
       // already returned once the clock is corrected backwards. Either way a
       // new share could pick the name of an old one and `writeFile` would
       // TRUNCATE a file a recipient was still reading — on the held-take path,
-      // possibly the only exported copy. `randomUUID` needs no reasoning about
-      // clocks or lifetimes. It needs a secure context, which the native shell
-      // always is (`https://localhost` / `capacitor://localhost`), and staging
-      // runs on the native route only.
-      const dir = `${SHARE_CACHE_DIR}/${crypto.randomUUID()}`;
+      // possibly the only exported copy.
+      const dir = `${SHARE_CACHE_DIR}/${randomShareId()}`;
       const path = `${dir}/${cacheFilename(file.name)}`;
       try {
         // Checked before each chunk AND before the first: a cancel that arrives
@@ -279,6 +276,24 @@ export function createNativeShareSession(
     discard: (staged: StagedShare): Promise<void> =>
       removeDir(bridge, staged.dir),
   };
+}
+
+/**
+ * 128 random bits as hex, for one staged share's directory.
+ *
+ * **`getRandomValues`, deliberately not `crypto.randomUUID`** (Frank R6 P2,
+ * second pass). `randomUUID` needs Chromium 92 / WebKit 15.4; `getRandomValues`
+ * has been there since Chromium 11. This whole PR exists because the Android
+ * System WebView on the phone that failed may be OLD (#336), so reaching for
+ * the newer API here would put a `TypeError` in the one place the fix has to
+ * work. It also means one path rather than a primary and an untested fallback.
+ */
+function randomShareId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    ""
+  );
 }
 
 /** The abort shape `share-flow.ts` already classifies as a dismissal. */
