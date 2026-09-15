@@ -319,22 +319,24 @@ export function useShareFlow(): UseShareFlow {
         // share needs no user activation — the plugin starts the chooser as an
         // Android Intent / a UIActivityViewController, not the WebView — but it
         // is called first here anyway, so the two routes have one shape.
-        try {
-          await nativeShare.send(armed.staged);
-        } catch (cause) {
-          // The staged file can be GONE by tap 2 (George R6 P2). `Directory.Cache`
-          // is the first thing the OS reclaims, and this window now spans however
-          // long the menu sits on "Share now" — a phone call, a backgrounding, a
-          // nearly-full training phone. The File itself is still in memory, so
-          // write it again and offer it rather than making a facilitator re-encode
-          // a whole book. Once, not in a loop.
-          //
-          // A dismissal is never retried: there the chooser DID open and the
-          // translator closed it, and a second sheet would be the app arguing.
-          if (classifyShareError(cause, hadActivation) === "dismissed")
-            throw cause;
-          await nativeShare.send(await nativeShare.stage(armed.file));
-        }
+        // ONE call, and deliberately no restage-on-failure here.
+        //
+        // The staged file can be gone by tap 2 — `Directory.Cache` is what the
+        // OS reclaims first, and this window spans however long the menu sits on
+        // "Share now" (George R6 P2). Writing it again from `armed.file` looks
+        // like the obvious recovery, and it was tried: it puts a
+        // multi-megabyte write back INSIDE `send`, which is the exact shape this
+        // round removed, and it immediately grew the defect that shape always
+        // grows — an uncancellable write that opens a chooser over a screen the
+        // translator already closed (Frank R6 P2). `send` stays one call.
+        //
+        // The flow already has a recovery, and it is the ordinary one: this
+        // reports `failed`, the menu stays open, and Share chapter/book
+        // re-prepares — re-encode and re-stage together, under the busy state
+        // that exists for slow work. The cost is a re-encode, not a lost
+        // recording: chapter and book audio are in IndexedDB throughout. That is
+        // an accepted residual, written down rather than patched over.
+        await nativeShare.send(armed.staged);
       } else {
         // `navigator.share` is invoked synchronously here: an async function runs
         // to its first await, and this call IS that boundary, so no work precedes
