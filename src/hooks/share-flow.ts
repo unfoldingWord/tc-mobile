@@ -191,7 +191,14 @@ export function useShareFlow(): UseShareFlow {
   const prepare = useCallback(async (build: BuildShareFile): Promise<void> => {
     // Already encoding, or a File is already armed: ignore. (The screen hides the
     // prepare control while `ready`, so this is a re-entry backstop.)
-    if (preparingRef.current || armedRef.current !== null) return;
+    // Already encoding, already armed, or a chooser is still up: ignore.
+    // `sendingRef` is in this guard because `send` now clears `armedRef` when it
+    // takes ownership (Frank R6 P2), so "armed" no longer covers the window in
+    // which a share is in flight — and a `reset()` while the sheet is open drops
+    // the flow to idle, putting tap 1 back on screen (George R6 P2). Without
+    // this, a tap there would start a second encode behind a live chooser.
+    if (preparingRef.current || armedRef.current !== null || sendingRef.current)
+      return;
     // Fail before the encode, not after: a browser with no Web Share should not
     // pay for a whole encode only to be told it cannot share it. The file-level
     // check still runs post-encode (it needs the File), but the capability
@@ -358,15 +365,21 @@ export function useShareFlow(): UseShareFlow {
       return "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
-      if (outcome === "retry") {
+      if (outcome === "retry" && armed.staged === null) {
         // Activation was spent — the File still stands, so put it back and stay
         // `ready` so another tap can hand it over. Not a failure the translator
         // should see. Only if this run still owns the flow: if a newer one has
-        // taken over, this staged file is nobody's and goes rather than leaking.
+        // taken over, the File is nobody's and is simply dropped.
         if (current()) armedRef.current = armed;
-        else if (armed.staged !== null) void nativeShare.discard(armed.staged);
         return "retry";
       }
+      // A native `retry` does NOT get its staged value back (George R6 P3):
+      // `nativeShare.send` removes the staged directory on ANY rejection, so
+      // restoring it would arm a URI whose file is already gone and the next tap
+      // would fail against it. Not reachable today — `retry` needs a DOMException
+      // `NotAllowedError` and the plugin rejects with a plain Error — but the
+      // composition is wrong regardless, so it falls through to idle below and
+      // the translator re-prepares, which restages as well as re-encodes.
       // A newer run owns the flow: don't touch its state and don't let the caller
       // act on this stale settle.
       if (!current()) return "superseded";
