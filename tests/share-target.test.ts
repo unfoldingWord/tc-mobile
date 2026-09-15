@@ -219,7 +219,8 @@ describe("the native share session", () => {
     const write = calls.find((call) => call.op === "write");
     expect(write?.path).toMatch(
       new RegExp(
-        `^${SHARE_CACHE_DIR}/\\d+-[a-z0-9]+/Genesis - Chapter 1\\.mp3$`
+        `^${SHARE_CACHE_DIR}/[0-9a-f-]{36}/Genesis - Chapter 1\\.mp3$`,
+        "i"
       )
     );
     // Neither the share directory nor this share's own directory exists yet.
@@ -245,21 +246,27 @@ describe("the native share session", () => {
     expect(calls.some((call) => call.op === "rmdir")).toBe(false);
   });
 
-  it("gives every share a name a later session cannot reuse", async () => {
-    // Nothing is swept any more, so a stale directory outlives the process that
-    // made it. The sequence alone restarts at 1 with the app, which would let a
-    // new share truncate a file a target is still reading; the timestamp is what
-    // prevents that.
-    const { share, calls } = harness();
-    await share(mp3());
-    await share(zip());
-    const dirs = calls
+  it("gives every share a name no other share can reuse, across sessions too", async () => {
+    // Frank R6 P2. Nothing is swept, so a directory outlives the process that
+    // made it — and a name a later run could reproduce is a name a later run
+    // could TRUNCATE, out from under a recipient still reading it. A per-session
+    // counter restarts at 1 with the app and `Date.now()` repeats itself once
+    // the clock is corrected backwards, so neither can carry this. Two separate
+    // sessions stand in for two runs of the app.
+    const first = harness();
+    const second = harness();
+    await first.share(mp3());
+    await second.share(mp3());
+
+    const dirs = [...first.calls, ...second.calls]
       .filter((call) => call.op === "write")
       .map((call) => dirOf(call));
     expect(dirs).toHaveLength(2);
     expect(new Set(dirs).size).toBe(2);
     for (const dir of dirs)
-      expect(dir).toMatch(new RegExp(`^${SHARE_CACHE_DIR}/\\d+-[0-9a-z]+$`));
+      expect(dir).toMatch(
+        new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f-]{36}$`, "i")
+      );
   });
 
   it("gives two concurrent shares separate directories, and neither removes the other's", async () => {

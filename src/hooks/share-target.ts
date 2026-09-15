@@ -204,19 +204,27 @@ export interface NativeShareSession {
  *
  * **Every share still gets its own directory**, which is what makes concurrent
  * shares safe: Share Chapter and the held-take rescue can be in flight together
- * and neither can write over the other's bytes (Frank R2 P2). The name carries a
- * timestamp as well as a sequence because nothing is swept any more, so a later
- * session's first share must not reuse a name whose file may still be read.
+ * and neither can write over the other's bytes (Frank R2 P2). The name is a
+ * random id, because nothing is ever swept: a directory outlives the process
+ * that made it, and a name a later run could reproduce is a name a later run
+ * could truncate (Frank R6 P2).
  */
 export function createNativeShareSession(
   bridge: NativeShareBridge
 ): NativeShareSession {
-  let sequence = 0;
-
   return {
     async stage(file: File, signal?: AbortSignal): Promise<StagedShare> {
-      sequence += 1;
-      const dir = `${SHARE_CACHE_DIR}/${sequence}-${Date.now().toString(36)}`;
+      // A random id, not a sequence or a timestamp (Frank R6 P2). Nothing is
+      // ever swept, so a directory outlives the process that made it: a counter
+      // restarts at 1 with the app, and `Date.now()` can return a value it has
+      // already returned once the clock is corrected backwards. Either way a
+      // new share could pick the name of an old one and `writeFile` would
+      // TRUNCATE a file a recipient was still reading — on the held-take path,
+      // possibly the only exported copy. `randomUUID` needs no reasoning about
+      // clocks or lifetimes. It needs a secure context, which the native shell
+      // always is (`https://localhost` / `capacitor://localhost`), and staging
+      // runs on the native route only.
+      const dir = `${SHARE_CACHE_DIR}/${crypto.randomUUID()}`;
       const path = `${dir}/${cacheFilename(file.name)}`;
       try {
         // Checked before each chunk AND before the first: a cancel that arrives
@@ -300,10 +308,9 @@ const capacitorShareBridge: NativeShareBridge = {
 };
 
 /**
- * The app's one native share session. A single instance on purpose: the
- * per-share sequence is only unique within a session, so Share Chapter, Share
- * Book and the recorder's held-take rescue all go through this one rather than
- * three that could name the same directory.
+ * The app's one native share session, so Share Chapter, Share Book and the
+ * recorder's held-take rescue all go through the same bridge and the same cache
+ * directory.
  */
 export const nativeShare: NativeShareSession =
   createNativeShareSession(capacitorShareBridge);
