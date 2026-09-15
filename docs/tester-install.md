@@ -32,6 +32,9 @@ On Android you install tC Mobile from a download link we send you, rather than
 from the Play Store. Your phone will ask you to confirm this is okay — that is
 normal, and the steps below show you exactly what to tap.
 
+The app needs **Android 7.0 (2016) or newer** — an older phone cannot install
+it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
+
 1. **Open the download link** we send you in your phone's web browser
    (`<placeholder: download URL>`).
 2. **Download the file.** It ends in `.apk` — that is the app.

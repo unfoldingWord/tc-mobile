@@ -14,7 +14,9 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    will set up (see [`tester-install.md`](../tester-install.md) for the exact
    steps — do not retype them here, just follow that guide).
 2. Know which kind of build each phone is getting: an Android phone installs
-   an APK from a download link; an iPhone installs through TestFlight. <!-- source: docs/tester-install.md, "Android (download link)" and "iPhone or iPad (TestFlight)" sections -->
+   an APK from a download link; an iPhone installs through TestFlight. <!-- source: docs/tester-install.md, "Android (download link)" and "iPhone or iPad (TestFlight)" sections --> The
+   Android app needs **Android 7.0 (2016) or newer** — an older phone cannot
+   install it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
 3. Bring a paper or digital "problem report" sheet (see [section 5](#5-reporting-a-problem))
    — there is no in-app way to send us a report yet. <!-- source: gh issue #205, open as of 2026-09-15; no reporting UI found in src/ during this pass -->
 4. Charge every phone. Recording drains the battery faster than normal use.
