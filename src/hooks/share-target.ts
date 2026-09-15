@@ -224,13 +224,16 @@ export function createNativeShareSession(
       const dir = `${SHARE_CACHE_DIR}/${randomShareId()}`;
       const path = `${dir}/${cacheFilename(file.name)}`;
       try {
-        // Checked before each chunk AND before the first: a cancel that arrives
-        // while the previous chunk was in flight must not start another, and an
-        // already-aborted signal must not write at all.
+        // Checked IMMEDIATELY BEFORE each bridge call, never merely before the
+        // read that precedes it (Frank R6 P2). Reading and base64-encoding a
+        // 768 KB slice is itself an await, so a cancel arriving during the read
+        // would otherwise still buy one more native write — the expensive half —
+        // on exactly the slow device this cancel exists for.
         throwIfAborted(signal);
         // `writeFile` truncates, so a repeat of this call over the same path
         // overwrites rather than appending to a partial: safely re-runnable.
         const first = await readChunkBase64(file, 0);
+        throwIfAborted(signal);
         const { uri } = await bridge.writeFile({
           path,
           data: first,
@@ -242,10 +245,9 @@ export function createNativeShareSession(
           at += SHARE_CHUNK_BYTES
         ) {
           throwIfAborted(signal);
-          await bridge.appendFile({
-            path,
-            data: await readChunkBase64(file, at),
-          });
+          const chunk = await readChunkBase64(file, at);
+          throwIfAborted(signal);
+          await bridge.appendFile({ path, data: chunk });
         }
         throwIfAborted(signal);
         return { uri, dir };

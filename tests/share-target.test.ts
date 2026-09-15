@@ -378,6 +378,31 @@ describe("the native share session", () => {
     });
   });
 
+  it("does not write a chunk when the cancel lands while that chunk is being read", async () => {
+    // Frank R6 P2. Reading and base64-encoding 768 KB is itself an await, so
+    // checking the signal only BEFORE the read left a window in which a cancel
+    // still bought one native write — the expensive half, on the slow device the
+    // cancel exists for.
+    const { session, calls } = harness();
+    const controller = new AbortController();
+    const file = mp3(16);
+    const read = file.slice.bind(file);
+    Object.defineProperty(file, "slice", {
+      value: (...args: Parameters<Blob["slice"]>) => {
+        // The menu closes while this chunk is being read.
+        controller.abort();
+        return read(...args);
+      },
+    });
+
+    await expect(session.stage(file, controller.signal)).rejects.toThrow(
+      DOMException
+    );
+
+    expect(calls.some((call) => call.op === "write")).toBe(false);
+    expect(calls.some((call) => call.op === "share")).toBe(false);
+  });
+
   it("discards a staged file the caller decided never to send", async () => {
     // What `reset()` and unmount call when a menu closes on an armed share.
     const { session, calls } = harness();
