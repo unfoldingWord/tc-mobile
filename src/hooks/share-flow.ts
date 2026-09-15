@@ -285,6 +285,14 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       return "failed";
     }
+    // Take ownership of the armed value SYNCHRONOUSLY, before any await. From
+    // here the staged cache file belongs to this send, not to `armedRef` — so a
+    // `reset()` or an unmount while the chooser is up cannot discard the file
+    // the chooser is holding (Frank R6 P2). Deleting a staged file mid-handoff
+    // is earlier than the deletion the rest of this module already refuses to
+    // do: the recipient has not merely failed to finish, it has not started.
+    // The `retry` arm below puts it back.
+    armedRef.current = null;
     sendingRef.current = true;
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
@@ -319,15 +327,19 @@ export function useShareFlow(): UseShareFlow {
       // tell the caller `superseded` so it does not close/reset over the new run
       // (George R-B7-book P2). Only the owning run clears the File.
       if (!current()) return "superseded";
-      armedRef.current = null;
+      // `armedRef` was cleared on entry; the file went to the OS.
       setStatus("idle");
       setMissing(0);
       return "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
       if (outcome === "retry") {
-        // Activation was spent — keep the File stashed and stay `ready` so another
-        // tap can hand it over. Not a failure the translator should see.
+        // Activation was spent — the File still stands, so put it back and stay
+        // `ready` so another tap can hand it over. Not a failure the translator
+        // should see. Only if this run still owns the flow: if a newer one has
+        // taken over, this staged file is nobody's and goes rather than leaking.
+        if (current()) armedRef.current = armed;
+        else if (armed.staged !== null) void nativeShare.discard(armed.staged);
         return "retry";
       }
       // A newer run owns the flow: don't touch its state and don't let the caller
@@ -337,8 +349,7 @@ export function useShareFlow(): UseShareFlow {
       // Dismissed or a real failure: end the flow for the run that still owns it.
       // The staged cache file is already gone — `nativeShare.send` removes its
       // own directory on a rejection, because a refused chooser is the one piece
-      // of evidence that nothing received it.
-      armedRef.current = null;
+      // of evidence that nothing received it. `armedRef` was cleared on entry.
       setStatus("idle");
       setMissing(0);
       if (outcome === "failed") setError("failed");
