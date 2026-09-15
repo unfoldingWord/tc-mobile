@@ -208,9 +208,12 @@ describe("panForZoom", () => {
     expect(v.end).toBeGreaterThanOrEqual(1000);
   });
 
-  it("fits any selection when zooming back out to the whole segment", () => {
-    // At zoom 1 the window spans the whole clip, so nothing can be left off
-    // screen — including a span that covers the entire buffer.
+  it("fits any selection when zooming back out to the whole-segment zoom", () => {
+    // At zoom 1 the window SPANS the clip, so any selection fits and the pan can
+    // always be found that shows all of it — including a span covering the whole
+    // buffer. Note this is not the same as "the whole clip is on screen": the
+    // window can still sit over the blank head or tail, which is the append view
+    // `viewportWindow`'s own case above pins.
     for (const span of [
       { start: 100, end: 900 },
       { start: 0, end: LENGTH },
@@ -274,11 +277,12 @@ describe("panForZoom", () => {
   });
 
   it("measures a selection by its real extent, not its raw handles", () => {
-    // `editor.selection` is the RAW picked span; only the editor's own `canCut`
-    // reader clamps it, so a handle dragged into the blank head or tail runs
-    // outside [0, length]. Measured raw, both of these read as "wider than the
-    // window" and pin the viewport into blank space — when the audio each one
-    // actually covers (100 samples) fits the 250-sample window easily.
+    // Measured raw, both of these read as "wider than the window" and pin the
+    // viewport into blank space — when the audio each one actually covers (100
+    // samples) fits the 250-sample window easily. `SegmentEditor` clamps its own
+    // endpoints, so the recorder cannot produce these spans today; this pins the
+    // function as total, which is what lets the branch above be trusted by the
+    // next caller rather than re-derived.
     const tail = panForZoom(LENGTH, 0, 4, CF, { start: 900, end: 4000 });
     const tailWin = win(tail, 4);
     expect(tailWin.start).toBeLessThanOrEqual(900);

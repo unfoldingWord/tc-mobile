@@ -85,8 +85,15 @@ export const strings = {
   // a destination — which could be read either way too. The button also carries
   // `aria-pressed`, so a screen reader gets the state twice; that redundancy is
   // deliberate on a control a sighted, literate tester still misread.
-  zoomAtWhole: "Whole segment in view. Zoom in to a quarter.",
-  zoomAtQuarter: "A quarter in view. Zoom out to the whole segment.",
+  //
+  // They name the MAGNIFICATION, never what is on screen. "Whole segment in
+  // view" was the first draft and is false whenever the clip is panned — which
+  // includes the sheet's own opening state, where the pan rests at the end and
+  // the window is [0.5L, 1.5L] (the append view `viewportWindow`'s own test
+  // pins). Zoom and pan are independent, so no label on this button can honestly
+  // promise an extent (Frank + George, round 1 — both lenses, independently).
+  zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
+  zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
   micRetry: "Try again",
   micBack: "Go back",

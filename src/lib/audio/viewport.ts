@@ -157,11 +157,23 @@ export function panAfterCut(pan: number, range: SampleRange): number {
  *    brings it in, landing against the edge it came in over rather than jerking
  *    to the centre.
  *
- * `selection` is the RAW picked span (`SegmentEditor.selection` is unclamped —
- * only its own `canCut` reader clamps), so both edges are clamped to
- * `[0, length]` here before anything is computed. The result is always within
- * `[0, length]`: the pan is also the record insertion offset, and there is no
- * such thing as inserting before the start or after the end.
+ * Both selection edges are clamped to `[0, length]` before anything is
+ * computed. That is **defensive, not load-bearing for today's caller**:
+ * `SegmentEditor`'s `openSelection` and `setSelection` already clamp each
+ * endpoint to the working buffer, so the recorder cannot hand this an out-of-
+ * range span (an earlier draft of this comment claimed the opposite — George R1
+ * P3). It stays because the clamp is what makes the function total, and because
+ * the span's REAL extent is what decides the wider-than-the-window branch: a
+ * caller that measured raw handles would pin the viewport into blank space.
+ *
+ * The result is always within `[0, length]`: the pan is also the record
+ * insertion offset, and there is no such thing as inserting before the start or
+ * after the end.
+ *
+ * Note that `zoom` 1 means the viewport SPANS the clip's length — not that the
+ * whole clip is on screen. With the pan at the end (the append rest) the window
+ * is `[0.5L, 1.5L]`. Keeping a selection in view is all this promises, and it is
+ * why the zoom control's label names the magnification rather than the extent.
  *
  * Clamping the admissible interval to the clip cannot invert it — clamping is
  * monotone and the raw interval is non-empty whenever the span fits — so the

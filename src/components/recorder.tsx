@@ -193,6 +193,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // sheet mounts fresh on every open, so `null` is the open state, and a drag
     // is what replaces it with an absolute sample position.
     const [panState, setPanState] = useState<number | null>(null);
+    // Where the zoom moved the view to keep an open selection on screen (#91).
+    // A VIEW value only — see `viewPan` below for why it must never be
+    // `panState`. Cleared when a selection opens (a fresh span has not been
+    // zoomed yet), when a drag takes the pan over, and on leaving edit.
+    const [zoomPan, setZoomPan] = useState<number | null>(null);
     const [zoom, setZoom] = useState(ZOOM_WHOLE);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -363,12 +368,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const displayedFinished =
       finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
+    // The zoom's view-only pan, live ONLY while a selection is open in edit mode
+    // (#91). Outside that window it is not consulted at all, which is what makes
+    // it expire by derivation rather than by a second switch that could fall out
+    // of step with the first.
+    //
+    // It is deliberately NOT `panState`. `panState === null` is the append rest,
+    // and `win.centerlineSample` is what `onRecordButton` locks in as the take's
+    // insertion offset — so a pan written merely to keep a selection on screen
+    // would retire the rest and splice the next recording mid-clip, invisibly
+    // (George R1 P1: seed a default selection at the resting pan, zoom, Done,
+    // Record, and ~2.5% of the old take is left stranded after the new one).
+    // Keeping the view pan out of `panState` means the zoom cannot reach the
+    // insertion offset at all, rather than reaching it and being corrected later.
+    const viewPan = mode === "edit" && editor.selectionActive ? zoomPan : null;
     // Clamp to the current length: an edit (a cut) can shorten `working` past a
     // `panState` set before it, and a stale pan beyond the end would sit the record
     // offset at the new end rather than where the translator was looking (George
     // R4). `viewportWindow` also clamps `centerlineSample`, so drawing was already
     // safe; this keeps the offset honest too.
-    const pan = Math.min(panState ?? length, length);
+    const pan = Math.min(viewPan ?? panState ?? length, length);
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
     // The prepared preview, shown on the stage across the whole take-in-flight
@@ -462,6 +481,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setPanState(
           Math.max(0, Math.min(panAtDragStart.current + delta, length))
         );
+        // A real drag is the translator choosing this view deliberately, so the
+        // pan becomes the REAL one — insertion offset included — and the zoom's
+        // view-only fit is handed over rather than continuing to override it.
+        // `panAtDragStart` was captured from the DRAWN pan, so the value written
+        // above continues from where the waveform already was and the handover is
+        // seamless. Done on the first MOVE rather than on pointerdown: a bare tap
+        // on the stage is not a pan and must not adopt a view fit as the splice
+        // point.
+        setZoomPan(null);
       },
       [
         dragging,
@@ -855,6 +883,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onExitEdit = useCallback(() => {
       editor.closeSelection();
       setZoom(ZOOM_WHOLE);
+      // The zoom's view pan is edit-only, exactly as the zoom itself is. The
+      // `viewPan` gate already makes it inert here (mode leaves "edit"), so this
+      // only drops a value that can no longer be read — but leaving it set would
+      // make the next edit session's behaviour depend on the last one's.
+      setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
     }, [editor]);
@@ -868,14 +901,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // to be for the span to survive the change; the geometry is pure and lives
     // in `lib/audio/viewport` with the rest of the window math, tested there.
     //
-    // The pan is only written when there IS a selection. A resting `panState` of
-    // null follows the end of the buffer as it grows (the append view), and
-    // pinning it to an absolute value on every zoom would quietly retire that.
+    // It writes `zoomPan`, never `panState`: this is a view fit, and `panState`
+    // is the record insertion offset (see `viewPan`). With no selection open
+    // there is nothing to keep in view and the pan is left alone entirely, so a
+    // plain zoom behaves exactly as it did before.
     const onToggleZoom = useCallback(() => {
       const next = zoom === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE;
       const span = editor.selectionActive ? editor.selection : null;
       if (span !== null) {
-        setPanState(panForZoom(length, pan, next, CENTER_FRACTION, span));
+        setZoomPan(panForZoom(length, pan, next, CENTER_FRACTION, span));
       }
       setZoom(next);
     }, [zoom, editor.selectionActive, editor.selection, length, pan]);
@@ -885,6 +919,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         editor.closeSelection();
         return;
       }
+      // A fresh span has not been zoomed yet, so drop any view pan a PREVIOUS
+      // selection's zoom left behind — otherwise re-opening a selection later
+      // would jump the view to where an earlier one had been fitted (#91).
+      setZoomPan(null);
       // Seed a grabbable span around the centerline (~30% of the visible window),
       // so the frame opens with handles under the finger rather than collapsed.
       const half = win.visibleSamples * 0.15;
