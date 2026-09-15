@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  effectivePan,
   panAfterCut,
   panForZoom,
   sampleToViewportX,
@@ -148,6 +149,157 @@ describe("panAfterCut", () => {
  * can be, not as magic numbers, so the test survives a change of centre
  * fraction.
  */
+/**
+ * Which pan the recorder actually draws and splices through (#91, round-1 P1).
+ *
+ * The round-1 P1 was that the zoom's view fit reached `panState`, which is also
+ * the record insertion offset — so a zoom with a selection open moved where the
+ * next take spliced. The fix is a second, view-only value that the record path
+ * must never see, and until now that separation lived only in a JSX-adjacent
+ * expression inside a 2000-line component, where nothing could test it. The
+ * George stand-in demonstrated the cost: mutating the WRITER (`setZoomPan` →
+ * `setPanState`) reintroduced the P1 verbatim and all 512 tests stayed green.
+ *
+ * This table pins the READER half of that guarantee — above all the first case,
+ * which is the invariant itself: in record mode the view pan is not consulted,
+ * whatever it holds. See the note in the round-3 triage for what this does and
+ * does not catch; the writer half is still structural.
+ */
+describe("effectivePan", () => {
+  const LENGTH = 1000;
+
+  it("IGNORES the view pan in record mode, whatever it holds", () => {
+    // The P1 invariant. `zoomPan` is deliberately a value that would be obvious
+    // if it leaked: nothing else in these cases is 123.
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: 123,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+    // Even with a selection somehow still open — the two terms are independent,
+    // so neither alone is load-bearing.
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: true,
+        zoomPan: 123,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+    // ...and with no pan of its own, record mode rests at the end (append).
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: true,
+        zoomPan: 123,
+        panState: null,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+  });
+
+  it("uses the view pan only in edit mode WITH a selection open", () => {
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: 475,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(475);
+  });
+
+  it("ignores the view pan in edit mode with NO selection open", () => {
+    // A stale `zoomPan` from an earlier selection must not reach the view; the
+    // recorder clears it, but the gate must not depend on that having happened.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: false,
+        zoomPan: 475,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+  });
+
+  it("falls back through the view pan, then the real pan, then the end", () => {
+    // Selection open but never zoomed: the real pan shows.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: null,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+    // Neither set: the append rest, at the end of the buffer.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: null,
+        panState: null,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+  });
+
+  it("honours a pan of exactly 0 (nullish fallback, not falsy)", () => {
+    // `||` here would silently replace the start of the clip with its end —
+    // the whole buffer's width of error, and in record mode that is the splice
+    // point, not just the view.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: 0,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(0);
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: null,
+        panState: 0,
+        length: LENGTH,
+      })
+    ).toBe(0);
+  });
+
+  it("clamps to the current length", () => {
+    // A cut can shorten the buffer past a pan set before it; a stale pan beyond
+    // the end would sit the record offset past the last sample.
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: null,
+        panState: 4000,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: 4000,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+  });
+});
+
 describe("panForZoom", () => {
   const LENGTH = 1000;
   const CF = 0.5;

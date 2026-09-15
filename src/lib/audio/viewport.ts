@@ -113,6 +113,57 @@ export function sampleToViewportX(
   return ((sample - win.start) / win.visibleSamples) * width;
 }
 
+/** The recorder's two surfaces. Kept as a literal union rather than imported:
+ *  `lib/` never reaches upward, and a third mode would fail to compile at the
+ *  call site, so the two cannot drift apart silently. */
+type RecorderMode = "record" | "edit";
+
+export interface EffectivePanInputs {
+  readonly mode: RecorderMode;
+  /** The B5 selection frame is open. */
+  readonly selectionActive: boolean;
+  /** Where the zoom moved the VIEW to keep that selection on screen (#91). */
+  readonly zoomPan: number | null;
+  /** The real pan — also the record insertion offset. `null` is the append rest. */
+  readonly panState: number | null;
+  /** The working buffer's length. */
+  readonly length: number;
+}
+
+/**
+ * Which pan the recorder draws through — and, in record mode, splices at.
+ *
+ * **This is the round-1 P1's guarantee, made readable.** `panState` is not only
+ * a view value: `null` is the append rest, and the sample under the centerline
+ * is what `onRecordButton` locks in as a take's insertion offset. The zoom's
+ * view fit (`zoomPan`) therefore must never become it, or a zoom taken with a
+ * selection open would move where the next recording splices — silently, since
+ * the centerline does not travel.
+ *
+ * So the view pan is consulted **only** in edit mode with a selection open, and
+ * both terms are independent guards rather than one restated twice: the mode
+ * term holds even if a future path leaves a selection open on the way back to
+ * record, and the selection term holds even if the mode is wrong. In record mode
+ * `zoomPan` is not read at all, whatever it holds.
+ *
+ * Lifted out of the component so that separation can be tested: it is a pure
+ * function of five values, and inside `recorder.tsx` nothing could reach it. It
+ * pins the READER half only — that the record path ignores the view pan. The
+ * WRITER half (that the zoom writes `zoomPan` and not `panState`) is still
+ * structural and untested: a node-only suite with no renderer cannot observe
+ * which setter a handler called. See the round-3 triage on #346.
+ *
+ * The fallback chain is deliberately nullish, not falsy: a pan of exactly 0 is
+ * the start of the clip and must survive, where `||` would replace it with the
+ * end. Only the UPPER bound is clamped, matching what this replaced — a cut can
+ * shorten the buffer past a pan set before it, while no writer produces a
+ * negative (the drag clamps at 0, and so does `panForZoom`).
+ */
+export function effectivePan(i: EffectivePanInputs): number {
+  const viewPan = i.mode === "edit" && i.selectionActive ? i.zoomPan : null;
+  return Math.min(viewPan ?? i.panState ?? i.length, i.length);
+}
+
 /**
  * Where an absolute pan sits after `range` is cut from the buffer.
  *
@@ -120,9 +171,18 @@ export function sampleToViewportX(
  * shifts that sample left, or the line would silently come to mark a later point
  * in the speech and a record would splice there (George R5). Subtract only the
  * removed samples that lay before the pan: a cut entirely after the line leaves
- * it, and a cut straddling it lands the line at the cut's start. A paste needs no
- * companion because it always inserts AT the centerline (`at === pan`), which
- * pushes only the audio to the line's right.
+ * it, and a cut straddling it lands the line at the cut's start.
+ *
+ * A paste needs no companion — but the reason is now CONDITIONAL, and the
+ * condition is not local to this file (George stand-in P3). It holds because
+ * paste inserts at the centerline (`at === pan`), pushing only the audio to the
+ * line's right — and the centerline is the pan only while `effectivePan` is
+ * returning `panState`, i.e. while no selection is open. The recorder's paste
+ * marker renders on exactly that condition, so today `at === pan` is always
+ * true. A paste reachable WITH a selection open would paste at the view pan
+ * instead, shifting samples under a `panState` this function would never be told
+ * about; such a path must pass `panState`, not the drawn centerline, and would
+ * need a companion here.
  */
 export function panAfterCut(pan: number, range: SampleRange): number {
   const lo = Math.min(range.start, range.end);

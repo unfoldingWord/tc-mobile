@@ -33,7 +33,12 @@ import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { computePeaks } from "@/lib/audio/peaks";
-import { panAfterCut, panForZoom, viewportWindow } from "@/lib/audio/viewport";
+import {
+  effectivePan,
+  panAfterCut,
+  panForZoom,
+  viewportWindow,
+} from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
@@ -368,26 +373,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const displayedFinished =
       finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
-    // The zoom's view-only pan, live ONLY while a selection is open in edit mode
-    // (#91). Outside that window it is not consulted at all, which is what makes
-    // it expire by derivation rather than by a second switch that could fall out
-    // of step with the first.
-    //
-    // It is deliberately NOT `panState`. `panState === null` is the append rest,
-    // and `win.centerlineSample` is what `onRecordButton` locks in as the take's
-    // insertion offset — so a pan written merely to keep a selection on screen
-    // would retire the rest and splice the next recording mid-clip, invisibly
-    // (George R1 P1: seed a default selection at the resting pan, zoom, Done,
-    // Record, and ~2.5% of the old take is left stranded after the new one).
-    // Keeping the view pan out of `panState` means the zoom cannot reach the
-    // insertion offset at all, rather than reaching it and being corrected later.
-    const viewPan = mode === "edit" && editor.selectionActive ? zoomPan : null;
-    // Clamp to the current length: an edit (a cut) can shorten `working` past a
-    // `panState` set before it, and a stale pan beyond the end would sit the record
-    // offset at the new end rather than where the translator was looking (George
-    // R4). `viewportWindow` also clamps `centerlineSample`, so drawing was already
-    // safe; this keeps the offset honest too.
-    const pan = Math.min(viewPan ?? panState ?? length, length);
+    // Which pan is drawn — and, in record mode, spliced at. The gate that keeps
+    // the zoom's view fit out of the record insertion offset (the round-1 P1)
+    // lives in `effectivePan`, pure and table-tested, rather than as an
+    // expression here where nothing could reach it: the George stand-in showed
+    // that reintroducing the P1 at the setter left all 512 tests green. Its
+    // docblock carries the full reasoning, including the upper-only clamp, which
+    // is what a cut shortening `working` past an older `panState` needs.
+    const pan = effectivePan({
+      mode,
+      selectionActive: editor.selectionActive,
+      zoomPan,
+      panState,
+      length,
+    });
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
     // The prepared preview, shown on the stage across the whole take-in-flight
@@ -942,6 +941,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       }
     }, [editor]);
 
+    // Paste at the drawn centerline — which is ALSO the record insertion offset,
+    // and that is not a coincidence to leave unstated (George stand-in P3).
+    //
+    // `win` is built from `effectivePan`, so with a selection open the line sits
+    // at the zoom's VIEW pan while `panState` is elsewhere. Pasting there would
+    // insert before the record offset and shift every later sample under it —
+    // and `panAfterCut` has no paste companion to correct for that, so the next
+    // take would splice wrong: the round-1 P1's consequence class, by a different
+    // route. It cannot happen today, because the only entry point is the paste
+    // marker below, which renders on `!editor.selectionActive` — the exact
+    // negation of the condition that makes the view pan live. So whenever this
+    // runs, `win.centerlineSample` IS the `panState` line.
+    //
+    // That safety is a render gate ~900 lines away, not a local property. A
+    // second paste entry point, or a "paste replaces the selection" feature,
+    // would flip it — and would have to take the pan from `panState` rather than
+    // from `win`.
     const onPaste = useCallback(() => {
       editor.paste(win.centerlineSample);
     }, [editor, win.centerlineSample]);
