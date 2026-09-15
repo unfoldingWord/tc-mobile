@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   SHARE_CACHE_DIR,
   SHARE_CHUNK_BYTES,
-  SHARE_MAX_AGE_MS,
-  SHARE_RETAINED,
   type NativeShareBridge,
   type ShareEnvironment,
   createNativeShareSession,
@@ -48,16 +46,12 @@ const zip = (): File =>
   new File([new Uint8Array(8)], "Genesis.zip", { type: "application/zip" });
 
 interface BridgeCall {
-  readonly op: "readdir" | "rmdir" | "write" | "append" | "share";
+  readonly op: "rmdir" | "write" | "append" | "share";
   readonly path?: string;
   readonly data?: string;
   readonly recursive?: boolean;
   readonly files?: readonly string[];
 }
-
-/** The name a share started `msAgo` milliseconds ago would have left behind. */
-const leftoverNamed = (sequence: number, msAgo: number): string =>
-  `${sequence}-${(Date.now() - msAgo).toString(36)}`;
 
 /** The directory a recorded write or share went to. */
 const dirOf = (call: BridgeCall | undefined): string =>
@@ -70,24 +64,13 @@ interface Harness {
   readonly calls: BridgeCall[];
 }
 
-/**
- * A session over a bridge that records every call. `fail` makes one operation
- * reject; `leftovers` is what an earlier session left in the share directory.
- */
-function harness(
-  fail?: { op: BridgeCall["op"]; cause: unknown },
-  leftovers: readonly string[] = []
-): Harness {
+/** A session over a bridge that records every call; `fail` makes one reject. */
+function harness(fail?: { op: BridgeCall["op"]; cause: unknown }): Harness {
   const calls: BridgeCall[] = [];
   const maybeFail = (op: BridgeCall["op"]): void => {
     if (fail?.op === op) throw fail.cause;
   };
   const bridge: NativeShareBridge = {
-    readdir: async ({ path }) => {
-      calls.push({ op: "readdir", path });
-      maybeFail("readdir");
-      return { names: [...leftovers] };
-    },
     rmdir: async ({ path, recursive }) => {
       calls.push({ op: "rmdir", path, recursive });
       maybeFail("rmdir");
@@ -230,124 +213,36 @@ describe("the native share session", () => {
     });
   });
 
-  it("leaves a recent previous run's share alone at startup", async () => {
-    // Frank R3 P2. Android can kill the app while the target is still uploading
-    // what the chooser handed it, so "a different process wrote it" is not
-    // evidence that nothing is reading it. Nothing here may be removed for
-    // being old; it is removed for being OLD ENOUGH, and this one is not.
-    const recent = leftoverNamed(7, 60_000);
-    const { share, calls } = harness(undefined, [recent]);
-    await share(mp3());
+  it("never removes a share that succeeded, however many follow it", async () => {
+    // Frank R5 P1, and the end of a three-round chain. `Share.share` resolving
+    // does not prove the recipient read the file (R2 P1); neither does a process
+    // boundary (R3 P2); and neither does a count of later shares or an elapsed
+    // day (R5 P1) — Drive can be sitting offline waiting for connectivity. Every
+    // such rule was a heuristic standing in for knowledge this app cannot have,
+    // and on the held-take rescue (#165) guessing wrong costs the only copy of a
+    // recording. So a successful share is never deleted here at all: the cache
+    // directory is the platform's to reclaim.
+    const { share, calls } = harness();
+    for (let i = 0; i < 6; i += 1) await share(mp3());
+    expect(calls.filter((call) => call.op === "share")).toHaveLength(6);
     expect(calls.some((call) => call.op === "rmdir")).toBe(false);
   });
 
-  it("removes a previous run's share once it is past the retention age", async () => {
-    const stale = leftoverNamed(7, SHARE_MAX_AGE_MS + 60_000);
-    const fresh = leftoverNamed(8, 60_000);
-    const { share, calls } = harness(undefined, [stale, fresh]);
-    await share(mp3());
-    expect(calls.filter((call) => call.op === "rmdir")).toEqual([
-      { op: "rmdir", path: `${SHARE_CACHE_DIR}/${stale}`, recursive: true },
-    ]);
-  });
-
-  it("will not remove a leftover whose age it cannot read", async () => {
-    // An unreadable name means an unknown age, and an unknown age is not a
-    // licence to delete someone's audio.
-    const { share, calls } = harness(undefined, ["chapter-1.mp3", "..", "x-"]);
-    await share(mp3());
-    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
-  });
-
-  it("looks at the share directory once per session, not once per share", async () => {
+  it("gives every share a name a later session cannot reuse", async () => {
+    // Nothing is swept any more, so a stale directory outlives the process that
+    // made it. The sequence alone restarts at 1 with the app, which would let a
+    // new share truncate a file a target is still reading; the timestamp is what
+    // prevents that.
     const { share, calls } = harness();
     await share(mp3());
     await share(zip());
-    expect(calls.filter((call) => call.op === "readdir")).toEqual([
-      { op: "readdir", path: SHARE_CACHE_DIR },
-    ]);
-  });
-
-  it("shares even when the cache cannot be listed at all", async () => {
-    // `readdir` rejects when the directory has never existed — the first share
-    // after an install — as loudly as for a real failure. Neither may stop the
-    // file reaching the OS.
-    const { share, calls } = harness({
-      op: "readdir",
-      cause: new Error("Directory does not exist"),
-    });
-    await share(mp3());
-    expect(calls.at(-1)?.op).toBe("share");
-  });
-
-  it("does not remove an earlier successful share's file — the recipient may still be reading it", async () => {
-    // Frank R2 P1. `Share.share` resolves when the chooser activity returns,
-    // which can be before Drive has uploaded what it was handed; for the
-    // held-take rescue (#165) those may be the only surviving bytes.
-    const { share, calls } = harness();
-    for (let i = 0; i < SHARE_RETAINED; i += 1) await share(mp3());
-
-    const firstDir = dirOf(calls.find((call) => call.op === "write"));
-    expect(firstDir).not.toBe("");
-    // Nothing removed at all while inside the window.
-    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
-
-    // One share past the window, and the oldest — and ONLY the oldest — goes.
-    await share(mp3());
-    expect(calls.filter((call) => call.op === "rmdir")).toEqual([
-      { op: "rmdir", path: firstDir, recursive: true },
-    ]);
-  });
-
-  it("never prunes a share that is still open at the sheet", async () => {
-    // George stand-in R4 P3-3. The invariant rounds 2 and 3 were about — an
-    // in-flight share is not a pruning candidate — had no test: the concurrency
-    // case below uses two shares, under the retention window, so a mutant that
-    // enrolled a directory BEFORE its share resolved survived the whole suite.
-    // Here the first share is held open at the sheet while enough others finish
-    // to push it out of the window.
-    const calls: BridgeCall[] = [];
-    let releaseHeld!: () => void;
-    const heldAtTheSheet = new Promise<void>((resolve) => {
-      releaseHeld = resolve;
-    });
-    let shares = 0;
-    const bridge: NativeShareBridge = {
-      readdir: async ({ path }) => {
-        calls.push({ op: "readdir", path });
-        return { names: [] };
-      },
-      rmdir: async ({ path, recursive }) => {
-        calls.push({ op: "rmdir", path, recursive });
-      },
-      writeFile: async ({ path, data, recursive }) => {
-        calls.push({ op: "write", path, data, recursive });
-        return { uri: uriFor(path) };
-      },
-      appendFile: async ({ path, data }) => {
-        calls.push({ op: "append", path, data });
-      },
-      share: async ({ files }) => {
-        calls.push({ op: "share", files });
-        shares += 1;
-        if (shares === 1) await heldAtTheSheet;
-      },
-    };
-    const session = createNativeShareSession(bridge);
-
-    const held = session.share(mp3());
-    // Let it reach the sheet — every bridge call resolves on a microtask.
-    for (let i = 0; i < 100 && shares === 0; i += 1) await Promise.resolve();
-    const heldDir = dirOf(calls.find((call) => call.op === "write"));
-    expect(heldDir).not.toBe("");
-
-    for (let i = 0; i < SHARE_RETAINED + 1; i += 1) await session.share(zip());
-
-    expect(
-      calls.some((call) => call.op === "rmdir" && call.path === heldDir)
-    ).toBe(false);
-    releaseHeld();
-    await held;
+    const dirs = calls
+      .filter((call) => call.op === "write")
+      .map((call) => dirOf(call));
+    expect(dirs).toHaveLength(2);
+    expect(new Set(dirs).size).toBe(2);
+    for (const dir of dirs)
+      expect(dir).toMatch(new RegExp(`^${SHARE_CACHE_DIR}/\\d+-[0-9a-z]+$`));
   });
 
   it("gives two concurrent shares separate directories, and neither removes the other's", async () => {
@@ -361,10 +256,6 @@ describe("the native share session", () => {
     });
     let writes = 0;
     const bridge: NativeShareBridge = {
-      readdir: async ({ path }) => {
-        calls.push({ op: "readdir", path });
-        return { names: [] };
-      },
       rmdir: async ({ path, recursive }) => {
         calls.push({ op: "rmdir", path, recursive });
       },
