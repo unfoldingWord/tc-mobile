@@ -139,6 +139,13 @@ export const strings = {
   // is in flight — the same in-place busy shape as `loadRetrying` (#137 G2).
   takeRecoverRetrying: "Saving your recording…",
   takeRecoverShare: "Share the recording",
+  // The Share control's accessible name AND the busy Notice beneath it while the
+  // recording is written out for the OS share sheet — both, because `Control` is
+  // icon-only and its label never paints (George R6 P2). On the native route the
+  // chooser does not open in the tap — the file goes to the app cache first — so
+  // the panel has to say it is working, or the translator reads a live panel as a
+  // dead button (#336). Same in-place busy shape as `takeRecoverRetrying`.
+  takeRecoverSharing: "Getting the recording ready…",
   // The share sheet is missing or refused these bytes.
   takeShareUnavailable: "Sharing is not available on this device.",
   takeShareFailed: "Could not share the recording. Try again.",

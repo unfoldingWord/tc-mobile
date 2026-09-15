@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  type StagedShare,
+  nativeShare,
+  readShareEnvironment,
+  selectShareRoute,
+} from "./share-target";
+
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
  *
@@ -8,6 +15,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * about the flow is the same, so it lives here once: the iOS user-activation
  * contract, the run-generation token, and the two re-entry guards. Each caller is
  * a thin wrapper that supplies a {@link BuildShareFile} and its own strings.
+ *
+ * WHAT the file is handed to is `share-target.ts`: the Web Share API in a
+ * browser, or Capacitor's Share plugin inside the native shell, where the
+ * WebView may expose no Web Share at all (#336). The route is decided once, at
+ * the two gates in `prepare`, and carried on the armed value — so the two
+ * gestures cannot disagree about it and `send` probes nothing.
+ *
+ * The native route also STAGES the file to the app cache in `prepare`, not in
+ * `send` (George R5 P2): it is the slow half, tap 1 is the gesture that already
+ * paints a busy state for slow work, and tap 2 must stay one call with no await
+ * before it. That is what keeps "the sheet opens in this gesture" true on both
+ * routes, which is what every caller's copy promises.
  *
  * Why two gestures. iOS grants a tap a short user-activation window and revokes
  * it the moment the call stack awaits. Encoding walks IndexedDB and runs a
@@ -107,10 +126,11 @@ export interface UseShareFlow {
    */
   prepare: (build: BuildShareFile) => Promise<void>;
   /**
-   * Tap 2: hand the stashed File to the OS share sheet. MUST be called straight
-   * from a user gesture: it calls `navigator.share` with no await before it, so
-   * the activation the platform requires is still live. The caller must not await
-   * anything before `send()` inside the same gesture.
+   * Tap 2: hand what tap 1 armed to the OS share sheet. MUST be called straight
+   * from a user gesture: the sheet call — `navigator.share` in a browser, the
+   * Share plugin natively, whose file tap 1 already staged — is made with no
+   * await before it, so the activation the web platform requires is still live.
+   * The caller must not await anything before `send()` inside the same gesture.
    */
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
@@ -127,10 +147,14 @@ export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
-  // The File prepared by tap 1, waiting for the send gesture. A ref, not state,
-  // so `send` reads it synchronously inside the gesture — before any render — and
-  // the `navigator.share` call keeps the activation the tap granted.
-  const fileRef = useRef<File | null>(null);
+  // What tap 1 prepared, waiting for the send gesture. A ref, not state, so
+  // `send` reads it synchronously inside the gesture — before any render — and
+  // the sheet call keeps the activation the tap granted. `staged` is non-null on
+  // the native route only: the file is already in the app cache by then, so tap
+  // 2 is one plugin call on both routes (George R5 P2).
+  const armedRef = useRef<{ file: File; staged: StagedShare | null } | null>(
+    null
+  );
   // A generation token invalidating an in-flight `prepare`. Both unmount AND
   // `reset` bump it, so a prepare that resolves after the screen is gone (Back
   // mid-encode) or after the menu was closed mid-gather does not `setState` or
@@ -155,6 +179,11 @@ export function useShareFlow(): UseShareFlow {
     () => () => {
       runIdRef.current += 1;
       abortRef.current?.abort();
+      // The screen is gone; a staged file armed for a send that will never come
+      // has no reader. Same fire-and-forget as `reset`.
+      const armed = armedRef.current;
+      armedRef.current = null;
+      if (armed?.staged != null) void nativeShare.discard(armed.staged);
     },
     []
   );
@@ -162,12 +191,20 @@ export function useShareFlow(): UseShareFlow {
   const prepare = useCallback(async (build: BuildShareFile): Promise<void> => {
     // Already encoding, or a File is already armed: ignore. (The screen hides the
     // prepare control while `ready`, so this is a re-entry backstop.)
-    if (preparingRef.current || fileRef.current !== null) return;
+    // Already encoding, already armed, or a chooser is still up: ignore.
+    // `sendingRef` is in this guard because `send` now clears `armedRef` when it
+    // takes ownership (Frank R6 P2), so "armed" no longer covers the window in
+    // which a share is in flight — and a `reset()` while the sheet is open drops
+    // the flow to idle, putting tap 1 back on screen (George R6 P2). Without
+    // this, a tap there would start a second encode behind a live chooser.
+    if (preparingRef.current || armedRef.current !== null || sendingRef.current)
+      return;
     // Fail before the encode, not after: a browser with no Web Share should not
     // pay for a whole encode only to be told it cannot share it. The file-level
-    // `canShare` still runs post-encode (it needs the File), but the capability
-    // itself is knowable now (George R-B7).
-    if (typeof navigator.share !== "function") {
+    // check still runs post-encode (it needs the File), but the capability
+    // itself is knowable now (George R-B7). Inside the native shell there is
+    // nothing to fail on — the plugin needs no Web Share (#336).
+    if (selectShareRoute(readShareEnvironment(), null) === "unsupported") {
       setError("failed");
       return;
     }
@@ -202,16 +239,35 @@ export function useShareFlow(): UseShareFlow {
         return;
       }
       const { file } = prepared;
-      const canShareFiles =
-        typeof navigator.share === "function" &&
-        (typeof navigator.canShare !== "function" ||
-          navigator.canShare({ files: [file] }));
-      if (!canShareFiles) {
+      // The browser may still refuse this particular File — Android Chrome's
+      // Web Share allowlist has no `application/zip`, which is #272. The native
+      // route does not consult that gate at all; see `selectShareRoute`.
+      const route = selectShareRoute(readShareEnvironment(), file);
+      if (route === "unsupported") {
         setError("failed");
         setStatus("idle");
         return;
       }
-      fileRef.current = file;
+      // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
+      // It is the slow half — a book zip crosses the bridge in 768 KB chunks —
+      // and this is the gesture that already has a busy state for slow work.
+      // Doing it in `send` left the menu reading `ready` with no sign anything
+      // was happening, and made "hands the file to the sheet in this gesture"
+      // false on native. The same `controller.signal` that stops the encode
+      // stops the write, so closing the menu mid-write cancels it and takes the
+      // partial file with it.
+      const staged =
+        route === "native"
+          ? await nativeShare.stage(file, controller.signal)
+          : null;
+      if (!current()) {
+        // Cancelled while staging, but the write finished first: the File is
+        // nobody's now, so do not leave it in the cache. Fire-and-forget — the
+        // run is over and a cleanup failure is not this screen's news.
+        if (staged !== null) void nativeShare.discard(staged);
+        return;
+      }
+      armedRef.current = { file, staged };
       setMissing(prepared.missing);
       setStatus("ready");
     } catch (cause) {
@@ -236,14 +292,22 @@ export function useShareFlow(): UseShareFlow {
     // A share is already in flight: ignore this tap and leave the File armed, so
     // a double-tap cannot open a second share whose rejection drops the File.
     if (sendingRef.current) return "retry";
-    const file = fileRef.current;
-    if (file === null) {
+    const armed = armedRef.current;
+    if (armed === null) {
       // Reachable only through a guard hole (ready with no armed File); surface it
       // rather than no-op silently behind a "Share now" that does nothing.
       setError("failed");
       setStatus("idle");
       return "failed";
     }
+    // Take ownership of the armed value SYNCHRONOUSLY, before any await. From
+    // here the staged cache file belongs to this send, not to `armedRef` — so a
+    // `reset()` or an unmount while the chooser is up cannot discard the file
+    // the chooser is holding (Frank R6 P2). Deleting a staged file mid-handoff
+    // is earlier than the deletion the rest of this module already refuses to
+    // do: the recipient has not merely failed to finish, it has not started.
+    // The `retry` arm below puts it back.
+    armedRef.current = null;
     sendingRef.current = true;
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
@@ -251,36 +315,79 @@ export function useShareFlow(): UseShareFlow {
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
-    // `navigator.share` is invoked synchronously here: an async function runs to
-    // its first await, and this call IS that boundary, so no work precedes it and
-    // the tap's user activation is still valid. Pass ONLY `files`: adding `title`
-    // alongside a file is a known iOS share-target bug where some apps
-    // (WhatsApp/Signal) take the title and drop the file while `share` still
-    // resolves — the File already carries its name (George R-B7).
+    // Which route this is was settled at prepare time and is carried by the
+    // armed value, so the two gestures cannot disagree about it — and no
+    // environment probe happens in the gesture. Either way exactly ONE call
+    // follows, with no await before it: the sheet opens in this gesture on both
+    // routes, which is what every caller's copy already promises.
     try {
-      await navigator.share({ files: [file] });
+      if (armed.staged !== null) {
+        // The file is already in the cache; this is only the chooser. Native
+        // share needs no user activation — the plugin starts the chooser as an
+        // Android Intent / a UIActivityViewController, not the WebView — but it
+        // is called first here anyway, so the two routes have one shape.
+        // ONE call, and deliberately no restage-on-failure here.
+        //
+        // The staged file can be gone by tap 2 — `Directory.Cache` is what the
+        // OS reclaims first, and this window spans however long the menu sits on
+        // "Share now" (George R6 P2). Writing it again from `armed.file` looks
+        // like the obvious recovery, and it was tried: it puts a
+        // multi-megabyte write back INSIDE `send`, which is the exact shape this
+        // round removed, and it immediately grew the defect that shape always
+        // grows — an uncancellable write that opens a chooser over a screen the
+        // translator already closed (Frank R6 P2). `send` stays one call.
+        //
+        // The flow already has a recovery, and it is the ordinary one: this
+        // reports `failed`, the menu stays open, and Share chapter/book
+        // re-prepares — re-encode and re-stage together, under the busy state
+        // that exists for slow work. The cost is a re-encode, not a lost
+        // recording: chapter and book audio are in IndexedDB throughout. That is
+        // an accepted residual, written down rather than patched over.
+        await nativeShare.send(armed.staged);
+      } else {
+        // `navigator.share` is invoked synchronously here: an async function runs
+        // to its first await, and this call IS that boundary, so no work precedes
+        // it and the tap's user activation is still valid. Pass ONLY `files`:
+        // adding `title` alongside a file is a known iOS share-target bug where
+        // some apps (WhatsApp/Signal) take the title and drop the file while
+        // `share` still resolves — the File already carries its name (George
+        // R-B7).
+        await navigator.share({ files: [armed.file] });
+      }
       // Shared. If a newer run has taken over (a `reset` while the sheet was open
       // bumped the token and may have armed a NEW File), leave its state alone AND
       // tell the caller `superseded` so it does not close/reset over the new run
       // (George R-B7-book P2). Only the owning run clears the File.
       if (!current()) return "superseded";
-      fileRef.current = null;
+      // `armedRef` was cleared on entry; the file went to the OS.
       setStatus("idle");
       setMissing(0);
       return "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
-      if (outcome === "retry") {
-        // Activation was spent — keep the File stashed and stay `ready` so another
-        // tap can hand it over. Not a failure the translator should see.
+      if (outcome === "retry" && armed.staged === null) {
+        // Activation was spent — the File still stands, so put it back and stay
+        // `ready` so another tap can hand it over. Not a failure the translator
+        // should see. Only if this run still owns the flow: if a newer one has
+        // taken over, the File is nobody's and is simply dropped.
+        if (current()) armedRef.current = armed;
         return "retry";
       }
+      // A native `retry` does NOT get its staged value back (George R6 P3):
+      // `nativeShare.send` removes the staged directory on ANY rejection, so
+      // restoring it would arm a URI whose file is already gone and the next tap
+      // would fail against it. Not reachable today — `retry` needs a DOMException
+      // `NotAllowedError` and the plugin rejects with a plain Error — but the
+      // composition is wrong regardless, so it falls through to idle below and
+      // the translator re-prepares, which restages as well as re-encodes.
       // A newer run owns the flow: don't touch its state and don't let the caller
       // act on this stale settle.
       if (!current()) return "superseded";
       if (outcome === "failed") console.error("Sharing failed", cause);
       // Dismissed or a real failure: end the flow for the run that still owns it.
-      fileRef.current = null;
+      // The staged cache file is already gone — `nativeShare.send` removes its
+      // own directory on a rejection, because a refused chooser is the one piece
+      // of evidence that nothing received it. `armedRef` was cleared on entry.
       setStatus("idle");
       setMissing(0);
       if (outcome === "failed") setError("failed");
@@ -297,7 +404,16 @@ export function useShareFlow(): UseShareFlow {
     runIdRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
-    fileRef.current = null;
+    // A file already staged in the cache for a share that is now abandoned has
+    // no reader and never will, so it goes. Fire-and-forget: `reset` runs from a
+    // scrim tap and must not wait on the filesystem, and `discard` never
+    // rejects. NOT `sendingRef` — that is cleared only by the send it belongs
+    // to. Clearing it here would let a second tap open a second chooser over the
+    // same file while the first is still up, which is the double-tap the guard
+    // exists for (George R5 P2, in part: the rest is that `send` is now short).
+    const armed = armedRef.current;
+    armedRef.current = null;
+    if (armed?.staged != null) void nativeShare.discard(armed.staged);
     preparingRef.current = false;
     setStatus("idle");
     setError(null);
