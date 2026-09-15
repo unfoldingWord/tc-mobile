@@ -9,7 +9,8 @@ name: Android APK
 # builds whatever ref you pick there.
 #
 # One-time setup: create the release keystore (docs/native/README.md §5 step 1)
-# and set the four GitHub secrets below. The Android SDK (Platform 36,
+# and set the four secrets below in the `release-signing` environment
+# (required reviewers; #321). The Android SDK (Platform 36,
 # Build-tools 36.0.0, ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner
 # image (verified against actions/runner-images, 2026-09-12). The JDK is NOT
 # left to the image: its default is Java 17, and Capacitor's generated
@@ -32,23 +33,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A cheap gate BEFORE any billable work. Refuse a non-staging/main ref
-  # (the dispatch picker defaults to develop) and a missing secret here — not
-  # partway through a Gradle build. An unset GitHub secret expands to "", so
-  # treat empty as missing. The build job `needs:` this, so a failure here
-  # never reaches the Gradle step.
+  # A cheap gate BEFORE the environment approval and any real work. Refuse a
+  # non-staging/main ref here (the dispatch picker defaults to develop). This
+  # job holds NO secrets and no environment on purpose: the signing secrets
+  # live in the `release-signing` environment (#321), which only the build job
+  # references, so a dispatch costs exactly one approval. The presence check
+  # moved there, as its first step.
   preflight:
-    name: Preflight (ref + secrets)
+    name: Preflight (ref)
     # Pinned to the image whose contents this lane was checked against (see the
     # header); `ubuntu-latest` retargets silently. Same reason the iOS lane pins
     # macos-15.
     runs-on: ubuntu-24.04
     permissions: {}
     env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       REF: ${{ github.ref_name }}
       # ref_name drops the branch-or-tag distinction: a TAG named `staging`
       # would read as "staging". Require the ref to be a branch as well (#320
@@ -69,28 +67,43 @@ jobs:
             exit 1
           fi
 
+  build:
+    name: Build release APK
+    needs: preflight
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
+    # the environment has required reviewers. A dispatch pauses here until an
+    # approver okays this run — the actor guard the in-yml ref check above
+    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
+    # itself). The Android keystore is permanent app identity, so this gate is
+    # the only real control on it. The approval UI shows the ref being built.
+    environment: release-signing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # First step, before checkout: an unset environment secret expands to "",
+      # so treat empty as missing and fail in seconds, not after npm ci and the
+      # web build. Step-scoped env so the keystore blob is not job-wide.
       - name: Require all four secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           missing=0
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD \
                       ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::secret $name is unset or empty"
+              echo "::error::environment secret $name is unset or empty (environment: release-signing)"
               missing=1
             fi
           done
           [ "$missing" -eq 0 ] || exit 1
-          echo "Ref and all four secrets present."
+          echo "All four signing secrets present."
 
-  build:
-    name: Build release APK
-    needs: preflight
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

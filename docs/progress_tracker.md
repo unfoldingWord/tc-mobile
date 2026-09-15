@@ -11,6 +11,327 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-14 — first Capacitor build to record on Android: the v0.1.15 APK refused the mic, one manifest line fixes it (#334), proven on the Galaxy A17
+
+**Branches:** `fix/android-modify-audio-settings` (PR #334, `8ea924e` → `123273b`), **review-clean
+after two rounds, CI green, not merged** — awaits the DRI's go. `docs/eod-2026-09-14` (this entry,
+stacked on #333). **No merges, no closes.** **Release:** pre-release **`android-debug-v0.2.0-pr334`**
+(`app-debug.apk`, 7 149 619 bytes, target `123273b`) supersedes `android-debug-v0.1.15`, which
+cannot record on any Android device. **Issues:** #245 rows 1 and 2, #263 first WebView finding.
+Mac session (`excalibur`).
+
+### #245 row 1 — the v0.1.15 debug APK cannot record
+
+Samsung Galaxy A17 5G (128 GB / 4 GB), installed from the release page. Launch OK; first Record
+raised the OS microphone prompt, allowed, Settings shows Microphone allowed — and Record still
+showed the app's permission panel, Retry the same. **Cause, read from Capacitor 8.5.1's
+`BridgeWebChromeClient.java`:** for the WebView's `AUDIO_CAPTURE` request it asks Android for
+**both** `MODIFY_AUDIO_SETTINGS` and `RECORD_AUDIO` and calls `request.deny()` unless every
+entry is granted; Android returns `false` for an undeclared permission without a prompt. Our
+manifest declared `RECORD_AUDIO` only, so the WebView was denied, `getUserMedia` rejected
+`NotAllowedError`, and `classifyMicRefusal` rendered the panel. The OS grant was real; the
+refusal was one layer down — the "wrapper differs from the PWA" case #263 exists for (the same
+bundle records in Chrome on the same phone, 09-08/09-09).
+
+### #334 — `MODIFY_AUDIO_SETTINGS` declared; two rounds, both lenses clean
+
+One `uses-permission` line (normal protection, granted at install, no prompt; iOS untouched) plus
+README §5. **Round 1 at `8ea924e`:** Frank clean, and independently re-read the Capacitor
+source; George 1 P3 — the README banner "nothing below has been verified on a device"
+contradicted the new dated observation — FIXED `123273b`. **Round 2 at `123273b`:** both
+clean, first try each. George's deep-tree reads: `cap sync` does not rewrite the app manifest;
+`use-recorder.ts` holds the single `getUserMedia` call site; no debug/release overlay can drop
+the line. **Residuals, explicitly not findings:** post-Deny `permissions.query` inside the
+WebView unknown → #263; AGENTS.md Testing still says "Android has never been run at all" →
+#245, rewritten once the protocol runs.
+
+### #245 row 2 — the rebuilt APK records
+
+Built on the Mac from `123273b` (`npm ci && npm run build && npx cap sync android && cd android
+&& ./gradlew assembleDebug`; the main checkout had to go **detached** because a container
+worktree still holds the branch name — same SHA, same bytes). `aapt2 dump permissions` on the
+APK lists `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS`. `adb devices` listed nothing, so the
+release-page route again: pre-release `android-debug-v0.2.0-pr334`, downloaded on the phone,
+installed over v0.1.15 in place (same debug keystore, no uninstall). **Record: PASS** — the
+panel is gone, recording works. That is the first Capacitor build to record on Android. Only
+the Record step was run; playback, edit, background, interruption and share remain unrun on
+the APK. Row posted on #245.
+
+### Inputs from Elsy today
+
+- **#314** (New Book asks for a name): "please take this one next" — next feature after #334.
+- **#272** (Android Share Book fails): "Share works now." Device and build not stated; #272
+  stays open until the evidence row on #245 reaches the share step.
+
+### Blockers / needs a human
+
+- **Seth:** the explicit go to merge #334 (review-clean at `123273b`, device-proven), then a
+  `chore(release)` patch promotion `develop → staging`, and re-cut the `android-debug-*`
+  pre-release from the promoted tree so the protocol runs on a promoted build.
+- **Seth:** #330 round 5 vs merge, and the five remaining iOS secrets (carried from 09-13 late).
+- **Tracker PRs #333 and #322** are green and clean; this entry is stacked on #333.
+- **Still owed:** a tester confirming a TestFlight build arrived; the Android keystore (#318
+  step 2).
+
+### Next steps
+
+1. Merge #334 → promote → re-cut the pre-release → resume #245 from step 2 (playback, edit,
+   background, call interruption, restart persistence, share) on the Galaxy A17.
+2. #314 per Elsy.
+3. #263: run the Android half of the checklist on the promoted APK; the iOS half still needs a
+   tester on the TestFlight build.
+4. Rewrite the AGENTS.md Testing bullet from the #245 evidence once the protocol is past step 2.
+
+### 2026-09-14 (late) — the first external tester's report triaged into four issues and seven evidence rows; the storage-location question answered; #336 (share inside the APK) is the new critical path
+
+Container session, alongside the Mac session above (which built and device-proved #334; the
+diagnosis, PR, and both review rounds ran here). **Branches:** `fix/android-modify-audio-settings`
+unchanged at `123273b`; `docs/eod-2026-09-14-late` (this entry, stacked on #335 → #333).
+**Filed:** #336, #337, #338, #339. **Commented:** #245 (row 3), #263, #269, #284, #286, #91, #316,
+#248, #336. **No merges, no closes.** `/sod` found the repo clean and green, #330 untouched
+overnight, and the `release-signing` environment still at 2 of 7 iOS secrets.
+
+### The storage-location question (team chat)
+
+A team member asked whether recordings should live in a common Android folder so the
+debug→release signing-key uninstall does not wipe them. Answer sent, grounded in the tree: the
+wipe is a **signing-key problem**, solved by creating the release keystore once (#318 step 2) so
+every tester build updates in place; **not** a storage-location problem. Moving recordings out
+of IndexedDB needs a native file-system plugin (none installed), an import path, and on Android
+11+ a reinstalled app cannot read files it did not create without a picker. Share Chapter /
+Share Book is today's user-driven export. The requirements owner separately asked that
+recordings go to the **MicroSD card** in future releases — captured with the constraints as
+**#339** (v1.0.0, "mirror finished MP3s" as the proposed shape).
+
+### First external tester — Android APK `android-debug-v0.2.0-pr334`
+
+Everything in the foreground path worked cold: rename book, create segments, record, erase
+part of a segment, delete a segment, second book, playback in list and single-segment views.
+The tester self-corrected on two non-features (reorder segments, renumber on delete) and
+called both "the app is right". **Failed:** Share Chapter **and** Share Book, both with the
+"Could not share … Try again." copy. **Confusing:** the eye / crossed-eye (the level-meter
+toggle), the two arrow icons (the zoom toggle) read as state not action, no way to audition a
+selection before erasing, and insert-in-the-middle exists but was not discoverable. First
+question asked: does anything talk to a server.
+
+Triage, deduped against every open and closed issue (a fresh agent, 40+ queries):
+
+| Item                                                       | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Both shares fail in the APK                                | **#336** new, v0.3.0. Distinct from #272 (Chrome: Chapter worked, Book failed). Hypothesis: `share-flow.ts` gates on `typeof navigator.share === "function"` and the System WebView lacks it. **Contradicted the same day** by the PM's "Share works now" on an emulator → cause is likely WebView-version-dependent; downgraded to medium, measurement first (WebView version + `typeof navigator.share` on a failing phone), then the Capacitor Share plugin behind the existing hook. |
+| Delete a book                                              | **#337** new, v0.3.0, scope question for the requirements owner (practice books pile up at the training; only uninstall clears them).                                                                                                                                                                                                                                                                                                                                                    |
+| Reorder books                                              | **#338** new, v1.0.0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| MicroSD / external storage                                 | **#339** new, v1.0.0 (above).                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Audition the selection before erase                        | evidence on **#284**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Eye icon; cancel-an-edit discoverability                   | evidence on **#286** (what the control is: `recorder.tsx` ~2036, glyph shows the action; tester suggests an ear/level glyph).                                                                                                                                                                                                                                                                                                                                                            |
+| Zoom arrows "reversed"; selection edges off-screen on zoom | evidence on **#91** (`recorder.tsx` ~1918).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Insert mid-clip not discoverable                           | evidence on **#316** — the tester's guess was right; Record inserts at the centerline.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "Is there a server?"                                       | evidence on **#248** — the runbook needs one sentence: everything is on the phone (ADR 0005; no `fetch`/XHR/WebSocket in `src/`; `allowBackup=false`); the flip side is that Share is the only copy.                                                                                                                                                                                                                                                                                     |
+| List-row playback audible                                  | counter-evidence on **#269** (observed silent in Chrome 09-08; tester heard it in the WebView; explicit re-test needed).                                                                                                                                                                                                                                                                                                                                                                 |
+| The whole run                                              | **#245 row 3**: a second Android device passing the foreground path, share excepted.                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+No tester or team-member name went into the public repo.
+
+### Tooling notes (container)
+
+A fresh worktree resolves `node_modules` upward to the main checkout's, which was installed on
+the Mac and lacks the Linux rollup binary — `npm ci` in the worktree before the first push.
+The worktree guard rejects heredocs whose text mentions "git" and any loop or pipeline around
+`gh`; write bodies with the file tool, then one plain `gh … --body-file` per call. Frank and
+George both ran first try on every round today (7 KB prompts); the stall pattern is size-bound.
+
+### Blockers / needs a human (late)
+
+- **Seth:** the go to merge #334 (device-proven), then #333 → #335 → this PR, and #322.
+- **Seth:** #330 round 5 vs merge; the five iOS secrets; the Android keystore (#318 step 2).
+- **Requirements owner:** #337 in or out of v0.3.0; #339 priority; #336 confirms whether the
+  training's borrowed phones can be assumed to run a current WebView.
+- **A failing-share phone with USB** for #336 step 2 (`chrome://inspect`), or a temporary build
+  stamp that prints `typeof navigator.share` in the Books footer.
+
+### Lanes queued for 2026-09-15
+
+Each lane is independent and can start from `develop` in its own worktree. Merge order matters
+only where marked.
+
+| Lane                                   | Owner                                        | Issue                                                                                                                                                                                                                                                 | Entry point                                                                                                                                                                                                                                                           | Bar                                                 |
+| -------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **L1 — land and promote**              | Seth (merges) + agent (release PR)           | #334, #333, #335, this PR, #322 → `chore(release): v0.2.1` develop→staging → re-cut `android-debug-*` from the promoted tree → resume #245 from step 2 on the Galaxy A17 (list-row playback for #269, share for #336/#272, background, call, restart) | `gh pr merge` one at a time, rebase the next; the served-bundle check on staging                                                                                                                                                                                      | **First.** Everything else re-bases on it.          |
+| **L2 — #336 share in the APK**         | agent, device proof by Seth                  | #336 (then #272)                                                                                                                                                                                                                                      | measure first: WebView version on both devices + `typeof navigator.share`; if old WebViews lack it, `@capacitor/share` + `@capacitor/filesystem` behind `share-flow.ts`'s existing boundary, `Capacitor.isNativePlatform()` branch, Node test of the branch selection | T2; dual review; device pass required               |
+| **L3 — #314 New Book asks for a name** | agent                                        | #314 (Elsy: "take this one next")                                                                                                                                                                                                                     | Books screen `+` → name modal, pre-filled placeholder, one transaction                                                                                                                                                                                                | T3 UI + T1 storage call already exists; dual review |
+| **L4 — recorder glyphs**               | agent                                        | #286 + #91 (tester-backed)                                                                                                                                                                                                                            | level-meter toggle: ear/level glyph, unambiguous state; zoom toggle: glyph readable one way, keep the selection in view across a zoom                                                                                                                                 | T3; dual review; cheap, ships before the training   |
+| **L5 — signing and secrets**           | Seth (manual) with an agent-prepared runbook | #330 → #321; #318 step 2                                                                                                                                                                                                                              | five iOS secrets into `release-signing`; keystore via `keytool`; four Android secrets; first `android-apk` dispatch from `staging` after L1                                                                                                                           | environment-gated dispatch proven                   |
+| **L6 — tester-facing docs**            | agent                                        | #248                                                                                                                                                                                                                                                  | runbook: the on-device sentence, install steps for the pre-release, a **known problems** list (#336 share, #337 no delete-book, #284), how to report                                                                                                                  | docs, merge on green                                |
+| **L7 — housekeeping**                  | agent                                        | #297, #298 (Dependabot), #271 (contributor docs)                                                                                                                                                                                                      | changelogs + suite for each, verdict on the PR                                                                                                                                                                                                                        | docs/deps, merge on green                           |
+
+Decisions L1–L7 do not need, but the week does: #337 scope and #339 priority from the
+requirements owner; whether #263's iOS half gets a TestFlight tester this week.
+
+---
+
+## 2026-09-13 — v0.2.0 on production, the repository public, the Android lane merged and a debug APK built on the Mac
+
+**Branches:** merged to **`develop`**: #319 (Android APK lane, `0dd30cc`), #323 (public-name
+scrub), #324 (v0.1.16), #326 (org links), #327 (v0.2.0), #331 (AGENTS.md "public"). **`develop`
+→ `staging`** twice: #325 (`0330d29`, served `0.1.16`) and #328 (`46f1f9b`, served `0.2.0`).
+**`staging` → `main`: #329** (merge `7c560ce`) — **production serves `0.2.0` / `7c560ce`**
+(`index-oXapchKA.js`, ~180 s after merge), the first deploy of `main` since the org transfer.
+**Tagged `v0.2.0`** — the repo's first tag. **Open:** #330 (#321 environment gate). **Closed:**
+#244, #250, #72. **Release:** pre-release `android-debug-v0.1.15` carrying `app-debug.apk`.
+Mac session (`excalibur`); a container session ran the #319 review rounds in parallel.
+
+### Android lane (#318 steps 3/4/6) → #319, merged after four rounds
+
+`android/app/build.gradle`: `signingConfigs.release` from four env vars, wired only when all
+four are set, and a `gradle.taskGraph.whenReady` guard that throws with the missing names
+when `assembleRelease`/`bundleRelease` is in the graph — `assembleDebug` untouched;
+`versionCode` takes `-PversionCode=<N>` (CI stamps a unix timestamp, local defaults to 1).
+`android-apk.yml` mirrors the iOS lane: ubuntu preflight, bundle guard, Ruby base64 decode
+of the keystore into a gitignored path, `assembleRelease --no-daemon`, 14-day artifact,
+keystore removed. **Round 1 at `8b23e33`:** Frank 1 P2, George 1 P1 + 4 P2, reviewer +2 —
+the P1 was the JDK (the image defaults to 17; Capacitor's generated Gradle compiles at 21),
+fixed with a pinned `setup-java` and a toolchain assertion; `ubuntu-24.04` pinned; the
+docs' `gradle.properties` claim corrected (the file reads env vars only); the debug-vs-release
+signing-key trap (uninstall wipes IndexedDB) written into README §0/§5a; upload set to
+fail when no APK exists. Four rounds, DRI-accepted at the polish tail with #321 open.
+
+**Local toolchain, first time on this Mac:** `JAVA_HOME` pointed at a deleted JDK 17 →
+Temurin 21 via Homebrew; no Android SDK → Android Studio via Homebrew; its wizard installed
+only platform `android-37.0`, so **platform 36 was added by hand** (`variables.gradle` pins
+`compileSdkVersion = 36`). `npm ci && npm run build && npx cap sync android && cd android &&
+./gradlew assembleDebug` → **BUILD SUCCESSFUL in 46 s**. `cap sync` must run from the repo
+root (from `android/` it reports "platform has not been added"). The phone never enumerated
+over USB — `system_profiler SPUSBDataType` showed nothing at all, so a charge-only cable, not
+ADB — hence the pre-release: open the release URL on the phone, tap the asset. **#245 is
+still unrun.**
+
+### Public flip (#250) — done
+
+Name scrub as two lanes, no Frank/George: a fork swept the six surnames and the account ID
+(2 files); a **fresh adversarial agent** over the whole tree then found what the list missed —
+one surname the sweep did not know, internal governance docs cited by path and quoted, and
+two sentences the first pass had mangled — plus three `claude.ai` artifact links to private
+material (DRI: remove). All fixed in #323. **39 `cloudflare-workers-and-pages[bot]` comments
+deleted** (every one carried the account ID; zero in review threads). Cloudflare's docs have
+**no opt-out for the PR comment** — it is bound to non-production branch builds — so the DRI
+chose to keep preview builds and accept the recurring comment, recorded on #250. Frank and
+George are tool aliases and stay; `bt-servant-*` names stay (public repos). Flipped after
+`main` served the scrubbed tree: `visibility: public`, anonymous fetch of `main` 200.
+
+### v0.2.0 gate (#244) — reopened, run, closed
+
+DRI reversed the 09-12 hold. The gate is **thin by definition**: Tim's 09-12 note on #243
+says v1 = the October training build = **v0.3.0**, so the 18 `v1-required` items moved
+there, one comment each (#283 #272 #269 #263 #262 #245 #180 #166 #108 #59 #58 #38 #12
+#318 #243 #320 #311 #270). Pre-flight: prod Worker read from the dashboard (org repo, branch
+`main`, `npx wrangler deploy`). **#72 item 1 proven** — exactly one `tc-mobile` build today,
+on the `main` push; none on five non-`main` pushes. Prod's exclude paths are only
+`node_modules/**, .git/` (staging has `docs/**, *.md, .github/**`): hygiene, a docs push to
+`main` burns a build. Accepted risk, on the PR: `main` ships with #59/#38 open; nobody is
+handed the production URL before v0.3.0. Milestone v0.2.0 now holds **#321 only**.
+
+### Account switch: `sethstoll3` → `sethstoll`
+
+New account made org owner; **35 open items reassigned across five uW repos**, 0 left on the
+old handle; `sethstoll3` removed. Workers Builds survived it — the staging promotion after
+the removal built and served (#328). Two findings on the way: **branch pushes never trigger
+a Workers Build** here even before the change (`a0251af`, `package.json` to `develop`, had no
+check-run), only production-branch pushes do, so the `develop` probe is meaningless and the
+promotion is the test; and a Markdown-only PR is invisible to staging by its own exclude
+paths. `gh` now runs as `sethstoll`; `wrangler` on this Mac is authenticated to ORO LABS
+only and cannot see the uW Workers — the served bundle is the deploy proof.
+
+### #321 — environment gate, PR #330, inert until the secrets move
+
+Environment **`release-signing`** created with `sethstoll` as required reviewer (free on a
+public repo). #330 puts `environment: release-signing` on both lanes' **signing job only** —
+preflight keeps the ref guard and holds no secrets, the presence check becomes the gated
+job's first step before checkout — so a dispatch costs one approval, not two. Docs: README
+§4a/§5a and `ios-credentials.md` §8 (`gh secret set … --env release-signing`). Merge order on
+the PR: environment → eleven secrets in → merge → delete the repo-level copies → one
+dispatch from `staging` to see pause → approve → green.
+
+### Blockers / needs a human
+
+- **Seth:** the eleven signing secrets into `release-signing` (values are in the secret
+  store); review mode for #330 (Frank + George, or an exemption recorded on the PR); then
+  merge, delete the repo copies, prove with an iOS dispatch, close #321 and the milestone.
+- **Seth:** the Android release keystore (#318 step 2) and its four secrets; a data cable or
+  a cloud link so the debug APK reaches a phone (#245).
+- **Still owed from 09-12:** a tester confirming a TestFlight build arrived; #263 on a device.
+
+### Next steps
+
+1. Land and prove #330 (one dispatch from `staging`).
+2. #245 with the published debug APK, then the keystore and the first `android-apk`
+   dispatch from `staging`.
+3. #263 — the WKWebView / Android WebView mic go/no-go.
+4. Dashboard hygiene: prod exclude paths to match staging.
+
+### 2026-09-13 (late) — #330 dual-reviewed to the cap; environment hardened; two of seven secrets moved; George's lens covered by a stand-in
+
+Container session, after the Mac session's EOD above. **Branch:** `ci/release-signing-environment`
+(PR #330) moved `41bcf38 → 6dd2c67 → 31cd976 → 1b6c614 → 9f26e62`, then `origin/develop` merged in
+as **`314c86c`** (clean; `develop` touches none of the PR's files) so the head carries #331's
+"public since 2026-09-13". CI green at every head. **Four triage comments** on the PR, one per
+round, every finding FIXED with a commit or REFUTED with `file:line`; the PR body's merge order
+rewritten. **Open:** #330 at the round cap, DRI decision pending. **No merges, no closes.**
+
+**What the four rounds found — all docs/settings, zero yml logic.** R1 (Frank, 1 P1): the docs
+said a same-named repository secret is "ignored" by the gated job — true for that job, but any
+ungated workflow still reads it, so the migration must delete the copies. R2 (George, 2 P2 + 3 P3,
+plus a stand-in deep-tree agent at `41bcf38`, 3 P2 + 3 P3): **delete the repository copies only
+after the gated yml is promoted** — the pre-#321 yml on `staging` has no environment and runs on
+those copies; the README's "Team plan" claim was wrong (**required reviewers exist only on public
+repos for Free/Pro/Team, and the org is on Free** — flipping private silently drops the rules
+_and_ the environment secrets); **admin bypass was on** with 14 admins; no runbook for the
+Waiting state; one loop for all eleven names. R3 (George, 1 P2 + 1 P3): the visibility statements
+in root README and org-transfer D2 were stale (AGENTS.md's was already fixed by #331 — refuted at
+the merge target). R4 (George, 2 P2 + 3 P3): the same AGENTS.md fact (retired by merging
+`develop`), and one genuinely new point — **the approver must open the yml on the dispatched ref
+before approving**, because a write-access branch can keep `environment: release-signing` and
+add a step that reads the secrets. Now in README §4a step 4 and ios-credentials §9. Frank
+APPROVE at `6dd2c67`, `31cd976`, `1b6c614`. Shape at the cap: a **chain**.
+
+**Settings, verified live via `gh api`:** `release-signing` exists, reviewer `sethstoll`,
+**`can_admins_bypass: false`** (Seth flipped it; the session's API attempt was blocked by the
+permission classifier), `prevent_self_review: false` (deliberate), branch policy all branches.
+Repo visibility PUBLIC, org plan `free`.
+
+**Secrets — 2 of 7.** `ASC_KEY_P8_BASE64` and `ASC_KEY_ID` set in the environment by piping
+`op read` → `base64 -w0` → `gh secret set --env` inside a script file (nothing printed; the key
+ID is Apple's filename suffix `CK2A9CF2K2`). The `uw-dev-ops` vault holds only the `.p8` and the
+`.cer` (public cert, **not** the `.p12`). **Missing from the vault:** `ASC_ISSUER_ID`,
+`APPLE_TEAM_ID`, `IOS_DIST_CERT_PASSWORD`, the `.p12`, the `.mobileprovision` — they exist as
+repository secrets (yesterday's TestFlight runs used them) and as files on the Mac. Repository
+copies stay until after promotion.
+
+**Tooling.** The 1Password service-account token was **not** stored anywhere persistent (only in
+an old session transcript; the classifier blocked extracting it — correctly). Seth wrote it to
+`/root/.config/op/sa-token` (600) from a container shell; recorded in memory. `gh` in the
+container was still the removed `sethstoll3` — re-login as `sethstoll` fixed push and comments.
+**George stalled 3 of 6 runs** at 20 KB prompts (narration-only, exit 0), so the ~40 KB
+stall theory from 09-12 does not hold; a fresh isolated agent briefed on his lens covered R1 and
+found the admin-bypass and plan-trap P2s.
+
+### Blockers / needs a human (late)
+
+- **Seth:** decide round 5 vs merge for #330 (residual recorded in the round-4 triage).
+- **Seth:** the five remaining iOS values into the environment — from the Mac files
+  (`gh secret set … --env release-signing`) or shared into `uw-dev-ops` for the session to pipe.
+- **Still owed:** a tester confirming a TestFlight build arrived; #263 on a device; #245 with the
+  debug APK; the Android keystore (#318 step 2).
+
+### Next steps (late)
+
+1. #330: DRI call → merge → **promote `develop → staging`** → dispatch iOS from `staging`, expect
+   Waiting, read the yml on the ref, approve, green → close #321 and the v0.2.0 milestone →
+   **then** delete the eleven repository-level copies.
+2. #322 (09-12 late tracker) is still open, green, merges clean — land it.
+3. Dependabot #297/#298 unreviewed since 09-11; #271 (contributor docs) since 09-08.
+
+---
+
 ## 2026-09-12 — the first native build attempted: Apple credentials done, v0.1.14 promoted, TestFlight dispatch failed at Install fastlane; triage cuts the gate to 20
 
 **Branches:** merged to **`develop`**: #301 (EOD 09-11), #303 (credentials runbook), #304
@@ -250,6 +571,110 @@ refusing read-only `gh`/`git show` with variables/heredocs.
 4. Docs: refresh `ios-credentials.md` §9 ref-trap table; #311 (`sort -r` Xcode 26.9 > 26.10)
    in the next lane-touching PR, proven by a dispatch rather than trusted.
 5. #250: the names scrub in the native docs and this tracker before the public flip.
+
+### 2026-09-12 (late) — Android APK lane: #318 filed, #319 built, dual-reviewed to APPROVE ×2 in 4 rounds, merged; #320/#321 spawned; D1 risk assessment recorded
+
+**Continues the evening.** SOD (late) found the tree exactly as the evening left it (#308
+merged as `1fa7fac`, staging serving v0.1.15, CI all green, four contributor PRs awaiting
+Seth's review rounds). The session then answered "how do we get to an APK, does it need
+signing?" and turned the answer into the lane. **Branches:** `develop` `1fa7fac` →
+**`0dd30cc`** (#319 squash); `staging` `a742a10` (v0.1.15, unchanged); `main` `3464a30`
+(held, #244). Filed: **#318, #320, #321.** Merged: **#319.** Milestone v0.2.0 open count
+19 → **22** (three new gate-scope issues, all housekeeping of the lane itself).
+
+**#318 — the Android APK lane had no issue.** #262's checkbox was the only trace; #245 is
+the Chrome/PWA test protocol, #263 assumes an installed build. Filed with the seven-step
+plan (local `assembleDebug` proof → keystore custody → `signingConfigs` → CI dispatch lane
+→ `versionCode` stamp → tester distribution → docs) and the one Android-specific T1
+constraint: **app identity is the signing key** — a phone cannot update across keys, the
+forced uninstall wipes IndexedDB, i.e. every recording, and the keystore therefore cannot
+be rotated. #262's checkbox now links #318; its evening status ("Android sibling = #245")
+corrected by comment.
+
+**#319 — steps 3, 4, 6, authored in Seth's other session, reviewed here** (branch held by
+the main checkout, so fixes were committed on a detached local branch and pushed with
+`git push origin HEAD:feat/android-apk-lane`; Seth pulls before touching it). Review loop,
+cap 4, used 4 — **both APPROVE at `6ce0a92`**, one docs-only follow-up carried by
+range-diff acceptance (the 09-03 precedent), squash-merged `0dd30cc`:
+
+| Round | Head      | Frank                      | George                           | Fix commit           |
+| ----- | --------- | -------------------------- | -------------------------------- | -------------------- |
+| 1     | `8b23e33` | REQUEST_CHANGES — 1 P2     | REQUEST_CHANGES — **1 P1**, 4 P2 | `5761965` (7 + 2 P3) |
+| 2     | `5761965` | REQUEST_CHANGES — 1 P2     | REQUEST_CHANGES — 1 P2, 5 P3     | `95b36a8` (7)        |
+| 3     | `95b36a8` | REQUEST_CHANGES — **1 P1** | REQUEST_CHANGES — 1 P2, 2 P3     | `6ce0a92` (2 P3)     |
+| 4     | `6ce0a92` | **APPROVE**                | **APPROVE** — 3 docs P3          | `7e74fb1` (docs)     |
+
+- **What review caught that would have failed the first dispatch:** the runner image
+  defaults to **JDK 17** and Capacitor's generated `capacitor.build.gradle` compiles at
+  **Java 21** — George P1, converged with the reviewer's own check against the
+  runner-image README. Fixed with a SHA-pinned `actions/setup-java` 21 (the macos-15
+  default-Xcode trap's Android twin). Also: `upload-artifact` defaults to `warn` on a
+  missing file (a green run with no APK) → `test -f` + `if-no-files-found: error`; the
+  docs described `~/.gradle/gradle.properties` (never read — `System.getenv` only) and a
+  GitHub pre-release that nothing creates; three files still called the iOS lane the only
+  binary workflow; the §0 "send that APK to a tester" imperative contradicted the identity
+  rule twice over.
+- **Refuted with evidence, not argument:** George R3's warm-daemon claim (a daemon started
+  without the env vars would keep them stale) — Gradle's
+  `ApplyClientEnvironmentVariables.java` _"applies the environment variables specified by
+  the client to the daemon JVM … and restores the previous values when the build
+  finishes."_ Frank R3's P1 fix (drop `allow_any_ref`) — a dispatch runs the dispatched
+  ref's **own** yml (the ref gotcha), so a push-access actor deletes the gate on their
+  branch; the in-yml gate is a **mistake guard, not an actor guard**. Premise accepted,
+  fix refuted, decision → #321.
+- **Reviewer behaviour, for the record:** George delivered a full verdict **all four
+  rounds**, first run, 20–35 KB prompts, grok serialized, Frank concurrent — against the
+  46 KB double-stall on #309 this afternoon. Frank did **not** re-raise his own R3 P1 in
+  R4 with the override unchanged; dispositions stand on evidence, never on a reviewer
+  going quiet.
+- **Merge mechanics lesson:** the PR body's "Closes #318" was changed to "Part of #318"
+  before merging and GitHub **still closed #318** from the link recorded at PR-open time.
+  Reopened with a comment; unlink in the sidebar next time, or never write "Closes" on a
+  partial delivery.
+
+**#320 (iOS sibling of Frank R2):** the ref gate compares `ref_name`, so a tag named
+`staging` passes; Android now also requires `ref_type == branch`. #320 also carries the
+iOS bundle guard's missing `obs/thumbs` check (George R3). Both ride the next iOS-lane PR
+with #311, re-proven by a dispatch.
+
+**#321 (D1 — Seth asked "what is the risk, especially public?"):** 11 signing secrets are
+reachable by any of **37 push-access, 2FA-enforced** accounts via a dispatched branch's own
+code — a compromised account, not a malicious colleague, is the realistic actor; the
+Android keystore is the irreversible asset. **Going public does not widen reach** (dispatch
+and secrets stay write-only; fork PRs get no secrets; no `pull_request_target`; read-only
+default token) and **unlocks the fix**: GitHub Environments with required reviewers, free
+on public repos, unavailable on this private free-plan repo. **DRI decision:** accept the
+mistake-guard design now; environment gate for both lanes in the #250 flip PR set; prune
+push access via the org admins; create the keystore only when the first real tester build
+is needed. Recorded on #321 and on #319.
+
+**Also:** memory updated (George threshold data, Frank non-determinism, the detached-branch
+push pattern, the worktree guard's script-file workaround, the "Closes" link lesson).
+`develop` CI green at `0dd30cc`.
+
+### Blockers / needs a human (late)
+
+- **#318 steps 1, 2, 5, 7 are all human:** a Mac with Android Studio + JDK 21 for the
+  `assembleDebug` proof (developer device only — never a future tester phone); the release
+  keystore + four secrets (create at the last responsible moment, per #321); the first
+  dispatch (`allow_any_ref` from `develop`, or promote to `staging` first).
+- **Tester receipt of the TestFlight build** still unconfirmed (evening item).
+- **#244 gate count moved the wrong way:** 22 open. The three new ones are lane
+  housekeeping; the triage in the evening's next-step 3 is now more pressing, not less.
+- **Contributor review rounds** still waiting on Seth as reviewer: #279 (R4, cap), #289
+  (R3), #215 (R5 or decision), #144 (scope question), #302 (never reviewed).
+
+### Next steps (late)
+
+1. **#318 step 1 + #245 on the same phone:** local debug APK, run the protocol, post the
+   header. This also answers #263 for Android.
+2. **#318 step 2 → first dispatch:** keystore, secrets, dispatch with `allow_any_ref`; expect
+   the fail-closed toolchain assert to speak first if the image notes were wrong.
+3. **#244 triage** of the 22 open milestone issues, explicitly close-or-move.
+4. Contributor PR rounds (#279, #289, #215, #144, #302) — the review debt is now the
+   largest item on the board after Android.
+5. Evening items still standing: TestFlight tester receipt; `ios-credentials.md` §9 refresh
+   - #311 + #320 in one iOS-lane PR; #250 names scrub.
 
 ---
 
