@@ -20,6 +20,7 @@ import { LiveScope } from "./live-scope";
 import {
   editRowReason,
   eraseRowReason,
+  heldTakeIsBusy,
   markRowReason,
   rowHint,
 } from "./menu-row-state";
@@ -1386,10 +1387,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // both settle arms.
       heldSharingRef.current = true;
       setHeldSharing(true);
-      const handedOver =
-        route === "native"
-          ? nativeShare.share(file)
-          : navigator.share({ files: [file] });
+      // On native this stages the file into the cache and then opens the
+      // chooser; the panel shows `sharing` throughout, and Discard is blocked
+      // for the whole window (George R5 P1). An async IIFE runs to its first
+      // await, and on the web branch that IS `navigator.share`, so the tap's
+      // activation is intact there.
+      const handedOver = (async () => {
+        if (route !== "native") {
+          await navigator.share({ files: [file] });
+          return;
+        }
+        const staged = await nativeShare.stage(file);
+        await nativeShare.send(staged);
+      })();
       void handedOver.then(
         () => {
           heldSharingRef.current = false;
@@ -1431,8 +1441,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // guard blocks the window a re-decode is mid-flight.
     const leaveHeldTake = useCallback(() => {
       // The synchronous double-close latch, mirroring `close()` — a second tap
-      // during the commit must not run the tail twice.
-      if (heldRetryingRef.current || closing.current) return;
+      // during the commit must not run the tail twice — plus the busy gate the
+      // panel's Discard control renders from (George R5 P1). `sharing` joined it
+      // because a native share writes the file to cache BEFORE the chooser
+      // opens: seconds of awaits with this panel live, in which two taps used to
+      // destroy the only copy of the take mid-write.
+      if (
+        heldTakeIsBusy({
+          retrying: heldRetryingRef.current,
+          sharing: heldSharingRef.current,
+        }) ||
+        closing.current
+      )
+        return;
       // Drop the failed-decode take, then run the SAME no-capture tail `close()`
       // runs (Seth's round-5 root fix for R4-G1). It commits BOTH halves the exit
       // still owes — a pending B5 edit AND a pending Finished toggle — then exits;
@@ -2278,7 +2299,11 @@ function SaveDecodeFailedPanel({
   // — the same care `SaveFailed` takes. There is no attempt count here, so the
   // retry handler disarms.
   const [armed, setArmed] = useState(false);
-  const showArmed = armed && !retrying;
+  // Any operation holding the take disarms the confirmation and blocks Discard —
+  // the same predicate the exit guard reads, so the control and the guard cannot
+  // fall out of step (George R5 P1).
+  const busy = heldTakeIsBusy({ retrying, sharing });
+  const showArmed = armed && !busy;
   return (
     <div
       role="alert"
@@ -2316,11 +2341,16 @@ function SaveDecodeFailedPanel({
       ) : null}
       <Control
         icon="share"
-        label={strings.takeRecoverShare}
+        label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt
         // the shared context the retry just resumed.
         disabled={retrying}
+        // State in place, because on the native route the chooser does NOT open
+        // in this gesture — the file is written to cache first, which on a long
+        // take is seconds of nothing (George R5 P1). Without this the panel looks
+        // untouched and the translator reaches for Discard.
+        busy={sharing}
         onClick={() => {
           setArmed(false);
           onShare();
@@ -2349,7 +2379,7 @@ function SaveDecodeFailedPanel({
           }
           variant="quiet"
           className={showArmed ? "text-[var(--s-live)]" : undefined}
-          disabled={retrying}
+          disabled={busy}
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (

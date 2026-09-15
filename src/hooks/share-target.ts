@@ -144,18 +144,44 @@ export function readShareEnvironment(): ShareEnvironment {
   };
 }
 
+/** A File already written to the app cache, waiting to be offered to the OS. */
+export interface StagedShare {
+  /** The `file://` URI the share plugin takes. */
+  readonly uri: string;
+  /** Its own directory, so abandoning it removes nothing else. */
+  readonly dir: string;
+}
+
 /** Hands prepared Files to the OS share sheet, and owns the cache they sit in. */
 export interface NativeShareSession {
   /**
-   * Write the File into the app cache and offer it to the OS share sheet.
+   * Write the File into the app cache, ready to be offered.
+   *
+   * **This is the slow half, and it is deliberately separate from {@link send}**
+   * (George R5 P2). A book zip is tens of megabytes and crosses the bridge in
+   * 768 KB chunks, so this runs for seconds. Every caller already has a place
+   * for slow work — `useShareFlow`'s tap 1, which paints `preparing` — and none
+   * of them has a place for it in the gesture that opens the sheet. Putting it
+   * there made "Share now" look like a dead button and left the flow `ready`
+   * while it ran.
+   *
+   * `signal` aborts it: a menu closed mid-write stops the write and takes the
+   * partial file with it.
+   */
+  stage(file: File, signal?: AbortSignal): Promise<StagedShare>;
+  /**
+   * Offer an already-staged file to the OS share sheet. The ONLY thing tap 2
+   * does on the native route, which is what keeps the menus' "the sheet opens in
+   * this gesture" contract true on both routes.
    *
    * **User activation is irrelevant here** — the chooser is started by the
    * plugin as an Android Intent / a `UIActivityViewController`, not by the
-   * WebView, so none of the awaits inside cost anything the way they would on
-   * the Web Share path. `share-flow.ts`'s two-gesture contract exists for that
-   * path and is unchanged.
+   * WebView. The web path's activation contract is `share-flow.ts`'s business
+   * and is unchanged.
    */
-  share(file: File): Promise<void>;
+  send(staged: StagedShare): Promise<void>;
+  /** Drop a staged file that will never be offered (the menu closed, unmount). */
+  discard(staged: StagedShare): Promise<void>;
 }
 
 /**
@@ -188,47 +214,69 @@ export function createNativeShareSession(
   let sequence = 0;
 
   return {
-    async share(file: File): Promise<void> {
+    async stage(file: File, signal?: AbortSignal): Promise<StagedShare> {
       sequence += 1;
       const dir = `${SHARE_CACHE_DIR}/${sequence}-${Date.now().toString(36)}`;
       const path = `${dir}/${cacheFilename(file.name)}`;
-      let uri: string;
       try {
+        // Checked before each chunk AND before the first: a cancel that arrives
+        // while the previous chunk was in flight must not start another, and an
+        // already-aborted signal must not write at all.
+        throwIfAborted(signal);
         // `writeFile` truncates, so a repeat of this call over the same path
         // overwrites rather than appending to a partial: safely re-runnable.
         const first = await readChunkBase64(file, 0);
-        uri = (await bridge.writeFile({ path, data: first, recursive: true }))
-          .uri;
+        const { uri } = await bridge.writeFile({
+          path,
+          data: first,
+          recursive: true,
+        });
         for (
           let at = SHARE_CHUNK_BYTES;
           at < file.size;
           at += SHARE_CHUNK_BYTES
-        )
+        ) {
+          throwIfAborted(signal);
           await bridge.appendFile({
             path,
             data: await readChunkBase64(file, at),
           });
+        }
+        throwIfAborted(signal);
+        return { uri, dir };
       } catch (cause) {
-        // Nothing reached the OS, so there is no reader to race: drop this
-        // share's own partial file rather than leave a truncated chapter.
+        // Nothing reached the OS — the write failed, or it was cancelled — so
+        // there is no reader to race: drop this share's own partial file rather
+        // than leave a truncated chapter behind.
         await removeDir(bridge, dir);
         throw cause;
       }
+    },
+
+    async send(staged: StagedShare): Promise<void> {
       try {
-        await bridge.share({ files: [uri] });
+        await bridge.share({ files: [staged.uri] });
       } catch (cause) {
         // The chooser refused or the user dismissed it: nothing was handed to
         // anything, so this file has no reader and goes now. A rejection is the
         // only evidence of that this code ever gets — which is why the resolved
-        // case below does nothing at all.
-        await removeDir(bridge, dir);
+        // case does nothing at all. See the doc comment above: there is no
+        // signal that a recipient is finished, so a sent file stays until the OS
+        // reclaims the cache.
+        await removeDir(bridge, staged.dir);
         throw asDomRejection(cause);
       }
-      // Deliberately no cleanup here. See the doc comment above: there is no
-      // signal that the recipient is finished, so the file stays until the OS
-      // reclaims the cache.
     },
+
+    discard: (staged: StagedShare): Promise<void> =>
+      removeDir(bridge, staged.dir),
   };
+}
+
+/** The abort shape `share-flow.ts` already classifies as a dismissal. */
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true)
+    throw new DOMException("Share cancelled", "AbortError");
 }
 
 /** The real bridge: Capacitor's Filesystem and Share plugins. */
@@ -252,9 +300,10 @@ const capacitorShareBridge: NativeShareBridge = {
 };
 
 /**
- * The app's one native share session. A single instance on purpose: the cache
- * retention window above is only a bound if every caller shares it, so Share
- * Chapter, Share Book and the recorder's held-take rescue all go through this.
+ * The app's one native share session. A single instance on purpose: the
+ * per-share sequence is only unique within a session, so Share Chapter, Share
+ * Book and the recorder's held-take rescue all go through this one rather than
+ * three that could name the same directory.
  */
 export const nativeShare: NativeShareSession =
   createNativeShareSession(capacitorShareBridge);
