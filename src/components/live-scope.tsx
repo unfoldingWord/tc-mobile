@@ -55,6 +55,17 @@ interface LiveScopeProps {
  * The zero-valued pad the ring emits before it fills is skipped via
  * `scope.count`: a `{0,0}` column is silence to a canvas, so painting it would
  * draw the unfilled head as amber "recorded silence".
+ *
+ * Drawn at ABSOLUTE level, deliberately — `Waveform` fits a stored take to the
+ * lane (#358, `lib/audio/display-gain.ts`) and this does not. While capture is
+ * live the scope is a level cue as much as a shape cue, and a scope that
+ * auto-scaled would make a microphone capturing far too quietly look exactly
+ * like a healthy one, which is the very problem #359 is about; the VU meter
+ * beside it is absolute for the same reason. The re-fit the translator needs
+ * happens the moment the take stops, when the recorder stage swaps this canvas
+ * for `Waveform`. #358 also sketches a running-max scale during capture; that
+ * half is deliberately NOT built here, pending the requirements owner's call
+ * and the Moto G peak/RMS measurement that separates #358 from #359.
  */
 export function LiveScope({
   readScope,

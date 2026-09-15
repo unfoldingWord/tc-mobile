@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
@@ -122,6 +123,16 @@ export function Waveform({
     }
 
     const buckets = peaks.min.length;
+    // Fit the take to the lane (#358). DISPLAY ONLY: the samples, the stored
+    // peaks, the MP3 and the export are untouched — this is a factor applied to
+    // the drawn height, never a gain on the audio (that is #359). Computed here
+    // rather than passed in so every call site — the recorder canvas and the
+    // Segments-list row — is scaled by the same rule, and recomputed from
+    // `peaks` alone so it is the same number on every repaint: panning and
+    // zooming change `view`, not the peaks, so the waveform does not breathe.
+    // 400 buckets in the recorder, 120 in a row — one extra pass over what the
+    // draw loop below already walks.
+    const gain = displayGain(peaks);
     ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible
@@ -132,8 +143,8 @@ export function Waveform({
       for (let i = 0; i < buckets; i++) {
         const x = ((i / buckets - view.startFraction) / span) * w;
         if (x < -barW || x > w) continue;
-        const top = mid - (peaks.max[i] ?? 0) * mid;
-        const bottom = mid - (peaks.min[i] ?? 0) * mid;
+        const top = mid - (peaks.max[i] ?? 0) * gain * mid;
+        const bottom = mid - (peaks.min[i] ?? 0) * gain * mid;
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
       drawCenterline();
@@ -145,8 +156,8 @@ export function Waveform({
     const barW = Math.max(1, w / buckets - 1);
     for (let i = 0; i < buckets; i++) {
       const x = (i / buckets) * w;
-      const top = mid - (peaks.max[i] ?? 0) * mid;
-      const bottom = mid - (peaks.min[i] ?? 0) * mid;
+      const top = mid - (peaks.max[i] ?? 0) * gain * mid;
+      const bottom = mid - (peaks.min[i] ?? 0) * gain * mid;
       ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
     }
     // `finished` is in the deps for its side effect only: it changes with the
