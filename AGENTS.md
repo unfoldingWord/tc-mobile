@@ -337,6 +337,15 @@ easy to regress.
   without asking first.
 - **Never** swallow an error silently. If a `catch` is genuinely empty, the
   comment must say why.
+- **Tester feedback is tagged by kind and source** (decided 2026-09-15).
+  Field testers and facilitators are asked for _bug reports_; those go into
+  the queue as `bug` with `source: tester`, and the body records who (by
+  role, never by name), when, and on which build. _Feature requests_ from
+  testers are documented, never dropped, and tagged `post-v1` with the source
+  and the rationale in the body; they are not scheduled until they are
+  reviewed against the plan after the training. Where a tester ask matches an
+  issue already open, it lands as an evidence comment on that issue, not as a
+  new one. `v1-required` means V1 = the v0.3.0 training build.
 
 ## Review — every PR, both reviewers
 
