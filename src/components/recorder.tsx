@@ -2356,7 +2356,17 @@ function SaveDecodeFailedPanel({
           onShare();
         }}
       />
-      {shareError ? <Notice>{shareError}</Notice> : null}
+      {/* The busy Notice, not just the relabelled control (George R6 P2):
+          `Control` is icon-only, so its `label` is the accessible name and
+          never paints. Without this the panel's only visible change during the
+          native cache write — seconds on a long take — is that Try again and
+          Discard go dim, which reads as a broken screen rather than as work in
+          flight. Same shape Try again above already uses. */}
+      {sharing ? (
+        <Notice tone="busy">{strings.takeRecoverSharing}</Notice>
+      ) : shareError ? (
+        <Notice>{shareError}</Notice>
+      ) : null}
       {shared ? (
         <>
           <Notice tone="info">{strings.takeRecoverShared}</Notice>
