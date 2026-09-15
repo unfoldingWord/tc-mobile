@@ -210,7 +210,16 @@ describe("shareFileNatively", () => {
     // the bytes that land must still be exactly the bytes we had.
     const size = SHARE_CHUNK_BYTES * 2 + 17;
     const source = new Uint8Array(size);
-    for (let i = 0; i < size; i += 1) source[i] = (i * 31 + 7) % 256;
+    // An LCG, NOT `(i * 31 + 7) % 256`. That fixture repeats every 256 bytes and
+    // `SHARE_CHUNK_BYTES` is a multiple of 256, so every chunk held identical
+    // bytes and a mutant that read chunk 0 three times passed this test. Caught
+    // by mutation, which is the only thing that could have caught it — the
+    // assertion was right and the data was lying to it.
+    let state = 0x2545f491;
+    for (let i = 0; i < size; i += 1) {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      source[i] = (state >>> 16) & 0xff;
+    }
     const { bridge, calls } = recordingBridge();
 
     await shareFileNatively(new File([source], "Genesis.zip"), bridge);
@@ -226,7 +235,15 @@ describe("shareFileNatively", () => {
         SHARE_CHUNK_BYTES
       );
     }
-    expect(writtenBytes(calls)).toEqual(source);
+    // Compared by index rather than `toEqual`, which walks 1.5M elements
+    // through the full deep-equality machinery: locally that cost ~1.7s of the
+    // test's ~1.9s, and on a CI runner it blew the 5s default timeout while
+    // asserting nothing extra (the whole encode is ~30ms). `findIndex` still
+    // names the first byte that differs, which is the only part of a diff over
+    // a megabyte and a half anyone can read.
+    const written = writtenBytes(calls);
+    expect(written.length).toBe(size);
+    expect(written.findIndex((byte, at) => byte !== source[at])).toBe(-1);
   });
 
   it("removes the temp file when the share sheet fails, and reports the failure", async () => {
