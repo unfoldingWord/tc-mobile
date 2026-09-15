@@ -79,9 +79,11 @@ export function isFinished(status: RecordingStatus): boolean {
  * shelf, three-digit padded ("Book 001", "Book 002" …).
  *
  * Pure, and the single definition of the placeholder — both callers go through
- * it, so the name the New Book field is pre-filled with (`peekNextBookName`) and
- * the name a blank confirm actually writes ({@link createBook}) cannot drift
- * (#314).
+ * it, so the name the New Book field is pre-filled with (the Books screen, off
+ * the shelf it has already loaded) and the name a blank confirm actually writes
+ * ({@link createBook}) cannot drift (#314). The pre-fill is DISPLAY only: an
+ * untouched field is confirmed as `""`, so the name that lands is always the one
+ * derived inside the write transaction below, never the rendered string.
  *
  * **First unused, not `count + 1`** (#360). The count-based namer this replaces
  * assumed books are only ever added. Once a book can be deleted, deleting
@@ -106,25 +108,6 @@ export function nextBookName(existingNames: Iterable<string>): string {
 }
 
 /**
- * The placeholder {@link createBook} would fall back to, WITHOUT creating
- * anything — what the New Book field is pre-filled with so a bare Confirm is
- * obviously fine (#314).
- *
- * Read-only by construction: a `readonly` transaction cannot write, so this can
- * never leave a book behind on a dialog the translator then cancels. It is a
- * peek, not a reservation — the name it returns is only the name the write will
- * derive if the shelf has not changed, which is why `createBook` re-derives
- * inside its own transaction rather than trusting this.
- */
-export async function peekNextBookName(): Promise<string> {
-  const db = await getDb();
-  const tx = db.transaction("books", "readonly");
-  const books = await tx.store.getAll();
-  await tx.done;
-  return nextBookName(books.map((b) => b.name));
-}
-
-/**
  * Create a book, named by the translator (#314) or by the placeholder.
  *
  * The name is trimmed, exactly as {@link renameBook} trims it — one validation
@@ -143,7 +126,11 @@ export async function peekNextBookName(): Promise<string> {
  * moved to the caller.
  *
  * A supplied name is never made unique: a facilitator may deliberately have two
- * books called "Mark", and {@link renameBook} has always allowed it.
+ * books called "Mark", and {@link renameBook} has always allowed it. That is
+ * also why the New Book dialog sends `""` rather than the placeholder string it
+ * displayed when the field is untouched — a supplied "Book 001" would bypass the
+ * derivation below, and two documents open on the same shelf would both write it
+ * (George R1 P2-3).
  */
 export async function createBook(
   name: string,
