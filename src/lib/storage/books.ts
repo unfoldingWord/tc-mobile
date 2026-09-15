@@ -213,7 +213,10 @@ const DELETE_BOOK_STORES = [
  * A row the array has lost — a half-written `addChapter` — is still this book's,
  * and once the book is gone nothing could ever reach it again. Going by the
  * index also means an id the array holds that points at ANOTHER book's chapter
- * is left alone rather than deleted out from under it.
+ * is left alone rather than deleted out from under it. For the same reason the
+ * walk does not depend on the `books` row existing: the row is removed if it is
+ * there, but a tree whose book row has already gone is still collected, because
+ * this is the only reclamation path there is.
  */
 export async function deleteBook(bookId: BookId): Promise<void> {
   const db = await getDb();
@@ -228,17 +231,18 @@ export async function deleteBook(bookId: BookId): Promise<void> {
   const segments = tx.objectStore("segments");
   const takes = tx.objectStore("takes");
 
-  const book = await books.get(bookId);
-  if (!book) {
-    // Already gone. Resolve without writing anything — see the idempotency note
-    // in the docblock. The transaction commits empty.
-    await tx.done;
-    return;
-  }
-
   // Gather the whole tree first, by parent link, before deleting anything: the
   // clip reference count below has to see every take of this book removed
   // before it can ask what is left.
+  //
+  // This runs whether or not the `books` row is still there, and the row itself
+  // is removed below only if present. An early return on a missing book would
+  // make the orphan guarantee conditional on the one row that is itself part of
+  // what is being removed: a tree whose `books` row had gone could never be
+  // reclaimed by anything, because this is the app's only reclamation path and
+  // it would no-op on exactly the state that needs it. Idempotency is unchanged
+  // — on a database that does not hold this book the index returns nothing and
+  // the transaction commits empty.
   const ownedChapters = await chapters.index("bookId").getAll(bookId);
   const doomedTakes: Take[] = [];
   const doomedSegments: SegmentId[] = [];
@@ -256,6 +260,8 @@ export async function deleteBook(bookId: BookId): Promise<void> {
   for (const take of doomedTakes) await takes.delete(take.id);
   for (const segmentId of doomedSegments) await segments.delete(segmentId);
   for (const chapter of ownedChapters) await chapters.delete(chapter.id);
+  // `delete` on an absent key is a no-op in IndexedDB, so the orphan case needs
+  // no branch here: the row goes if it is there, and nothing is written if not.
   await books.delete(bookId);
 
   // The take rows are gone, so what `getAll` returns now is exactly the set of
