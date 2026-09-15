@@ -27,36 +27,6 @@ import { Share } from "@capacitor/share";
 export const SHARE_CACHE_DIR = "tc-mobile-share";
 
 /**
- * How many completed shares keep their file before the oldest is removed.
- *
- * A share sheet gives no signal that the receiving app has finished reading the
- * file — `Share.share` resolves when the chooser activity returns, which can be
- * well before Drive has uploaded what it was handed. So the lifetime is
- * measured in user actions rather than in milliseconds: a directory is removed
- * only once {@link SHARE_RETAINED} further shares have each been prepared,
- * offered, and dismissed. Two is not enough to be comfortable and ten is
- * hoarding; three bounds the cache at three shares while putting two complete
- * round trips between a hand-off and its cleanup.
- */
-export const SHARE_RETAINED = 3;
-
-/**
- * How old a share's directory must be before a later session removes it.
- *
- * Within a session, {@link SHARE_RETAINED} counts completed user round trips.
- * Across sessions there are no round trips to count, and a process boundary
- * proves nothing: Android can kill the app while the target app is still
- * uploading what the chooser handed it (Frank R3 P2). So a later run judges a
- * leftover by its age, which the directory name carries.
- *
- * A day. A background upload still unfinished after that has failed for reasons
- * a deleted cache file will not change, and it bounds the cache to one day of
- * shares. A device clock that moves backwards makes a directory look newer than
- * it is, which errs towards keeping bytes rather than deleting them.
- */
-export const SHARE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-/**
  * How much of the file crosses the bridge at a time.
  *
  * Capacitor's Filesystem takes binary data as base64 on native (`data: string |
@@ -101,8 +71,6 @@ export interface NativeShareBridge {
   }): Promise<{ uri: string }>;
   /** Append a further chunk to a file `writeFile` already created. */
   appendFile(options: { path: string; data: string }): Promise<void>;
-  /** Name every entry directly inside a directory. */
-  readdir(options: { path: string }): Promise<{ names: string[] }>;
   /** Remove a directory and everything in it. */
   rmdir(options: { path: string; recursive: boolean }): Promise<void>;
   /** Open the OS share sheet for the given file URIs. */
@@ -193,48 +161,37 @@ export interface NativeShareSession {
 /**
  * A share session over one bridge.
  *
- * The cache lifetime lives here rather than in module variables so that two
- * callers cannot get two different views of it, and so a test gets a clean one
- * per case instead of whatever the previous case left behind.
+ * **A share that succeeded is never deleted by this app.** Three rounds of
+ * review went looking for a signal that the receiving app had finished reading
+ * the file, and there is none: `Share.share` resolves when the chooser activity
+ * returns (Frank R2 P1), a process boundary proves nothing because Android can
+ * kill the app mid-upload (Frank R3 P2), and neither a count of later shares nor
+ * an elapsed day proves consumption either (Frank R5 P1) — Drive can be sitting
+ * offline waiting for connectivity. Every one of those was a heuristic standing
+ * in for knowledge the app cannot have, and on the held-take rescue (#165) the
+ * cost of guessing wrong is the only copy of a recording.
  *
- * **Every share gets its own directory.** That is what makes concurrent shares
- * safe — Share Chapter and the recorder's held-take rescue can be in flight at
- * once, and neither can write over or delete the other's bytes (Frank R2 P2).
- * Nothing in the active path removes a directory other than its own, and a
- * completed share's file is removed only once {@link SHARE_RETAINED} further
- * shares have finished, never the moment the chooser returns — `Share.share`
- * resolves when the chooser activity returns, which can be before the receiving
- * app has read what it was handed (Frank R2 P1). For the held-take rescue those
- * may be the only surviving bytes of a recording.
+ * So the lifetime belongs to the platform, which is what `Directory.Cache` is
+ * for: the OS reclaims it under storage pressure, and the user can clear it from
+ * Settings. What this code still owns is the case where nothing was ever handed
+ * over — a failed write or a rejected chooser — and it cleans those up at once.
  *
- * **Restarting the app proves nothing either** (Frank R3 P2). Android can kill
- * the app while the target is still uploading, so a previous run's leftovers
- * are not automatically safe to delete. The startup sweep is therefore by AGE,
- * read out of the directory name, not by "some other process made it".
+ * **Every share still gets its own directory**, which is what makes concurrent
+ * shares safe: Share Chapter and the held-take rescue can be in flight together
+ * and neither can write over the other's bytes (Frank R2 P2). The name carries a
+ * timestamp as well as a sequence because nothing is swept any more, so a later
+ * session's first share must not reuse a name whose file may still be read.
  */
 export function createNativeShareSession(
   bridge: NativeShareBridge
 ): NativeShareSession {
-  // One sweep per session, shared as a promise rather than latched with a
-  // boolean: a second share starting while the first is still sweeping must
-  // WAIT for it, not skip it and write into a directory the sweep is about to
-  // remove.
-  let sweep: Promise<void> | null = null;
-  // Completed shares, oldest first. A directory enters only after its own share
-  // resolved, so an in-flight share's directory is never a pruning candidate.
-  const completed: string[] = [];
   let sequence = 0;
 
   return {
     async share(file: File): Promise<void> {
       sequence += 1;
-      // Unique per share AND across runs — the timestamp is what makes the name
-      // survivable as an age, which is the only evidence a later run has about
-      // whether a directory is still being read. `sharedAt` parses it back.
       const dir = `${SHARE_CACHE_DIR}/${sequence}-${Date.now().toString(36)}`;
       const path = `${dir}/${cacheFilename(file.name)}`;
-      sweep ??= sweepAgedOut(bridge);
-      await sweep;
       let uri: string;
       try {
         // `writeFile` truncates, so a repeat of this call over the same path
@@ -260,14 +217,16 @@ export function createNativeShareSession(
       try {
         await bridge.share({ files: [uri] });
       } catch (cause) {
+        // The chooser refused or the user dismissed it: nothing was handed to
+        // anything, so this file has no reader and goes now. A rejection is the
+        // only evidence of that this code ever gets — which is why the resolved
+        // case below does nothing at all.
         await removeDir(bridge, dir);
         throw asDomRejection(cause);
       }
-      completed.push(dir);
-      while (completed.length > SHARE_RETAINED) {
-        const stale = completed.shift();
-        if (stale !== undefined) await removeDir(bridge, stale);
-      }
+      // Deliberately no cleanup here. See the doc comment above: there is no
+      // signal that the recipient is finished, so the file stays until the OS
+      // reclaims the cache.
     },
   };
 }
@@ -280,13 +239,6 @@ const capacitorShareBridge: NativeShareBridge = {
     Filesystem.writeFile({ path, data, directory: Directory.Cache, recursive }),
   appendFile: async ({ path, data }) => {
     await Filesystem.appendFile({ path, data, directory: Directory.Cache });
-  },
-  readdir: async ({ path }) => {
-    const { files } = await Filesystem.readdir({
-      path,
-      directory: Directory.Cache,
-    });
-    return { names: files.map((file) => file.name) };
   },
   rmdir: async ({ path, recursive }) => {
     await Filesystem.rmdir({ path, directory: Directory.Cache, recursive });
@@ -322,40 +274,6 @@ function asDomRejection(cause: unknown): unknown {
   return cause;
 }
 
-/**
- * Remove the leftovers of earlier sessions that are old enough to be certainly
- * finished with — and nothing else. Runs once per session, before the first
- * write, and never rejects: a cache that could not be listed is not a reason to
- * refuse a share.
- */
-async function sweepAgedOut(bridge: NativeShareBridge): Promise<void> {
-  const now = Date.now();
-  let names: readonly string[];
-  try {
-    names = (await bridge.readdir({ path: SHARE_CACHE_DIR })).names;
-  } catch {
-    // The share directory has never existed (the first share after an install)
-    // or could not be listed. Either way this session has nothing it may
-    // remove, and the next `writeFile` creates the directory it needs.
-    return;
-  }
-  for (const name of names) {
-    const at = sharedAt(name);
-    // `null` means the name was not written by this code — so its age is
-    // unknown, and an unknown age is not a licence to delete someone's audio.
-    if (at !== null && now - at > SHARE_MAX_AGE_MS)
-      await removeDir(bridge, `${SHARE_CACHE_DIR}/${name}`);
-  }
-}
-
-/** When the share that made this directory started, or null if unreadable. */
-function sharedAt(name: string): number | null {
-  const stamp = /^\d+-([0-9a-z]+)$/.exec(name)?.[1];
-  if (stamp === undefined) return null;
-  const at = Number.parseInt(stamp, 36);
-  return Number.isFinite(at) && at > 0 ? at : null;
-}
-
 async function removeDir(
   bridge: NativeShareBridge,
   path: string
@@ -363,12 +281,12 @@ async function removeDir(
   try {
     await bridge.rmdir({ path, recursive: true });
   } catch {
-    // Deliberately no channel, and it never rejects. The wanted state is "the
-    // directory is not there", and `rmdir` rejects for the ordinary case that
-    // it never existed (the first share after an install) as loudly as for a
-    // real failure. Every share writes to a path of its own, so a failure here
-    // costs cache bytes the OS can reclaim — never a wrong file shared, and
-    // never a share that does not happen.
+    // Deliberately no channel, and it never rejects. This only ever runs on a
+    // share that failed, where the wanted state is "the directory is not
+    // there" and the caller is already throwing the real cause; `rmdir` also
+    // rejects for the ordinary case that the write never created the directory
+    // at all. A failure here costs cache bytes the OS can reclaim — never a
+    // wrong file shared, and never a share that does not happen.
   }
 }
 
