@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
+import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
+import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
@@ -36,6 +38,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     createBook,
     addChapter,
     renameBook,
+    deleteBook,
+    deleting,
+    deleteFailed,
   } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
@@ -64,6 +69,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Whether the open book ≡ menu is in rename mode (the name field showing) or
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
+  // Which book the Delete confirm is armed for (#337), held apart from
+  // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
+  // Segments row menu, where Erase closes the row menu and the screen holds the
+  // target. `null` means no confirm is up.
+  const [deleteTargetId, setDeleteTargetId] = useState<BookId | null>(null);
   // A monotonic token for the current book-menu session. It advances whenever the
   // menu closes, switches to another book, or arms a share — every transition
   // after which a late-resolving rename must NOT run its close, or it would drop
@@ -97,7 +107,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       pendingScroll.current = null;
     }
     const focusId = pendingFocus.current;
-    if (focusId !== null) {
+    // HOLD the hand-off while the delete confirm is up. The shelf is `inert`
+    // then (see the wrapper below), and an element inside an inert subtree
+    // cannot take focus at all — so focusing here would be a silent no-op and
+    // the pending target would be consumed and lost. `deleteTargetId` going
+    // null is exactly the moment `inert` comes off, and it is in this effect's
+    // deps, so the hand-off runs on that render instead. This is the repo's own
+    // lesson, learned twice: a focus fix that ignores `inert` is dead code
+    // (#364; docs/progress_tracker.md).
+    if (focusId !== null && deleteTargetId === null) {
       // The row's first <button> is the expand/collapse toggle; a second
       // activation there would collapse the new book. Target the add-chapter
       // Control (`.control`) — the actual next action (George R3 P3).
@@ -107,7 +125,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         ?.focus();
       pendingFocus.current = null;
     }
-  }, [books]);
+    // Keyed on BOTH: `books` covers create/add-chapter and a successful delete,
+    // `deleteTargetId` covers the render on which the confirm comes down. A
+    // delete resolves through whichever of the two lands last, so neither order
+    // drops the hand-off.
+  }, [books, deleteTargetId]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {
@@ -206,6 +228,90 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         ? strings.shareBookFailed
         : null;
 
+  // ── Delete a book (#337) ──────────────────────────────────────────────────
+  // The book the confirm names, resolved from the shelf each render — so a book
+  // that is no longer there takes its dialog down with it rather than leaving a
+  // confirm armed for a row that does not exist.
+  const deleteTarget = books.find((b) => b.bookId === deleteTargetId) ?? null;
+  const closeDeleteConfirm = useCallback(() => setDeleteTargetId(null), []);
+  // Arm the confirm from the ≡ menu, closing the menu first — the same shape as
+  // the Segments row menu, where Erase closes the row menu and the screen owns
+  // the target. `shareMenuBookId` is read BEFORE the close clears it.
+  // Arm the confirm from the ≡ menu, closing the menu through the ONE close path
+  // — which resets the share.
+  //
+  // Round 4 tried to keep an armed zip alive across the confirm, so Cancel would
+  // not cost a whole-book encode (George R4 P2-3). That broke the invariant the
+  // unchanged share hook is written on: `useBookShare` is one screen-level flow
+  // with NO owning bookId, and its `preparing`/`ready` state is only ever safe
+  // because every menu close resets it. With it kept alive, opening ANOTHER
+  // book's ≡ rendered that book's menu off the first book's flow — "Share now"
+  // there would hand Practice's archive to the share sheet from Mark's menu
+  // (Frank R5 P2 and George R5 P2-1, raised independently), and resetting at
+  // confirm-time instead threw away a ready zip of a book still on disk whenever
+  // the delete then failed (George R5 P2-2).
+  //
+  // Two new P2s from one accommodation is the siblings signal, not a chain: the
+  // approach is wrong, not the details. So this returns to the behaviour that
+  // stood clean through rounds 1-3, and giving the share flow an owning bookId —
+  // which is what would make R4 P2-3 safely fixable — is #363, its own change to
+  // its own unchanged code.
+  const onArmDelete = useCallback(() => {
+    const bookId = shareMenuBookId;
+    onCloseShareMenu();
+    setDeleteTargetId(bookId);
+  }, [onCloseShareMenu, shareMenuBookId]);
+  const onConfirmDelete = useCallback(() => {
+    if (deleteTargetId === null) return;
+    // The shelf order as it is right now, captured while the row is still on
+    // screen — `focusTargetAfterDelete` needs it to name the row that will take
+    // this one's place.
+    const shelfBefore = books.map((b) => b.bookId);
+    // No share reset here: arming the confirm already closed the menu through
+    // `onCloseShareMenu`, which reset it. Resetting again at confirm time is what
+    // George R5 P2-2 caught — the store write is fallible, so on a failed delete
+    // it would discard a ready zip of a book that is still on disk.
+    void (async () => {
+      const result = await deleteBook(deleteTargetId);
+      // A double-tap's second call is refused, not answered: the first delete is
+      // still running and owns the outcome, so the confirm must NOT come down.
+      if (result === "busy") return;
+      if (result === "ok") {
+        // The id is gone for good, so drop it from the expanded set rather than
+        // letting a session of deletes accumulate dead ids.
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.delete(deleteTargetId);
+          return next;
+        });
+      }
+      // Both outcomes hand focus off the SAME way — never a direct `.focus()`
+      // here. The confirm is still up at this point, so the shelf is still
+      // `inert` and focusing into it would do nothing (#364). Record the target
+      // and let the effect above act once `setDeleteTargetId(null)` has taken
+      // `inert` off.
+      //
+      // On success the row unmounts and focus would fall to the document; on
+      // failure the row survives but the confirm carrying the focused Cancel
+      // unmounts, so it falls to the document just the same. Which node each
+      // case wants is decided by `focusTargetAfterDelete`, which is pure and has
+      // a test table — the ordering below is the half no test here can observe.
+      pendingFocus.current = focusTargetAfterDelete(
+        result,
+        deleteTargetId,
+        shelfBefore
+      );
+      setDeleteTargetId(null);
+    })();
+  }, [books, deleteBook, deleteTargetId]);
+
+  // `deleteFailed` only ever RELABELS the hook's current error — they are one
+  // state there, so the label cannot outlive what it labels. A *reload* no
+  // longer takes this line down (it would race the delete's own error off the
+  // screen); what clears it is another delete, or any write that succeeds
+  // (George R4 P2-2 / Frank R4 P2).
+  const noticeText = deleteFailed ? strings.deleteBookFailed : error;
+
   return (
     // While the menu is open, take the whole shelf chrome — New Book included —
     // out of the focus/pointer tree for AT/switch users, matching how Segments
@@ -213,7 +319,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // background). The Menu portals to <body>, so it stays live above this (#77).
     <div
       className="flex h-full flex-col gap-[14px]"
-      inert={menuOpen || shareMenuBook !== null || undefined}
+      inert={
+        menuOpen || shareMenuBook !== null || deleteTarget !== null || undefined
+      }
     >
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
         {!showEmpty && (
@@ -238,9 +346,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           "back out and re-enter" recovery the way Segments does. So a load
           failure carries a Retry (reload), not just a Notice, or the shelf is a
           dead end with recordings invisible on disk (G9). */}
-      {error ? (
+      {noticeText ? (
         <Notice>
-          <span className="min-w-0 flex-1">{error}</span>
+          <span className="min-w-0 flex-1">{noticeText}</span>
           {loadFailed && (
             <Control
               icon="retry"
@@ -257,13 +365,18 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
 
       <div className="flex-1 overflow-y-auto">
         {showEmpty ? (
-          <EmptyState
-            headline={strings.booksEmpty}
-            teach={strings.booksEmptyTeach}
-            ctaLabel={strings.newBook}
-            ctaIcon="plus"
-            onCta={() => void onNewBook()}
-          />
+          // Registered as a focus target like a book row: deleting the last book
+          // unmounts the row that had focus, and this CTA is the only control
+          // left to hand it to (#337).
+          <div className="h-full" ref={(el) => setNode(EMPTY_STATE_NODE, el)}>
+            <EmptyState
+              headline={strings.booksEmpty}
+              teach={strings.booksEmptyTeach}
+              ctaLabel={strings.newBook}
+              ctaIcon="plus"
+              onCta={() => void onNewBook()}
+            />
+          </div>
         ) : (
           <ul className="flex flex-col gap-[10px]">
             {books.map((book) => (
@@ -305,8 +418,17 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               onCancel={() => setRenamingBook(false)}
             />
             {/* A failed rename speaks here — the screen's Notice is behind the
-                scrim — while the field stays up for another try. */}
-            {error && <Notice>{error}</Notice>}
+                scrim — while the field stays up for another try.
+
+                Never a DELETE's error, though: `deleteFailed` marks the current
+                error as the delete's, and that one already has a labelled home
+                on the shelf. Without the guard, failing a delete and then
+                opening Rename put the raw store message inside a rename field
+                nothing had submitted yet (George stand-in P3-2). The remaining
+                instances of that class — a failed create or add-chapter reaching
+                this panel the same way — are pre-existing and belong to #172,
+                which is about raw browser strings in Notices generally. */}
+            {error && !deleteFailed && <Notice>{error}</Notice>}
           </>
         ) : (
           <>
@@ -342,9 +464,31 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               </Notice>
             )}
             {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
+            {/* Destructive, so it sits last — the same place Delete holds in the
+                Segments row menu (#80). It arms the shared two-tap confirm; it
+                never deletes on this tap. */}
+            <Control
+              icon="trash"
+              label={strings.deleteBook}
+              variant="quiet"
+              onClick={onArmDelete}
+            />
           </>
         )}
       </Menu>
+
+      {/* The SAME confirm the segment Erase uses — one dialog, parameterised by
+          its copy, never a second one. Focus lands on Cancel, Escape and a scrim
+          tap cancel, and both are no-ops once the delete is in flight. */}
+      <EraseConfirm
+        open={deleteTarget !== null}
+        title={strings.deleteBookConfirmTitle(deleteTarget?.name ?? "")}
+        confirmLabel={strings.deleteBookConfirm}
+        cancelLabel={strings.eraseCancel}
+        busy={deleting}
+        onConfirm={onConfirmDelete}
+        onCancel={closeDeleteConfirm}
+      />
     </div>
   );
 }
