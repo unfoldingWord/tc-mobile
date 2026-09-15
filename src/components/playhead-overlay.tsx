@@ -5,8 +5,14 @@ import { cn } from "@/lib/utils";
 
 interface PlayheadOverlayProps {
   /**
-   * The sounding position in milliseconds, or `null` when nothing is sounding (a
-   * HIDE sentinel distinct from 0, the clip start). A PULL (D-LEVEL-PULL, like
+   * The sounding position in milliseconds **within the drawn buffer**, or `null`
+   * when nothing is sounding (a HIDE sentinel distinct from 0, the clip start).
+   * Usually the two are the same thing; they part company for an edit-mode
+   * audition (#284), which sounds a view of the middle of the buffer that stays
+   * drawn, and the recorder adds that view's offset before this is read. The line
+   * belongs over the audio the eye can see, so this overlay is deliberately given
+   * one coordinate system — the drawn one — and knows nothing of selections. A
+   * PULL (D-LEVEL-PULL, like
    * `VuMeter`'s `readLevel` and `LiveScope`'s `readScope`): this overlay polls it
    * on its own `requestAnimationFrame` clock and moves the line by DOM, so buffer
    * playback never lifts into React state and nothing re-renders per frame — the
@@ -19,7 +25,7 @@ interface PlayheadOverlayProps {
    * paused or idle waveform.
    */
   active: boolean;
-  /** Duration of the sounding buffer, for the position fraction. */
+  /** Duration of the DRAWN buffer, for the position fraction. */
   durationMs: number;
   /**
    * The recorder viewport the bars are drawn through (`Waveform`'s `view`), so
