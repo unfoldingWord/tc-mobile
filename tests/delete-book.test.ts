@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { unwrap } from "idb";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
@@ -137,7 +138,45 @@ async function expectGone(
   expect(orphaned).toEqual([]);
 }
 
+/**
+ * Make the NEXT transaction this database opens throw the moment `deleteBook`
+ * asks it for `storeName`.
+ *
+ * The seam is the native `IDBDatabase.transaction`, reached with `unwrap` past
+ * idb's proxy — the same seam `tests/take-durability.test.ts` spies on, because
+ * `deleteBook` does not return its transaction and the arguments and the stores
+ * it asks for are the only things observable from outside.
+ *
+ * Throwing on `objectStore("clipMeta")` lands the failure exactly where it
+ * matters: the tree deletes (takes, segments, chapters, the book row) have all
+ * been issued by then and the clip deletes have not. That is the seam George
+ * named — a JS throw there, with no abort, is what would commit a database
+ * whose audio is stranded with nothing able to reach or free it.
+ */
+function throwWhenStoreRequested(
+  raw: IDBDatabase,
+  storeName: string,
+  error: Error
+) {
+  const open = raw.transaction.bind(raw);
+  return vi
+    .spyOn(raw, "transaction")
+    .mockImplementation((...args: Parameters<IDBDatabase["transaction"]>) => {
+      const tx = open(...args);
+      const objectStore = tx.objectStore.bind(tx);
+      Object.defineProperty(tx, "objectStore", {
+        configurable: true,
+        value: (name: string) => {
+          if (name === storeName) throw error;
+          return objectStore(name);
+        },
+      });
+      return tx;
+    });
+}
+
 beforeEach(clearAllStores);
+afterEach(() => vi.restoreAllMocks());
 
 describe("deleteBook", () => {
   it("removes the book, its chapters, its segments, their takes and their clips", async () => {
@@ -380,6 +419,35 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
     });
+  });
+
+  it("leaves every store untouched when the walk throws after the tree deletes", async () => {
+    // The tree deletes are issued BEFORE the clip deletes, so a JS throw in
+    // between is the one ordering that can strand audio: IndexedDB auto-commits
+    // an INACTIVE transaction unless it is aborted, and a thrown error — unlike
+    // a failed request — does not abort on its own. `saveTake` and
+    // `commitTranscode` both carry that guard; `deleteBook` now does too
+    // (George R3 P2-3).
+    const tree = await bookWithRecordings("Practice");
+    const before = await countAll();
+    expect(before.clipData).toBe(3);
+
+    const injected = new Error("injected mid-walk failure");
+    const raw = unwrap(await getDb()) as IDBDatabase;
+    throwWhenStoreRequested(raw, "clipMeta", injected);
+
+    await expect(deleteBook(tree.bookId)).rejects.toThrow(injected);
+
+    // Nothing at all moved: the book, its chapters, its segments, its takes and
+    // all three clips are exactly as they were. A commit here would have left
+    // the first four gone and the audio orphaned.
+    vi.restoreAllMocks();
+    expect(await countAll()).toEqual(before);
+    expect(await getBook(tree.bookId)).toBeDefined();
+    for (const { segmentId, clipId } of tree.recorded) {
+      expect(await getSegment(segmentId)).toBeDefined();
+      expect(await getClipMeta(clipId)).toBeDefined();
+    }
   });
 
   it("reclaims an orphan tree whose book row is already gone", async () => {

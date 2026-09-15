@@ -9,6 +9,7 @@ import {
   addSegment,
   clearSegmentTake,
   createBook,
+  deleteBook,
   saveTake,
 } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
@@ -93,6 +94,29 @@ describe("take writes ask for strict durability", () => {
 
     const options = await transactionOptionsDuring(async () => {
       await clearSegmentTake(segmentId);
+    });
+
+    expect(options).toEqual([{ durability: "strict" }]);
+  });
+
+  it("deleteBook opens its transaction with durability: strict", async () => {
+    // Deleting a book removes the only copy of every take under it — a whole
+    // tree at once, not one segment — so it is held to the same bar as the two
+    // above (#337, #350). Without this case a refactor could drop the options
+    // bag and `tests/delete-book.test.ts` would stay green: it asserts what the
+    // rows look like afterwards, never how the transaction was opened.
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const segmentId = (await addSegment(chapter.id)).id;
+    await saveTake(
+      segmentId,
+      newClipId(),
+      samples(1000),
+      CANONICAL_SAMPLE_RATE
+    );
+
+    const options = await transactionOptionsDuring(async () => {
+      await deleteBook(book.id);
     });
 
     expect(options).toEqual([{ durability: "strict" }]);
