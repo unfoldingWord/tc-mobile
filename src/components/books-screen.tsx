@@ -168,12 +168,19 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, []);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
-  const onCloseShareMenu = useCallback(() => {
-    bookMenuSession.current += 1;
-    setShareMenuBookId(null);
-    setRenamingBook(false);
-    bookShare.reset();
-  }, [bookShare]);
+  const closeBookMenu = useCallback(
+    (resetShare: boolean) => {
+      bookMenuSession.current += 1;
+      setShareMenuBookId(null);
+      setRenamingBook(false);
+      if (resetShare) bookShare.reset();
+    },
+    [bookShare]
+  );
+  const onCloseShareMenu = useCallback(
+    () => closeBookMenu(true),
+    [closeBookMenu]
+  );
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -234,9 +241,17 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // the target. `shareMenuBookId` is read BEFORE the close clears it.
   const onArmDelete = useCallback(() => {
     const bookId = shareMenuBookId;
-    onCloseShareMenu();
+    // Close the menu WITHOUT resetting the share. On Segments the two live on
+    // different menus (Erase on the row, Share on the chapter), so closing one
+    // never touched the other; here they share the book's ≡, and resetting on
+    // the way to the confirm would abort the encoder and drop a stashed zip
+    // before the translator has agreed to anything — so Cancel would silently
+    // cost them a whole-book encode (George R4 P2-3). The reset happens on a
+    // CONFIRMED delete instead, where it is needed to keep an in-flight export
+    // from racing the T1 walk.
+    closeBookMenu(false);
     setDeleteTargetId(bookId);
-  }, [onCloseShareMenu, shareMenuBookId]);
+  }, [closeBookMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // Where focus goes once this row unmounts, decided while the row is still on
@@ -246,6 +261,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // the same hole the new-book hand-off above closes.
     const index = books.findIndex((b) => b.bookId === deleteTargetId);
     const neighbour = books[index + 1] ?? books[index - 1] ?? null;
+    // NOW the share goes: the translator has confirmed, so an armed zip is
+    // worthless and an encode still running would be reading a tree this walk
+    // is about to delete. Arming the confirm deliberately does not do this.
+    bookShare.reset();
     void (async () => {
       const result = await deleteBook(deleteTargetId);
       // A double-tap's second call is refused, not answered: the first delete is
@@ -267,11 +286,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       }
       setDeleteTargetId(null);
     })();
-  }, [books, deleteBook, deleteTargetId]);
+  }, [books, bookShare, deleteBook, deleteTargetId]);
 
-  // `deleteFailed` only ever RELABELS the hook's current error — the hook sets
-  // and clears the two together — so a successful reload takes this line down
-  // with the error it labelled, and any later failure speaks for itself.
+  // `deleteFailed` only ever RELABELS the hook's current error — they are one
+  // state there, so the label cannot outlive what it labels. A *reload* no
+  // longer takes this line down (it would race the delete's own error off the
+  // screen); what clears it is another delete, or any write that succeeds
+  // (George R4 P2-2 / Frank R4 P2).
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
   return (
