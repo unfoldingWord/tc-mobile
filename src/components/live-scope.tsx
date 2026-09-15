@@ -61,11 +61,18 @@ interface LiveScopeProps {
  * live the scope is a level cue as much as a shape cue, and a scope that
  * auto-scaled would make a microphone capturing far too quietly look exactly
  * like a healthy one, which is the very problem #359 is about; the VU meter
- * beside it is absolute for the same reason. The re-fit the translator needs
- * happens the moment the take stops, when the recorder stage swaps this canvas
- * for `Waveform`. #358 also sketches a running-max scale during capture; that
- * half is deliberately NOT built here, pending the requirements owner's call
- * and the Moto G peak/RMS measurement that separates #358 from #359.
+ * beside it is absolute for the same reason.
+ *
+ * `Waveform` holds the same line rather than contradicting it: it suppresses
+ * the fit whenever `capturing` is set, so the mid-take swaps between the two
+ * canvases — this scope unmounting for a paused first take's decoded preview
+ * (`recorder.tsx`'s `previewShown`), and remounting on Resume — do not change
+ * the scale under the translator (George R1 P2). The re-fit lands once, when
+ * the take is committed and capture is over.
+ *
+ * #358 also sketches a running-max scale during capture; that half is
+ * deliberately NOT built here, pending the requirements owner's call and the
+ * Moto G peak/RMS measurement that separates #358 from #359.
  */
 export function LiveScope({
   readScope,

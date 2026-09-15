@@ -132,7 +132,14 @@ export function Waveform({
     // zooming change `view`, not the peaks, so the waveform does not breathe.
     // 400 buckets in the recorder, 120 in a row — one extra pass over what the
     // draw loop below already walks.
-    const gain = displayGain(peaks);
+    //
+    // `capturing` (recording or paused) suppresses the fit: while a take is in
+    // flight this canvas draws at absolute level, exactly like `LiveScope` and
+    // the VU meter, so the recorder's mid-take stage swaps — the paused
+    // first-take preview, a punch-in's merged buffer — cannot re-fit a take that
+    // is still being made and then un-fit it on Resume (George R1 P2/P3). A row
+    // never sets `capturing`, so a stored take is always fitted.
+    const gain = displayGain(peaks, capturing);
     ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible

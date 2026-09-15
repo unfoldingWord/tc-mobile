@@ -14,10 +14,12 @@
  * is not a gain on the audio — making the capture itself louder is #359, a
  * different remedy to the same symptom, and the two are independent.
  *
- * The VU meter is deliberately NOT scaled here, and neither is the live capture
- * scope: absolute level has to keep reading as absolute level somewhere, or a
- * genuinely too-quiet microphone becomes invisible (see `LiveScope`'s comment
- * and #359).
+ * Nothing is fitted while the take is still being made. The VU meter, the live
+ * capture scope and the drawn waveform all stay at absolute level for as long
+ * as a take is in flight: absolute level has to keep reading as absolute level
+ * while there is still something the translator could do about it, or a
+ * genuinely too-quiet microphone becomes invisible (#359). The fit lands once,
+ * when the take is committed — see `takeInFlight` below.
  */
 
 import type { Peaks } from "@/types/audio";
@@ -39,18 +41,26 @@ export const DISPLAY_TARGET_PEAK = 0.9;
  * `DISPLAY_TARGET_PEAK / MAX_DISPLAY_GAIN` = 0.045 full scale (~-27 dBFS,
  * about 1 474 of the 32 767 steps a 16-bit sample has); below that the drawn
  * height falls away with the real level, so room tone at -54 dBFS (0.002 FS)
- * still draws at a twentieth of the lane and reads as what it is.
+ * draws at a twentieth of the lane. On the 200 px recorder canvas that is ~8 px
+ * against a fitted take's ~180 and reads as what it is; on a 26 px Segments row
+ * it is ~1 px, which the draw site's 1.5 px minimum bar height makes
+ * indistinguishable from silence. The row was never a level meter — that is the
+ * VU meter's job and the recorder canvas's — but do not read this constant as a
+ * promise the row can keep (George R1 P3).
  *
  * 20x is chosen from where speech actually sits rather than from the format's
- * limits. A healthy spoken voice peaks around -20 to -6 dBFS (`meter.ts`), so
- * even a phone capturing a good 15 dB below that — worse than the #358 report
- * describes — lands above -27 dBFS and is fitted to the full target. Going
+ * limits. A healthy spoken voice peaks around -20 to -6 dBFS (`meter.ts`), so a
+ * phone capturing up to 7 dB below the quiet end of that band still lands at or
+ * above -27 dBFS and is fitted to the full target — the #358 report's take, at
+ * about a tenth of full scale (-20 dBFS), is fitted with room to spare. Going
  * further buys nothing for speech and costs the distinction between "quiet
  * voice" and "no voice", which is the one thing the drawn waveform must not
- * lose while #359 is undecided. Amplifying for display costs no fidelity at
- * either end: 16-bit quantisation noise sits near -96 dBFS, ~70 dB below the
- * point where the cap takes over, and the bars are drawn from bucket extrema
- * rather than from the sample ladder.
+ * lose while #359 is undecided; a phone quieter than -27 dBFS is a capture
+ * problem, and the Moto G measurement #358 and #359 both ask for is what should
+ * settle whether one exists before this number moves. Amplifying for display
+ * costs no fidelity at either end: 16-bit quantisation noise sits near -96
+ * dBFS, ~70 dB below the point where the cap takes over, and the bars are drawn
+ * from bucket extrema rather than from the sample ladder.
  */
 export const MAX_DISPLAY_GAIN = 20;
 
@@ -85,13 +95,28 @@ function loudestPeak(peaks: Peaks): number {
 /**
  * The factor a drawer multiplies `peaks` by so the take fills the lane.
  *
- * One factor for the whole take, a pure function of the peaks, so it is stable
+ * One factor for the whole take, a pure function of its inputs, so it is stable
  * for as long as those peaks are on screen: panning, zooming and a repaint all
  * recompute the same number, and the waveform never breathes under the
  * translator's finger.
  *
- * Three cases, in order:
+ * `takeInFlight` is the recorder's "a take is being made right now" — recording
+ * or paused. It forces 1, and it is not a nicety. The recorder swaps what is on
+ * the stage several times mid-take: a paused FIRST take with a decoded preview
+ * unmounts the live scope and mounts the stored-peaks drawer instead
+ * (`recorder.tsx`'s `previewShown`), and Resume swaps it straight back. Without
+ * this the same in-flight take would jump from a thin absolute line to a
+ * full-height fitted one at Pause+Play and collapse again on Resume — the
+ * quiet-microphone-looks-healthy failure this module is careful not to cause,
+ * arriving through the one path that is not the live scope (George R1 P2). A
+ * punch-in has the same shape: appending a loud phrase swaps the peaks object,
+ * which would re-fit the whole take and shrink the speech already recorded
+ * (George R1 P3). One rule — absolute in flight, fitted once committed —
+ * removes both, and the re-fit still lands the moment the take is stopped.
  *
+ * Four cases, in order:
+ *
+ *   - **The take is still in flight.** 1.
  *   - **No peaks, or digital silence.** 1. There is no loudest point to fit to,
  *     and returning the cap would be a divide by zero wearing a number.
  *   - **Already at or above the target.** 1. The gain never ATTENUATES; a take
@@ -105,7 +130,11 @@ function loudestPeak(peaks: Peaks): number {
  * `DISPLAY_TARGET_PEAK`; and under the cap the loudest peak is smaller than the
  * crossover, so `peak * MAX_DISPLAY_GAIN` is smaller than the target still.
  */
-export function displayGain(peaks: Peaks | null): number {
+export function displayGain(
+  peaks: Peaks | null,
+  takeInFlight: boolean
+): number {
+  if (takeInFlight) return 1;
   if (!peaks) return 1;
 
   const peak = loudestPeak(peaks);

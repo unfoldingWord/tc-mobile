@@ -43,12 +43,12 @@ describe("displayGain", () => {
     // The take already fills the lane. Fitting it to the 0.9 target would
     // SHRINK it, which is not what a display scale is for: the gain never
     // attenuates.
-    expect(displayGain(peaksWithPeak(1))).toBe(1);
+    expect(displayGain(peaksWithPeak(1), false)).toBe(1);
   });
 
   it("does not attenuate a take whose peak is already above the target", () => {
     const peaks = peaksWithPeak(0.95);
-    const gain = displayGain(peaks);
+    const gain = displayGain(peaks, false);
     expect(gain).toBe(1);
     // ...and the drawn excursion still fits the lane, so nothing is clipped off
     // the top of the canvas.
@@ -59,7 +59,7 @@ describe("displayGain", () => {
   it("scales a quiet take so its loudest peak reaches the target", () => {
     // The #358 case: a Moto G take peaking at a tenth of full scale.
     const peaks = peaksWithPeak(0.1);
-    const gain = displayGain(peaks);
+    const gain = displayGain(peaks, false);
     expect(gain).toBeCloseTo(9, 6);
     expect(drawnPeak(peaks, gain)).toBeCloseTo(DISPLAY_TARGET_PEAK, 6);
   });
@@ -70,7 +70,7 @@ describe("displayGain", () => {
     // firing side of the boundary.
     const crossover = DISPLAY_TARGET_PEAK / MAX_DISPLAY_GAIN;
     const peaks = peaksWithPeak(crossover);
-    const gain = displayGain(peaks);
+    const gain = displayGain(peaks, false);
     // Looser than the other cases on purpose: `Peaks` holds Float32, so 0.045
     // round-trips as 0.044999998... and the fitted gain lands a part in 10^7
     // under the cap. The point of the case is which branch decides, not the
@@ -84,7 +84,7 @@ describe("displayGain", () => {
     // Room tone, ~-54 dBFS. Without the cap this would be scaled by 450 and a
     // recording of nothing would draw as a full-height waveform.
     const peaks = peaksWithPeak(0.002);
-    const gain = displayGain(peaks);
+    const gain = displayGain(peaks, false);
     expect(gain).toBe(MAX_DISPLAY_GAIN);
     expect(drawnPeak(peaks, gain)).toBeCloseTo(0.04, 6);
     expect(drawnPeak(peaks, gain)).toBeLessThan(DISPLAY_TARGET_PEAK);
@@ -97,11 +97,11 @@ describe("displayGain", () => {
     const min = Float32Array.from([-0.2, -0.05, -0.01]);
     const max = Float32Array.from([0.05, 0.02, 0.01]);
     const peaks: Peaks = { min, max, samplesPerBucket: 100 };
-    expect(displayGain(peaks)).toBeCloseTo(DISPLAY_TARGET_PEAK / 0.2, 6);
+    expect(displayGain(peaks, false)).toBeCloseTo(DISPLAY_TARGET_PEAK / 0.2, 6);
   });
 
   it("is unity for a segment with no peaks at all", () => {
-    expect(displayGain(null)).toBe(1);
+    expect(displayGain(null, false)).toBe(1);
   });
 
   it("is unity for digital silence rather than the cap", () => {
@@ -110,7 +110,7 @@ describe("displayGain", () => {
     // draws the same flat line anyway — but only unity says honestly that
     // nothing was scaled.
     const peaks = peaksWithPeak(0);
-    expect(displayGain(peaks)).toBe(1);
+    expect(displayGain(peaks, false)).toBe(1);
   });
 
   it("never draws a take outside the lane, at any input level", () => {
@@ -121,7 +121,9 @@ describe("displayGain", () => {
       0, 1e-6, 0.0005, 0.002, 0.045, 0.1, 0.3, 0.5, 0.89, 0.9, 0.91, 0.99, 1,
     ]) {
       const peaks = peaksWithPeak(peak);
-      expect(drawnPeak(peaks, displayGain(peaks))).toBeLessThanOrEqual(1);
+      expect(drawnPeak(peaks, displayGain(peaks, false))).toBeLessThanOrEqual(
+        1
+      );
     }
   });
 
@@ -133,7 +135,39 @@ describe("displayGain", () => {
     const min = Float32Array.from([-0.1, Number.NaN]);
     const max = Float32Array.from([Number.POSITIVE_INFINITY, 0.1]);
     const peaks: Peaks = { min, max, samplesPerBucket: 100 };
-    expect(displayGain(peaks)).toBeCloseTo(DISPLAY_TARGET_PEAK / 0.1, 6);
+    expect(displayGain(peaks, false)).toBeCloseTo(DISPLAY_TARGET_PEAK / 0.1, 6);
+  });
+
+  it("does not fit a take that is still in flight", () => {
+    // George R1 P2. While a take is being made, the drawn waveform stays at
+    // absolute level — the same rule the live scope and the VU meter follow, so
+    // a microphone capturing far too quietly cannot be made to look healthy by
+    // the display while there is still something to do about it.
+    const peaks = peaksWithPeak(0.1);
+    expect(displayGain(peaks, true)).toBe(1);
+    // ...and the very same peaks ARE fitted once the take is no longer in
+    // flight. Both states, not just the firing one.
+    expect(displayGain(peaks, false)).toBeCloseTo(9, 6);
+  });
+
+  it("holds the in-flight rule at every level, including ones the cap would decide", () => {
+    // The gate must not be reachable only through the fit branch: silence, a
+    // capped near-silence and a full-scale take all stay at 1 in flight, so no
+    // input level can smuggle a re-fit into the middle of a take.
+    for (const peak of [0, 0.002, 0.045, 0.1, 0.5, 1]) {
+      expect(displayGain(peaksWithPeak(peak), true)).toBe(1);
+    }
+  });
+
+  it("leaves an in-flight take's peaks untouched even when they change mid-take", () => {
+    // The punch-in case (George R1 P3 #2): appending a loud phrase to a quiet
+    // take swaps the peaks object the recorder draws, which would otherwise
+    // re-fit the whole take to the new, louder peak and visibly shrink the
+    // speech that was already there. In flight, both draw at 1.
+    const quiet = peaksWithPeak(0.1);
+    const afterLoudInsert = peaksWithPeak(0.5);
+    expect(displayGain(quiet, true)).toBe(1);
+    expect(displayGain(afterLoudInsert, true)).toBe(1);
   });
 
   it("fits peaks taken from a real quiet PCM buffer", () => {
@@ -144,7 +178,7 @@ describe("displayGain", () => {
       samples[i] = Math.round(Math.sin(i / 8) * INT16_MAX * 0.05);
     }
     const peaks = computePeaks(samples, 40);
-    const gain = displayGain(peaks);
+    const gain = displayGain(peaks, false);
     expect(gain).toBeGreaterThan(1);
     expect(gain).toBeLessThanOrEqual(MAX_DISPLAY_GAIN);
     expect(drawnPeak(peaks, gain)).toBeCloseTo(DISPLAY_TARGET_PEAK, 2);
