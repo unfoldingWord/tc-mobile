@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
+import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
@@ -13,14 +14,6 @@ import { useBooks } from "@/hooks/use-books";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
-
-/**
- * The focus-target key for the empty state's CTA.
- *
- * `setNode` is keyed by book and chapter id (both UUIDs), so a literal with a
- * non-UUID shape cannot collide with a row.
- */
-const EMPTY_STATE_NODE = "books-empty-state";
 
 interface BooksScreenProps {
   /** Open a chapter's Segments screen. Owned by App (slice 4) for navigation. */
@@ -114,7 +107,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       pendingScroll.current = null;
     }
     const focusId = pendingFocus.current;
-    if (focusId !== null) {
+    // HOLD the hand-off while the delete confirm is up. The shelf is `inert`
+    // then (see the wrapper below), and an element inside an inert subtree
+    // cannot take focus at all — so focusing here would be a silent no-op and
+    // the pending target would be consumed and lost. `deleteTargetId` going
+    // null is exactly the moment `inert` comes off, and it is in this effect's
+    // deps, so the hand-off runs on that render instead. This is the repo's own
+    // lesson, learned twice: a focus fix that ignores `inert` is dead code
+    // (#364; docs/progress_tracker.md).
+    if (focusId !== null && deleteTargetId === null) {
       // The row's first <button> is the expand/collapse toggle; a second
       // activation there would collapse the new book. Target the add-chapter
       // Control (`.control`) — the actual next action (George R3 P3).
@@ -124,7 +125,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         ?.focus();
       pendingFocus.current = null;
     }
-  }, [books]);
+    // Keyed on BOTH: `books` covers create/add-chapter and a successful delete,
+    // `deleteTargetId` covers the render on which the confirm comes down. A
+    // delete resolves through whichever of the two lands last, so neither order
+    // drops the hand-off.
+  }, [books, deleteTargetId]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {
@@ -258,13 +263,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, [onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
-    // Where focus goes once this row unmounts, decided while the row is still on
-    // screen: the book that slides into its place, else the one above it, else
-    // the empty state's CTA — the only control left on an emptied shelf. Without
-    // it focus falls to the document and a keyboard or switch user lands nowhere,
-    // the same hole the new-book hand-off above closes.
-    const index = books.findIndex((b) => b.bookId === deleteTargetId);
-    const neighbour = books[index + 1] ?? books[index - 1] ?? null;
+    // The shelf order as it is right now, captured while the row is still on
+    // screen — `focusTargetAfterDelete` needs it to name the row that will take
+    // this one's place.
+    const shelfBefore = books.map((b) => b.bookId);
     // No share reset here: arming the confirm already closed the menu through
     // `onCloseShareMenu`, which reset it. Resetting again at confirm time is what
     // George R5 P2-2 caught — the store write is fallible, so on a failed delete
@@ -282,22 +284,23 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           next.delete(deleteTargetId);
           return next;
         });
-        // The hook drops the row in the same turn it commits, so this render
-        // already mounts the neighbour (or the empty-state CTA) and the
-        // `[books]` effect below can consume this. The later reload is a second
-        // chance at it, so a race here costs a frame, not the focus.
-        pendingFocus.current = neighbour?.bookId ?? EMPTY_STATE_NODE;
-      } else {
-        // Failed. The row is still there, but unmounting the confirm takes the
-        // focused Cancel with it, and `pendingFocus` cannot help: it is consumed
-        // by the `[books]` effect, and `books` does not change on a failure. So
-        // focus the surviving row directly, or a keyboard or switch user is left
-        // on the document with only a Notice they may not notice (George R5 P3).
-        nodes.current
-          .get(deleteTargetId)
-          ?.querySelector<HTMLElement>("button.control")
-          ?.focus();
       }
+      // Both outcomes hand focus off the SAME way — never a direct `.focus()`
+      // here. The confirm is still up at this point, so the shelf is still
+      // `inert` and focusing into it would do nothing (#364). Record the target
+      // and let the effect above act once `setDeleteTargetId(null)` has taken
+      // `inert` off.
+      //
+      // On success the row unmounts and focus would fall to the document; on
+      // failure the row survives but the confirm carrying the focused Cancel
+      // unmounts, so it falls to the document just the same. Which node each
+      // case wants is decided by `focusTargetAfterDelete`, which is pure and has
+      // a test table — the ordering below is the half no test here can observe.
+      pendingFocus.current = focusTargetAfterDelete(
+        result,
+        deleteTargetId,
+        shelfBefore
+      );
       setDeleteTargetId(null);
     })();
   }, [books, deleteBook, deleteTargetId]);
