@@ -80,6 +80,16 @@ export function useBooks() {
   /** True while a book delete is in flight — the confirm dialog's `busy`. */
   const [deleting, setDeleting] = useState(false);
   /**
+   * Whether the CURRENT `error` came from a delete, so the screen can speak it
+   * in words a translator can act on instead of the store's message.
+   *
+   * It is a label on `error`, never a second source of truth: `report` below is
+   * the one switch that sets both, so the flag cannot outlive the error it
+   * describes, and a later failure from any other mutation takes the label off
+   * again. There is no second switch to fall out of step (George R1 P2).
+   */
+  const [deleteFailed, setDeleteFailed] = useState(false);
+  /**
    * The live in-flight guard, readable synchronously.
    *
    * `deleting` is last render's value; two taps in one frame both read it false.
@@ -88,6 +98,24 @@ export function useBooks() {
    */
   const deletingRef = useRef(false);
 
+  /**
+   * The ONE place this hook sets or clears `error`.
+   *
+   * `report(null)` clears; `report(cause)` records a failure; `report(cause,
+   * true)` records one the screen should speak in the delete's own words. Both
+   * pieces of state move together here, so a stale "could not delete" can never
+   * survive a healthy reload or shadow another mutation's failure.
+   */
+  const report = useCallback((cause: unknown, fromDelete = false): void => {
+    if (cause === null) {
+      setError(null);
+      setDeleteFailed(false);
+      return;
+    }
+    setError(cause instanceof Error ? cause.message : String(cause));
+    setDeleteFailed(fromDelete);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -95,11 +123,11 @@ export function useBooks() {
         const cards = await loadBookCards();
         if (cancelled) return;
         setBooks(cards);
-        setError(null);
+        report(null);
         setLoaded(true);
       } catch (cause) {
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        report(cause);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -107,7 +135,7 @@ export function useBooks() {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken]);
+  }, [reloadToken, report]);
 
   const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
@@ -120,10 +148,10 @@ export function useBooks() {
       reload();
       return book;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      report(cause);
       return null;
     }
-  }, [reload]);
+  }, [reload, report]);
 
   const addChapter = useCallback(
     async (bookId: BookId): Promise<Chapter | null> => {
@@ -132,11 +160,11 @@ export function useBooks() {
         reload();
         return chapter;
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        report(cause);
         return null;
       }
     },
-    [reload]
+    [reload, report]
   );
 
   const renameBook = useCallback(
@@ -150,11 +178,11 @@ export function useBooks() {
         reload();
         return book;
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        report(cause);
         return null;
       }
     },
-    [reload]
+    [reload, report]
   );
 
   const deleteBook = useCallback(
@@ -167,17 +195,26 @@ export function useBooks() {
       setDeleting(true);
       try {
         await deleteBookFromStore(bookId);
-        // reload() rather than dropping the row in place: the whole shelf is
-        // one read, an empty shelf has to reach the invite empty state, and the
-        // store is the only authority on what survived.
+        // Drop the row in the SAME turn the store commits, THEN reload for
+        // authority. `reload()` alone only bumps a token: the shelf would keep
+        // rendering the deleted book until an async `loadBookCards` resolved,
+        // leaving a tappable row whose chapters are gone (the Segments loader
+        // would throw `No such chapter`), and leaving the caller's focus
+        // hand-off with no `books` change to fire on — and if that reload then
+        // FAILED, `books` would never change at all and the ghost would stay,
+        // with no Retry offered because `loaded` has already latched (George R1
+        // P2-1). This is `eraseRow`'s model, one screen up: patch what we know
+        // changed, then re-read.
+        setBooks((prev) => prev.filter((b) => b.bookId !== bookId));
         reload();
         return "ok";
       } catch (cause) {
         // Never swallowed: the reason reaches `error` for a maintainer reading
-        // the screen Notice, while the screen shows `deleteBookFailed` to the
-        // translator. `console.error` is the sink, as in `performErase`.
+        // the screen Notice, while `deleteFailed` tells the screen to speak it
+        // in the delete's own words. `console.error` is the sink, as in
+        // `performErase`.
         console.error("Deleting a book failed", cause);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        report(cause, true);
         return "failed";
       } finally {
         // Releases the guard rather than dropping state, so it is safe in
@@ -186,7 +223,7 @@ export function useBooks() {
         setDeleting(false);
       }
     },
-    [reload]
+    [reload, report]
   );
 
   return {
@@ -194,6 +231,7 @@ export function useBooks() {
     loading,
     loaded,
     error,
+    deleteFailed,
     reload,
     createBook,
     addChapter,

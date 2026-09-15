@@ -223,8 +223,9 @@ export const strings = {
     `Delete ${book} and everything in it?`,
   deleteBookConfirm: "Delete",
   // A destructive op that did NOT happen has to say so in its own words. The
-  // store's message ("No such book: …") is for a maintainer; this is the line a
-  // screen reader speaks to a translator. Mirrors `eraseFailed` (#80).
+  // store's own message — a quota or connection fault, since `deleteBook` never
+  // throws on a missing book — is for a maintainer; this is the line a screen
+  // reader speaks to a translator. Mirrors `eraseFailed` (#80).
   deleteBookFailed: "Could not delete this book. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
