@@ -11,6 +11,63 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-15 — L1 landed and promoted (v0.2.1), the first tester's report built as five PRs, the issue list triaged (99 → 93 → 99 with new inbound), and a strategic pause at 97 % of the usage budget
+
+**Paused deliberately at ~17:40 UTC with five Opus lanes killed mid-round** (Seth: "we may not make it… pause strategically"). Every lane had pushed; worktrees under `.claude/worktrees/agent-*` hold any uncommitted tail. **Model policy from today (memory `tc-mobile-subagent-model-policy`): Sonnet by default; Opus (= Opus 5; the Agent tool has no 4.8) only for T1/recorder-core lanes with Seth's go; ≤3 Opus at once.**
+
+### Landed on `develop` (all squash) and `staging`
+
+| What                                                                                                                                                                        | Where                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| #334 Android `MODIFY_AUDIO_SETTINGS` fix; tracker PRs #333/#335/#322/#340; #330 signing-environment gate                                                                    | `ffd98e7` … `a5f36f3`, `57daa48` |
+| `chore(release): v0.2.1` (#341) → **develop → staging #342, merge `977f544`**; staging serves `0.2.1`/`977f544`, Workers Builds check-run success (verified, noted on #342) | staging                          |
+| #346 recorder toggles (level-meter glyph, magnifier zoom, `panForZoom`, `effectivePan`) — **dual-clean**                                                                    | `dad7c9c`                        |
+| #343 facilitator runbook (`docs/training/facilitator-runbook.md`, + Android 7.0 line in `tester-install.md`)                                                                | `90c5443`                        |
+| #356 AGENTS.md tester-feedback convention; #271 AGENTS.md "gates tested in both states" (closed #270)                                                                       | `2f0fec2`, `dfcea6d`             |
+
+### Open PRs from today, state at the pause
+
+| PR                                | Issue                      | Head                                                              | Frank          | George                                     | Blocks                                                                                       |
+| --------------------------------- | -------------------------- | ----------------------------------------------------------------- | -------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| #344 delete a Book                | #337 (in scope, Tim 09-15) | `5a4da04` (R7: #364 focus-after-inert fix)                        | APPROVE        | **not run at head**                        | George at `5a4da04`; #363/#360/#361 accepted residuals; #364 should close                    |
+| #345 audition in edit             | #284 (**Tim unanswered**)  | `81141d6`                                                         | APPROVE        | P2 → **#370** (toolbar wrap at 320 px)     | Tim's answer; accept #370 or one 2-line round                                                |
+| #347 native share                 | #336                       | `6accc01` (R6 partial: Discard-during-write P1, sending state P2) | —              | —                                          | finish R6; both lenses (George **scoped** method in the R5 comment); device proof on the A17 |
+| #366 quiet-take waveform scale    | #358 (Tim)                 | `5db1654`                                                         | R3 in progress | R3 P2 (`fitFrom` + draw clamp) being fixed | finish R3                                                                                    |
+| #367 New Book asks for a name     | #314 (Elsy)                | `e472ee5`                                                         | clean R3       | R3 not run                                 | George R3                                                                                    |
+| #368 recorder inert/focus cluster | #75 #97 #151               | `ab69765`                                                         | R?             | fixing a P3 comment                        | finish round                                                                                 |
+
+Not started: **#315** (bottom-bar edit control; waits for #345 to land — same toolbar). **Promotion v0.2.2 held** until #344 and #347 clear (Seth). **#271/#343/#356 merged; #366–#368 must be re-briefed on Sonnet if respawned.**
+
+### Reviews: what today taught
+
+- **George's 402 was a stale login, not balance** (re-login → 9 % monthly usage). Stand-in deep-tree agents covered his lens on #344/#345/#346/#347 and found real P2s (paste-marker misplacement; held-take false success); George then ran for real and found more (delete-tx abort missing → **the rollback IS testable**, contrary to the stand-in; Select live over the swapped view; Discard live during the native write). **Scoped George** (merge-base + non-source paths as a local base, three-dot diff) ran first try where the full 57 KB prompt stalled 3×.
+- Harness defects filed/recorded: **#348** (frank.sh passes a failed run), **#220** (+2: triage.sh exits 1 with one report; hard-codes "Both reviewers ran"). **PR-body edit race** (memory `tc-mobile-pr-body-edit-race`): a lane's `gh pr edit --body-file` from a stale copy clobbered the coordinator's edit on #344.
+- **Coverage gap filed as #361 (v0.3.0, v1-required):** six review findings/surviving mutants in hook/component wiring the Node-only suite cannot drive.
+
+### Issue triage (Seth-approved, all with evidence comments)
+
+Closed #16, #170, #251 (completed); #182→#192, #150→#36 (duplicates); #285 (intentional since 08-28). Moved to v0.3.0: #75 #97 #120 #151 #25 #196 #197. 19 body-correction comments (#174 → **schema v5 is spent by #264; #174 and draft #257 must be v6**; #316/#317 reverse three recorded decisions; #241 names the wrong variable; #272 "Share works now" was the emulator; …). Closing keywords fixed on #344/#271/#257/#261; #347 → `Refs #336`, #343 → `Refs #248`. Labels `source: tester`, `post-v1` created; `v1-required` description now says v0.3.0.
+
+### Decisions recorded (sync-up 09-15, Tim/Elsy/Seth)
+
+#337 **in** (with strong confirm); #339 **post-V1**; v1-required = v0.3.0; tester feedback = bugs to the queue, features tagged `post-v1` with source (AGENTS.md Conventions). New: **#353** project import/export (Shema bundle, Scripture Bundle), **#354** share "ready" state, **#355** codec/record-to-MP3 research, **#361**, **#362**, **#363**, **#364**, **#370**. Tim filed **#357** (35-language localisation), **#358**, **#359** (mic level); #358/#359 cross-linked. Min Android = **7.0** (minSdk 24) — on #336, runbook, install guide.
+
+### Blockers / needs a human
+
+- **Tim (@timjore):** #284 (audition — built, waiting); #316/#317 reversals; #286 level-meter toggle keep/remove; Q6 (#243) → #115/#116/#24/#252. Seth is drafting the Slack post himself.
+- **Seth:** merge go per PR as they clear; iOS secrets into `release-signing` (5 of 7) + Android keystore (#318 step 2); re-cut APK from staging `977f544` and run #245 from step 2 (list playback #269, share #336/#272, background, call, restart); read the Moto G peak/RMS for #358/#359.
+- **Elsy:** second tester (Caleb, Android) into the APK loop; Signal group for field testing.
+
+### Artifacts
+
+PM status page (v12, 15 Sep after sync-up): `https://claude.ai/code/artifact/423ff4cc-9fef-4caa-b489-51e7a943eca4`. Facilitator runbook page (private): `https://claude.ai/artifact/KQ6VzEBUqnH1TL37aJNoM2`.
+
+### Next session, in order
+
+1. `/sod`; check usage budget first. 2. Resume the five PRs on **Sonnet** unless T1 (#344 George run at `5a4da04` is verification-only → resume that lane, not respawn). 3. Merge in order as each goes dual-clean: #344 → #366/#367/#368 → #347 (after A17) → #345 (after Tim). 4. `chore(release): v0.2.2` develop → staging once #344 and #347 are in. 5. Re-cut the APK; Android sheet from step 2.
+
+---
+
 ## 2026-09-14 — first Capacitor build to record on Android: the v0.1.15 APK refused the mic, one manifest line fixes it (#334), proven on the Galaxy A17
 
 **Branches:** `fix/android-modify-audio-settings` (PR #334, `8ea924e` → `123273b`), **review-clean
