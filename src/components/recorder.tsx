@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -28,6 +29,7 @@ import { Waveform } from "./waveform";
 import { classifyShareError } from "@/hooks/share-flow";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { mergeTake } from "@/lib/audio/edit";
@@ -193,6 +195,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const [vuVisible, setVuVisible] = useState(true);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // Focus back to whatever opened an overlay, once the overlay is gone (#97).
+    // ONE pair for the ≡ menu and the erase confirm together, because they are
+    // one `inert` scope and they chain inside it — the Erase row closes the menu
+    // and opens the confirm in the same commit. See the capture in `openMenu`
+    // and the restore effect below `menuShown`.
+    const focusRestore = useFocusRestore();
 
     // `null` ⇒ resting at the end of the existing audio (append-ready, F7). A
     // derived rest, rather than a value set in an effect once `view` loads: the
@@ -870,10 +878,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // with no reachable stop (George R2 #1). It keeps a prepared preview so the
     // stage does not blank behind the menu and Play can replay it on close.
     const openMenu = useCallback(() => {
+      // Remember the ≡ that was tapped, HERE — synchronously, in the gesture's
+      // own handler (#97). One React commit later the sheet goes `inert`, which
+      // blurs this button to `<body>` in the mutation phase, before any effect
+      // could read it; #96's attempt captured that `body` and its restore was a
+      // silent no-op for every menu in the app.
+      focusRestore.capture();
       audio.stopBuffer();
       abortPreview();
       setMenuOpen(true);
-    }, [audio, abortPreview]);
+    }, [audio, abortPreview, focusRestore]);
 
     // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
     // row share this. Close any open selection AND reset zoom to whole: record
@@ -1588,10 +1602,67 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // nothing dismissed it. That left the panel (and its Retry) inert behind the
     // scrim, with Edit greyed and no reason and Mark naming the wrong blocker, on
     // exactly the screen #135 exists to fix (George, round 4). Deriving the menu's
-    // open state kills the frame rather than reacting a frame later, and the effect
+    // open state kills the frame rather than reacting a frame later, and
     // `onRetryRecord` drops the latch, so a Retry that succeeds cannot resurrect a
     // drawer the translator never re-opened.
     const menuShown = menuOpen && !denied;
+
+    // …and DROP the latch on the denied edge, rather than only masking it
+    // (#151). Masking alone leaves a live `menuOpen` that anything clearing the
+    // mic error un-hides, and one thing does: `pagehide` → `use-audio-session`'s
+    // `leave()` (:682) → `cancelRecording()` → `use-recorder`'s `cancel()` →
+    // `setError(null)` (:956) → `micError` false → `denied` false → `menuShown`
+    // true again. Returning to the page then shows the ≡ drawer over an idle,
+    // empty segment that nobody opened. The two exits that DO drop the latch —
+    // Retry (`onRetryRecord`) and Back (which unmounts the keyed sheet) — are
+    // not on that path.
+    //
+    // Adjusted during render, the pattern React documents for deriving state
+    // from a changed input, NOT in an effect: this repo's ESLint refuses
+    // `setState` inside an effect ("cascading renders"), which is what pushed
+    // #139 into the Retry handler in the first place. It also kills the frame
+    // instead of reacting a frame later, exactly as `menuShown` above does.
+    // `denied` is true from the first render on a device with no MediaRecorder,
+    // and `prevDenied` seeds from it, so an unsupported device sees no edge.
+    const [prevDenied, setPrevDenied] = useState(denied);
+    if (denied !== prevDenied) {
+      setPrevDenied(denied);
+      if (denied) setMenuOpen(false);
+    }
+
+    // Any overlay owns the screen: the ≡ menu, the erase confirm, or the erase
+    // itself still committing after the confirm flag was cleared out from under
+    // it. One flag, because these chain within a single `inert` scope and both
+    // the inert gate below and the focus restore have to see the CHAIN, not the
+    // individual dialogs.
+    const overlayUp = menuShown || confirmOpen || erase.erasing;
+
+    // Put focus back where the overlay took it from, AFTER `inert` has lifted
+    // (#97). A layout effect, not the close handler and not a passive one: React
+    // removes the `inert` attribute in the mutation phase, layout effects run
+    // straight after that, and an element in an inert subtree cannot take focus
+    // — so a `.focus()` any earlier is dead code, the exact shape
+    // `docs/progress_tracker.md` warns about and #364 shipped again today.
+    //
+    // Keyed on `overlayUp`, so the menu → confirm chain restores ONCE, to the ≡
+    // that started it. `restore` is a no-op with nothing captured, so the
+    // re-runs the other dependencies cause are harmless.
+    //
+    // `suppressed` when a full-body panel owns the screen: each `autoFocus`es
+    // its own control in the same commit, and stealing that back would strand a
+    // screen-reader user off the Retry they were just handed. The capture is
+    // consumed either way, so it can never fire late.
+    const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
+    useLayoutEffect(() => {
+      if (overlayUp) return;
+      focusRestore.restore({
+        suppressed: panelOwnsFocus,
+        // The same landmark the open edge uses (the effect above), so the sheet
+        // has one answer to "where does focus live here", not two.
+        fallback:
+          sheetRef.current?.querySelector<HTMLElement>("button") ?? null,
+      });
+    }, [overlayUp, panelOwnsFocus, focusRestore]);
 
     const markReason = markRowReason({
       hasView: view !== null,
@@ -1602,18 +1673,51 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     return (
       <div className="recorder-scrim" role="dialog" aria-modal="true">
-        {/* `inert` the sheet while the menu is open. Nested aria-modal dialogs do
-          not reliably hide the background for AT/switch users — G8 already
-          refused to trust that on the Segments list — so without this an AT user
-          could reach the covered Record while the menu is up and mutate the
-          splice base under a Redo (George R4). `erase.erasing` is folded in
-          alongside `confirmOpen` so the sheet stays inert across the whole erase
-          even if the confirm flag is cleared out from under it — Record must never
-          be tappable while a delete runs (Frank R4-1). */}
+        {/* THE INERT RULE (#75). An overlay inerts the sheet because nested
+          aria-modal dialogs do not reliably hide the background for AT/switch
+          users — G8 already refused to trust that on the Segments list — and
+          without it an AT user could reach the covered Record while the menu is
+          up and mutate the splice base under a Redo (George R4). `erase.erasing`
+          is folded in alongside `confirmOpen` so the sheet stays inert across
+          the whole erase even if the confirm flag is cleared out from under it
+          (Frank R4-1).
+
+          But an overlay never inerts the transport of a take that is ALREADY
+          RUNNING. A translator mid-take must be able to stop the capture, and a
+          drawer they opened for the level strip is not a reason to take that
+          away. Hence `&& !takeActive`, which is the whole of the scoping — and
+          it is a scoping, not a hole, because of what `takeActive` implies here:
+
+          - `overlayUp && takeActive` can only be the ≡ menu in RECORD mode. The
+            edit-mode opener is `disabled` on `isClosing`, and the Erase row
+            (the only door to the confirm) is `disabled` on `takeActive`.
+          - A take cannot START under an overlay: the confirm and the menu are
+            only reachable at idle or mid-take, and at idle this gate is still
+            inert, so Record is unreachable and `takeActive` cannot flip true.
+            The exception is a fixed point, not a race.
+          - What that leaves live behind the scrim is exactly the transport:
+            Record/Pause, Play, the header Back and the ≡ itself. Every buffer
+            mutator is out of reach anyway — the paste marker, Cut, Select,
+            Undo/Redo and the selection handles all require `idleEditable` or
+            edit mode, both false while a take is live.
+          - Play mid-take is the paused preview, and it is its own stop: this is
+            the one case George R5's "Play goes unreachable behind the scrim"
+            does not apply to, and `openMenu` still stops playback for the idle
+            case that it does.
+          - Back stays live and means "dismiss the overlay", not "save":
+            `close()` refuses while `overlayBlocksClose` and drops the menu
+            instead (:1118).
+
+          This restores the transport for AT, switch and keyboard users. It does
+          NOT give a touch user their tap back: `.menu-scrim` is
+          `position: fixed; inset: 0; z-index: 80`, so a finger anywhere outside
+          the panel lands on the scrim and dismisses the menu — the extra gesture
+          #75 describes. Removing that costs a design call about the scrim, which
+          is not this change. */}
         <div
           ref={sheetRef}
           className="recorder-sheet mx-auto max-w-md"
-          inert={menuShown || confirmOpen || erase.erasing || undefined}
+          inert={(overlayUp && !takeActive) || undefined}
         >
           <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
             <Control
