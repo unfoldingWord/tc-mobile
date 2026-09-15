@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   SHARE_CACHE_DIR,
   SHARE_CHUNK_BYTES,
+  SHARE_MAX_AGE_MS,
   SHARE_RETAINED,
   type NativeShareBridge,
   type ShareEnvironment,
@@ -46,12 +47,16 @@ const zip = (): File =>
   new File([new Uint8Array(8)], "Genesis.zip", { type: "application/zip" });
 
 interface BridgeCall {
-  readonly op: "rmdir" | "write" | "append" | "share";
+  readonly op: "readdir" | "rmdir" | "write" | "append" | "share";
   readonly path?: string;
   readonly data?: string;
   readonly recursive?: boolean;
   readonly files?: readonly string[];
 }
+
+/** The name a share started `msAgo` milliseconds ago would have left behind. */
+const leftoverNamed = (sequence: number, msAgo: number): string =>
+  `${sequence}-${(Date.now() - msAgo).toString(36)}`;
 
 /** The directory a recorded write or share went to. */
 const dirOf = (call: BridgeCall | undefined): string =>
@@ -64,13 +69,24 @@ interface Harness {
   readonly calls: BridgeCall[];
 }
 
-/** A session over a bridge that records every call; `fail` makes one reject. */
-function harness(fail?: { op: BridgeCall["op"]; cause: unknown }): Harness {
+/**
+ * A session over a bridge that records every call. `fail` makes one operation
+ * reject; `leftovers` is what an earlier session left in the share directory.
+ */
+function harness(
+  fail?: { op: BridgeCall["op"]; cause: unknown },
+  leftovers: readonly string[] = []
+): Harness {
   const calls: BridgeCall[] = [];
   const maybeFail = (op: BridgeCall["op"]): void => {
     if (fail?.op === op) throw fail.cause;
   };
   const bridge: NativeShareBridge = {
+    readdir: async ({ path }) => {
+      calls.push({ op: "readdir", path });
+      maybeFail("readdir");
+      return { names: [...leftovers] };
+    },
     rmdir: async ({ path, recursive }) => {
       calls.push({ op: "rmdir", path, recursive });
       maybeFail("rmdir");
@@ -184,23 +200,54 @@ describe("the native share session", () => {
     });
   });
 
-  it("sweeps what a previous run of the app left behind, exactly once", async () => {
+  it("leaves a recent previous run's share alone at startup", async () => {
+    // Frank R3 P2. Android can kill the app while the target is still uploading
+    // what the chooser handed it, so "a different process wrote it" is not
+    // evidence that nothing is reading it. Nothing here may be removed for
+    // being old; it is removed for being OLD ENOUGH, and this one is not.
+    const recent = leftoverNamed(7, 60_000);
+    const { share, calls } = harness(undefined, [recent]);
+    await share(mp3());
+    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
+  });
+
+  it("removes a previous run's share once it is past the retention age", async () => {
+    const stale = leftoverNamed(7, SHARE_MAX_AGE_MS + 60_000);
+    const fresh = leftoverNamed(8, 60_000);
+    const { share, calls } = harness(undefined, [stale, fresh]);
+    await share(mp3());
+    expect(calls.filter((call) => call.op === "rmdir")).toEqual([
+      { op: "rmdir", path: `${SHARE_CACHE_DIR}/${stale}`, recursive: true },
+    ]);
+  });
+
+  it("will not remove a leftover whose age it cannot read", async () => {
+    // An unreadable name means an unknown age, and an unknown age is not a
+    // licence to delete someone's audio.
+    const { share, calls } = harness(undefined, ["chapter-1.mp3", "..", "x-"]);
+    await share(mp3());
+    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
+  });
+
+  it("looks at the share directory once per session, not once per share", async () => {
     const { share, calls } = harness();
     await share(mp3());
-    expect(calls[0]).toEqual({
-      op: "rmdir",
-      path: SHARE_CACHE_DIR,
-      recursive: true,
-    });
-
-    // The second share must NOT sweep again: everything under the directory now
-    // belongs to this run, and one of them may still be being read.
     await share(zip());
-    expect(
-      calls.filter(
-        (call) => call.op === "rmdir" && call.path === SHARE_CACHE_DIR
-      )
-    ).toHaveLength(1);
+    expect(calls.filter((call) => call.op === "readdir")).toEqual([
+      { op: "readdir", path: SHARE_CACHE_DIR },
+    ]);
+  });
+
+  it("shares even when the cache cannot be listed at all", async () => {
+    // `readdir` rejects when the directory has never existed — the first share
+    // after an install — as loudly as for a real failure. Neither may stop the
+    // file reaching the OS.
+    const { share, calls } = harness({
+      op: "readdir",
+      cause: new Error("Directory does not exist"),
+    });
+    await share(mp3());
+    expect(calls.at(-1)?.op).toBe("share");
   });
 
   it("does not remove an earlier successful share's file — the recipient may still be reading it", async () => {
@@ -212,19 +259,14 @@ describe("the native share session", () => {
 
     const firstDir = dirOf(calls.find((call) => call.op === "write"));
     expect(firstDir).not.toBe("");
-    // Only the one-time sweep of the previous run's leftovers.
-    expect(calls.filter((call) => call.op === "rmdir")).toHaveLength(1);
-    expect(calls.some((call) => call.path === firstDir)).toBe(false);
+    // Nothing removed at all while inside the window.
+    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
 
     // One share past the window, and the oldest — and ONLY the oldest — goes.
     await share(mp3());
-    const removals = calls.filter((call) => call.op === "rmdir");
-    expect(removals).toHaveLength(2);
-    expect(removals[1]).toEqual({
-      op: "rmdir",
-      path: firstDir,
-      recursive: true,
-    });
+    expect(calls.filter((call) => call.op === "rmdir")).toEqual([
+      { op: "rmdir", path: firstDir, recursive: true },
+    ]);
   });
 
   it("gives two concurrent shares separate directories, and neither removes the other's", async () => {
@@ -238,6 +280,10 @@ describe("the native share session", () => {
     });
     let writes = 0;
     const bridge: NativeShareBridge = {
+      readdir: async ({ path }) => {
+        calls.push({ op: "readdir", path });
+        return { names: [] };
+      },
       rmdir: async ({ path, recursive }) => {
         calls.push({ op: "rmdir", path, recursive });
       },
@@ -268,10 +314,9 @@ describe("the native share session", () => {
     expect(dirOf({ op: "write", path: writePaths[0] })).not.toBe(
       dirOf({ op: "write", path: writePaths[1] })
     );
-    // Only the one-time sweep, which both awaited before either wrote.
-    expect(calls.filter((call) => call.op === "rmdir")).toEqual([
-      { op: "rmdir", path: SHARE_CACHE_DIR, recursive: true },
-    ]);
+    // Neither removed anything: the sweep found no aged-out leftovers, and a
+    // completed share is not a pruning candidate until the window passes.
+    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
     expect(calls.filter((call) => call.op === "share")).toHaveLength(2);
   });
 
