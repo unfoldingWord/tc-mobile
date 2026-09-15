@@ -15,10 +15,10 @@ import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
+import { liveScopeShown, stageView } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
-import { liveScopeShown } from "./recorder-stage";
 import {
   editRowReason,
   eraseRowReason,
@@ -474,31 +474,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         ? previewState === "decoding" || previewState === "failed"
         : recording || !hasAudio);
 
-    // Show the WHOLE buffer while a preview is up or a RECORD-mode buffer plays,
-    // so the sweeping playhead is always on screen and the preview's own peaks
-    // are not sliced by a pan window measured against `working` (George R1). The
-    // pan/zoom window exists to choose an insert point for a record, not to watch
-    // playback travel; the record window returns when the preview clears on
-    // Resume.
-    //
-    // An edit-mode audition of a PICKED SPAN (#284) is the one exception, and it
-    // is exactly as wide as its reason: the selection frame is positioned through
-    // `win` (the pan/zoom window) while `Waveform` would be drawing clip fractions
-    // 0..1, so a whole-clip swap under a zoomed or panned selection would leave
-    // the band marking one span and the audio under it showing another — while the
-    // whole point of that audition is to hear precisely the span the band marks.
-    // So it plays in place.
-    //
-    // With NO band up there is nothing to keep aligned, and keeping the pan window
-    // would reinstate the very defect the swap exists to prevent: at the F7 rest
-    // (line at the end) a quarter-zoom window shows only the last quarter, while
-    // the audition sounds from frame 0 — the translator hears the start of the
-    // take looking at the end, with the playhead off-screen and hidden, and pan
-    // frozen so it cannot be brought back (George R1 G1). A "line"/"whole"
-    // audition therefore takes the whole-clip view, like record mode.
-    const wholeView =
-      previewShown !== null ||
-      (audio.playingBuffer && (mode === "record" || !editor.selectionActive));
+    // Which way the stage is drawn, and what that makes inert (#284). All three
+    // answers come from ONE pure derivation, `stageView`, because three review
+    // rounds found the same defect in three different controls — a control
+    // reading the pan/zoom window while something else was drawn. The class, the
+    // reasoning and the deliberate exceptions are enumerated there; this file
+    // reads the answers rather than re-deriving them per control, so a seventh
+    // control added later inherits the rule instead of re-earning the bug.
+    const stage = stageView({
+      mode,
+      playingBuffer: audio.playingBuffer,
+      selectionActive: editor.selectionActive,
+      previewShown: previewShown !== null,
+    });
+    const wholeView = stage.wholeView;
     const waveView = {
       startFraction: wholeView ? 0 : hasAudio ? win.start / length : 0,
       endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
@@ -546,21 +535,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // handle back within reach (B5, George R2). The handles stop their own
         // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
         // never also starts a pan — only a drag on the bare canvas pans.
-        // Frozen during playback too. For a record-mode play (and a "line"/"whole"
-        // audition) the canvas is showing the whole-clip view, so a drag would move
-        // the hidden record `pan`/insert offset the translator cannot see, and the
-        // viewport would jump when playback stops (Frank/George R2). An audition of
-        // a PICKED SPAN draws through this same pan window (#284), so there the
-        // freeze is holding the band still over the audio it marks while it sounds.
-        // Either way, playback is listen-only — no scrub in v1 (D4).
-        if (!hasAudio || recording || paused || busy || audio.playingBuffer)
+        // Frozen during playback too — the pan is one of the window controls
+        // `stage.windowControlsInert` names, and the oldest member of that class
+        // (Frank/George R2): under a swapped view a drag moves a record offset
+        // that is not on screen, and under a picked-span audition it would slide
+        // the band off the audio it marks while that audio sounds. Playback is
+        // listen-only — no scrub in v1 (D4).
+        if (
+          !hasAudio ||
+          recording ||
+          paused ||
+          busy ||
+          stage.windowControlsInert
+        )
           return;
         setDragging(true);
         dragStartX.current = e.clientX;
         panAtDragStart.current = pan;
         e.currentTarget.setPointerCapture(e.pointerId);
       },
-      [hasAudio, recording, paused, busy, audio.playingBuffer, pan]
+      [hasAudio, recording, paused, busy, stage.windowControlsInert, pan]
     );
 
     const onPointerMove = useCallback(
@@ -571,8 +565,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // moving the first finger through the `requesting` window — sliding the
         // centerline off the sample insertionOffset already locked to at the tap
         // (#61). The pointer-down guard alone left this multitouch path open.
-        // Also frozen once playback starts mid-drag (same whole-clip desync, R2).
-        if (!dragging || recording || paused || busy || audio.playingBuffer)
+        // Also frozen once playback starts mid-drag, by the same predicate the
+        // pointer-down guard uses (R2).
+        if (
+          !dragging ||
+          recording ||
+          paused ||
+          busy ||
+          stage.windowControlsInert
+        )
           return;
         const width = stageRef.current?.clientWidth ?? 1;
         // Drag right reveals earlier audio: the sample under the centerline
@@ -598,7 +599,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         recording,
         paused,
         busy,
-        audio.playingBuffer,
+        stage.windowControlsInert,
         win.visibleSamples,
         length,
       ]
@@ -2259,9 +2260,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // buffer (#101); everything else shows the working buffer's.
                       // `recorded` is true whenever there is a waveform to mark —
                       // stored audio, or a prepared preview of a first take. The
-                      // centerline is suppressed whenever a preview is shown or a
-                      // buffer plays (`wholeView`), where a mid-clip red marker over
-                      // a whole-clip view would mislead (George R2).
+                      // centerline is suppressed for EVERY sounding buffer, not
+                      // only a swapped view (`stage.centerlineHidden`): over a
+                      // whole-clip view the red marker would point at a sample it
+                      // is no longer drawn over (George R2), and over a picked-span
+                      // audition it is honest but leaves a second static vertical
+                      // line beside the travelling playhead, which reads as
+                      // "insert here" to a non-reader (George R4 P3).
                       peaks={previewShown ? previewShown.peaks : editor.peaks}
                       height={200}
                       recorded={hasAudio || previewShown !== null}
@@ -2317,7 +2322,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // this is the same array as `peaks`, so idle and a first
                       // take are unaffected.
                       fitFrom={editor.peaks}
-                      playing={wholeView}
+                      playing={stage.centerlineHidden}
                       view={waveView}
                     />
                   )}
@@ -2354,25 +2359,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     idleEditable &&
                     editor.canPaste &&
                     !editor.selectionActive &&
-                    !audio.playingBuffer && (
+                    !stage.windowControlsInert && (
                       // The paste marker rides the centerline (mockup 5): tapping it
                       // inserts the clipboard there. stopPropagation so the tap does
                       // not also arm a pan on the stage beneath it.
                       //
-                      // Gone while a buffer sounds (#284), for the reason Record is
-                      // already dead there: this marker is at a FIXED 50% of the
-                      // stage because it rides the centerline of the pan/zoom
-                      // window, but a "line"/"whole" audition takes the whole-clip
-                      // view — the canvas redraws 0..1 and `playing` suppresses the
-                      // centerline under it — while `onPaste` still inserts at
-                      // `win.centerlineSample`. At the F7 rest the marker would sit
-                      // over the midpoint and paste at the END: a control pointing
-                      // at one sample and acting on another, in a UI for people who
-                      // cannot read. Removing it, rather than disabling it, also
-                      // takes away the false position; Play is one tap from
-                      // bringing it back. (The selection band, its sibling through
-                      // `win`, is kept honest instead by an audition of a picked
-                      // span not swapping the view at all.)
+                      // Unmounted, not merely disabled, while `windowControlsInert`
+                      // (#284): it is pinned at a FIXED 50% of the stage because it
+                      // rides the centerline of the pan window, while `onPaste`
+                      // inserts at `win.centerlineSample` — so under a swapped view
+                      // it would sit over the midpoint and paste at the END. Taking
+                      // the control away takes the false POSITION away with it,
+                      // which a `disabled` would not. See `recorder-stage.ts` for
+                      // the rest of the class.
                       <button
                         type="button"
                         className="paste-marker"
@@ -2542,16 +2541,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     pressed={zoom === ZOOM_QUARTER}
                     variant="quiet"
                     size={24}
-                    // Frozen while a buffer sounds, exactly as the pan already is
-                    // (#284 / George R2 on the pan): a zoom mid-audition rebuilds
-                    // the window around the centerline under a line that is already
-                    // travelling — for a picked span the band and the audio stay
-                    // aligned, but the sounding region can leave the viewport and
-                    // the playhead simply hides, and for a "line"/"whole" audition
-                    // the whole-clip view means the tap does nothing visible at all
-                    // and only takes effect once the sound stops. Playback is
-                    // listen-only (D4); stopping it is one tap.
-                    disabled={audio.playingBuffer}
+                    // A window control: it rebuilds the window under a line that
+                    // is already travelling. `recorder-stage.ts` carries the class.
+                    disabled={stage.windowControlsInert}
                     onClick={onToggleZoom}
                   />
                   <Control
@@ -2563,7 +2555,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     }
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
-                    disabled={!idleEditable || !hasAudio}
+                    // A window control, and the one this class was found through
+                    // (George R4 P2-1): it seeds its span from the centerline —
+                    // which is hidden while a buffer sounds — so mid-audition it
+                    // would highlight the insert point rather than the audio being
+                    // heard, at the F7 rest the END of the take. Inert in BOTH
+                    // directions: closing an open frame mid-audition would also
+                    // flip the view out from under the sound, since a picked span
+                    // is what keeps the pan window.
+                    disabled={
+                      !idleEditable || !hasAudio || stage.windowControlsInert
+                    }
                     onClick={onToggleSelection}
                   />
                   <Control
