@@ -32,11 +32,15 @@ interface NameEditProps {
  * keyboard expects, alongside the tappable check for touch. The field
  * auto-focuses because it is only ever REVEALED by a deliberate tap ("Rename",
  * or New Book), never shown unbidden, so opening the soft keyboard is the
- * intent, not a surprise. The store owns normalisation — trim, and what a blank
- * value means — so this passes the raw value straight through and never
- * disables its own commit: a bare Confirm on the pre-filled New Book field is
- * the one-tap path, and even a cleared field resolves to the placeholder rather
- * than erroring.
+ * intent, not a surprise.
+ *
+ * This field never validates and never disables its own commit: it passes the
+ * raw value straight through, and what a blank one MEANS belongs to the caller's
+ * store, which is the only place that knows. The three are deliberately
+ * different — `renameBook` keeps the current name, `renameChapter` clears the
+ * label back to the "Chapter N" default, `createBook` falls back to the
+ * "Book NNN" placeholder — so do not read any one of them as this component's
+ * contract (George R1 P3-5).
  */
 export function NameEdit({
   initialValue,
@@ -73,13 +77,17 @@ export function NameEdit({
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
-            // Stop the Escape here: the Menu binds a WINDOW-level keydown that
-            // closes the whole panel on Escape and does not honour
-            // `defaultPrevented`. Without this, one Escape fires both `onCancel`
-            // AND the Menu's `onClose` — which on the rename path drops an armed
-            // share via `share.reset()` (G1). What Cancel means is the CALLER's
-            // decision, taken exactly once: the rename steps back to the action
-            // list, New Book dismisses its dialog and creates nothing.
+            // One Escape must resolve to ONE cancel. The Menu binds a
+            // WINDOW-level keydown that closes the whole panel, and on the
+            // rename path that also drops an armed share via `share.reset()`
+            // (G1) — so a double-fire is a real loss, not a cosmetic one.
+            // `preventDefault` above is what Menu actually checks
+            // (`menu.tsx`, `if (e.defaultPrevented) return`); `stopPropagation`
+            // is belt-and-braces, kept so this does not silently start
+            // double-firing if that check is ever removed (George R1 P3-6).
+            // What Cancel MEANS is the caller's decision: the rename steps back
+            // to the action list, New Book dismisses its dialog and creates
+            // nothing.
             e.stopPropagation();
             onCancel();
           }

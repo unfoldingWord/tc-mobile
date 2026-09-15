@@ -31,12 +31,12 @@ interface BooksScreenProps {
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const {
     books,
+    newBookPlaceholder,
     loading,
     loaded,
     error,
     reload,
     createBook,
-    peekBookName,
     addChapter,
     renameBook,
     deleteBook,
@@ -69,12 +69,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // so each open remounts `NameEdit` with a fresh seed (Menu unmounts its
   // children when closed, which is what resets a half-typed name).
   const [newBookSeed, setNewBookSeed] = useState<string | null>(null);
-  // Latches across the peek's await so a second + tap in that window cannot open
-  // the dialog twice; released as soon as the dialog is up (the shelf goes inert
-  // behind it, so the trigger is out of reach from then on).
-  const openingNewBook = useRef(false);
-  // Latches across the create's await: `NameEdit`'s check is not disabled
-  // in-flight, and a double activation would otherwise create two books.
+  // A failed create, scoped to THIS dialog. Not the hook's shared `error`: that
+  // channel also carries an addChapter or rename failure, which would then be
+  // announced (Notice is `role="alert"`) inside a New Book dialog that has not
+  // failed at anything — on the one-tap create path, to someone who may not read
+  // the words disowning it (Frank R1 P3, George R1 P2-2).
+  const [newBookError, setNewBookError] = useState<string | null>(null);
+  // Latches across the create's await. It stops a second Confirm, and it is what
+  // `onCancelNewBook` checks: once the write is committing, dismissal is a no-op
+  // rather than a promise the store cannot keep.
   const creatingBook = useRef(false);
   // Where focus was when the New Book dialog opened — the corner + or the empty
   // state's CTA. Restored when the dialog closes WITHOUT creating, so a cancel
@@ -165,29 +168,36 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // book would otherwise have been given silently, so the one-tap create the
   // corner + used to be is still one tap — Confirm — and nobody has to hunt for
   // Rename afterwards to give the book its real name.
-  const onNewBook = useCallback(async () => {
-    if (openingNewBook.current) return;
-    openingNewBook.current = true;
-    try {
-      // Remember the trigger so Cancel can hand focus back to it. Read before
-      // the await: the dialog has not opened yet, so this is still the control
-      // that was tapped.
-      newBookReturnFocus.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
-      // A failed peek returns "" rather than throwing, so the dialog still
-      // opens — on an empty field, which a blank Confirm resolves to the
-      // placeholder anyway.
-      setNewBookSeed(await peekBookName());
-    } finally {
-      openingNewBook.current = false;
-    }
-  }, [peekBookName]);
+  // Synchronous, deliberately: the placeholder is already in hand from the shelf
+  // read, so the dialog opens in the SAME commit as the tap. An `await` here
+  // would leave the shelf live and un-`inert` for that window — `inert` keys on
+  // `newBookSeed`, which cannot be set until the await resolves — and the
+  // hamburger or a row's ≡ sits one tap away, which is how two `aria-modal`
+  // panels end up stacked on `document.body` (George R1 P2-1).
+  const onNewBook = useCallback(() => {
+    // Remember the trigger so Cancel can hand focus back to it.
+    newBookReturnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setNewBookError(null); // a fresh dialog starts with nothing to report
+    setNewBookSeed(newBookPlaceholder);
+  }, [newBookPlaceholder]);
 
   // Cancel, Escape, the panel's Close, a scrim tap: all the same outcome —
   // nothing is created, and focus goes back where it came from.
-  const onCancelNewBook = useCallback(() => setNewBookSeed(null), []);
+  const onCancelNewBook = useCallback(() => {
+    // Mid-create, dismissal does nothing. The IndexedDB write cannot be recalled
+    // once Confirm has run, so tearing the dialog down here would make "Cancel
+    // creates nothing" false AND let the create's continuation expand and steal
+    // focus for a book the closing gesture disowned (Frank R1 P2 / George R1
+    // P2-4, both lenses). Holding the panel for the length of one `put` is the
+    // same "in-flight owns the panel" rule EraseConfirm applies to its own
+    // committing action.
+    if (creatingBook.current) return;
+    setNewBookSeed(null);
+    setNewBookError(null);
+  }, []);
 
   // Return focus to the trigger once the dialog is gone. In an effect, not in
   // the handler: the shelf is `inert` while the dialog is open, and focusing an
@@ -202,17 +212,30 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, [newBookSeed]);
 
   const onConfirmNewBook = useCallback(
-    async (name: string) => {
+    async (typed: string) => {
       if (creatingBook.current) return;
       creatingBook.current = true;
       try {
-        // A blank or whitespace-only name is not an error: the store falls back
-        // to the placeholder, inside the same transaction that writes the row.
-        const book = await createBook(name);
-        // A failed create keeps the dialog OPEN with the reason in its own
-        // Notice — the screen's Notice sits behind the scrim, so the create
-        // needs a channel inside the panel, exactly as the rename does.
-        if (!book) return;
+        setNewBookError(null);
+        // An untouched field means "the placeholder is fine", so send "" and let
+        // the store derive the name INSIDE its write transaction — the one-tap
+        // create the corner + used to be, race-safety and all. Sending the
+        // rendered string instead would take the supplied-name path, which is
+        // deliberately never made unique: two documents open on the same shelf
+        // both render "Book 001" and would both write it (George R1 P2-3). A
+        // typed name is a deliberate choice and goes through as typed; a blank
+        // or whitespace-only one is not an error either, and lands on the same
+        // fallback.
+        const name = typed === newBookSeed ? "" : typed;
+        const outcome = await createBook(name);
+        if (!outcome.ok) {
+          // A failed create keeps the dialog OPEN with the reason in its own
+          // Notice — the screen's Notice sits behind the scrim — and the typed
+          // name stays in the field for another try.
+          setNewBookError(outcome.message);
+          return;
+        }
+        const { book } = outcome;
         newBookReturnFocus.current = null;
         setNewBookSeed(null);
         // A new book opens expanded — the next action is adding its first
@@ -228,7 +251,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         creatingBook.current = false;
       }
     },
-    [createBook]
+    [createBook, newBookSeed]
   );
 
   const onNewChapter = useCallback(
@@ -464,7 +487,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             variant="primary"
             size={26}
             disabled={loading || loadFailed}
-            onClick={() => void onNewBook()}
+            onClick={onNewBook}
           />
         )}
         <Control
@@ -507,7 +530,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               teach={strings.booksEmptyTeach}
               ctaLabel={strings.newBook}
               ctaIcon="plus"
-              onCta={() => void onNewBook()}
+              onCta={onNewBook}
             />
           </div>
         ) : (
@@ -548,9 +571,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           onSave={(name) => void onConfirmNewBook(name)}
           onCancel={onCancelNewBook}
         />
-        {/* A failed create speaks here — the screen's Notice is behind the
-            scrim — while the field stays up with the typed name for another try. */}
-        {error && <Notice>{error}</Notice>}
+        {/* THIS dialog's own failure channel — never the shared `error`, which
+            also carries a failed addChapter or rename and would announce one
+            here as if naming had gone wrong. */}
+        {newBookError && <Notice>{newBookError}</Notice>}
       </Menu>
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
