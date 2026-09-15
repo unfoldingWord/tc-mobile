@@ -8,6 +8,7 @@ import {
   type NativeShareBridge,
   type ShareEnvironment,
   createNativeShareSession,
+  resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
 
@@ -181,7 +182,36 @@ describe("selectShareRoute", () => {
   });
 });
 
+describe("resolveProvesDelivery", () => {
+  it("trusts a web resolve — navigator.share rejects a dismissal", () => {
+    expect(resolveProvesDelivery("web")).toBe(true);
+  });
+
+  it("does NOT trust a native resolve, so nothing destructive may hang off it", () => {
+    // George stand-in R4 P2. `SharePlugin.java`'s `activityResult` rejects a
+    // RESULT_CANCELED chooser only while `stopped` is false, and `handleOnStop`
+    // sets `stopped` on any activity stop — a notification, a call. So a chooser
+    // dismissed with Back can resolve as success. The held-take rescue (#165)
+    // holds the only copy of a recording and offers a SINGLE-tap Done off this
+    // signal, which is why it must read false here.
+    expect(resolveProvesDelivery("native")).toBe(false);
+  });
+
+  it("does not treat an unsupported route as delivery either", () => {
+    expect(resolveProvesDelivery("unsupported")).toBe(false);
+  });
+});
+
 describe("the native share session", () => {
+  it("chunks on a boundary base64 cannot pad", () => {
+    // Load-bearing and otherwise unasserted (George stand-in R4 P3-4): the
+    // per-chunk decodes in these tests are independent, so they cannot observe
+    // padding, and an unaligned chunk would only corrupt the file if the native
+    // side joined the base64 strings before decoding. The alignment is what
+    // makes that question moot; nothing else pins it.
+    expect(SHARE_CHUNK_BYTES % 3).toBe(0);
+  });
+
   it("writes the file into a directory of its own and hands that uri to the plugin", async () => {
     const { share, calls } = harness();
     await share(mp3());
@@ -267,6 +297,57 @@ describe("the native share session", () => {
     expect(calls.filter((call) => call.op === "rmdir")).toEqual([
       { op: "rmdir", path: firstDir, recursive: true },
     ]);
+  });
+
+  it("never prunes a share that is still open at the sheet", async () => {
+    // George stand-in R4 P3-3. The invariant rounds 2 and 3 were about — an
+    // in-flight share is not a pruning candidate — had no test: the concurrency
+    // case below uses two shares, under the retention window, so a mutant that
+    // enrolled a directory BEFORE its share resolved survived the whole suite.
+    // Here the first share is held open at the sheet while enough others finish
+    // to push it out of the window.
+    const calls: BridgeCall[] = [];
+    let releaseHeld!: () => void;
+    const heldAtTheSheet = new Promise<void>((resolve) => {
+      releaseHeld = resolve;
+    });
+    let shares = 0;
+    const bridge: NativeShareBridge = {
+      readdir: async ({ path }) => {
+        calls.push({ op: "readdir", path });
+        return { names: [] };
+      },
+      rmdir: async ({ path, recursive }) => {
+        calls.push({ op: "rmdir", path, recursive });
+      },
+      writeFile: async ({ path, data, recursive }) => {
+        calls.push({ op: "write", path, data, recursive });
+        return { uri: uriFor(path) };
+      },
+      appendFile: async ({ path, data }) => {
+        calls.push({ op: "append", path, data });
+      },
+      share: async ({ files }) => {
+        calls.push({ op: "share", files });
+        shares += 1;
+        if (shares === 1) await heldAtTheSheet;
+      },
+    };
+    const session = createNativeShareSession(bridge);
+
+    const held = session.share(mp3());
+    // Let it reach the sheet — every bridge call resolves on a microtask.
+    for (let i = 0; i < 100 && shares === 0; i += 1) await Promise.resolve();
+    const heldDir = dirOf(calls.find((call) => call.op === "write"));
+    expect(heldDir).not.toBe("");
+
+    for (let i = 0; i < SHARE_RETAINED + 1; i += 1) await session.share(zip());
+
+    expect(
+      calls.some((call) => call.op === "rmdir" && call.path === heldDir)
+    ).toBe(false);
+    releaseHeld();
+    await held;
   });
 
   it("gives two concurrent shares separate directories, and neither removes the other's", async () => {

@@ -29,6 +29,7 @@ import { classifyShareError } from "@/hooks/share-flow";
 import {
   nativeShare,
   readShareEnvironment,
+  resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -1395,7 +1396,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           setHeldSharing(false);
           // Rescued off the phone. Offer a Done exit even though the decode never
           // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
-          setHeldShared(true);
+          //
+          // ONLY where the resolve proves it, which on the native route it does
+          // not (George stand-in R4 P2, see `resolveProvesDelivery`): a chooser
+          // dismissed with Back after the activity stopped resolves as success,
+          // and `Done` is a SINGLE tap that drops the only copy of this
+          // recording. So on native the panel stays "held", the two-tap Discard
+          // stays the only exit, and the share sheet itself was the feedback.
+          // Losing an exit is recoverable; losing the take is not.
+          setHeldShared(resolveProvesDelivery(route));
           setHeldShareError(null);
         },
         (cause: unknown) => {
