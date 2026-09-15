@@ -33,8 +33,9 @@ export interface AuditionPlan {
  * the preview and the scissors cannot disagree about what is selected. A
  * reversed span (a handle dragged past its partner — the editor deliberately
  * leaves those unordered so the handle stays under the finger) normalises here,
- * and a span that clamps down to nothing is `null` rather than a claim on the
- * audio floor for zero samples.
+ * and a span from which no whole sample would be taken — collapsed, clamped
+ * shut, shorter than a sample, or carrying a non-finite edge — is `null` rather
+ * than a claim on the audio floor for zero samples.
  *
  * With nothing picked, the audition runs from the centerline — the line the
  * translator can see, and the sample a record would splice at — to the end of
@@ -57,7 +58,15 @@ export function auditionPlan(
 
   if (selection !== null) {
     const range = clampRange(selection, workingLength);
-    if (range.start === range.end) return null;
+    // Empty is decided the way the audio is actually taken, not by comparing the
+    // two floats: both `subarray` (the audition) and `slice` (`sliceRange`, the
+    // cut) TRUNCATE their indices, so a span living inside one sample removes
+    // nothing and sounds nothing. A plain `start === end` also let `NaN` through
+    // — `NaN === NaN` is false — and a `subarray(NaN, NaN)` is empty, so either
+    // hole leaves a live control that visibly does nothing when tapped (Frank R1
+    // F1, George R1 P3-1). `!(a > b)` rejects the non-finite case with the same
+    // shape used below.
+    if (!(Math.trunc(range.end) > Math.trunc(range.start))) return null;
     return { range, source: "selection" };
   }
 

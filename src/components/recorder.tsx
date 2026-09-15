@@ -431,14 +431,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // playback travel; the record window returns when the preview clears on
     // Resume.
     //
-    // An edit-mode audition (#284) is the exception, and must NOT switch the view:
-    // the selection frame is positioned through `win` (the pan/zoom window) while
-    // `Waveform` would be drawing clip fractions 0..1, so a whole-clip swap under
-    // a zoomed or panned selection would leave the band marking one span and the
-    // audio under it showing another — while the whole point of the audition is
-    // to hear precisely the span the band marks. The audition plays in place.
+    // An edit-mode audition of a PICKED SPAN (#284) is the one exception, and it
+    // is exactly as wide as its reason: the selection frame is positioned through
+    // `win` (the pan/zoom window) while `Waveform` would be drawing clip fractions
+    // 0..1, so a whole-clip swap under a zoomed or panned selection would leave
+    // the band marking one span and the audio under it showing another — while the
+    // whole point of that audition is to hear precisely the span the band marks.
+    // So it plays in place.
+    //
+    // With NO band up there is nothing to keep aligned, and keeping the pan window
+    // would reinstate the very defect the swap exists to prevent: at the F7 rest
+    // (line at the end) a quarter-zoom window shows only the last quarter, while
+    // the audition sounds from frame 0 — the translator hears the start of the
+    // take looking at the end, with the playhead off-screen and hidden, and pan
+    // frozen so it cannot be brought back (George R1 G1). A "line"/"whole"
+    // audition therefore takes the whole-clip view, like record mode.
     const wholeView =
-      previewShown !== null || (audio.playingBuffer && mode === "record");
+      previewShown !== null ||
+      (audio.playingBuffer && (mode === "record" || !editor.selectionActive));
     const waveView = {
       startFraction: wholeView ? 0 : hasAudio ? win.start / length : 0,
       endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
@@ -486,10 +496,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // handle back within reach (B5, George R2). The handles stop their own
         // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
         // never also starts a pan — only a drag on the bare canvas pans.
-        // Frozen during playback too: the canvas is showing the whole-clip view,
-        // so a drag would move the hidden record `pan`/insert offset the translator
-        // cannot see, and the viewport would jump when playback stops (Frank/George
-        // R2). Playback is listen-only — no scrub in v1 (D4).
+        // Frozen during playback too. For a record-mode play (and a "line"/"whole"
+        // audition) the canvas is showing the whole-clip view, so a drag would move
+        // the hidden record `pan`/insert offset the translator cannot see, and the
+        // viewport would jump when playback stops (Frank/George R2). An audition of
+        // a PICKED SPAN draws through this same pan window (#284), so there the
+        // freeze is holding the band still over the audio it marks while it sounds.
+        // Either way, playback is listen-only — no scrub in v1 (D4).
         if (!hasAudio || recording || paused || busy || audio.playingBuffer)
           return;
         setDragging(true);
