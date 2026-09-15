@@ -79,8 +79,21 @@ export const strings = {
   record: "Record",
   pause: "Pause",
   resume: "Resume",
-  zoomWhole: "Zoom: whole segment",
-  zoomQuarter: "Zoom: quarter view",
+  // The zoom toggle's two names (#91). Each says the STATE first and the ACTION
+  // second, because the first external tester read the old glyph as the state
+  // and the old labels ("Zoom: whole segment" / "Zoom: quarter view") named only
+  // a destination — which could be read either way too. The button also carries
+  // `aria-pressed`, so a screen reader gets the state twice; that redundancy is
+  // deliberate on a control a sighted, literate tester still misread.
+  //
+  // They name the MAGNIFICATION, never what is on screen. "Whole segment in
+  // view" was the first draft and is false whenever the clip is panned — which
+  // includes the sheet's own opening state, where the pan rests at the end and
+  // the window is [0.5L, 1.5L] (the append view `viewportWindow`'s own test
+  // pins). Zoom and pan are independent, so no label on this button can honestly
+  // promise an extent (Frank + George, round 1 — both lenses, independently).
+  zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
+  zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
   micRetry: "Try again",
   micBack: "Go back",
@@ -200,8 +213,14 @@ export const strings = {
   // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  vuShow: "Show the level meter",
-  vuHide: "Hide the level meter",
+  // The level-meter row's two names (#286). Same rule as the zoom toggle: state
+  // first, action second. The old pair ("Show the level meter" / "Hide the level
+  // meter") named only the action, and paired with an eye/eye-off glyph left the
+  // first external tester unable to say which state they were in — or what the
+  // control was attached to. Naming the meter in both halves is what ties the
+  // row to the strip that appears when it is on.
+  vuShown: "Level meter is showing. Hide it.",
+  vuHidden: "Level meter is hidden. Show it.",
   eraseSegment: "Erase recording",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
