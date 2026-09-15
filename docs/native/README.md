@@ -290,7 +290,51 @@ change.
    Then create an **internal tester group** (TestFlight → Internal Testing) and
    enable **_Automatically distribute new builds_** on it, or an uploaded build
    reaches no one until it is assigned to a group by hand.
-4. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+4. **The `release-signing` environment** (_Settings → Environments → New_):
+   name it exactly `release-signing`, add **required reviewers** (the DRI at
+   minimum), and **untick _Allow administrators to bypass configured
+   protection rules_** — with it on (GitHub's default), any repository admin
+   can click _Start all waiting jobs_ and no reviewer is consulted, which is
+   the #321 hole under a different door. Leave _Prevent self-review_ off: the
+   DRI both dispatches and approves. Leave the deployment-branch rule at "all
+   branches" — the in-yml ref guard handles branches; the reviewer is the actor
+   guard (#321). A settings-side branch list would be the one ref guard a
+   rewritten yml cannot remove, but it would also block the `allow_any_ref`
+   proving dispatches from feature branches; recorded here so the trade-off is
+   not re-litigated.
+
+   **Plan trap.** On GitHub Free, Pro and Team, required reviewers exist
+   **only on public repositories**, and the unfoldingWord org is on Free. If
+   this repository is ever made private again, GitHub ignores the protection
+   rules **and the environment secrets**: the gate is silently gone, and both
+   lanes fail at the presence check naming a secret that is in fact set.
+   Nothing in a run explains why — this paragraph is the explanation.
+
+   Both native lanes' signing jobs declare `environment: release-signing`, so
+   every dispatch pauses for one approval before any secret is read.
+
+   **What the approval is.** GitHub runs the workflow file **on the dispatched
+   ref**, and any push-access branch can rewrite it while keeping
+   `environment: release-signing` on the job — so a branch can add a step that
+   reads the secrets, and the pause is the only thing between it and them.
+   Before _Approve and deploy_, open `.github/workflows/<lane>.yml` **on the
+   ref the run shows** and confirm it is the committed lane; reject anything
+   else. Approving without reading is the #321 hole with a rubber stamp on it.
+
+5. **Environment secrets** (_Settings → Environments → release-signing →
+   Environment secrets_), **not** repository secrets. When both exist, the
+   environment copy takes precedence for the gated job — but a repository
+   secret stays readable by **any** workflow in the repository, gated or not,
+   so a leftover repository copy is the bypass #321 closes. Migrating from
+   repository secrets, **in this order**: set and verify every environment
+   secret; promote the yml that carries `environment: release-signing` to
+   **every ref you still dispatch** (`staging`, and `main` once it has the
+   lane); only then delete the repository copies (all eleven signing names in
+   one loop — `ios-credentials.md` §8). Deleting earlier breaks the live
+   tester lane: the pre-#321 yml on `staging` has no environment, cannot see
+   environment secrets, and runs on the repository copies until the promotion
+   replaces it. Afterwards `gh secret list` at repository level should show
+   **no signing name** — `CLOUDFLARE_ACCOUNT_ID` is not one:
 
    | Secret                         | Value                                                                      |
    | ------------------------------ | -------------------------------------------------------------------------- |
@@ -425,7 +469,10 @@ build: never hand one to a tester once the release keystore exists.
 **Tester distribution:** workflow artifacts require a GitHub login to download,
 and the lane attaches the APK **only** as a run artifact — nothing creates a
 GitHub release or pre-release today (the repo's first tag is the v0.2.0
-promotion). So the channel is: a person with repository access downloads the
+promotion). The repo is public, so "a GitHub login" means **any** signed-in
+GitHub user can fetch the artifact for as long as it is retained; it is a
+convenience, not a private channel (the keystore is not in the APK — this is an
+access-boundary note, not a signing leak). So the channel is: a team member downloads the
 `android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
 the team drive; §5
 step 4 covers installation on the phone. Attaching the APK to a release is a
@@ -435,7 +482,15 @@ follow-up once a release step exists, not a documented path.
 
 1. **Create the release keystore** (§5 step 1) and store it in the team secret
    store.
-2. **Four GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+2. **Four environment secrets** in the `release-signing` environment (§4a
+   step 4 creates it; _Settings → Environments → release-signing →
+   Environment secrets_). Not repository secrets — the build job is
+   environment-scoped and pauses for a reviewer before reading them (#321). A
+   repository secret of the same name is still readable by an ungated
+   workflow, so if any of these four ever existed at repository level, delete
+   that copy — the eleven-name loop in `ios-credentials.md` §8 — once the
+   environment copy is verified **and** the gated yml is on every ref you
+   still dispatch (§4a step 5 has the order and the reason):
 
    | Secret                    | Value                                                                         |
    | ------------------------- | ----------------------------------------------------------------------------- |
@@ -447,9 +502,10 @@ follow-up once a release step exists, not a documented path.
    The keystore is decoded to `android/tc-mobile-release.jks` at build time
    (gitignored) and deleted after the APK is built. **Never commit it.**
 
-**First dispatch:** the preflight checks the ref and all four secrets before any
-Gradle work. The `build.gradle` signing config also fails loudly if the env vars
-are unset — two layers. What the runner provides was checked against the
+**First dispatch:** the preflight checks the ref; the build job then waits for
+the environment reviewer and, once approved, checks all four secrets as its
+first step, before checkout. The `build.gradle` signing config also fails
+loudly if the env vars are unset — three layers. What the runner provides was checked against the
 `ubuntu-24.04` image notes (actions/runner-images, 2026-09-12), not observed on
 a live run: Android SDK Platform 36 and Build-tools 36.0.0 under `ANDROID_HOME`,
 and Ruby for the keystore decode — so no `sdkmanager` step is needed. The JDK is

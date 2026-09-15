@@ -10,7 +10,8 @@ name: iOS TestFlight
 # macOS runners bill at a premium, so the trigger is deliberate and the lane
 # does not wait for Apple's server-side processing (see the Fastfile).
 #
-# One-time setup lives in docs/native/README.md §4a: the seven secrets below,
+# One-time setup lives in docs/native/README.md §4a: the seven secrets below
+# (in the `release-signing` environment, required reviewers — #321),
 # the App Store Connect app record, and the API key's role.
 on:
   workflow_dispatch:
@@ -28,24 +29,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A cheap ubuntu gate BEFORE any billed macOS runner is acquired. Refuse a
-  # non-staging/main ref (the dispatch picker defaults to develop, and this is
-  # the first path that puts a build on a tester's phone) and a missing secret
-  # here — not ~10 minutes into the archive. An unset GitHub secret expands to
-  # "", which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
-  # missing. The macOS job `needs:` this, so a failure never reaches macos-14.
+  # A cheap ubuntu gate BEFORE the environment approval and the billed macOS
+  # runner. Refuse a non-staging/main ref here (the dispatch picker defaults
+  # to develop, and this is the first path that puts a build on a tester's
+  # phone). This job holds NO secrets and no environment on purpose: the
+  # signing secrets live in the `release-signing` environment (#321), which
+  # only the macOS job references, so a dispatch costs exactly one approval.
+  # The presence check moved there, as its first step.
   preflight:
-    name: Preflight (ref + secrets)
+    name: Preflight (ref)
     runs-on: ubuntu-latest
     permissions: {}
     env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
-      IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-      IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
-      IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
       REF: ${{ github.ref_name }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
@@ -59,23 +54,15 @@ jobs:
             exit 1
           fi
 
-      - name: Require all seven secrets
-        run: |
-          set -euo pipefail
-          missing=0
-          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
-                      IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::secret $name is unset or empty"
-              missing=1
-            fi
-          done
-          [ "$missing" -eq 0 ] || exit 1
-          echo "Ref and all seven secrets present."
-
   testflight:
     name: Build and upload to TestFlight
     needs: preflight
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
+    # the environment has required reviewers. A dispatch pauses here until an
+    # approver okays this run — the actor guard the in-yml ref check above
+    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
+    # itself). The approval UI shows the ref being built.
+    environment: release-signing
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -89,6 +76,28 @@ jobs:
       # "Write signing credentials" step and not needed as env vars here.
       IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
     steps:
+      # First step, before checkout: an unset environment secret expands to "",
+      # which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
+      # missing and fail in seconds rather than ~10 minutes into the archive.
+      # Step-scoped env so the base64 blobs are not job-wide.
+      - name: Require all seven secrets
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
+                      IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::environment secret $name is unset or empty (environment: release-signing)"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All seven signing secrets present."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -163,7 +172,7 @@ jobs:
         # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
         # wrapped secret. Reading the secret from ENV keeps it out of the process
         # arguments and the shell history.
-        # The preflight job already failed the run if this secret is unset/empty.
+        # The first step of this job already failed the run if this secret is unset/empty.
         run: |
           set -euo pipefail
           ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
