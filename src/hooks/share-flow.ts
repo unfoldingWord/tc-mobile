@@ -18,8 +18,15 @@ import {
  *
  * WHAT the file is handed to is `share-target.ts`: the Web Share API in a
  * browser, or Capacitor's Share plugin inside the native shell, where the
- * WebView may expose no Web Share at all (#336). The flow below is the same
- * either way; only the two gates and the one call at the end consult the route.
+ * WebView may expose no Web Share at all (#336). The route is decided once, at
+ * the two gates in `prepare`, and carried on the armed value — so the two
+ * gestures cannot disagree about it and `send` probes nothing.
+ *
+ * The native route also STAGES the file to the app cache in `prepare`, not in
+ * `send` (George R5 P2): it is the slow half, tap 1 is the gesture that already
+ * paints a busy state for slow work, and tap 2 must stay one call with no await
+ * before it. That is what keeps "the sheet opens in this gesture" true on both
+ * routes, which is what every caller's copy promises.
  *
  * Why two gestures. iOS grants a tap a short user-activation window and revokes
  * it the moment the call stack awaits. Encoding walks IndexedDB and runs a
@@ -119,10 +126,11 @@ export interface UseShareFlow {
    */
   prepare: (build: BuildShareFile) => Promise<void>;
   /**
-   * Tap 2: hand the stashed File to the OS share sheet. MUST be called straight
-   * from a user gesture: it calls `navigator.share` with no await before it, so
-   * the activation the platform requires is still live. The caller must not await
-   * anything before `send()` inside the same gesture.
+   * Tap 2: hand what tap 1 armed to the OS share sheet. MUST be called straight
+   * from a user gesture: the sheet call — `navigator.share` in a browser, the
+   * Share plugin natively, whose file tap 1 already staged — is made with no
+   * await before it, so the activation the web platform requires is still live.
+   * The caller must not await anything before `send()` inside the same gesture.
    */
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
@@ -311,7 +319,22 @@ export function useShareFlow(): UseShareFlow {
         // share needs no user activation — the plugin starts the chooser as an
         // Android Intent / a UIActivityViewController, not the WebView — but it
         // is called first here anyway, so the two routes have one shape.
-        await nativeShare.send(armed.staged);
+        try {
+          await nativeShare.send(armed.staged);
+        } catch (cause) {
+          // The staged file can be GONE by tap 2 (George R6 P2). `Directory.Cache`
+          // is the first thing the OS reclaims, and this window now spans however
+          // long the menu sits on "Share now" — a phone call, a backgrounding, a
+          // nearly-full training phone. The File itself is still in memory, so
+          // write it again and offer it rather than making a facilitator re-encode
+          // a whole book. Once, not in a loop.
+          //
+          // A dismissal is never retried: there the chooser DID open and the
+          // translator closed it, and a second sheet would be the app arguing.
+          if (classifyShareError(cause, hadActivation) === "dismissed")
+            throw cause;
+          await nativeShare.send(await nativeShare.stage(armed.file));
+        }
       } else {
         // `navigator.share` is invoked synchronously here: an async function runs
         // to its first await, and this call IS that boundary, so no work precedes
