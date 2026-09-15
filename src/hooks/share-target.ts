@@ -41,6 +41,22 @@ export const SHARE_CACHE_DIR = "tc-mobile-share";
 export const SHARE_RETAINED = 3;
 
 /**
+ * How old a share's directory must be before a later session removes it.
+ *
+ * Within a session, {@link SHARE_RETAINED} counts completed user round trips.
+ * Across sessions there are no round trips to count, and a process boundary
+ * proves nothing: Android can kill the app while the target app is still
+ * uploading what the chooser handed it (Frank R3 P2). So a later run judges a
+ * leftover by its age, which the directory name carries.
+ *
+ * A day. A background upload still unfinished after that has failed for reasons
+ * a deleted cache file will not change, and it bounds the cache to one day of
+ * shares. A device clock that moves backwards makes a directory look newer than
+ * it is, which errs towards keeping bytes rather than deleting them.
+ */
+export const SHARE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
  * How much of the file crosses the bridge at a time.
  *
  * Capacitor's Filesystem takes binary data as base64 on native (`data: string |
@@ -85,7 +101,9 @@ export interface NativeShareBridge {
   }): Promise<{ uri: string }>;
   /** Append a further chunk to a file `writeFile` already created. */
   appendFile(options: { path: string; data: string }): Promise<void>;
-  /** Remove the share directory and everything in it. */
+  /** Name every entry directly inside a directory. */
+  readdir(options: { path: string }): Promise<{ names: string[] }>;
+  /** Remove a directory and everything in it. */
   rmdir(options: { path: string; recursive: boolean }): Promise<void>;
   /** Open the OS share sheet for the given file URIs. */
   share(options: { files: string[] }): Promise<void>;
@@ -159,16 +177,20 @@ export interface NativeShareSession {
  * resolves when the chooser activity returns, which can be before the receiving
  * app has read what it was handed (Frank R2 P1). For the held-take rescue those
  * may be the only surviving bytes of a recording.
+ *
+ * **Restarting the app proves nothing either** (Frank R3 P2). Android can kill
+ * the app while the target is still uploading, so a previous run's leftovers
+ * are not automatically safe to delete. The startup sweep is therefore by AGE,
+ * read out of the directory name, not by "some other process made it".
  */
 export function createNativeShareSession(
   bridge: NativeShareBridge
 ): NativeShareSession {
-  // One sweep per process, shared as a promise rather than latched with a
+  // One sweep per session, shared as a promise rather than latched with a
   // boolean: a second share starting while the first is still sweeping must
   // WAIT for it, not skip it and write into a directory the sweep is about to
-  // remove. Everything under the share directory at this point belongs to a
-  // previous run of the app, so nothing live can be reading it.
-  let previousRuns: Promise<void> | null = null;
+  // remove.
+  let sweep: Promise<void> | null = null;
   // Completed shares, oldest first. A directory enters only after its own share
   // resolved, so an in-flight share's directory is never a pruning candidate.
   const completed: string[] = [];
@@ -177,12 +199,13 @@ export function createNativeShareSession(
   return {
     async share(file: File): Promise<void> {
       sequence += 1;
-      // Unique per share, and per run: the sequence alone would collide with a
-      // previous run's leftovers if the sweep below ever failed.
+      // Unique per share AND across runs — the timestamp is what makes the name
+      // survivable as an age, which is the only evidence a later run has about
+      // whether a directory is still being read. `sharedAt` parses it back.
       const dir = `${SHARE_CACHE_DIR}/${sequence}-${Date.now().toString(36)}`;
       const path = `${dir}/${cacheFilename(file.name)}`;
-      previousRuns ??= removeDir(bridge, SHARE_CACHE_DIR);
-      await previousRuns;
+      sweep ??= sweepAgedOut(bridge);
+      await sweep;
       let uri: string;
       try {
         // `writeFile` truncates, so a repeat of this call over the same path
@@ -229,6 +252,13 @@ const capacitorShareBridge: NativeShareBridge = {
   appendFile: async ({ path, data }) => {
     await Filesystem.appendFile({ path, data, directory: Directory.Cache });
   },
+  readdir: async ({ path }) => {
+    const { files } = await Filesystem.readdir({
+      path,
+      directory: Directory.Cache,
+    });
+    return { names: files.map((file) => file.name) };
+  },
   rmdir: async ({ path, recursive }) => {
     await Filesystem.rmdir({ path, directory: Directory.Cache, recursive });
   },
@@ -261,6 +291,40 @@ function asDomRejection(cause: unknown): unknown {
   if (cause instanceof Error && /^share cancell?ed$/i.test(cause.message))
     return new DOMException(cause.message, "AbortError");
   return cause;
+}
+
+/**
+ * Remove the leftovers of earlier sessions that are old enough to be certainly
+ * finished with — and nothing else. Runs once per session, before the first
+ * write, and never rejects: a cache that could not be listed is not a reason to
+ * refuse a share.
+ */
+async function sweepAgedOut(bridge: NativeShareBridge): Promise<void> {
+  const now = Date.now();
+  let names: readonly string[];
+  try {
+    names = (await bridge.readdir({ path: SHARE_CACHE_DIR })).names;
+  } catch {
+    // The share directory has never existed (the first share after an install)
+    // or could not be listed. Either way this session has nothing it may
+    // remove, and the next `writeFile` creates the directory it needs.
+    return;
+  }
+  for (const name of names) {
+    const at = sharedAt(name);
+    // `null` means the name was not written by this code — so its age is
+    // unknown, and an unknown age is not a licence to delete someone's audio.
+    if (at !== null && now - at > SHARE_MAX_AGE_MS)
+      await removeDir(bridge, `${SHARE_CACHE_DIR}/${name}`);
+  }
+}
+
+/** When the share that made this directory started, or null if unreadable. */
+function sharedAt(name: string): number | null {
+  const stamp = /^\d+-([0-9a-z]+)$/.exec(name)?.[1];
+  if (stamp === undefined) return null;
+  const at = Number.parseInt(stamp, 36);
+  return Number.isFinite(at) && at > 0 ? at : null;
 }
 
 async function removeDir(
