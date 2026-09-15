@@ -20,7 +20,11 @@ just the native shell and the pipeline to produce installable builds.
 > [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) and
 > [§5a](#5a-android--apk-via-ci-automated-no-mac-step) run on GitHub-hosted
 > runners instead (the iOS lane is proven end to end, the Android lane has not
-> yet been dispatched). Nothing below has been verified on a device.
+> yet been dispatched). **No Capacitor build has yet recorded audio on a
+> device.** The only on-device observation so far is a _failure_: the
+> 2026-09-14 debug APK on Android installed, prompted for the microphone, and
+> was refused by the WebView (§5, the `MODIFY_AUDIO_SETTINGS` paragraph). The
+> fix for that has not been run on a device either; §8 still applies in full.
 
 ---
 
@@ -327,14 +331,24 @@ is the repeatable path. **The first green CI run is the first real verification.
 
 Sideload only; **Play Store submission is out of scope** (#262).
 
-**Microphone permission:** the app records audio, so the manifest declares
-`RECORD_AUDIO`. This now **ships in the committed shell**
-(`android/app/src/main/AndroidManifest.xml`, alongside `INTERNET`) — the system
-WebView cannot grant `getUserMedia({audio:true})` a permission the manifest
-never declares. Android 6+ also shows a **runtime** prompt on first record;
-confirm the prompt appears and audio captures on-device (part of the
-audio-revalidation spike, §8). Do not remove the permission (#262 / #86 C1–C2,
-PR #265).
+**Microphone permission — two manifest lines, not one:** the manifest declares
+`RECORD_AUDIO` **and** `MODIFY_AUDIO_SETTINGS`
+(`android/app/src/main/AndroidManifest.xml`, alongside `INTERNET`). Both are
+required because of how Capacitor bridges the WebView to Android: when the page
+calls `getUserMedia({audio:true})`, the system WebView asks the host app for
+`AUDIO_CAPTURE`, and Capacitor's `BridgeWebChromeClient.onPermissionRequest`
+answers by requesting **both** `MODIFY_AUDIO_SETTINGS` and `RECORD_AUDIO` from
+Android and calls `request.deny()` unless every one is granted
+(`node_modules/@capacitor/android/.../BridgeWebChromeClient.java`, 8.5.1).
+Android refuses an undeclared permission silently, so with `RECORD_AUDIO` alone
+the OS prompt appears, the user allows it, Settings shows Microphone allowed —
+and the app still gets a `NotAllowedError` and shows the permission panel. That
+is exactly what the first Android device pass hit (Galaxy A17 5G, debug APK
+v0.1.15, 2026-09-14; #263 / #245). `MODIFY_AUDIO_SETTINGS` is normal-protection,
+granted at install with no prompt; `RECORD_AUDIO` still shows the **runtime**
+prompt on first record. Confirm the prompt appears and audio captures on-device
+(part of the audio-revalidation spike, §8). Do not remove either permission
+(#262 / #86 C1–C2, PR #265).
 
 **Backups are off:** the manifest sets `android:allowBackup="false"`
 (`AndroidManifest.xml`). Recordings and project metadata live in
