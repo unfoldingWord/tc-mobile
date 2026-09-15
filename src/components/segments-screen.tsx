@@ -114,9 +114,11 @@ export const SegmentsScreen = forwardRef<
       strings.shareFilename(bookName, chapterNumber)
     );
   }, [audio, share, chapterId, bookName, chapterNumber]);
-  // Tap 2 — hand the armed File to the OS share sheet. `send()` calls
-  // `navigator.share` synchronously inside this gesture; the `.then` runs after
-  // the sheet settles. Close the menu once the flow is done, but NOT on `retry`
+  // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
+  // as its first call inside this gesture (`navigator.share` in a browser, the
+  // Share plugin in the native shell, whose file tap 1 already wrote to the
+  // cache — George R5 P2); the `.then` runs after the sheet settles. Close the
+  // menu once the flow is done, but NOT on `retry`
   // (the File is still armed for another tap) or `failed` (the error Notice
   // lives in the menu and must stay visible).
   const onSendShare = useCallback(() => {

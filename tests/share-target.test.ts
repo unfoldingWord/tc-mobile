@@ -4,6 +4,7 @@ import {
   SHARE_CACHE_DIR,
   SHARE_CHUNK_BYTES,
   type NativeShareBridge,
+  type NativeShareSession,
   type ShareEnvironment,
   createNativeShareSession,
   resolveProvesDelivery,
@@ -60,7 +61,9 @@ const dirOf = (call: BridgeCall | undefined): string =>
 const uriFor = (path: string): string => `file:///data/cache/${path}`;
 
 interface Harness {
-  readonly share: (file: File) => Promise<void>;
+  readonly session: NativeShareSession;
+  /** stage + send — the sequence both callers run, one gesture apart. */
+  readonly share: (file: File, signal?: AbortSignal) => Promise<void>;
   readonly calls: BridgeCall[];
 }
 
@@ -96,7 +99,14 @@ function harness(
       maybeFail("share");
     },
   };
-  return { share: createNativeShareSession(bridge).share, calls };
+  const session = createNativeShareSession(bridge);
+  return {
+    session,
+    share: async (file, signal) => {
+      await session.send(await session.stage(file, signal));
+    },
+    calls,
+  };
 }
 
 /** Re-assemble the bytes the bridge was asked to write, in call order. */
@@ -280,9 +290,12 @@ describe("the native share session", () => {
       },
     };
     const session = createNativeShareSession(bridge);
+    const stageThenSend = async (file: File): Promise<void> => {
+      await session.send(await session.stage(file));
+    };
 
-    const first = session.share(mp3());
-    const second = session.share(zip());
+    const first = stageThenSend(mp3());
+    const second = stageThenSend(zip());
     releaseFirstWrite();
     await Promise.all([first, second]);
 
@@ -294,9 +307,89 @@ describe("the native share session", () => {
       dirOf({ op: "write", path: writePaths[1] })
     );
     // Neither removed anything: the sweep found no aged-out leftovers, and a
-    // completed share is not a pruning candidate until the window passes.
+    // successful share is never removed at all.
     expect(calls.some((call) => call.op === "rmdir")).toBe(false);
     expect(calls.filter((call) => call.op === "share")).toHaveLength(2);
+  });
+
+  it("stops a cancelled write before the sheet, and takes the partial with it", async () => {
+    // George R5 P2. The staging write is the slow half — a book zip in 768 KB
+    // chunks — and it now runs on tap 1, where closing the menu is a normal
+    // thing to do. `reset()` aborts; nothing may reach the OS after that, and
+    // the half-written file must not be left behind.
+    const { session, calls } = harness();
+    const controller = new AbortController();
+    controller.abort();
+
+    const cause = await session
+      .stage(mp3(), controller.signal)
+      .catch((error: unknown) => error);
+
+    expect(cause).toBeInstanceOf(DOMException);
+    expect((cause as DOMException).name).toBe("AbortError");
+    // Aborted before it started: nothing written, nothing offered.
+    expect(calls.some((call) => call.op === "write")).toBe(false);
+    expect(calls.some((call) => call.op === "share")).toBe(false);
+  });
+
+  it("stops a write cancelled between chunks, and removes what it had written", async () => {
+    // The reachable case: the menu closes while a multi-chunk zip is going over
+    // the bridge. The loop must not start another chunk, and the partial file
+    // must not survive as a truncated chapter.
+    const calls: BridgeCall[] = [];
+    const controller = new AbortController();
+    const bridge: NativeShareBridge = {
+      rmdir: async ({ path, recursive }) => {
+        calls.push({ op: "rmdir", path, recursive });
+      },
+      writeFile: async ({ path, data, recursive }) => {
+        calls.push({ op: "write", path, data, recursive });
+        // The translator taps the scrim just as the first chunk lands.
+        controller.abort();
+        return { uri: uriFor(path) };
+      },
+      appendFile: async ({ path, data }) => {
+        calls.push({ op: "append", path, data });
+      },
+      share: async ({ files }) => {
+        calls.push({ op: "share", files });
+      },
+    };
+    const session = createNativeShareSession(bridge);
+    const big = new File(
+      [new Uint8Array(SHARE_CHUNK_BYTES * 3)],
+      "Genesis.zip"
+    );
+
+    await expect(session.stage(big, controller.signal)).rejects.toThrow(
+      DOMException
+    );
+
+    const written = dirOf(calls.find((call) => call.op === "write"));
+    // The first chunk went; the other two never started.
+    expect(calls.some((call) => call.op === "append")).toBe(false);
+    expect(calls.some((call) => call.op === "share")).toBe(false);
+    expect(calls.at(-1)).toEqual({
+      op: "rmdir",
+      path: written,
+      recursive: true,
+    });
+  });
+
+  it("discards a staged file the caller decided never to send", async () => {
+    // What `reset()` and unmount call when a menu closes on an armed share.
+    const { session, calls } = harness();
+    const staged = await session.stage(mp3());
+    expect(calls.some((call) => call.op === "rmdir")).toBe(false);
+
+    await session.discard(staged);
+
+    expect(calls.at(-1)).toEqual({
+      op: "rmdir",
+      path: staged.dir,
+      recursive: true,
+    });
+    expect(calls.some((call) => call.op === "share")).toBe(false);
   });
 
   it("keeps the extension so the OS picks the right target app", async () => {

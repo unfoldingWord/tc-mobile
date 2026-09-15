@@ -182,6 +182,31 @@ export function rowHint(reason: RowReason | null): RowHint | null {
   }
 }
 
+/**
+ * Is the held-take recovery panel mid-operation, so its take must not be
+ * dropped? (George R5 P1.)
+ *
+ * The panel holds the ONLY copy of a take whose decode failed (#165), and
+ * Discard is the one control that destroys it. Two operations must hold it off:
+ * a re-decode (`retrying`), and now a share (`sharing`) — because on the native
+ * route a share is no longer "the OS sheet opens in this gesture". The chunked
+ * cache write runs first, for seconds on a long take, and every chunk returns to
+ * the event loop with the panel mounted and clickable. Two taps in that window
+ * used to delete the recording out from under a share that had not yet reached
+ * the chooser.
+ *
+ * One predicate, used by BOTH the control's `disabled` and the exit guard, for
+ * the reason at the top of this file: a second switch elsewhere is a switch that
+ * falls out of step. `closing` is deliberately NOT an input — it is the exit's
+ * own re-entry latch, not a state the panel can see or show.
+ */
+export function heldTakeIsBusy(i: {
+  readonly retrying: boolean;
+  readonly sharing: boolean;
+}): boolean {
+  return i.retrying || i.sharing;
+}
+
 interface MarkRowInputs {
   readonly hasView: boolean;
   /**

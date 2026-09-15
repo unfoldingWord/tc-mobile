@@ -139,6 +139,11 @@ export const strings = {
   // is in flight — the same in-place busy shape as `loadRetrying` (#137 G2).
   takeRecoverRetrying: "Saving your recording…",
   takeRecoverShare: "Share the recording",
+  // Shown in place of the Share label while the recording is being written out
+  // for the OS share sheet. On the native route the chooser does not open in the
+  // tap — the file goes to the app cache first — so the panel has to say that it
+  // is working, or the translator reads a live panel as a dead button (#336).
+  takeRecoverSharing: "Getting the recording ready…",
   // The share sheet is missing or refused these bytes.
   takeShareUnavailable: "Sharing is not available on this device.",
   takeShareFailed: "Could not share the recording. Try again.",
