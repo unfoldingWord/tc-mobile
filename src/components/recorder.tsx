@@ -1943,10 +1943,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   {mode === "edit" &&
                     idleEditable &&
                     editor.canPaste &&
-                    !editor.selectionActive && (
+                    !editor.selectionActive &&
+                    !audio.playingBuffer && (
                       // The paste marker rides the centerline (mockup 5): tapping it
                       // inserts the clipboard there. stopPropagation so the tap does
                       // not also arm a pan on the stage beneath it.
+                      //
+                      // Gone while a buffer sounds (#284), for the reason Record is
+                      // already dead there: this marker is at a FIXED 50% of the
+                      // stage because it rides the centerline of the pan/zoom
+                      // window, but a "line"/"whole" audition takes the whole-clip
+                      // view — the canvas redraws 0..1 and `playing` suppresses the
+                      // centerline under it — while `onPaste` still inserts at
+                      // `win.centerlineSample`. At the F7 rest the marker would sit
+                      // over the midpoint and paste at the END: a control pointing
+                      // at one sample and acting on another, in a UI for people who
+                      // cannot read. Removing it, rather than disabling it, also
+                      // takes away the false position; Play is one tap from
+                      // bringing it back. (The selection band, its sibling through
+                      // `win`, is kept honest instead by an audition of a picked
+                      // span not swapping the view at all.)
                       <button
                         type="button"
                         className="paste-marker"
@@ -2109,6 +2125,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     }
                     variant="quiet"
                     size={24}
+                    // Frozen while a buffer sounds, exactly as the pan already is
+                    // (#284 / George R2 on the pan): a zoom mid-audition rebuilds
+                    // the window around the centerline under a line that is already
+                    // travelling — for a picked span the band and the audio stay
+                    // aligned, but the sounding region can leave the viewport and
+                    // the playhead simply hides, and for a "line"/"whole" audition
+                    // the whole-clip view means the tap does nothing visible at all
+                    // and only takes effect once the sound stops. Playback is
+                    // listen-only (D4); stopping it is one tap.
+                    disabled={audio.playingBuffer}
                     onClick={() =>
                       setZoom((z) =>
                         z === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE
