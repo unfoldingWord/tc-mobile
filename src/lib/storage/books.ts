@@ -180,6 +180,20 @@ const DELETE_BOOK_STORES = [
 ] as const;
 
 /**
+ * Open the transaction a book delete needs. Strict durability: this removes the
+ * only copy of a whole book of takes (#179). Split out so `DeleteBookTx` is
+ * derived from the call itself and cannot drift from what actually opens — the
+ * same shape `openTakeTx`/`TakeTx` uses above.
+ */
+function openDeleteBookTx(db: IDBPDatabase<TcMobileDb>) {
+  return db.transaction(DELETE_BOOK_STORES, "readwrite", {
+    durability: "strict",
+  });
+}
+
+type DeleteBookTx = ReturnType<typeof openDeleteBookTx>;
+
+/**
  * Delete a book and everything under it — chapters, segments, takes and the
  * audio behind them (#337).
  *
@@ -220,12 +234,44 @@ const DELETE_BOOK_STORES = [
  */
 export async function deleteBook(bookId: BookId): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(
-    DELETE_BOOK_STORES,
-    "readwrite",
-    // Strict durability: this removes the only copy of a whole book of takes.
-    { durability: "strict" }
-  );
+  const tx = openDeleteBookTx(db);
+  try {
+    await deleteBookInTx(tx, bookId);
+    await tx.done;
+  } catch (cause) {
+    // A THROWN error mid-transaction does not roll this back on its own:
+    // IndexedDB auto-commits an inactive transaction unless it is aborted. The
+    // same guard `saveTake` and `commitTranscode` hold — and it matters more
+    // here than anywhere, because the tree deletes are issued BEFORE the clip
+    // deletes. A throw in between (building the reference-count sets, or
+    // anything the idb wrapper raises) would otherwise commit a database in
+    // which the book, its chapters, its segments and its takes are gone while
+    // `clipMeta`/`clipData` still hold their audio — megabytes that nothing can
+    // reach and nothing can free, since this function is the only reclamation
+    // path there is. That is precisely the leak the one-transaction shape
+    // exists to prevent. (A failed *request* already aborts on its own; this
+    // covers the thrown case.)
+    try {
+      tx.abort();
+    } catch {
+      // Already settled — aborted by a request failure, or committed. Nothing
+      // to undo; the original cause below is what the caller needs.
+    }
+    // Observe the aborted transaction's `done` (idb creates it eagerly and it
+    // rejects with AbortError on abort), so it is not an unhandled rejection.
+    await tx.done.catch(() => {});
+    throw cause;
+  }
+}
+
+/**
+ * The walk itself, on a caller-owned transaction.
+ *
+ * Split out so `deleteBook` above is exactly the transaction's lifetime — open,
+ * run, commit, or abort — and the abort guard cannot be bypassed by an early
+ * return added to the walk later.
+ */
+async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   const books = tx.objectStore("books");
   const chapters = tx.objectStore("chapters");
   const segments = tx.objectStore("segments");
@@ -277,8 +323,6 @@ export async function deleteBook(bookId: BookId): Promise<void> {
     await tx.objectStore("clipMeta").delete(clipId);
     await tx.objectStore("clipData").delete(clipId);
   }
-
-  await tx.done;
 }
 
 // ── Chapters ─────────────────────────────────────────────────────────────

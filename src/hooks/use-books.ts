@@ -61,6 +61,18 @@ async function loadBookCard(book: Book): Promise<BookCard> {
 type DeleteBookResult = "ok" | "failed" | "busy";
 
 /**
+ * The hook's single error slot: the message, and whether it came from a delete.
+ *
+ * One state, not two, so the label and the message it labels cannot drift apart
+ * — a delete's copy must never outlive the error it describes, and a later
+ * failure from any other mutation must take the label off (George R1 P2-2).
+ */
+interface Failure {
+  readonly message: string;
+  readonly fromDelete: boolean;
+}
+
+/**
  * The Books screen (B2): the book/chapter tree and its two creation actions.
  *
  * Expand/collapse is per-viewer UI state and stays in the component; this hook
@@ -75,20 +87,23 @@ export function useBooks() {
   // by a failed create — so only this distinguishes "a genuinely empty shelf"
   // from "a read that never succeeded" for the caller's empty-vs-retry choice.
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  /**
+   * The generation a load must still belong to for its result to be applied.
+   *
+   * `cancelled` in the load effect below is NOT enough on its own: it flips in
+   * an effect cleanup, which React runs after paint, so between a mutation
+   * committing and that cleanup there is a window in which a load started
+   * BEFORE the write can resolve and write its pre-write snapshot over the
+   * shelf — putting a just-deleted book back, with its chapters already gone
+   * underneath it (George R3 P1). A ref moves that invalidation into the same
+   * synchronous step as the write. Bumped by `reload()`, so every path that
+   * asks for a re-read also invalidates whatever was already in flight.
+   */
+  const loadGen = useRef(0);
   /** True while a book delete is in flight — the confirm dialog's `busy`. */
   const [deleting, setDeleting] = useState(false);
-  /**
-   * Whether the CURRENT `error` came from a delete, so the screen can speak it
-   * in words a translator can act on instead of the store's message.
-   *
-   * It is a label on `error`, never a second source of truth: `report` below is
-   * the one switch that sets both, so the flag cannot outlive the error it
-   * describes, and a later failure from any other mutation takes the label off
-   * again. There is no second switch to fall out of step (George R1 P2).
-   */
-  const [deleteFailed, setDeleteFailed] = useState(false);
   /**
    * The live in-flight guard, readable synchronously.
    *
@@ -108,28 +123,43 @@ export function useBooks() {
    */
   const report = useCallback((cause: unknown, fromDelete = false): void => {
     if (cause === null) {
-      setError(null);
-      setDeleteFailed(false);
+      setFailure(null);
       return;
     }
-    setError(cause instanceof Error ? cause.message : String(cause));
-    setDeleteFailed(fromDelete);
+    setFailure({
+      message: cause instanceof Error ? cause.message : String(cause),
+      fromDelete,
+    });
   }, []);
 
   useEffect(() => {
+    // Captured synchronously, before the first await, so this load knows which
+    // generation it belongs to.
+    const gen = loadGen.current;
     let cancelled = false;
     void (async () => {
+      // Superseded: a reload or a delete has happened since this load started,
+      // so its snapshot describes a database state that is no longer true.
+      // Checked alongside `cancelled` because `cancelled` alone flips too late
+      // (see `loadGen`).
+      const stale = () => cancelled || gen !== loadGen.current;
       try {
         const cards = await loadBookCards();
-        if (cancelled) return;
+        if (stale()) return;
         setBooks(cards);
-        report(null);
+        // A successful read clears a standing load or mutation error — the
+        // shelf it just drew IS the truth. It must NOT clear a DELETE failure:
+        // the delete's failure path re-arms this very load (so the shelf still
+        // refreshes), and clearing here would race that error off the screen
+        // every time, leaving a book that is still on disk with no signal that
+        // removing it failed (George R3 P1 scenario B).
+        setFailure((prev) => (prev?.fromDelete ? prev : null));
         setLoaded(true);
       } catch (cause) {
-        if (cancelled) return;
+        if (stale()) return;
         report(cause);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!stale()) setLoading(false);
       }
     })();
     return () => {
@@ -137,7 +167,13 @@ export function useBooks() {
     };
   }, [reloadToken, report]);
 
-  const reload = useCallback(() => setReloadToken((t) => t + 1), []);
+  const reload = useCallback(() => {
+    // Invalidate anything already in flight in the SAME synchronous step, then
+    // ask for the new read. Doing only the latter is what let a pre-write
+    // snapshot land after the write (George R3 P1).
+    loadGen.current += 1;
+    setReloadToken((t) => t + 1);
+  }, []);
 
   const createBook = useCallback(async (): Promise<Book | null> => {
     // Auto-named from the count on disk (race-safe in storage), not from the
@@ -193,6 +229,10 @@ export function useBooks() {
       if (deletingRef.current) return "busy";
       deletingRef.current = true;
       setDeleting(true);
+      // Clear at the START of the op, as `useEraseSegment` does: a Notice from
+      // the previous attempt must not stand over an attempt that is running
+      // now, and must not survive into a success (George R3 P2-2).
+      report(null);
       try {
         await deleteBookFromStore(bookId);
         // Drop the row in the SAME turn the store commits, THEN reload for
@@ -206,7 +246,14 @@ export function useBooks() {
         // P2-1). This is `eraseRow`'s model, one screen up: patch what we know
         // changed, then re-read.
         setBooks((prev) => prev.filter((b) => b.bookId !== bookId));
+        // `reload()` bumps `loadGen` first, so a load that started before this
+        // delete can no longer apply its pre-delete snapshot over the filtered
+        // shelf — the resurrection in George R3 P1 scenario A.
         reload();
+        // Explicit, not merely implied by the follow-up read: the delete
+        // succeeded, so a Notice from an earlier failed attempt comes down now
+        // rather than whenever `loadBookCards` happens to resolve.
+        report(null);
         return "ok";
       } catch (cause) {
         // Never swallowed: the reason reaches `error` for a maintainer reading
@@ -215,6 +262,15 @@ export function useBooks() {
         // `performErase`.
         console.error("Deleting a book failed", cause);
         report(cause, true);
+        // Re-arm the read even though nothing was deleted. A load that started
+        // before this attempt is now invalidated by `reload()`'s generation
+        // bump — without that, its `setFailure(null)` would clear this very
+        // error and leave a book still on disk with no signal that removing it
+        // failed. Re-arming rather than only invalidating means a refresh
+        // another mutation had asked for is not silently dropped. The new
+        // load's success cannot clear this error: it preserves a delete failure
+        // by design (see the load effect).
+        reload();
         return "failed";
       } finally {
         // Releases the guard rather than dropping state, so it is safe in
@@ -230,8 +286,10 @@ export function useBooks() {
     books,
     loading,
     loaded,
-    error,
-    deleteFailed,
+    // Derived from the one failure slot, so the message and its delete label
+    // are always the same failure's.
+    error: failure?.message ?? null,
+    deleteFailed: failure?.fromDelete ?? false,
     reload,
     createBook,
     addChapter,
