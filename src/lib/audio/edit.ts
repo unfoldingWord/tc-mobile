@@ -21,6 +21,27 @@ export function clampRange(range: SampleRange, length: number): SampleRange {
   };
 }
 
+/**
+ * Would this range actually take any audio? The one "is anything selected?"
+ * predicate, shared by everything that acts on a span.
+ *
+ * Selection edges are floats — pointer geometry, and a keyboard nudge of
+ * `visibleSamples / 400` — while every consumer TRUNCATES its indices: `slice`
+ * for a cut, `subarray` for an audition. So comparing the two floats asks the
+ * wrong question, and asking it let the controls disagree with each other and
+ * with the audio: on a span living inside one sample, Play went inert while Cut
+ * stayed live and applied an empty cut, which advances the undo log and
+ * REPLACES the chapter-wide clipboard with an empty buffer (Frank R3). `!(a > b)`
+ * rather than `<=` so a non-finite edge — which `start === end` let through,
+ * `NaN === NaN` being false — is rejected too.
+ *
+ * Takes an already-NORMALISED range: every call site clamps with `clampRange`
+ * first, which is also what orders a reversed span.
+ */
+export function spansWholeSample(range: SampleRange): boolean {
+  return Math.trunc(range.end) > Math.trunc(range.start);
+}
+
 /** Copy the samples inside `range`. Used for both copy and the cut clipboard. */
 export function sliceRange(
   samples: Int16Array,
