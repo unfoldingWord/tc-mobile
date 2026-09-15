@@ -192,8 +192,13 @@ export const strings = {
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
   // hand. Short and literal, like `previewUnavailable`.
   // Names both steps in the order the overlay allows — while this menu is open
-  // the recorder sheet is inert, so the sheet's control is out of reach until the
-  // menu closes — and names them by the accessible names those two controls
+  // the sheet's control is behind the scrim (and, at idle, behind its `inert`
+  // too), so it is out of reach until the menu closes. Mid-take the sheet is no
+  // longer inert (#75), so AT can reach the header Back while the menu is up —
+  // but that Back dismisses the MENU rather than saving (`close()` refuses while
+  // an overlay is up), so the two steps this cue names are still the way to
+  // save. The order is what matters, and it is unchanged. Named by the
+  // accessible names those two controls
   // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu
