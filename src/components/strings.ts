@@ -52,6 +52,10 @@ export const strings = {
   // thing a non-reader has to understand is that the filled-in text is already
   // a usable answer.
   newBookTitle: "Name your new book",
+  // The New Book dialog's dismiss control. NOT `menuClose` ("Close menu"): this
+  // panel is a naming dialog, and the one thing its exit has to say is that
+  // leaving here creates nothing.
+  newBookClose: "Close without creating a book",
   // The same check control, on the New Book dialog. NOT `saveName`: nothing is
   // being saved back onto an existing book here — this activation is what
   // creates it, and the spoken label is the only thing that says so.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addChapter as addChapterToBook,
@@ -24,24 +24,10 @@ import type { BookCard, ChapterRow } from "@/types/view";
  * The per-chapter counts come from `chapterProgress`, which counts segment
  * status only — never clip bytes — so building this screen stays cheap even
  * when a book holds many recorded chapters.
- *
- * The New Book placeholder rides along (#314). It is derived from the SAME
- * `listBooks()` the shelf is rendered from, so it costs no extra read and it
- * describes exactly the shelf the translator is looking at. Deriving it here,
- * rather than reading it on the `+` tap, is what lets the dialog open
- * synchronously: an `await` between the tap and the dialog leaves the shelf live
- * and un-`inert` for that window, long enough for a second menu to open
- * underneath the one about to appear (George R1 P2-1).
  */
-async function loadBookCards(): Promise<{
-  cards: BookCard[];
-  newBookPlaceholder: string;
-}> {
+async function loadBookCards(): Promise<BookCard[]> {
   const books = await listBooks();
-  return {
-    cards: await Promise.all(books.map(loadBookCard)),
-    newBookPlaceholder: nextBookName(books.map((b) => b.name)),
-  };
+  return Promise.all(books.map(loadBookCard));
 }
 
 async function loadBookCard(book: Book): Promise<BookCard> {
@@ -197,13 +183,6 @@ type CreateBookOutcome =
  */
 export function useBooks() {
   const [books, setBooks] = useState<BookCard[]>([]);
-  // The name a blank New Book confirm would be given, from the last shelf read.
-  // "Book 001" until the first read lands — which is also the right answer for
-  // the empty shelf that read will report. The dialog cannot be opened before
-  // then anyway: `+` is disabled while `loading`.
-  const [newBookPlaceholder, setNewBookPlaceholder] = useState(() =>
-    nextBookName([])
-  );
   const [loading, setLoading] = useState(true);
   // Latches true on the first read that completes without throwing. `loading`
   // can't stand in — `reload()` never flips it back on — so only this
@@ -267,11 +246,9 @@ export function useBooks() {
       // (see `loadGen`).
       const stale = () => cancelled || gen !== loadGen.current;
       try {
-        const { cards, newBookPlaceholder: placeholder } =
-          await loadBookCards();
+        const cards = await loadBookCards();
         if (stale()) return;
         setBooks(cards);
-        setNewBookPlaceholder(placeholder);
         // THE LOAD NEVER TOUCHES A STANDING DELETE FAILURE — in either
         // direction. Success clears a load or mutation error, because the shelf
         // it just drew IS the truth; it must not clear a delete failure,
@@ -313,6 +290,21 @@ export function useBooks() {
     setReloadToken((t) => t + 1);
   }, []);
 
+  /**
+   * The name a blank New Book confirm would be given, for the dialog to pre-fill
+   * its field with (#314).
+   *
+   * Derived from `books` rather than held as its own state, so it cannot lag the
+   * shelf by a render: the optimistic insert below moves both in one commit, and
+   * a second `+` immediately after a create offers the NEXT name rather than the
+   * one just taken (George R2 P2-1). Same pure function the store's own fallback
+   * uses, over the same names, so the field shows what a blank confirm writes.
+   */
+  const newBookPlaceholder = useMemo(
+    () => nextBookName(books.map((b) => b.name)),
+    [books]
+  );
+
   const createBook = useCallback(
     async (name: string): Promise<CreateBookOutcome> => {
       // The name comes from the New Book field (#314). A blank one falls back to
@@ -327,6 +319,21 @@ export function useBooks() {
       try {
         const book = await createBookInStore(name);
         report(null); // a successful write clears the slot — see `deleteBook`
+        // Put the row on the shelf in THIS turn, before `reload()`'s async read
+        // lands. The New Book dialog unmounts on success, and every contract it
+        // hands off to keys on `books`: `showEmpty` would otherwise re-raise the
+        // "start your first book" invite — with a live CTA — over a shelf that
+        // now has a book on it, a second Confirm there writing a second book
+        // that cannot be deleted on this tree; and the screen's scroll/focus
+        // effect could not run at all, leaving focus on the document (George R2
+        // P2-1). Prepended because `listBooks` sorts by `updatedAt` and this is
+        // the newest, so the optimistic order is the order the reload confirms.
+        // `reload()` stays as the reconciliation that fills in anything this
+        // synthesised card cannot know.
+        setBooks((prev) => [
+          { bookId: book.id, name: book.name, chapters: [] },
+          ...prev,
+        ]);
         reload();
         return { ok: true, book };
       } catch (cause) {
