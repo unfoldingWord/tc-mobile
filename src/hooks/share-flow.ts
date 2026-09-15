@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  capacitorShareBridge,
+  readShareEnvironment,
+  selectShareRoute,
+  shareFileNatively,
+} from "./share-target";
+
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
  *
@@ -8,6 +15,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * about the flow is the same, so it lives here once: the iOS user-activation
  * contract, the run-generation token, and the two re-entry guards. Each caller is
  * a thin wrapper that supplies a {@link BuildShareFile} and its own strings.
+ *
+ * WHAT the file is handed to is `share-target.ts`: the Web Share API in a
+ * browser, or Capacitor's Share plugin inside the native shell, where the
+ * WebView may expose no Web Share at all (#336). The flow below is the same
+ * either way; only the two gates and the one call at the end consult the route.
  *
  * Why two gestures. iOS grants a tap a short user-activation window and revokes
  * it the moment the call stack awaits. Encoding walks IndexedDB and runs a
@@ -165,9 +177,10 @@ export function useShareFlow(): UseShareFlow {
     if (preparingRef.current || fileRef.current !== null) return;
     // Fail before the encode, not after: a browser with no Web Share should not
     // pay for a whole encode only to be told it cannot share it. The file-level
-    // `canShare` still runs post-encode (it needs the File), but the capability
-    // itself is knowable now (George R-B7).
-    if (typeof navigator.share !== "function") {
+    // check still runs post-encode (it needs the File), but the capability
+    // itself is knowable now (George R-B7). Inside the native shell there is
+    // nothing to fail on — the plugin needs no Web Share (#336).
+    if (selectShareRoute(readShareEnvironment(), null) === "unsupported") {
       setError("failed");
       return;
     }
@@ -202,11 +215,10 @@ export function useShareFlow(): UseShareFlow {
         return;
       }
       const { file } = prepared;
-      const canShareFiles =
-        typeof navigator.share === "function" &&
-        (typeof navigator.canShare !== "function" ||
-          navigator.canShare({ files: [file] }));
-      if (!canShareFiles) {
+      // The browser may still refuse this particular File — Android Chrome's
+      // Web Share allowlist has no `application/zip`, which is #272. The native
+      // route does not consult that gate at all; see `selectShareRoute`.
+      if (selectShareRoute(readShareEnvironment(), file) === "unsupported") {
         setError("failed");
         setStatus("idle");
         return;
@@ -251,14 +263,30 @@ export function useShareFlow(): UseShareFlow {
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
-    // `navigator.share` is invoked synchronously here: an async function runs to
-    // its first await, and this call IS that boundary, so no work precedes it and
-    // the tap's user activation is still valid. Pass ONLY `files`: adding `title`
-    // alongside a file is a known iOS share-target bug where some apps
-    // (WhatsApp/Signal) take the title and drop the file while `share` still
-    // resolves — the File already carries its name (George R-B7).
+    // Route chosen SYNCHRONOUSLY, so the web branch below is still the first
+    // await in this function and the tap's user activation is intact when
+    // `navigator.share` runs. Reading the environment and branching are plain
+    // calls; neither yields.
+    const route = selectShareRoute(readShareEnvironment(), file);
     try {
-      await navigator.share({ files: [file] });
+      if (route === "native") {
+        // The native share sheet does NOT need user activation: the chooser is
+        // started by the plugin as an Android Intent / a UIActivityViewController,
+        // not by the WebView, so the awaits inside (write the cache file, then
+        // share) cost nothing here. That is only true on this branch — the web
+        // branch's contract is unchanged, and the whole two-gesture flow exists
+        // for it.
+        await shareFileNatively(file, capacitorShareBridge);
+      } else {
+        // `navigator.share` is invoked synchronously here: an async function runs
+        // to its first await, and this call IS that boundary, so no work precedes
+        // it and the tap's user activation is still valid. Pass ONLY `files`:
+        // adding `title` alongside a file is a known iOS share-target bug where
+        // some apps (WhatsApp/Signal) take the title and drop the file while
+        // `share` still resolves — the File already carries its name (George
+        // R-B7).
+        await navigator.share({ files: [file] });
+      }
       // Shared. If a newer run has taken over (a `reset` while the sheet was open
       // bumped the token and may have armed a NEW File), leave its state alone AND
       // tell the caller `superseded` so it does not close/reset over the new run
