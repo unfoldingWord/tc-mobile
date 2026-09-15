@@ -14,12 +14,14 @@
  * is not a gain on the audio — making the capture itself louder is #359, a
  * different remedy to the same symptom, and the two are independent.
  *
- * Nothing is fitted while the take is still being made. The VU meter, the live
- * capture scope and the drawn waveform all stay at absolute level for as long
- * as a take is in flight: absolute level has to keep reading as absolute level
- * while there is still something the translator could do about it, or a
- * genuinely too-quiet microphone becomes invisible (#359). The fit lands once,
- * when the take is committed — see `takeInFlight` below.
+ * A take that has never been committed is not fitted while it is still being
+ * made. The VU meter, the live capture scope and this drawer all keep a first
+ * take at absolute level until it is stopped: absolute level has to keep
+ * reading as absolute level while there is still something the translator could
+ * do about it, or a genuinely too-quiet microphone becomes invisible (#359).
+ * Audio that IS committed stays fitted throughout, including while a punch-in
+ * records over it — see `firstTakeInFlight` below for why the distinction is
+ * exactly there and not one step wider.
  */
 
 import type { Peaks } from "@/types/audio";
@@ -65,6 +67,32 @@ export const DISPLAY_TARGET_PEAK = 0.9;
 export const MAX_DISPLAY_GAIN = 20;
 
 /**
+ * Whether the canvas is showing a take that has nothing committed behind it and
+ * is still being made — the one state the display fit is suppressed in.
+ *
+ * Both halves matter, and the second is the one a reader will be tempted to
+ * drop:
+ *
+ *   - `capturing` alone is too wide. A punch-in is capturing, but what it draws
+ *     is the segment's ALREADY COMMITTED audio: the new recording is not
+ *     spliced into the working buffer until close, so the canvas is the stored
+ *     clip the translator is aiming at. Un-fitting that is #358's own complaint
+ *     at the worst possible moment (George R2 P2).
+ *   - `!hasCommittedAudio` alone is too wide the other way: an idle segment
+ *     with no audio draws the dotted never-recorded rule, and a committed take
+ *     at idle must of course be fitted.
+ *
+ * Lives here rather than inline in the recorder because it is the whole of the
+ * decision, and nothing in `tests/` can mount a canvas to check it there.
+ */
+export function isFirstTakeInFlight(
+  capturing: boolean,
+  hasCommittedAudio: boolean
+): boolean {
+  return capturing && !hasCommittedAudio;
+}
+
+/**
  * The loudest excursion in `peaks`, either side of the centreline, in [0, 1].
  *
  * Both arrays are searched because speech is asymmetric: fitting to `max`
@@ -100,23 +128,27 @@ function loudestPeak(peaks: Peaks): number {
  * recompute the same number, and the waveform never breathes under the
  * translator's finger.
  *
- * `takeInFlight` is the recorder's "a take is being made right now" — recording
- * or paused. It forces 1, and it is not a nicety. The recorder swaps what is on
- * the stage several times mid-take: a paused FIRST take with a decoded preview
- * unmounts the live scope and mounts the stored-peaks drawer instead
+ * `firstTakeInFlight` is narrow on purpose: a take being made (recording or
+ * paused) on a segment that has **no committed audio yet**. It forces 1, and it
+ * is not a nicety. A paused first take whose Play decode has landed unmounts the
+ * live scope and mounts this drawer on the decoded preview instead
  * (`recorder.tsx`'s `previewShown`), and Resume swaps it straight back. Without
  * this the same in-flight take would jump from a thin absolute line to a
  * full-height fitted one at Pause+Play and collapse again on Resume — the
  * quiet-microphone-looks-healthy failure this module is careful not to cause,
- * arriving through the one path that is not the live scope (George R1 P2). A
- * punch-in has the same shape: appending a loud phrase swaps the peaks object,
- * which would re-fit the whole take and shrink the speech already recorded
- * (George R1 P3). One rule — absolute in flight, fitted once committed —
- * removes both, and the re-fit still lands the moment the take is stopped.
+ * arriving through the one path that is not the live scope (George R1 P2).
+ *
+ * It is deliberately NOT "a take is in flight". A punch-in draws the segment's
+ * ALREADY COMMITTED audio while capturing — `working` does not grow until the
+ * new recording is spliced at close — so treating that canvas as in-flight
+ * would collapse the stored speech to a tenth of the lane at the exact moment
+ * the translator is aiming at the centreline with it, and pop it back at Back.
+ * That is #358's own complaint, reintroduced on the insert path (George R2 P2).
+ * Committed audio stays fitted through Record, Pause and Resume.
  *
  * Four cases, in order:
  *
- *   - **The take is still in flight.** 1.
+ *   - **An uncommitted first take is still in flight.** 1.
  *   - **No peaks, or digital silence.** 1. There is no loudest point to fit to,
  *     and returning the cap would be a divide by zero wearing a number.
  *   - **Already at or above the target.** 1. The gain never ATTENUATES; a take
@@ -132,9 +164,9 @@ function loudestPeak(peaks: Peaks): number {
  */
 export function displayGain(
   peaks: Peaks | null,
-  takeInFlight: boolean
+  firstTakeInFlight: boolean
 ): number {
-  if (takeInFlight) return 1;
+  if (firstTakeInFlight) return 1;
   if (!peaks) return 1;
 
   const peak = loudestPeak(peaks);

@@ -36,6 +36,19 @@ interface WaveformProps {
    */
   capturing?: boolean;
   /**
+   * A take is being made on a segment with NO committed audio yet — the paused
+   * first take whose decoded preview this canvas draws while `LiveScope` is
+   * unmounted (#101). It suppresses the #358 display fit, so that preview reads
+   * at the same absolute level as the scope it replaced and Resume does not
+   * collapse it again (George R1 P2).
+   *
+   * Narrower than `capturing` on purpose. A punch-in draws the segment's already
+   * committed audio while recording, and un-fitting THAT is the #358 complaint
+   * all over again at the moment the translator is aiming at the centreline
+   * (George R2 P2). A row never sets it; a stored take is always fitted.
+   */
+  firstTakeInFlight?: boolean;
+  /**
    * A finished row repaints in the green (`--s-done`) role. The stroke colour
    * still comes from the inherited `--c-wave-stroke` (remapped by
    * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
@@ -64,6 +77,7 @@ export function Waveform({
   view = null,
   finished = false,
   capturing = false,
+  firstTakeInFlight = false,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -133,13 +147,12 @@ export function Waveform({
     // 400 buckets in the recorder, 120 in a row — one extra pass over what the
     // draw loop below already walks.
     //
-    // `capturing` (recording or paused) suppresses the fit: while a take is in
-    // flight this canvas draws at absolute level, exactly like `LiveScope` and
-    // the VU meter, so the recorder's mid-take stage swaps — the paused
-    // first-take preview, a punch-in's merged buffer — cannot re-fit a take that
-    // is still being made and then un-fit it on Resume (George R1 P2/P3). A row
-    // never sets `capturing`, so a stored take is always fitted.
-    const gain = displayGain(peaks, capturing);
+    // `firstTakeInFlight` — NOT `capturing` — suppresses the fit, so an
+    // uncommitted take reads at the same absolute level as the `LiveScope` this
+    // canvas replaces mid-take, while committed audio that a punch-in is
+    // recording over stays fitted and aimable (George R1 P2, R2 P2; the prop's
+    // docblock carries both failures).
+    const gain = displayGain(peaks, firstTakeInFlight);
     ctx.fillStyle = stroke;
     if (view) {
       // A bucket's fraction of the clip maps to a screen x by where the visible
@@ -170,7 +183,21 @@ export function Waveform({
     // `finished` is in the deps for its side effect only: it changes with the
     // `.row--finished` class, so listing it re-runs this draw (which re-reads
     // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
-  }, [peaks, playing, recorded, height, view, finished, capturing]);
+    // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on
+    // the Record and Back edges without `peaks` changing — the whole point of
+    // the flag is that the same peaks draw at a different scale either side of
+    // it, so a stale deps array would leave the canvas at the old scale until
+    // something else happened to invalidate it.
+  }, [
+    peaks,
+    playing,
+    recorded,
+    height,
+    view,
+    finished,
+    capturing,
+    firstTakeInFlight,
+  ]);
 
   return (
     <canvas

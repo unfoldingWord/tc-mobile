@@ -4,6 +4,7 @@ import {
   DISPLAY_TARGET_PEAK,
   MAX_DISPLAY_GAIN,
   displayGain,
+  isFirstTakeInFlight,
 } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import { INT16_MAX } from "@/lib/audio/format";
@@ -138,36 +139,64 @@ describe("displayGain", () => {
     expect(displayGain(peaks, false)).toBeCloseTo(DISPLAY_TARGET_PEAK / 0.1, 6);
   });
 
-  it("does not fit a take that is still in flight", () => {
-    // George R1 P2. While a take is being made, the drawn waveform stays at
-    // absolute level — the same rule the live scope and the VU meter follow, so
-    // a microphone capturing far too quietly cannot be made to look healthy by
-    // the display while there is still something to do about it.
+  it("does not fit an uncommitted take that is still in flight", () => {
+    // George R1 P2. A paused first take's decoded preview is drawn by the same
+    // canvas that replaced the live scope, so it stays at absolute level — the
+    // rule the scope and the VU meter follow — and Resume, which swaps the
+    // scope back, does not collapse a full-height waveform to a thin line.
     const peaks = peaksWithPeak(0.1);
     expect(displayGain(peaks, true)).toBe(1);
-    // ...and the very same peaks ARE fitted once the take is no longer in
-    // flight. Both states, not just the firing one.
+    // ...and the very same peaks ARE fitted once nothing is in flight. Both
+    // states, not just the firing one.
     expect(displayGain(peaks, false)).toBeCloseTo(9, 6);
   });
 
-  it("holds the in-flight rule at every level, including ones the cap would decide", () => {
+  it("holds the uncommitted-in-flight rule at every level, including ones the cap would decide", () => {
     // The gate must not be reachable only through the fit branch: silence, a
-    // capped near-silence and a full-scale take all stay at 1 in flight, so no
-    // input level can smuggle a re-fit into the middle of a take.
+    // capped near-silence and a full-scale take all stay at 1, so no input
+    // level can smuggle a re-fit into the middle of a first take.
     for (const peak of [0, 0.002, 0.045, 0.1, 0.5, 1]) {
       expect(displayGain(peaksWithPeak(peak), true)).toBe(1);
     }
   });
 
-  it("leaves an in-flight take's peaks untouched even when they change mid-take", () => {
-    // The punch-in case (George R1 P3 #2): appending a loud phrase to a quiet
-    // take swaps the peaks object the recorder draws, which would otherwise
-    // re-fit the whole take to the new, louder peak and visibly shrink the
-    // speech that was already there. In flight, both draw at 1.
-    const quiet = peaksWithPeak(0.1);
-    const afterLoudInsert = peaksWithPeak(0.5);
-    expect(displayGain(quiet, true)).toBe(1);
-    expect(displayGain(afterLoudInsert, true)).toBe(1);
+  it("suppresses the fit for exactly one of the four recorder states", () => {
+    // The whole of the split, in both states of both inputs. The row that
+    // earned this table is the last one: a punch-in IS capturing, and gating on
+    // that alone un-fits the committed clip the translator is aiming at
+    // (George R2 P2).
+    const table: ReadonlyArray<[boolean, boolean, boolean]> = [
+      // capturing, hasCommittedAudio, suppress the fit
+      [false, false, false], // idle, never recorded — the dotted rule
+      [false, true, false], // idle with a take — fitted, the #358 fix
+      [true, false, true], // FIRST take in flight — absolute, like the scope
+      [true, true, false], // punch-in over committed audio — stays fitted
+    ];
+    for (const [capturing, hasCommittedAudio, expected] of table) {
+      expect([
+        capturing,
+        hasCommittedAudio,
+        isFirstTakeInFlight(capturing, hasCommittedAudio),
+      ]).toEqual([capturing, hasCommittedAudio, expected]);
+    }
+  });
+
+  it("keeps committed audio fitted while a punch-in records over it", () => {
+    // George R2 P2, and the reason the flag is `firstTakeInFlight` rather than
+    // "a take is in flight". During a punch-in the canvas shows the segment's
+    // ALREADY STORED clip — `working` does not grow until the new recording is
+    // spliced at close — so un-fitting it would shrink the translator's only
+    // view of what they are aiming at, at the moment they are aiming, and pop
+    // it back at Back. The same peaks are drawn at Record, at Pause, on Resume
+    // and at idle, and every one of them is the fitted gain.
+    const committed = peaksWithPeak(0.1);
+    const fitted = displayGain(committed, false);
+    expect(fitted).toBeCloseTo(9, 6);
+    // Every stage of a punch-in draws committed audio: `firstTakeInFlight` is
+    // false throughout, so there is one gain and no jump.
+    for (const stage of ["idle", "recording", "paused", "closing"]) {
+      expect([stage, displayGain(committed, false)]).toEqual([stage, fitted]);
+    }
   });
 
   it("fits peaks taken from a real quiet PCM buffer", () => {
