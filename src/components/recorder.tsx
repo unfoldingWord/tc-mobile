@@ -27,10 +27,9 @@ import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { classifyShareError } from "@/hooks/share-flow";
 import {
-  capacitorShareBridge,
+  nativeShare,
   readShareEnvironment,
   selectShareRoute,
-  shareFileNatively,
 } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
@@ -1388,7 +1387,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setHeldSharing(true);
       const handedOver =
         route === "native"
-          ? shareFileNatively(file, capacitorShareBridge)
+          ? nativeShare.share(file)
           : navigator.share({ files: [file] });
       void handedOver.then(
         () => {

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  capacitorShareBridge,
+  nativeShare,
   readShareEnvironment,
   selectShareRoute,
-  shareFileNatively,
 } from "./share-target";
 
 /**
@@ -276,7 +275,7 @@ export function useShareFlow(): UseShareFlow {
         // share) cost nothing here. That is only true on this branch — the web
         // branch's contract is unchanged, and the whole two-gesture flow exists
         // for it.
-        await shareFileNatively(file, capacitorShareBridge);
+        await nativeShare.share(file);
       } else {
         // `navigator.share` is invoked synchronously here: an async function runs
         // to its first await, and this call IS that boundary, so no work precedes

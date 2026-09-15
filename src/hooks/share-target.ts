@@ -23,8 +23,22 @@ import { Share } from "@capacitor/share";
  * on a phone.
  */
 
-/** The directory, under the OS cache, that holds the file being shared. */
+/** The directory, under the OS cache, that holds the files being shared. */
 export const SHARE_CACHE_DIR = "tc-mobile-share";
+
+/**
+ * How many completed shares keep their file before the oldest is removed.
+ *
+ * A share sheet gives no signal that the receiving app has finished reading the
+ * file — `Share.share` resolves when the chooser activity returns, which can be
+ * well before Drive has uploaded what it was handed. So the lifetime is
+ * measured in user actions rather than in milliseconds: a directory is removed
+ * only once {@link SHARE_RETAINED} further shares have each been prepared,
+ * offered, and dismissed. Two is not enough to be comfortable and ten is
+ * hoarding; three bounds the cache at three shares while putting two complete
+ * round trips between a hand-off and its cleanup.
+ */
+export const SHARE_RETAINED = 3;
 
 /**
  * How much of the file crosses the bridge at a time.
@@ -58,7 +72,7 @@ export interface ShareEnvironment {
 }
 
 /**
- * The plugin calls {@link shareFileNatively} makes, as an injected boundary so
+ * The plugin calls a {@link NativeShareSession} makes, as an injected boundary so
  * the assembly around them is testable in plain Node. Mirrors the Capacitor
  * plugin signatures minus the parts this module fixes (`Directory.Cache`).
  */
@@ -115,52 +129,99 @@ export function readShareEnvironment(): ShareEnvironment {
   };
 }
 
+/** Hands prepared Files to the OS share sheet, and owns the cache they sit in. */
+export interface NativeShareSession {
+  /**
+   * Write the File into the app cache and offer it to the OS share sheet.
+   *
+   * **User activation is irrelevant here** — the chooser is started by the
+   * plugin as an Android Intent / a `UIActivityViewController`, not by the
+   * WebView, so none of the awaits inside cost anything the way they would on
+   * the Web Share path. `share-flow.ts`'s two-gesture contract exists for that
+   * path and is unchanged.
+   */
+  share(file: File): Promise<void>;
+}
+
 /**
- * Hand a prepared File to the OS through the native share sheet.
+ * A share session over one bridge.
  *
- * Write it into the app's own cache, share the resulting `file://` URI, and
- * leave the cache clean. **User activation is irrelevant here** — the chooser is
- * started by the plugin as an Android Intent / a `UIActivityViewController`, not
- * by the WebView, so none of the awaits below cost anything the way they would
- * on the Web Share path. `share-flow.ts`'s two-gesture contract exists for that
- * path and is unchanged.
+ * The cache lifetime lives here rather than in module variables so that two
+ * callers cannot get two different views of it, and so a test gets a clean one
+ * per case instead of whatever the previous case left behind.
+ *
+ * **Every share gets its own directory.** That is what makes concurrent shares
+ * safe — Share Chapter and the recorder's held-take rescue can be in flight at
+ * once, and neither can write over or delete the other's bytes (Frank R2 P2).
+ * Nothing in the active path removes a directory other than its own, and a
+ * completed share's file is removed only once {@link SHARE_RETAINED} further
+ * shares have finished, never the moment the chooser returns — `Share.share`
+ * resolves when the chooser activity returns, which can be before the receiving
+ * app has read what it was handed (Frank R2 P1). For the held-take rescue those
+ * may be the only surviving bytes of a recording.
  */
-export async function shareFileNatively(
-  file: File,
+export function createNativeShareSession(
   bridge: NativeShareBridge
-): Promise<void> {
-  const path = `${SHARE_CACHE_DIR}/${cacheFilename(file.name)}`;
-  // Clear the PREVIOUS share, not this one. Deleting the file the moment the
-  // chooser returns would race a target app that reads the content URI after
-  // its activity finishes (Drive queues the upload), so the cleanup is deferred
-  // to the next share instead — one file at a time, in an OS-reclaimable cache.
-  await clearShareCache(bridge);
-  let uri: string;
-  try {
-    // `writeFile` truncates, so re-sharing the same chapter overwrites rather
-    // than appending to what a previous run left: the whole sequence is safely
-    // re-runnable.
-    const first = await readChunkBase64(file, 0);
-    uri = (await bridge.writeFile({ path, data: first, recursive: true })).uri;
-    for (let at = SHARE_CHUNK_BYTES; at < file.size; at += SHARE_CHUNK_BYTES) {
-      await bridge.appendFile({ path, data: await readChunkBase64(file, at) });
-    }
-  } catch (cause) {
-    // Nothing reached the OS, so there is no reader to race: drop the partial
-    // file now rather than leave a truncated chapter in the cache.
-    await clearShareCache(bridge);
-    throw cause;
-  }
-  try {
-    await bridge.share({ files: [uri] });
-  } catch (cause) {
-    await clearShareCache(bridge);
-    throw asDomRejection(cause);
-  }
+): NativeShareSession {
+  // One sweep per process, shared as a promise rather than latched with a
+  // boolean: a second share starting while the first is still sweeping must
+  // WAIT for it, not skip it and write into a directory the sweep is about to
+  // remove. Everything under the share directory at this point belongs to a
+  // previous run of the app, so nothing live can be reading it.
+  let previousRuns: Promise<void> | null = null;
+  // Completed shares, oldest first. A directory enters only after its own share
+  // resolved, so an in-flight share's directory is never a pruning candidate.
+  const completed: string[] = [];
+  let sequence = 0;
+
+  return {
+    async share(file: File): Promise<void> {
+      sequence += 1;
+      // Unique per share, and per run: the sequence alone would collide with a
+      // previous run's leftovers if the sweep below ever failed.
+      const dir = `${SHARE_CACHE_DIR}/${sequence}-${Date.now().toString(36)}`;
+      const path = `${dir}/${cacheFilename(file.name)}`;
+      previousRuns ??= removeDir(bridge, SHARE_CACHE_DIR);
+      await previousRuns;
+      let uri: string;
+      try {
+        // `writeFile` truncates, so a repeat of this call over the same path
+        // overwrites rather than appending to a partial: safely re-runnable.
+        const first = await readChunkBase64(file, 0);
+        uri = (await bridge.writeFile({ path, data: first, recursive: true }))
+          .uri;
+        for (
+          let at = SHARE_CHUNK_BYTES;
+          at < file.size;
+          at += SHARE_CHUNK_BYTES
+        )
+          await bridge.appendFile({
+            path,
+            data: await readChunkBase64(file, at),
+          });
+      } catch (cause) {
+        // Nothing reached the OS, so there is no reader to race: drop this
+        // share's own partial file rather than leave a truncated chapter.
+        await removeDir(bridge, dir);
+        throw cause;
+      }
+      try {
+        await bridge.share({ files: [uri] });
+      } catch (cause) {
+        await removeDir(bridge, dir);
+        throw asDomRejection(cause);
+      }
+      completed.push(dir);
+      while (completed.length > SHARE_RETAINED) {
+        const stale = completed.shift();
+        if (stale !== undefined) await removeDir(bridge, stale);
+      }
+    },
+  };
 }
 
 /** The real bridge: Capacitor's Filesystem and Share plugins. */
-export const capacitorShareBridge: NativeShareBridge = {
+const capacitorShareBridge: NativeShareBridge = {
   writeFile: ({ path, data, recursive }) =>
     // No `encoding`: that is what tells the plugin the data is base64 and the
     // bytes are binary. Passing Encoding.UTF8 would write the base64 text.
@@ -180,6 +241,14 @@ export const capacitorShareBridge: NativeShareBridge = {
 };
 
 /**
+ * The app's one native share session. A single instance on purpose: the cache
+ * retention window above is only a bound if every caller shares it, so Share
+ * Chapter, Share Book and the recorder's held-take rescue all go through this.
+ */
+export const nativeShare: NativeShareSession =
+  createNativeShareSession(capacitorShareBridge);
+
+/**
  * Translate a plugin rejection into what `classifyShareError` reads.
  *
  * The Share plugin rejects a chooser the user dismissed with a plain Error
@@ -194,15 +263,19 @@ function asDomRejection(cause: unknown): unknown {
   return cause;
 }
 
-async function clearShareCache(bridge: NativeShareBridge): Promise<void> {
+async function removeDir(
+  bridge: NativeShareBridge,
+  path: string
+): Promise<void> {
   try {
-    await bridge.rmdir({ path: SHARE_CACHE_DIR, recursive: true });
+    await bridge.rmdir({ path, recursive: true });
   } catch {
-    // Deliberately no channel. The wanted state is "the directory is not
-    // there", and `rmdir` rejects for the ordinary case that it never existed
-    // (the first share after an install) as loudly as for a real failure. The
-    // `writeFile` below truncates whatever it reuses either way, so failing
-    // here costs cache bytes the OS can reclaim, never a wrong file shared.
+    // Deliberately no channel, and it never rejects. The wanted state is "the
+    // directory is not there", and `rmdir` rejects for the ordinary case that
+    // it never existed (the first share after an install) as loudly as for a
+    // real failure. Every share writes to a path of its own, so a failure here
+    // costs cache bytes the OS can reclaim — never a wrong file shared, and
+    // never a share that does not happen.
   }
 }
 

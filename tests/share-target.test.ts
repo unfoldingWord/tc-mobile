@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   SHARE_CACHE_DIR,
   SHARE_CHUNK_BYTES,
+  SHARE_RETAINED,
   type NativeShareBridge,
   type ShareEnvironment,
+  createNativeShareSession,
   selectShareRoute,
-  shareFileNatively,
 } from "@/hooks/share-target";
 
 /**
@@ -20,10 +21,14 @@ import {
  * native plugin instead of the WebView's Web Share.
  *
  * What is node-testable is the part that decides and the part that assembles:
- * `selectShareRoute` (native vs web vs unsupported) and `shareFileNatively`
- * (cache write, chunking, share, cleanup), the latter through an injected
- * {@link NativeShareBridge}. The plugin calls themselves — Capacitor's
- * Filesystem and Share — are a device boundary and are NOT covered here.
+ * `selectShareRoute` (native vs web vs unsupported) and the share session (cache
+ * write, chunking, share, and the lifetime of the file afterwards), the latter
+ * through an injected {@link NativeShareBridge}. The plugin calls themselves —
+ * Capacitor's Filesystem and Share — are a device boundary and are NOT covered
+ * here.
+ *
+ * Every case builds its own session, so the cache lifetime one case exercises
+ * cannot leak into the next.
  */
 
 const WEB_ONLY: ShareEnvironment = {
@@ -48,16 +53,19 @@ interface BridgeCall {
   readonly files?: readonly string[];
 }
 
-interface Recorder {
-  readonly bridge: NativeShareBridge;
+/** The directory a recorded write or share went to. */
+const dirOf = (call: BridgeCall | undefined): string =>
+  (call?.path ?? call?.files?.[0] ?? "").replace(/\/[^/]*$/, "");
+
+const uriFor = (path: string): string => `file:///data/cache/${path}`;
+
+interface Harness {
+  readonly share: (file: File) => Promise<void>;
   readonly calls: BridgeCall[];
 }
 
-/** A bridge that records every call; `fail` makes one operation reject. */
-function recordingBridge(fail?: {
-  op: BridgeCall["op"];
-  cause: unknown;
-}): Recorder {
+/** A session over a bridge that records every call; `fail` makes one reject. */
+function harness(fail?: { op: BridgeCall["op"]; cause: unknown }): Harness {
   const calls: BridgeCall[] = [];
   const maybeFail = (op: BridgeCall["op"]): void => {
     if (fail?.op === op) throw fail.cause;
@@ -70,7 +78,7 @@ function recordingBridge(fail?: {
     writeFile: async ({ path, data, recursive }) => {
       calls.push({ op: "write", path, data, recursive });
       maybeFail("write");
-      return { uri: `file:///data/cache/${path}` };
+      return { uri: uriFor(path) };
     },
     appendFile: async ({ path, data }) => {
       calls.push({ op: "append", path, data });
@@ -81,7 +89,7 @@ function recordingBridge(fail?: {
       maybeFail("share");
     },
   };
-  return { bridge, calls };
+  return { share: createNativeShareSession(bridge).share, calls };
 }
 
 /** Re-assemble the bytes the bridge was asked to write, in call order. */
@@ -157,45 +165,127 @@ describe("selectShareRoute", () => {
   });
 });
 
-describe("shareFileNatively", () => {
-  it("writes the file into the share cache and hands its uri to the plugin", async () => {
-    const { bridge, calls } = recordingBridge();
-    await shareFileNatively(mp3(), bridge);
+describe("the native share session", () => {
+  it("writes the file into a directory of its own and hands that uri to the plugin", async () => {
+    const { share, calls } = harness();
+    await share(mp3());
 
     const write = calls.find((call) => call.op === "write");
-    expect(write?.path).toBe(`${SHARE_CACHE_DIR}/Genesis - Chapter 1.mp3`);
-    // The parent directory does not exist on a first share.
+    expect(write?.path).toMatch(
+      new RegExp(
+        `^${SHARE_CACHE_DIR}/\\d+-[a-z0-9]+/Genesis - Chapter 1\\.mp3$`
+      )
+    );
+    // Neither the share directory nor this share's own directory exists yet.
     expect(write?.recursive).toBe(true);
     expect(calls.at(-1)).toEqual({
       op: "share",
-      files: [`file:///data/cache/${SHARE_CACHE_DIR}/Genesis - Chapter 1.mp3`],
+      files: [uriFor(write?.path ?? "")],
     });
   });
 
-  it("clears the previous share's file before writing the new one", async () => {
-    const { bridge, calls } = recordingBridge();
-    await shareFileNatively(mp3(), bridge);
+  it("sweeps what a previous run of the app left behind, exactly once", async () => {
+    const { share, calls } = harness();
+    await share(mp3());
     expect(calls[0]).toEqual({
       op: "rmdir",
       path: SHARE_CACHE_DIR,
       recursive: true,
     });
+
+    // The second share must NOT sweep again: everything under the directory now
+    // belongs to this run, and one of them may still be being read.
+    await share(zip());
+    expect(
+      calls.filter(
+        (call) => call.op === "rmdir" && call.path === SHARE_CACHE_DIR
+      )
+    ).toHaveLength(1);
+  });
+
+  it("does not remove an earlier successful share's file — the recipient may still be reading it", async () => {
+    // Frank R2 P1. `Share.share` resolves when the chooser activity returns,
+    // which can be before Drive has uploaded what it was handed; for the
+    // held-take rescue (#165) those may be the only surviving bytes.
+    const { share, calls } = harness();
+    for (let i = 0; i < SHARE_RETAINED; i += 1) await share(mp3());
+
+    const firstDir = dirOf(calls.find((call) => call.op === "write"));
+    expect(firstDir).not.toBe("");
+    // Only the one-time sweep of the previous run's leftovers.
+    expect(calls.filter((call) => call.op === "rmdir")).toHaveLength(1);
+    expect(calls.some((call) => call.path === firstDir)).toBe(false);
+
+    // One share past the window, and the oldest — and ONLY the oldest — goes.
+    await share(mp3());
+    const removals = calls.filter((call) => call.op === "rmdir");
+    expect(removals).toHaveLength(2);
+    expect(removals[1]).toEqual({
+      op: "rmdir",
+      path: firstDir,
+      recursive: true,
+    });
+  });
+
+  it("gives two concurrent shares separate directories, and neither removes the other's", async () => {
+    // Frank R2 P2. Share Chapter and the recorder's held-take rescue can be in
+    // flight at once; a single shared directory let one recursively delete the
+    // other mid-write.
+    const calls: BridgeCall[] = [];
+    let releaseFirstWrite!: () => void;
+    const firstWriteGate = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve;
+    });
+    let writes = 0;
+    const bridge: NativeShareBridge = {
+      rmdir: async ({ path, recursive }) => {
+        calls.push({ op: "rmdir", path, recursive });
+      },
+      writeFile: async ({ path, data, recursive }) => {
+        calls.push({ op: "write", path, data, recursive });
+        writes += 1;
+        if (writes === 1) await firstWriteGate;
+        return { uri: uriFor(path) };
+      },
+      appendFile: async ({ path, data }) => {
+        calls.push({ op: "append", path, data });
+      },
+      share: async ({ files }) => {
+        calls.push({ op: "share", files });
+      },
+    };
+    const session = createNativeShareSession(bridge);
+
+    const first = session.share(mp3());
+    const second = session.share(zip());
+    releaseFirstWrite();
+    await Promise.all([first, second]);
+
+    const writePaths = calls
+      .filter((call) => call.op === "write")
+      .map((call) => call.path ?? "");
+    expect(writePaths).toHaveLength(2);
+    expect(dirOf({ op: "write", path: writePaths[0] })).not.toBe(
+      dirOf({ op: "write", path: writePaths[1] })
+    );
+    // Only the one-time sweep, which both awaited before either wrote.
+    expect(calls.filter((call) => call.op === "rmdir")).toEqual([
+      { op: "rmdir", path: SHARE_CACHE_DIR, recursive: true },
+    ]);
+    expect(calls.filter((call) => call.op === "share")).toHaveLength(2);
   });
 
   it("keeps the extension so the OS picks the right target app", async () => {
-    const { bridge, calls } = recordingBridge();
-    await shareFileNatively(zip(), bridge);
-    expect(calls.find((call) => call.op === "write")?.path).toBe(
-      `${SHARE_CACHE_DIR}/Genesis.zip`
+    const { share, calls } = harness();
+    await share(zip());
+    expect(calls.find((call) => call.op === "write")?.path).toMatch(
+      /\/Genesis\.zip$/
     );
   });
 
   it("cannot be walked out of the share directory by a crafted name", async () => {
-    const { bridge, calls } = recordingBridge();
-    await shareFileNatively(
-      new File([new Uint8Array(4)], "../../databases/take.mp3"),
-      bridge
-    );
+    const { share, calls } = harness();
+    await share(new File([new Uint8Array(4)], "../../databases/take.mp3"));
     const path = calls.find((call) => call.op === "write")?.path ?? "";
     expect(path.startsWith(`${SHARE_CACHE_DIR}/`)).toBe(true);
     expect(path).not.toContain("..");
@@ -220,9 +310,9 @@ describe("shareFileNatively", () => {
       state = (state * 1103515245 + 12345) & 0x7fffffff;
       source[i] = (state >>> 16) & 0xff;
     }
-    const { bridge, calls } = recordingBridge();
+    const { share, calls } = harness();
 
-    await shareFileNatively(new File([source], "Genesis.zip"), bridge);
+    await share(new File([source], "Genesis.zip"));
 
     const writes = calls.filter(
       (call) => call.op === "write" || call.op === "append"
@@ -246,27 +336,25 @@ describe("shareFileNatively", () => {
     expect(written.findIndex((byte, at) => byte !== source[at])).toBe(-1);
   });
 
-  it("removes the temp file when the share sheet fails, and reports the failure", async () => {
-    const { bridge, calls } = recordingBridge({
+  it("removes its own directory when the share sheet fails, and reports the failure", async () => {
+    const { share, calls } = harness({
       op: "share",
       cause: new Error("no activity found"),
     });
-    await expect(shareFileNatively(mp3(), bridge)).rejects.toThrow(
-      "no activity found"
-    );
-    // Cleared once before the write and once after the failed share.
-    expect(calls.filter((call) => call.op === "rmdir")).toHaveLength(2);
-    expect(calls.at(-1)?.op).toBe("rmdir");
+    await expect(share(mp3())).rejects.toThrow("no activity found");
+    const own = dirOf(calls.find((call) => call.op === "write"));
+    expect(calls.at(-1)).toEqual({ op: "rmdir", path: own, recursive: true });
   });
 
-  it("removes the temp file when the write itself fails", async () => {
-    const { bridge, calls } = recordingBridge({
+  it("removes its own directory when the write itself fails", async () => {
+    const { share, calls } = harness({
       op: "write",
       cause: new Error("disk full"),
     });
-    await expect(shareFileNatively(mp3(), bridge)).rejects.toThrow("disk full");
+    await expect(share(mp3())).rejects.toThrow("disk full");
     expect(calls.some((call) => call.op === "share")).toBe(false);
-    expect(calls.at(-1)?.op).toBe("rmdir");
+    const own = dirOf(calls.find((call) => call.op === "write"));
+    expect(calls.at(-1)).toEqual({ op: "rmdir", path: own, recursive: true });
   });
 
   it("reads a dismissed chooser as a dismissal, not a failure", async () => {
@@ -274,25 +362,24 @@ describe("shareFileNatively", () => {
     // "Share canceled" (SharePlugin.java's activityResult, SharePlugin.swift:63)
     // — not a DOMException. Untranslated, `classifyShareError` would read it as
     // `failed` and show the translator an error for tapping Back.
-    const { bridge } = recordingBridge({
+    const { share } = harness({
       op: "share",
       cause: new Error("Share canceled"),
     });
-    const cause = await shareFileNatively(mp3(), bridge).catch(
-      (error: unknown) => error
-    );
+    const cause = await share(mp3()).catch((error: unknown) => error);
     expect(cause).toBeInstanceOf(DOMException);
     expect((cause as DOMException).name).toBe("AbortError");
   });
 
   it("survives a cleanup that cannot run — the share is what matters", async () => {
-    // rmdir rejects when the directory was never there (the first share of a
-    // session) as well as when it could not be removed. Neither is news.
-    const { bridge, calls } = recordingBridge({
+    // rmdir rejects when the directory was never there (the first share after an
+    // install) as well as when it could not be removed. Neither is news, and
+    // neither may stop the file reaching the OS.
+    const { share, calls } = harness({
       op: "rmdir",
       cause: new Error("Directory does not exist"),
     });
-    await shareFileNatively(mp3(), bridge);
+    await share(mp3());
     expect(calls.at(-1)?.op).toBe("share");
   });
 });
