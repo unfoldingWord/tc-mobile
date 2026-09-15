@@ -21,24 +21,50 @@ import tseslint from "typescript-eslint";
  * durable layer.
  */
 
-const deny = (groups) => ({
+/**
+ * F-336 — Capacitor's plugin APIs are a browser/native boundary, so they belong
+ * in `hooks/` with every other one. `no-restricted-globals` cannot see them:
+ * they arrive as an import, not a global, so nothing would have stopped
+ * `@capacitor/filesystem` appearing in `lib/export/book.ts` and taking the
+ * DOM-free audio core with it.
+ *
+ * Added with the plugins themselves (`@capacitor/share`, `@capacitor/filesystem`
+ * — #336) rather than left for the first violation. `src/hooks/share-target.ts`
+ * is the share boundary; `hooks/audio-io.ts` is the audio one.
+ *
+ * Appended to each outer layer's own patterns rather than given a config block
+ * of its own: a second block matching the same files would REPLACE
+ * `no-restricted-imports`'s options rather than merge with them, silently
+ * dropping the onion rule it was meant to sit beside.
+ */
+const CAPACITOR_DENIED = {
+  group: ["@capacitor/*", "@capacitor/*/**"],
+  message:
+    "Capacitor plugins are a native/browser boundary: import them in " +
+    "src/hooks/** only (share-target.ts is the share boundary). See AGENTS.md.",
+};
+
+const deny = (groups, extra = []) => ({
   "no-restricted-imports": [
     "error",
     {
-      patterns: groups.map(({ layer, message }) => ({
-        // Both spellings. The `@/` alias is the convention, but nothing forces
-        // it: `../hooks/audio-io` reaches the same file and used to pass this
-        // rule silently. No import in `src/` uses the relative form today —
-        // the risk is an editor auto-import while B1–B5 move files between
-        // layers, which is exactly when the rule needs to hold.
-        group: [
-          `@/${layer}/*`,
-          `@/${layer}/**`,
-          `**/${layer}/*`,
-          `**/${layer}/**`,
-        ],
-        message,
-      })),
+      patterns: [
+        ...extra,
+        ...groups.map(({ layer, message }) => ({
+          // Both spellings. The `@/` alias is the convention, but nothing forces
+          // it: `../hooks/audio-io` reaches the same file and used to pass this
+          // rule silently. No import in `src/` uses the relative form today —
+          // the risk is an editor auto-import while B1–B5 move files between
+          // layers, which is exactly when the rule needs to hold.
+          group: [
+            `@/${layer}/*`,
+            `@/${layer}/**`,
+            `**/${layer}/*`,
+            `**/${layer}/**`,
+          ],
+          message,
+        })),
+      ],
     },
   ],
 });
@@ -130,35 +156,50 @@ export default tseslint.config(
   // types/ — the innermost layer, no internal dependencies at all.
   {
     files: ["src/types/**/*.ts"],
-    rules: deny([
-      { layer: "lib", message: "types cannot import lib (onion architecture)" },
-      {
-        layer: "hooks",
-        message: "types cannot import hooks (onion architecture)",
-      },
-      {
-        layer: "components",
-        message: "types cannot import components (onion architecture)",
-      },
-      { layer: "app", message: "types cannot import app (onion architecture)" },
-    ]),
+    rules: deny(
+      [
+        {
+          layer: "lib",
+          message: "types cannot import lib (onion architecture)",
+        },
+        {
+          layer: "hooks",
+          message: "types cannot import hooks (onion architecture)",
+        },
+        {
+          layer: "components",
+          message: "types cannot import components (onion architecture)",
+        },
+        {
+          layer: "app",
+          message: "types cannot import app (onion architecture)",
+        },
+      ],
+      [CAPACITOR_DENIED]
+    ),
   },
 
   // lib/ — pure core. May import types only, and may touch no browser API.
   {
     files: ["src/lib/**/*.ts"],
     rules: {
-      ...deny([
-        {
-          layer: "hooks",
-          message: "lib cannot import hooks (onion architecture)",
-        },
-        {
-          layer: "components",
-          message: "lib cannot import components (onion architecture)",
-        },
-        { layer: "app", message: "lib cannot import app (onion architecture)" },
-      ]),
+      ...deny(
+        [
+          {
+            layer: "hooks",
+            message: "lib cannot import hooks (onion architecture)",
+          },
+          {
+            layer: "components",
+            message: "lib cannot import components (onion architecture)",
+          },
+          {
+            layer: "app",
+            message: "lib cannot import app (onion architecture)",
+          },
+        ],
+        [CAPACITOR_DENIED]
+      ),
       "no-restricted-globals": [
         "error",
         ...BROWSER_ONLY_GLOBALS.map((name) => ({
@@ -187,12 +228,23 @@ export default tseslint.config(
   // components/ — may import hooks, lib, types.
   {
     files: ["src/components/**/*.{ts,tsx}"],
-    rules: deny([
-      {
-        layer: "app",
-        message: "components cannot import app (onion architecture)",
-      },
-    ]),
+    rules: deny(
+      [
+        {
+          layer: "app",
+          message: "components cannot import app (onion architecture)",
+        },
+      ],
+      [CAPACITOR_DENIED]
+    ),
+  },
+
+  // app/ — the outermost layer: it may import every layer below, but a
+  // Capacitor plugin is still a boundary that belongs in hooks/. This block
+  // exists only for that rule; app/ has no onion denials of its own.
+  {
+    files: ["src/app/**/*.{ts,tsx}"],
+    rules: deny([], [CAPACITOR_DENIED]),
   },
 
   // The audio core indexes typed arrays in hot loops, where
