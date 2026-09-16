@@ -5,7 +5,9 @@ import {
   chapterProgress,
   createNextBook,
   deleteBook as deleteBookFromStore,
+  getBook,
   getChapter,
+  isStaleBookFailure,
   listBooks,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
@@ -59,6 +61,30 @@ async function loadBookCard(book: Book): Promise<BookCard> {
  * act on `"ok"`/`"failed"` and ignore `"busy"`.
  */
 type DeleteBookResult = "ok" | "failed" | "busy";
+
+/**
+ * Report a `renameBook` / `addChapter` failure — unless it is stale: the SAME
+ * book id this hook has already handled through an unrelated, successful
+ * delete (`isStaleBookFailure`, PR #344 round 8). Both mutations throw
+ * `No such book: <id>` from an identical missing-row guard, and once a book
+ * can be deleted that throw is reachable by a race that is not a fresh
+ * failure — an in-flight rename or add-chapter losing its target to a delete
+ * that already committed and already reported its own, correct outcome.
+ *
+ * `stillPresent` is read from the store — the system of record — rather than
+ * from `books` state, which a memoised callback would otherwise read through
+ * a stale closure (this hook's `renameBook`/`addChapter` are not re-created
+ * when `books` changes).
+ */
+async function reportUnlessStale(
+  cause: unknown,
+  bookId: BookId,
+  report: (cause: unknown, fromDelete?: boolean) => void
+): Promise<void> {
+  const stillPresent = (await getBook(bookId)) !== undefined;
+  if (isStaleBookFailure(cause, bookId, stillPresent)) return;
+  report(cause);
+}
 
 /**
  * The hook's single error slot: the message, and whether it came from a delete.
@@ -217,7 +243,10 @@ export function useBooks() {
         reload();
         return chapter;
       } catch (cause) {
-        report(cause);
+        // Stale if an unrelated delete already removed this exact book and
+        // already reported its own outcome — see `reportUnlessStale`. Any
+        // other failure is reported as-is.
+        await reportUnlessStale(cause, bookId, report);
         return null;
       }
     },
@@ -236,7 +265,10 @@ export function useBooks() {
         reload();
         return book;
       } catch (cause) {
-        report(cause);
+        // Stale if an unrelated delete already removed this exact book and
+        // already reported its own outcome — see `reportUnlessStale`. Any
+        // other failure is reported as-is.
+        await reportUnlessStale(cause, bookId, report);
         return null;
       }
     },

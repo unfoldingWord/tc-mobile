@@ -167,6 +167,43 @@ export async function renameBook(
 }
 
 /**
+ * Whether a caught failure from {@link renameBook} or {@link addChapter}
+ * describes a book that is gone because an UNRELATED delete already succeeded
+ * — not a fresh failure the screen should speak (George, PR #344 round 8).
+ *
+ * Both throw the identical `No such book: ${id}` shape from their own
+ * `if (!book) throw` guard. Once a book can be deleted (#337), that throw is
+ * reachable by a race that has nothing to do with a NEW failure: a rename or
+ * an add-chapter already in flight when a delete commits loses its target
+ * mid-flight, and a naive catch would paint "No such book: …" over a shelf
+ * that just correctly dropped the row.
+ *
+ * Deliberately narrow, so a genuine failure is never swallowed:
+ *
+ *   - The message must name the SAME id the caller was acting on — not merely
+ *     start with "No such book" — so a stale race on one book can never
+ *     absorb a real failure about another.
+ *   - `stillPresent` is the caller's own check, against the store (the system
+ *     of record, not React state), of whether that exact id exists right now.
+ *     If it does, this is not the delete race — something else produced the
+ *     same message, or the id came back some other way, and it is reported.
+ *
+ * Pure and synchronous on purpose: the caller resolves `stillPresent` (an
+ * async store read) itself, so this decision — the part that actually needs
+ * proving — is a plain function a Node test can pin without a fake database.
+ */
+export function isStaleBookFailure(
+  cause: unknown,
+  targetId: BookId,
+  stillPresent: boolean
+): boolean {
+  if (stillPresent) return false;
+  return (
+    cause instanceof Error && cause.message === `No such book: ${targetId}`
+  );
+}
+
+/**
  * The stores a book delete touches: the tree, and both halves of every clip
  * that goes with it.
  */
