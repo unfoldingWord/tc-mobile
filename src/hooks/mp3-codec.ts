@@ -20,6 +20,12 @@
  * Decoding is `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio
  * boundary.
  *
+ * AND IT SAYS SO. #166's other half: every encode's outcome moves an
+ * {@link EncoderHealth} store this module owns, which the Books shelf draws one
+ * line from. It lives here rather than in a caller because this is the one place
+ * every encode passes — see the store's own note for the three ways a
+ * caller-side count was wrong.
+ *
  * ONE lane. A Finished transcode and a Share are each "one chapter or segment
  * of PCM at a time" on their own, but nothing stopped them running together —
  * one segment's PCM in a worker plus a whole chapter's in another (round-1
@@ -42,6 +48,7 @@
  */
 
 import { decodeMp3ToCanonical } from "./audio-io";
+import { reportFailure } from "./report-failure";
 import type { AudioCodec } from "@/types/audio";
 
 /** The one message the client posts: a view onto canonical PCM, transferred. */
@@ -109,6 +116,128 @@ function subscribeVisibility(onChange: () => void): () => void {
   if (typeof document === "undefined") return () => {};
   document.addEventListener("visibilitychange", onChange);
   return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+/**
+ * Whether this phone's encoder is working — #166's other half, "surface an
+ * encoder that has stopped working".
+ *
+ * `failing` never means audio was lost. It means the one thing that turns PCM
+ * into MP3 is not doing it, so the storage relief D3/#12 exists for has quietly
+ * stopped and Share will fail too — invisible from where a translator stands
+ * unless something says so.
+ */
+export type EncoderHealth = "ok" | "failing";
+
+/**
+ * How many consecutive ordinary encode failures it takes to say so.
+ *
+ * Not 1: one encode can fail for reasons that are not the encoder's — a device
+ * momentarily out of memory, one malformed buffer — and a screen that reports
+ * each one is a screen nobody reads. A STALL does not go through this count at
+ * all; see `noteEncoderStalled`.
+ *
+ * Exported so the tests drive the threshold rather than re-state it.
+ */
+export const ENCODER_FAILURE_THRESHOLD = 3;
+
+/**
+ * The health lives HERE, in the encoder, and not in any caller.
+ *
+ * The first cut counted failures inside the Finished sweep, and both reviewers
+ * took that apart from opposite ends in one round. A stall ends the sweep run
+ * (#290), so a wedged worker yields one failure per run and a page gets one
+ * launch sweep — three-in-a-row could never accumulate, and the indicator could
+ * not reach the exact failure the deadline exists for (George P1). Share is the
+ * app's other encode-bearing job, so a stall there moved nothing and a Share
+ * that encoded fine never cleared a line the sweep had put up (George P2-3). And
+ * a `loadSegmentClip` or `commitTranscode` throw was counted as "this phone
+ * cannot encode", which is a false diagnosis with a useless recovery attached
+ * (Frank P2 and George P2-4, independently — the round's one convergence).
+ *
+ * Deciding it at `encodeInWorker`'s own outcomes makes all three structural
+ * rather than remembered: every encode in the app is on this lane, nothing that
+ * is not an encode can move the state, and no caller has to report anything.
+ */
+let consecutiveFailures = 0;
+let health: EncoderHealth = "ok";
+/**
+ * A SET, unlike `report-failure.ts`'s single slot: that module has one slot on
+ * purpose (a second consumer of the same failures is a second place to keep in
+ * sync), whereas this is a plain store any screen may read, and React's
+ * `useSyncExternalStore` subscribes and unsubscribes freely — twice over on a
+ * StrictMode mount.
+ */
+const healthListeners = new Set<(health: EncoderHealth) => void>();
+
+/** The encoder's current health. The `getSnapshot` half of the store. */
+export function encoderHealth(): EncoderHealth {
+  return health;
+}
+
+/**
+ * Watch the encoder's health. Returns the unsubscribe.
+ *
+ * Called on CHANGE only, so a screen draws one line for the condition rather
+ * than re-announcing it per failed encode — which matters because the `Notice`
+ * it drives is announced to a screen reader.
+ */
+export function subscribeToEncoderHealth(
+  listener: (health: EncoderHealth) => void
+): () => void {
+  healthListeners.add(listener);
+  return () => {
+    healthListeners.delete(listener);
+  };
+}
+
+function publishHealth(next: EncoderHealth): void {
+  if (next === health) return;
+  health = next;
+  // A copy, so a listener that unsubscribes from inside its own callback does
+  // not mutate the set being iterated.
+  for (const listener of [...healthListeners]) {
+    try {
+      listener(next);
+    } catch (cause) {
+      // Never swallowed: this store's entire purpose is that a silent failure
+      // stops being silent.
+      reportFailure(cause, "encoder-health");
+    }
+  }
+}
+
+/**
+ * An encode produced bytes. The encoder demonstrably works, so the count goes to
+ * zero and the condition is over — whoever asked for the encode. A Share that
+ * succeeds clears a line the Finished sweep put up, because the claim on screen
+ * is about the phone, not about the job (George P2-3).
+ */
+function noteEncodeSucceeded(): void {
+  consecutiveFailures = 0;
+  publishHealth("ok");
+}
+
+/** One ordinary encode failure: the worker threw, or died. */
+function noteEncodeFailed(): void {
+  consecutiveFailures += 1;
+  if (consecutiveFailures >= ENCODER_FAILURE_THRESHOLD)
+    publishHealth("failing");
+}
+
+/**
+ * A stall is the CONDITION, not evidence towards it.
+ *
+ * Fifteen seconds of a worker answering neither a heartbeat, a result nor an
+ * error is already the finding the threshold would be accumulating towards, and
+ * waiting for two more of them is waiting for runs that do not come: the sweep
+ * ends its run on a stall (#290) and a page gets one launch sweep (George P1).
+ * The count is taken to the threshold rather than the flag set alone, so a later
+ * success has one thing to clear.
+ */
+function noteEncoderStalled(): void {
+  consecutiveFailures = ENCODER_FAILURE_THRESHOLD;
+  publishHealth("failing");
 }
 
 /** The tail of the lane: resolves when the job currently holding it is done. */
@@ -297,6 +426,10 @@ function encodeInWorker(
       return;
     }
     if (typeof Worker === "undefined") {
+      // A phone with no `Worker` cannot encode, ever. Counted like any other
+      // encode failure rather than special-cased: three attempts and the shelf
+      // says the phone cannot make recordings smaller, which is exactly true.
+      noteEncodeFailed();
       reject(
         new Error("This browser cannot encode MP3: no Web Worker support")
       );
@@ -311,6 +444,7 @@ function encodeInWorker(
       // by the durable listener (which drops the handle) and this job's `onerror`
       // below (which rejects it).
       dropEncoderWorker();
+      noteEncodeFailed();
       reject(cause);
       return;
     }
@@ -423,11 +557,12 @@ function encodeInWorker(
       try {
         teardownAndRecover();
       } catch (recoverError) {
-        console.error(
-          "Recovering the encoder after a stall failed",
-          recoverError
-        );
+        // To the app's ONE sink, not the console (George R1 P3-5): sweep
+        // failures were moved there for #167/#188, and this would otherwise be
+        // the last encoder-adjacent failure that never reaches the #205 funnel.
+        reportFailure(recoverError, "encoder-recover");
       }
+      noteEncoderStalled();
       reject(new EncoderStalledError(ENCODER_SILENCE_TIMEOUT_MS));
     }
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -456,8 +591,13 @@ function encodeInWorker(
         return;
       }
       release();
-      if (response.kind === "done") resolve(new Uint8Array(response.mp3));
-      else reject(new Error(`MP3 encoding failed: ${response.message}`));
+      if (response.kind === "done") {
+        noteEncodeSucceeded();
+        resolve(new Uint8Array(response.mp3));
+      } else {
+        noteEncodeFailed();
+        reject(new Error(`MP3 encoding failed: ${response.message}`));
+      }
     };
     worker.onerror = (event) => {
       // A worker error after this job settled belongs to whoever owns the
@@ -465,6 +605,9 @@ function encodeInWorker(
       if (settled) return;
       // Reject this in-flight job; the durable listener drops the dead worker.
       release();
+      // A worker that dies IS the encoder failing — a script that will not load,
+      // a crash mid-encode — so it counts like an encode that threw.
+      noteEncodeFailed();
       // `ErrorEvent.error` is the thrown value when the script threw; a script
       // that failed to load has only a message (often empty), so say so.
       reject(
@@ -491,6 +634,10 @@ function encodeInWorker(
       // by THEN — an unrelated encode's (Frank R2 P2). Release this job first,
       // then reject. The worker itself is left warm: the message failed, not the
       // worker.
+      //
+      // Deliberately NOT counted against the encoder's health: a detached buffer
+      // or an `InvalidStateError` posting the request is this caller handing over
+      // something it should not have, and the encoder never saw it.
       release();
       reject(cause);
     }

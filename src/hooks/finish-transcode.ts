@@ -29,16 +29,12 @@
  * and the next sweep retries. ONE failure still says nothing to the translator:
  * from where they stand nothing has changed, and there is no action to offer.
  *
- * REPEATED failure is a different fact, and #166's other half. A device whose
- * worker cannot run at all transcodes nothing and used to tell nobody — the only
- * trace was a `console.error`, which AGENTS.md is explicit is "not a channel on a
- * phone in a village". So every failure now goes to the app's single failure sink
- * (`report-failure.ts`, #167), and consecutive ones are COUNTED here in the module
- * state: at `TRANSCODE_FAILURE_THRESHOLD` the published `transcodeHealth` flips to
- * `failing` and the Books shelf draws one state-in-place line. One indicator for
- * the condition, never a message per failure — and one successful transcode
- * clears it, because the condition is "this phone cannot encode right now", not
- * "this phone once failed".
+ * Every failure here goes to the app's single failure sink (`report-failure.ts`,
+ * #167) rather than to `console.error`, which AGENTS.md is explicit is "not a
+ * channel on a phone in a village". Whether the ENCODER is the thing that has
+ * stopped working is not decided here — `mp3-codec.ts` owns that store, because
+ * a load or a commit failing says nothing about encoding and because Share
+ * encodes too (Frank R1 P2 / George R1 P2-3, P2-4).
  */
 
 import { reportFailure } from "./report-failure";
@@ -49,106 +45,38 @@ import {
   commitTranscode,
   listPcmFinishedSegments,
 } from "@/lib/storage/transcode";
+import type { SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS } from "@/types/view";
 
 let running: Promise<void> | null = null;
 let requestedDuringRun = false;
-
 /**
- * Whether the encoder is getting finished segments transcoded.
+ * The segment whose encode last stalled, if any.
  *
- * `failing` does not mean anything was lost — every failed segment keeps its PCM
- * — it means the storage relief D3/#12 exists for has stopped happening on this
- * phone, silently, and somebody should know.
+ * Not a blocklist — a deprioritisation. The owed list comes back "in no
+ * particular order" but in practice a stable `getAll` walk, and a stall ends the
+ * RUN (#290), so a single clip that wedges the worker every time sat at the head
+ * of that list and every other finished segment behind it never got a turn for
+ * the life of the page (George R1 P2-2). Moving it to the BACK of the next
+ * pass's list lets the other nineteen through and still retries it, rather than
+ * abandoning a segment nothing else will ever pick up.
  */
-export type TranscodeHealth = "ok" | "failing";
-
-/**
- * How many CONSECUTIVE failed transcodes it takes before the shelf says so.
- *
- * Not 1. A single failure is ordinary — a clip erased under the sweep, a
- * transient decode, one encode killed by momentary memory pressure — and a
- * screen that reports each one would be a screen nobody reads. Not large either:
- * a sweep runs at launch and on every Finished transition, so three in a row is
- * minutes of a translator marking segments done with nothing being compressed.
- *
- * Exported so the threshold is a value the tests drive rather than a literal
- * they re-state; a test that hard-codes 3 passes whatever this says.
- */
-export const TRANSCODE_FAILURE_THRESHOLD = 3;
-
-/** Consecutive failed transcode turns since the last successful one. */
-let consecutiveFailures = 0;
-let health: TranscodeHealth = "ok";
-/**
- * The health subscribers. A SET, unlike `report-failure.ts`'s single slot: that
- * module has one slot on purpose (a second consumer of the same failures is a
- * second place to keep in sync), whereas this is a plain store any screen may
- * read, and React's `useSyncExternalStore` subscribes and unsubscribes freely —
- * including twice on a StrictMode mount.
- */
-const healthListeners = new Set<(health: TranscodeHealth) => void>();
-
-/** The encoder's current health. The `getSnapshot` half of the store. */
-export function transcodeHealth(): TranscodeHealth {
-  return health;
-}
-
-/**
- * Watch the encoder's health. Returns the unsubscribe.
- *
- * Called on every CHANGE only, so a screen renders one line for the condition
- * rather than re-announcing it per failed segment — which matters because the
- * Notice it drives is announced to a screen reader.
- */
-export function subscribeToTranscodeHealth(
-  listener: (health: TranscodeHealth) => void
-): () => void {
-  healthListeners.add(listener);
-  return () => {
-    healthListeners.delete(listener);
-  };
-}
-
-function publishHealth(next: TranscodeHealth): void {
-  if (next === health) return;
-  health = next;
-  // A copy, so a listener that unsubscribes from inside its own callback does
-  // not mutate the set being iterated.
-  for (const listener of [...healthListeners]) {
-    try {
-      listener(next);
-    } catch (cause) {
-      // A subscriber that throws must not take the sweep down with it, and must
-      // not vanish either: the sweep is the background job whose whole failure
-      // mode is being invisible.
-      reportFailure(cause, "transcode-health");
-    }
-  }
-}
-
-/**
- * One transcode landed. The encoder demonstrably works, so the count goes to
- * zero — a run of failures that ends is not a phone that cannot encode.
- */
-function noteTranscodeSucceeded(): void {
-  consecutiveFailures = 0;
-  publishHealth("ok");
-}
-
-/** One transcode turn failed, in any way — including a stall. */
-function noteTranscodeFailed(): void {
-  consecutiveFailures += 1;
-  if (consecutiveFailures >= TRANSCODE_FAILURE_THRESHOLD)
-    publishHealth("failing");
-}
+let lastStalledSegmentId: SegmentId | null = null;
 
 /**
  * Ask for every finished-but-PCM segment to be transcoded. Returns the promise
- * of the sweep that will cover the request — the one in flight (which will run
- * once more when it finishes) or a fresh one. Never rejects: per-segment
- * failures are reported to the failure sink and skipped, and a failure to list
- * is reported the same way.
+ * of the sweep that will cover the request — the one in flight or a fresh one.
+ * Never rejects: per-segment failures are reported to the failure sink and
+ * skipped, and a failure to list is reported the same way.
+ *
+ * ONE case is not covered by the promise it hands back: a request that lands
+ * while a run is in flight is covered by that run's extra pass UNLESS the run
+ * ends on a stall, which drops the extra pass deliberately (#290 — the retry
+ * must not go straight back at a worker known to be wedged). Those segments keep
+ * their PCM and are picked up by the next launch or the next transition. Every
+ * call site `void`s this promise, so nothing observes the difference today; it
+ * is written down because the next reader of the coalescing contract would
+ * otherwise re-break #290 (George R1 P3-6).
  */
 export function requestTranscodeSweep(): Promise<void> {
   if (running) {
@@ -170,6 +98,11 @@ export function requestTranscodeSweep(): Promise<void> {
  * There is no in-between window a joiner can fall into and be dropped — which is
  * exactly what the earlier `.finally(…).then(…)` chain existed to paper over
  * (that chain was the B8 PR's coalescing residual; folded per #185 round-2 George).
+ *
+ * ONE deliberate exception, and it is not a window: a run that ends on a STALL
+ * drops the extra pass even when the flag is set, because going straight back at
+ * a worker known to be wedged is the whole of #290. Those segments keep their
+ * PCM and the next launch or transition picks them up (George R1 P3-6).
  *
  * The clear lives in `finally`, not after the loop, on purpose: an uncaught throw
  * out of `sweepOnce` must still release the lock. `if (running)` is truthy for a
@@ -195,34 +128,47 @@ async function runSweeps(): Promise<void> {
   }
 }
 
+/**
+ * Move the segment that stalled last time to the BACK of this pass.
+ *
+ * `listPcmFinishedSegments` promises no order and delivers a stable `getAll`
+ * walk, so a clip that wedges the worker every time keeps the head of the queue
+ * and — since a stall ends the run — nothing behind it is ever attempted
+ * (George R1 P2-2). Pure, so the reordering is pinned by a test rather than by
+ * reading the loop.
+ */
+export function afterStalledSegment<
+  T extends { readonly segmentId: SegmentId },
+>(owed: readonly T[], stalled: SegmentId | null): readonly T[] {
+  if (stalled === null || owed.length < 2) return owed;
+  const index = owed.findIndex((entry) => entry.segmentId === stalled);
+  if (index < 0) return owed;
+  return [...owed.slice(0, index), ...owed.slice(index + 1), owed[index]!];
+}
+
 /** One pass. Resolves `true` when it stopped because the encoder is wedged. */
 async function sweepOnce(): Promise<boolean> {
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
   } catch (cause) {
-    // Reported, never counted: failing to READ which segments are owed says
-    // nothing about whether this phone can encode, and the indicator means
-    // exactly that one thing.
     reportFailure(
       new Error("Could not list segments awaiting transcode", { cause }),
       "transcode-sweep"
     );
     return false;
   }
-  for (const { segmentId, clipId } of owed) {
+  for (const { segmentId, clipId } of afterStalledSegment(
+    owed,
+    lastStalledSegmentId
+  )) {
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
       // PCM is read only once the lane is ours, so a share holding the lane
       // never coexists with a segment's PCM waiting here (round-1 George G1).
       // One segment per turn on the lane, so a share queued between two
       // segments gets in between them.
-      //
-      // Resolves `true` only when this turn actually encoded AND committed. A
-      // skip is not a success: the encoder was never asked, so clearing the
-      // failure count on one would hide a phone whose worker is dead behind a
-      // segment the translator happened to erase.
-      const transcoded = await withEncoder(undefined, async (codec) => {
+      await withEncoder(undefined, async (codec) => {
         const audio = await loadSegmentClip(segmentId);
         // Changed since the list was taken (erased, re-recorded, already MP3):
         // not this clip's job any more; the commit would call it stale anyway.
@@ -231,15 +177,17 @@ async function sweepOnce(): Promise<boolean> {
           audio.clip.encoding !== "pcm" ||
           audio.clip.meta.id !== clipId
         )
-          return false;
+          return;
         const { samples } = audio.clip;
         // Before the encode: it transfers `samples` away.
         const peaks = computePeaks(samples, ROW_PEAK_BUCKETS);
         const mp3 = await codec.encodeMp3(samples);
         await commitTranscode(segmentId, clipId, mp3, peaks);
-        return true;
       });
-      if (transcoded) noteTranscodeSucceeded();
+      // This clip is no longer the one that wedged the worker, so it stops being
+      // deprioritised. Cleared on ANY completed turn: a skip proves nothing
+      // about the clip, but it does mean the head of the queue moved on.
+      if (lastStalledSegmentId === segmentId) lastStalledSegmentId = null;
     } catch (cause) {
       // To the app's ONE sink, not the console alone (#167). The segment id
       // rides in a wrapper rather than in the context, because `context` is the
@@ -252,10 +200,6 @@ async function sweepOnce(): Promise<boolean> {
         ),
         "transcode-segment"
       );
-      // Counted for the shelf indicator BEFORE the stall's early return, so the
-      // one failure kind that means "the encoder has stopped working" is not
-      // the one kind that never reaches the count.
-      noteTranscodeFailed();
       // A STALLED encoder is not a per-segment failure — it is the whole worker
       // being wedged (#166), and the next segment would only re-arm the same
       // silence deadline and stall again: N segments × the timeout, blocking
@@ -263,7 +207,15 @@ async function sweepOnce(): Promise<boolean> {
       // PCM is kept and the next launch's sweep (or the next transition's
       // request) retries once the page — and its worker — are healthy again.
       // A plain per-segment error keeps the loop going to the next segment.
-      if (cause instanceof EncoderStalledError) return true;
+      //
+      // Remembering WHICH segment stalled is what stops this early exit from
+      // becoming a head-of-line block: one poison clip at the front of a stable
+      // list would otherwise starve every other finished segment for the life of
+      // the page (George R1 P2-2). The next pass puts it last.
+      if (cause instanceof EncoderStalledError) {
+        lastStalledSegmentId = segmentId;
+        return true;
+      }
     }
   }
   return false;

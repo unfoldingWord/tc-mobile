@@ -1,13 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { requestTranscodeSweep } from "@/hooks/finish-transcode";
-import { EncoderStalledError, withEncoder } from "@/hooks/mp3-codec";
-import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentAudio } from "@/lib/storage/segment-audio";
-import {
-  commitTranscode,
-  listPcmFinishedSegments,
-} from "@/lib/storage/transcode";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
@@ -26,6 +19,15 @@ import type { SegmentId } from "@/types/domain";
  * The codec module is only partially mocked so `EncoderStalledError` stays the
  * REAL class — the sweep's `instanceof` check is exactly what is under test — while
  * `withEncoder` is a stub whose per-segment behaviour each case drives.
+ *
+ * Every case re-imports the sweep through `vi.resetModules()`. The sweep now
+ * REMEMBERS which segment stalled, so it can put it last on the next pass instead
+ * of letting one poison clip starve the queue (George R1 P2-2) — and that memory
+ * is module state, so without the reset the first case below would decide the
+ * second one's queue order and the #290 assertions would depend on file order.
+ * Because `resetModules` rebuilds every MOCKED dependency too, those are
+ * re-imported here as well: a `vi.mocked()` on a statically imported one would
+ * configure an instance the reloaded sweep never sees.
  */
 
 vi.mock("@/hooks/mp3-codec", async (importOriginal) => {
@@ -90,26 +92,50 @@ function codec(encodeMp3: AudioCodec["encodeMp3"]): AudioCodec {
   };
 }
 
-let encodeMp3: ReturnType<typeof vi.fn>;
+type Sweep = typeof import("@/hooks/finish-transcode");
+type Storage = typeof import("@/lib/storage/transcode");
+type SegmentAudioModule = typeof import("@/lib/storage/segment-audio");
 
-beforeEach(() => {
+let encodeMp3: ReturnType<typeof vi.fn>;
+let requestTranscodeSweep: Sweep["requestTranscodeSweep"];
+let EncoderStalledError: typeof import("@/hooks/mp3-codec").EncoderStalledError;
+let withEncoder: typeof import("@/hooks/mp3-codec").withEncoder;
+let loadSegmentClip: SegmentAudioModule["loadSegmentClip"];
+let commitTranscode: Storage["commitTranscode"];
+let listPcmFinishedSegments: Storage["listPcmFinishedSegments"];
+
+beforeEach(async () => {
+  vi.resetModules();
   vi.resetAllMocks();
   encodeMp3 = vi.fn(
     async (samples: Int16Array) => new Uint8Array([samples[0] ?? 0])
   );
+
+  const codecModule = await import("@/hooks/mp3-codec");
+  EncoderStalledError = codecModule.EncoderStalledError;
+  withEncoder = codecModule.withEncoder;
   vi.mocked(withEncoder).mockImplementation(async (_signal, work) =>
     work(codec(encodeMp3 as unknown as AudioCodec["encodeMp3"]))
   );
+
+  const segmentAudio = await import("@/lib/storage/segment-audio");
+  loadSegmentClip = segmentAudio.loadSegmentClip;
   vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) =>
     segmentId === sid("s1")
       ? resolvedPcm(cid("c1"), Int16Array.of(1))
       : resolvedPcm(cid("c2"), Int16Array.of(2))
   );
+
+  const storage = await import("@/lib/storage/transcode");
+  commitTranscode = storage.commitTranscode;
+  listPcmFinishedSegments = storage.listPcmFinishedSegments;
   vi.mocked(commitTranscode).mockResolvedValue("committed");
   vi.mocked(listPcmFinishedSegments).mockResolvedValue([
     { segmentId: sid("s1"), clipId: cid("c1") },
     { segmentId: sid("s2"), clipId: cid("c2") },
   ]);
+
+  ({ requestTranscodeSweep } = await import("@/hooks/finish-transcode"));
 });
 
 describe("requestTranscodeSweep — a stalled encoder", () => {

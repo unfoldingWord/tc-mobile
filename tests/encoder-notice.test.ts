@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { encoderNotice } from "@/components/encoder-notice";
 import { strings } from "@/components/strings";
-import { transcodeNotice } from "@/components/transcode-notice";
 
 /**
  * What the Books shelf says when the encoder has stopped working (#166).
@@ -13,15 +13,15 @@ import { transcodeNotice } from "@/components/transcode-notice";
  * a healthy encoder shows NOTHING, a failing one shows exactly one line, and
  * that line wears the `info` mark rather than the red `alert` one.
  */
-describe("transcodeNotice", () => {
+describe("encoderNotice", () => {
   it("says nothing while the encoder is healthy", () => {
-    expect(transcodeNotice("ok")).toBeNull();
+    expect(encoderNotice("ok")).toBeNull();
   });
 
   it("shows the shelf line once the encoder has stopped working", () => {
-    expect(transcodeNotice("failing")).toEqual({
+    expect(encoderNotice("failing")).toEqual({
       tone: "info",
-      text: strings.transcodeFailing,
+      text: strings.encoderFailing,
     });
   });
 
@@ -30,7 +30,7 @@ describe("transcodeNotice", () => {
     // `busy` for work they are waiting on. Neither is true here: every recording
     // is safe, nothing is in flight, and a red line on the home screen for a
     // background condition teaches people to ignore red (notice-tone.ts).
-    const notice = transcodeNotice("failing");
+    const notice = encoderNotice("failing");
     expect(notice?.tone).not.toBe("alert");
     expect(notice?.tone).not.toBe("busy");
   });
@@ -38,7 +38,7 @@ describe("transcodeNotice", () => {
   it("never puts a cause or an error string in front of a translator", () => {
     // #172's rule, and #167's: raw browser text goes to the sink, never to the
     // shelf. The line names the condition and one thing that may help.
-    const text = transcodeNotice("failing")?.text ?? "";
+    const text = encoderNotice("failing")?.text ?? "";
     expect(text).not.toMatch(/error|Error|undefined|\bMP3\b|encoder/);
     expect(text.length).toBeGreaterThan(0);
   });

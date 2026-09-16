@@ -354,13 +354,17 @@ export const strings = {
   appReloadTeach: "The app will start again.",
 
   // ── The encoder has stopped working (#166) ───────────────────────────────
-  // Shown once on the shelf after `TRANSCODE_FAILURE_THRESHOLD` finished
-  // segments in a row fail to compress. What has actually stopped is the
-  // storage relief D3 exists for (#12), which is invisible from where the
-  // translator stands — so the line says the condition in their terms, says
-  // plainly that nothing is lost (it is not: every failed segment keeps its
-  // audio), and names the one thing that sometimes helps. No cause text, no
-  // error string, no word from the encoder's own vocabulary (#172).
-  transcodeFailing:
-    "This phone could not make finished recordings smaller. Nothing is lost — restarting the app may help.",
+  // Shown once on the shelf when `encoderHealth()` reads `failing` — one stall,
+  // or `ENCODER_FAILURE_THRESHOLD` ordinary encode failures in a row. "Make
+  // recordings smaller" is what the encoder does in BOTH of the jobs that use
+  // it: the Finished transcode that buys back storage (D3, #12) and the MP3 a
+  // Share hands to the phone. Both stop together, and both are invisible from
+  // where the translator stands unless this says so.
+  //
+  // It says plainly that nothing is lost, because nothing is — a failed
+  // transcode keeps its PCM — and names the one thing that sometimes helps. No
+  // cause text, no error string, no word from the encoder's own vocabulary
+  // (#172).
+  encoderFailing:
+    "This phone could not make recordings smaller. Nothing is lost — restarting the app may help.",
 } as const;

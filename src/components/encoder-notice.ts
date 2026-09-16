@@ -20,17 +20,15 @@
 
 import { strings } from "./strings";
 import type { NoticeTone } from "./notice-tone";
-import type { TranscodeHealth } from "@/hooks/finish-transcode";
+import type { EncoderHealth } from "@/hooks/mp3-codec";
 
-export interface TranscodeNotice {
+export interface EncoderNotice {
   readonly tone: NoticeTone;
   readonly text: string;
 }
 
 /** The shelf's one line about the encoder, or `null` when there is nothing to say. */
-export function transcodeNotice(
-  health: TranscodeHealth
-): TranscodeNotice | null {
+export function encoderNotice(health: EncoderHealth): EncoderNotice | null {
   if (health === "ok") return null;
-  return { tone: "info", text: strings.transcodeFailing };
+  return { tone: "info", text: strings.encoderFailing };
 }

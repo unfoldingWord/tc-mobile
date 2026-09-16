@@ -15,12 +15,9 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
+import { encoderNotice } from "./encoder-notice";
 import { strings } from "./strings";
-import { transcodeNotice } from "./transcode-notice";
-import {
-  subscribeToTranscodeHealth,
-  transcodeHealth,
-} from "@/hooks/finish-transcode";
+import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { cn } from "@/lib/utils";
@@ -590,20 +587,17 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // (George R4 P2-2 / Frank R4 P2).
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
-  // The encoder's own health (#166). Module state, not hook state — the sweep
-  // runs from App and from every Finished transition on another screen — so it
-  // is read through `useSyncExternalStore`, which re-renders on the store's own
-  // change rather than on a poll. Both arguments are module-level functions and
-  // so are stable across renders; the third is the server snapshot, which never
-  // runs here but keeps the hook honest if this tree is ever server-rendered
+  // The encoder's own health (#166). Module state, not hook state — every
+  // encode in the app runs through `mp3-codec`'s single lane, from the sweep
+  // App starts at launch to a Share on another screen — so it is read through
+  // `useSyncExternalStore`, which re-renders on the store's own change rather
+  // than on a poll. Both arguments are module-level functions and so are stable
+  // across renders; the third is the server snapshot, which never runs here but
+  // keeps the hook honest if this tree is ever server-rendered
   // (`error-boundary.test.ts` already renders components through
   // `react-dom/server`).
-  const encoderNotice = transcodeNotice(
-    useSyncExternalStore(
-      subscribeToTranscodeHealth,
-      transcodeHealth,
-      transcodeHealth
-    )
+  const encoderLine = encoderNotice(
+    useSyncExternalStore(subscribeToEncoderHealth, encoderHealth, encoderHealth)
   );
 
   return (
@@ -666,8 +660,8 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           and this is a standing background condition rather than something the
           translator just did. It sits under it so a load failure — which has a
           recovery — is still read first. */}
-      {encoderNotice && (
-        <Notice tone={encoderNotice.tone}>{encoderNotice.text}</Notice>
+      {encoderLine && (
+        <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
       )}
 
       <div className="flex-1 overflow-y-auto">
