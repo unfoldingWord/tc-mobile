@@ -296,7 +296,13 @@ describe("one drain pass after a stall, in the SAME run (George R2 P2)", () => {
 
   it("stops at a SECOND stall in the drain — that is a wedged encoder, not a bad clip", async () => {
     twentyOwed();
+    let calls = 0;
     encodeMp3.mockImplementation(async (s: Int16Array) => {
+      // A drain that LOOPED would alternate between the two poison clips
+      // forever. Past a generous bound, stop stalling so a loop ends and the
+      // count below fails legibly instead of the suite dying out of memory.
+      calls += 1;
+      if (calls > 50) throw new Error("bounded: the drain looped");
       if (s[0] === 0 || s[0] === 5) throw new StalledError(15_000);
       return new Uint8Array([s[0] ?? 0]);
     });
