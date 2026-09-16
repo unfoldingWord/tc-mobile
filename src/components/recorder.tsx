@@ -18,6 +18,7 @@ import { recorderStatusKind } from "./processing-status";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
+import { liveScopeShown } from "./recorder-stage";
 import {
   editRowReason,
   eraseRowReason,
@@ -294,6 +295,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // tap would start a capture that the closing `leave()` then discards (a take
     // lost with no recovery screen).
     const [isClosing, setIsClosing] = useState(false);
+    /**
+     * Whether THIS close began with an active capture (recording, paused, or a
+     * #59 `processing` freeze) — as opposed to an edit-only or Finished-only
+     * close, which also sets `isClosing` true for the same commit-then-exit
+     * wait but never had a mic to show (Frank R-resume, round 3). Read
+     * alongside `isClosing`, never on its own: it is only meaningful while
+     * `isClosing` is true, and is left stale (harmlessly) between closes
+     * rather than reset on every `setIsClosing(false)`. Every site that flips
+     * `isClosing` to `true` sets this in the same synchronous block (batched
+     * into the same render as `isClosing`'s own update), never derived from a
+     * ref read at render time (`react-hooks/refs`).
+     */
+    const [captureClosing, setCaptureClosing] = useState(false);
     /**
      * The in-sheet preview of the paused take-so-far (#101): the decoded capture
      * spliced into `working` by `mergeTake` at the same `insertionOffset` `close()`
@@ -726,6 +740,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (closing.current) return;
       closing.current = true;
       setIsClosing(true);
+      // The guard above already proved `recording || paused` to reach here.
+      setCaptureClosing(true);
       // Abort any in-flight preview decode, then drop the preview's PCM but keep its
       // peaks on stage through the commit — exactly the pair `close()` runs, so a
       // first take does not blank while it saves.
@@ -1182,6 +1198,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // original recording (gone) with the replacement never landed and the cut
         // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
         const attemptedCapture = recording || paused || state === "processing";
+        // Still synchronous (no `await` above this line since `setIsClosing(true)`
+        // ran) — batched into the same render `isClosing`'s own update triggers.
+        // An edit-only or Finished-only close reaches this function too (Frank
+        // R-resume, round 3): without this, `liveScopeShown` could not tell that
+        // close apart from an append/first-take commit and would mount a
+        // `LiveScope` with nothing in its ring to paint — a blank canvas for the
+        // whole IndexedDB write.
+        setCaptureClosing(attemptedCapture);
         if (attemptedCapture) {
           // Do NOT await the in-flight preview decode here. `stop()` steals the
           // chunks/stream/recorder into locals BEFORE its first await, which is what
@@ -1522,6 +1546,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       enterEditAfterRecover.current = false;
       closing.current = true;
       setIsClosing(true);
+      // The comment above is literal: this runs the SAME no-capture tail as an
+      // edit-only close. The capture that produced `heldTake` already stopped
+      // (and failed to decode) before this ran; `heldTake` clearing to `null`
+      // here is what lets the ordinary recorder-stage (and `liveScopeShown`)
+      // render again underneath, so it must not be told a capture is live.
+      setCaptureClosing(false);
       void commitPendingAndExit(false, false);
     }, [commitPendingAndExit]);
 
@@ -1711,6 +1741,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       takeCommitting: isClosing || busy,
       starting,
       canFinish: finishedState !== "disabled",
+    });
+
+    // Whether the record stage's `LiveScope` branch is what's mounted below —
+    // named once so the ternary reads as a decision, not an inline predicate.
+    const liveScope = liveScopeShown({
+      recording,
+      paused,
+      processing: state === "processing",
+      // `isClosing` alone is not enough (Frank R-resume round 3): it is also
+      // true for an edit-only or Finished-only close, which never had a mic to
+      // show. `captureClosing` narrows it to the close that actually followed
+      // a capture — see its own docblock above.
+      isClosing: isClosing && captureClosing,
+      hasAudio,
+      meterFailed: audio.meterFailed,
+      previewShown: previewShown !== null,
     });
 
     return (
@@ -1971,27 +2017,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
                 >
-                  {(recording ||
-                    paused ||
-                    state === "processing" ||
-                    isClosing) &&
-                  !audio.meterFailed &&
-                  !hasAudio &&
-                  !previewShown ? (
-                    // A FIRST take with a working tap: the dedicated live scope
-                    // grows from the head and scrolls R→L (#120), sidestepping
-                    // Waveform's `!recorded` dotted rule. It stays mounted for the
-                    // WHOLE take-in-flight window — recording, paused, processing,
-                    // AND the F8 close (`isClosing`, the stop→decode→save wait,
-                    // where `stop()` has already flipped state to idle but the PCM
-                    // is not in `working` yet, so `hasAudio` is still false). That
-                    // whole predicate is `takeActive && state !== "requesting"`:
-                    // without `isClosing` the frozen take snapped back to the empty
-                    // dotted rule for the multi-MB IndexedDB write and read as
-                    // discarded (George R2/R4). `active` goes false off "recording"
-                    // (pause/processing/close), freezing the last frame (R-B6). A
-                    // punch-in/append (`hasAudio`) keeps Waveform instead, so the
-                    // existing clip and the #110 insert centerline stay visible.
+                  {liveScope ? (
+                    // The dedicated live scope drives the stage while a take is
+                    // ACTIVELY in flight (no preview up) — `liveScopeShown`
+                    // (recorder-stage.ts) owns the rule, including the #283 append
+                    // case (a 2nd take now grows live instead of waiting for
+                    // re-entry). It grows from the head and scrolls R→L (#120),
+                    // sidestepping Waveform's `!recorded` dotted rule. `active`
+                    // goes false off "recording" (pause/processing/close),
+                    // freezing the last frame (R-B6).
                     <LiveScope
                       readScope={audio.readScope}
                       peekScope={audio.peekScope}
@@ -2001,10 +2035,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       label={strings.liveWaveform}
                     />
                   ) : (
-                    // Idle / edit / playback, a punch-in/append capture, and the
-                    // tap-failed fallback: `capturing` keeps the #110 record
-                    // centerline over the existing audio (or the dotted first-take
-                    // rule when the tap failed), not a blank stage (George R1/R2).
+                    // Idle / edit / playback, a prepared preview (first take OR
+                    // append), and the tap-failed fallback. A preview ALWAYS wins
+                    // the stage over the live scope (George R-resume round 2):
+                    // `#101` Play-while-paused sounds the merged buffer regardless
+                    // of `hasAudio`, so it must be drawn here — with a working
+                    // playhead — not left silently behind a frozen live ring. A
+                    // live take-in-flight otherwise is NOT here anymore for either
+                    // a first take or an append (#283). `capturing` keeps the #110
+                    // record centerline over the existing audio (or the dotted
+                    // first-take rule when the tap failed), not a blank stage
+                    // (George R1/R2).
                     <Waveform
                       // The paused-take preview draws its own peaks over the whole
                       // buffer (#101); everything else shows the working buffer's.
@@ -2020,10 +2061,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // The #358 display fit is suppressed only for a take with
                       // nothing committed behind it — the paused first take
                       // whose decoded preview replaces `LiveScope` above. A
-                      // punch-in (`hasAudio`) draws the STORED clip while it
-                      // records, since `working` does not grow until the splice
-                      // at close, so that canvas stays fitted (George R2 P2).
-                      // The rule itself is pure and table-tested in
+                      // punch-in (`hasAudio`) reaches THIS branch only via the
+                      // tap-failed fallback, an idle view, or its own Pause+Play
+                      // preview (below) — its live recording is on `LiveScope`
+                      // now (#283) — and in every one of those cases it draws
+                      // the STORED/merged clip fitted, since `working` does not
+                      // grow until the splice at close (George R2 P2). The rule
+                      // itself is pure and table-tested in
                       // `lib/audio/display-gain.ts`, not spelled out here.
                       //
                       // `takeActive`, NOT `recording || paused` (George R3 #2 —
@@ -2042,7 +2086,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // prevent, on the one window it was built for.
                       // `hasAudio` still gates the punch-in case unchanged: once
                       // there is committed audio, `isFirstTakeInFlight` is false
-                      // regardless of `takeActive`, so George R2 P2 stands.
+                      // regardless of `takeActive`, so George R2 P2 stands. An
+                      // append's own Pause+Play preview is deliberately included
+                      // in that "committed audio" case too (George R-resume round
+                      // 2): it draws FITTED to the committed clip's own gain via
+                      // `fitFrom` below, not absolute — the scale change from the
+                      // `LiveScope` it replaces is an intentional consequence of
+                      // an explicit Play tap (reviewing the take), not the
+                      // involuntary "did I lose it" edge this flag prevents.
                       firstTakeInFlight={isFirstTakeInFlight(
                         takeActive,
                         hasAudio
@@ -2066,7 +2117,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     polls `readPlaybackElapsed` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
                     inert list behind it. Mounted always; it hides itself when
-                    nothing is sounding. */}
+                    nothing is sounding. Its fractions read `waveView`, which
+                    switches to the whole merged-preview buffer the moment one is
+                    prepared (`wholeView`) — correct here because a preview always
+                    puts `Waveform` on stage (above), never `LiveScope`, so this
+                    overlay's coordinate system always matches what is drawn
+                    underneath it (George R-resume round 2). */}
                   <PlayheadOverlay
                     readElapsedMs={audio.readPlaybackElapsed}
                     active={audio.playingBuffer}
