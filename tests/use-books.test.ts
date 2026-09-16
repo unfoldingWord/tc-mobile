@@ -223,6 +223,32 @@ describe("patchNewChapter", () => {
     const next = patchNewChapter(books, chapterBookId("b-1"), chapter());
     expect(next).toEqual(books);
   });
+
+  it("moves the patched book to the front of the shelf, matching the updatedAt bump the write already made (Frank R5 P2)", () => {
+    // `addChapterToBook` bumps the parent book's `updatedAt` in the same
+    // write, and `listBooks` sorts newest-first — with `reload()` gone
+    // (George R4 P2-2), nothing else reconciles the shelf order, so the
+    // patch itself has to move the book, not just append its chapter.
+    const books = [card(bookId("b-1")), card(bookId("b-2"))];
+    const next = patchNewChapter(
+      books,
+      bookId("b-2"),
+      chapter({ id: chapterId("ch-9"), bookId: bookId("b-2") })
+    );
+
+    expect(next.map((c) => c.bookId)).toEqual([bookId("b-2"), bookId("b-1")]);
+    expect(next[0]?.chapters).toEqual([
+      {
+        chapterId: chapterId("ch-9"),
+        number: 1,
+        name: null,
+        finishedCount: 0,
+        totalCount: 0,
+      },
+    ]);
+    // The untouched book keeps its own identity, just shifted in position.
+    expect(next[1]).toBe(books[0]);
+  });
 });
 
 describe("canStartAddChapter", () => {

@@ -172,9 +172,18 @@ interface Failure {
  * as "the first tap did nothing" and invites another, and on this tree there
  * is no way to delete the extra chapter it writes.
  *
- * Appended, not prepended: `ChapterRow` order is the book's chapter order —
- * unlike `BookCard`'s `updatedAt` shelf sort — and a new chapter is the next
- * one, not the first.
+ * The patched card also moves to the FRONT of the shelf. `addChapterToBook`
+ * bumps the book's `updatedAt` in the same write (`lib/storage/books.ts`,
+ * the `chapters` object store put), and `listBooks` sorts newest-first — with
+ * `reload()` gone, nothing else will ever reconcile that order, so a chapter
+ * added to a book that is not already first left the shelf permanently
+ * disagreeing with what a fresh read would return (Frank R5 P2: dropping
+ * `reload()` for the P2-2 fix above removed the one thing that used to paper
+ * over this).
+ *
+ * Chapters themselves are appended, not prepended: `ChapterRow` order is the
+ * book's chapter order — unlike `BookCard`'s `updatedAt` shelf sort — and a
+ * new chapter is the next one, not the first.
  *
  * Pure so the fold itself, not just the ref that gates it, has a red-first
  * test (`tests/use-books.test.ts`).
@@ -184,25 +193,25 @@ export function patchNewChapter(
   bookId: BookId,
   chapter: Chapter
 ): BookCard[] {
-  return books.map((card) =>
-    card.bookId === bookId
-      ? {
-          ...card,
-          chapters: [
-            ...card.chapters,
-            {
-              chapterId: chapter.id,
-              number: chapter.number,
-              name: chapter.name,
-              // A brand-new chapter has no segments, so both counts are known
-              // without a read — mirrors `addSegment`'s optimistic row.
-              finishedCount: 0,
-              totalCount: 0,
-            },
-          ],
-        }
-      : card
-  );
+  const index = books.findIndex((card) => card.bookId === bookId);
+  const original = books[index];
+  if (index === -1 || !original) return books as BookCard[]; // stale card
+  const patched: BookCard = {
+    ...original,
+    chapters: [
+      ...original.chapters,
+      {
+        chapterId: chapter.id,
+        number: chapter.number,
+        name: chapter.name,
+        // A brand-new chapter has no segments, so both counts are known
+        // without a read — mirrors `addSegment`'s optimistic row.
+        finishedCount: 0,
+        totalCount: 0,
+      },
+    ],
+  };
+  return [patched, ...books.slice(0, index), ...books.slice(index + 1)];
 }
 
 /**
