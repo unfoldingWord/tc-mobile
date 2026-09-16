@@ -331,6 +331,13 @@ export const strings = {
   // the book grain, so this combines rather than stacking two.
   shareBookMissingAndPartial: (chapters: number, segments: number): string =>
     `${strings.shareBookMissing(chapters)} ${strings.shareBookPartial(segments)}`,
+  // The encoder went silent mid-share and was restarted (#166). Chapter and book
+  // alike: the cause is the phone, not what was being shared. Try again is still
+  // the first thing to do — the encoder was restarted — and the restart hint is
+  // here because the Books shelf that carries it is not on screen while a
+  // chapter is open (George R2 P3-2).
+  shareEncoderStopped:
+    "Could not prepare this to share. Try again — if it keeps happening, restart the app.",
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,

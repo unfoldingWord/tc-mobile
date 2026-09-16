@@ -139,7 +139,7 @@ beforeEach(async () => {
 });
 
 describe("requestTranscodeSweep — a stalled encoder", () => {
-  it("BREAKS the sweep on EncoderStalledError, leaving later segments untouched", async () => {
+  it("BREAKS the pass on EncoderStalledError, then drains once WITHOUT the stalled clip", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       // s1's encode reports the worker wedged; s2 would encode fine.
@@ -150,11 +150,17 @@ describe("requestTranscodeSweep — a stalled encoder", () => {
 
       await expect(requestTranscodeSweep()).resolves.toBeUndefined();
 
-      // The lane turn for s1 ran and stalled; s2's turn NEVER started — the sweep
-      // stopped rather than re-arm the deadline on it and block queued Shares.
-      expect(withEncoder).toHaveBeenCalledTimes(1);
-      expect(loadSegmentClip).toHaveBeenCalledTimes(1);
-      expect(commitTranscode).not.toHaveBeenCalled();
+      // The first pass stopped at s1 rather than re-arm the deadline down the
+      // list. The ONE drain pass (George R2 P2) then re-listed and ran s2 on the
+      // recovered worker — and never went back to s1.
+      expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
+      expect(withEncoder).toHaveBeenCalledTimes(2);
+      expect(loadSegmentClip).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(loadSegmentClip).mock.calls.map((c) => c[0])).toEqual([
+        sid("s1"),
+        sid("s2"),
+      ]);
+      expect(commitTranscode).toHaveBeenCalledTimes(1);
       expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {
       errorSpy.mockRestore();
@@ -186,11 +192,16 @@ describe("requestTranscodeSweep — a stalled encoder", () => {
 
       await expect(requestTranscodeSweep()).resolves.toBeUndefined();
 
-      // One pass only: the list was taken once and the wedged worker was asked
-      // once. A second pass would show up as a second listing.
-      expect(listPcmFinishedSegments).toHaveBeenCalledTimes(1);
-      expect(withEncoder).toHaveBeenCalledTimes(1);
-      expect(commitTranscode).not.toHaveBeenCalled();
+      // The coalesced extra pass is NOT run: had it been, s1 — first in the
+      // list — would have been asked again. What runs instead is the single
+      // drain pass, which leaves s1 out. So s1 is asked exactly once, the list
+      // is taken exactly twice (pass + drain), and nothing loops.
+      expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
+      const s1Turns = vi
+        .mocked(loadSegmentClip)
+        .mock.calls.filter((c) => c[0] === sid("s1"));
+      expect(s1Turns).toHaveLength(1);
+      expect(commitTranscode).toHaveBeenCalledTimes(1);
     } finally {
       errorSpy.mockRestore();
     }

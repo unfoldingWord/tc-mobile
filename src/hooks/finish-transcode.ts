@@ -70,13 +70,12 @@ let lastStalledSegmentId: SegmentId | null = null;
  * skipped, and a failure to list is reported the same way.
  *
  * ONE case is not covered by the promise it hands back: a request that lands
- * while a run is in flight is covered by that run's extra pass UNLESS the run
- * ends on a stall, which drops the extra pass deliberately (#290 — the retry
- * must not go straight back at a worker known to be wedged). Those segments keep
- * their PCM and are picked up by the next launch or the next transition. Every
- * call site `void`s this promise, so nothing observes the difference today; it
- * is written down because the next reader of the coalescing contract would
- * otherwise re-break #290 (George R1 P3-6).
+ * while a run is in flight is covered by that run's extra pass — or, if the run
+ * stalled, by its single drain pass — UNLESS the drain pass stalls too. Those
+ * segments keep their PCM and are picked up by the next launch or the next
+ * transition. Every call site `void`s this promise, so nothing observes the
+ * difference today; it is written down because the next reader of the
+ * coalescing contract would otherwise re-break #290 (George R1 P3-6).
  */
 export function requestTranscodeSweep(): Promise<void> {
   if (running) {
@@ -99,10 +98,12 @@ export function requestTranscodeSweep(): Promise<void> {
  * exactly what the earlier `.finally(…).then(…)` chain existed to paper over
  * (that chain was the B8 PR's coalescing residual; folded per #185 round-2 George).
  *
- * ONE deliberate exception, and it is not a window: a run that ends on a STALL
- * drops the extra pass even when the flag is set, because going straight back at
- * a worker known to be wedged is the whole of #290. Those segments keep their
- * PCM and the next launch or transition picks them up (George R1 P3-6).
+ * ONE deliberate exception, and it is not a window: a pass that ends on a STALL
+ * is not followed by the coalesced extra pass (#290). It is followed instead by
+ * exactly one DRAIN pass that re-lists — so a transition that landed during the
+ * stall is still covered — and leaves the stalled clip out. Only if that drain
+ * itself stalls are the rest left for the next launch or transition, with their
+ * PCM kept (George R1 P3-6, R2 P2).
  *
  * The clear lives in `finally`, not after the loop, on purpose: an uncaught throw
  * out of `sweepOnce` must still release the lock. `if (running)` is truthy for a
@@ -111,10 +112,10 @@ export function requestTranscodeSweep(): Promise<void> {
  */
 async function runSweeps(): Promise<void> {
   try {
-    let stalled = false;
+    let stalled: SegmentId | null = null;
     do {
       requestedDuringRun = false;
-      stalled = await sweepOnce();
+      stalled = await sweepOnce(null);
       // A stall ends the RUN, not just the pass. Breaking out of `sweepOnce`
       // alone left the coalescing flag set, so a Finished transition that
       // landed during the 15 s stall window sent the loop straight back at the
@@ -122,7 +123,22 @@ async function runSweeps(): Promise<void> {
       // behind it, for a worker we already know is not answering (Frank R3 P2,
       // #290). The retry belongs to the next launch or the next transition,
       // once the page and its worker are healthy again.
-    } while (requestedDuringRun && !stalled);
+    } while (requestedDuringRun && stalled === null);
+    // ...but ONE drain pass, on the worker `encodeInWorker` has already
+    // recovered, with the clip that stalled left out (George R2 P2). Without
+    // it the deprioritisation below only ever helped a LATER pass in the same
+    // page, and the only automatic later pass is the launch sweep after a
+    // reload — which zeroes that memory. One poison clip sorted first then
+    // stalled every launch and nothing behind it ever ran, and the restart the
+    // shelf recommends was the very thing that reset it.
+    //
+    // Exactly one, never a loop: a stall INSIDE the drain is a second clip
+    // wedging a fresh worker, which is an encoder that has stopped, not a bad
+    // clip, and the run ends there. The poison is not retried in this run at
+    // all — going straight back at what just wedged is the whole of #290 — and
+    // a Share queued on the lane gets its turn between any two segments here
+    // exactly as it does in an ordinary pass.
+    if (stalled !== null) await sweepOnce(stalled);
   } finally {
     running = null;
   }
@@ -146,8 +162,13 @@ export function afterStalledSegment<
   return [...owed.slice(0, index), ...owed.slice(index + 1), owed[index]!];
 }
 
-/** One pass. Resolves `true` when it stopped because the encoder is wedged. */
-async function sweepOnce(): Promise<boolean> {
+/**
+ * One pass. Resolves to the id of the segment whose encode STALLED, which is
+ * what ended the pass early, or `null` when the pass ran to the end.
+ *
+ * `skip` leaves one segment out entirely — the drain pass's poison clip.
+ */
+async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
@@ -156,12 +177,13 @@ async function sweepOnce(): Promise<boolean> {
       new Error("Could not list segments awaiting transcode", { cause }),
       "transcode-sweep"
     );
-    return false;
+    return null;
   }
   for (const { segmentId, clipId } of afterStalledSegment(
     owed,
     lastStalledSegmentId
   )) {
+    if (segmentId === skip) continue;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
       // PCM is read only once the lane is ours, so a share holding the lane
@@ -203,20 +225,19 @@ async function sweepOnce(): Promise<boolean> {
       // A STALLED encoder is not a per-segment failure — it is the whole worker
       // being wedged (#166), and the next segment would only re-arm the same
       // silence deadline and stall again: N segments × the timeout, blocking
-      // every Share queued behind the lane that whole time. Stop the sweep; its
-      // PCM is kept and the next launch's sweep (or the next transition's
-      // request) retries once the page — and its worker — are healthy again.
-      // A plain per-segment error keeps the loop going to the next segment.
+      // every Share queued behind the lane that whole time. End the pass and
+      // hand back WHICH clip stalled: `runSweeps` makes one drain pass without
+      // it, and a later sweep in this page puts it last. Its PCM is kept either
+      // way. A plain per-segment error keeps the loop going to the next segment.
       //
-      // Remembering WHICH segment stalled is what stops this early exit from
-      // becoming a head-of-line block: one poison clip at the front of a stable
-      // list would otherwise starve every other finished segment for the life of
-      // the page (George R1 P2-2). The next pass puts it last.
+      // Naming the clip is what stops this early exit from becoming a
+      // head-of-line block: one poison clip at the front of a stable list would
+      // otherwise starve every other finished segment (George R1 P2-2, R2 P2).
       if (cause instanceof EncoderStalledError) {
         lastStalledSegmentId = segmentId;
-        return true;
+        return segmentId;
       }
     }
   }
-  return false;
+  return null;
 }

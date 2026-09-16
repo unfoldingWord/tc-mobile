@@ -216,18 +216,14 @@ describe("a stalled segment does not block the queue (George R1 P2-2)", () => {
     });
 
     await requestTranscodeSweep();
-    // Pass 1: s1 first, stalls, run over. s2 untouched.
-    expect(commitTranscode).not.toHaveBeenCalled();
+    // Run 1: s1 first, stalls; the drain lands s2 without retrying s1.
+    vi.mocked(loadSegmentClip).mockClear();
 
     await requestTranscodeSweep();
-    // Pass 2: s2 goes first and lands. s1 is retried after it, and stalls again.
-    expect(commitTranscode).toHaveBeenCalledTimes(1);
-    expect(commitTranscode).toHaveBeenCalledWith(
-      sid("s2"),
-      cid("c2"),
-      expect.any(Uint8Array),
-      expect.anything()
-    );
+    // Run 2, a LATER sweep in the same page: s1 is still remembered, so the
+    // pass takes s2 first and only then retries s1 (which stalls again).
+    expect(vi.mocked(loadSegmentClip).mock.calls[0]?.[0]).toBe(sid("s2"));
+    expect(vi.mocked(loadSegmentClip).mock.calls[1]?.[0]).toBe(sid("s1"));
   });
 
   it("leaves a healthy run's order alone", async () => {
@@ -257,6 +253,70 @@ describe("a stalled segment does not block the queue (George R1 P2-2)", () => {
       sid("s1"),
       sid("s2"),
     ]);
+  });
+});
+
+describe("one drain pass after a stall, in the SAME run (George R2 P2)", () => {
+  /** Twenty owed segments p00..p19, each clip holding its own index. */
+  function twentyOwed(): void {
+    const ids = Array.from({ length: 20 }, (_, i) =>
+      String(i).padStart(2, "0")
+    );
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue(
+      ids.map((n) => ({ segmentId: sid(`p${n}`), clipId: cid(`c${n}`) }))
+    );
+    vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) => {
+      const n = segmentId.slice(1);
+      return resolvedPcm(segmentId, cid(`c${n}`), Int16Array.of(Number(n)));
+    });
+  }
+
+  it("drains the other nineteen on the recovered worker when the FIRST clip is poison", async () => {
+    // The launch sweep is the only automatic pass a page gets, and the restart
+    // the shelf recommends zeroes the sweep's memory. A reorder that only helps
+    // a LATER pass therefore never helped at all: the poison clip, sorted
+    // first, stalled every launch and the other nineteen never ran.
+    twentyOwed();
+    encodeMp3.mockImplementation(async (s: Int16Array) => {
+      if (s[0] === 0) throw new StalledError(15_000);
+      return new Uint8Array([s[0] ?? 0]);
+    });
+
+    await requestTranscodeSweep();
+
+    expect(commitTranscode).toHaveBeenCalledTimes(19);
+    // The poison is attempted ONCE in the run — not retried at the back of the
+    // drain. #290's point is not to go straight back at what just wedged.
+    const poisonAttempts = encodeMp3.mock.calls.filter(
+      ([s]) => (s as Int16Array)[0] === 0
+    );
+    expect(poisonAttempts).toHaveLength(1);
+    expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops at a SECOND stall in the drain — that is a wedged encoder, not a bad clip", async () => {
+    twentyOwed();
+    encodeMp3.mockImplementation(async (s: Int16Array) => {
+      if (s[0] === 0 || s[0] === 5) throw new StalledError(15_000);
+      return new Uint8Array([s[0] ?? 0]);
+    });
+
+    await requestTranscodeSweep();
+
+    // p01..p04 land in the drain, p05 stalls, nothing after it is tried.
+    expect(commitTranscode).toHaveBeenCalledTimes(4);
+    expect(encodeMp3).toHaveBeenCalledTimes(6);
+    // Exactly one drain: no third listing, however the run ended.
+    expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes no drain pass when nothing stalled", async () => {
+    twentyOwed();
+
+    await requestTranscodeSweep();
+
+    expect(commitTranscode).toHaveBeenCalledTimes(20);
+    expect(listPcmFinishedSegments).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -16,6 +16,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
+import { shareErrorText } from "./share-error-copy";
 import { strings } from "./strings";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
@@ -427,12 +428,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, [bookShare, onCloseShareMenu]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. Map its error code to copy here.
-  const bookShareErrorText =
-    bookShare.error === "nothing"
-      ? strings.shareBookNothing
-      : bookShare.error === "failed"
-        ? strings.shareBookFailed
-        : null;
+  const bookShareErrorText = shareErrorText(bookShare.error, "book");
   // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EncoderStalledError } from "./mp3-codec";
 import { createShareHandoff } from "./share-handoff";
 import {
   type StagedShare,
@@ -41,10 +42,22 @@ import {
 /**
  * Why a share did not proceed. A CODE, not a message — the screen maps it to a
  * translator-facing string, so this browser-boundary hook stays free of UI copy.
- * `nothing`: there was no recorded audio to share. `failed`: encoding, the share
- * sheet, or an unsupported browser.
+ * `nothing`: there was no recorded audio to share. `encoder`: the encoder went
+ * silent past its deadline and was restarted (#166) — "try again" is still the
+ * right first move, but a restart is the one that may be needed, and the Books
+ * shelf that says so is not on screen while a chapter is open (George R2 P3-2).
+ * `failed`: any other encode failure, the share sheet, or an unsupported
+ * browser.
  */
-export type ShareError = "nothing" | "failed";
+export type ShareError = "nothing" | "encoder" | "failed";
+
+/**
+ * Which code a failed PREPARE (tap 1) surfaces. Only the typed stall signal is
+ * singled out; every other throw stays the generic `failed` it always was.
+ */
+export function classifyPrepareError(cause: unknown): ShareError {
+  return cause instanceof EncoderStalledError ? "encoder" : "failed";
+}
 
 /**
  * `idle`: nothing prepared. `preparing`: tap 1's encode is in flight (busy).
@@ -292,7 +305,7 @@ export function useShareFlow(): UseShareFlow {
         // produced — is not this screen's news.
         if (!current()) return;
         console.error("Preparing the share failed", cause);
-        setError("failed");
+        setError(classifyPrepareError(cause));
         setStatus("idle");
       } finally {
         // Only clear the guard for the run that still owns it. A stale run whose
