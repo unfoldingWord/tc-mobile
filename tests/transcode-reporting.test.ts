@@ -316,6 +316,45 @@ describe("one drain pass after a stall, in the SAME run (George R2 P2)", () => {
     expect(listPcmFinishedSegments).toHaveBeenCalledTimes(2);
   });
 
+  it("serves a request that arrives DURING a successful drain (George R3 P2-2)", async () => {
+    // The drain is an `await` after the loop's last look at the coalescing
+    // flag, so a `void requestTranscodeSweep()` landing inside it joined the
+    // running promise, set the flag, and was dropped when the run cleared —
+    // the joiner told its work was covered when it was not.
+    twentyOwed();
+    let listings = 0;
+    vi.mocked(listPcmFinishedSegments).mockImplementation(async () => {
+      listings += 1;
+      const ids = Array.from({ length: listings >= 3 ? 21 : 20 }, (_, i) =>
+        String(i).padStart(2, "0")
+      );
+      return ids.map((n) => ({
+        segmentId: sid(`p${n}`),
+        clipId: cid(`c${n}`),
+      }));
+    });
+    let requested = false;
+    encodeMp3.mockImplementation(async (s: Int16Array) => {
+      if (s[0] === 0) throw new StalledError(15_000);
+      // Mid-drain: a translator marks segment 20 Finished.
+      if (s[0] === 3 && !requested) {
+        requested = true;
+        void requestTranscodeSweep();
+      }
+      return new Uint8Array([s[0] ?? 0]);
+    });
+
+    await requestTranscodeSweep();
+
+    const committed = vi.mocked(commitTranscode).mock.calls.map((c) => c[0]);
+    expect(committed).toContain(sid("p20"));
+    // And the poison stayed out of the extra pass: asked once in the run.
+    const poisonAttempts = encodeMp3.mock.calls.filter(
+      ([s]) => (s as Int16Array)[0] === 0
+    );
+    expect(poisonAttempts).toHaveLength(1);
+  });
+
   it("makes no drain pass when nothing stalled", async () => {
     twentyOwed();
 

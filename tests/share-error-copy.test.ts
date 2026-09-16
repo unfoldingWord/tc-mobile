@@ -1,30 +1,72 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { shareErrorText } from "@/components/share-error-copy";
 import { strings } from "@/components/strings";
 import { EncoderStalledError } from "@/hooks/mp3-codec";
-import { classifyPrepareError } from "@/hooks/share-flow";
+import { subscribeToFailures } from "@/hooks/report-failure";
+import { classifyPrepareError, settlePrepareFailure } from "@/hooks/share-flow";
 
 /**
- * A stalled encoder during Share says so where the translator is looking
- * (George R2 P3-2).
+ * A stalled or failing encoder during Share says so where the translator is
+ * looking (George R2 P3-2, R3 P2-1).
  *
  * The Books shelf carries the "restart the app" line, but a Share Chapter runs
  * from the Segments screen, where the shelf is unmounted. So the share menu has
- * to carry it for the one failure that needs it. Two pure seams are pinned: the
- * hook's classification, and the copy each screen shows.
+ * to carry it whenever the encoder is the problem. Two pure seams are pinned:
+ * the hook's classification (and its report to the sink), and the copy each
+ * screen shows.
  */
 describe("classifyPrepareError", () => {
-  it("singles out a stalled encoder", () => {
-    expect(classifyPrepareError(new EncoderStalledError(15_000))).toBe(
-      "encoder"
-    );
+  it("singles out a stalled encoder, whatever the health reads", () => {
+    const stall = new EncoderStalledError(15_000);
+    expect(classifyPrepareError(stall, "ok")).toBe("encoder");
+    expect(classifyPrepareError(stall, "failing")).toBe("encoder");
   });
 
-  it("leaves every other failure as the generic `failed`", () => {
-    expect(classifyPrepareError(new Error("lame blew up"))).toBe("failed");
-    expect(classifyPrepareError("a string")).toBe("failed");
-    expect(classifyPrepareError(undefined)).toBe("failed");
+  it("leaves an ordinary failure `failed` while the encoder is still healthy", () => {
+    // The first and second ordinary failures: the threshold is still absorbing
+    // noise, and "try again" is the honest advice.
+    expect(classifyPrepareError(new Error("lame blew up"), "ok")).toBe(
+      "failed"
+    );
+    expect(classifyPrepareError("a string", "ok")).toBe("failed");
+    expect(classifyPrepareError(undefined, "ok")).toBe("failed");
+  });
+
+  it("names the encoder for ANY failure once the encoder is failing (George R3 P2-1)", () => {
+    // A purged worker chunk (#182) or a worker that dies on every encode never
+    // stalls — it errors. Once those errors have tripped the threshold, the
+    // encode has already moved the store, and the only place a translator on
+    // Segments can learn that a restart is needed is this line.
+    expect(
+      classifyPrepareError(new Error("worker failed to start"), "failing")
+    ).toBe("encoder");
+  });
+});
+
+describe("settlePrepareFailure", () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it("reports the failure to the SINK and returns the code (George R3 P3-4)", () => {
+    // The sweep moved onto `reportFailure` in this PR; a Share that failed the
+    // same way was still only a `console.error`.
+    const reports: { context: string; cause: unknown }[] = [];
+    const stop = subscribeToFailures((r) =>
+      reports.push({ context: r.context, cause: r.cause })
+    );
+    try {
+      const stall = new EncoderStalledError(15_000);
+      expect(settlePrepareFailure(stall, "ok")).toBe("encoder");
+      expect(reports).toEqual([{ context: "share-prepare", cause: stall }]);
+    } finally {
+      stop();
+    }
   });
 });
 

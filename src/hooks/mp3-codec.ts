@@ -348,10 +348,24 @@ function encoderWorker(): Worker {
   return sharedWorker;
 }
 
-/** Terminate and forget the shared worker; the next encode recreates it. */
+/**
+ * Forget and terminate the shared worker; the next encode recreates it.
+ *
+ * FORGET FIRST (#291, George R3 P3-3). With terminate-then-null, a `terminate()`
+ * that threw left the handle in place: the recovery never reached its re-warm,
+ * and the next encode posted into a worker that could no longer answer and
+ * stalled for another full window. `terminate()` is specified not to throw, so
+ * this is defensive — but a throw here is still reported rather than swallowed,
+ * and never lets the dead handle survive.
+ */
 function dropEncoderWorker(): void {
-  sharedWorker?.terminate();
+  const worker = sharedWorker;
   sharedWorker = null;
+  try {
+    worker?.terminate();
+  } catch (cause) {
+    reportFailure(cause, "encoder-recover");
+  }
 }
 
 /**

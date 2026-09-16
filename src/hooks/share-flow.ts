@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { EncoderStalledError } from "./mp3-codec";
+import {
+  type EncoderHealth,
+  EncoderStalledError,
+  encoderHealth,
+} from "./mp3-codec";
+import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   type StagedShare,
@@ -52,11 +57,39 @@ import {
 export type ShareError = "nothing" | "encoder" | "failed";
 
 /**
- * Which code a failed PREPARE (tap 1) surfaces. Only the typed stall signal is
- * singled out; every other throw stays the generic `failed` it always was.
+ * Which code a failed PREPARE (tap 1) surfaces.
+ *
+ * `encoder` for a stall, and ALSO for any failure once the encoder's health
+ * already reads `failing` (George R3 P2-1). A purged worker chunk (#182) or a
+ * worker that dies on every encode never stalls — it errors — and by the time
+ * this runs `encodeInWorker` has already counted that error. The Books shelf
+ * that would say so is unmounted while a chapter is open, so this line is the
+ * only place a translator on Segments can learn a restart is needed. Below the
+ * threshold an ordinary throw stays `failed`: "try again" is honest there.
+ *
+ * `health` is a parameter, defaulted to the live store, so the decision is a
+ * pure function a test can drive.
  */
-export function classifyPrepareError(cause: unknown): ShareError {
-  return cause instanceof EncoderStalledError ? "encoder" : "failed";
+export function classifyPrepareError(
+  cause: unknown,
+  health: EncoderHealth = encoderHealth()
+): ShareError {
+  if (cause instanceof EncoderStalledError) return "encoder";
+  return health === "failing" ? "encoder" : "failed";
+}
+
+/**
+ * A failed prepare, settled: reported to the app's ONE failure sink and
+ * classified for the screen (George R3 P3-4). The Finished sweep moved onto
+ * `reportFailure` in #166; a Share that failed the same way was still only a
+ * `console.error`, which AGENTS.md is explicit is not a channel.
+ */
+export function settlePrepareFailure(
+  cause: unknown,
+  health: EncoderHealth = encoderHealth()
+): ShareError {
+  reportFailure(cause, "share-prepare");
+  return classifyPrepareError(cause, health);
 }
 
 /**
@@ -304,8 +337,7 @@ export function useShareFlow(): UseShareFlow {
         // A stale run's rejection — including the AbortError its own cancel
         // produced — is not this screen's news.
         if (!current()) return;
-        console.error("Preparing the share failed", cause);
-        setError(classifyPrepareError(cause));
+        setError(settlePrepareFailure(cause));
         setStatus("idle");
       } finally {
         // Only clear the guard for the run that still owns it. A stale run whose

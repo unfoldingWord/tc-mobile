@@ -245,6 +245,21 @@ describe("encoderHealth (#166)", () => {
     }
   });
 
+  it("never keeps a worker whose terminate threw as the reusable handle (#291, George R3 P3-3)", async () => {
+    FakeWorker.terminateThrows = true;
+    await stallOnce();
+    const wedged = FakeWorker.instances[0];
+
+    // The recovery must have warmed a NEW worker, and the next encode must post
+    // to it — not to the terminated one, which would answer nothing and stall
+    // for another fifteen seconds.
+    FakeWorker.terminateThrows = false;
+    await succeedOnce();
+    expect(FakeWorker.instances.length).toBeGreaterThan(1);
+    expect(live()).not.toBe(wedged);
+    expect(encoderHealth()).toBe("ok");
+  });
+
   it("a throwing subscriber is reported, never swallowed, and does not break the encode", async () => {
     const boom = new Error("the listener blew up");
     const stopListener = subscribeToEncoderHealth(() => {
