@@ -36,7 +36,7 @@ import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
 import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
-import { CANONICAL_SAMPLE_RATE, framesToMs } from "@/lib/audio/format";
+import { framesToMs } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
