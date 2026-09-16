@@ -39,6 +39,16 @@ interface BookExport {
    * a hole must not share "as if whole" (Frank R-B7-book P2).
    */
   readonly missing: number;
+  /**
+   * Segments missing INSIDE chapters that DID make it into the zip — the sum of
+   * each included chapter's own `exportChapterMp3` `missing` count (#116). A
+   * book whose three chapters each omit one segment reports `missing === 0`
+   * (every chapter shipped something) and `partialSegments === 3`; before this
+   * field existed that per-chapter count was read and discarded here, so a
+   * book with the exact hole Share Chapter warns about showed no Notice at the
+   * book grain at all.
+   */
+  readonly partialSegments: number;
 }
 
 /**
@@ -92,6 +102,10 @@ export async function exportBookZip(
   const { chapters, missing: danglingChapters } =
     await resolveBookChapters(bookId);
   let missing = danglingChapters;
+  // Sum of each INCLUDED chapter's own `result.missing` — see `BookExport`
+  // above. Chapters left out entirely contribute to `missing`, not here; a
+  // chapter counts toward at most one of the two.
+  let partialSegments = 0;
 
   // The streaming archive. `ondata` fires synchronously from `push`/`end` for a
   // pass-through entry (nothing here is deferred to a worker), so by the time
@@ -131,11 +145,12 @@ export async function exportBookZip(
     zip.add(entry);
     entry.push(result.mp3, true);
     if (zipError) throw zipError;
+    partialSegments += result.missing;
     written++;
   }
   if (written === 0) return null;
 
   zip.end();
   if (zipError) throw zipError;
-  return { chunks, chapters: written, missing };
+  return { chunks, chapters: written, missing, partialSegments };
 }

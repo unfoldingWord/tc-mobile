@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { liveScopeShown, type StageState } from "@/components/recorder-stage";
+import {
+  liveScopeShown,
+  stageView,
+  type StageState,
+} from "@/components/recorder-stage";
 
 /**
  * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
@@ -91,5 +95,180 @@ describe("liveScopeShown — the stage-owning states win", () => {
         liveScopeShown(stage({ ...s, previewShown: true, hasAudio: true }))
       ).toBe(false);
     }
+  });
+});
+
+/**
+ * The recorder stage's three view-coupled decisions, as a truth table.
+ *
+ * Rounds 3, 4, 5 and 7 of this PR's review each found the same defect wearing
+ * a different hat — the paste marker, then zoom, then Select, then the
+ * playhead's own hide rule — and each time the answer was "this control (or
+ * overlay) assumes the pan/zoom window while something else is drawn, or
+ * assumes every sounding buffer swapped to the whole clip when this one
+ * didn't". Repetition is a class, not a coincidence, so the decision is made
+ * once, here, where it can be enumerated and pinned; `recorder.tsx` reads the
+ * answers rather than re-deriving them per control.
+ *
+ * The axes are the four the recorder actually varies: which mode the sheet is
+ * in, whether a buffer is sounding, whether a selection frame is up, and
+ * whether a paused-take preview is on the stage.
+ *
+ * A fourth decision, `centerlineHidden`, lived in this table from R2 through
+ * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the centerline is
+ * visible in every state, so `Waveform` now draws it unconditionally
+ * whenever a recorder `view` is present, with nothing left for this pure
+ * module to decide — see the module docblock above `stageView`. There is
+ * deliberately no test here pinning "always visible": that claim now lives
+ * entirely in `Waveform`'s canvas draw, which this repo's convention treats
+ * as review-only (see this PR's body for what is and is not verified).
+ */
+
+const base = {
+  mode: "edit",
+  playingBuffer: false,
+  selectionActive: false,
+  previewShown: false,
+} as const;
+
+describe("stageView", () => {
+  it("draws the pan window when nothing is sounding", () => {
+    // Edit mode, idle: the ordinary editing state.
+    expect(stageView(base)).toEqual({
+      wholeView: false,
+      windowControlsInert: false,
+      inPlaceAudition: false,
+    });
+    expect(stageView({ ...base, selectionActive: true })).toEqual({
+      wholeView: false,
+      windowControlsInert: false,
+      inPlaceAudition: false,
+    });
+  });
+
+  it("swaps to the whole clip for a record-mode play", () => {
+    // The playhead must stay on screen and the pan window is not what a
+    // listener is following (George R1 G1 on #102).
+    expect(stageView({ ...base, mode: "record", playingBuffer: true })).toEqual(
+      {
+        wholeView: true,
+        windowControlsInert: true,
+        inPlaceAudition: false,
+      }
+    );
+  });
+
+  it("swaps to the whole clip for an audition with no span picked", () => {
+    // "line"/"whole": nothing is drawn through the pan window that has to stay
+    // aligned, and keeping that window would sound audio that is off screen.
+    expect(stageView({ ...base, playingBuffer: true })).toEqual({
+      wholeView: true,
+      windowControlsInert: true,
+      inPlaceAudition: false,
+    });
+  });
+
+  it("keeps the pan window for an audition of a picked span, and marks it in-place", () => {
+    // The band is positioned through that window, and hearing exactly the span
+    // it marks is the point — so the view stays put.
+    //
+    // `inPlaceAudition: true` is the ONLY case it is — it is what tells the
+    // playhead overlay to clamp a position outside the (unswapped) window to
+    // the edge rather than hide (George R7): a picked span wider than the
+    // pan/zoom window sounds all of it, but the window itself never widens,
+    // so without this the moving cue this whole feature exists to add
+    // vanishes the moment playback crosses `win.end`.
+    expect(
+      stageView({ ...base, playingBuffer: true, selectionActive: true })
+    ).toEqual({
+      wholeView: false,
+      windowControlsInert: true,
+      inPlaceAudition: true,
+    });
+  });
+
+  it("plays in place only in EDIT mode, never on a stale record-mode span", () => {
+    // Playing in place is an EDIT-mode idea: a record-mode play must always get
+    // the whole-clip view, whatever the selection flag says. This input is not
+    // reachable in the app today — the one other `setMode("record")` call site
+    // (`onRetryRecord`) does leave the frame open, but it only runs while
+    // `denied`, which requires `!hasAudio`, and Select needs audio — so no frame
+    // can be open there. It is pinned anyway because this is a pure function:
+    // it is asked questions by its type, not by today's call sites, and the
+    // answer for this one is the whole-clip view — never in-place, either.
+    // Mutation is what surfaced the original gap — dropping `mode === "edit"`
+    // from the in-place rule left the suite green.
+    expect(
+      stageView({
+        ...base,
+        mode: "record",
+        playingBuffer: true,
+        selectionActive: true,
+      })
+    ).toEqual({
+      wholeView: true,
+      windowControlsInert: true,
+      inPlaceAudition: false,
+    });
+  });
+
+  it("swaps to the whole clip for a paused-take preview, span or not", () => {
+    // The preview draws its own peaks across the whole stage (#101), so it is
+    // never shown through the pan window.
+    expect(stageView({ ...base, mode: "record", previewShown: true })).toEqual({
+      wholeView: true,
+      windowControlsInert: false,
+      inPlaceAudition: false,
+    });
+    expect(
+      stageView({ ...base, previewShown: true, selectionActive: true })
+    ).toEqual({
+      wholeView: true,
+      windowControlsInert: false,
+      inPlaceAudition: false,
+    });
+  });
+
+  it("never marks a preview in-place, even with a stale selection open", () => {
+    // `previewShown` forces `wholeView` regardless of `inPlace`, so
+    // `inPlaceAudition` (which requires `!wholeView`) must be false here too —
+    // a preview is not a sounding BUFFER in the sense this flag means (Play is
+    // what sounds it; the paused transport owns those controls). Mutation:
+    // dropping the `!wholeView` half of `inPlaceAudition` and leaving only
+    // `input.playingBuffer` would pass every case above but flip this one,
+    // since nothing else in the table sets `playingBuffer` and `previewShown`
+    // together — this is the case that catches it.
+    expect(
+      stageView({
+        ...base,
+        playingBuffer: true,
+        previewShown: true,
+        selectionActive: true,
+      }).inPlaceAudition
+    ).toBe(false);
+  });
+
+  it("inerts the window controls for every sounding buffer, in both modes", () => {
+    // The one predicate behind the class: while audio sounds, no control may
+    // read or move the pan/zoom window. Mode-independent on purpose — it is the
+    // same condition the stage pan has always used, which is why the pan is the
+    // one control that never had this bug.
+    expect(
+      stageView({ ...base, playingBuffer: true }).windowControlsInert
+    ).toBe(true);
+    expect(
+      stageView({ ...base, mode: "record", playingBuffer: true })
+        .windowControlsInert
+    ).toBe(true);
+    expect(
+      stageView({ ...base, playingBuffer: true, selectionActive: true })
+        .windowControlsInert
+    ).toBe(true);
+    // A preview on the stage is not a sounding buffer: Play is what sounds it,
+    // and the paused transport owns those controls (`idleEditable` is already
+    // false there).
+    expect(stageView({ ...base, previewShown: true }).windowControlsInert).toBe(
+      false
+    );
   });
 });

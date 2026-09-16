@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Control } from "./control";
+import { shareControlAffordance } from "./control-affordance";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
@@ -8,9 +15,13 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
+import { encoderNotice } from "./encoder-notice";
+import { shareErrorText } from "./share-error-copy";
 import { strings } from "./strings";
+import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -62,6 +73,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
+  // Durable storage (#12). A book exists only because a write committed, so a
+  // successful shelf read that finds one is "after the first successful write"
+  // reached from the read side — the trigger the hook's docblock explains. The
+  // marker is non-null only when the browser explicitly said it has NOT
+  // promised to keep this data, THIS render still has a book on the shelf (a
+  // delete back to empty must not leave a stale warning up, George R1 P2-1),
+  // and the app is not the Capacitor training shell (native storage is not
+  // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
+  // rejected query) says nothing.
+  const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
   // value the name field is seeded with — the "Book NNN" placeholder the hook
@@ -114,6 +135,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Whether the open book ≡ menu is in rename mode (the name field showing) or
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
+  // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
+  // `busy`. Reset to `false` at every site that bumps `bookMenuSession` (open,
+  // close, arm-a-share) as well as on settle: a still-pending rename for book
+  // A left this `true` across a menu close, so opening book B's ≡ showed B's
+  // FRESH Confirm as busy before B's own Save was ever tapped (Frank r1,
+  // #384) — a session-token comparison would fix it too, but reading
+  // `bookMenuSession.current` (a ref) during render to compare against is
+  // banned (`react-hooks/refs`), so the reset instead happens at each place
+  // that already advances the session.
+  const [savingBookName, setSavingBookName] = useState(false);
   // Which book the Delete confirm is armed for (#337), held apart from
   // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
   // Segments row menu, where Erase closes the row menu and the screen holds the
@@ -322,13 +353,28 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const onOpenShareMenu = useCallback((bookId: BookId) => {
     bookMenuSession.current += 1;
     setShareMenuBookId(bookId);
+    // A different book's still-pending rename must not show THIS book's fresh
+    // Confirm as busy before it has even been tapped (Frank r1, #384).
+    setSavingBookName(false);
   }, []);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
+  //
+  // This is Menu's actual `onClose` — a Menu-level guard that blocked it while
+  // `savingBookName` was true (round 3/4 of #384's review) was REVERTED: it
+  // stopped the scrim/Close/Escape-elsewhere from unmounting the menu mid-write,
+  // but system Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
+  // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
+  // exit (George R5 P2) — Close used to work, so nobody reached for system Back;
+  // making it a silent no-op is what sends them there. Fixing this properly
+  // needs the nav layer's `overlayBlocksClose`/`overlayDismissal` absorbing
+  // system Back too, tracked at #393 (with #374, the same gap for Books' other
+  // menus) rather than shipped as a partial fix here.
   const onCloseShareMenu = useCallback(() => {
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
+    setSavingBookName(false);
     bookShare.reset();
   }, [bookShare]);
   // Commit the typed book name (#264), then close the menu on success. A failed
@@ -343,12 +389,31 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       // same session (F1). Without this, the stale resolution closes the
       // now-current menu and runs share.reset(), discarding a prepared encode.
       const session = bookMenuSession.current;
-      void renameBook(shareMenuBookId, name).then((book) => {
-        if (book && bookMenuSession.current === session) onCloseShareMenu();
-      });
+      setSavingBookName(true);
+      void renameBook(shareMenuBookId, name)
+        .then((book) => {
+          if (book && bookMenuSession.current === session) onCloseShareMenu();
+        })
+        .finally(() => {
+          // Guarded the same way the close above is: a stale settle from a
+          // session this screen has already moved past (a newer open, close,
+          // or armed share) must not touch state a newer session now owns.
+          if (bookMenuSession.current === session) setSavingBookName(false);
+        });
     },
     [renameBook, shareMenuBookId, onCloseShareMenu]
   );
+  // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
+  // the session and clears `savingBookName` like every other exit from this
+  // rename does (George R1 P2, #384): without it, a rename cancelled while
+  // still saving left BOTH a late resolution free to close the menu the user
+  // had already backed out of, AND a stale `savingBookName` that showed the
+  // NEXT Rename tap's fresh Confirm as busy before it was ever tapped.
+  const onCancelRenameBook = useCallback(() => {
+    bookMenuSession.current += 1;
+    setRenamingBook(false);
+    setSavingBookName(false);
+  }, []);
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
   // menu stays open across both gestures (the shelf is `inert` behind it), so the
   // panel is what the translator is looking at.
@@ -357,6 +422,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
+    setSavingBookName(false);
     void bookShare.prepare(
       shareMenuBook.bookId,
       strings.shareBookFilename(shareMenuBook.name),
@@ -373,12 +439,26 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, [bookShare, onCloseShareMenu]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. Map its error code to copy here.
-  const bookShareErrorText =
-    bookShare.error === "nothing"
-      ? strings.shareBookNothing
-      : bookShare.error === "failed"
-        ? strings.shareBookFailed
-        : null;
+  const bookShareErrorText = shareErrorText(bookShare.error, "book");
+  // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
+  // `partialSegments` (segments missing inside chapters that DID ship) are two
+  // different counts that can both be non-zero for the same book. One Notice,
+  // not two — the copy combines when both are present rather than stacking.
+  const bookShareGapText =
+    bookShare.missing > 0 && bookShare.partialSegments > 0
+      ? strings.shareBookMissingAndPartial(
+          bookShare.missing,
+          bookShare.partialSegments
+        )
+      : bookShare.missing > 0
+        ? strings.shareBookMissing(bookShare.missing)
+        : bookShare.partialSegments > 0
+          ? strings.shareBookPartial(bookShare.partialSegments)
+          : null;
+  // The Share Control's glyph/variant/busy across idle → preparing → ready
+  // (#354) — the same table Share Chapter and NameEdit's Confirm use, so
+  // "busy" and "ready" never borrow each other's mark or Confirm's.
+  const bookShareAffordance = shareControlAffordance(bookShare.status);
 
   // ── Delete a book (#337) ──────────────────────────────────────────────────
   // The book the confirm names, resolved from the shelf each render. `open`
@@ -514,6 +594,19 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // (George R4 P2-2 / Frank R4 P2).
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
+  // The encoder's own health (#166). Module state, not hook state — every
+  // encode in the app runs through `mp3-codec`'s single lane, from the sweep
+  // App starts at launch to a Share on another screen — so it is read through
+  // `useSyncExternalStore`, which re-renders on the store's own change rather
+  // than on a poll. Both arguments are module-level functions and so are stable
+  // across renders; the third is the server snapshot, which never runs here but
+  // keeps the hook honest if this tree is ever server-rendered
+  // (`error-boundary.test.ts` already renders components through
+  // `react-dom/server`).
+  const encoderLine = encoderNotice(
+    useSyncExternalStore(subscribeToEncoderHealth, encoderHealth, encoderHealth)
+  );
+
   return (
     // While the menu is open, take the whole shelf chrome — New Book included —
     // out of the focus/pointer tree for AT/switch users, matching how Segments
@@ -567,6 +660,36 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         </Notice>
       ) : (
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
+      )}
+
+      {/* Two standing background conditions can be true at once — the browser
+          has not promised to keep this storage (#12), AND the encoder has
+          stopped working (#166) — and they are about different subsystems, so
+          #279's precedent (encoderLine's own line, not folded into the
+          load/delete/loading slot above, which stays exclusive and acute-first)
+          extends to both rather than making one dominant CSS-flag over the
+          other: each is `&&`-rendered on its own, and BOTH may show stacked.
+          Neither collides with the slot above — both need a completed,
+          non-loading read, which is exactly when `noticeText` is falsy and
+          `loading` is false; there is no gate keying on that here because
+          `storage` and `encoderLine` are themselves already `null` until then
+          (`useStoragePersistence` requires `hasContent`, i.e. a loaded shelf;
+          `encoderHealth()` has nothing to report before a book exists to
+          encode from).
+
+          Order: storage first, encoder second. Storage's risk is total and
+          unrecoverable (browser eviction, no restore path) where encoder's
+          copy explicitly promises nothing is lost — the more severe standing
+          risk reads first, same principle the load-failure/loading slot above
+          already applies by being exclusive and ordered acute-first.
+          `notice-tone.ts`'s `info` docblock names this exact case (a standing
+          condition, not only a completed-event caveat) after George round 1
+          P3-3 flagged the original wording as covering only the latter. */}
+      {storage === "not-persisted" && (
+        <Notice tone="info">{strings.storageNotPersisted}</Notice>
+      )}
+      {encoderLine && (
+        <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
       )}
 
       <div className="flex-1 overflow-y-auto">
@@ -647,8 +770,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               initialValue={shareMenuBook.name}
               fieldLabel={strings.bookNameField}
               onSave={onSaveBookName}
-              onCancel={() => setRenamingBook(false)}
+              onCancel={onCancelRenameBook}
+              busy={savingBookName}
             />
+            {/* Announced regardless of where focus sits — Enter leaves it on
+                the field, not Confirm (George R1 P2, #384). Mirrors Share's
+                own `tone="busy"` Notice for the same reason: Confirm's own
+                busy mark only reaches a screen reader focused ON it. */}
+            {savingBookName && (
+              <Notice tone="busy">{strings.savingName}</Notice>
+            )}
             {/* A failed rename speaks here — the screen's Notice is behind the
                 scrim — while the field stays up for another try.
 
@@ -672,28 +803,40 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             />
             {bookShare.status === "ready" ? (
               <Control
-                icon="share"
+                icon={bookShareAffordance.icon}
                 label={strings.shareSend}
-                variant="primary"
+                variant={bookShareAffordance.variant}
+                className={bookShareAffordance.className}
                 autoFocus
                 onClick={onSendBookShare}
               />
             ) : (
+              // `busy` (not disabled) while preparing: the control must stay
+              // enabled/focusable — a re-tap is already a no-op via the hook's
+              // `preparingRef`, and disabling it would drop this control out of
+              // Menu's `FOCUSABLE` set, breaking the Tab trap (George R-B7) —
+              // and now also paints and reads that wait (#354; see
+              // `control-affordance.ts`).
               <Control
-                icon="share"
-                label={strings.shareBook}
-                variant="quiet"
+                icon={bookShareAffordance.icon}
+                label={
+                  bookShare.status === "preparing"
+                    ? strings.shareBookPreparing
+                    : strings.shareBook
+                }
+                variant={bookShareAffordance.variant}
+                busy={bookShareAffordance.busy}
                 onClick={onPrepareBookShare}
               />
             )}
             {bookShare.status === "preparing" && (
               <Notice tone="busy">{strings.shareBookPreparing}</Notice>
             )}
-            {bookShare.status === "ready" && bookShare.missing > 0 && (
-              // A heads-up once the zip is armed, not a wait (#112).
-              <Notice tone="info">
-                {strings.shareBookMissing(bookShare.missing)}
-              </Notice>
+            {bookShare.status === "ready" && bookShareGapText && (
+              // A heads-up once the zip is armed, not a wait (#112). Covers
+              // both whole chapters left out AND segments missing inside
+              // chapters that shipped (#116) — see `bookShareGapText` above.
+              <Notice tone="info">{bookShareGapText}</Notice>
             )}
             {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
             {/* Destructive, so it sits last — the same place Delete holds in the

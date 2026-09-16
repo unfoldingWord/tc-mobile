@@ -9,14 +9,6 @@ interface WaveformProps {
   /** Precomputed peaks, or `null` for a segment with no recording. */
   peaks: Peaks | null;
   height?: number;
-  /**
-   * The recorder's buffer is sounding. The playhead itself is a DOM overlay now
-   * (`PlayheadOverlay`, #102), not a bar in this canvas — this flag only tells
-   * the canvas to SUPPRESS its record centerline during playback, where a
-   * mid-clip red (insert-here) marker the disabled Record cannot act on would
-   * mislead (George R2). Recorder-only; a row never sets it.
-   */
-  playing?: boolean;
   recorded?: boolean;
   className?: string;
   /**
@@ -25,27 +17,19 @@ interface WaveformProps {
    */
   view?: WaveformWindow | null;
   /**
-   * The recorder is actively capturing (recording or paused). Keeps the red
-   * centerline visible during a FIRST take — when there is no committed audio
-   * yet (`recorded` is false) but the line still marks where recording is
-   * happening. Without it, gating the centerline on `recorded` alone would drop
-   * the record-position marker mid-first-take. Idle + never-recorded (neither
-   * `recorded` nor `capturing`) shows no red line, per the requirements
-   * owner's build feedback: the centerline appears only when a waveform exists
-   * or one is being made.
-   */
-  capturing?: boolean;
-  /**
    * A take is being made on a segment with NO committed audio yet — the paused
    * first take whose decoded preview this canvas draws while `LiveScope` is
    * unmounted (#101). It suppresses the #358 display fit, so that preview reads
    * at the same absolute level as the scope it replaced and Resume does not
    * collapse it again (George R1 P2).
    *
-   * Narrower than `capturing` on purpose. A punch-in draws the segment's already
-   * committed audio while recording, and un-fitting THAT is the #358 complaint
-   * all over again at the moment the translator is aiming at the centreline
-   * (George R2 P2). A row never sets it; a stored take is always fitted.
+   * Narrower than "recording or paused" on purpose (the `capturing` prop this
+   * used to be checked against was removed with #316, once the centerline
+   * stopped needing a capturing flag to stay visible — see `recorder.tsx`'s
+   * call site). A punch-in draws the segment's already committed audio while
+   * recording, and un-fitting THAT is the #358 complaint all over again at
+   * the moment the translator is aiming at the centreline (George R2 P2). A
+   * row never sets it; a stored take is always fitted.
    */
   firstTakeInFlight?: boolean;
   /**
@@ -86,12 +70,10 @@ interface WaveformProps {
 export function Waveform({
   peaks,
   height = 26,
-  playing = false,
   recorded = true,
   className,
   view = null,
   finished = false,
-  capturing = false,
   firstTakeInFlight = false,
   fitFrom,
 }: WaveformProps) {
@@ -136,16 +118,19 @@ export function Waveform({
 
     // The fixed centerline (recorder mode): drawn last so it sits over the
     // audio, and in the record colour because it is where recording starts.
-    // Suppressed while the buffer plays: during playback the recorder swaps to a
-    // whole-clip view where the centerline would fall mid-clip and read as a
-    // (red, insert-here) marker the disabled Record cannot act on — the sweeping
-    // playhead overlay is the only position cue that means anything then (George R2).
+    // ALWAYS drawn whenever a recorder `view` is present — every record/edit
+    // state, per the requirements owner's #316 answer (2026-09-16): "having
+    // the line always visible is important in segment record/edit mode".
+    // This reverses two decisions recorded here previously: an idle,
+    // never-recorded segment used to show no line (the requirements owner's
+    // own earlier build feedback, now read as miscommunication), and the line
+    // used to hide while a buffer sounded / the view swapped to the whole
+    // clip (George R2 / R4 P3 — see `recorder-stage.ts`'s module docblock for
+    // the retired `centerlineHidden` decision that used to gate this). A row
+    // never passes `view`, so this canvas still never draws the line outside
+    // the recorder.
     const drawCenterline = () => {
-      if (!view || playing) return;
-      // Only when a waveform exists (`recorded`) or one is being made
-      // (`capturing`); an idle never-recorded segment shows the dotted rule with
-      // no red line (the requirements owner's build feedback).
-      if (!recorded && !capturing) return;
+      if (!view) return;
       ctx.fillStyle = live;
       ctx.fillRect(Math.round(view.centerFraction * w) - 1, 0, 2, h);
     };
@@ -172,11 +157,11 @@ export function Waveform({
     // 400 buckets in the recorder, 120 in a row — one extra pass over what the
     // draw loop below already walks.
     //
-    // `firstTakeInFlight` — NOT `capturing` — suppresses the fit, so an
-    // uncommitted take reads at the same absolute level as the `LiveScope` this
-    // canvas replaces mid-take, while committed audio that a punch-in is
-    // recording over stays fitted and aimable (George R1 P2, R2 P2; the prop's
-    // docblock carries both failures).
+    // `firstTakeInFlight` — narrower than "recording or paused" — suppresses
+    // the fit, so an uncommitted take reads at the same absolute level as the
+    // `LiveScope` this canvas replaces mid-take, while committed audio that a
+    // punch-in is recording over stays fitted and aimable (George R1 P2, R2
+    // P2; the prop's docblock carries both failures).
     //
     // Fit from `fitFrom` when the caller supplied one — the punch-in Pause+Play
     // preview paints the merged buffer but must fit to the committed clip, not
@@ -227,17 +212,7 @@ export function Waveform({
     // too: it can change (preview shown/cleared) while `peaks` also changes,
     // and a stale value would fit the previous stage's committed clip to the
     // current one's preview.
-  }, [
-    peaks,
-    playing,
-    recorded,
-    height,
-    view,
-    finished,
-    capturing,
-    firstTakeInFlight,
-    fitFrom,
-  ]);
+  }, [peaks, recorded, height, view, finished, firstTakeInFlight, fitFrom]);
 
   return (
     <canvas

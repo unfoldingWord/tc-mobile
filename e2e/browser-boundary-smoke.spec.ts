@@ -25,16 +25,24 @@ import { expect, test } from "@playwright/test";
  * proven is the same code the screens run, without a fake microphone or a
  * simulated tap driving fragile UI timing.
  *
- * Scope cut, disclosed: the issue's fix-shape step 3 also asks for "at least
- * one `progress` message before `done`". On `develop` HEAD, `mp3.worker.ts`'s
- * protocol is one request → one `done`/`error` — no `progress` message exists
- * yet. That heartbeat is added by #207 (open, draft, unmerged as of this PR).
- * Asserting it here would either fabricate a pass against code that doesn't
- * emit it, or require implementing #207's deadline feature inside a smoke-test
- * PR — out of scope for #251. The round-trip itself (a real MP3 comes back
- * from the real worker) is asserted in full below; once #207 merges, extending
- * this spec to also assert the heartbeat is a small, separate follow-up.
+ * The issue's fix-shape step 3 also asked for "at least one `progress` message
+ * before `done`". That heartbeat did not exist when this spec was written; #166
+ * (PR #279) added it, and the heartbeat describe below asserts it — and more
+ * than its existence: that a BUSY worker's heartbeat actually reaches the main
+ * thread well inside the silence deadline, over an encode long enough for that
+ * to matter (George R4 residual 1 on #279).
  */
+
+/**
+ * Ten minutes of canonical PCM — the "ten-minute segment" #175's memory figures
+ * are written about. Three minutes was tried first: it encoded in 1.2 s on the
+ * dev container, which is only two or three heartbeat intervals (the worker
+ * throttles to one every 500 ms) and too thin a margin for a gap measurement
+ * to mean much. Ten minutes gives several intervals even on a fast machine and
+ * still keeps two encodes to seconds. The measured timings are logged, so a
+ * slower runner shows up in the output rather than as a mystery.
+ */
+const HEARTBEAT_CLIP_FRAMES = 44_100 * 600;
 
 /** Samples per MPEG-1 Layer III granule (`lib/audio/mp3-align.ts`). */
 const MP3_GRANULE = 1152;
@@ -54,6 +62,16 @@ declare global {
         fittedHeadRms: number;
         fittedTailRms: number;
         sourceRms: number;
+      }>;
+      encodeWithHeartbeat: (frameCount: number) => Promise<{
+        frameCount: number;
+        codecMp3Length: number;
+        codecEncodeMs: number;
+        stalledName: string | null;
+        progressCount: number;
+        directEncodeMs: number;
+        maxGapMs: number;
+        deadlineMs: number;
       }>;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
@@ -134,6 +152,48 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
     expect(result.fittedHeadRms).toBeLessThan(result.sourceRms * 1.5);
     expect(result.fittedTailRms).toBeGreaterThan(result.sourceRms * 0.5);
     expect(result.fittedTailRms).toBeLessThan(result.sourceRms * 1.5);
+  });
+});
+
+test.describe("the encoder heartbeat through a real busy worker (#166, #279 George R4 residual 1)", () => {
+  test("a multi-minute encode completes under the deadline, and its heartbeat gaps stay far inside it", async ({
+    page,
+  }) => {
+    // Two multi-minute encodes; generous, and logged below.
+    test.setTimeout(180_000);
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const r = await page.evaluate(
+      (n) => window.__e2e!.encodeWithHeartbeat(n),
+      HEARTBEAT_CLIP_FRAMES
+    );
+    console.log(
+      `[heartbeat] ${r.frameCount / 44_100}s clip: codec encode ${Math.round(r.codecEncodeMs)} ms; ` +
+        `instrumented encode ${Math.round(r.directEncodeMs)} ms, ` +
+        `${r.progressCount} progress messages, max gap ${Math.round(r.maxGapMs)} ms ` +
+        `(deadline ${r.deadlineMs} ms)`
+    );
+
+    // (a) Through the app's real lane, deadline armed: no stall, real bytes.
+    expect(r.stalledName).toBeNull();
+    expect(r.codecMp3Length).toBeGreaterThan(100_000);
+
+    // The measurement only means something if the encode outlasted several
+    // heartbeat intervals. If a much faster machine ever finishes in under a
+    // second, this fails loudly and the clip length needs raising — rather than
+    // passing on a gap that was never given the chance to grow.
+    expect(r.directEncodeMs).toBeGreaterThan(2_000);
+
+    // (b) The busy worker's heartbeat reaches the main thread while it works —
+    // not one beat, but a steady stream across the encode.
+    expect(r.progressCount).toBeGreaterThanOrEqual(3);
+
+    // (c) The longest silence the main thread saw — request to first message,
+    // beat to beat, last beat to `done` — is far inside the deadline. A fifth
+    // of it leaves room for a phone several times slower than this runner. If
+    // this fails, the deadline design is wrong, not this bound.
+    expect(r.maxGapMs).toBeLessThan(r.deadlineMs / 5);
   });
 });
 

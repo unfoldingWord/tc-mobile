@@ -23,7 +23,7 @@
  * a fake-microphone UI flow would be far more brittle than this.
  */
 
-import { withEncoder } from "@/hooks/mp3-codec";
+import { ENCODER_SILENCE_TIMEOUT_MS, withEncoder } from "@/hooks/mp3-codec";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -128,6 +128,122 @@ async function encodeAndDecode(
   };
 }
 
+export interface HeartbeatResult {
+  /** Audio fed to each encode, in samples. */
+  readonly frameCount: number;
+  /**
+   * (a) The encode through the app's REAL lane — `withEncoder`, the shared
+   * worker, the silence deadline armed — finished and returned bytes. A stall
+   * rejects with `EncoderStalledError` and would surface here as `stalledName`.
+   */
+  readonly codecMp3Length: number;
+  readonly codecEncodeMs: number;
+  readonly stalledName: string | null;
+  /** (b) How many `progress` messages the instrumented worker posted before `done`. */
+  readonly progressCount: number;
+  /** Wall-clock of the instrumented encode, request post to `done` receipt. */
+  readonly directEncodeMs: number;
+  /**
+   * (c) The longest SILENCE the main thread saw while the worker was busy:
+   * the largest gap between the request and the first message, between
+   * consecutive `progress` messages, and between the last one and `done`.
+   * This is the quantity `ENCODER_SILENCE_TIMEOUT_MS` is judged against.
+   */
+  readonly maxGapMs: number;
+  /** The real `ENCODER_SILENCE_TIMEOUT_MS`, so the spec compares against it rather than a copy. */
+  readonly deadlineMs: number;
+}
+
+/**
+ * Does a BUSY worker's heartbeat actually reach the main thread in time
+ * (George R4 residual 1, #166)?
+ *
+ * The silence deadline rests on it. `mp3.worker.ts` posts `progress` from
+ * inside a synchronous encode loop; if the browser held those messages until
+ * the worker's handler returned, a long, healthy encode would look silent for
+ * its whole duration and be killed. No Node fake can say what Chromium does.
+ *
+ * Two encodes of the same length, because the codec keeps its worker private
+ * and does not expose its message stream (and should not grow a test-only
+ * seam for this):
+ *
+ *  1. through `withEncoder`, the app's real lane with the deadline armed —
+ *     this is the claim that a long encode COMPLETES rather than stalls;
+ *  2. through a second instance of the SAME worker script, built from the same
+ *     module URL, with every message timestamped on receipt — this is where the
+ *     heartbeat's count and gaps are measured. Same script, same browser, same
+ *     idle main thread; only the observer differs.
+ */
+async function encodeWithHeartbeat(
+  frameCount: number
+): Promise<HeartbeatResult> {
+  let codecMp3Length = 0;
+  let stalledName: string | null = null;
+  const codecStart = performance.now();
+  try {
+    const mp3 = await withEncoder(undefined, (codec) =>
+      codec.encodeMp3(syntheticPcm(frameCount))
+    );
+    codecMp3Length = mp3.length;
+  } catch (cause) {
+    stalledName = cause instanceof Error ? cause.name : String(cause);
+  }
+  const codecEncodeMs = performance.now() - codecStart;
+
+  const worker = new Worker(
+    new URL("../hooks/mp3.worker.ts", import.meta.url),
+    { type: "module" }
+  );
+  try {
+    const samples = syntheticPcm(frameCount);
+    const arrivals: number[] = [];
+    const posted = performance.now();
+    const outcome = await new Promise<{ kind: string; count: number }>(
+      (resolve, reject) => {
+        let count = 0;
+        worker.onmessage = (event: MessageEvent<{ kind: string }>) => {
+          arrivals.push(performance.now());
+          if (event.data.kind === "progress") {
+            count += 1;
+            return;
+          }
+          resolve({ kind: event.data.kind, count });
+        };
+        worker.onerror = (event) => reject(new Error(event.message));
+        worker.postMessage(
+          {
+            buffer: samples.buffer,
+            byteOffset: samples.byteOffset,
+            length: samples.length,
+          },
+          [samples.buffer]
+        );
+      }
+    );
+    if (outcome.kind !== "done") {
+      throw new Error(`instrumented encode ended with ${outcome.kind}`);
+    }
+    let maxGapMs = 0;
+    let previous = posted;
+    for (const at of arrivals) {
+      maxGapMs = Math.max(maxGapMs, at - previous);
+      previous = at;
+    }
+    return {
+      frameCount,
+      codecMp3Length,
+      codecEncodeMs,
+      stalledName,
+      progressCount: outcome.count,
+      directEncodeMs: previous - posted,
+      maxGapMs,
+      deadlineMs: ENCODER_SILENCE_TIMEOUT_MS,
+    };
+  } finally {
+    worker.terminate();
+  }
+}
+
 /** Open the app's real IndexedDB connection through its real singleton. */
 async function openDb(): Promise<{ name: string; version: number }> {
   const db = await getDb();
@@ -149,6 +265,7 @@ declare global {
   interface Window {
     __e2e?: {
       encodeAndDecode: typeof encodeAndDecode;
+      encodeWithHeartbeat: typeof encodeWithHeartbeat;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -157,4 +274,9 @@ declare global {
   }
 }
 
-window.__e2e = { encodeAndDecode, openDb, watchVersionChange };
+window.__e2e = {
+  encodeAndDecode,
+  encodeWithHeartbeat,
+  openDb,
+  watchVersionChange,
+};

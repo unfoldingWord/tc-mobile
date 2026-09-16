@@ -60,6 +60,11 @@ export const strings = {
   // being saved back onto an existing book here — this activation is what
   // creates it, and the spoken label is the only thing that says so.
   createBook: "Create book",
+  // Shown in place of `saveName`/`createBook` while the write is in flight
+  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
+  // already do, so a screen reader focused on Confirm does not read it as idle
+  // for the whole write, on either caller.
+  savingName: "Saving…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
@@ -196,6 +201,14 @@ export const strings = {
   selectStart: "Select a span to edit",
   selectStop: "Close the selection",
   cut: "Cut the selection",
+  // Edit-mode Play — the audition (#284). The glyph and the stop label are the
+  // record bar's (`playRecording` / `stopPlayback`); what is new is that the
+  // name says WHICH audio the tap will sound, because in edit mode that changes
+  // with the picked span. `auditionPlan`'s `source` chooses between these three,
+  // so the spoken name and the samples heard come from one decision:
+  // "selection" → below, "line" → below, "whole" → `playRecording`.
+  auditionSelection: "Play the selection",
+  auditionFromLine: "Play from the line",
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
@@ -298,13 +311,33 @@ export const strings = {
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
-  // `missing` here counts whole chapters left out of the zip — a chapter with no
-  // resolvable audio at all. A chapter that is merely partial still ships (its
-  // own gaps are the chapter share's concern), so this speaks in chapters.
+  // `missing` counts whole chapters left out of the zip — a chapter with no
+  // resolvable audio at all.
   shareBookMissing: (n: number): string =>
     n === 1
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
+  // A chapter that IS included can still be partial — one or more of its own
+  // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
+  // rolled up across every included chapter, #116). Distinct from
+  // `shareBookMissing`, which speaks in whole chapters; this speaks in
+  // segments, mirroring `shareMissing`'s chapter-grain phrasing.
+  shareBookPartial: (n: number): string =>
+    n === 1
+      ? "1 segment was left out of a chapter that was otherwise included."
+      : `${n} segments were left out of chapters that were otherwise included.`,
+  // Both gaps can occur in the same book (a whole chapter missing AND a
+  // segment missing from one that shipped). The screen surfaces ONE Notice for
+  // the book grain, so this combines rather than stacking two.
+  shareBookMissingAndPartial: (chapters: number, segments: number): string =>
+    `${strings.shareBookMissing(chapters)} ${strings.shareBookPartial(segments)}`,
+  // The encoder went silent mid-share and was restarted (#166). Chapter and book
+  // alike: the cause is the phone, not what was being shared. Try again is still
+  // the first thing to do — the encoder was restarted — and the restart hint is
+  // here because the Books shelf that carries it is not on screen while a
+  // chapter is open (George R2 P3-2).
+  shareEncoderStopped:
+    "Could not prepare this to share. Try again — if it keeps happening, restart the app.",
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
@@ -326,4 +359,34 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+
+  // ── The encoder has stopped working (#166) ───────────────────────────────
+  // Shown once on the shelf when `encoderHealth()` reads `failing` — one stall,
+  // or `ENCODER_FAILURE_THRESHOLD` ordinary encode failures in a row. "Make
+  // recordings smaller" is what the encoder does in BOTH of the jobs that use
+  // it: the Finished transcode that buys back storage (D3, #12) and the MP3 a
+  // Share hands to the phone. Both stop together, and both are invisible from
+  // where the translator stands unless this says so.
+  //
+  // It says plainly that nothing is lost, because nothing is — a failed
+  // transcode keeps its PCM — and names the one thing that sometimes helps. No
+  // cause text, no error string, no word from the encoder's own vocabulary
+  // (#172).
+  encoderFailing:
+    "This phone could not make recordings smaller. Nothing is lost — restarting the app may help.",
+
+  // ── Storage durability (#12) ─────────────────────────────────────────────
+  // State-in-place on the Books screen: the browser has NOT promised to keep
+  // this origin's storage, so anything recorded here can be evicted when the
+  // device runs low on space — and there is no restore path. Shown only when
+  // `persisted()` answered false AND the shelf holds a book AND the app is not
+  // the native shell (`lib/storage/persistence.ts`); an absent API is unknown,
+  // and unknown says nothing. Says the one thing the translator can act on
+  // rather than the mechanism, and says "may" twice over: whether eviction
+  // happens on their device is not known, and — George round 1 P3-4, #214 —
+  // "any book exists" (the trigger) is not "a recording exists" yet, so the
+  // copy speaks about what recording here risks rather than asserting
+  // recordings already sitting at risk.
+  storageNotPersisted:
+    "This phone may delete what you record here if space runs low. Share your work when you can.",
 } as const;
