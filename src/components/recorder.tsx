@@ -22,12 +22,19 @@ import { liveScopeShown } from "./recorder-stage";
 import {
   editRowReason,
   eraseRowReason,
+  heldTakeIsBusy,
   markRowReason,
   rowHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { classifyShareError } from "@/hooks/share-flow";
+import {
+  nativeShare,
+  readShareEnvironment,
+  resolveProvesDelivery,
+  selectShareRoute,
+} from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
@@ -1532,11 +1539,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       const file = new File([blob], `recording.${container.ext}`, {
         type: container.type,
       });
-      if (
-        typeof navigator.share !== "function" ||
-        (typeof navigator.canShare === "function" &&
-          !navigator.canShare({ files: [file] }))
-      ) {
+      // Same seam as Share Chapter / Share Book (#336): inside the Capacitor
+      // shell the WebView may expose no `navigator.share` at all, and this panel
+      // is the last-resort escape for bytes that would otherwise be lost (#165)
+      // — the one path that must not dead-end in the APK. The route is chosen
+      // synchronously, so the web branch below still calls `navigator.share`
+      // inside this gesture's activation; the native branch needs none (the
+      // chooser is started by the plugin, not the WebView).
+      const route = selectShareRoute(readShareEnvironment(), file);
+      if (route === "unsupported") {
         setHeldShareError(strings.takeShareUnavailable);
         return;
       }
@@ -1548,13 +1559,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // both settle arms.
       heldSharingRef.current = true;
       setHeldSharing(true);
-      void navigator.share({ files: [file] }).then(
+      // On native this stages the file into the cache and then opens the
+      // chooser; the panel shows `sharing` throughout, and Discard is blocked
+      // for the whole window (George R5 P1). An async IIFE runs to its first
+      // await, and on the web branch that IS `navigator.share`, so the tap's
+      // activation is intact there.
+      const handedOver = (async () => {
+        if (route !== "native") {
+          await navigator.share({ files: [file] });
+          return;
+        }
+        const staged = await nativeShare.stage(file);
+        await nativeShare.send(staged);
+      })();
+      void handedOver.then(
         () => {
           heldSharingRef.current = false;
           setHeldSharing(false);
           // Rescued off the phone. Offer a Done exit even though the decode never
           // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
-          setHeldShared(true);
+          //
+          // ONLY where the resolve proves it, which on the native route it does
+          // not (George stand-in R4 P2, see `resolveProvesDelivery`): a chooser
+          // dismissed with Back after the activity stopped resolves as success,
+          // and `Done` is a SINGLE tap that drops the only copy of this
+          // recording. So on native the panel stays "held", the two-tap Discard
+          // stays the only exit, and the share sheet itself was the feedback.
+          // Losing an exit is recoverable; losing the take is not.
+          setHeldShared(resolveProvesDelivery(route));
           setHeldShareError(null);
         },
         (cause: unknown) => {
@@ -1581,8 +1613,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // guard blocks the window a re-decode is mid-flight.
     const leaveHeldTake = useCallback(() => {
       // The synchronous double-close latch, mirroring `close()` — a second tap
-      // during the commit must not run the tail twice.
-      if (heldRetryingRef.current || closing.current) return;
+      // during the commit must not run the tail twice — plus the busy gate the
+      // panel's Discard control renders from (George R5 P1). `sharing` joined it
+      // because a native share writes the file to cache BEFORE the chooser
+      // opens: seconds of awaits with this panel live, in which two taps used to
+      // destroy the only copy of the take mid-write.
+      if (
+        heldTakeIsBusy({
+          retrying: heldRetryingRef.current,
+          sharing: heldSharingRef.current,
+        }) ||
+        closing.current
+      )
+        return;
       // Drop the failed-decode take, then run the SAME no-capture tail `close()`
       // runs (Seth's round-5 root fix for R4-G1). It commits BOTH halves the exit
       // still owes — a pending B5 edit AND a pending Finished toggle — then exits;
@@ -2678,7 +2721,11 @@ function SaveDecodeFailedPanel({
   // — the same care `SaveFailed` takes. There is no attempt count here, so the
   // retry handler disarms.
   const [armed, setArmed] = useState(false);
-  const showArmed = armed && !retrying;
+  // Any operation holding the take disarms the confirmation and blocks Discard —
+  // the same predicate the exit guard reads, so the control and the guard cannot
+  // fall out of step (George R5 P1).
+  const busy = heldTakeIsBusy({ retrying, sharing });
+  const showArmed = armed && !busy;
   return (
     <div
       role="alert"
@@ -2716,17 +2763,32 @@ function SaveDecodeFailedPanel({
       ) : null}
       <Control
         icon="share"
-        label={strings.takeRecoverShare}
+        label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt
         // the shared context the retry just resumed.
         disabled={retrying}
+        // State in place, because on the native route the chooser does NOT open
+        // in this gesture — the file is written to cache first, which on a long
+        // take is seconds of nothing (George R5 P1). Without this the panel looks
+        // untouched and the translator reaches for Discard.
+        busy={sharing}
         onClick={() => {
           setArmed(false);
           onShare();
         }}
       />
-      {shareError ? <Notice>{shareError}</Notice> : null}
+      {/* The busy Notice, not just the relabelled control (George R6 P2):
+          `Control` is icon-only, so its `label` is the accessible name and
+          never paints. Without this the panel's only visible change during the
+          native cache write — seconds on a long take — is that Try again and
+          Discard go dim, which reads as a broken screen rather than as work in
+          flight. Same shape Try again above already uses. */}
+      {sharing ? (
+        <Notice tone="busy">{strings.takeRecoverSharing}</Notice>
+      ) : shareError ? (
+        <Notice>{shareError}</Notice>
+      ) : null}
       {shared ? (
         <>
           <Notice tone="info">{strings.takeRecoverShared}</Notice>
@@ -2749,7 +2811,7 @@ function SaveDecodeFailedPanel({
           }
           variant="quiet"
           className={showArmed ? "text-[var(--s-live)]" : undefined}
-          disabled={retrying}
+          disabled={busy}
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (

@@ -33,8 +33,10 @@ export interface UseChapterShare {
 /**
  * Share a chapter as one concatenated MP3 to the OS share sheet (B7, A4). A thin
  * wrapper over {@link useShareFlow}: tap 1 builds the chapter MP3 into a File, and
- * the shared flow owns the two-gesture state machine and the `navigator.share`
- * handoff. The whole build runs on the app's single encoder lane (`withEncoder`,
+ * the shared flow owns the two-gesture state machine and the OS share handoff —
+ * `navigator.share` in a browser, Capacitor's Share plugin inside the native
+ * shell, where the WebView may expose no Web Share at all (#336, George R6 P3).
+ * The whole build runs on the app's single encoder lane (`withEncoder`,
  * B8): the encode is in the worker, the flow's abort signal reaches it (closing
  * the menu mid-encode stops the work), and it never overlaps a Finished
  * transcode's PCM.

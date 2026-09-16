@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   editRowReason,
   eraseRowReason,
+  heldTakeIsBusy,
   markRowReason,
   rowHint,
 } from "@/components/menu-row-state";
@@ -328,5 +329,37 @@ describe("the starting race — all three rows, distinct words", () => {
     // the in-flight start, so it names no control at all.
     expect(starting?.label).not.toContain(strings.closeRecorder);
     expect(starting?.label).not.toContain(strings.menuClose);
+  });
+});
+
+/**
+ * #165 / #336 — the held-take panel's Discard destroys the ONLY copy of a take
+ * whose decode failed, so every operation holding that take has to block it.
+ * `sharing` joined `retrying` when the native share route landed: there the
+ * chooser does NOT open in the tap — the file is written to the app cache first,
+ * in 768 KB chunks, each returning to the event loop with the panel mounted and
+ * clickable (George R5 P1).
+ *
+ * The predicate is shared by the control's `disabled`, by the armed-confirm
+ * display, and by `leaveHeldTake`'s guard, for the reason at the top of
+ * `menu-row-state.ts`: a second switch elsewhere is one that falls out of step.
+ */
+describe("heldTakeIsBusy", () => {
+  it("lets the take be dropped when nothing is holding it", () => {
+    expect(heldTakeIsBusy({ retrying: false, sharing: false })).toBe(false);
+  });
+
+  it("holds it during a re-decode", () => {
+    expect(heldTakeIsBusy({ retrying: true, sharing: false })).toBe(true);
+  });
+
+  it("holds it during a share — the native write runs before the chooser", () => {
+    // The regression this exists for: two taps during the cache write used to
+    // delete the recording out from under a share that had not reached the OS.
+    expect(heldTakeIsBusy({ retrying: false, sharing: true })).toBe(true);
+  });
+
+  it("holds it while both are somehow true", () => {
+    expect(heldTakeIsBusy({ retrying: true, sharing: true })).toBe(true);
   });
 });

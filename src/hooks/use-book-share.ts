@@ -39,8 +39,10 @@ export interface UseBookShare {
 /**
  * Share a book as one zip of per-chapter MP3s to the OS share sheet (B7, A4). A
  * thin wrapper over {@link useShareFlow}: tap 1 builds the zip into a File, and
- * the shared flow owns the two-gesture state machine and the `navigator.share`
- * handoff. The whole build holds the app's single encoder lane (`withEncoder`,
+ * the shared flow owns the two-gesture state machine and the OS share handoff —
+ * `navigator.share` in a browser, Capacitor's Share plugin inside the native
+ * shell, where the WebView may expose no Web Share at all (#336, George R6 P3).
+ * The whole build holds the app's single encoder lane (`withEncoder`,
  * B8) so its chapter-at-a-time peak is never joined by a Finished transcode's
  * PCM; each chapter encodes in the worker and the flow's abort signal reaches it.
  */
