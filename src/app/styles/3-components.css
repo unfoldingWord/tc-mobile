@@ -108,6 +108,15 @@
     /* No hover punch on an inert control: the base .control:hover brightness
        would otherwise still brighten a disabled button (George R1 P2). */
     filter: none;
+    /* The BASE dim, so the plain `default` variant (#315's bottom-bar Edit
+       control — the first `disabled` use of it; `name-edit.tsx`'s only
+       carries `busy`) reads as inert rather than keeping its enabled
+       background and ink with only a cursor change a touchscreen cannot
+       show (Frank, #403). Equal specificity to the variant-specific rules
+       below, so a later, more specific opacity for `--quiet`/`--record`/
+       `--play`/`--primary` still wins by source order — this is only ever
+       the value a variant does not override. */
+    opacity: 0.4;
   }
   /* Monochrome quiet glyphs (select/undo/cut): saturate() barely moves an
      already-grey glyph, so dim to read as inactive. Precedent: the row
