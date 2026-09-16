@@ -30,6 +30,8 @@ type ErrorEventish = { error?: Error; message?: string };
 
 class FakeWorker {
   static instances: FakeWorker[] = [];
+  /** When set, `terminate()` throws — the "recovery itself fails" edge. */
+  static terminateThrows = false;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: ((event: ErrorEventish) => void) | null = null;
   terminated = false;
@@ -51,6 +53,7 @@ class FakeWorker {
   postMessage(): void {}
   terminate(): void {
     this.terminated = true;
+    if (FakeWorker.terminateThrows) throw new Error("terminate blew up");
   }
 
   emitDone(mp3: ArrayBuffer): void {
@@ -126,6 +129,7 @@ beforeEach(async () => {
   vi.resetModules();
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   FakeWorker.instances = [];
+  FakeWorker.terminateThrows = false;
   globalThis.Worker = FakeWorker as unknown as typeof Worker;
   const mod = await import("@/hooks/mp3-codec");
   withEncoder = mod.withEncoder;
@@ -220,6 +224,25 @@ describe("encoderHealth (#166)", () => {
     await stallOnce();
     expect(encoderHealth()).toBe("failing");
     expect(seen).toEqual(["failing", "ok"]);
+  });
+
+  it("reports a stall recovery that itself fails, instead of logging it (George R1 P3-5)", async () => {
+    const reports: { context: string; cause: unknown }[] = [];
+    const stopSink = subscribeToFailures((r) =>
+      reports.push({ context: r.context, cause: r.cause })
+    );
+    try {
+      FakeWorker.terminateThrows = true;
+      await stallOnce();
+
+      // The lane is still released and the health still moves — a terminate that
+      // throws must never cost either — and the recovery failure now sits in the
+      // same funnel as every other caught failure rather than in the console.
+      expect(encoderHealth()).toBe("failing");
+      expect(reports.map((r) => r.context)).toContain("encoder-recover");
+    } finally {
+      stopSink();
+    }
   });
 
   it("a throwing subscriber is reported, never swallowed, and does not break the encode", async () => {
