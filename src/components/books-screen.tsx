@@ -116,10 +116,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
   // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
-  // `busy` so it stops reading as idle for the length of the write. Cleared
-  // unconditionally in `.finally()`, unlike the close below: it is purely
-  // presentational, so clearing it for a session a newer one has already
-  // superseded is harmless (nothing reads it once NameEdit has unmounted).
+  // `busy`. Reset to `false` at every site that bumps `bookMenuSession` (open,
+  // close, arm-a-share) as well as on settle: a still-pending rename for book
+  // A left this `true` across a menu close, so opening book B's ≡ showed B's
+  // FRESH Confirm as busy before B's own Save was ever tapped (Frank r1,
+  // #384) — a session-token comparison would fix it too, but reading
+  // `bookMenuSession.current` (a ref) during render to compare against is
+  // banned (`react-hooks/refs`), so the reset instead happens at each place
+  // that already advances the session.
   const [savingBookName, setSavingBookName] = useState(false);
   // Which book the Delete confirm is armed for (#337), held apart from
   // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
@@ -329,6 +333,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const onOpenShareMenu = useCallback((bookId: BookId) => {
     bookMenuSession.current += 1;
     setShareMenuBookId(bookId);
+    // A different book's still-pending rename must not show THIS book's fresh
+    // Confirm as busy before it has even been tapped (Frank r1, #384).
+    setSavingBookName(false);
   }, []);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
@@ -336,6 +343,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
+    setSavingBookName(false);
     bookShare.reset();
   }, [bookShare]);
   // Commit the typed book name (#264), then close the menu on success. A failed
@@ -355,7 +363,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         .then((book) => {
           if (book && bookMenuSession.current === session) onCloseShareMenu();
         })
-        .finally(() => setSavingBookName(false));
+        .finally(() => {
+          // Guarded the same way the close above is: a stale settle from a
+          // session this screen has already moved past (a newer open, close,
+          // or armed share) must not touch state a newer session now owns.
+          if (bookMenuSession.current === session) setSavingBookName(false);
+        });
     },
     [renameBook, shareMenuBookId, onCloseShareMenu]
   );
@@ -367,6 +380,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
+    setSavingBookName(false);
     void bookShare.prepare(
       shareMenuBook.bookId,
       strings.shareBookFilename(shareMenuBook.name),

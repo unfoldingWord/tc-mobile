@@ -94,8 +94,11 @@ export const SegmentsScreen = forwardRef<
   // list. Resets to the action list whenever the menu closes.
   const [renamingChapter, setRenamingChapter] = useState(false);
   // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
-  // `busy`. Cleared unconditionally in `.finally()`: purely presentational, so
-  // clearing it for a session a newer one has already superseded is harmless.
+  // `busy`. Reset to `false` at every site that bumps `chapterMenuSession`
+  // (open, close, arm-a-share) as well as on settle, mirroring
+  // `books-screen.tsx`'s `savingBookName`: a still-pending rename must not
+  // show a freshly (re)opened menu's Confirm as busy before it has been
+  // tapped (Frank r1, #384).
   const [savingChapterName, setSavingChapterName] = useState(false);
   // A monotonic token for the current chapter-menu session. It advances whenever
   // the menu opens, closes, or arms a share — every transition after which a
@@ -114,6 +117,7 @@ export const SegmentsScreen = forwardRef<
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
+    setSavingChapterName(false);
     void share.prepare(
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
@@ -138,6 +142,7 @@ export const SegmentsScreen = forwardRef<
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
+    setSavingChapterName(false);
     share.reset();
   }, [share]);
   // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
@@ -145,6 +150,9 @@ export const SegmentsScreen = forwardRef<
   const openChapterMenu = useCallback(() => {
     chapterMenuSession.current += 1;
     setChapterMenuOpen(true);
+    // A still-pending rename from the last time this menu was open must not
+    // show the freshly reopened Confirm as busy before it has been tapped.
+    setSavingChapterName(false);
   }, []);
   // Commit the typed chapter name (#264), then close the menu on success. The
   // hook patches the breadcrumb in place. A failed write keeps the field up
@@ -164,7 +172,13 @@ export const SegmentsScreen = forwardRef<
           if (ok && chapterMenuSession.current === session)
             onCloseChapterMenu();
         })
-        .finally(() => setSavingChapterName(false));
+        .finally(() => {
+          // Guarded like the close above: a stale settle from a session this
+          // screen has already moved past must not touch state a newer
+          // session (a reopen, or an armed share) now owns.
+          if (chapterMenuSession.current === session)
+            setSavingChapterName(false);
+        });
     },
     [renameChapter, onCloseChapterMenu]
   );
