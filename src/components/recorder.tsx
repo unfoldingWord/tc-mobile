@@ -296,6 +296,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // lost with no recovery screen).
     const [isClosing, setIsClosing] = useState(false);
     /**
+     * Whether THIS close began with an active capture (recording, paused, or a
+     * #59 `processing` freeze) — as opposed to an edit-only or Finished-only
+     * close, which also sets `isClosing` true for the same commit-then-exit
+     * wait but never had a mic to show (Frank R-resume, round 3). Read
+     * alongside `isClosing`, never on its own: it is only meaningful while
+     * `isClosing` is true, and is left stale (harmlessly) between closes
+     * rather than reset on every `setIsClosing(false)`. Every site that flips
+     * `isClosing` to `true` sets this in the same synchronous block (batched
+     * into the same render as `isClosing`'s own update), never derived from a
+     * ref read at render time (`react-hooks/refs`).
+     */
+    const [captureClosing, setCaptureClosing] = useState(false);
+    /**
      * The in-sheet preview of the paused take-so-far (#101): the decoded capture
      * spliced into `working` by `mergeTake` at the same `insertionOffset` `close()`
      * commits — so the preview lands exactly WHERE Back saves it, though its tail
@@ -727,6 +740,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (closing.current) return;
       closing.current = true;
       setIsClosing(true);
+      // The guard above already proved `recording || paused` to reach here.
+      setCaptureClosing(true);
       // Abort any in-flight preview decode, then drop the preview's PCM but keep its
       // peaks on stage through the commit — exactly the pair `close()` runs, so a
       // first take does not blank while it saves.
@@ -1183,6 +1198,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // original recording (gone) with the replacement never landed and the cut
         // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
         const attemptedCapture = recording || paused || state === "processing";
+        // Still synchronous (no `await` above this line since `setIsClosing(true)`
+        // ran) — batched into the same render `isClosing`'s own update triggers.
+        // An edit-only or Finished-only close reaches this function too (Frank
+        // R-resume, round 3): without this, `liveScopeShown` could not tell that
+        // close apart from an append/first-take commit and would mount a
+        // `LiveScope` with nothing in its ring to paint — a blank canvas for the
+        // whole IndexedDB write.
+        setCaptureClosing(attemptedCapture);
         if (attemptedCapture) {
           // Do NOT await the in-flight preview decode here. `stop()` steals the
           // chunks/stream/recorder into locals BEFORE its first await, which is what
@@ -1523,6 +1546,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       enterEditAfterRecover.current = false;
       closing.current = true;
       setIsClosing(true);
+      // The comment above is literal: this runs the SAME no-capture tail as an
+      // edit-only close. The capture that produced `heldTake` already stopped
+      // (and failed to decode) before this ran; `heldTake` clearing to `null`
+      // here is what lets the ordinary recorder-stage (and `liveScopeShown`)
+      // render again underneath, so it must not be told a capture is live.
+      setCaptureClosing(false);
       void commitPendingAndExit(false, false);
     }, [commitPendingAndExit]);
 
@@ -1720,7 +1749,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       recording,
       paused,
       processing: state === "processing",
-      isClosing,
+      // `isClosing` alone is not enough (Frank R-resume round 3): it is also
+      // true for an edit-only or Finished-only close, which never had a mic to
+      // show. `captureClosing` narrows it to the close that actually followed
+      // a capture — see its own docblock above.
+      isClosing: isClosing && captureClosing,
       hasAudio,
       meterFailed: audio.meterFailed,
       previewShown: previewShown !== null,

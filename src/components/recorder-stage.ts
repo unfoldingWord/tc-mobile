@@ -17,7 +17,21 @@ export interface StageState {
   paused: boolean;
   /** `state === "processing"` — a #59 interruption's decode, or an F8 decode. */
   processing: boolean;
-  /** The F8 close window (`stop()` flipped to idle, PCM not yet in `working`). */
+  /**
+   * The F8 close window (`stop()` flipped to idle, PCM not yet in `working`)
+   * — but ONLY when the close being committed followed an actual capture
+   * (recording, paused, or a #59 `processing` freeze).
+   *
+   * The recorder's own `isClosing` state does NOT mean that by itself: the
+   * same `close()` handler, and the same flag, cover an edit-only or
+   * Finished-only exit too (Frank R-resume, round 3) — there is no mic
+   * involved, and `LiveScope` has nothing in its ring to paint, so mounting it
+   * during that wait leaves a blank canvas for the whole IndexedDB write
+   * instead of the stored/edited waveform. The caller must narrow its own
+   * `isClosing` to a capture-close before passing it here (`recorder.tsx`'s
+   * `captureClosingRef`); this module has no other way to tell the two closes
+   * apart.
+   */
   isClosing: boolean;
   /**
    * `length > 0` — the segment already holds audio, so this take is an append.
