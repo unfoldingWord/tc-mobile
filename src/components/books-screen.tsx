@@ -372,6 +372,17 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     },
     [renameBook, shareMenuBookId, onCloseShareMenu]
   );
+  // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
+  // the session and clears `savingBookName` like every other exit from this
+  // rename does (George R1 P2, #384): without it, a rename cancelled while
+  // still saving left BOTH a late resolution free to close the menu the user
+  // had already backed out of, AND a stale `savingBookName` that showed the
+  // NEXT Rename tap's fresh Confirm as busy before it was ever tapped.
+  const onCancelRenameBook = useCallback(() => {
+    bookMenuSession.current += 1;
+    setRenamingBook(false);
+    setSavingBookName(false);
+  }, []);
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
   // menu stays open across both gestures (the shelf is `inert` behind it), so the
   // panel is what the translator is looking at.
@@ -675,9 +686,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               initialValue={shareMenuBook.name}
               fieldLabel={strings.bookNameField}
               onSave={onSaveBookName}
-              onCancel={() => setRenamingBook(false)}
+              onCancel={onCancelRenameBook}
               busy={savingBookName}
             />
+            {/* Announced regardless of where focus sits — Enter leaves it on
+                the field, not Confirm (George R1 P2, #384). Mirrors Share's
+                own `tone="busy"` Notice for the same reason: Confirm's own
+                busy mark only reaches a screen reader focused ON it. */}
+            {savingBookName && (
+              <Notice tone="busy">{strings.savingName}</Notice>
+            )}
             {/* A failed rename speaks here — the screen's Notice is behind the
                 scrim — while the field stays up for another try.
 
@@ -704,7 +722,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
                 icon={bookShareAffordance.icon}
                 label={strings.shareSend}
                 variant={bookShareAffordance.variant}
-                className="control-ready"
+                className={bookShareAffordance.className}
                 autoFocus
                 onClick={onSendBookShare}
               />

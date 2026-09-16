@@ -40,6 +40,12 @@ describe("shareControlAffordance", () => {
     expect(shareControlAffordance("ready").icon).toBe("check");
     expect(shareControlAffordance("idle").icon).toBe("share");
   });
+
+  it("only ready carries the ink class — a caller cannot forget the tone the way a hand-attached className could (George R1 P3)", () => {
+    expect(shareControlAffordance("idle").className).toBeUndefined();
+    expect(shareControlAffordance("preparing").className).toBeUndefined();
+    expect(shareControlAffordance("ready").className).toBe("control-ready");
+  });
 });
 
 describe("confirmControlAffordance", () => {

@@ -21,6 +21,15 @@ export interface ShareControlAffordance {
   readonly variant: "quiet" | "primary";
   /** Forwarded to `Control`'s `busy` — sets `aria-busy` and the layer-3 spin. */
   readonly busy: boolean;
+  /**
+   * Forwarded to `Control`'s `className`. Only `ready` carries one — the
+   * `--s-done` glyph tint (`.control-ready`, 3-components.css) — so the tone
+   * lives in this table rather than being reattached by hand at each call
+   * site (George R1 P3, #384: an omitted class would silently ship a ready
+   * Control with the check glyph and the XL box but none of the "yes, this
+   * is so" ink #354 asks for).
+   */
+  readonly className: string | undefined;
 }
 
 /**
@@ -36,11 +45,26 @@ export function shareControlAffordance(
 ): ShareControlAffordance {
   switch (status) {
     case "idle":
-      return { icon: "share", variant: "quiet", busy: false };
+      return {
+        icon: "share",
+        variant: "quiet",
+        busy: false,
+        className: undefined,
+      };
     case "preparing":
-      return { icon: "retry", variant: "quiet", busy: true };
+      return {
+        icon: "retry",
+        variant: "quiet",
+        busy: true,
+        className: undefined,
+      };
     case "ready":
-      return { icon: "check", variant: "primary", busy: false };
+      return {
+        icon: "check",
+        variant: "primary",
+        busy: false,
+        className: "control-ready",
+      };
   }
 }
 

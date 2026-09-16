@@ -182,6 +182,17 @@ export const SegmentsScreen = forwardRef<
     },
     [renameChapter, onCloseChapterMenu]
   );
+  // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
+  // the session and clears `savingChapterName` like every other exit from
+  // this rename does (George R1 P2, #384): without it, a rename cancelled
+  // while still saving left BOTH a late resolution free to close the menu the
+  // user had already backed out of, AND a stale `savingChapterName` that
+  // showed the NEXT Rename tap's fresh Confirm as busy before it was tapped.
+  const onCancelRenameChapter = useCallback(() => {
+    chapterMenuSession.current += 1;
+    setRenamingChapter(false);
+    setSavingChapterName(false);
+  }, []);
   const erase = useEraseSegment();
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
@@ -428,9 +439,16 @@ export const SegmentsScreen = forwardRef<
               initialValue={chapterName ?? ""}
               fieldLabel={strings.chapterNameField}
               onSave={onSaveChapterName}
-              onCancel={() => setRenamingChapter(false)}
+              onCancel={onCancelRenameChapter}
               busy={savingChapterName}
             />
+            {/* Announced regardless of where focus sits — Enter leaves it on
+                the field, not Confirm (George R1 P2, #384). Mirrors Share's
+                own `tone="busy"` Notice for the same reason: Confirm's own
+                busy mark only reaches a screen reader focused ON it. */}
+            {savingChapterName && (
+              <Notice tone="busy">{strings.savingName}</Notice>
+            )}
             {/* A failed rename speaks here — the screen Notice is behind the
                 scrim — while the field stays up for another try. */}
             {error && <Notice>{error}</Notice>}
@@ -452,7 +470,7 @@ export const SegmentsScreen = forwardRef<
                 icon={shareAffordance.icon}
                 label={strings.shareSend}
                 variant={shareAffordance.variant}
-                className="control-ready"
+                className={shareAffordance.className}
                 autoFocus
                 onClick={onSendShare}
               />
