@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
-import { shareControlAffordance } from "./control-affordance";
+import {
+  canDismissWhileSaving,
+  shareControlAffordance,
+} from "./control-affordance";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
@@ -125,6 +128,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // banned (`react-hooks/refs`), so the reset instead happens at each place
   // that already advances the session.
   const [savingBookName, setSavingBookName] = useState(false);
+  // A synchronous mirror of `savingBookName` (George R3/coordinator, #384): the
+  // state only reaches `onDismissShareMenu`'s closure once React re-renders and
+  // Menu's own passive effect re-syncs its Escape ref (`onCloseRef`) — the exact
+  // lagging-prop window `EraseConfirm`'s `busyRef`/`inFlightRef` exists to close
+  // for the same reason. Written at the same call sites as the state, in the
+  // same synchronous tick, so a dismiss arriving right after Save cannot land in
+  // that gap.
+  const savingBookRef = useRef(false);
   // Which book the Delete confirm is armed for (#337), held apart from
   // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
   // Segments row menu, where Erase closes the row menu and the screen holds the
@@ -335,6 +346,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     setShareMenuBookId(bookId);
     // A different book's still-pending rename must not show THIS book's fresh
     // Confirm as busy before it has even been tapped (Frank r1, #384).
+    savingBookRef.current = false;
     setSavingBookName(false);
   }, []);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
@@ -343,6 +355,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
+    savingBookRef.current = false;
     setSavingBookName(false);
     bookShare.reset();
   }, [bookShare]);
@@ -358,9 +371,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // that gap once, centrally, the way `EraseConfirm` already guards every
   // dismiss path while its own write is in flight.
   const onDismissShareMenu = useCallback(() => {
-    if (savingBookName) return;
+    // Reads the REF, not the `savingBookName` state this closure would
+    // otherwise capture — see `savingBookRef`'s own comment for why the state
+    // alone is one render (and one passive effect) too slow here.
+    if (!canDismissWhileSaving(savingBookRef.current)) return;
     onCloseShareMenu();
-  }, [savingBookName, onCloseShareMenu]);
+  }, [onCloseShareMenu]);
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -373,6 +389,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       // same session (F1). Without this, the stale resolution closes the
       // now-current menu and runs share.reset(), discarding a prepared encode.
       const session = bookMenuSession.current;
+      // Set synchronously, in this same tick, BEFORE the async write starts —
+      // so a dismiss arriving immediately after this tap sees it, rather than
+      // waiting for React's render and Menu's passive `onCloseRef` sync.
+      savingBookRef.current = true;
       setSavingBookName(true);
       void renameBook(shareMenuBookId, name)
         .then((book) => {
@@ -382,7 +402,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           // Guarded the same way the close above is: a stale settle from a
           // session this screen has already moved past (a newer open, close,
           // or armed share) must not touch state a newer session now owns.
-          if (bookMenuSession.current === session) setSavingBookName(false);
+          if (bookMenuSession.current === session) {
+            savingBookRef.current = false;
+            setSavingBookName(false);
+          }
         });
     },
     [renameBook, shareMenuBookId, onCloseShareMenu]
@@ -396,6 +419,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const onCancelRenameBook = useCallback(() => {
     bookMenuSession.current += 1;
     setRenamingBook(false);
+    savingBookRef.current = false;
     setSavingBookName(false);
   }, []);
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
@@ -406,6 +430,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
+    savingBookRef.current = false;
     setSavingBookName(false);
     void bookShare.prepare(
       shareMenuBook.bookId,

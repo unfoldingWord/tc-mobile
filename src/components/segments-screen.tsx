@@ -8,7 +8,10 @@ import {
 } from "react";
 
 import { Control } from "./control";
-import { shareControlAffordance } from "./control-affordance";
+import {
+  canDismissWhileSaving,
+  shareControlAffordance,
+} from "./control-affordance";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
@@ -100,6 +103,11 @@ export const SegmentsScreen = forwardRef<
   // show a freshly (re)opened menu's Confirm as busy before it has been
   // tapped (Frank r1, #384).
   const [savingChapterName, setSavingChapterName] = useState(false);
+  // A synchronous mirror of `savingChapterName` (George R3/coordinator, #384):
+  // mirrors `books-screen.tsx`'s `savingBookRef` — see its comment for why the
+  // state alone lags a render (and Menu's passive `onCloseRef` re-sync) behind
+  // a dismiss that could arrive right after Save.
+  const savingChapterRef = useRef(false);
   // A monotonic token for the current chapter-menu session. It advances whenever
   // the menu opens, closes, or arms a share — every transition after which a
   // late-resolving rename must NOT run its close, or it would drop a prepared
@@ -117,6 +125,7 @@ export const SegmentsScreen = forwardRef<
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
+    savingChapterRef.current = false;
     setSavingChapterName(false);
     void share.prepare(
       chapterId,
@@ -142,6 +151,7 @@ export const SegmentsScreen = forwardRef<
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
+    savingChapterRef.current = false;
     setSavingChapterName(false);
     share.reset();
   }, [share]);
@@ -157,9 +167,11 @@ export const SegmentsScreen = forwardRef<
   // that gap once, centrally, the way `EraseConfirm` already guards every
   // dismiss path while its own write is in flight.
   const onDismissChapterMenu = useCallback(() => {
-    if (savingChapterName) return;
+    // Reads the REF, not the `savingChapterName` state this closure would
+    // otherwise capture — see `savingChapterRef`'s own comment.
+    if (!canDismissWhileSaving(savingChapterRef.current)) return;
     onCloseChapterMenu();
-  }, [savingChapterName, onCloseChapterMenu]);
+  }, [onCloseChapterMenu]);
   // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
   // from a prior open cannot close this one.
   const openChapterMenu = useCallback(() => {
@@ -167,6 +179,7 @@ export const SegmentsScreen = forwardRef<
     setChapterMenuOpen(true);
     // A still-pending rename from the last time this menu was open must not
     // show the freshly reopened Confirm as busy before it has been tapped.
+    savingChapterRef.current = false;
     setSavingChapterName(false);
   }, []);
   // Commit the typed chapter name (#264), then close the menu on success. The
@@ -181,6 +194,10 @@ export const SegmentsScreen = forwardRef<
       // resolution closes the now-current menu and runs share.reset(),
       // discarding a prepared encode.
       const session = chapterMenuSession.current;
+      // Set synchronously, in this same tick, BEFORE the async write starts —
+      // so a dismiss arriving immediately after this tap sees it, rather than
+      // waiting for React's render and Menu's passive `onCloseRef` sync.
+      savingChapterRef.current = true;
       setSavingChapterName(true);
       void renameChapter(name)
         .then((ok) => {
@@ -191,8 +208,10 @@ export const SegmentsScreen = forwardRef<
           // Guarded like the close above: a stale settle from a session this
           // screen has already moved past must not touch state a newer
           // session (a reopen, or an armed share) now owns.
-          if (chapterMenuSession.current === session)
+          if (chapterMenuSession.current === session) {
+            savingChapterRef.current = false;
             setSavingChapterName(false);
+          }
         });
     },
     [renameChapter, onCloseChapterMenu]
@@ -206,6 +225,7 @@ export const SegmentsScreen = forwardRef<
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
     setRenamingChapter(false);
+    savingChapterRef.current = false;
     setSavingChapterName(false);
   }, []);
   const erase = useEraseSegment();

@@ -86,3 +86,16 @@ export function confirmControlAffordance(
     ? { icon: "retry", busy: true }
     : { icon: "check", busy: false };
 }
+
+/**
+ * Whether a dismiss — `Menu`'s scrim tap, its Close control, or Escape when no
+ * child already handled it — may proceed while a Confirm's write is in flight
+ * (George R3, #384). The write itself cannot be aborted, so letting the
+ * dismiss through does not stop it: it still commits moments later with no
+ * menu open to show it. The same "Cancel is a no-op while in flight" rule
+ * `EraseConfirm`'s Cancel already follows, pulled out as its own decision so
+ * it is pinned once rather than re-derived at each call site.
+ */
+export function canDismissWhileSaving(saving: boolean): boolean {
+  return !saving;
+}
