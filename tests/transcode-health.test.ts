@@ -276,6 +276,20 @@ describe("transcodeHealth — surfacing an encoder that stopped working (#166)",
 
       expect(transcodeHealth()).toBe("ok");
       expect(seen).toEqual(["failing", "ok"]);
+
+      // And the COUNT is back to zero with it, not merely the published state.
+      // A success that only flipped the state would leave the count at N, so
+      // the very next single failure would re-trip — the threshold would be 1
+      // for the rest of the page's life, which is the opposite of what a
+      // threshold is for. It has to take N more in a row.
+      failEveryEncode();
+      for (let i = 0; i < THRESHOLD - 1; i++) {
+        await requestTranscodeSweep();
+        expect(transcodeHealth()).toBe("ok");
+      }
+      await requestTranscodeSweep();
+      expect(transcodeHealth()).toBe("failing");
+      expect(seen).toEqual(["failing", "ok", "failing"]);
     } finally {
       stop();
     }
