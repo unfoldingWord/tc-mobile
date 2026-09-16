@@ -2991,7 +2991,12 @@ function SaveDecodeFailedPanel({
         <Notice>{retryError}</Notice>
       ) : null}
       <Control
-        icon="share"
+        // While sharing, swap to the retry glyph (George R4/R5 P3, #384): every
+        // OTHER busy `Control` in the app now spins under the shared
+        // `[aria-busy="true"]` CSS rule #384 added, and the retry mark is the
+        // one that rule's motion is meant to animate — spinning the idle share
+        // glyph instead reads as a stuck tray, not a wait.
+        icon={sharing ? "retry" : "share"}
         label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt

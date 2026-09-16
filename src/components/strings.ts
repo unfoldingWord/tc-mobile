@@ -60,6 +60,11 @@ export const strings = {
   // being saved back onto an existing book here — this activation is what
   // creates it, and the spoken label is the only thing that says so.
   createBook: "Create book",
+  // Shown in place of `saveName`/`createBook` while the write is in flight
+  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
+  // already do, so a screen reader focused on Confirm does not read it as idle
+  // for the whole write, on either caller.
+  savingName: "Saving…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",

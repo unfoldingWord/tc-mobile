@@ -138,6 +138,28 @@
     filter: saturate(0.12);
     opacity: 0.55;
   }
+  /* A `busy` control (#137) never goes natively `disabled` and never picks up
+     the `aria-disabled` rules above — it must stay focusable and keep reading
+     as live, not inert (an AT/switch user mid-retry is not "blocked", they are
+     "waiting"). Until now `aria-busy` painted NOTHING, so it read as idle for
+     the whole write (#383). The spin is scoped to the glyph itself, not the
+     button, so the control's box size never moves (#164, #351) — the caller's
+     icon swap (`control-affordance.ts`, e.g. the retry glyph) does the shape
+     half, this does the motion half. The second `@keyframes` animation in the
+     app, alongside `rec-pulse` below — both reduced-motion-guarded. */
+  .control[aria-busy="true"] svg {
+    animation: control-spin 900ms linear infinite;
+  }
+  @keyframes control-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .control[aria-busy="true"] svg {
+      animation: none;
+    }
+  }
 
   .control--record {
     background: var(--s-live);
@@ -761,6 +783,15 @@
      behind, right after the tap that turned the toggle on. */
   .control.is-done,
   .control.is-on {
+    color: var(--s-done);
+  }
+
+  /* Share's ready-to-send mark (#354): the SAME ink `is-done`/`is-on` wear,
+     on the check glyph `control-affordance.ts` already swaps in for `ready` —
+     not `pressed`/`is-on` itself, because a ready-to-send Control is not a
+     two-state toggle (there is nothing to press back off). A plain class, not
+     a variant, so it layers onto `.control--primary` without touching size. */
+  .control-ready {
     color: var(--s-done);
   }
 

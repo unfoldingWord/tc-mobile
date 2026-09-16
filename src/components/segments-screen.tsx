@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Control } from "./control";
+import { shareControlAffordance } from "./control-affordance";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
@@ -92,6 +93,13 @@ export const SegmentsScreen = forwardRef<
   // Whether the chapter ≡ menu is showing its rename field (#264) or its action
   // list. Resets to the action list whenever the menu closes.
   const [renamingChapter, setRenamingChapter] = useState(false);
+  // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
+  // `busy`. Reset to `false` at every site that bumps `chapterMenuSession`
+  // (open, close, arm-a-share) as well as on settle, mirroring
+  // `books-screen.tsx`'s `savingBookName`: a still-pending rename must not
+  // show a freshly (re)opened menu's Confirm as busy before it has been
+  // tapped (Frank r1, #384).
+  const [savingChapterName, setSavingChapterName] = useState(false);
   // A monotonic token for the current chapter-menu session. It advances whenever
   // the menu opens, closes, or arms a share — every transition after which a
   // late-resolving rename must NOT run its close, or it would drop a prepared
@@ -109,6 +117,7 @@ export const SegmentsScreen = forwardRef<
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
+    setSavingChapterName(false);
     void share.prepare(
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
@@ -129,10 +138,22 @@ export const SegmentsScreen = forwardRef<
   }, [share]);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File and clear state so a stale "ready" cannot linger behind a closed menu.
+  //
+  // This is Menu's actual `onClose` — a Menu-level guard that blocked it while
+  // `savingChapterName` was true (round 3/4 of #384's review) was REVERTED: it
+  // stopped the scrim/Close/Escape-elsewhere from unmounting the menu mid-write,
+  // but system Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
+  // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
+  // exit (George R5 P2) — Close used to work, so nobody reached for system Back;
+  // making it a silent no-op is what sends them there. Fixing this properly
+  // needs the nav layer's `overlayBlocksClose`/`overlayDismissal` absorbing
+  // system Back too, tracked at #393 (with #374, the same gap for Books' other
+  // menus) rather than shipped as a partial fix here.
   const onCloseChapterMenu = useCallback(() => {
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
+    setSavingChapterName(false);
     share.reset();
   }, [share]);
   // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
@@ -140,6 +161,9 @@ export const SegmentsScreen = forwardRef<
   const openChapterMenu = useCallback(() => {
     chapterMenuSession.current += 1;
     setChapterMenuOpen(true);
+    // A still-pending rename from the last time this menu was open must not
+    // show the freshly reopened Confirm as busy before it has been tapped.
+    setSavingChapterName(false);
   }, []);
   // Commit the typed chapter name (#264), then close the menu on success. The
   // hook patches the breadcrumb in place. A failed write keeps the field up
@@ -153,12 +177,33 @@ export const SegmentsScreen = forwardRef<
       // resolution closes the now-current menu and runs share.reset(),
       // discarding a prepared encode.
       const session = chapterMenuSession.current;
-      void renameChapter(name).then((ok) => {
-        if (ok && chapterMenuSession.current === session) onCloseChapterMenu();
-      });
+      setSavingChapterName(true);
+      void renameChapter(name)
+        .then((ok) => {
+          if (ok && chapterMenuSession.current === session)
+            onCloseChapterMenu();
+        })
+        .finally(() => {
+          // Guarded like the close above: a stale settle from a session this
+          // screen has already moved past must not touch state a newer
+          // session (a reopen, or an armed share) now owns.
+          if (chapterMenuSession.current === session)
+            setSavingChapterName(false);
+        });
     },
     [renameChapter, onCloseChapterMenu]
   );
+  // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
+  // the session and clears `savingChapterName` like every other exit from
+  // this rename does (George R1 P2, #384): without it, a rename cancelled
+  // while still saving left BOTH a late resolution free to close the menu the
+  // user had already backed out of, AND a stale `savingChapterName` that
+  // showed the NEXT Rename tap's fresh Confirm as busy before it was tapped.
+  const onCancelRenameChapter = useCallback(() => {
+    chapterMenuSession.current += 1;
+    setRenamingChapter(false);
+    setSavingChapterName(false);
+  }, []);
   const erase = useEraseSegment();
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
@@ -213,6 +258,9 @@ export const SegmentsScreen = forwardRef<
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
   // what the translator is looking at. Its error code is mapped to copy here and
   // rendered in the menu below.
+  // The Share Control's glyph/variant/busy across idle → preparing → ready
+  // (#354) — the same table Share Book and NameEdit's Confirm use.
+  const shareAffordance = shareControlAffordance(share.status);
   const shareErrorText =
     share.error === "nothing"
       ? strings.shareNothing
@@ -402,8 +450,16 @@ export const SegmentsScreen = forwardRef<
               initialValue={chapterName ?? ""}
               fieldLabel={strings.chapterNameField}
               onSave={onSaveChapterName}
-              onCancel={() => setRenamingChapter(false)}
+              onCancel={onCancelRenameChapter}
+              busy={savingChapterName}
             />
+            {/* Announced regardless of where focus sits — Enter leaves it on
+                the field, not Confirm (George R1 P2, #384). Mirrors Share's
+                own `tone="busy"` Notice for the same reason: Confirm's own
+                busy mark only reaches a screen reader focused ON it. */}
+            {savingChapterName && (
+              <Notice tone="busy">{strings.savingName}</Notice>
+            )}
             {/* A failed rename speaks here — the screen Notice is behind the
                 scrim — while the field stays up for another try. */}
             {error && <Notice>{error}</Notice>}
@@ -422,9 +478,10 @@ export const SegmentsScreen = forwardRef<
                 as it appears, since the Menu only lands focus on its open edge. */}
             {share.status === "ready" ? (
               <Control
-                icon="share"
+                icon={shareAffordance.icon}
                 label={strings.shareSend}
-                variant="primary"
+                variant={shareAffordance.variant}
+                className={shareAffordance.className}
                 autoFocus
                 onClick={onSendShare}
               />
@@ -433,11 +490,17 @@ export const SegmentsScreen = forwardRef<
               // the hook's `preparingRef`, and disabling it would drop this
               // control out of Menu's `FOCUSABLE` set (which excludes
               // `[disabled]`), breaking the Tab trap and letting focus escape the
-              // portal (George R-B7).
+              // portal (George R-B7). `busy` (not disabled) is what now paints
+              // and reads that wait state (#354; `control-affordance.ts`).
               <Control
-                icon="share"
-                label={strings.shareChapter}
-                variant="quiet"
+                icon={shareAffordance.icon}
+                label={
+                  share.status === "preparing"
+                    ? strings.sharePreparing
+                    : strings.shareChapter
+                }
+                variant={shareAffordance.variant}
+                busy={shareAffordance.busy}
                 onClick={onPrepareShare}
               />
             )}
