@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Control } from "./control";
+import { confirmControlAffordance } from "./control-affordance";
 import { strings } from "./strings";
 
 interface NameEditProps {
@@ -32,6 +33,11 @@ interface NameEditProps {
    * is the one Control ships for this. Optional and defaulted false: the
    * rename call sites have no in-flight window worth signalling (their menu
    * already re-renders on the write's own error/close paths).
+   *
+   * The glyph/label swap while busy, and the Escape/re-tap guards below, come
+   * from the SAME table Share's `ready` state uses (`control-affordance.ts`,
+   * #383/#354): a busy Confirm never reads as idle for the length of the
+   * write, on either caller.
    */
   busy?: boolean;
 }
@@ -65,15 +71,17 @@ export function NameEdit({
   busy = false,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
+  const affordance = confirmControlAffordance(busy);
   return (
     <form
       className="name-edit"
       onSubmit={(e) => {
         e.preventDefault();
-        // Enter still submits the form while busy (the input has no
-        // `disabled`/`readOnly` of its own — see below, and #385) — swallow
-        // it here so it cannot re-invoke `onSave` behind the busy Control's
-        // back (Control does not native-disable on `busy`, by design).
+        // Enter still submits the form while busy (the input is `readOnly`,
+        // not `disabled`, below — #385) — swallow it here so it cannot
+        // re-invoke `onSave` behind the busy Control's own onClick guard
+        // (`control.tsx`; Control does not native-disable on `busy`, by
+        // design, so this form-level guard is the only thing stopping Enter).
         if (busy) return;
         onSave(value);
       }}
@@ -93,6 +101,13 @@ export function NameEdit({
         // outside the recovery overlay. On New Book the field arrives pre-filled,
         // so the caret lands on text the translator can accept as it stands.
         autoFocus
+        // Frozen while the write is in flight (George R1 P2, #384): `onSave`
+        // already closed over the value it was called with, so a keystroke
+        // typed after that tap (the field keeps focus; nothing moves it to
+        // Confirm) would be visible next to a busy Confirm without ever
+        // reaching disk — a live field beside a wait mark reading as "this is
+        // what is being saved/created" when it is not.
+        readOnly={busy}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -109,17 +124,30 @@ export function NameEdit({
             // to the action list, New Book dismisses its dialog and creates
             // nothing.
             e.stopPropagation();
+            // While busy, a no-op — like EraseConfirm's Cancel while erasing —
+            // NOT a call to `onCancel` (Frank r2, #384). The commit already in
+            // flight cannot be aborted; calling `onCancel` would only clear the
+            // busy UI and return to idle while that write kept running, so it
+            // could still land moments later with nothing open to show it —
+            // directly contradicting `onCancel`'s own contract. The wait this
+            // leaves the field in is bounded by a single IndexedDB write, not
+            // indefinite.
+            if (busy) return;
             onCancel();
           }
         }}
       />
       {/* type="button" (Control's default), so Enter submits the form once via
-          onSubmit rather than also firing this — one commit path, not two. */}
+          onSubmit rather than also firing this — one commit path, not two.
+          `busy` (not `disabled`): the control stays focused and readable to
+          AT through the write, and its own onClick guard (control.tsx) already
+          no-ops a re-tap while busy — see `affordance`/`control-affordance.ts`
+          for the glyph table (#383). */}
       <Control
-        icon="check"
-        label={saveLabel}
+        icon={affordance.icon}
+        label={busy ? strings.savingName : saveLabel}
         variant="default"
-        busy={busy}
+        busy={affordance.busy}
         onClick={() => onSave(value)}
       />
     </form>

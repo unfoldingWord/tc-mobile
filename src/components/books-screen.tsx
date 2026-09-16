@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
+import { shareControlAffordance } from "./control-affordance";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
@@ -114,6 +115,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Whether the open book ≡ menu is in rename mode (the name field showing) or
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
+  // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
+  // `busy` so it stops reading as idle for the length of the write. Cleared
+  // unconditionally in `.finally()`, unlike the close below: it is purely
+  // presentational, so clearing it for a session a newer one has already
+  // superseded is harmless (nothing reads it once NameEdit has unmounted).
+  const [savingBookName, setSavingBookName] = useState(false);
   // Which book the Delete confirm is armed for (#337), held apart from
   // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
   // Segments row menu, where Erase closes the row menu and the screen holds the
@@ -343,9 +350,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       // same session (F1). Without this, the stale resolution closes the
       // now-current menu and runs share.reset(), discarding a prepared encode.
       const session = bookMenuSession.current;
-      void renameBook(shareMenuBookId, name).then((book) => {
-        if (book && bookMenuSession.current === session) onCloseShareMenu();
-      });
+      setSavingBookName(true);
+      void renameBook(shareMenuBookId, name)
+        .then((book) => {
+          if (book && bookMenuSession.current === session) onCloseShareMenu();
+        })
+        .finally(() => setSavingBookName(false));
     },
     [renameBook, shareMenuBookId, onCloseShareMenu]
   );
@@ -379,6 +389,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       : bookShare.error === "failed"
         ? strings.shareBookFailed
         : null;
+  // The Share Control's glyph/variant/busy across idle → preparing → ready
+  // (#354) — the same table Share Chapter and NameEdit's Confirm use, so
+  // "busy" and "ready" never borrow each other's mark or Confirm's.
+  const bookShareAffordance = shareControlAffordance(bookShare.status);
 
   // ── Delete a book (#337) ──────────────────────────────────────────────────
   // The book the confirm names, resolved from the shelf each render. `open`
@@ -648,6 +662,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               fieldLabel={strings.bookNameField}
               onSave={onSaveBookName}
               onCancel={() => setRenamingBook(false)}
+              busy={savingBookName}
             />
             {/* A failed rename speaks here — the screen's Notice is behind the
                 scrim — while the field stays up for another try.
@@ -672,17 +687,29 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             />
             {bookShare.status === "ready" ? (
               <Control
-                icon="share"
+                icon={bookShareAffordance.icon}
                 label={strings.shareSend}
-                variant="primary"
+                variant={bookShareAffordance.variant}
+                className="control-ready"
                 autoFocus
                 onClick={onSendBookShare}
               />
             ) : (
+              // `busy` (not disabled) while preparing: the control must stay
+              // enabled/focusable — a re-tap is already a no-op via the hook's
+              // `preparingRef`, and disabling it would drop this control out of
+              // Menu's `FOCUSABLE` set, breaking the Tab trap (George R-B7) —
+              // and now also paints and reads that wait (#354; see
+              // `control-affordance.ts`).
               <Control
-                icon="share"
-                label={strings.shareBook}
-                variant="quiet"
+                icon={bookShareAffordance.icon}
+                label={
+                  bookShare.status === "preparing"
+                    ? strings.shareBookPreparing
+                    : strings.shareBook
+                }
+                variant={bookShareAffordance.variant}
+                busy={bookShareAffordance.busy}
                 onClick={onPrepareBookShare}
               />
             )}

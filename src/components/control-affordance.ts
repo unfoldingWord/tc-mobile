@@ -1,0 +1,64 @@
+/**
+ * What a busy `Control` and a ready `Control` look like — one table,
+ * mirroring `notice-tone.ts`'s rule that a wait and a result must never share
+ * a mark (#112). Before this, `Control`'s `busy` set `aria-busy` and nothing
+ * painted or read differently (#383), and Share's `ready` state changed only
+ * the box size and label — a glyph a non-reader can tell from `preparing` had
+ * no visible expression at all (#354).
+ *
+ * Two tables, not one, because the two callers have different shapes: Share
+ * is a three-state "prepare then send" flow (idle → preparing → ready); a
+ * Confirm — New Book's, and Rename's Save, which has the identical
+ * write-in-flight-with-a-silent-control gap today — is only ever idle or
+ * busy, with no staged second tap.
+ */
+
+import type { ShareStatus } from "@/hooks/share-flow";
+import type { IconName } from "./icon";
+
+export interface ShareControlAffordance {
+  readonly icon: IconName;
+  readonly variant: "quiet" | "primary";
+  /** Forwarded to `Control`'s `busy` — sets `aria-busy` and the layer-3 spin. */
+  readonly busy: boolean;
+}
+
+/**
+ * `idle`: the plain share glyph, the same size as every other quiet control
+ * on the row. `preparing`: the retry glyph — the same wait mark `Notice`'s
+ * `busy` tone already wears — spinning, `aria-busy`, box size UNCHANGED
+ * (#164, #351: a size change on tap reflows the row around it). `ready`: the
+ * check glyph — the "yes, this is so" mark `is-done`/`is-on` already wear —
+ * on the existing primary/XL variant.
+ */
+export function shareControlAffordance(
+  status: ShareStatus
+): ShareControlAffordance {
+  switch (status) {
+    case "idle":
+      return { icon: "share", variant: "quiet", busy: false };
+    case "preparing":
+      return { icon: "retry", variant: "quiet", busy: true };
+    case "ready":
+      return { icon: "check", variant: "primary", busy: false };
+  }
+}
+
+export interface ConfirmControlAffordance {
+  readonly icon: IconName;
+  readonly busy: boolean;
+}
+
+/**
+ * A single Confirm `Control`'s affordance while its write is in flight. The
+ * retry glyph while `saving`, the check glyph once it is safe to tap again —
+ * never the reverse, and never the same glyph for both, or the control would
+ * read as idle during the write, which is the defect #383 names.
+ */
+export function confirmControlAffordance(
+  saving: boolean
+): ConfirmControlAffordance {
+  return saving
+    ? { icon: "retry", busy: true }
+    : { icon: "check", busy: false };
+}
