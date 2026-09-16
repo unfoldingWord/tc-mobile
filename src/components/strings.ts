@@ -352,4 +352,15 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+
+  // ── The encoder has stopped working (#166) ───────────────────────────────
+  // Shown once on the shelf after `TRANSCODE_FAILURE_THRESHOLD` finished
+  // segments in a row fail to compress. What has actually stopped is the
+  // storage relief D3 exists for (#12), which is invisible from where the
+  // translator stands — so the line says the condition in their terms, says
+  // plainly that nothing is lost (it is not: every failed segment keeps its
+  // audio), and names the one thing that sometimes helps. No cause text, no
+  // error string, no word from the encoder's own vocabulary (#172).
+  transcodeFailing:
+    "This phone could not make finished recordings smaller. Nothing is lost — restarting the app may help.",
 } as const;
