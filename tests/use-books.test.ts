@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   canStartAddChapter,
   dropBookCard,
+  isLoadCurrent,
   patchNewChapter,
   reportUnlessStale,
 } from "@/hooks/use-books";
@@ -136,16 +137,23 @@ describe("dropBookCard", () => {
 });
 
 /**
- * `useBooks`'s Add-chapter path, minus React (no jsdom, no renderer — the
- * same constraint `tests/use-erase-segment.test.ts` documents). What is
- * Node-testable here is the pair of pure decisions the hook's `addChapter`
- * was missing: the fold that patches a new chapter onto its book's card in
- * the same turn as the write, and the guard that a second tap for the same
- * book while the first is in flight must not proceed (George R3/R4 P2 —
- * "Create success now focuses an unlatched, non-optimistic Add-chapter
- * control; extra chapters cannot be deleted"). `addingChapterFor`, the ref
- * that HOLDS the guard, is React state and is review + on-device surface,
- * same as `creatingBook` and `useEraseSegment`'s own double-tap ref.
+ * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (no
+ * jsdom, no renderer — the same constraint `tests/use-erase-segment.test.ts`
+ * documents). What is Node-testable here is three pure decisions the hook's
+ * `addChapter`/`createBook`/load effect were missing:
+ *
+ * - the fold that patches a new chapter onto its book's card in the same
+ *   turn as the write;
+ * - the guard that a second tap for the same book while the first is in
+ *   flight must not proceed (George R3/R4 P2 — "Create success now focuses
+ *   an unlatched, non-optimistic Add-chapter control; extra chapters cannot
+ *   be deleted"); and
+ * - the generation check that stops a load which started before an
+ *   optimistic patch from overwriting it after the fact (George R4 P2-2).
+ *
+ * `addingChapterFor` and `loadGen`, the refs that HOLD these guards, are
+ * React state and are review + on-device surface, same as `creatingBook`
+ * and `useEraseSegment`'s own double-tap ref.
  */
 
 const chapterBookId = (s: string): BookId => s as BookId;
@@ -230,5 +238,22 @@ describe("canStartAddChapter", () => {
   it("does not block a different book's Add-chapter tap", () => {
     const inFlight = new Set([chapterBookId("b-1")]);
     expect(canStartAddChapter(inFlight, chapterBookId("b-2"))).toBe(true);
+  });
+});
+
+describe("isLoadCurrent", () => {
+  it("is current when nothing has bumped the generation since the load started", () => {
+    expect(isLoadCurrent(3, 3)).toBe(true);
+  });
+
+  it("is stale once an optimistic patch (or a newer load) has bumped the generation", () => {
+    // `startedAt` is what a load captured when it began; `current` has since
+    // moved on — a `createBook`/`addChapter` patch, or a later load's own
+    // start, both bump it the same way (George R4 P2-2).
+    expect(isLoadCurrent(3, 4)).toBe(false);
+  });
+
+  it("a load started before ANY patch is stale even against a much later generation", () => {
+    expect(isLoadCurrent(0, 5)).toBe(false);
   });
 });

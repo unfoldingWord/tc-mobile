@@ -128,9 +128,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
   // What to scroll to once the list next reloads — a freshly made book or
-  // chapter. A ref, not state: creating one calls `reload()`, so the `books`
-  // change already re-renders us; clearing a ref here avoids a setState-in-
-  // effect cascade.
+  // chapter. A ref, not state: creating one patches `books` directly (no
+  // `reload()` needed — see `useBooks.createBook`/`addChapter`, George R4
+  // P2-2), so the `books` change already re-renders us; clearing a ref here
+  // avoids a setState-in-effect cascade.
   const pendingScroll = useRef<string | null>(null);
   // The empty-state CTA unmounts on the create it triggers. Without this, focus
   // falls to the document and the first header stop takes over — on a chapter
@@ -159,13 +160,20 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // lesson, learned twice: a focus fix that ignores `inert` is dead code
     // (#364; docs/progress_tracker.md).
     if (focusId !== null && deleteTargetId === null) {
-      // The row's first <button> is the expand/collapse toggle; a second
-      // activation there would collapse the new book. Target the add-chapter
-      // Control (`.control`) — the actual next action (George R3 P3).
-      nodes.current
-        .get(focusId)
-        ?.querySelector<HTMLElement>("button.control")
-        ?.focus();
+      // The row's first <button> is the expand/collapse toggle. Landing here
+      // instead of the add-chapter Control is a DELIBERATE step back from an
+      // earlier round: targeting `.control` put a live, activating native
+      // button under focus as the direct continuation of Confirm's own Enter
+      // — and a still-held Enter key-repeats `click` on whatever is focused,
+      // so a facilitator holding Enter through Confirm wrote MULTIPLE
+      // undeletable chapters before the per-book latch could catch up (the
+      // latch only stops OVERLAPPING calls; it releases the instant each
+      // write resolves, and a `put` is typically faster than OS key-repeat —
+      // George R4 P2-1). A stray re-activation of the toggle just re-collapses
+      // the row — visible immediately, undone by one more tap, and it writes
+      // nothing — so it is the safe landing spot even though Add-chapter is
+      // the more useful one Tab further on.
+      nodes.current.get(focusId)?.querySelector<HTMLElement>("button")?.focus();
       pendingFocus.current = null;
     }
     // Keyed on ALL THREE: `books` covers create/add-chapter and a successful
@@ -769,8 +777,10 @@ function BookItem({
           variant="quiet"
           onClick={onNewChapter}
         />
-        {/* Overflow ≡ after the +, so the add-chapter Control stays the row's
-            first `.control` — the target the new-book focus hand-off relies on. */}
+        {/* Overflow ≡ after the +. The new-book focus hand-off targets the
+            row's toggle button above, not either Control (George R4 P2-1) —
+            this ordering is no longer load-bearing for that hand-off, only
+            for the read/visual order: expand, add, manage. */}
         <Control
           icon="menu"
           label={strings.bookMenuOpen(book.name)}

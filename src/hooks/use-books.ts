@@ -162,13 +162,15 @@ interface Failure {
 
 /**
  * Fold a freshly added chapter into its book's card, in the same turn as the
- * write — the "patch now, `reload()` later" contract `createBook`'s optimistic
- * insert and `useChapterSegments.addSegment` both use, extended to the one
- * creation path that still only reloaded. Without this, the row stayed empty
- * until `loadBookCards` finished, `reload()` never having flipped `loading`
- * (George R3/R4 P2): a fast repeat activation reads as "the first tap did
- * nothing" and invites another, and on this tree there is no way to delete
- * the extra chapter it writes.
+ * write — no `reload()` after it, the same contract `createBook`'s optimistic
+ * insert and `useChapterSegments.addSegment` both follow (George R4 P2-2:
+ * `addChapter` used to `reload()` after patching, which could race a load
+ * effect that started earlier and stomp this exact patch with a stale
+ * absolute `setBooks(cards)` — see `isLoadCurrent`). Without the patch at
+ * all, the row stayed empty until `loadBookCards` finished, `reload()` never
+ * having flipped `loading` (George R3/R4 P2): a fast repeat activation reads
+ * as "the first tap did nothing" and invites another, and on this tree there
+ * is no way to delete the extra chapter it writes.
  *
  * Appended, not prepended: `ChapterRow` order is the book's chapter order —
  * unlike `BookCard`'s `updatedAt` shelf sort — and a new chapter is the next
@@ -220,6 +222,25 @@ export function canStartAddChapter(
 }
 
 /**
+ * Whether a load stamped `startedAt` may still apply its result, given the
+ * CURRENT generation.
+ *
+ * `createBook`'s and `addChapter`'s optimistic patches bump the generation,
+ * and so does the start of every subsequent load — so a load whose stamp has
+ * fallen behind current has been superseded and must not overwrite newer
+ * state with what it read before the patch landed (George R4 P2-2: the load
+ * effect's `cancelled` closure flag is set by a CLEANUP function, which runs
+ * on React's own schedule; it is not guaranteed to have run before an
+ * already-in-flight load's own promise resolves, so an absolute
+ * `setBooks(cards)` from a load that started before an optimistic patch, but
+ * resolves after it, could silently erase the patch). The generation is the
+ * explicit, synchronous version of the same check.
+ */
+export function isLoadCurrent(startedAt: number, current: number): boolean {
+  return startedAt === current;
+}
+
+/**
  * What a create attempt resolved to: the book, or the reason it failed.
  *
  * A discriminated outcome rather than `Book | null`, because the caller needs
@@ -260,7 +281,13 @@ export function useBooks() {
    * shelf — putting a just-deleted book back, with its chapters already gone
    * underneath it (George R3 P1). A ref moves that invalidation into the same
    * synchronous step as the write. Bumped by `reload()`, so every path that
-   * asks for a re-read also invalidates whatever was already in flight.
+   * asks for a re-read also invalidates whatever was already in flight — AND
+   * bumped directly by `createBook`'s and `addChapter`'s optimistic patches,
+   * which do NOT call `reload()` (see those callbacks): a load that started
+   * before the patch but resolves after it must not overwrite the patch with
+   * a stale absolute `setBooks(cards)` (George R4 P2-2). `isLoadCurrent` is
+   * the pure, explicit version of the comparison below, pinned in
+   * `tests/use-books.test.ts`.
    */
   const loadGen = useRef(0);
   /** True while a book delete is in flight — the confirm dialog's `busy`. */
@@ -299,11 +326,11 @@ export function useBooks() {
     const gen = loadGen.current;
     let cancelled = false;
     void (async () => {
-      // Superseded: a reload or a delete has happened since this load started,
-      // so its snapshot describes a database state that is no longer true.
-      // Checked alongside `cancelled` because `cancelled` alone flips too late
-      // (see `loadGen`).
-      const stale = () => cancelled || gen !== loadGen.current;
+      // Superseded: a reload, a delete, or an optimistic create/addChapter
+      // patch has happened since this load started, so its snapshot describes
+      // a database state that is no longer true. Checked alongside `cancelled`
+      // because `cancelled` alone flips too late (see `loadGen`).
+      const stale = () => cancelled || !isLoadCurrent(gen, loadGen.current);
       try {
         const cards = await loadBookCards();
         if (stale()) return;
@@ -378,22 +405,30 @@ export function useBooks() {
       try {
         const book = await createBookInStore(name);
         report(null); // a successful write clears the slot — see `deleteBook`
-        // Put the row on the shelf in THIS turn, before `reload()`'s async read
-        // lands. The New Book dialog unmounts on success, and every contract it
+        // Put the row on the shelf in THIS turn — no `reload()` after it.
+        // The New Book dialog unmounts on success, and every contract it
         // hands off to keys on `books`: `showEmpty` would otherwise re-raise the
         // "start your first book" invite — with a live CTA — over a shelf that
         // now has a book on it, a second Confirm there writing a second book
         // that cannot be deleted on this tree; and the screen's scroll/focus
         // effect could not run at all, leaving focus on the document (George R2
         // P2-1). Prepended because `listBooks` sorts by `updatedAt` and this is
-        // the newest, so the optimistic order is the order the reload confirms.
-        // `reload()` stays as the reconciliation that fills in anything this
-        // synthesised card cannot know.
+        // the newest, so the optimistic order is the order a later read would
+        // confirm.
+        //
+        // `reload()` USED to follow this, "as reconciliation" — but the new
+        // card is already fully correct (its id/name come straight from the
+        // write), so the only thing a reload could add is a race: if it is
+        // still in flight when `addChapter` patches a DIFFERENT book's card,
+        // an absolute `setBooks(cards)` landing after that patch would erase
+        // it (George R4 P2-2). Bumping the generation instead tells any load
+        // already in flight — this one, or an older one — that a newer,
+        // synthesised state now exists and its own read is stale.
         setBooks((prev) => [
           { bookId: book.id, name: book.name, chapters: [] },
           ...prev,
         ]);
-        reload();
+        loadGen.current += 1;
         return { ok: true, book };
       } catch (cause) {
         return {
@@ -402,7 +437,7 @@ export function useBooks() {
         };
       }
     },
-    [reload, report]
+    [report]
   );
 
   // The Add-chapter in-flight latch, one entry per book. A ref (like
@@ -423,9 +458,13 @@ export function useBooks() {
         // see `patchNewChapter` — so the control's own repeated activations
         // (fast taps, a held Enter's key-repeat landing here after a New Book
         // success) see the row that landed instead of an empty card that
-        // reads as "nothing happened" (George R3/R4 P2).
+        // reads as "nothing happened" (George R3/R4 P2). No `reload()`, for
+        // the same reason `createBook` dropped it (George R4 P2-2): the patch
+        // is already fully correct, and reloading risked a stale absolute
+        // `setBooks(cards)` landing on top of it. Bump the generation instead
+        // — see `isLoadCurrent`.
         setBooks((prev) => patchNewChapter(prev, bookId, chapter));
-        reload();
+        loadGen.current += 1;
         return chapter;
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and
@@ -460,7 +499,9 @@ export function useBooks() {
     async (bookId: BookId, name: string): Promise<Book | null> => {
       // reload() rather than an in-place patch: a rename bumps the book's
       // updatedAt, and listBooks sorts by it, so the shelf order actually
-      // changes — the same reason createBook/addChapter reload. A failed write
+      // changes — unlike createBook/addChapter, whose optimistic patch is
+      // already exactly what a reload would confirm, a rename's patch would
+      // have to duplicate the sort `listBooks` already does. A failed write
       // reaches the same Notice a load failure does.
       try {
         const book = await renameBookInStore(bookId, name);
