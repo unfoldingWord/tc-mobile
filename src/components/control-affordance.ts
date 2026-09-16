@@ -8,10 +8,10 @@
  *
  * Two tables, not one, because the two callers have different shapes: Share
  * is a three-state "prepare then send" flow (idle → preparing → ready); a
- * Confirm is only ever idle or busy, with no staged second tap. Today's only
- * caller is Rename's Save, which had the identical write-in-flight-with-a-
- * silent-control gap #383 names; New Book's own Confirm (#367) is not yet on
- * `develop` and will reuse this same table once it rebases here.
+ * Confirm is only ever idle or busy, with no staged second tap. `NameEdit`'s
+ * one save Control is the shared caller for both its uses — Rename's Save
+ * and New Book's Create (#314/#367) — which is what keeps the glyph/label
+ * swap identical on both rather than each inventing its own.
  */
 
 import type { ShareStatus } from "@/hooks/share-flow";
