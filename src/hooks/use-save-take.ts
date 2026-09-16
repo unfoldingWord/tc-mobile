@@ -165,7 +165,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   // The latest `onSaved`, read from the commit closure without making `commit`
   // depend on a callback identity the caller re-creates each render. Kept
   // current in an effect, not written during render (`react-hooks/refs`) — the
-  // same latest-ref shape `recorderStateRef` uses in `use-recorder.ts`. The
+  // same latest-ref shape `recorderStateRef` uses in `use-audio-session.ts`. The
   // `useRef` initialiser already holds the first render's callback, and effects
   // flush before the next tap, so no commit can read a stale one.
   const onSavedRef = useRef(onSaved);

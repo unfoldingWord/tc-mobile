@@ -792,8 +792,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           dirty.current = true;
           if (!saved) {
             // Take the SAME exit `close()`'s capture path takes: it always reaches
-            // `onExit(dirty)` after the save (`commitPendingAndExit` with
-            // `committed`), so App clears `recorder` and the recovery screen owns
+            // `onExit(dirty)` after the save (`executeTail`, once the take is
+            // committed), so App clears `recorder` and the recovery screen owns
             // the body with nothing mounted behind it. Do NOT enter edit mode.
             onExit(dirty.current);
             return;
