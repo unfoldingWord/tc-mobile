@@ -1714,6 +1714,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       canFinish: finishedState !== "disabled",
     });
 
+    // Whether the record stage's `LiveScope` branch is what's mounted below —
+    // computed once so the `PlayheadOverlay` gating right after it can read the
+    // same decision `liveScopeShown` (recorder-stage.ts) made, rather than
+    // re-deriving it and risking the two disagreeing.
+    const liveScope = liveScopeShown({
+      recording,
+      paused,
+      processing: state === "processing",
+      isClosing,
+      hasAudio,
+      meterFailed: audio.meterFailed,
+      previewShown: previewShown !== null,
+    });
+
     return (
       <div className="recorder-scrim" role="dialog" aria-modal="true">
         {/* THE INERT RULE (#75). An overlay inerts the sheet because nested
@@ -1972,21 +1986,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
                 >
-                  {liveScopeShown({
-                    recording,
-                    paused,
-                    processing: state === "processing",
-                    isClosing,
-                    hasAudio,
-                    meterFailed: audio.meterFailed,
-                    previewShown: previewShown !== null,
-                  }) ? (
+                  {liveScope ? (
                     // The dedicated live scope drives the stage while a take is in
                     // flight — `liveScopeShown` (recorder-stage.ts) owns the rule,
                     // including the #283 append case (a 2nd take now grows live
-                    // instead of waiting for re-entry). It grows from the head and
-                    // scrolls R→L (#120), sidestepping Waveform's `!recorded`
-                    // dotted rule. `active` goes false off "recording"
+                    // instead of waiting for re-entry) AND an append's Pause+Play
+                    // preview (George R-resume P2: the preview must not swap to a
+                    // differently-scaled Waveform mid-append). It grows from the
+                    // head and scrolls R→L (#120), sidestepping Waveform's
+                    // `!recorded` dotted rule. `active` goes false off "recording"
                     // (pause/processing/close), freezing the last frame (R-B6).
                     <LiveScope
                       readScope={audio.readScope}
@@ -1997,13 +2005,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       label={strings.liveWaveform}
                     />
                   ) : (
-                    // Idle / edit / playback, a prepared preview (of any take),
-                    // and the tap-failed fallback. A live take-in-flight is NOT
-                    // here anymore — an append grows on `LiveScope` too now
-                    // (#283); this branch is reached mid-take only via a preview
-                    // or a failed tap. `capturing` keeps the #110 record
-                    // centerline over the existing audio (or the dotted first-take
-                    // rule when the tap failed), not a blank stage (George R1/R2).
+                    // Idle / edit / playback, a FIRST take's prepared preview, and
+                    // the tap-failed fallback. A live take-in-flight is NOT here
+                    // anymore for either a first take or an append (#283); an
+                    // append's own preview stays on LiveScope too (George
+                    // R-resume P2) rather than reaching this branch. `capturing`
+                    // keeps the #110 record centerline over the existing audio (or
+                    // the dotted first-take rule when the tap failed), not a blank
+                    // stage (George R1/R2).
                     <Waveform
                       // The paused-take preview draws its own peaks over the whole
                       // buffer (#101); everything else shows the working buffer's.
@@ -2017,13 +2026,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       recorded={hasAudio || previewShown !== null}
                       capturing={recording || paused}
                       // The #358 display fit is suppressed only for a take with
-                      // nothing committed behind it — the paused first take
-                      // whose decoded preview replaces `LiveScope` above. A
-                      // punch-in (`hasAudio`) draws the STORED clip while it
-                      // records, since `working` does not grow until the splice
-                      // at close, so that canvas stays fitted (George R2 P2).
-                      // The rule itself is pure and table-tested in
-                      // `lib/audio/display-gain.ts`, not spelled out here.
+                      // nothing committed behind it — a FIRST take's paused
+                      // decoded preview, the one case that still reaches this
+                      // branch mid-take (an append's own preview stays on
+                      // `LiveScope`, George R-resume P2, so `hasAudio` is always
+                      // false whenever this branch is live-take-active; it only
+                      // reads true here for the idle/meter-failed cases, where
+                      // `isFirstTakeInFlight` is false anyway because
+                      // `takeActive` is false). The rule itself is pure and
+                      // table-tested in `lib/audio/display-gain.ts`, not spelled
+                      // out here.
                       //
                       // `takeActive`, NOT `recording || paused` (George R3 #2 —
                       // the re-run, a distinct finding from the fitFrom fix
@@ -2039,9 +2051,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // full height under the Saving notice — the exact
                       // quiet-mic-looks-healthy failure this flag exists to
                       // prevent, on the one window it was built for.
-                      // `hasAudio` still gates the punch-in case unchanged: once
-                      // there is committed audio, `isFirstTakeInFlight` is false
-                      // regardless of `takeActive`, so George R2 P2 stands.
                       firstTakeInFlight={isFirstTakeInFlight(
                         takeActive,
                         hasAudio
@@ -2065,10 +2074,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     polls `readPlaybackElapsed` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
                     inert list behind it. Mounted always; it hides itself when
-                    nothing is sounding. */}
+                    nothing is sounding.
+                    `!liveScope` (George R-resume P2): its fractions are always
+                    read against `waveView`/`soundingLength`, which switch to the
+                    merged preview buffer the moment one is prepared — correct
+                    over `Waveform`, but an append's own preview keeps `LiveScope`
+                    mounted instead (above), which draws neither that buffer nor
+                    its fractions. Without this an append's Pause+Play would sweep
+                    a line over the live ring at coordinates that describe a
+                    buffer the stage is not drawing. */}
                   <PlayheadOverlay
                     readElapsedMs={audio.readPlaybackElapsed}
-                    active={audio.playingBuffer}
+                    active={audio.playingBuffer && !liveScope}
                     durationMs={soundingDurationMs}
                     startFraction={waveView.startFraction}
                     endFraction={waveView.endFraction}

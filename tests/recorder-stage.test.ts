@@ -75,9 +75,31 @@ describe("liveScopeShown — the stage-owning states win", () => {
     }
   });
 
-  it("never shows it when a preview is up", () => {
+  it("never shows it for a FIRST take when a preview is up", () => {
     for (const s of IN_FLIGHT) {
-      expect(liveScopeShown(stage({ ...s, previewShown: true }))).toBe(false);
+      expect(
+        liveScopeShown(stage({ ...s, previewShown: true, hasAudio: false }))
+      ).toBe(false);
     }
   });
+});
+
+describe("liveScopeShown — an append's preview stays on the live scope (George R-resume P2)", () => {
+  // On rebasing #283 onto #366 (display-gain fit): a first take's preview
+  // correctly wins the stage, because Waveform then draws absolute
+  // (isFirstTakeInFlight is true when hasAudio is false), matching the
+  // LiveScope it replaces. An append's preview must NOT win — Waveform would
+  // draw the merged buffer FITTED (isFirstTakeInFlight is false once hasAudio
+  // is true), a scale jump off the absolute LiveScope the append was just
+  // growing on, on top of Waveform's useEffect blank-first-frame. Reintroduce
+  // the old `if (s.meterFailed || s.previewShown) return false;` and every
+  // case below dies.
+  it.each(IN_FLIGHT)(
+    "keeps the live scope through a preview while %o and hasAudio",
+    (s) => {
+      expect(
+        liveScopeShown(stage({ ...s, previewShown: true, hasAudio: true }))
+      ).toBe(true);
+    }
+  );
 });
