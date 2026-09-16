@@ -117,6 +117,15 @@ export function liveScopeShown(s: StageState): boolean {
  * George). Repetition is a class, and the class-level answer is to derive the
  * question once rather than gate each consumer by hand.
  *
+ * A fourth decision, `centerlineHidden`, lived here from R2 (whole-clip
+ * playback) through R4 P3 (in-place audition) until #316 (requirements
+ * owner, 2026-09-16: "having the line always visible is important in
+ * segment record/edit mode") retired it — the line is never suppressed, in
+ * any state, so there is no longer a decision to derive. `Waveform` draws it
+ * unconditionally whenever a recorder `view` is present; see its
+ * `drawCenterline` for the current (unconditional) rule and this module's
+ * git history for the retired one.
+ *
  * Pure and DOM-free so the truth table is a test rather than a phone.
  */
 
@@ -142,15 +151,6 @@ interface StageView {
    */
   readonly wholeView: boolean;
   /**
-   * Suppress the red insert centerline (`Waveform`'s `playing`).
-   *
-   * Whenever the view is swapped — the line would mark a sample that is no
-   * longer where it is drawn — and also for a picked-span audition, where the
-   * line is still honest but a second static vertical line beside a travelling
-   * playhead reads as "insert here" to someone who cannot read the screen.
-   */
-  readonly centerlineHidden: boolean;
-  /**
    * Every control that READS OR MOVES the pan/zoom window is inert.
    *
    * The enumeration, so the next reader sees the class rather than a scatter of
@@ -165,10 +165,11 @@ interface StageView {
    *   sample and inserts at another (it is unmounted, not merely disabled, so
    *   the false POSITION goes too);
    * - **Select**: seeds its span from `win.centerlineSample` ± the visible
-   *   width, and the centerline is hidden while sounding — so it would
-   *   highlight the insert point rather than the audio being heard. Inert in
-   *   both directions: closing a frame mid-audition would also flip the view
-   *   out from under the sound.
+   *   width — a position that, while sounding, no longer matches what the
+   *   (always-visible, #316) line marks once the view has swapped to the
+   *   whole clip, so it would highlight the insert point rather than the
+   *   audio being heard. Inert in both directions: closing a frame
+   *   mid-audition would also flip the view out from under the sound.
    *
    * OUT, deliberately — each stays live, and why:
    *
@@ -219,7 +220,6 @@ export function stageView(input: StageInput): StageView {
   const wholeView = input.previewShown || (input.playingBuffer && !inPlace);
   return {
     wholeView,
-    centerlineHidden: wholeView || input.playingBuffer,
     windowControlsInert: input.playingBuffer,
     inPlaceAudition: input.playingBuffer && !wholeView,
   };

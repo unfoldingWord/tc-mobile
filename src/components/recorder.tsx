@@ -2311,26 +2311,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // of `hasAudio`, so it must be drawn here — with a working
                     // playhead — not left silently behind a frozen live ring. A
                     // live take-in-flight otherwise is NOT here anymore for either
-                    // a first take or an append (#283). `capturing` keeps the #110
-                    // record centerline over the existing audio (or the dotted
-                    // first-take rule when the tap failed), not a blank stage
-                    // (George R1/R2).
+                    // a first take or an append (#283). The canvas's own #110/#316
+                    // centerline is drawn unconditionally whenever `view` is set,
+                    // so it covers the existing audio here (or the dotted
+                    // first-take rule when the tap failed) without a capturing
+                    // flag, not a blank stage (George R1/R2).
                     <Waveform
                       // The paused-take preview draws its own peaks over the whole
                       // buffer (#101); everything else shows the working buffer's.
                       // `recorded` is true whenever there is a waveform to mark —
                       // stored audio, or a prepared preview of a first take. The
-                      // centerline is suppressed for EVERY sounding buffer, not
-                      // only a swapped view (`stage.centerlineHidden`): over a
-                      // whole-clip view the red marker would point at a sample it
-                      // is no longer drawn over (George R2), and over a picked-span
-                      // audition it is honest but leaves a second static vertical
-                      // line beside the travelling playhead, which reads as
-                      // "insert here" to a non-reader (George R4 P3).
+                      // centerline itself is no longer suppressed for a sounding
+                      // buffer or a swapped view — the requirements owner reversed
+                      // both suppressions in #316 (2026-09-16); see
+                      // `recorder-stage.ts`'s module docblock for the superseded
+                      // George R2 / R4 P3 findings that used to justify hiding it.
                       peaks={previewShown ? previewShown.peaks : editor.peaks}
                       height={200}
                       recorded={hasAudio || previewShown !== null}
-                      capturing={recording || paused}
                       // The #358 display fit is suppressed only for a take with
                       // nothing committed behind it — the paused first take
                       // whose decoded preview replaces `LiveScope` above. A
@@ -2382,7 +2380,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // this is the same array as `peaks`, so idle and a first
                       // take are unaffected.
                       fitFrom={editor.peaks}
-                      playing={stage.centerlineHidden}
                       view={waveView}
                     />
                   )}
@@ -2535,12 +2532,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     }
                     variant="record"
                     // Disabled while the buffer plays ONLY when idle: the visible
-                    // whole-clip view hides the insert centerline, so a new record
-                    // would splice at an offset the translator cannot see (George
-                    // R2). While PAUSED the button is Resume, whose offset is already
-                    // locked — resuming stops a sounding preview and continues the
-                    // take, so it must stay enabled (George R3 #4). Stop playback
-                    // (tap Play) first only in the idle case.
+                    // whole-clip view draws the centerline at a fixed screen
+                    // position that no longer corresponds to the stored insertion
+                    // offset (#316 keeps the line itself visible; it is the
+                    // COORDINATE that goes stale under a swapped view, not the
+                    // line's presence), so a new record would splice at a sample
+                    // the translator cannot see is different from what is drawn
+                    // (George R2). While PAUSED the button is Resume, whose offset
+                    // is already locked — resuming stops a sounding preview and
+                    // continues the take, so it must stay enabled (George R3 #4).
+                    // Stop playback (tap Play) first only in the idle case.
                     disabled={
                       busy ||
                       isClosing ||

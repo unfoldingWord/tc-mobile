@@ -99,7 +99,7 @@ describe("liveScopeShown — the stage-owning states win", () => {
 });
 
 /**
- * The recorder stage's four view-coupled decisions, as a truth table.
+ * The recorder stage's three view-coupled decisions, as a truth table.
  *
  * Rounds 3, 4, 5 and 7 of this PR's review each found the same defect wearing
  * a different hat — the paste marker, then zoom, then Select, then the
@@ -113,6 +113,15 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * The axes are the four the recorder actually varies: which mode the sheet is
  * in, whether a buffer is sounding, whether a selection frame is up, and
  * whether a paused-take preview is on the stage.
+ *
+ * A fourth decision, `centerlineHidden`, lived in this table from R2 through
+ * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the centerline is
+ * visible in every state, so `Waveform` now draws it unconditionally
+ * whenever a recorder `view` is present, with nothing left for this pure
+ * module to decide — see the module docblock above `stageView`. There is
+ * deliberately no test here pinning "always visible": that claim now lives
+ * entirely in `Waveform`'s canvas draw, which this repo's convention treats
+ * as review-only (see this PR's body for what is and is not verified).
  */
 
 const base = {
@@ -123,17 +132,15 @@ const base = {
 } as const;
 
 describe("stageView", () => {
-  it("draws the pan window and shows the line when nothing is sounding", () => {
+  it("draws the pan window when nothing is sounding", () => {
     // Edit mode, idle: the ordinary editing state.
     expect(stageView(base)).toEqual({
       wholeView: false,
-      centerlineHidden: false,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
     expect(stageView({ ...base, selectionActive: true })).toEqual({
       wholeView: false,
-      centerlineHidden: false,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
@@ -145,7 +152,6 @@ describe("stageView", () => {
     expect(stageView({ ...base, mode: "record", playingBuffer: true })).toEqual(
       {
         wholeView: true,
-        centerlineHidden: true,
         windowControlsInert: true,
         inPlaceAudition: false,
       }
@@ -157,7 +163,6 @@ describe("stageView", () => {
     // aligned, and keeping that window would sound audio that is off screen.
     expect(stageView({ ...base, playingBuffer: true })).toEqual({
       wholeView: true,
-      centerlineHidden: true,
       windowControlsInert: true,
       inPlaceAudition: false,
     });
@@ -165,9 +170,7 @@ describe("stageView", () => {
 
   it("keeps the pan window for an audition of a picked span, and marks it in-place", () => {
     // The band is positioned through that window, and hearing exactly the span
-    // it marks is the point — so the view stays put. The line still hides:
-    // a second static vertical line beside a travelling playhead reads as
-    // "insert here" to someone who cannot read the screen (George R4 P3).
+    // it marks is the point — so the view stays put.
     //
     // `inPlaceAudition: true` is the ONLY case it is — it is what tells the
     // playhead overlay to clamp a position outside the (unswapped) window to
@@ -179,7 +182,6 @@ describe("stageView", () => {
       stageView({ ...base, playingBuffer: true, selectionActive: true })
     ).toEqual({
       wholeView: false,
-      centerlineHidden: true,
       windowControlsInert: true,
       inPlaceAudition: true,
     });
@@ -205,7 +207,6 @@ describe("stageView", () => {
       })
     ).toEqual({
       wholeView: true,
-      centerlineHidden: true,
       windowControlsInert: true,
       inPlaceAudition: false,
     });
@@ -216,7 +217,6 @@ describe("stageView", () => {
     // never shown through the pan window.
     expect(stageView({ ...base, mode: "record", previewShown: true })).toEqual({
       wholeView: true,
-      centerlineHidden: true,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
@@ -224,7 +224,6 @@ describe("stageView", () => {
       stageView({ ...base, previewShown: true, selectionActive: true })
     ).toEqual({
       wholeView: true,
-      centerlineHidden: true,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
