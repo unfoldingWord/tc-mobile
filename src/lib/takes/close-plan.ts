@@ -1,0 +1,281 @@
+/**
+ * What closing the recorder does — as a pure decision over its inputs.
+ *
+ * `close()` in `components/recorder.tsx` is the ONLY commit path in the
+ * product: there is no Stop control, so a take exists on disk because the sheet
+ * was closed (F8). It carried this whole decision inline, and this project has
+ * no renderer — `vitest.config.ts` sets `environment: "node"` and there is no
+ * jsdom or testing-library in `package.json` — so nothing could reach it. A
+ * wrong branch there does not produce a wrong pixel; it drops a recording a
+ * translator cannot make again, with `npm run verify` and CI green (#180).
+ *
+ * So the decision moved here, by the same move that produced
+ * `lib/takes/pending-take.ts` and `lib/audio/session.ts`: pure, DOM-free,
+ * React-free, and enumerated in `tests/close-plan.test.ts`. The component keeps
+ * only the effects — stopping the capture, the two saves, the store write, the
+ * held-take panel, and the reset that leaves the sheet open.
+ *
+ * The order the plan encodes is not arbitrary. A committed take carries the
+ * pending edits (its splice base IS the edited buffer, Model A) and carries the
+ * finished mark (applied atomically with the take, so a separate write cannot
+ * be clobbered by the same close's demote-to-draft). So at most ONE of
+ * save-take / save-edit / clear / mark ever happens.
+ */
+
+/**
+ * What a stopped capture yielded.
+ *
+ * Structurally the `StopResult` of `hooks/use-recorder.ts`, so the component
+ * passes that result through with no conversion to drift. Declared here rather
+ * than imported because `lib/` may not reach into `hooks/`.
+ *
+ * `TBytes` is the captured container bytes — a `Blob` at the one call site.
+ * Generic rather than named, because naming `Blob` here would put a web type in
+ * `lib/`, which `npm run typecheck:lib` exists to keep out (it compiles this
+ * directory with no DOM lib). The bytes are never inspected, only carried, so
+ * the parameter costs nothing and the component still gets a narrowed `Blob`
+ * back out of the verdict instead of re-checking a value the classifier has
+ * already proved non-null.
+ */
+export interface CaptureOutcome<TBytes = unknown> {
+  /** Canonical PCM when the take produced usable audio, else null. */
+  readonly samples: Int16Array | null;
+  /**
+   * The captured container bytes, kept whenever the DECODE failed — on a
+   * current stop and on a superseded one alike (`StopResult.blob`). Null on
+   * success, and null on an empty or silent capture, where there is no audio
+   * worth keeping.
+   */
+  readonly bytes: TBytes | null;
+  /**
+   * A translator-facing reason when `samples` is null and it is worth saying.
+   * Null when there is nothing to say — a superseded stop, whose UI belongs to
+   * a newer recording. Never the empty string: `use-recorder.ts` produces this
+   * from `stopDecodeMessage`, which returns either null or a whole sentence, so
+   * `!== null` here and the component's former truthiness test agree on every
+   * value that can actually arrive.
+   */
+  readonly error: string | null;
+}
+
+/**
+ * What a stop yielded, as the one classification both commit paths read.
+ *
+ * `close()` and the commit-and-edit path in `onEnterEdit` (#134) must take the
+ * same four-way decision on a stop result and then do DIFFERENT things with it
+ * — one exits, the other opens edit mode. That agreement used to be a comment
+ * ("Mirror close()'s precedence exactly"), which is the kind of claim that
+ * rots; it is now one function they both call.
+ *
+ * The payload rides the verdict so neither caller re-checks what the classifier
+ * has already established: `samples` is proved non-empty, `bytes` proved
+ * non-null, `error` proved present.
+ */
+export type CaptureVerdict<TBytes = unknown> =
+  /** Usable audio in hand — commit it. */
+  | { readonly kind: "take"; readonly samples: Int16Array }
+  /**
+   * The decode failed but the captured bytes survive (#165). The take exists
+   * NOWHERE else, so these are held for the recovery panel — re-decode on a
+   * fresh gesture, or share the bytes off the phone.
+   */
+  | { readonly kind: "hold"; readonly bytes: TBytes }
+  /** No audio and nothing kept, but something worth saying — an empty capture. */
+  | { readonly kind: "notice"; readonly error: string }
+  /**
+   * Nothing at all: a `leave()`/pagehide bumped the generation mid-flush, so a
+   * newer owner speaks for the screen and this stop has no UI of its own.
+   */
+  | { readonly kind: "superseded" };
+
+/**
+ * Which of the four a stop result is.
+ *
+ * The precedence is the load-bearing part, and each step of it is a take that
+ * was lost once:
+ *
+ * 1. Confirmed samples first, ahead of any error also reported — audio already
+ *    in hand is committed rather than turned into a notice. A successful decode
+ *    to ZERO frames is not audio: persisting it would fabricate a recorded
+ *    state that plays silence.
+ * 2. Kept bytes BEFORE the error, so a superseded stop whose decode failed
+ *    (bytes kept, error withheld — George R1 G2) holds them instead of falling
+ *    through to a silent close. That interruption is the #106 case #165 exists
+ *    to recover, and it was the one the panel never appeared on.
+ * 3. Only then the error, which by then means an empty or silent capture: no
+ *    audio, and no bytes a retry could help with.
+ */
+export function classifyCapture<TBytes>(
+  outcome: CaptureOutcome<TBytes>
+): CaptureVerdict<TBytes> {
+  const { samples, bytes, error } = outcome;
+  if (samples && samples.length > 0) return { kind: "take", samples };
+  if (bytes !== null) return { kind: "hold", bytes };
+  if (error !== null) return { kind: "notice", error };
+  return { kind: "superseded" };
+}
+
+/**
+ * The session work an exit still owes when no take is being committed: a
+ * pending B5 edit, and a pending Finished toggle.
+ *
+ * Separated from the capture decision because two callers need exactly this
+ * half and nothing else — the recovery panel's exit (`leaveHeldTake`), and a
+ * close where the recorder was idle.
+ */
+export interface PendingWork {
+  /** Whether this session cut or pasted (`useSegmentEditor.hasEdits`). */
+  readonly hasEdits: boolean;
+  /** Frames in the working buffer — zero after a cut down to nothing. */
+  readonly workingLength: number;
+  /**
+   * The finished checkbox's desired state, or null when the translator never
+   * touched it this session. Null and false are NOT the same: only an explicit
+   * mark makes a take finished, and a re-record nobody marked is a
+   * demote-to-draft.
+   */
+  readonly finishedIntent: boolean | null;
+  /** The segment's stored finished flag, or null when no segment is loaded. */
+  readonly storedFinished: boolean | null;
+}
+
+/** Everything the close decision reads. */
+export interface CloseInputs<TBytes = unknown> extends PendingWork {
+  /**
+   * The stopped capture's outcome, or null when no capture was attempted —
+   * `attemptsCapture` was false, so `stopRecording` was never called. The two
+   * are the same question: non-null here means a take was in play at close.
+   */
+  readonly capture: CaptureOutcome<TBytes> | null;
+}
+
+/**
+ * The work a close owes when there is no capture to commit. A separate type
+ * because the recovery-panel exit can only ever produce one of these, and the
+ * component's executor for them is shared by both callers — the George R4-G1
+ * root, now a type rather than a convention.
+ */
+export type TailPlan =
+  /** The edits cut the take down to nothing: return the segment to unrecorded. */
+  | { readonly action: "clear" }
+  /** Persist the edited buffer on its own — no capture to splice (B5). */
+  | { readonly action: "save-edit"; readonly finished: boolean }
+  /** Nothing to persist but a real finished toggle, written directly. */
+  | { readonly action: "mark"; readonly finished: boolean }
+  /** Nothing to do — exit. */
+  | { readonly action: "close" };
+
+/** The one thing the close does, and what the executor needs to do it. */
+export type ClosePlan<TBytes = unknown> =
+  /** Commit the capture, splicing it into the working buffer. */
+  | {
+      readonly action: "save-take";
+      readonly samples: Int16Array;
+      readonly finished: boolean;
+    }
+  /**
+   * Do not exit: the decode failed and the bytes are the take's only copy.
+   * They go to the recovery panel (#165), whose own actions are the way out.
+   */
+  | { readonly action: "hold"; readonly bytes: TBytes }
+  /**
+   * Do not exit: the capture yielded no audio and said why, so the sheet stays
+   * open with the reason in place. Closing here would lose a take silently.
+   */
+  | { readonly action: "stay"; readonly error: string }
+  | TailPlan;
+
+/**
+ * The recorder states a close has to stop a capture from.
+ *
+ * A local union rather than an import of `RecorderState`, which lives in
+ * `hooks/use-recorder.ts` where `lib/` may not reach. The call site still ties
+ * the two together: `recorder.tsx` passes a `RecorderState`, so a state added
+ * there and not here fails typecheck at that call rather than silently reading
+ * as "no capture in play".
+ */
+type CaptureState =
+  "idle" | "requesting" | "recording" | "paused" | "processing";
+
+/**
+ * Whether closing from this state has to stop a capture first.
+ *
+ * `processing` counts: a #59 mic interruption freezes a real take there, and
+ * its audio is owed a stop. `requesting` does not — the permission prompt is
+ * still up and there is no recorder yet, so treating it as a take would swallow
+ * an edit-only close behind a stop that returns nothing.
+ */
+export function attemptsCapture(state: CaptureState): boolean {
+  return state === "recording" || state === "paused" || state === "processing";
+}
+
+/**
+ * The finished toggle on its own — the last thing a close can owe.
+ *
+ * Only a real change, and only against a loaded segment: the store rejects a
+ * finished mark on a segment with no take.
+ */
+function planFinishedWrite(
+  finishedIntent: boolean | null,
+  storedFinished: boolean | null
+): TailPlan {
+  if (
+    storedFinished !== null &&
+    finishedIntent !== null &&
+    finishedIntent !== storedFinished
+  ) {
+    return { action: "mark", finished: finishedIntent };
+  }
+  return { action: "close" };
+}
+
+/**
+ * What an exit owes when nothing was captured: the pending edit, then the
+ * pending toggle. At most one of them — a saved edit carries the mark.
+ */
+export function planPendingWork(inputs: PendingWork): TailPlan {
+  const { hasEdits, workingLength, finishedIntent, storedFinished } = inputs;
+  if (hasEdits) {
+    return workingLength === 0
+      ? // Cut down to nothing clears the take, so there is no 0-frame ghost:
+        // a resolved clip that plays silence and can be counted finished. A
+        // cleared segment is never-recorded, so it carries no finished mark.
+        { action: "clear" }
+      : { action: "save-edit", finished: finishedIntent === true };
+  }
+  return planFinishedWrite(finishedIntent, storedFinished);
+}
+
+export function planClose<TBytes>(
+  inputs: CloseInputs<TBytes>
+): ClosePlan<TBytes> {
+  const { capture, finishedIntent, storedFinished } = inputs;
+
+  if (capture) {
+    const verdict = classifyCapture(capture);
+    switch (verdict.kind) {
+      case "take":
+        return {
+          action: "save-take",
+          samples: verdict.samples,
+          // Only an explicit mark this session marks the take finished.
+          finished: finishedIntent === true,
+        };
+      case "hold":
+        return { action: "hold", bytes: verdict.bytes };
+      case "notice":
+        return { action: "stay", error: verdict.error };
+      case "superseded":
+        // Nothing to save and nothing to say, so fall through to the
+        // mark/close decision rather than dead-ending the sheet open (#59).
+        break;
+    }
+    // The pending edits are deliberately NOT persisted on this path — note
+    // that `planPendingWork` is not what runs here. A cut-to-empty cleared on a
+    // superseded stop would drop the original recording while the replacement
+    // never landed and the cut audio lives only in RAM on the clipboard:
+    // unrecoverable field loss (George R5).
+    return planFinishedWrite(finishedIntent, storedFinished);
+  }
+  return planPendingWork(inputs);
+}
