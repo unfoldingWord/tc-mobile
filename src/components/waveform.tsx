@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 import { clampUnit, displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
@@ -97,7 +97,16 @@ export function Waveform({
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
-  useEffect(() => {
+  // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
+  // the browser paints a freshly-mounted canvas — the same reasoning
+  // `LiveScope` documents for its own mount effect. A first-take Pause+Play
+  // preview, and (since #283) an append's Pause+Play preview, both remount
+  // this component right where `LiveScope` unmounts; in `useEffect` the
+  // synchronous paint still runs after the browser had already shown one
+  // blank frame (George R-resume, rounds 1 and 2, both raised the class even
+  // though the fix each round landed on did not itself need it — closing it
+  // here rather than leaving it latent for the next remount path to hit).
+  useLayoutEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");

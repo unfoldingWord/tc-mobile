@@ -22,34 +22,31 @@ export interface StageState {
   /**
    * `length > 0` — the segment already holds audio, so this take is an append.
    *
-   * **Not** read by the recording/frozen half of {@link liveScopeShown}. The
-   * first #283 fix gated the frozen arm on it (`!hasAudio && (paused || …)`),
-   * which made an append SWAP `LiveScope`→`Waveform` at the recording→
-   * paused/close edge: `Waveform` paints in `useEffect`, so the stage flashed
-   * blank then showed the pre-take clip (Model A does not splice the take into
-   * `working` until close), reading as "pause discarded my take" — the "read
-   * as discarded" class the first-take `isClosing` clause exists to prevent
-   * (George R1 P2). Kept as an input so the tests can pin that prior audio
-   * never changes that half of the outcome.
+   * **Not** read by {@link liveScopeShown}. The first #283 fix gated the
+   * frozen arm on it (`!hasAudio && (paused || …)`), which made an append SWAP
+   * `LiveScope`→`Waveform` at the recording→paused/close edge: `Waveform`
+   * paints in `useEffect`, so the stage flashed blank then showed the
+   * pre-take clip (Model A does not splice the take into `working` until
+   * close), reading as "pause discarded my take" — the "read as discarded"
+   * class the first-take `isClosing` clause exists to prevent (George R1 P2).
    *
-   * It IS read by the `previewShown` half (George R-resume P2, on rebasing
-   * onto #366's display-gain fit): a first take's Pause+Play preview is meant
-   * to win the stage (its `Waveform` draws absolute, matching the `LiveScope`
-   * it replaces, because `isFirstTakeInFlight` is true when `hasAudio` is
-   * false). An append's Pause+Play preview must NOT — its `Waveform` would
-   * draw the merged buffer FITTED (`isFirstTakeInFlight` is false once
-   * `hasAudio` is true), a scale jump off the absolute `LiveScope` the append
-   * was just growing on, on top of `Waveform`'s `useEffect` blank-first-frame.
-   * So an append keeps `LiveScope` through a preview too — see
-   * {@link liveScopeShown}'s second guard.
+   * A second attempt (George R-resume round 1, `a96a81e`) also gated the
+   * `previewShown` arm on it, so an append's own Pause+Play preview stayed on
+   * `LiveScope` instead of winning the stage. George round 2 caught that this
+   * broke a DIFFERENT, pre-existing contract: `#101` Play-while-paused still
+   * `mergeTake`s and sounds the merged buffer regardless, so the stage showed
+   * a frozen take-only ring with no playhead while the translator HEARD the
+   * full spliced result — a "hear X, see Y" mismatch, and worse than the scale
+   * jump it was trying to prevent (a first take's preview never had this
+   * problem: `isFirstTakeInFlight` already draws it absolute, matching
+   * `LiveScope`'s own scale, so there is no jump to prevent there in the first
+   * place). Reverted here; kept as an input so the tests can pin that prior
+   * audio never changes the recording/frozen-arm outcome.
    */
   hasAudio: boolean;
   /** The mic tap could not be wired — no live scope data to draw. */
   meterFailed: boolean;
-  /**
-   * A prepared whole-buffer preview is up (`previewShown !== null`). Wins the
-   * stage for a FIRST take only — see {@link hasAudio}'s second paragraph.
-   */
+  /** A prepared whole-buffer preview is up (`previewShown !== null`). */
   previewShown: boolean;
 }
 
@@ -57,11 +54,11 @@ export interface StageState {
  * Whether the dedicated live scope (vs. the `Waveform` path) drives the record
  * stage.
  *
- * - A failed tap always wins the stage — no live scope data to draw.
- * - A prepared whole-buffer preview wins the stage only for a FIRST take
- *   (`!hasAudio`). An append's preview stays on `LiveScope` (George R-resume
- *   P2) — see {@link StageState.hasAudio}'s second paragraph for why letting
- *   it win there reintroduces a scale jump and a blank first frame.
+ * - A failed tap or a prepared preview always wins the stage — no live scope.
+ *   A preview (first take OR append) is `#101`'s Play-while-paused: it plays
+ *   an actual decoded buffer and must be drawn (with a working playhead) on
+ *   `Waveform`, not left silently behind a frozen `LiveScope` — see
+ *   {@link StageState.hasAudio}'s second paragraph.
  * - Otherwise the live scope drives the **whole take-in-flight window**
  *   (recording, paused, processing, and the F8 close) for a first take **and an
  *   append (#283)**, growing while `recording` and freezing on its last frame
@@ -69,24 +66,20 @@ export interface StageState {
  *   second take showed the VU moving but no waveform growing until the segment
  *   was left and re-entered.
  *
- * `hasAudio` does not gate the recording/frozen half of this rule — see
- * {@link StageState}. Treating an append exactly like a first take there is
- * both the behaviour #283 asked for ("the same way it renders during the first
- * take") and what avoids the pause/close swap-and-flash that gating the frozen
- * arm on `hasAudio` caused.
+ * `hasAudio` is intentionally absent from the logic — see {@link StageState}.
+ * Treating an append exactly like a first take is both the behaviour #283 asked
+ * for ("the same way it renders during the first take") and what avoids the
+ * pause/close swap-and-flash that gating the frozen arm on `hasAudio` caused.
  *
- * Tradeoff: while an append is in flight (including its preview) this shows
+ * Tradeoff: while an append is in flight (and not being previewed) this shows
  * the head-growing (then frozen) live scope in place of the existing clip; the
- * clip returns once the take commits. For the default end-append that reads
- * naturally; for a mid-clip insert it shows the take without the surrounding
- * clip / insert position. Preserving the existing clip *and* live growth
- * together (a composed view) is a larger change tracked separately if wanted.
- * A caller that mounts `LiveScope` on the strength of this predicate must also
- * suppress anything keyed to the merged-preview view (e.g. `PlayheadOverlay`)
- * while it is true and a preview is playing — see the recorder call site.
+ * clip returns once a preview is prepared or the take commits. For the default
+ * end-append that reads naturally; for a mid-clip insert it shows the take
+ * without the surrounding clip / insert position. Preserving the existing clip
+ * *and* live growth together (a composed view) is a larger change tracked
+ * separately if wanted.
  */
 export function liveScopeShown(s: StageState): boolean {
-  if (s.meterFailed) return false;
-  if (s.previewShown && !s.hasAudio) return false;
+  if (s.meterFailed || s.previewShown) return false;
   return s.recording || s.paused || s.processing || s.isClosing;
 }
