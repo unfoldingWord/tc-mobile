@@ -425,6 +425,21 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       : bookShare.error === "failed"
         ? strings.shareBookFailed
         : null;
+  // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
+  // `partialSegments` (segments missing inside chapters that DID ship) are two
+  // different counts that can both be non-zero for the same book. One Notice,
+  // not two — the copy combines when both are present rather than stacking.
+  const bookShareGapText =
+    bookShare.missing > 0 && bookShare.partialSegments > 0
+      ? strings.shareBookMissingAndPartial(
+          bookShare.missing,
+          bookShare.partialSegments
+        )
+      : bookShare.missing > 0
+        ? strings.shareBookMissing(bookShare.missing)
+        : bookShare.partialSegments > 0
+          ? strings.shareBookPartial(bookShare.partialSegments)
+          : null;
   // The Share Control's glyph/variant/busy across idle → preparing → ready
   // (#354) — the same table Share Chapter and NameEdit's Confirm use, so
   // "busy" and "ready" never borrow each other's mark or Confirm's.
@@ -759,11 +774,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             {bookShare.status === "preparing" && (
               <Notice tone="busy">{strings.shareBookPreparing}</Notice>
             )}
-            {bookShare.status === "ready" && bookShare.missing > 0 && (
-              // A heads-up once the zip is armed, not a wait (#112).
-              <Notice tone="info">
-                {strings.shareBookMissing(bookShare.missing)}
-              </Notice>
+            {bookShare.status === "ready" && bookShareGapText && (
+              // A heads-up once the zip is armed, not a wait (#112). Covers
+              // both whole chapters left out AND segments missing inside
+              // chapters that shipped (#116) — see `bookShareGapText` above.
+              <Notice tone="info">{bookShareGapText}</Notice>
             )}
             {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
             {/* Destructive, so it sits last — the same place Delete holds in the
