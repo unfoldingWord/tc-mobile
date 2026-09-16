@@ -124,6 +124,30 @@ export async function reportUnlessStale(
 }
 
 /**
+ * The shelf's `books` state with exactly one book's card removed.
+ *
+ * `deleteBook`'s own success path patches `books` this way, in the SAME turn
+ * the store transaction commits, so a chapter tap in between can never reach
+ * a row whose parent book — and every store row under it — is already gone
+ * (see the long comment on `deleteBook` below). A `reportUnlessStale` SWALLOW
+ * is the same shape from a different door: an unrelated delete (a second tab,
+ * or a pre-`autoUpdate` page) already committed and IndexedDB has already
+ * moved, so `addChapter`/`renameBook`'s catch must patch the shelf the same
+ * way before it reloads — `reload()` alone leaves the ghost row tappable
+ * until the async read lands, and a chapter tap into it reaches the unchanged
+ * Segments loader, which throws (George, PR #344 round 10 P2-1). Extracted so
+ * both callers share one decision instead of three copies of the same filter
+ * drifting apart, and so the decision itself — not the `setBooks` wiring
+ * around it — is what a plain Node test pins.
+ */
+export function dropBookCard(
+  books: readonly BookCard[],
+  bookId: BookId
+): BookCard[] {
+  return books.filter((b) => b.bookId !== bookId);
+}
+
+/**
  * The hook's single error slot: the message, and whether it came from a delete.
  *
  * One state, not two, so the label and the message it labels cannot drift apart
@@ -282,14 +306,20 @@ export function useBooks() {
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and
         // already reported its own outcome — see `reportUnlessStale`. A
-        // swallowed (stale) failure still reloads: `books` is IndexedDB's
-        // cache, not its source of truth, and the store has already moved
-        // out from under this ghost row (George, PR #344 round 9) — the
-        // second-tab/pre-update-page shape `db.ts`'s `autoUpdate` designs for.
-        // A genuinely reported failure needs no extra reload; the book is
-        // still live and nothing about it changed.
+        // swallowed (stale) failure still patches `books` and reloads:
+        // `books` is IndexedDB's cache, not its source of truth, and the
+        // store has already moved out from under this ghost row (George, PR
+        // #344 round 9) — the second-tab/pre-update-page shape `db.ts`'s
+        // `autoUpdate` designs for. `reload()` alone left the row tappable
+        // until that read landed (George, PR #344 round 10 P2-1); patching
+        // first is exactly what `deleteBook`'s own success path already does,
+        // below. A genuinely reported failure needs no extra reload or
+        // patch; the book is still live and nothing about it changed.
         const { swallowed } = await reportUnlessStale(cause, bookId, report);
-        if (swallowed) reload();
+        if (swallowed) {
+          setBooks((prev) => dropBookCard(prev, bookId));
+          reload();
+        }
         return null;
       }
     },
@@ -310,9 +340,12 @@ export function useBooks() {
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and
         // already reported its own outcome — see `reportUnlessStale`. Same
-        // swallow-reloads rule as `addChapter` above.
+        // swallow-patches-and-reloads rule as `addChapter` above.
         const { swallowed } = await reportUnlessStale(cause, bookId, report);
-        if (swallowed) reload();
+        if (swallowed) {
+          setBooks((prev) => dropBookCard(prev, bookId));
+          reload();
+        }
         return null;
       }
     },
@@ -343,7 +376,7 @@ export function useBooks() {
         // with no Retry offered because `loaded` has already latched (George R1
         // P2-1). This is `eraseRow`'s model, one screen up: patch what we know
         // changed, then re-read.
-        setBooks((prev) => prev.filter((b) => b.bookId !== bookId));
+        setBooks((prev) => dropBookCard(prev, bookId));
         // `reload()` bumps `loadGen` first, so a load that started before this
         // delete can no longer apply its pre-delete snapshot over the filtered
         // shelf — the resurrection in George R3 P1 scenario A.

@@ -229,11 +229,57 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         : null;
 
   // ── Delete a book (#337) ──────────────────────────────────────────────────
-  // The book the confirm names, resolved from the shelf each render — so a book
-  // that is no longer there takes its dialog down with it rather than leaving a
-  // confirm armed for a row that does not exist.
+  // The book the confirm names, resolved from the shelf each render. `open`
+  // and `inert` below key off `deleteTargetId` alone, not this — a book that
+  // vanishes out from under an armed confirm resolves this to null one render
+  // before the auto-close effect below clears `deleteTargetId` in turn, and
+  // driving the dialog from two different signals is exactly what let the
+  // hold outlive it (George R10 P2-3).
   const deleteTarget = books.find((b) => b.bookId === deleteTargetId) ?? null;
-  const closeDeleteConfirm = useCallback(() => setDeleteTargetId(null), []);
+  // The shelf order as it was when the confirm was armed for this book — the
+  // same "before" snapshot `onConfirmDelete` below captures for its own
+  // hand-off. Read by the auto-close effect further down, whose vanish can
+  // only ever see the shelf AFTER the book is already gone.
+  const armedShelf = useRef<readonly BookId[]>([]);
+  const closeDeleteConfirm = useCallback(() => {
+    // Cancel / Escape / scrim unmount the confirm with focus still on Cancel.
+    // `onConfirmDelete` below already hands focus off after both of ITS
+    // outcomes; a plain close never did, so a keyboard/switch user landed on
+    // `document` on the path they actually take most (George R10 P2-2). The
+    // row is untouched, so the target is just the book the confirm was
+    // armed for; the effect above runs once `deleteTargetId` goes null and
+    // `inert` lifts.
+    if (deleteTargetId !== null) pendingFocus.current = deleteTargetId;
+    setDeleteTargetId(null);
+  }, [deleteTargetId]);
+  // The book underneath the confirm can also vanish WITHOUT going through
+  // this screen's own delete flow — a second tab or a pre-`autoUpdate` page
+  // deleting it, the same shape `reportUnlessStale` (`use-books.ts`) guards
+  // against. `deleteTarget` resolving to null already takes the dialog and
+  // `inert` down (both now key off `deleteTargetId` directly, below), but
+  // nothing cleared `deleteTargetId` itself, so the focus hold stayed latched
+  // with no confirm left to close it and no `pendingFocus` ever recorded —
+  // silently swallowing the NEXT hand-off too (George R10 P2-3).
+  //
+  // The setState is pushed past a microtask so it is not SYNCHRONOUS within
+  // the effect body — `react-hooks/set-state-in-effect` flags exactly that
+  // shape, and refs (`pendingFocus`, `armedShelf`) may not be read or written
+  // during render (`react-hooks/refs`), which rules out doing this inline in
+  // the render body instead. Matches how every other effect in this hook
+  // already only calls its setters from inside an async callback (the load
+  // effect's `void (async () => { ... })()`, below).
+  useEffect(() => {
+    if (deleteTargetId === null || deleteTarget !== null) return;
+    const targetId = deleteTargetId;
+    void Promise.resolve().then(() => {
+      pendingFocus.current = focusTargetAfterDelete(
+        "ok",
+        targetId,
+        armedShelf.current
+      );
+      setDeleteTargetId(null);
+    });
+  }, [deleteTarget, deleteTargetId]);
   // Arm the confirm from the ≡ menu, closing the menu first — the same shape as
   // the Segments row menu, where Erase closes the row menu and the screen owns
   // the target. `shareMenuBookId` is read BEFORE the close clears it.
@@ -259,8 +305,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const onArmDelete = useCallback(() => {
     const bookId = shareMenuBookId;
     onCloseShareMenu();
+    // Captured NOW, while the row this confirm targets is still on screen —
+    // the auto-close effect above needs this "before" shelf, because by the
+    // time it detects the vanish, `books` has already moved on without it.
+    armedShelf.current = books.map((b) => b.bookId);
     setDeleteTargetId(bookId);
-  }, [onCloseShareMenu, shareMenuBookId]);
+  }, [books, onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // The shelf order as it is right now, captured while the row is still on
@@ -320,7 +370,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     <div
       className="flex h-full flex-col gap-[14px]"
       inert={
-        menuOpen || shareMenuBook !== null || deleteTarget !== null || undefined
+        menuOpen ||
+        shareMenuBook !== null ||
+        deleteTargetId !== null ||
+        undefined
       }
     >
       <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
@@ -481,7 +534,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           its copy, never a second one. Focus lands on Cancel, Escape and a scrim
           tap cancel, and both are no-ops once the delete is in flight. */}
       <EraseConfirm
-        open={deleteTarget !== null}
+        open={deleteTargetId !== null}
         title={strings.deleteBookConfirmTitle(deleteTarget?.name ?? "")}
         confirmLabel={strings.deleteBookConfirm}
         cancelLabel={strings.eraseCancel}

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { reportUnlessStale } from "@/hooks/use-books";
+import { dropBookCard, reportUnlessStale } from "@/hooks/use-books";
 import type { BookId } from "@/types/domain";
+import type { BookCard } from "@/types/view";
 
 /**
  * `reportUnlessStale` is the plain-async decision `renameBook`/`addChapter`'s
@@ -88,5 +89,43 @@ describe("reportUnlessStale", () => {
 
     expect(result).toEqual({ swallowed: false });
     expect(report).toHaveBeenCalledExactlyOnceWith(cause);
+  });
+});
+
+const card = (id: string, name = id): BookCard => ({
+  bookId: id as BookId,
+  name,
+  chapters: [],
+});
+
+/**
+ * `dropBookCard` is the "next books" decision `addChapter`/`renameBook`'s
+ * catch blocks now apply to `books` state on a `reportUnlessStale` swallow
+ * (PR #344 round 11, George round 10 P2-1): `reload()` alone left the ghost
+ * row tappable until the async `loadBookCards` read landed, and a chapter tap
+ * into it reached the unchanged Segments loader, which throws `No such
+ * chapter`. `deleteBook`'s own success path already patched `books` this way
+ * for exactly that reason; this pins the shared decision in plain Node,
+ * since the `setBooks` wiring around it is React state a Node suite cannot
+ * drive (see the file-level comment above).
+ */
+describe("dropBookCard", () => {
+  it("removes exactly the named book's card, keeping the others and their order", () => {
+    const books = [card("book-a"), card("book-b"), card("book-c")];
+
+    expect(dropBookCard(books, "book-b" as BookId)).toEqual([
+      card("book-a"),
+      card("book-c"),
+    ]);
+  });
+
+  it("is a no-op when the id is not on the shelf", () => {
+    const books = [card("book-a")];
+
+    expect(dropBookCard(books, "book-x" as BookId)).toEqual(books);
+  });
+
+  it("empties the shelf when it names the only book", () => {
+    expect(dropBookCard([card("book-a")], "book-a" as BookId)).toEqual([]);
   });
 });
