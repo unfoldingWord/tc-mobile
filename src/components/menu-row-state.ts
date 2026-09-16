@@ -191,6 +191,35 @@ export function rowHint(reason: RowReason | null): RowHint | null {
 }
 
 /**
+ * The record-mode bottom-bar Edit control's hint (#315 round 1, George P2-1)
+ * — the SAME `editRowReason` gate as the ≡ row's `enterEdit`, but not always
+ * the same WORDS.
+ *
+ * `rowHint("uncommitted-take")` is `strings.blockedByTake`: "Use \"Close
+ * menu\", then \"Close recorder\", to save the recording." That sentence
+ * describes the ≡ overlay's own dismiss sequence, and it is true only for a
+ * row that sits INSIDE that overlay, disabled while the overlay itself blocks
+ * the way out. The toolbar control is not inside any overlay — it fires
+ * during a normal Back-tapped close (`committing: isClosing`) or a #59
+ * `processing` freeze, while the sheet's own Saving/Interrupted `Notice`
+ * (`recorderStatusKind`) is already on screen explaining the exact same wait.
+ * Naming "Close menu" there points at a menu that is not open, over a control
+ * that was never in one.
+ *
+ * So on the toolbar, `"uncommitted-take"` returns null: a plain (native)
+ * disable, because the Notice already carries the reason and a second,
+ * differently-worded alert badge would be a second explanation of the same
+ * wait rather than a correction of a wrong one. Every other reason is
+ * surface-agnostic and carries through to `rowHint` unchanged — `"starting"`
+ * (`micStarting`) and `"no-audio"` (`nothingRecorded`) name no control and
+ * are true wherever they fire.
+ */
+export function toolbarEditHint(reason: RowReason | null): RowHint | null {
+  if (reason === "uncommitted-take") return null;
+  return rowHint(reason);
+}
+
+/**
  * Is the held-take recovery panel mid-operation, so its take must not be
  * dropped? (George R5 P1.)
  *

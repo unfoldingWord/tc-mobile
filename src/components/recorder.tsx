@@ -25,6 +25,7 @@ import {
   heldTakeIsBusy,
   markRowReason,
   rowHint,
+  toolbarEditHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
@@ -163,13 +164,17 @@ export interface RecorderHandle {
  * persisted — spliced with the recording, or on its own for an edit-only session
  * (`saveEditedSegment`).
  *
- * The sheet is two modes (#89). RECORD mode is the hero Record + Play pair with
- * the menu opener in the header; the finished toggle lives in that menu. EDIT
- * mode — entered deliberately from the record menu, strictly idle — is the
- * [play] [zoom] [select] [undo] [redo] [menu] spread with the selection frame,
- * paste marker and floating Cut, marked by a header "Editing" pill that also
- * exits. Edit-mode Play is the audition (#284): it sounds the picked span, and
- * only that span, so a cut can be heard before it is made.
+ * The sheet is two modes (#89). RECORD mode is the hero Record + Play + Edit
+ * trio (#315) with the menu opener in the header; the finished toggle lives in
+ * that menu. EDIT mode — entered deliberately, from either the record menu's
+ * "Edit recording" row or the toolbar Edit control (#315), both firing
+ * `onEnterEdit` — is the [play] [zoom] [select] [undo] [redo] [menu] spread
+ * with the selection frame, paste marker and floating Cut, marked by a header
+ * "Editing" pill that also exits. A live/paused take does not block either
+ * entry point: `onEnterEdit` commits the take first (#134), then opens edit
+ * mode over the committed audio. Edit-mode Play is the audition (#284): it
+ * sounds the picked span, and only that span, so a cut can be heard before it
+ * is made.
  */
 export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
   function Recorder(
@@ -204,10 +209,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
     const [menuOpen, setMenuOpen] = useState(false);
     // The sheet is two modes over one segment (#89): a record mode (the hero
-    // Record + Play pair) and an edit mode (the waveform-editing toolbar). The
-    // sheet always opens in record; App keys it on `segmentId` so it remounts per
-    // open, so `"record"` is the open state with no reset effect needed. Edit is
-    // entered deliberately from the record menu and is strictly idle.
+    // Record + Play + Edit trio, #315) and an edit mode (the waveform-editing
+    // toolbar). The sheet always opens in record; App keys it on `segmentId` so
+    // it remounts per open, so `"record"` is the open state with no reset
+    // effect needed. Edit is entered deliberately — the record menu's row or
+    // the toolbar control — and a live/paused take does not block it: entering
+    // commits the take first (#134), so entry is not "strictly idle" anymore.
     const [mode, setMode] = useState<"record" | "edit">("record");
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -1943,6 +1950,36 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // individual dialogs.
     const overlayUp = menuShown || confirmOpen || erase.erasing;
 
+    // The bottom-bar Edit control's own gate (#315 round 1, George P2-2) — the
+    // toolbar-only surface-availability check the sheet `inert` exemption below
+    // does NOT cover.
+    //
+    // The exemption on `.recorder-sheet` (`inert={(overlayUp && !takeActive) ||
+    // undefined}`, below) keeps the WHOLE sheet body reachable to AT during a
+    // live/paused take with the ≡ menu open — the sheet's own comment there
+    // states the consequence is "exactly Record/Pause and Play". The toolbar
+    // Edit control is a body sibling of those two, and `editReason` is null
+    // while `hasTake` (#134) — so without this it is a THIRD control the sheet
+    // exemption newly exposes: reachable to VoiceOver/switch scanning one step
+    // past Play, under the visual scrim, while the menu's OWN Edit row is the
+    // correctly-scoped in-overlay affordance for the identical action.
+    //
+    // `editReason` alone must not gain a `menuShown` clause — that would split
+    // the #134/#135 gate the ≡ row and this control otherwise share verbatim.
+    // Instead the toolbar copy ORs in `menuShown` on top of the shared reason,
+    // and drops to no hint (a plain native disable, matching how the rest of
+    // the un-exempted sheet is unreachable) whenever `menuShown` is the only
+    // thing blocking it — there is nothing surface-specific to say beyond "the
+    // menu owns the screen right now", and the menu itself already says that.
+    const editToolbarDisabled = editReason !== null || menuShown;
+    // `toolbarEditHint` only has an opinion when `editReason` itself disables
+    // the control (#315 round 1, George P2-1) — see its own docblock in
+    // `menu-row-state.ts` for why `"uncommitted-take"` drops the ≡ row's
+    // "Close menu" copy here. When `menuShown` alone is what disables it,
+    // `editReason` is null and there is no reason-shaped hint to show.
+    const editToolbarHint =
+      editReason !== null ? toolbarEditHint(editReason) : null;
+
     // Put focus back where the overlay took it from, AFTER `inert` has lifted
     // (#97). A layout effect, not the close handler and not a passive one: React
     // removes the `inert` attribute in the mutation phase, layout effects run
@@ -2059,8 +2096,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           named dismiss, and it is right there. The ≡ goes inert with it: it is
           in the header, and re-opening an already-open menu is a no-op.
 
-          What is exempt is therefore exactly Record/Pause and Play — and it is
-          a scoping, not a hole, because of what `takeActive` implies here:
+          What is exempt is therefore exactly Record/Pause and Play — plus one
+          MORE sheet-body control since #315, the toolbar Edit button, which
+          this exemption would otherwise ALSO expose (it sits beside Play with
+          no `inert` of its own) but which disables itself instead — see the
+          last bullet below. The exemption is a scoping, not a hole, because of
+          what `takeActive` implies here:
 
           - `overlayUp && takeActive` can only be the ≡ menu in RECORD mode. The
             edit-mode opener is `disabled` on `isClosing`, and the Erase row
@@ -2074,6 +2115,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             anyway — the paste marker, Cut, Select, Undo/Redo and the selection
             handles all require `idleEditable` or edit mode, both false while a
             take is live — and the header is inert in its own right.
+          - The toolbar Edit control (#315) is NOT part of this exemption, even
+            though `editReason` alone would allow it during a live/paused take
+            (#134's commit-then-edit). It carries its own `menuShown` clause
+            (`editToolbarDisabled`, above `menuShown`'s declaration) precisely
+            so this scoping stays true — George R1 P2-2 caught that without it,
+            the exemption silently grew a THIRD reachable control, one that
+            FINALIZES the take (`onEnterEdit`'s commit) where Pause would have
+            kept it resumable. The ≡ menu's own Edit row is the correctly-scoped
+            in-overlay affordance for the identical action.
           - Play mid-take is the paused preview, and it is its own stop: this is
             the one case George R5's "Play goes unreachable behind the scrim"
             does not apply to, and `openMenu` still stops playback for the idle
@@ -2142,10 +2192,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 : ""}
             </span>
             {mode === "record" ? (
-              // The menu opener lives in the header in record mode (the toolbar is
-              // just the Record + Play pair). Same gate the old toolbar opener
-              // used — reachable mid-take (Edit commits-then-edits a live/paused
-              // take, #134), blocked only through the close window.
+              // The menu opener lives in the header in record mode (the toolbar
+              // is the Record + Play + Edit trio, #315). Same gate the old
+              // toolbar opener used — reachable mid-take (Edit commits-then-edits
+              // a live/paused take, #134), blocked only through the close window.
               <Control
                 icon="menu"
                 label={strings.recorderMenuOpen}
@@ -2516,10 +2566,60 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {audio.error && <Notice>{audio.error}</Notice>}
 
               {mode === "record" ? (
-                // Record mode: the centered hero pair. Record (xl 68px) is THE
+                // Record mode: the centered hero trio. Record (xl 68px) is THE
                 // action; Play (lg 52px) sits to its right, dead while any take is
                 // live/committing or the mic is spinning up, live at idle with
                 // audio. The menu opener is in the header, not here.
+                //
+                // Edit/select (md 44px, #315) is the third member — the requirements
+                // owner's TestFlight report that the only path into edit mode was
+                // the hidden ≡ menu row. It fires the SAME `onEnterEdit` the ≡ row
+                // does, gated by the SAME `editReason` (computed once, above, and
+                // shared by both Controls) — one decision, two affordances, never a
+                // second gate that could fall out of step (AGENTS.md's #135 rule).
+                // The ≡ row stays: this is a second trigger, not a replacement, so
+                // nothing that worked stops working.
+                //
+                // Always rendered (never hidden) so a legible-disabled grey with a
+                // reason (#84/#135) is what a not-yet-recorded segment shows,
+                // exactly like the ≡ row it mirrors — matching `onEnterEdit`'s own
+                // commit-then-edit reach (#134): a live or paused take does NOT
+                // disable it, since entering edit here commits that take first,
+                // same as tapping the menu row would.
+                //
+                // `editToolbarDisabled`/`editToolbarHint` (computed above, #315
+                // round 1, George P2-1/P2-2), NOT the raw `editReason`/`rowHint`
+                // pair the ≡ row uses: the toolbar control is a sheet-body sibling
+                // of Record and Play, reachable to AT under the ≡-menu scrim during
+                // a live/paused take (the sheet's own `inert` exemption is scoped
+                // to "exactly Record/Pause and Play" — see that comment below,
+                // which this control would otherwise silently widen), so it also
+                // disables while `menuShown`; and `"uncommitted-take"`'s ≡-only
+                // "Close menu" copy is wrong here, where the Saving/Interrupted
+                // `Notice` already explains the same wait with no menu in sight.
+                // See `menu-row-state.ts`'s `toolbarEditHint` for the reasoning
+                // and `tests/menu-row-state.test.ts` for the red-first pins. The
+                // GATE (which reasons block it) is still one shared derivation;
+                // only the toolbar's presentation of it differs.
+                //
+                // Icon `selection` (the `[ ]` brackets, mockup 4) rather than the
+                // ≡ row's pencil — the two entry points read as the same
+                // DESTINATION (edit mode) via one shared accessible name
+                // (`strings.enterEdit`), but this one is visually the mockup's
+                // selection glyph so it reads as "the tool that lets you pick a
+                // span" rather than a second unrelated pencil icon on the bar.
+                //
+                // Variant `default` (--c-control-md, 44px — the touch floor,
+                // #362/#164) rather than `quiet` (40px, under the floor): this is
+                // new work, so it does not inherit the edit toolbar's existing
+                // sub-floor debt. Precedent: `name-edit.tsx`'s Save/Create control
+                // is the only other `default`-variant Control in the app.
+                //
+                // It does NOT persist into edit mode — the whole toolbar swaps to
+                // the edit toolbar below, exactly as Record and Play already do —
+                // so there is no second "leave edit" control to keep in sync with
+                // the header "Editing" pill (D2): the pill stays the one
+                // non-reader-legible mode marker and Done exit, unchanged.
                 <div className="recorder-toolbar pair flex items-center px-[16px]">
                   <Control
                     icon={recording ? "pause" : "record"}
@@ -2560,6 +2660,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant="play"
                     disabled={playDisabled}
                     onClick={onPlayButton}
+                  />
+                  <Control
+                    icon="selection"
+                    label={strings.enterEdit}
+                    variant="default"
+                    disabled={editToolbarDisabled}
+                    hint={editToolbarHint}
+                    onClick={onEnterEdit}
                   />
                 </div>
               ) : (
