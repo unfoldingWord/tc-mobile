@@ -389,12 +389,31 @@ async function readChunkBase64(file: File, at: number): Promise<string> {
  * there is no separator to bound it, and a dotfile is not a name to hand a
  * translator. The extension survives, because Android's share intent reads the
  * MIME type off it (`SharePlugin.getMimeType`).
+ *
+ * **No raw space, either** (George R6 P2). `shareFilename` (strings.ts) always
+ * interpolates one — "Genesis - Chapter 1.mp3" — and this segment is what
+ * `Share.share`'s URI ends in. Android's `MimeTypeMap.getFileExtensionFromUrl`
+ * reads the MIME type off that same URI string with an allowlist
+ * (`[a-zA-Z_0-9.\-()%]+`) that does not include a literal space; if the URI
+ * the Filesystem plugin hands back is ever unencoded, a space here silently
+ * degrades the share to a generic wildcard (any-type) intent — the sheet
+ * still opens, so this would not have been caught by "did Share Chapter work
+ * at all", only by
+ * "did the right target apps show up", which is the original #336/#272 field
+ * failure. Whether that URI is percent-encoded on Android is not verified
+ * here (`ionfilesystemlib` is fetched at native build time, not vendored in
+ * this checkout) — removing the space at the source removes the question
+ * rather than trusting an answer nobody can currently read.
+ *
+ * Unicode letters (a name in a non-Latin script) are deliberately NOT widened
+ * back in here alongside this — that is #375, a separate, larger change to
+ * this same sanitiser, and not the risk this fix is scoped to.
  */
 function cacheFilename(name: string): string {
   const cleaned = name
-    .replace(/[^A-Za-z0-9._ -]/g, "_")
-    .replace(/\.{2,}/g, ".")
-    .trim();
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .replace(/\.{2,}/g, ".");
   if (cleaned === "" || cleaned === ".") return "share";
   return cleaned.startsWith(".") ? `share${cleaned}` : cleaned;
 }

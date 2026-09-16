@@ -218,7 +218,7 @@ describe("the native share session", () => {
 
     const write = calls.find((call) => call.op === "write");
     expect(write?.path).toMatch(
-      new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f]{32}/Genesis - Chapter 1\\.mp3$`)
+      new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f]{32}/Genesis_-_Chapter_1\\.mp3$`)
     );
     // Neither the share directory nor this share's own directory exists yet.
     expect(write?.recursive).toBe(true);
@@ -434,6 +434,25 @@ describe("the native share session", () => {
     expect(path.startsWith(`${SHARE_CACHE_DIR}/`)).toBe(true);
     expect(path).not.toContain("..");
     expect(path).not.toContain("/databases/");
+  });
+
+  it("never leaves a raw space in the last path segment (George R6 P2)", async () => {
+    // `shareFilename` (strings.ts) always interpolates spaces — "Genesis -
+    // Chapter 1.mp3" — and Android's Share plugin reads the MIME type off
+    // this exact segment with `MimeTypeMap.getFileExtensionFromUrl`, whose
+    // allowlist (`[a-zA-Z_0-9.\-()%]+`) does not include a literal space. If
+    // the URI Android's Filesystem plugin hands back is ever unencoded, a
+    // space here degrades the share to a generic `*/*` intent — the share
+    // sheet opens, but the audio/mpeg-only targets the field case (#336)
+    // needs do not appear. Stripping it at the source removes the question
+    // rather than trusting the URI to already be percent-encoded.
+    const { share, calls } = harness();
+    await share(mp3());
+    const path = calls.find((call) => call.op === "write")?.path ?? "";
+    expect(path).not.toMatch(/ /);
+    expect(path).toMatch(
+      new RegExp(`^${SHARE_CACHE_DIR}/[0-9a-f]{32}/Genesis_-_Chapter_1\\.mp3$`)
+    );
   });
 
   it("streams a multi-megabyte file in bounded chunks, byte for byte", async () => {
