@@ -2516,10 +2516,45 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {audio.error && <Notice>{audio.error}</Notice>}
 
               {mode === "record" ? (
-                // Record mode: the centered hero pair. Record (xl 68px) is THE
+                // Record mode: the centered hero trio. Record (xl 68px) is THE
                 // action; Play (lg 52px) sits to its right, dead while any take is
                 // live/committing or the mic is spinning up, live at idle with
                 // audio. The menu opener is in the header, not here.
+                //
+                // Edit/select (md 44px, #315) is the third member — the requirements
+                // owner's TestFlight report that the only path into edit mode was
+                // the hidden ≡ menu row. It fires the SAME `onEnterEdit` the ≡ row
+                // does, gated by the SAME `editReason`/`rowHint` (computed once,
+                // above, and shared by both Controls) — one decision, two
+                // affordances, never a second gate that could fall out of step
+                // (AGENTS.md's #135 rule). The ≡ row stays: this is a second
+                // trigger, not a replacement, so nothing that worked stops working.
+                //
+                // Always rendered (never hidden) so a legible-disabled grey with a
+                // reason (#84/#135) is what a not-yet-recorded segment shows,
+                // exactly like the ≡ row it mirrors — matching `onEnterEdit`'s own
+                // commit-then-edit reach (#134): a live or paused take does NOT
+                // disable it, since entering edit here commits that take first,
+                // same as tapping the menu row would.
+                //
+                // Icon `selection` (the `[ ]` brackets, mockup 4) rather than the
+                // ≡ row's pencil — the two entry points read as the same
+                // DESTINATION (edit mode) via one shared accessible name
+                // (`strings.enterEdit`), but this one is visually the mockup's
+                // selection glyph so it reads as "the tool that lets you pick a
+                // span" rather than a second unrelated pencil icon on the bar.
+                //
+                // Variant `default` (--c-control-md, 44px — the touch floor,
+                // #362/#164) rather than `quiet` (40px, under the floor): this is
+                // new work, so it does not inherit the edit toolbar's existing
+                // sub-floor debt. Precedent: `name-edit.tsx`'s Save/Create control
+                // is the only other `default`-variant Control in the app.
+                //
+                // It does NOT persist into edit mode — the whole toolbar swaps to
+                // the edit toolbar below, exactly as Record and Play already do —
+                // so there is no second "leave edit" control to keep in sync with
+                // the header "Editing" pill (D2): the pill stays the one
+                // non-reader-legible mode marker and Done exit, unchanged.
                 <div className="recorder-toolbar pair flex items-center px-[16px]">
                   <Control
                     icon={recording ? "pause" : "record"}
@@ -2560,6 +2595,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant="play"
                     disabled={playDisabled}
                     onClick={onPlayButton}
+                  />
+                  <Control
+                    icon="selection"
+                    label={strings.enterEdit}
+                    variant="default"
+                    disabled={editReason !== null}
+                    hint={rowHint(editReason)}
+                    onClick={onEnterEdit}
                   />
                 </div>
               ) : (
