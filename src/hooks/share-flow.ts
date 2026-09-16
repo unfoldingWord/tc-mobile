@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { createShareHandoff } from "./share-handoff";
 import {
   type StagedShare,
   nativeShare,
@@ -147,14 +148,19 @@ export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
-  // What tap 1 prepared, waiting for the send gesture. A ref, not state, so
-  // `send` reads it synchronously inside the gesture — before any render — and
-  // the sheet call keeps the activation the tap granted. `staged` is non-null on
-  // the native route only: the file is already in the app cache by then, so tap
-  // 2 is one plugin call on both routes (George R5 P2).
-  const armedRef = useRef<{ file: File; staged: StagedShare | null } | null>(
-    null
-  );
+  // What tap 1 prepared, waiting for the send gesture, and whether tap 2 owns
+  // it right now. Extracted into `share-handoff.ts` (#365) rather than a ref
+  // pair: `send` still takes ownership SYNCHRONOUSLY inside the gesture —
+  // before any render — so the sheet call keeps the activation the tap
+  // granted, but the ownership handoff itself is now a plain state machine,
+  // provable in Node instead of only by reading this file's control flow.
+  // `staged` is non-null on the native route only: the file is already in the
+  // app cache by then, so tap 2 is one plugin call on both routes (George R5
+  // P2).
+  const handoffRef = useRef<ReturnType<
+    typeof createShareHandoff<{ file: File; staged: StagedShare | null }>
+  > | null>(null);
+  const handoff = (handoffRef.current ??= createShareHandoff());
   // A generation token invalidating an in-flight `prepare`. Both unmount AND
   // `reset` bump it, so a prepare that resolves after the screen is gone (Back
   // mid-encode) or after the menu was closed mid-gather does not `setState` or
@@ -164,12 +170,6 @@ export function useShareFlow(): UseShareFlow {
   // Re-entry guard for tap 1: a second tap before the first render commits must
   // not start a second (expensive) encode.
   const preparingRef = useRef(false);
-  // Re-entry guard for tap 2: `navigator.share` is only ever in flight once. A
-  // double-tap (or two clicks before the OS sheet paints) must not open a second
-  // share of the same File — the second's rejection would be classified `failed`
-  // and drop the armed File out from under the first. Mirrors `use-erase-segment`'s
-  // double-tap guard, which exists for exactly this reason.
-  const sendingRef = useRef(false);
   // The in-flight prepare's abort handle (B8). Bumping the run token makes a
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
@@ -180,119 +180,131 @@ export function useShareFlow(): UseShareFlow {
       runIdRef.current += 1;
       abortRef.current?.abort();
       // The screen is gone; a staged file armed for a send that will never come
-      // has no reader. Same fire-and-forget as `reset`.
-      const armed = armedRef.current;
-      armedRef.current = null;
+      // has no reader. Same fire-and-forget as `reset`. `dropArmed()` returns
+      // `null` if `send()` already took ownership (#365) — that in-flight send
+      // keeps running after unmount and owns its own cleanup; this must not
+      // reach into it.
+      const armed = handoff.dropArmed();
       if (armed?.staged != null) void nativeShare.discard(armed.staged);
     },
-    []
+    [handoff]
   );
 
-  const prepare = useCallback(async (build: BuildShareFile): Promise<void> => {
-    // Already encoding, or a File is already armed: ignore. (The screen hides the
-    // prepare control while `ready`, so this is a re-entry backstop.)
-    // Already encoding, already armed, or a chooser is still up: ignore.
-    // `sendingRef` is in this guard because `send` now clears `armedRef` when it
-    // takes ownership (Frank R6 P2), so "armed" no longer covers the window in
-    // which a share is in flight — and a `reset()` while the sheet is open drops
-    // the flow to idle, putting tap 1 back on screen (George R6 P2). Without
-    // this, a tap there would start a second encode behind a live chooser.
-    if (preparingRef.current || armedRef.current !== null || sendingRef.current)
-      return;
-    // Fail before the encode, not after: a browser with no Web Share should not
-    // pay for a whole encode only to be told it cannot share it. The file-level
-    // check still runs post-encode (it needs the File), but the capability
-    // itself is knowable now (George R-B7). Inside the native shell there is
-    // nothing to fail on — the plugin needs no Web Share (#336).
-    if (selectShareRoute(readShareEnvironment(), null) === "unsupported") {
-      setError("failed");
-      return;
-    }
-    preparingRef.current = true;
-    // Claim this run. A later `reset` (menu close) or unmount bumps the token,
-    // and every resumption below bails when its captured id is stale.
-    const runId = (runIdRef.current += 1);
-    const current = () => runId === runIdRef.current;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setError(null);
-    setMissing(0);
-    setStatus("preparing");
-    // Yield once so `preparing` paints before the gather starts (its awaits
-    // also yield, but a tiny share can return before the browser paints).
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    try {
-      // `build` threads `current` and the signal through to the export so a
-      // cancel during the gather skips the encode and a cancel during the encode
-      // stops the worker. It returns "nothing" for a genuinely empty share and
-      // null when it was cancelled mid-build.
-      const prepared = await build(current, controller.signal);
-      if (!current()) return;
-      // "nothing" (no audio) and null (cancelled, but not yet observed as such)
-      // both settle back to idle; only "nothing" is a reason to surface. A null
-      // here with the run still current is unreachable — a cancel bumps the token,
-      // so the `!current()` bail above would have caught it — but it is folded in
-      // rather than left to narrow to `PreparedShare` on a wrong assumption.
-      if (prepared === null || prepared === "nothing") {
-        if (prepared === "nothing") setError("nothing");
-        setStatus("idle");
+  const prepare = useCallback(
+    async (build: BuildShareFile): Promise<void> => {
+      // Already encoding, already armed, or a chooser is still up: ignore. (The
+      // screen hides the prepare control while `ready`, so this is a re-entry
+      // backstop.) `handoff.isBusy()` covers all three: `send` takes ownership
+      // synchronously when it starts (Frank R6 P2), so "armed" alone no longer
+      // covers the window in which a share is in flight — and a `reset()` while
+      // the sheet is open drops the flow to idle, putting tap 1 back on screen
+      // (George R6 P2). Without this, a tap there would start a second encode
+      // behind a live chooser.
+      if (preparingRef.current || handoff.isBusy()) return;
+      // Fail before the encode, not after: a browser with no Web Share should not
+      // pay for a whole encode only to be told it cannot share it. The file-level
+      // check still runs post-encode (it needs the File), but the capability
+      // itself is knowable now (George R-B7). Inside the native shell there is
+      // nothing to fail on — the plugin needs no Web Share (#336).
+      if (selectShareRoute(readShareEnvironment(), null) === "unsupported") {
+        setError("failed");
         return;
       }
-      const { file } = prepared;
-      // The browser may still refuse this particular File — Android Chrome's
-      // Web Share allowlist has no `application/zip`, which is #272. The native
-      // route does not consult that gate at all; see `selectShareRoute`.
-      const route = selectShareRoute(readShareEnvironment(), file);
-      if (route === "unsupported") {
+      preparingRef.current = true;
+      // Claim this run. A later `reset` (menu close) or unmount bumps the token,
+      // and every resumption below bails when its captured id is stale.
+      const runId = (runIdRef.current += 1);
+      const current = () => runId === runIdRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setError(null);
+      setMissing(0);
+      setStatus("preparing");
+      // Yield once so `preparing` paints before the gather starts (its awaits
+      // also yield, but a tiny share can return before the browser paints).
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      try {
+        // `build` threads `current` and the signal through to the export so a
+        // cancel during the gather skips the encode and a cancel during the encode
+        // stops the worker. It returns "nothing" for a genuinely empty share and
+        // null when it was cancelled mid-build.
+        const prepared = await build(current, controller.signal);
+        if (!current()) return;
+        // "nothing" (no audio) and null (cancelled, but not yet observed as such)
+        // both settle back to idle; only "nothing" is a reason to surface. A null
+        // here with the run still current is unreachable — a cancel bumps the token,
+        // so the `!current()` bail above would have caught it — but it is folded in
+        // rather than left to narrow to `PreparedShare` on a wrong assumption.
+        if (prepared === null || prepared === "nothing") {
+          if (prepared === "nothing") setError("nothing");
+          setStatus("idle");
+          return;
+        }
+        const { file } = prepared;
+        // The browser may still refuse this particular File — Android Chrome's
+        // Web Share allowlist has no `application/zip`, which is #272. The native
+        // route does not consult that gate at all; see `selectShareRoute`.
+        const route = selectShareRoute(readShareEnvironment(), file);
+        if (route === "unsupported") {
+          setError("failed");
+          setStatus("idle");
+          return;
+        }
+        // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
+        // It is the slow half — a book zip crosses the bridge in 768 KB chunks —
+        // and this is the gesture that already has a busy state for slow work.
+        // Doing it in `send` left the menu reading `ready` with no sign anything
+        // was happening, and made "hands the file to the sheet in this gesture"
+        // false on native. The same `controller.signal` that stops the encode
+        // stops the write, so closing the menu mid-write cancels it and takes the
+        // partial file with it.
+        const staged =
+          route === "native"
+            ? await nativeShare.stage(file, controller.signal)
+            : null;
+        if (!current()) {
+          // Cancelled while staging, but the write finished first: the File is
+          // nobody's now, so do not leave it in the cache. Fire-and-forget — the
+          // run is over and a cleanup failure is not this screen's news.
+          if (staged !== null) void nativeShare.discard(staged);
+          return;
+        }
+        handoff.arm({ file, staged });
+        setMissing(prepared.missing);
+        setStatus("ready");
+      } catch (cause) {
+        // A stale run's rejection — including the AbortError its own cancel
+        // produced — is not this screen's news.
+        if (!current()) return;
+        console.error("Preparing the share failed", cause);
         setError("failed");
         setStatus("idle");
-        return;
+      } finally {
+        // Only clear the guard for the run that still owns it. A stale run whose
+        // token was bumped by `reset` must NOT release a newer run's guard, or a
+        // further tap would start a third full encode over the same source.
+        if (current()) {
+          preparingRef.current = false;
+          if (abortRef.current === controller) abortRef.current = null;
+        }
       }
-      // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
-      // It is the slow half — a book zip crosses the bridge in 768 KB chunks —
-      // and this is the gesture that already has a busy state for slow work.
-      // Doing it in `send` left the menu reading `ready` with no sign anything
-      // was happening, and made "hands the file to the sheet in this gesture"
-      // false on native. The same `controller.signal` that stops the encode
-      // stops the write, so closing the menu mid-write cancels it and takes the
-      // partial file with it.
-      const staged =
-        route === "native"
-          ? await nativeShare.stage(file, controller.signal)
-          : null;
-      if (!current()) {
-        // Cancelled while staging, but the write finished first: the File is
-        // nobody's now, so do not leave it in the cache. Fire-and-forget — the
-        // run is over and a cleanup failure is not this screen's news.
-        if (staged !== null) void nativeShare.discard(staged);
-        return;
-      }
-      armedRef.current = { file, staged };
-      setMissing(prepared.missing);
-      setStatus("ready");
-    } catch (cause) {
-      // A stale run's rejection — including the AbortError its own cancel
-      // produced — is not this screen's news.
-      if (!current()) return;
-      console.error("Preparing the share failed", cause);
-      setError("failed");
-      setStatus("idle");
-    } finally {
-      // Only clear the guard for the run that still owns it. A stale run whose
-      // token was bumped by `reset` must NOT release a newer run's guard, or a
-      // further tap would start a third full encode over the same source.
-      if (current()) {
-        preparingRef.current = false;
-        if (abortRef.current === controller) abortRef.current = null;
-      }
-    }
-  }, []);
+    },
+    [handoff]
+  );
 
   const send = useCallback(async (): Promise<ShareOutcome> => {
     // A share is already in flight: ignore this tap and leave the File armed, so
     // a double-tap cannot open a second share whose rejection drops the File.
-    if (sendingRef.current) return "retry";
-    const armed = armedRef.current;
+    if (handoff.sending) return "retry";
+    // Take ownership of the armed value SYNCHRONOUSLY, before any await — the
+    // one property `share-handoff.ts` (#365) exists to prove. From here the
+    // staged cache file belongs to this send, not to the handoff's `armed` —
+    // so a `reset()` or an unmount while the chooser is up cannot discard the
+    // file the chooser is holding (Frank R6 P2). Deleting a staged file
+    // mid-handoff is earlier than the deletion the rest of this module already
+    // refuses to do: the recipient has not merely failed to finish, it has not
+    // started. The `retry` arm below puts it back.
+    const armed = handoff.take();
     if (armed === null) {
       // Reachable only through a guard hole (ready with no armed File); surface it
       // rather than no-op silently behind a "Share now" that does nothing.
@@ -300,15 +312,6 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       return "failed";
     }
-    // Take ownership of the armed value SYNCHRONOUSLY, before any await. From
-    // here the staged cache file belongs to this send, not to `armedRef` — so a
-    // `reset()` or an unmount while the chooser is up cannot discard the file
-    // the chooser is holding (Frank R6 P2). Deleting a staged file mid-handoff
-    // is earlier than the deletion the rest of this module already refuses to
-    // do: the recipient has not merely failed to finish, it has not started.
-    // The `retry` arm below puts it back.
-    armedRef.current = null;
-    sendingRef.current = true;
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
     const current = () => runId === runIdRef.current;
@@ -359,7 +362,7 @@ export function useShareFlow(): UseShareFlow {
       // tell the caller `superseded` so it does not close/reset over the new run
       // (George R-B7-book P2). Only the owning run clears the File.
       if (!current()) return "superseded";
-      // `armedRef` was cleared on entry; the file went to the OS.
+      // The handoff's `armed` was cleared when `take()` ran; the file went to the OS.
       setStatus("idle");
       setMissing(0);
       return "sent";
@@ -370,7 +373,7 @@ export function useShareFlow(): UseShareFlow {
         // `ready` so another tap can hand it over. Not a failure the translator
         // should see. Only if this run still owns the flow: if a newer one has
         // taken over, the File is nobody's and is simply dropped.
-        if (current()) armedRef.current = armed;
+        if (current()) handoff.restore(armed);
         return "retry";
       }
       // A native `retry` does NOT get its staged value back (George R6 P3):
@@ -387,15 +390,16 @@ export function useShareFlow(): UseShareFlow {
       // Dismissed or a real failure: end the flow for the run that still owns it.
       // The staged cache file is already gone — `nativeShare.send` removes its
       // own directory on a rejection, because a refused chooser is the one piece
-      // of evidence that nothing received it. `armedRef` was cleared on entry.
+      // of evidence that nothing received it. The handoff's `armed` was cleared
+      // when `take()` ran.
       setStatus("idle");
       setMissing(0);
       if (outcome === "failed") setError("failed");
       return outcome;
     } finally {
-      sendingRef.current = false;
+      handoff.finishSending();
     }
-  }, []);
+  }, [handoff]);
 
   const reset = useCallback(() => {
     // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
@@ -407,18 +411,19 @@ export function useShareFlow(): UseShareFlow {
     // A file already staged in the cache for a share that is now abandoned has
     // no reader and never will, so it goes. Fire-and-forget: `reset` runs from a
     // scrim tap and must not wait on the filesystem, and `discard` never
-    // rejects. NOT `sendingRef` — that is cleared only by the send it belongs
-    // to. Clearing it here would let a second tap open a second chooser over the
-    // same file while the first is still up, which is the double-tap the guard
-    // exists for (George R5 P2, in part: the rest is that `send` is now short).
-    const armed = armedRef.current;
-    armedRef.current = null;
+    // rejects. `dropArmed()` returns null if `send()` already took ownership
+    // (#365) — clearing `sending` here would let a second tap open a second
+    // chooser over the same file while the first is still up, which is the
+    // double-tap the guard exists for (George R5 P2, in part: the rest is that
+    // `send` is now short) — so `reset()` never touches it; only the send that
+    // owns it calls `finishSending()`.
+    const armed = handoff.dropArmed();
     if (armed?.staged != null) void nativeShare.discard(armed.staged);
     preparingRef.current = false;
     setStatus("idle");
     setError(null);
     setMissing(0);
-  }, []);
+  }, [handoff]);
 
   return { status, error, missing, prepare, send, reset };
 }
