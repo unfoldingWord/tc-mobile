@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { dropBookCard, reportUnlessStale } from "@/hooks/use-books";
-import type { BookId } from "@/types/domain";
+import {
+  canStartAddChapter,
+  dropBookCard,
+  isLoadCurrent,
+  patchNewChapter,
+  patchRenamedBook,
+  reportUnlessStale,
+} from "@/hooks/use-books";
+import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
 /**
@@ -127,5 +134,219 @@ describe("dropBookCard", () => {
 
   it("empties the shelf when it names the only book", () => {
     expect(dropBookCard([card("book-a")], "book-a" as BookId)).toEqual([]);
+  });
+});
+
+/**
+ * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (no
+ * jsdom, no renderer — the same constraint `tests/use-erase-segment.test.ts`
+ * documents). What is Node-testable here is three pure decisions the hook's
+ * `addChapter`/`createBook`/load effect were missing:
+ *
+ * - the fold that patches a new chapter onto its book's card in the same
+ *   turn as the write;
+ * - the guard that a second tap for the same book while the first is in
+ *   flight must not proceed (George R3/R4 P2 — "Create success now focuses
+ *   an unlatched, non-optimistic Add-chapter control; extra chapters cannot
+ *   be deleted"); and
+ * - the generation check that stops a load which started before an
+ *   optimistic patch from overwriting it after the fact (George R4 P2-2).
+ *
+ * `addingChapterFor` and `loadGen`, the refs that HOLD these guards, are
+ * React state and are review + on-device surface, same as `creatingBook`
+ * and `useEraseSegment`'s own double-tap ref.
+ */
+
+const chapterBookId = (s: string): BookId => s as BookId;
+const chapterId = (s: string): ChapterId => s as ChapterId;
+
+const chapterCard = (
+  bookId_: BookId,
+  chapters: BookCard["chapters"] = []
+): BookCard => ({
+  bookId: bookId_,
+  name: `Book ${bookId_}`,
+  chapters,
+});
+
+const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
+  id: chapterId("ch-1"),
+  bookId: chapterBookId("b-1"),
+  number: 1,
+  name: null,
+  segmentIds: [],
+  ...overrides,
+});
+
+const book = (overrides: Partial<Book> = {}): Book => ({
+  id: chapterBookId("b-1"),
+  name: "Mark",
+  languageCode: null,
+  chapterIds: [],
+  createdAt: 0,
+  updatedAt: 0,
+  ...overrides,
+});
+
+describe("patchNewChapter", () => {
+  it("appends the new chapter as a zero-progress row on its own book's card", () => {
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
+    const next = patchNewChapter(books, chapterBookId("b-1"), chapter());
+
+    expect(next[0]?.chapters).toEqual([
+      {
+        chapterId: chapterId("ch-1"),
+        number: 1,
+        name: null,
+        finishedCount: 0,
+        totalCount: 0,
+      },
+    ]);
+    // The other book's card is untouched — same array reference, even.
+    expect(next[1]).toBe(books[1]);
+  });
+
+  it("appends after any existing chapters, preserving chapter order", () => {
+    const existing = [
+      {
+        chapterId: chapterId("ch-0"),
+        number: 1,
+        name: null,
+        finishedCount: 2,
+        totalCount: 2,
+      },
+    ];
+    const books = [chapterCard(chapterBookId("b-1"), existing)];
+    const next = patchNewChapter(
+      books,
+      chapterBookId("b-1"),
+      chapter({ id: chapterId("ch-1"), number: 2 })
+    );
+
+    expect(next[0]?.chapters.map((c) => c.chapterId)).toEqual([
+      chapterId("ch-0"),
+      chapterId("ch-1"),
+    ]);
+  });
+
+  it("is a no-op when the chapter's book is not on the shelf (a stale card)", () => {
+    const books = [chapterCard(chapterBookId("b-2"))];
+    const next = patchNewChapter(books, chapterBookId("b-1"), chapter());
+    expect(next).toEqual(books);
+  });
+
+  it("moves the patched book to the front of the shelf, matching the updatedAt bump the write already made (Frank R5 P2)", () => {
+    // `addChapterToBook` bumps the parent book's `updatedAt` in the same
+    // write, and `listBooks` sorts newest-first — `reload()` reconciles that
+    // order too, but only once its async read lands, so the patch itself
+    // still has to move the book immediately or the shelf flashes the wrong
+    // order for the length of that read (George R7 P3-3).
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
+    const next = patchNewChapter(
+      books,
+      chapterBookId("b-2"),
+      chapter({ id: chapterId("ch-9"), bookId: chapterBookId("b-2") })
+    );
+
+    expect(next.map((c) => c.bookId)).toEqual([
+      chapterBookId("b-2"),
+      chapterBookId("b-1"),
+    ]);
+    expect(next[0]?.chapters).toEqual([
+      {
+        chapterId: chapterId("ch-9"),
+        number: 1,
+        name: null,
+        finishedCount: 0,
+        totalCount: 0,
+      },
+    ]);
+    // The untouched book keeps its own identity, just shifted in position.
+    expect(next[1]).toBe(books[0]);
+  });
+});
+
+describe("patchRenamedBook", () => {
+  it("moves a genuinely renamed book to the front of the shelf", () => {
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
+    const next = patchRenamedBook(
+      books,
+      book({ id: chapterBookId("b-2"), name: "Luke" })
+    );
+
+    expect(next.map((c) => c.bookId)).toEqual([
+      chapterBookId("b-2"),
+      chapterBookId("b-1"),
+    ]);
+    expect(next[0]?.name).toBe("Luke");
+    // The untouched book keeps its own identity, just shifted in position.
+    expect(next[1]).toBe(books[0]);
+  });
+
+  it("does not reorder an idempotent rename (name unchanged, no write, no recency bump)", () => {
+    // Mirrors `renameBookInStore`'s own contract: a blank rename keeps the
+    // current name and does not bump `updatedAt` or write at all, so the
+    // shelf order must not move either — there is no recency to reflect.
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
+    const next = patchRenamedBook(
+      books,
+      book({ id: chapterBookId("b-2"), name: "Book b-2" })
+    );
+
+    expect(next).toBe(books);
+  });
+
+  it("is a no-op when the renamed book is not on the shelf (a stale card)", () => {
+    const books = [chapterCard(chapterBookId("b-2"))];
+    const next = patchRenamedBook(
+      books,
+      book({ id: chapterBookId("b-1"), name: "Mark" })
+    );
+    expect(next).toEqual(books);
+  });
+});
+
+describe("canStartAddChapter", () => {
+  it("allows a tap when nothing is in flight for that book", () => {
+    expect(canStartAddChapter(new Set(), chapterBookId("b-1"))).toBe(true);
+  });
+
+  it("swallows a second tap for the SAME book while the first is in flight", () => {
+    const inFlight = new Set([chapterBookId("b-1")]);
+    expect(canStartAddChapter(inFlight, chapterBookId("b-1"))).toBe(false);
+  });
+
+  it("does not block a different book's Add-chapter tap", () => {
+    const inFlight = new Set([chapterBookId("b-1")]);
+    expect(canStartAddChapter(inFlight, chapterBookId("b-2"))).toBe(true);
+  });
+});
+
+describe("isLoadCurrent", () => {
+  it("is current when nothing has bumped the generation since the load started", () => {
+    expect(isLoadCurrent(3, 3)).toBe(true);
+  });
+
+  it("is stale once an optimistic patch (or a newer load) has bumped the generation", () => {
+    // `startedAt` is what a load captured when it began; `current` has since
+    // moved on — a `createBook`/`addChapter` patch, or a later load's own
+    // start, both bump it the same way (George R4 P2-2).
+    expect(isLoadCurrent(3, 4)).toBe(false);
+  });
+
+  it("a load started before ANY patch is stale even against a much later generation", () => {
+    expect(isLoadCurrent(0, 5)).toBe(false);
   });
 });

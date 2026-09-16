@@ -31,6 +31,7 @@ interface BooksScreenProps {
 export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const {
     books,
+    newBookPlaceholder,
     loading,
     loaded,
     error,
@@ -50,10 +51,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // recovery; the menu stays reachable.
   //
   // `loaded` (from the hook) latches on the first successful read, so this
-  // guards a failed *read* only. A failed create also sets `error`, but once
-  // the shelf is known-empty that failure must keep the invite — and its CTA,
-  // the only enabled create — up with the error in the Notice, not tear it down
-  // and strand focus (George R3 P2).
+  // guards a failed *read* only — which is now all `error` carries for the
+  // create path: since #314 a failed create returns its reason to the dialog
+  // instead of writing this shared channel, so it can no longer tear the
+  // known-empty shelf's invite down or strand focus (the shape George R3 P2
+  // asked for, now structural rather than conditional).
   const loadFailed = error !== null && !loaded;
   // The empty state carries its own present primary CTA, so the header create
   // control would be a second, equal "New book" — two CTAs read as none
@@ -61,6 +63,49 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
+  // The New Book dialog (#314). `null` is closed; a string is open, and IS the
+  // value the name field is seeded with — the "Book NNN" placeholder the hook
+  // derives from the loaded shelf. Held as the seed rather than a boolean so the
+  // field's starting text and the dialog's open state cannot disagree, so each
+  // open remounts `NameEdit` with a fresh seed (Menu unmounts its children when
+  // closed, which is what resets a half-typed name), and so Confirm can tell an
+  // untouched field from a typed one.
+  const [newBookSeed, setNewBookSeed] = useState<string | null>(null);
+  // A failed create, scoped to THIS dialog. Not the hook's shared `error`: that
+  // channel also carries an addChapter or rename failure, which would then be
+  // announced (Notice is `role="alert"`) inside a New Book dialog that has not
+  // failed at anything — on the one-tap create path, to someone who may not read
+  // the words disowning it (Frank R1 P3, George R1 P2-2).
+  const [newBookError, setNewBookError] = useState<string | null>(null);
+  // The in-flight latch. It stops a second Confirm, and it is what
+  // `onCancelNewBook` checks: once the write is committing, dismissal is a no-op
+  // rather than a promise the store cannot keep.
+  //
+  // Its LIFETIME is the point, and it is EraseConfirm's, not a `finally`: set
+  // synchronously on Confirm, released on a FAILED create (the dialog stays up,
+  // so Retry and Cancel must work again) and otherwise held until the next open
+  // edge resets it. Dropping it the moment the write resolves would leave a gap
+  // — the panel is still mounted until React paints the close — in which a held
+  // Enter or a double-tap straddling a fast `put` starts a second create and
+  // writes a second book (George R2 P2-2). A book, unlike a chapter, CAN be
+  // deleted (#337) — but only by hand, through its own confirm; nothing here
+  // recovers from a slipped-through extra create for free (George R7 P3-1).
+  const creatingBook = useRef(false);
+  // The visual half of the same latch. `creatingBook` is deliberately a ref —
+  // reading it does not re-render — but that also meant Confirm never showed
+  // busy: nothing on screen changed for the length of the write, so Close,
+  // Escape and the scrim still LOOKED live even though `onCancelNewBook`
+  // already turned them into no-ops (George R3/R4 P3). State, synced wherever
+  // the ref is, purely so `NameEdit`'s save Control can render its OWN `busy`
+  // — not `disabled`, which would drop the focused control out of the tab
+  // order mid-commit and strand a keyboard/switch user in the still-open
+  // dialog (Frank R4 P2; see `name-edit.tsx`'s `busy` prop doc).
+  const [creatingBookBusy, setCreatingBookBusy] = useState(false);
+  // Where focus was when the New Book dialog opened — the corner + or the empty
+  // state's CTA. Restored when the dialog closes WITHOUT creating, so a cancel
+  // does not drop focus to the document (the dialog's own controls unmount).
+  // Cleared on a successful create, where `pendingFocus` takes over instead.
+  const newBookReturnFocus = useRef<HTMLElement | null>(null);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
@@ -85,9 +130,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
   // What to scroll to once the list next reloads — a freshly made book or
-  // chapter. A ref, not state: creating one calls `reload()`, so the `books`
-  // change already re-renders us; clearing a ref here avoids a setState-in-
-  // effect cascade.
+  // chapter. A ref, not state: creating one patches `books` directly (no
+  // `reload()` needed — see `useBooks.createBook`/`addChapter`, George R4
+  // P2-2), so the `books` change already re-renders us; clearing a ref here
+  // avoids a setState-in-effect cascade.
   const pendingScroll = useRef<string | null>(null);
   // The empty-state CTA unmounts on the create it triggers. Without this, focus
   // falls to the document and the first header stop takes over — on a chapter
@@ -116,20 +162,33 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // lesson, learned twice: a focus fix that ignores `inert` is dead code
     // (#364; docs/progress_tracker.md).
     if (focusId !== null && deleteTargetId === null) {
-      // The row's first <button> is the expand/collapse toggle; a second
-      // activation there would collapse the new book. Target the add-chapter
-      // Control (`.control`) — the actual next action (George R3 P3).
-      nodes.current
-        .get(focusId)
-        ?.querySelector<HTMLElement>("button.control")
-        ?.focus();
+      // The row's first <button> is the expand/collapse toggle. Landing here
+      // instead of the add-chapter Control is a DELIBERATE step back from an
+      // earlier round: targeting `.control` put a live, activating native
+      // button under focus as the direct continuation of Confirm's own Enter
+      // — and a still-held Enter key-repeats `click` on whatever is focused,
+      // so a facilitator holding Enter through Confirm wrote MULTIPLE
+      // undeletable chapters before the per-book latch could catch up (the
+      // latch only stops OVERLAPPING calls; it releases the instant each
+      // write resolves, and a `put` is typically faster than OS key-repeat —
+      // George R4 P2-1). A stray re-activation of the toggle just re-collapses
+      // the row — visible immediately, undone by one more tap, and it writes
+      // nothing — so it is the safe landing spot even though Add-chapter is
+      // the more useful one Tab further on.
+      nodes.current.get(focusId)?.querySelector<HTMLElement>("button")?.focus();
       pendingFocus.current = null;
     }
-    // Keyed on BOTH: `books` covers create/add-chapter and a successful delete,
-    // `deleteTargetId` covers the render on which the confirm comes down. A
-    // delete resolves through whichever of the two lands last, so neither order
-    // drops the hand-off.
-  }, [books, deleteTargetId]);
+    // Keyed on ALL THREE: `books` covers create/add-chapter and a successful
+    // delete, `deleteTargetId` covers the render on which the delete confirm
+    // comes down, and `newBookSeed` covers the render on which the New Book
+    // dialog closes. A create now inserts the row into `books` (in the hook)
+    // and closes the dialog (here) as two setStates in one async continuation;
+    // React batches those into a single commit, but this hand-off must not
+    // DEPEND on that — if they ever split, the `books` render would run this
+    // effect before the refs below were set and the focus would be lost for
+    // good. Re-running on either close edge makes the order irrelevant; a run
+    // with nothing pending is a no-op.
+  }, [books, deleteTargetId, newBookSeed]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {
@@ -140,17 +199,110 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     });
   }, []);
 
-  const onNewBook = useCallback(async () => {
-    // Only a create from the invite (the corner + is hidden while empty) hands
-    // off focus, so a corner-+ create on a populated shelf doesn't yank it.
-    const fromEmpty = books.length === 0;
-    const book = await createBook();
-    if (!book) return; // failed create surfaced through the hook's Notice
-    // A new book opens expanded — the next action is adding its first chapter.
-    setExpanded((prev) => new Set(prev).add(book.id));
-    pendingScroll.current = book.id;
-    if (fromEmpty) pendingFocus.current = book.id;
-  }, [createBook, books]);
+  // `+` (and the empty state's CTA) no longer create anything: they open the
+  // naming dialog first (#314). The field is pre-filled with the placeholder the
+  // book would otherwise have been given silently, so the one-tap create the
+  // corner + used to be is still one tap — Confirm — and nobody has to hunt for
+  // Rename afterwards to give the book its real name.
+  // Synchronous, deliberately: the placeholder is already in hand from the shelf
+  // read, so the dialog opens in the SAME commit as the tap. An `await` here
+  // would leave the shelf live and un-`inert` for that window — `inert` keys on
+  // `newBookSeed`, which cannot be set until the await resolves — and the
+  // hamburger or a row's ≡ sits one tap away, which is how two `aria-modal`
+  // panels end up stacked on `document.body` (George R1 P2-1).
+  const onNewBook = useCallback(() => {
+    // Remember the trigger so Cancel can hand focus back to it.
+    newBookReturnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    // The open edge is where the in-flight latch resets, exactly as
+    // EraseConfirm resets `inFlightRef` — a reused dialog starts clean.
+    creatingBook.current = false;
+    setCreatingBookBusy(false);
+    setNewBookError(null); // a fresh dialog starts with nothing to report
+    setNewBookSeed(newBookPlaceholder);
+  }, [newBookPlaceholder]);
+
+  // Cancel, Escape, the panel's Close, a scrim tap: all the same outcome —
+  // nothing is created, and focus goes back where it came from.
+  const onCancelNewBook = useCallback(() => {
+    // Mid-create, dismissal does nothing. The IndexedDB write cannot be recalled
+    // once Confirm has run, so tearing the dialog down here would make "Cancel
+    // creates nothing" false AND let the create's continuation expand and steal
+    // focus for a book the closing gesture disowned (Frank R1 P2 / George R1
+    // P2-4, both lenses). Holding the panel for the length of one `put` is the
+    // same "in-flight owns the panel" rule EraseConfirm applies to its own
+    // committing action.
+    if (creatingBook.current) return;
+    setNewBookSeed(null);
+    setNewBookError(null);
+  }, []);
+
+  // Return focus to the trigger once the dialog is gone. In an effect, not in
+  // the handler: the shelf is `inert` while the dialog is open, and focusing an
+  // element inside an inert subtree does nothing — so this has to wait for the
+  // render that removes `inert`. A create clears the ref, because `pendingFocus`
+  // hands focus to the new row's toggle button instead (George R5 P3 — this
+  // comment used to say "add-chapter control", which is what an earlier round
+  // targeted before George R4 P2-1 moved the landing to the toggle; see the
+  // `pendingFocus` effect above for why).
+  useEffect(() => {
+    if (newBookSeed !== null) return;
+    const el = newBookReturnFocus.current;
+    newBookReturnFocus.current = null;
+    if (el?.isConnected) el.focus();
+  }, [newBookSeed]);
+
+  const onConfirmNewBook = useCallback(
+    async (typed: string) => {
+      if (creatingBook.current) return;
+      creatingBook.current = true;
+      setCreatingBookBusy(true);
+      setNewBookError(null);
+      // An untouched field means "the placeholder is fine", so send "" and let
+      // the store derive the name INSIDE its write transaction — the one-tap
+      // create the corner + used to be, race-safety and all. Sending the
+      // rendered string instead would take the supplied-name path, which is
+      // deliberately never made unique: two documents open on the same shelf
+      // both render "Book 001" and would both write it (George R1 P2-3).
+      //
+      // Compared TRIMMED, because the caret lands in the pre-filled text and a
+      // stray trailing space would otherwise slip "Book 001 " down the supplied
+      // path — trimmed to the same duplicate this mapping exists to prevent
+      // (George R2 P3-5). A genuinely typed name goes through as typed; a blank
+      // or whitespace-only one is not an error either and lands on the same
+      // fallback, in the store.
+      const name = typed.trim() === newBookSeed ? "" : typed;
+      const outcome = await createBook(name);
+      if (!outcome.ok) {
+        // A failed create keeps the dialog OPEN with the reason in its own
+        // Notice — the screen's Notice sits behind the scrim — and the typed
+        // name stays in the field for another try. Releasing the latch here, and
+        // only here, is what makes that retry (and Cancel) work again.
+        creatingBook.current = false;
+        setCreatingBookBusy(false);
+        setNewBookError(outcome.message);
+        return;
+      }
+      const { book } = outcome;
+      newBookReturnFocus.current = null;
+      setNewBookSeed(null);
+      // A new book opens expanded — the next action is adding its first
+      // chapter — and focus follows, in EVERY case now. Before #314 only a
+      // create from the empty-state invite handed focus off, because the
+      // corner + survived the create and kept it. The dialog's check does
+      // not: it unmounts on Confirm, so without this hand-off focus falls to
+      // the document and the first header stop takes over.
+      setExpanded((prev) => new Set(prev).add(book.id));
+      pendingScroll.current = book.id;
+      pendingFocus.current = book.id;
+      // No `finally`: on success the latch stays held until the next open edge.
+      // See its declaration — releasing it here reopens the double-create window
+      // between the write resolving and the panel actually unmounting.
+    },
+    [createBook, newBookSeed]
+  );
 
   const onNewChapter = useCallback(
     async (bookId: BookId) => {
@@ -373,6 +525,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         menuOpen ||
         shareMenuBook !== null ||
         deleteTargetId !== null ||
+        newBookSeed !== null ||
         undefined
       }
     >
@@ -384,7 +537,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             variant="primary"
             size={26}
             disabled={loading || loadFailed}
-            onClick={() => void onNewBook()}
+            onClick={onNewBook}
           />
         )}
         <Control
@@ -427,7 +580,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               teach={strings.booksEmptyTeach}
               ctaLabel={strings.newBook}
               ctaIcon="plus"
-              onCta={() => void onNewBook()}
+              onCta={onNewBook}
             />
           </div>
         ) : (
@@ -449,6 +602,32 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       </div>
 
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+
+      {/* New Book asks for the name before it creates anything (#314). The same
+          panel surface the rename uses — so the focus trap, Escape, the scrim
+          tap and the announced heading are the reviewed ones, not a second
+          dialog mechanism — holding the same NameEdit field. The field arrives
+          pre-filled with the placeholder, so Confirm alone is the old one-tap
+          create; Cancel, Escape, Close and the scrim all create nothing. */}
+      <Menu
+        open={newBookSeed !== null}
+        onClose={onCancelNewBook}
+        title={strings.newBookTitle}
+        closeLabel={strings.newBookClose}
+      >
+        <NameEdit
+          initialValue={newBookSeed ?? ""}
+          fieldLabel={strings.bookNameField}
+          saveLabel={strings.createBook}
+          onSave={(name) => void onConfirmNewBook(name)}
+          onCancel={onCancelNewBook}
+          busy={creatingBookBusy}
+        />
+        {/* THIS dialog's own failure channel — never the shared `error`, which
+            also carries a failed addChapter or rename and would announce one
+            here as if naming had gone wrong. */}
+        {newBookError && <Notice>{newBookError}</Notice>}
+      </Menu>
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
           the same spot — "Share book" encodes + zips (tap 1), then a primary
@@ -603,8 +782,10 @@ function BookItem({
           variant="quiet"
           onClick={onNewChapter}
         />
-        {/* Overflow ≡ after the +, so the add-chapter Control stays the row's
-            first `.control` — the target the new-book focus hand-off relies on. */}
+        {/* Overflow ≡ after the +. The new-book focus hand-off targets the
+            row's toggle button above, not either Control (George R4 P2-1) —
+            this ordering is no longer load-bearing for that hand-off, only
+            for the read/visual order: expand, add, manage. */}
         <Control
           icon="menu"
           label={strings.bookMenuOpen(book.name)}

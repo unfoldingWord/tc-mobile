@@ -34,6 +34,13 @@ interface MenuProps {
    */
   title?: string;
   /**
+   * Accessible name of the header's dismiss control. Defaults to "Close menu",
+   * which is what this panel is on every menu — but not on the New Book dialog
+   * (#314), where it is the "create nothing" exit and a screen-reader user would
+   * otherwise be told a naming dialog closes a menu (George R2 P3-4).
+   */
+  closeLabel?: string;
+  /**
    * The menu's contents. Empty on the global menu this lane: Template Library is
    * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
    * opens, traps focus, and closes — not a stub, because the mechanism is exactly
@@ -54,6 +61,7 @@ export function Menu({
   open,
   onClose,
   title = strings.menuTitle,
+  closeLabel = strings.menuClose,
   children,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -163,7 +171,7 @@ export function Menu({
           <span className="t-title">{title}</span>
           <Control
             icon="back"
-            label={strings.menuClose}
+            label={closeLabel}
             variant="quiet"
             onClick={onClose}
           />

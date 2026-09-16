@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addChapter as addChapterToBook,
   chapterProgress,
-  createNextBook,
+  createBook as createBookInStore,
   deleteBook as deleteBookFromStore,
   getBook,
   getChapter,
   isStaleBookFailure,
   listBooks,
+  nextBookName,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import type { Book, BookId, Chapter } from "@/types/domain";
@@ -160,19 +161,166 @@ interface Failure {
 }
 
 /**
+ * Fold a freshly added chapter into its book's card, in the same turn as the
+ * write — patched immediately, the same contract `createBook`'s optimistic
+ * insert and `useChapterSegments.addSegment` both follow, so the control's
+ * own repeated activations (fast taps, a held Enter's key-repeat) see the row
+ * that landed instead of an empty card that reads as "nothing happened"
+ * (George R3/R4 P2): without the patch, the row stayed empty until
+ * `loadBookCards` finished, and on this tree there is no way to delete the
+ * extra chapter a second tap writes. The caller (`addChapter`) still
+ * `reload()`s after patching — see its own comment (George R7 P2) — for the
+ * two-copy shelf-reconciliation `reportUnlessStale` is built around;
+ * `isLoadCurrent` (below) is what stops that reload's own read from landing
+ * on top of a newer patch.
+ *
+ * The patched card also moves to the FRONT of the shelf. `addChapterToBook`
+ * bumps the book's `updatedAt` in the same write (`lib/storage/books.ts`,
+ * the `chapters` object store put), and `listBooks` sorts newest-first — the
+ * IMMEDIATE patch has to already reflect that, because the reload that
+ * reconciles it is asynchronous: a chapter added to a book that is not
+ * already first would otherwise flash out of order for the length of that
+ * read (Frank R5 P2).
+ *
+ * Chapters themselves are appended, not prepended: `ChapterRow` order is the
+ * book's chapter order — unlike `BookCard`'s `updatedAt` shelf sort — and a
+ * new chapter is the next one, not the first.
+ *
+ * Pure so the fold itself, not just the ref that gates it, has a red-first
+ * test (`tests/use-books.test.ts`).
+ */
+export function patchNewChapter(
+  books: readonly BookCard[],
+  bookId: BookId,
+  chapter: Chapter
+): BookCard[] {
+  const index = books.findIndex((card) => card.bookId === bookId);
+  const original = books[index];
+  if (index === -1 || !original) return books as BookCard[]; // stale card
+  const patched: BookCard = {
+    ...original,
+    chapters: [
+      ...original.chapters,
+      {
+        chapterId: chapter.id,
+        number: chapter.number,
+        name: chapter.name,
+        // A brand-new chapter has no segments, so both counts are known
+        // without a read — mirrors `addSegment`'s optimistic row.
+        finishedCount: 0,
+        totalCount: 0,
+      },
+    ],
+  };
+  return moveToFront(books, index, patched);
+}
+
+/** Shared by every optimistic patch that also moves its card to the shelf's
+ * front — see `patchNewChapter` and `patchRenamedBook`. Not exported: it is
+ * an implementation detail of "where does the patched card land", not a
+ * decision either caller needs to make independently. */
+function moveToFront<T>(items: readonly T[], index: number, patched: T): T[] {
+  return [patched, ...items.slice(0, index), ...items.slice(index + 1)];
+}
+
+/**
+ * Fold a rename's result into its book's card, in the same turn as the write.
+ * `renameBook` used to rely on `reload()` alone (no immediate patch), on the
+ * theory that a rename's shelf-reorder made an in-place patch have to
+ * duplicate `listBooks`' own sort. That was exactly what Frank R5 P2 caught
+ * breaking: `isLoadCurrent` discards ANY load whose generation has fallen
+ * behind current, and a rename's reload had no fallback if a LATER
+ * optimistic patch (`createBook`/`addChapter`) bumped the generation before
+ * the rename's own read landed — the database held the new name permanently
+ * while the shelf kept showing the old one, because nothing else was ever
+ * going to re-apply it. Patching immediately, like the other two paths,
+ * removes the window this bug needed to open at all; `renameBook` still
+ * `reload()`s afterward (George R7 P2) for the same two-copy reconciliation
+ * `createBook`/`addChapter` do, and `isLoadCurrent` still protects this
+ * patch from a stale read the same way.
+ *
+ * Mirrors `renameBookInStore`'s own idempotency: a blank rename keeps the
+ * current name and does not bump `updatedAt` or write at all, so a
+ * name-unchanged result here does not reorder the shelf either — moving it
+ * would show recency that never actually happened on disk. A genuine rename
+ * moves the card to the front, matching the write's own bump, the same
+ * reasoning `patchNewChapter` already follows for `addChapter`.
+ */
+export function patchRenamedBook(
+  books: readonly BookCard[],
+  book: Book
+): BookCard[] {
+  const index = books.findIndex((card) => card.bookId === book.id);
+  const original = books[index];
+  if (index === -1 || !original) return books as BookCard[]; // stale card
+  if (book.name === original.name) return books as BookCard[]; // no-op rename
+  return moveToFront(books, index, { ...original, name: book.name });
+}
+
+/**
+ * Whether an Add-chapter tap for `bookId` should proceed, given the set of
+ * books currently mid-create. The guard itself — not just the ref that holds
+ * it — gets a red-first test: a second tap for the SAME book while the first
+ * is still in flight must be swallowed (the unlatched control George R3/R4
+ * P2 found), while a tap for a DIFFERENT book must not be blocked by it — two
+ * books' Add-chapter controls are independent, unlike the single New Book
+ * dialog's `creatingBook` latch.
+ */
+export function canStartAddChapter(
+  inFlight: ReadonlySet<BookId>,
+  bookId: BookId
+): boolean {
+  return !inFlight.has(bookId);
+}
+
+/**
+ * Whether a load stamped `startedAt` may still apply its result, given the
+ * CURRENT generation.
+ *
+ * `reload()` bumps the generation — every one of `createBook`'s,
+ * `addChapter`'s and `renameBook`'s success paths call it right after their
+ * own optimistic `setBooks` patch (George R7 P2), and so does a manual Retry
+ * — so a load whose stamp has fallen behind current has been superseded and
+ * must not overwrite newer state with what it read before the patch landed
+ * (George R4 P2-2: the load effect's `cancelled` closure flag is set by a
+ * CLEANUP function, which runs on React's own schedule; it is not guaranteed
+ * to have run before an already-in-flight load's own promise resolves, so an
+ * absolute `setBooks(cards)` from a load that started before an optimistic
+ * patch, but resolves after it, could silently erase the patch). The
+ * generation is the explicit, synchronous version of the same check.
+ */
+export function isLoadCurrent(startedAt: number, current: number): boolean {
+  return startedAt === current;
+}
+
+/**
+ * What a create attempt resolved to: the book, or the reason it failed.
+ *
+ * A discriminated outcome rather than `Book | null`, because the caller needs
+ * the REASON and needs it scoped to this attempt — see `createBook` below.
+ */
+type CreateBookOutcome =
+  | { readonly ok: true; readonly book: Book }
+  | { readonly ok: false; readonly message: string };
+
+/**
  * The Books screen (B2): the book/chapter tree and its two creation actions.
  *
  * Expand/collapse is per-viewer UI state and stays in the component; this hook
- * owns only what is on disk. `createBook` and `addChapter` return what they
- * made so the screen can expand and scroll to it.
+ * owns only what is on disk. `addChapter` returns what it made so the screen can
+ * expand and scroll to it; `createBook` returns an outcome rather than a
+ * nullable book, because a failed create has to speak INSIDE the New Book dialog
+ * (the screen's Notice sits behind its scrim) and must not be confused with
+ * whatever last wrote the shared channel (#314; Frank R1 P3, George R1 P2-2).
+ * `newBookPlaceholder` is the name that dialog pre-fills its field with.
  */
 export function useBooks() {
   const [books, setBooks] = useState<BookCard[]>([]);
   const [loading, setLoading] = useState(true);
   // Latches true on the first read that completes without throwing. `loading`
-  // can't stand in: `reload()` never flips it back on, and `error` is also set
-  // by a failed create — so only this distinguishes "a genuinely empty shelf"
-  // from "a read that never succeeded" for the caller's empty-vs-retry choice.
+  // can't stand in — `reload()` never flips it back on — so only this
+  // distinguishes "a genuinely empty shelf" from "a read that never succeeded"
+  // for the caller's empty-vs-retry choice.
   const [loaded, setLoaded] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -186,7 +334,15 @@ export function useBooks() {
    * shelf — putting a just-deleted book back, with its chapters already gone
    * underneath it (George R3 P1). A ref moves that invalidation into the same
    * synchronous step as the write. Bumped by `reload()`, so every path that
-   * asks for a re-read also invalidates whatever was already in flight.
+   * asks for a re-read also invalidates whatever was already in flight —
+   * `createBook`, `addChapter` and `renameBook` all patch `books` optimistic-
+   * ally in the SAME turn as their write and then call `reload()` too (George
+   * R7 P2: a two-copy shelf — a second tab, or a pre-`autoUpdate` page — needs
+   * that reconciling read, or nothing ever catches this copy up with what the
+   * other one wrote), so a load that started before an optimistic patch but
+   * resolves after it must not overwrite the patch with a stale absolute
+   * `setBooks(cards)` (George R4 P2-2). `isLoadCurrent` is the pure, explicit
+   * version of the comparison below, pinned in `tests/use-books.test.ts`.
    */
   const loadGen = useRef(0);
   /** True while a book delete is in flight — the confirm dialog's `busy`. */
@@ -225,11 +381,11 @@ export function useBooks() {
     const gen = loadGen.current;
     let cancelled = false;
     void (async () => {
-      // Superseded: a reload or a delete has happened since this load started,
-      // so its snapshot describes a database state that is no longer true.
-      // Checked alongside `cancelled` because `cancelled` alone flips too late
-      // (see `loadGen`).
-      const stale = () => cancelled || gen !== loadGen.current;
+      // Superseded: a reload, a delete, or an optimistic create/addChapter
+      // patch has happened since this load started, so its snapshot describes
+      // a database state that is no longer true. Checked alongside `cancelled`
+      // because `cancelled` alone flips too late (see `loadGen`).
+      const stale = () => cancelled || !isLoadCurrent(gen, loadGen.current);
       try {
         const cards = await loadBookCards();
         if (stale()) return;
@@ -275,32 +431,101 @@ export function useBooks() {
     setReloadToken((t) => t + 1);
   }, []);
 
-  const createBook = useCallback(async (): Promise<Book | null> => {
-    // Auto-named from the count on disk (race-safe in storage), not from the
-    // stale render count. A failed write reaches the same Notice a load failure
-    // does, never a silent unhandled rejection — the caller gets null.
-    try {
-      const book = await createNextBook();
-      // A write that SUCCEEDED clears the slot, including a standing delete
-      // failure. The load deliberately no longer does this (see the effect), so
-      // without it a failed delete's Notice would stand over a healthy shelf
-      // for the rest of the session — Frank R4 P2 and George R4 P2-2, raised
-      // independently by both lenses. Cleared before `reload()`, so the new
-      // read cannot re-assert anything about the old failure.
-      report(null);
-      reload();
-      return book;
-    } catch (cause) {
-      report(cause);
-      return null;
-    }
-  }, [reload, report]);
+  /**
+   * The name a blank New Book confirm would be given, for the dialog to pre-fill
+   * its field with (#314).
+   *
+   * Derived from `books` rather than held as its own state, so it cannot lag the
+   * shelf by a render: the optimistic insert below moves both in one commit, and
+   * a second `+` immediately after a create offers the NEXT name rather than the
+   * one just taken (George R2 P2-1). Same pure function the store's own fallback
+   * uses, over the same names, so the field shows what a blank confirm writes.
+   */
+  const newBookPlaceholder = useMemo(
+    () => nextBookName(books.map((b) => b.name)),
+    [books]
+  );
+
+  const createBook = useCallback(
+    async (name: string): Promise<CreateBookOutcome> => {
+      // The name comes from the New Book field (#314). A blank one falls back to
+      // the "Book NNN" placeholder — derived on disk inside the write's own
+      // transaction, so it is race-safe and never a render-time snapshot.
+      //
+      // The reason is RETURNED rather than pushed onto the shared `error`: this
+      // failure has to appear inside the New Book dialog, and that dialog must
+      // not also display an addChapter or rename failure left on the shared
+      // channel by an earlier action (Frank R1 P3 / George R1 P2-2, raised
+      // independently by both lenses). Still never a silent unhandled rejection.
+      try {
+        const book = await createBookInStore(name);
+        report(null); // a successful write clears the slot — see `deleteBook`
+        // Put the row on the shelf in THIS turn, before `reload()`'s async read
+        // lands. The New Book dialog unmounts on success, and every contract it
+        // hands off to keys on `books`: `showEmpty` would otherwise re-raise the
+        // "start your first book" invite — with a live CTA — over a shelf that
+        // now has a book on it, a second Confirm there writing a second book
+        // only a manual delete (#337) recovers from; and the screen's
+        // scroll/focus effect could not run at all, leaving focus on the
+        // document (George R2 P2-1). Prepended because `listBooks` sorts by
+        // `updatedAt` and this is
+        // the newest, so the optimistic order is the order the reload confirms.
+        //
+        // `reload()` DOES follow this. An earlier round dropped it on the
+        // theory that the new card is already fully correct so a reload could
+        // only race a later patch — true in a single copy, but `books` is
+        // IndexedDB's cache, not the source of truth (`reportUnlessStale`'s
+        // doc above): a second tab or a pre-`autoUpdate` page can mutate the
+        // SAME store underneath this one, and dropping the reconciling read
+        // meant nothing here — or in `addChapter`/`renameBook` below — ever
+        // caught up with disk again outside of a delete or a stale swallow
+        // (George R7 P2, on the #344 rebase: the shelf stopped being
+        // reconciled with disk for exactly the two-copy shape
+        // `reportUnlessStale` exists to handle). `reload()` bumps the
+        // generation itself, so the guard below still discards this read if a
+        // NEWER patch lands before it resolves — the optimistic insert above
+        // is never at risk, only ever reconciled or superseded.
+        setBooks((prev) => [
+          { bookId: book.id, name: book.name, chapters: [] },
+          ...prev,
+        ]);
+        reload();
+        return { ok: true, book };
+      } catch (cause) {
+        return {
+          ok: false,
+          message: cause instanceof Error ? cause.message : String(cause),
+        };
+      }
+    },
+    [reload, report]
+  );
+
+  // The Add-chapter in-flight latch, one entry per book. A ref (like
+  // `creatingBook` in books-screen.tsx), not state: it gates re-entrancy
+  // rather than driving a render, and each book's control latches
+  // independently, so two different books' Add-chapter taps do not block
+  // each other the way the single New Book dialog's latch would.
+  const addingChapterFor = useRef<Set<BookId>>(new Set());
 
   const addChapter = useCallback(
     async (bookId: BookId): Promise<Chapter | null> => {
+      if (!canStartAddChapter(addingChapterFor.current, bookId)) return null;
+      addingChapterFor.current.add(bookId);
       try {
         const chapter = await addChapterToBook(bookId);
         report(null); // a successful write clears the slot — see `createBook`
+        // Patch the row on THIS book's card in the same turn as the write —
+        // see `patchNewChapter` — so the control's own repeated activations
+        // (fast taps, a held Enter's key-repeat landing here after a New Book
+        // success) see the row that landed instead of an empty card that
+        // reads as "nothing happened" (George R3/R4 P2). `reload()` still
+        // follows — see `createBook`'s matching comment (George R7 P2): the
+        // patch is what the control sees immediately, `reload()` is what
+        // catches this book up with anything a second copy did elsewhere,
+        // and `isLoadCurrent` still protects the patch from a stale read
+        // landing after a NEWER one.
+        setBooks((prev) => patchNewChapter(prev, bookId, chapter));
         reload();
         return chapter;
       } catch (cause) {
@@ -321,6 +546,12 @@ export function useBooks() {
           reload();
         }
         return null;
+      } finally {
+        // Released unconditionally, success or failure: unlike `creatingBook`
+        // there is no dialog to reopen and no reset to reach the next attempt
+        // through — the Add-chapter control stays mounted and reachable, so
+        // "released when this attempt is done" is the whole contract.
+        addingChapterFor.current.delete(bookId);
       }
     },
     [reload, report]
@@ -328,13 +559,13 @@ export function useBooks() {
 
   const renameBook = useCallback(
     async (bookId: BookId, name: string): Promise<Book | null> => {
-      // reload() rather than an in-place patch: a rename bumps the book's
-      // updatedAt, and listBooks sorts by it, so the shelf order actually
-      // changes — the same reason createBook/addChapter reload. A failed write
-      // reaches the same Notice a load failure does.
+      // `reload()` follows the patch — see `createBook`'s matching comment
+      // (George R7 P2). A failed write reaches the same Notice a load
+      // failure does.
       try {
         const book = await renameBookInStore(bookId, name);
         report(null); // a successful write clears the slot — see `createBook`
+        setBooks((prev) => patchRenamedBook(prev, book));
         reload();
         return book;
       } catch (cause) {
@@ -415,6 +646,7 @@ export function useBooks() {
 
   return {
     books,
+    newBookPlaceholder,
     loading,
     loaded,
     // Derived from the one failure slot, so the message and its delete label
