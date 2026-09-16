@@ -21,13 +21,17 @@ interface NameEditProps {
    *  nothing at all. */
   onCancel: () => void;
   /**
-   * The commit is in flight. Disables the save Control so it carries the same
-   * visual "this is committing" signal `EraseConfirm` gives its own destructive
-   * action (`disabled={busy}` there) — the gap George R3/R4 P3 found: the field
-   * and Close/Escape/scrim still looked live for the length of a New Book
-   * write, with nothing on screen saying otherwise. Optional and defaulted
-   * false: the rename call sites have no in-flight window worth signalling
-   * (their menu already re-renders on the write's own error/close paths).
+   * The commit is in flight. Passed straight through to the save Control's OWN
+   * `busy` (never `disabled`): `Control`'s docblock is explicit that `busy`
+   * exists so a committing control can swallow activation and announce
+   * `aria-busy` WITHOUT dropping out of the tab order the way a native
+   * `disabled` would — Frank R4 P2 caught exactly that on the first pass here,
+   * a focused "Create book" going natively disabled mid-commit and stranding
+   * a keyboard/switch user with no focused control left in the still-open
+   * dialog. `disabled` is the wrong half of `EraseConfirm` to imitate; `busy`
+   * is the one Control ships for this. Optional and defaulted false: the
+   * rename call sites have no in-flight window worth signalling (their menu
+   * already re-renders on the write's own error/close paths).
    */
   busy?: boolean;
 }
@@ -114,7 +118,7 @@ export function NameEdit({
         icon="check"
         label={saveLabel}
         variant="default"
-        disabled={busy}
+        busy={busy}
         onClick={() => onSave(value)}
       />
     </form>

@@ -94,8 +94,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // busy: nothing on screen changed for the length of the write, so Close,
   // Escape and the scrim still LOOKED live even though `onCancelNewBook`
   // already turned them into no-ops (George R3/R4 P3). State, synced wherever
-  // the ref is, purely so `NameEdit`'s save Control can render `disabled`,
-  // matching `EraseConfirm`'s `disabled={busy}` on its own committing action.
+  // the ref is, purely so `NameEdit`'s save Control can render its OWN `busy`
+  // — not `disabled`, which would drop the focused control out of the tab
+  // order mid-commit and strand a keyboard/switch user in the still-open
+  // dialog (Frank R4 P2; see `name-edit.tsx`'s `busy` prop doc).
   const [creatingBookBusy, setCreatingBookBusy] = useState(false);
   // Where focus was when the New Book dialog opened — the corner + or the empty
   // state's CTA. Restored when the dialog closes WITHOUT creating, so a cancel
