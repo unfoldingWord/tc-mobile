@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  type EncoderHealth,
+  EncoderFailedError,
+  EncoderStalledError,
+  encoderHealth,
+} from "./mp3-codec";
+import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   type StagedShare,
@@ -41,10 +48,59 @@ import {
 /**
  * Why a share did not proceed. A CODE, not a message — the screen maps it to a
  * translator-facing string, so this browser-boundary hook stays free of UI copy.
- * `nothing`: there was no recorded audio to share. `failed`: encoding, the share
- * sheet, or an unsupported browser.
+ * `nothing`: there was no recorded audio to share. `encoder`: the ENCODER is
+ * the problem (#166) — it stalled, or it failed again while its health already
+ * reads `failing` (see `classifyPrepareError`). "Try again" is still the right
+ * first move, but a restart may be needed, and the Books shelf that says so is
+ * not on screen while a chapter is open (George R2 P3-2). `failed`: anything
+ * else — a first encoder failure, storage, the share sheet, an unsupported
+ * browser.
  */
-export type ShareError = "nothing" | "failed";
+export type ShareError = "nothing" | "encoder" | "failed";
+
+/**
+ * Which code a failed PREPARE (tap 1) surfaces.
+ *
+ * `encoder` for a stall, and for an ordinary ENCODER failure
+ * (`EncoderFailedError`) once the encoder's health already reads `failing`
+ * (George R3 P2-1). A purged worker chunk (#182) or a worker that dies on every
+ * encode never stalls — it errors — and by the time this runs `encodeInWorker`
+ * has already counted that error. The Books shelf that would say so is
+ * unmounted while a chapter is open, so this line is the only place a
+ * translator on Segments can learn a restart is needed. Below the threshold an
+ * encoder failure stays `failed`: "try again" is honest there.
+ *
+ * Anything that is NOT the encoder's — an IndexedDB read in the share build, an
+ * export error — stays `failed` whatever the health reads (Frank R4 P2). The
+ * encoder may be unhealthy too, but it did not cause this failure, and a
+ * restart line would send the translator after the wrong problem.
+ *
+ * `health` is a parameter, defaulted to the live store, so the decision is a
+ * pure function a test can drive.
+ */
+export function classifyPrepareError(
+  cause: unknown,
+  health: EncoderHealth = encoderHealth()
+): ShareError {
+  if (cause instanceof EncoderStalledError) return "encoder";
+  if (cause instanceof EncoderFailedError && health === "failing")
+    return "encoder";
+  return "failed";
+}
+
+/**
+ * A failed prepare, settled: reported to the app's ONE failure sink and
+ * classified for the screen (George R3 P3-4). The Finished sweep moved onto
+ * `reportFailure` in #166; a Share that failed the same way was still only a
+ * `console.error`, which AGENTS.md is explicit is not a channel.
+ */
+export function settlePrepareFailure(
+  cause: unknown,
+  health: EncoderHealth = encoderHealth()
+): ShareError {
+  reportFailure(cause, "share-prepare");
+  return classifyPrepareError(cause, health);
+}
 
 /**
  * `idle`: nothing prepared. `preparing`: tap 1's encode is in flight (busy).
@@ -291,8 +347,7 @@ export function useShareFlow(): UseShareFlow {
         // A stale run's rejection — including the AbortError its own cancel
         // produced — is not this screen's news.
         if (!current()) return;
-        console.error("Preparing the share failed", cause);
-        setError("failed");
+        setError(settlePrepareFailure(cause));
         setStatus("idle");
       } finally {
         // Only clear the guard for the run that still owns it. A stale run whose

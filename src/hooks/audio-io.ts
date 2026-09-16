@@ -11,7 +11,7 @@ import {
   CANONICAL_CHANNELS,
   CANONICAL_SAMPLE_RATE,
   floatToInt16,
-  int16ToFloat,
+  int16ToFloatInto,
 } from "@/lib/audio/format";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
@@ -74,15 +74,38 @@ function getAudioContextCtor(): AudioContextCtor {
 let sharedContext: AudioContext | null = null;
 
 /**
- * A single shared AudioContext.
+ * A single shared AudioContext, PINNED to the canonical rate.
  *
  * iOS caps the number of AudioContexts a page may create and starts them
  * suspended until a user gesture, so creating one per playback both leaks and
  * silently fails. One context, resumed on demand, avoids both.
+ *
+ * The rate is not cosmetic (#175). `decodeAudioData` resamples to the context's
+ * rate, so a context left at the device default — 48 kHz on a typical phone —
+ * made `toCanonical` render EVERY take and every stored clip through an
+ * `OfflineAudioContext`, a whole-clip copy on top of the two playback already
+ * held. Asking for `CANONICAL_SAMPLE_RATE` lands the decode already canonical
+ * and that copy disappears.
+ *
+ * Best-effort, never fatal: Safari before 14.1 throws `NotSupportedError` on the
+ * `sampleRate` option, and a device may refuse the rate outright. Those fall
+ * back to a default context, where `toCanonical`'s resample path — still there,
+ * unchanged — does the conversion as before.
  */
 function getAudioContext(): AudioContext {
-  sharedContext ??= new (getAudioContextCtor())();
+  sharedContext ??= createSharedContext();
   return sharedContext;
+}
+
+function createSharedContext(): AudioContext {
+  const Ctor = getAudioContextCtor();
+  try {
+    return new Ctor({ sampleRate: CANONICAL_SAMPLE_RATE });
+  } catch {
+    // The rate was refused, not the context. Swallowed deliberately: the
+    // fallback is a fully working context whose decodes take the resample path.
+    return new Ctor();
+  }
 }
 
 /**
@@ -356,18 +379,47 @@ async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
   return floatToInt16(rendered.getChannelData(0));
 }
 
-/** Wrap canonical PCM in an AudioBuffer for playback. */
+/**
+ * How many frames one playback fill window holds: one second of canonical audio,
+ * 176 KB as Float32.
+ *
+ * The window is the whole point (#175) — it bounds the conversion scratch at a
+ * constant instead of the clip's length — so it wants to be small enough that a
+ * chapter-length recording costs nothing extra and large enough that the write
+ * loop stays short (600 iterations for ten minutes).
+ */
+const PLAYBACK_FILL_FRAMES = CANONICAL_SAMPLE_RATE;
+
+/**
+ * Wrap canonical PCM in an AudioBuffer for playback, filling it through ONE
+ * reused window rather than a whole-clip Float32 copy (#175).
+ *
+ * The predecessor built `int16ToFloat(samples)` — a second whole-clip buffer —
+ * and handed it to `copyToChannel`, which holds a copy of its own; with the
+ * retained Int16 source that put a ten-minute segment at roughly 265 MB on one
+ * Play tap, unguarded. Writing window by window leaves the `AudioBuffer` (which
+ * playback genuinely needs) plus 176 KB, whatever the clip's length.
+ *
+ * The tail is passed as a `subarray` of exactly the samples written, not the
+ * whole window: the window still holds the previous chunk past that point, and
+ * `copyToChannel` would otherwise write those stale frames as audio.
+ */
 function toAudioBuffer(
   samples: Int16Array,
   sampleRate: number = CANONICAL_SAMPLE_RATE
 ): AudioBuffer {
   const ctx = getAudioContext();
-  const buffer = ctx.createBuffer(
-    CANONICAL_CHANNELS,
-    Math.max(1, samples.length),
-    sampleRate
-  );
-  buffer.copyToChannel(int16ToFloat(samples), 0);
+  const frames = Math.max(1, samples.length);
+  const buffer = ctx.createBuffer(CANONICAL_CHANNELS, frames, sampleRate);
+  const window = new Float32Array(Math.min(PLAYBACK_FILL_FRAMES, frames));
+  for (let offset = 0; offset < samples.length; offset += window.length) {
+    const written = int16ToFloatInto(samples, window, offset);
+    buffer.copyToChannel(
+      written === window.length ? window : window.subarray(0, written),
+      0,
+      offset
+    );
+  }
   return buffer;
 }
 
@@ -378,6 +430,11 @@ export interface PlaybackHandle {
   readonly duration: number;
 }
 
+/** Resolve after the current task, so queued input gets its turn first. */
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** Play canonical PCM, optionally from an offset. Returns a stop handle. */
 export async function playSamples(
   samples: Int16Array,
@@ -385,7 +442,8 @@ export async function playSamples(
     offsetSeconds?: number;
     onEnded?: () => void;
     /**
-     * Re-checked AFTER the resume await, just before any node is built. A play
+     * Checked twice: after the resume await, before the buffer is filled; and
+     * again after the fill, once a task has passed (see the body). A play
      * claim can be superseded (a Stop, a competing take, a mic claim) during
      * `resumeAudioContext` — which on iOS is a real await that also un-suspends a
      * suspended/interrupted context. Without this the source starts and is only
@@ -417,6 +475,21 @@ export async function playSamples(
 
   const ctx = getAudioContext();
   const buffer = toAudioBuffer(samples);
+
+  // The fill above is synchronous and scales with the clip (#175): about 600
+  // `copyToChannel` calls for ten minutes. A Stop, or a Play on another row,
+  // tapped DURING it cannot run until something yields. With no yield between
+  // here and `source.start()`, that tap would be handled only after the source
+  // had started, and `settle` would kill it: the start-then-stop #104 exists
+  // to prevent (George R4 G-1). A bare re-check here would be dead code,
+  // because nothing can change within this task. So yield one TASK, not a
+  // microtask (input events are tasks), and ask again. The cost is one
+  // macrotask of latency per Play.
+  await nextTask();
+  if (!options.isStillCurrent()) {
+    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+  }
+
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   source.connect(ctx.destination);

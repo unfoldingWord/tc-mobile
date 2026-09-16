@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Control } from "./control";
 import { shareControlAffordance } from "./control-affordance";
@@ -9,7 +15,10 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
+import { encoderNotice } from "./encoder-notice";
+import { shareErrorText } from "./share-error-copy";
 import { strings } from "./strings";
+import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { cn } from "@/lib/utils";
@@ -419,12 +428,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   }, [bookShare, onCloseShareMenu]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. Map its error code to copy here.
-  const bookShareErrorText =
-    bookShare.error === "nothing"
-      ? strings.shareBookNothing
-      : bookShare.error === "failed"
-        ? strings.shareBookFailed
-        : null;
+  const bookShareErrorText = shareErrorText(bookShare.error, "book");
   // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,
@@ -579,6 +583,19 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // (George R4 P2-2 / Frank R4 P2).
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
+  // The encoder's own health (#166). Module state, not hook state — every
+  // encode in the app runs through `mp3-codec`'s single lane, from the sweep
+  // App starts at launch to a Share on another screen — so it is read through
+  // `useSyncExternalStore`, which re-renders on the store's own change rather
+  // than on a poll. Both arguments are module-level functions and so are stable
+  // across renders; the third is the server snapshot, which never runs here but
+  // keeps the hook honest if this tree is ever server-rendered
+  // (`error-boundary.test.ts` already renders components through
+  // `react-dom/server`).
+  const encoderLine = encoderNotice(
+    useSyncExternalStore(subscribeToEncoderHealth, encoderHealth, encoderHealth)
+  );
+
   return (
     // While the menu is open, take the whole shelf chrome — New Book included —
     // out of the focus/pointer tree for AT/switch users, matching how Segments
@@ -632,6 +649,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         </Notice>
       ) : (
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
+      )}
+
+      {/* The encoder has stopped working (#166). Its own line, not the slot
+          above: that slot is the shelf's load/delete channel and is exclusive,
+          and this is a standing background condition rather than something the
+          translator just did. It sits under it so a load failure — which has a
+          recovery — is still read first. */}
+      {encoderLine && (
+        <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
       )}
 
       <div className="flex-1 overflow-y-auto">

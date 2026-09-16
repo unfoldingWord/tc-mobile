@@ -15,6 +15,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
+import { shareErrorText as shareErrorCopy } from "./share-error-copy";
 import { strings } from "./strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -261,12 +262,7 @@ export const SegmentsScreen = forwardRef<
   // The Share Control's glyph/variant/busy across idle → preparing → ready
   // (#354) — the same table Share Book and NameEdit's Confirm use.
   const shareAffordance = shareControlAffordance(share.status);
-  const shareErrorText =
-    share.error === "nothing"
-      ? strings.shareNothing
-      : share.error === "failed"
-        ? strings.shareFailed
-        : null;
+  const shareErrorText = shareErrorCopy(share.error, "chapter");
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);

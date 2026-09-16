@@ -331,6 +331,13 @@ export const strings = {
   // the book grain, so this combines rather than stacking two.
   shareBookMissingAndPartial: (chapters: number, segments: number): string =>
     `${strings.shareBookMissing(chapters)} ${strings.shareBookPartial(segments)}`,
+  // The encoder went silent mid-share and was restarted (#166). Chapter and book
+  // alike: the cause is the phone, not what was being shared. Try again is still
+  // the first thing to do — the encoder was restarted — and the restart hint is
+  // here because the Books shelf that carries it is not on screen while a
+  // chapter is open (George R2 P3-2).
+  shareEncoderStopped:
+    "Could not prepare this to share. Try again — if it keeps happening, restart the app.",
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
@@ -352,4 +359,19 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+
+  // ── The encoder has stopped working (#166) ───────────────────────────────
+  // Shown once on the shelf when `encoderHealth()` reads `failing` — one stall,
+  // or `ENCODER_FAILURE_THRESHOLD` ordinary encode failures in a row. "Make
+  // recordings smaller" is what the encoder does in BOTH of the jobs that use
+  // it: the Finished transcode that buys back storage (D3, #12) and the MP3 a
+  // Share hands to the phone. Both stop together, and both are invisible from
+  // where the translator stands unless this says so.
+  //
+  // It says plainly that nothing is lost, because nothing is — a failed
+  // transcode keeps its PCM — and names the one thing that sometimes helps. No
+  // cause text, no error string, no word from the encoder's own vocabulary
+  // (#172).
+  encoderFailing:
+    "This phone could not make recordings smaller. Nothing is lost — restarting the app may help.",
 } as const;
