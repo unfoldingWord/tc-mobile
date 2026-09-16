@@ -71,17 +71,38 @@ type DeleteBookResult = "ok" | "failed" | "busy";
  * failure — an in-flight rename or add-chapter losing its target to a delete
  * that already committed and already reported its own, correct outcome.
  *
- * `stillPresent` is read from the store — the system of record — rather than
- * from `books` state, which a memoised callback would otherwise read through
- * a stale closure (this hook's `renameBook`/`addChapter` are not re-created
- * when `books` changes).
+ * `checkPresent` reads the store — the system of record — rather than `books`
+ * state, which a memoised callback would otherwise read through a stale
+ * closure (this hook's `renameBook`/`addChapter` are not re-created when
+ * `books` changes). It is injected, defaulting to a real store read, so its
+ * OWN failure — the gap Frank's round-9 review found (below) — can be pinned
+ * in plain Node without a failing IndexedDB, the same seam this repo already
+ * uses to test the encoder boundary (`AudioCodec`).
+ *
+ * This function must never reject. Every caller is already inside a `catch`
+ * for a mutation that failed; before this guard, a failure of the stale-check
+ * read itself (the same fault that may have caused `cause`, e.g. a blocked or
+ * broken IndexedDB) propagated out and turned a HANDLED mutation failure into
+ * an unhandled promise rejection — `addChapter`/`renameBook` never reaching
+ * their documented `Promise<... | null>` contract (Frank, PR #344 round 9). On
+ * that path the ORIGINAL mutation failure is reported: it is the operation the
+ * translator actually attempted, and the stale-check's own fault is not new
+ * information the screen can act on.
  */
-async function reportUnlessStale(
+export async function reportUnlessStale(
   cause: unknown,
   bookId: BookId,
-  report: (cause: unknown, fromDelete?: boolean) => void
+  report: (cause: unknown, fromDelete?: boolean) => void,
+  checkPresent: (id: BookId) => Promise<boolean> = async (id) =>
+    (await getBook(id)) !== undefined
 ): Promise<void> {
-  const stillPresent = (await getBook(bookId)) !== undefined;
+  let stillPresent: boolean;
+  try {
+    stillPresent = await checkPresent(bookId);
+  } catch {
+    report(cause);
+    return;
+  }
   if (isStaleBookFailure(cause, bookId, stillPresent)) return;
   report(cause);
 }
