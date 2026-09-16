@@ -374,4 +374,19 @@ export const strings = {
   // (#172).
   encoderFailing:
     "This phone could not make recordings smaller. Nothing is lost — restarting the app may help.",
+
+  // ── Storage durability (#12) ─────────────────────────────────────────────
+  // State-in-place on the Books screen: the browser has NOT promised to keep
+  // this origin's storage, so anything recorded here can be evicted when the
+  // device runs low on space — and there is no restore path. Shown only when
+  // `persisted()` answered false AND the shelf holds a book AND the app is not
+  // the native shell (`lib/storage/persistence.ts`); an absent API is unknown,
+  // and unknown says nothing. Says the one thing the translator can act on
+  // rather than the mechanism, and says "may" twice over: whether eviction
+  // happens on their device is not known, and — George round 1 P3-4, #214 —
+  // "any book exists" (the trigger) is not "a recording exists" yet, so the
+  // copy speaks about what recording here risks rather than asserting
+  // recordings already sitting at risk.
+  storageNotPersisted:
+    "This phone may delete what you record here if space runs low. Share your work when you can.",
 } as const;

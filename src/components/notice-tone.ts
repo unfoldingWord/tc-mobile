@@ -15,9 +15,12 @@ import type { IconName } from "./icon";
  * `alert` is a failure: red, an alert glyph, announced immediately.
  * `busy` is work in progress the translator has to wait for: muted, the retry
  * glyph, announced politely.
- * `info` is a heads-up about something already done — a completeness warning,
- * a caveat: full ink, its own glyph, announced politely. Not red (nothing
- * failed) and not muted (it is news, not a wait).
+ * `info` is a heads-up that is not a failure and not a wait: full ink, its own
+ * glyph, announced politely. Covers both a completeness caveat about
+ * something already done (a share gap, an interruption) and a standing
+ * condition worth naming on its own — e.g. storage durability (#12) — where
+ * nothing has failed yet but the risk is ongoing rather than a one-time
+ * event. Not red (nothing failed) and not muted (it is news, not a wait).
  */
 export type NoticeTone = "alert" | "busy" | "info";
 
