@@ -71,8 +71,9 @@ export function NameEdit({
       onSubmit={(e) => {
         e.preventDefault();
         // Enter still submits the form while busy (the input has no
-        // `disabled`/`readOnly` of its own — see below) — swallow it here so
-        // it cannot re-invoke `onSave` behind the disabled Control's back.
+        // `disabled`/`readOnly` of its own — see below, and #385) — swallow
+        // it here so it cannot re-invoke `onSave` behind the busy Control's
+        // back (Control does not native-disable on `busy`, by design).
         if (busy) return;
         onSave(value);
       }}

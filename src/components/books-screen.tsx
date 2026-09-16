@@ -87,7 +87,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // edge resets it. Dropping it the moment the write resolves would leave a gap
   // — the panel is still mounted until React paints the close — in which a held
   // Enter or a double-tap straddling a fast `put` starts a second create and
-  // writes a second book (George R2 P2-2). There is no delete on this tree.
+  // writes a second book (George R2 P2-2). A book, unlike a chapter, CAN be
+  // deleted (#337) — but only by hand, through its own confirm; nothing here
+  // recovers from a slipped-through extra create for free (George R7 P3-1).
   const creatingBook = useRef(false);
   // The visual half of the same latch. `creatingBook` is deliberately a ref —
   // reading it does not re-render — but that also meant Confirm never showed

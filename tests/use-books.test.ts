@@ -240,9 +240,10 @@ describe("patchNewChapter", () => {
 
   it("moves the patched book to the front of the shelf, matching the updatedAt bump the write already made (Frank R5 P2)", () => {
     // `addChapterToBook` bumps the parent book's `updatedAt` in the same
-    // write, and `listBooks` sorts newest-first — with `reload()` gone
-    // (George R4 P2-2), nothing else reconciles the shelf order, so the
-    // patch itself has to move the book, not just append its chapter.
+    // write, and `listBooks` sorts newest-first — `reload()` reconciles that
+    // order too, but only once its async read lands, so the patch itself
+    // still has to move the book immediately or the shelf flashes the wrong
+    // order for the length of that read (George R7 P3-3).
     const books = [
       chapterCard(chapterBookId("b-1")),
       chapterCard(chapterBookId("b-2")),

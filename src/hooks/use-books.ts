@@ -277,16 +277,17 @@ export function canStartAddChapter(
  * Whether a load stamped `startedAt` may still apply its result, given the
  * CURRENT generation.
  *
- * `createBook`'s and `addChapter`'s optimistic patches bump the generation,
- * and so does the start of every subsequent load — so a load whose stamp has
- * fallen behind current has been superseded and must not overwrite newer
- * state with what it read before the patch landed (George R4 P2-2: the load
- * effect's `cancelled` closure flag is set by a CLEANUP function, which runs
- * on React's own schedule; it is not guaranteed to have run before an
- * already-in-flight load's own promise resolves, so an absolute
- * `setBooks(cards)` from a load that started before an optimistic patch, but
- * resolves after it, could silently erase the patch). The generation is the
- * explicit, synchronous version of the same check.
+ * `reload()` bumps the generation — every one of `createBook`'s,
+ * `addChapter`'s and `renameBook`'s success paths call it right after their
+ * own optimistic `setBooks` patch (George R7 P2), and so does a manual Retry
+ * — so a load whose stamp has fallen behind current has been superseded and
+ * must not overwrite newer state with what it read before the patch landed
+ * (George R4 P2-2: the load effect's `cancelled` closure flag is set by a
+ * CLEANUP function, which runs on React's own schedule; it is not guaranteed
+ * to have run before an already-in-flight load's own promise resolves, so an
+ * absolute `setBooks(cards)` from a load that started before an optimistic
+ * patch, but resolves after it, could silently erase the patch). The
+ * generation is the explicit, synchronous version of the same check.
  */
 export function isLoadCurrent(startedAt: number, current: number): boolean {
   return startedAt === current;
@@ -464,9 +465,10 @@ export function useBooks() {
         // hands off to keys on `books`: `showEmpty` would otherwise re-raise the
         // "start your first book" invite — with a live CTA — over a shelf that
         // now has a book on it, a second Confirm there writing a second book
-        // that cannot be deleted on this tree; and the screen's scroll/focus
-        // effect could not run at all, leaving focus on the document (George R2
-        // P2-1). Prepended because `listBooks` sorts by `updatedAt` and this is
+        // only a manual delete (#337) recovers from; and the screen's
+        // scroll/focus effect could not run at all, leaving focus on the
+        // document (George R2 P2-1). Prepended because `listBooks` sorts by
+        // `updatedAt` and this is
         // the newest, so the optimistic order is the order the reload confirms.
         //
         // `reload()` DOES follow this. An earlier round dropped it on the
