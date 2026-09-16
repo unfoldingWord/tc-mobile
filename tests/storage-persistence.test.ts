@@ -17,11 +17,24 @@ import { storageMarker } from "@/lib/storage/persistence";
  * halves that CAN be covered in plain Node — the marker decision, and the
  * browser sequence through an injected manager.
  *
+ * George round 1 (#214) found two lifecycle bugs in the React half: the marker
+ * did not re-check `hasContent` (P2-1, a deleted-to-empty shelf kept a stale
+ * warning up) and the resolved answer was not cached at module scope (P2-2, a
+ * Books remount blinked the marker off for a tick). `storageMarker` now takes
+ * `hasContent` and `native` as well as `persisted`, and both new inputs are
+ * pinned below with the same red-first/mutation discipline as the original
+ * three-state `persisted` case. The P2-2 caching fix lives entirely in the
+ * React effect, which this file still cannot reach — see the note below.
+ *
  * What is NOT covered here: `useStoragePersistence` itself (this repo has no
  * jsdom or renderer — the same limitation `tests/use-erase-segment.test.ts`
- * documents), and the real `navigator.storage` answer on a device. Whether an
- * installed PWA on Android is granted persistence is unknown and must be read
- * off a device; nothing in this repository can answer it.
+ * documents) — so the module-scope `resolvedAnswer` cache that fixes P2-2 is
+ * review/on-device surface, not pinned by a test — and the real
+ * `navigator.storage` answer on a device. Whether an installed PWA on Android
+ * is granted persistence is unknown and must be read off a device; nothing in
+ * this repository can answer it. Whether `Capacitor.isNativePlatform()`
+ * correctly reports `true` inside the training APK is likewise unobserved;
+ * owed on #245.
  */
 
 /** A `navigator.storage` stand-in, with only the methods a case needs. */
@@ -31,11 +44,11 @@ const manager = (
 
 describe("storageMarker", () => {
   it("marks storage that the browser has refused to persist", () => {
-    expect(storageMarker(false)).toBe("not-persisted");
+    expect(storageMarker(false, true, false)).toBe("not-persisted");
   });
 
   it("says nothing when storage is persisted", () => {
-    expect(storageMarker(true)).toBeNull();
+    expect(storageMarker(true, true, false)).toBeNull();
   });
 
   it("says nothing when the answer is unknown", () => {
@@ -44,7 +57,26 @@ describe("storageMarker", () => {
     // `!persisted` test would mark those devices "not persisted", which is a
     // warning we have no evidence for, on the one platform this repo has
     // actually run on. Unknown is silence, never a warning.
-    expect(storageMarker(undefined)).toBeNull();
+    expect(storageMarker(undefined, true, false)).toBeNull();
+  });
+
+  it("says nothing once the shelf has emptied back out (George R1 P2-1)", () => {
+    // A stale `false` reading from before the last book was deleted (#344) or
+    // a second tab's `dropBookCard` must not keep the eviction warning up over
+    // the empty-shelf invite — the marker is about a shelf that currently
+    // holds something, not one that once did.
+    expect(storageMarker(false, false, false)).toBeNull();
+  });
+
+  it("never shows inside the Capacitor training shell, regardless of persisted() (George residual, #214)", () => {
+    // Native storage is not evicted the way a browser tab's is
+    // (docs/research/native-packaging.md); the browser-eviction copy would be
+    // simply false there, whatever `persisted()` answers inside the WebView.
+    // Both an otherwise-showable `false` and an `undefined` answer are covered
+    // so a mutation cannot pass by short-circuiting `native` only inside one
+    // branch of the `persisted` check.
+    expect(storageMarker(false, true, true)).toBeNull();
+    expect(storageMarker(undefined, true, true)).toBeNull();
   });
 });
 

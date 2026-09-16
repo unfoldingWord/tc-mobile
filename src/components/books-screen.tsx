@@ -77,7 +77,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // successful shelf read that finds one is "after the first successful write"
   // reached from the read side — the trigger the hook's docblock explains. The
   // marker is non-null only when the browser explicitly said it has NOT
-  // promised to keep this data; unknown (no API, a rejected query) says nothing.
+  // promised to keep this data, THIS render still has a book on the shelf (a
+  // delete back to empty must not leave a stale warning up, George R1 P2-1),
+  // and the app is not the Capacitor training shell (native storage is not
+  // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
+  // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
@@ -677,7 +681,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           unrecoverable (browser eviction, no restore path) where encoder's
           copy explicitly promises nothing is lost — the more severe standing
           risk reads first, same principle the load-failure/loading slot above
-          already applies by being exclusive and ordered acute-first. */}
+          already applies by being exclusive and ordered acute-first.
+          `notice-tone.ts`'s `info` docblock names this exact case (a standing
+          condition, not only a completed-event caveat) after George round 1
+          P3-3 flagged the original wording as covering only the latter. */}
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
       )}

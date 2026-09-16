@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
 
 import { storageMarker, type StorageMarker } from "@/lib/storage/persistence";
@@ -5,11 +6,12 @@ import { storageMarker, type StorageMarker } from "@/lib/storage/persistence";
 /**
  * Ask the browser to keep this app's storage, once per launch (#12).
  *
- * `navigator.storage` is a browser API, so it lives here and not in `lib/` —
- * `lib/storage/persistence.ts` holds the decision this hook's answer feeds. The
- * whole sequence is a plain async function over an injected manager, so it is
- * exercised in Node against stubs (the split `performErase` uses); the React
- * half below is the thin part.
+ * `navigator.storage` (and `Capacitor.isNativePlatform()`, the same probe
+ * `share-target.ts` uses) are browser-boundary APIs, so they live here and not
+ * in `lib/` — `lib/storage/persistence.ts` holds the decision this hook's
+ * answer feeds. The whole request sequence is a plain async function over an
+ * injected manager, so it is exercised in Node against stubs (the split
+ * `performErase` uses); the React half below is the thin part.
  *
  * **The September gate is the request only.** ADR 0002 listed three mitigations
  * for PCM's ~5.3 MB/minute. Transcode-on-Finished shipped in B8, the 22 050 Hz
@@ -17,6 +19,14 @@ import { storageMarker, type StorageMarker } from "@/lib/storage/persistence";
  * *loss* rather than size. A nearly-full `estimate()` marker is deliberately not
  * here: it needs a headroom threshold nobody has decided, and sampled once on a
  * screen mount it would go stale while the translator records. #12 carries it.
+ *
+ * **Round 1 (George, #214) found two lifecycle bugs**, both fixed here:
+ * `storageMarker` now also takes `hasContent` and `native` (an empty shelf or
+ * the training APK must not show a browser-eviction warning that is stale or
+ * simply false there), and the *resolved* answer — not only the in-flight
+ * request — is cached at module scope, so a Books remount after a chapter
+ * visit paints the standing marker on its first render instead of blinking it
+ * off until the effect resolves.
  */
 
 /**
@@ -105,15 +115,39 @@ function browserStorageManager(): StorageDurabilityManager | undefined {
 let request: Promise<boolean | undefined> | null = null;
 
 /**
+ * The settled answer, cached beside `request` (George round 1 P2-2, #214).
+ *
+ * `request` alone stops a second `persist()` call, but a fresh
+ * `useStoragePersistence` mount still started its `useState` at `undefined` —
+ * "not yet known" — even when the module already had the real answer, so a
+ * remount (Books unmounts on every chapter open, `App.tsx`) painted with no
+ * marker for one tick before the effect's `.then` caught up. For a `role`
+ * `"status"` Notice that is both a visible flicker on the standing condition
+ * the screen's own comment calls it, and — screen-reader-wise — a re-announce
+ * that never happens for a truly standing state anywhere else in this file.
+ * Reading this synchronously as the initial state removes the gap.
+ */
+let resolvedAnswer: boolean | undefined = undefined;
+
+/**
  * Ask for durable storage once the device holds work worth keeping, and return
- * the marker the screen shows — `null` while unknown or already persisted.
+ * the marker the screen shows — `null` while unknown, already persisted, the
+ * shelf has emptied back out, or the app is running in the native shell.
  *
  * **Why this trigger.** The audit's shape is "once after the first successful
  * write", and the save path is another lane's file this week. `hasContent` is
  * that same moment reached from the read side: a book only exists because
  * `createNextBook` committed, so a successful shelf read that finds one *is* a
  * successful write having happened. Asking on an empty shelf would also spend
- * the browser's one-time decision before there is anything to lose.
+ * the browser's one-time decision before there is anything to lose. The
+ * REQUEST stays gated on `hasContent` for that reason; the DISPLAY additionally
+ * re-checks `hasContent` at render time in `storageMarker` (George P2-1) since
+ * a book created and later deleted back to nothing must not leave a stale
+ * `persisted === false` reading on screen.
+ *
+ * **Native is asked but never shown a warning about.** `persist()` is still
+ * requested inside the Capacitor training APK — harmless, and free insurance —
+ * but `storageMarker` suppresses the marker there; see its docblock.
  *
  * **The answer itself is unknown and must be read off a device.** Whether an
  * installed PWA on Android is granted persistence is not something this
@@ -128,11 +162,18 @@ let request: Promise<boolean | undefined> | null = null;
 export function useStoragePersistence(
   hasContent: boolean
 ): StorageMarker | null {
-  const [persisted, setPersisted] = useState<boolean | undefined>(undefined);
+  const [persisted, setPersisted] = useState<boolean | undefined>(
+    () => resolvedAnswer
+  );
 
   useEffect(() => {
     if (!hasContent) return;
-    request ??= ensurePersistedStorage(browserStorageManager());
+    request ??= ensurePersistedStorage(browserStorageManager()).then(
+      (answer) => {
+        resolvedAnswer = answer;
+        return answer;
+      }
+    );
     let cancelled = false;
     // `ensurePersistedStorage` never rejects, so there is no dropped rejection
     // here and no second channel to catch one in.
@@ -144,5 +185,5 @@ export function useStoragePersistence(
     };
   }, [hasContent]);
 
-  return storageMarker(persisted);
+  return storageMarker(persisted, hasContent, Capacitor.isNativePlatform());
 }
