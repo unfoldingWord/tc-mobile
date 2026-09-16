@@ -18,13 +18,14 @@ import {
   chapterProgress,
   clearSegmentTake,
   createBook,
-  createNextBook,
   getBook,
   getChapter,
   getSegment,
   getSegmentsOfChapter,
   isFinished,
+  isStaleBookFailure,
   listBooks,
+  nextBookName,
   renameBook,
   renameChapter,
   resolveChapterClipIds,
@@ -37,7 +38,7 @@ import {
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { RecordingStatus } from "@/types/domain";
+import type { BookId, RecordingStatus } from "@/types/domain";
 import { samplesOf } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
@@ -170,14 +171,15 @@ describe("clip storage", () => {
 });
 
 describe("book tree", () => {
-  it("auto-names concurrent New Book taps distinctly (race-safe)", async () => {
-    // Two taps before the first write lands must not both become "Book 001":
-    // the name comes from the count on disk inside one readwrite transaction,
-    // which IndexedDB serialises, so the second sees the first.
-    const [a, b] = await Promise.all([createNextBook(), createNextBook()]);
+  it("auto-names concurrent blank New Book confirms distinctly (race-safe)", async () => {
+    // Two confirms before the first write lands must not both become
+    // "Book 001": the fallback name is derived from what is on disk INSIDE the
+    // one readwrite transaction that writes the row, and IndexedDB serialises
+    // overlapping readwrite transactions, so the second sees the first.
+    const [a, b] = await Promise.all([createBook(""), createBook("")]);
     const names = [a.name, b.name].sort();
     expect(names).toEqual(["Book 001", "Book 002"]);
-    const third = await createNextBook();
+    const third = await createBook("");
     expect(third.name).toBe("Book 003");
   });
 
@@ -548,6 +550,114 @@ describe("book tree", () => {
   });
 });
 
+/** The placeholder for ordinal `n`, as this namer spells it. */
+const nextBookNameFor = (n: number): string =>
+  `Book ${String(n).padStart(3, "0")}`;
+
+/**
+ * The "Book NNN" placeholder — computed, shown, and fallen back to (#314, #360).
+ *
+ * #314 moved the placeholder from "what a book is silently named" to "what the
+ * New Book field is pre-filled with", so the same computation now has two
+ * callers: the Books screen, which renders it off the shelf it has already
+ * loaded, and `createBook`'s blank fallback inside the write transaction.
+ * `nextBookName` is the one pure function both go through.
+ *
+ * The rendered name is DISPLAY only — an untouched field is confirmed as `""` —
+ * so the name that actually lands is always the transaction's, never the
+ * snapshot's. That is what keeps the one-tap create as race-safe as the
+ * pre-#314 `createNextBook` was.
+ *
+ * #360 is the rule the namer encodes: the first UNUSED name, not `count + 1`.
+ * Once a book can be deleted, a count-based name repeats — and the delete
+ * confirm names the book in its accessible name, so two identical rows make a
+ * destructive dialog unable to say which book it is about to destroy.
+ */
+describe("book auto-naming (#314, #360)", () => {
+  it("starts at Book 001 on an empty shelf", () => {
+    expect(nextBookName([])).toBe("Book 001");
+  });
+
+  it("zero-pads to three digits and counts up past the padding", () => {
+    expect(nextBookName(["Book 001", "Book 002"])).toBe("Book 003");
+    // Not capped at 999: the padding is a minimum width, not a limit.
+    const upTo999 = Array.from({ length: 999 }, (_, i) =>
+      nextBookNameFor(i + 1)
+    );
+    expect(nextBookName(upTo999)).toBe("Book 1000");
+  });
+
+  it("picks the FIRST unused name, so a delete does not make one repeat (#360)", () => {
+    // The #360 reproduction, as data: 001 and 002 exist, 001 is deleted. A
+    // count-based namer sees one book and says "Book 002" — a duplicate row.
+    expect(nextBookName(["Book 002"])).toBe("Book 001");
+    expect(nextBookName(["Book 002"])).not.toBe("Book 002");
+    // A hole in the middle is filled before the end is extended.
+    expect(nextBookName(["Book 001", "Book 003"])).toBe("Book 002");
+  });
+
+  it("ignores names that are not placeholders, and unpadded look-alikes", () => {
+    // A facilitator's real names ("Mark") occupy no placeholder slot — the
+    // shelf is not a numbering authority, the placeholder set is.
+    expect(nextBookName(["Mark", "Luke"])).toBe("Book 001");
+    // "Book 1" is not the string this namer would ever write, so it does not
+    // block "Book 001". Exact match on the stored name is the whole rule.
+    expect(nextBookName(["Book 1"])).toBe("Book 001");
+  });
+
+  it("does not repeat a name after a book is deleted from the shelf (#360)", async () => {
+    // The same rule end to end, through storage. `deleteBook` is #344 and is not
+    // on develop yet, so the row is removed directly — this pins the NAMER
+    // against a shelf with a hole in it, which is the state any delete leaves.
+    const first = await createBook("");
+    const second = await createBook("");
+    expect([first.name, second.name]).toEqual(["Book 001", "Book 002"]);
+
+    const db = await getDb();
+    await db.delete("books", first.id);
+
+    const third = await createBook("");
+    expect(third.name).toBe("Book 001");
+    expect(third.name).not.toBe(second.name);
+  });
+
+  it("names the shelf the screen would render the same as the next blank create", async () => {
+    // The screen derives the pre-fill by calling this namer over the books it
+    // has loaded; the store derives the written name by calling it over the
+    // books in its write transaction. Same function, same shelf, same answer —
+    // which is why a bare Confirm lands on the name the field displayed.
+    await createBook("");
+    const shelf = await listBooks();
+    const displayed = nextBookName(shelf.map((b) => b.name));
+    expect(displayed).toBe("Book 002");
+    expect((await createBook("")).name).toBe(displayed);
+  });
+
+  it("does not make a SUPPLIED name unique", async () => {
+    // Deliberate, and long-standing: a facilitator may have two books called
+    // "Mark", and renameBook has always allowed it. It is also why the New Book
+    // dialog sends "" rather than the "Book NNN" string it displayed — a
+    // supplied placeholder would take THIS path and two documents open on the
+    // same shelf would both write "Book 001" (George R1 P2-3).
+    const first = await createBook("Mark");
+    const second = await createBook("Mark");
+    expect([first.name, second.name]).toEqual(["Mark", "Mark"]);
+    expect(first.id).not.toBe(second.id);
+  });
+
+  it("falls back to the placeholder for a blank or whitespace-only name (#314)", async () => {
+    // "Empty or whitespace-only input falls back to the placeholder, never
+    // errors" — enforced in the store, next to renameBook's own normalisation,
+    // so the rule holds however the name arrives.
+    expect((await createBook("   ")).name).toBe("Book 001");
+    expect((await createBook("\t\n ")).name).toBe("Book 002");
+  });
+
+  it("trims a typed name, like renameBook does", async () => {
+    expect((await createBook("  Mark  ")).name).toBe("Mark");
+  });
+});
+
 /**
  * Renaming a book and a chapter in place (#264, the Nairobi manual workflow).
  *
@@ -652,6 +762,53 @@ describe("rename book and chapter", () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
     );
+  });
+});
+
+/**
+ * `renameBook` and `addChapter` both throw `No such book: <id>` from an
+ * identical `if (!book) throw` guard. Once a book can be deleted (#337), an
+ * in-flight rename or add-chapter can lose its target to an unrelated,
+ * already-successful delete — and a naive catch would report that throw as a
+ * fresh failure over a shelf that just correctly dropped the row (George, PR
+ * #344 round 8). `isStaleBookFailure` is the narrow decision that tells the
+ * two apart; `use-books.ts` is the caller, and its React/DOM half is not
+ * reachable from this Node suite (#361) — this pins the decision only.
+ */
+describe("isStaleBookFailure", () => {
+  const gone = "gone-book-0000-4000-8000-000000000001" as BookId;
+  const other = "other-book-000-4000-8000-000000000002" as BookId;
+
+  it("is stale: the exact target id's own throw, once it is confirmed gone", () => {
+    const cause = new Error(`No such book: ${gone}`);
+    expect(isStaleBookFailure(cause, gone, false)).toBe(true);
+  });
+
+  it("is NOT stale when the target id is still present", () => {
+    // The book still exists, so whatever this error is, it is not the
+    // delete race — report it rather than swallow it.
+    const cause = new Error(`No such book: ${gone}`);
+    expect(isStaleBookFailure(cause, gone, true)).toBe(false);
+  });
+
+  it("is NOT stale when the message names a DIFFERENT book", () => {
+    // A stale race on `gone` must never absorb a real failure about `other`,
+    // even though both are absent and both throw the same shape.
+    const cause = new Error(`No such book: ${other}`);
+    expect(isStaleBookFailure(cause, gone, false)).toBe(false);
+  });
+
+  it("is NOT stale for any other failure, even once the book is gone", () => {
+    expect(isStaleBookFailure(new Error("quota exceeded"), gone, false)).toBe(
+      false
+    );
+  });
+
+  it("is NOT stale for a non-Error cause", () => {
+    expect(isStaleBookFailure("No such book: " + gone, gone, false)).toBe(
+      false
+    );
+    expect(isStaleBookFailure(null, gone, false)).toBe(false);
   });
 });
 

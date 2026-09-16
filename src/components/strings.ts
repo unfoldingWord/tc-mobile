@@ -36,15 +36,30 @@ export const strings = {
   chapterHeading: (name: string | null, n: number): string =>
     name ?? `Chapter ${n}`,
 
-  // ── Rename (#264) — book and chapter, from their ≡ menus ──────────────────
+  // ── Naming (#264 rename, #314 New Book) ──────────────────────────────────
+  // One naming field serves both flows, so these strings are shared: the rename
+  // reached from a ≡ menu, and the New Book dialog the corner + now opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
   // The inline text field's accessible name (the whole text layer of the input)
   // and its placeholder.
   bookNameField: "Book name",
   chapterNameField: "Chapter name",
-  // The check control that commits the typed name.
+  // The check control that commits the typed name on a RENAME.
   saveName: "Save name",
+  // The New Book dialog's heading, and so its accessible name (#314). It says
+  // what the field is for, because the field arrives pre-filled and the one
+  // thing a non-reader has to understand is that the filled-in text is already
+  // a usable answer.
+  newBookTitle: "Name your new book",
+  // The New Book dialog's dismiss control. NOT `menuClose` ("Close menu"): this
+  // panel is a naming dialog, and the one thing its exit has to say is that
+  // leaving here creates nothing.
+  newBookClose: "Close without creating a book",
+  // The same check control, on the New Book dialog. NOT `saveName`: nothing is
+  // being saved back onto an existing book here — this activation is what
+  // creates it, and the spoken label is the only thing that says so.
+  createBook: "Create book",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
@@ -79,8 +94,21 @@ export const strings = {
   record: "Record",
   pause: "Pause",
   resume: "Resume",
-  zoomWhole: "Zoom: whole segment",
-  zoomQuarter: "Zoom: quarter view",
+  // The zoom toggle's two names (#91). Each says the STATE first and the ACTION
+  // second, because the first external tester read the old glyph as the state
+  // and the old labels ("Zoom: whole segment" / "Zoom: quarter view") named only
+  // a destination — which could be read either way too. The button also carries
+  // `aria-pressed`, so a screen reader gets the state twice; that redundancy is
+  // deliberate on a control a sighted, literate tester still misread.
+  //
+  // They name the MAGNIFICATION, never what is on screen. "Whole segment in
+  // view" was the first draft and is false whenever the clip is panned — which
+  // includes the sheet's own opening state, where the pan rests at the end and
+  // the window is [0.5L, 1.5L] (the append view `viewportWindow`'s own test
+  // pins). Zoom and pan are independent, so no label on this button can honestly
+  // promise an extent (Frank + George, round 1 — both lenses, independently).
+  zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
+  zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
   micRetry: "Try again",
   micBack: "Go back",
@@ -126,6 +154,13 @@ export const strings = {
   // is in flight — the same in-place busy shape as `loadRetrying` (#137 G2).
   takeRecoverRetrying: "Saving your recording…",
   takeRecoverShare: "Share the recording",
+  // The Share control's accessible name AND the busy Notice beneath it while the
+  // recording is written out for the OS share sheet — both, because `Control` is
+  // icon-only and its label never paints (George R6 P2). On the native route the
+  // chooser does not open in the tap — the file goes to the app cache first — so
+  // the panel has to say it is working, or the translator reads a live panel as a
+  // dead button (#336). Same in-place busy shape as `takeRecoverRetrying`.
+  takeRecoverSharing: "Getting the recording ready…",
   // The share sheet is missing or refused these bytes.
   takeShareUnavailable: "Sharing is not available on this device.",
   takeShareFailed: "Could not share the recording. Try again.",
@@ -179,8 +214,14 @@ export const strings = {
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
   // hand. Short and literal, like `previewUnavailable`.
   // Names both steps in the order the overlay allows — while this menu is open
-  // the recorder sheet is inert, so the sheet's control is out of reach until the
-  // menu closes — and names them by the accessible names those two controls
+  // the sheet's control is behind the scrim (and, at idle, behind its `inert`
+  // too), so it is out of reach until the menu closes. Mid-take the SHEET is no
+  // longer inert (#75), but the HEADER — and so header Back — stays inert under
+  // any overlay regardless of `takeActive` (George R2 P2), so Back is not
+  // reachable to AT at all while this menu is up. The two steps this cue names
+  // are still the way to save: close the menu, then close the recorder. The
+  // order is what matters, and it is unchanged. Named by the accessible names
+  // those two controls
   // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu
@@ -200,14 +241,31 @@ export const strings = {
   // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  vuShow: "Show the level meter",
-  vuHide: "Hide the level meter",
   eraseSegment: "Erase recording",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
+  // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
+  // string for both flows it now serves — segment Erase and book Delete —
+  // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+
+  // ── Delete a book (#337) ─────────────────────────────────────────────────
+  // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
+  // the segment Erase uses, not a second one.
+  deleteBook: "Delete book",
+  // Names the book, because this dialog's title is also its accessible name and
+  // it is the only thing that says WHICH shelf row is about to go. "everything
+  // in it" is the honest scope: the chapters, the segments and every recording.
+  deleteBookConfirmTitle: (book: string): string =>
+    `Delete ${book} and everything in it?`,
+  deleteBookConfirm: "Delete",
+  // A destructive op that did NOT happen has to say so in its own words. The
+  // store's own message — a quota or connection fault, since `deleteBook` never
+  // throws on a missing book — is for a maintainer; this is the line a screen
+  // reader speaks to a translator. Mirrors `eraseFailed` (#80).
+  deleteBookFailed: "Could not delete this book. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
   chapterMenuOpen: "More actions for this chapter",

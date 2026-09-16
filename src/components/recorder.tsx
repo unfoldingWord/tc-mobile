@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -17,24 +18,48 @@ import { recorderStatusKind } from "./processing-status";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
+import { liveScopeShown } from "./recorder-stage";
 import {
   editRowReason,
   eraseRowReason,
+  heldTakeIsBusy,
   markRowReason,
   rowHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { classifyShareError } from "@/hooks/share-flow";
+import {
+  nativeShare,
+  readShareEnvironment,
+  resolveProvesDelivery,
+  selectShareRoute,
+} from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
+import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
-import { panAfterCut, viewportWindow } from "@/lib/audio/viewport";
+import {
+  effectivePan,
+  panAfterCut,
+  panForZoom,
+  viewportWindow,
+} from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
+import {
+  attemptsCapture,
+  classifyCapture,
+  planClose,
+  planPendingWork,
+  type CaptureOutcome,
+  type TailPlan,
+} from "@/lib/takes/close-plan";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -181,18 +206,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // open, so `"record"` is the open state with no reset effect needed. Edit is
     // entered deliberately from the record menu and is strictly idle.
     const [mode, setMode] = useState<"record" | "edit">("record");
-    // The VU strip is visible by default when the sheet opens (D-VU-DEFAULT); the
-    // menu toggles it. Per-session local state — there is no prefs layer to
-    // persist it across opens.
-    const [vuVisible, setVuVisible] = useState(true);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // Focus back to whatever opened an overlay, once the overlay is gone (#97).
+    // ONE pair for the ≡ menu and the erase confirm together, because they are
+    // one `inert` scope and they chain inside it — the Erase row closes the menu
+    // and opens the confirm in the same commit. See the capture in `openMenu`
+    // and the restore effect below `menuShown`.
+    const focusRestore = useFocusRestore();
 
     // `null` ⇒ resting at the end of the existing audio (append-ready, F7). A
     // derived rest, rather than a value set in an effect once `view` loads: the
     // sheet mounts fresh on every open, so `null` is the open state, and a drag
     // is what replaces it with an absolute sample position.
     const [panState, setPanState] = useState<number | null>(null);
+    // Where the zoom moved the view to keep an open selection on screen (#91).
+    // A VIEW value only — see `viewPan` below for why it must never be
+    // `panState`. Cleared when a selection opens (a fresh span has not been
+    // zoomed yet), when a drag takes the pan over, and on leaving edit.
+    const [zoomPan, setZoomPan] = useState<number | null>(null);
     const [zoom, setZoom] = useState(ZOOM_WHOLE);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -274,6 +306,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // tap would start a capture that the closing `leave()` then discards (a take
     // lost with no recovery screen).
     const [isClosing, setIsClosing] = useState(false);
+    /**
+     * Whether THIS close began with an active capture (recording, paused, or a
+     * #59 `processing` freeze) — as opposed to an edit-only or Finished-only
+     * close, which also sets `isClosing` true for the same commit-then-exit
+     * wait but never had a mic to show (Frank R-resume, round 3). Read
+     * alongside `isClosing`, never on its own: it is only meaningful while
+     * `isClosing` is true, and is left stale (harmlessly) between closes
+     * rather than reset on every `setIsClosing(false)`. Every site that flips
+     * `isClosing` to `true` sets this in the same synchronous block (batched
+     * into the same render as `isClosing`'s own update), never derived from a
+     * ref read at render time (`react-hooks/refs`).
+     */
+    const [captureClosing, setCaptureClosing] = useState(false);
     /**
      * The in-sheet preview of the paused take-so-far (#101): the decoded capture
      * spliced into `working` by `mergeTake` at the same `insertionOffset` `close()`
@@ -363,12 +408,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const displayedFinished =
       finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
-    // Clamp to the current length: an edit (a cut) can shorten `working` past a
-    // `panState` set before it, and a stale pan beyond the end would sit the record
-    // offset at the new end rather than where the translator was looking (George
-    // R4). `viewportWindow` also clamps `centerlineSample`, so drawing was already
-    // safe; this keeps the offset honest too.
-    const pan = Math.min(panState ?? length, length);
+    // Which pan is drawn — and, in record mode, spliced at. The gate that keeps
+    // the zoom's view fit out of the record insertion offset (the round-1 P1)
+    // lives in `effectivePan`, pure and table-tested, rather than as an
+    // expression here where nothing could reach it: the George stand-in showed
+    // that reintroducing the P1 at the setter left all 512 tests green. Its
+    // docblock carries the full reasoning, including the upper-only clamp, which
+    // is what a cut shortening `working` past an older `panState` needs.
+    const pan = effectivePan({
+      mode,
+      selectionActive: editor.selectionActive,
+      zoomPan,
+      panState,
+      length,
+    });
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
 
     // The prepared preview, shown on the stage across the whole take-in-flight
@@ -462,6 +515,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setPanState(
           Math.max(0, Math.min(panAtDragStart.current + delta, length))
         );
+        // A real drag is the translator choosing this view deliberately, so the
+        // pan becomes the REAL one — insertion offset included — and the zoom's
+        // view-only fit is handed over rather than continuing to override it.
+        // `panAtDragStart` was captured from the DRAWN pan, so the value written
+        // above continues from where the waveform already was and the handover is
+        // seamless. Done on the first MOVE rather than on pointerdown: a bare tap
+        // on the stage is not a pan and must not adopt a view fit as the splice
+        // point.
+        setZoomPan(null);
       },
       [
         dragging,
@@ -689,6 +751,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (closing.current) return;
       closing.current = true;
       setIsClosing(true);
+      // The guard above already proved `recording || paused` to reach here.
+      setCaptureClosing(true);
       // Abort any in-flight preview decode, then drop the preview's PCM but keep its
       // peaks on stage through the commit — exactly the pair `close()` runs, so a
       // first take does not blank while it saves.
@@ -698,7 +762,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       );
       void (async () => {
         const result = await audio.stopRecording();
-        if (result.samples && result.samples.length > 0) {
+        // The SAME four-way reading of a stop result `close()` takes, by calling
+        // the same function rather than by a comment claiming the two agree
+        // (#180). What each verdict MEANS here is different — this path stays and
+        // opens edit mode where `close()` exits — but which verdict it is must
+        // never differ, and the precedence (samples, then kept bytes, then the
+        // error) is the part that was lost once.
+        const verdict = classifyCapture({
+          samples: result.samples,
+          bytes: result.blob,
+          error: result.error,
+        });
+        if (verdict.kind === "take") {
           // Splice the take into the WORKING buffer at the locked offset, exactly
           // as `close()` does; the mark rides the take through `addTake`. UNLIKE
           // `close()`, whose next step is always onExit, this path means to STAY
@@ -713,15 +788,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           const saved = await saveRecording(
             segmentId,
             editor.working,
-            result.samples,
+            verdict.samples,
             insertionOffset.current,
             finishedIntent === true
           );
           dirty.current = true;
           if (!saved) {
             // Take the SAME exit `close()`'s capture path takes: it always reaches
-            // `onExit(dirty)` after the save (`commitPendingAndExit` with
-            // `committed`), so App clears `recorder` and the recovery screen owns
+            // `onExit(dirty)` after the save (`executeTail`, once the take is
+            // committed), so App clears `recorder` and the recovery screen owns
             // the body with nothing mounted behind it. Do NOT enter edit mode.
             onExit(dirty.current);
             return;
@@ -762,23 +837,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           setMode("edit");
           return;
         }
-        // No usable audio. Mirror close()'s precedence exactly (:1063): a decode
-        // failure whose captured bytes survived (#165/#106) is the take's ONLY
-        // copy — HOLD it and hand the body to the recovery panel, checked BEFORE
-        // the plain error Notice so a superseded stop (blob kept, error withheld)
-        // cannot fall through and silently drop it. Only an empty/silent capture
-        // (blob-less, error set) stays in record mode to retry. Either way, do NOT
-        // enter edit mode.
-        if (result.blob) {
-          // The decode FAILED (or a leave() superseded the stop) but the bytes are
-          // the only copy of the take — exactly close()'s :1063 branch. Route to the
-          // recovery panel (re-decode on a fresh gesture, or share off-phone); do
-          // NOT onExit and do NOT enter edit mode. Retry/discard/share live there.
-          // Unlike close()'s identical branch, mark this recovery as Edit-initiated
-          // so a successful Try again reaches edit mode instead of exiting to
-          // Segments — the take was committed to be EDITED (#134), and the recovery
-          // is a detour, not a Back (George R3 P2 #1).
-          setHeldTake(result.blob);
+        // No usable audio. The classifier already applied close()'s precedence: a
+        // decode failure whose captured bytes survived (#165/#106) is the take's
+        // ONLY copy, so "hold" wins over "notice" and a superseded stop (bytes
+        // kept, error withheld) cannot fall through and silently drop it. Only an
+        // empty/silent capture is a "notice", and it stays in record mode to
+        // retry. Neither enters edit mode.
+        if (verdict.kind === "hold") {
+          // Route to the recovery panel (re-decode on a fresh gesture, or share
+          // off-phone); do NOT onExit and do NOT enter edit mode. Retry/discard/
+          // share live there. Unlike close()'s identical branch, mark this recovery
+          // as Edit-initiated so a successful Try again reaches edit mode instead
+          // of exiting to Segments — the take was committed to be EDITED (#134),
+          // and the recovery is a detour, not a Back (George R3 P2 #1).
+          setHeldTake(verdict.bytes);
           enterEditAfterRecover.current = true;
           setHeldShareError(null);
           setHeldRetryError(null);
@@ -788,8 +860,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           setIsClosing(false);
           return;
         }
-        if (result.error) {
-          setStopError(result.error);
+        if (verdict.kind === "notice") {
+          setStopError(verdict.error);
           cancelPreview();
         }
         closing.current = false;
@@ -834,18 +906,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // Open the ≡ menu. Stops buffer playback first: the menu is the one gateway to
     // every idle-time action reachable while a buffer sounds (Edit, Finished, VU,
-    // Erase), and opening it inerts the sheet — so Play, the only stop control,
-    // goes unreachable, and Erase locks a confirm behind that scrim (George R5).
+    // Erase), and opening it inerts the sheet AT IDLE — so Play, the only stop
+    // control, goes unreachable, and Erase locks a confirm behind that scrim
+    // (George R5). Mid-take the sheet is no longer inert (#75, the rule at the
+    // sheet `<div>`), so Play is reachable there and this stop is belt rather
+    // than the only exit; at idle — which is every path that reaches Erase or
+    // Edit — it is still the whole of the guarantee.
     // Stopping here closes that whole class at the boundary, like entering edit.
     // `abortPreview` extends it to an in-flight decode: without it, a decode that
     // resolves while the menu is up would start the preview behind the inert scrim
     // with no reachable stop (George R2 #1). It keeps a prepared preview so the
     // stage does not blank behind the menu and Play can replay it on close.
     const openMenu = useCallback(() => {
+      // Remember the ≡ that was tapped, HERE — synchronously, in the gesture's
+      // own handler (#97). One React commit later the sheet goes `inert`, which
+      // blurs this button to `<body>` in the mutation phase, before any effect
+      // could read it; #96's attempt captured that `body` and its restore was a
+      // silent no-op for every menu in the app.
+      focusRestore.capture();
       audio.stopBuffer();
       abortPreview();
       setMenuOpen(true);
-    }, [audio, abortPreview]);
+    }, [audio, abortPreview, focusRestore]);
 
     // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
     // row share this. Close any open selection AND reset zoom to whole: record
@@ -855,15 +937,46 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onExitEdit = useCallback(() => {
       editor.closeSelection();
       setZoom(ZOOM_WHOLE);
+      // The zoom's view pan is edit-only, exactly as the zoom itself is. The
+      // `viewPan` gate already makes it inert here (mode leaves "edit"), so this
+      // only drops a value that can no longer be read — but leaving it set would
+      // make the next edit session's behaviour depend on the last one's.
+      setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
     }, [editor]);
+
+    // Zoom, keeping the picked span on screen (#91).
+    //
+    // Changing the zoom alone shrinks the window around a pan that has nothing
+    // to do with the span being edited, so the selection walks off the viewport
+    // — the first external tester read that as the control acting on the
+    // selection rather than on the view. `panForZoom` answers where the pan has
+    // to be for the span to survive the change; the geometry is pure and lives
+    // in `lib/audio/viewport` with the rest of the window math, tested there.
+    //
+    // It writes `zoomPan`, never `panState`: this is a view fit, and `panState`
+    // is the record insertion offset (see `viewPan`). With no selection open
+    // there is nothing to keep in view and the pan is left alone entirely, so a
+    // plain zoom behaves exactly as it did before.
+    const onToggleZoom = useCallback(() => {
+      const next = zoom === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE;
+      const span = editor.selectionActive ? editor.selection : null;
+      if (span !== null) {
+        setZoomPan(panForZoom(length, pan, next, CENTER_FRACTION, span));
+      }
+      setZoom(next);
+    }, [zoom, editor.selectionActive, editor.selection, length, pan]);
 
     const onToggleSelection = useCallback(() => {
       if (editor.selectionActive) {
         editor.closeSelection();
         return;
       }
+      // A fresh span has not been zoomed yet, so drop any view pan a PREVIOUS
+      // selection's zoom left behind — otherwise re-opening a selection later
+      // would jump the view to where an earlier one had been fitted (#91).
+      setZoomPan(null);
       // Seed a grabbable span around the centerline (~30% of the visible window),
       // so the frame opens with handles under the finger rather than collapsed.
       const half = win.visibleSamples * 0.15;
@@ -883,6 +996,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       }
     }, [editor]);
 
+    // Paste at the drawn centerline — which is ALSO the record insertion offset,
+    // and that is not a coincidence to leave unstated (George stand-in P3).
+    //
+    // `win` is built from `effectivePan`, so with a selection open the line sits
+    // at the zoom's VIEW pan while `panState` is elsewhere. Pasting there would
+    // insert before the record offset and shift every later sample under it —
+    // and `panAfterCut` has no paste companion to correct for that, so the next
+    // take would splice wrong: the round-1 P1's consequence class, by a different
+    // route. It cannot happen today, because the only entry point is the paste
+    // marker below, which renders on `!editor.selectionActive` — the exact
+    // negation of the condition that makes the view pan live. So whenever this
+    // runs, `win.centerlineSample` IS the `panState` line.
+    //
+    // That safety is a render gate ~900 lines away, not a local property. A
+    // second paste entry point, or a "paste replaces the selection" feature,
+    // would flip it — and would have to take the pan from `panState` rather than
+    // from `win`.
     const onPaste = useCallback(() => {
       editor.paste(win.centerlineSample);
     }, [editor, win.centerlineSample]);
@@ -924,26 +1054,44 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       })();
     }, [erase, segmentId, onExit, audio]);
 
+    /**
+     * Reopen the sheet at idle with the reason in place, rather than exiting on
+     * audio that cannot be recorded again.
+     *
+     * Shared by every stay-open exit — a stop error, a failed clear, a failed
+     * finished write — which were three copies of the same four statements. It
+     * drops the kept preview so the stage reverts to `working` rather than a
+     * whole-clip preview with no insert line (George R4 #1).
+     */
+    const stayOpen = useCallback(
+      (reason: string) => {
+        setStopError(reason);
+        cancelPreview();
+        closing.current = false;
+        setIsClosing(false);
+      },
+      [cancelPreview]
+    );
+
     // The no-capture commit tail, shared by `close()` (when nothing was captured)
     // and `leaveHeldTake` (the recovery-panel exit). ONE path for both halves of
     // the session work an exit still owes — a pending B5 edit AND a pending
     // Finished toggle — so a recovery exit can never drop one of them again (the
     // root of the class George raised as R2 B-4, the edits half, and R4-G1, the
-    // flag half; Seth's round-5 direction). `committed`/`attemptedCapture` are
-    // threaded from the caller so the same `!committed && !attemptedCapture` gates
-    // hold; returns whether it exited (false keeps the sheet open on a write
-    // failure, with the reason in place).
-    const commitPendingAndExit = useCallback(
-      async (
-        committed: boolean,
-        attemptedCapture: boolean
-      ): Promise<boolean> => {
+    // flag half; Seth's round-5 direction).
+    //
+    // It no longer DECIDES which of them is owed: `planPendingWork` does, in
+    // `lib/takes/close-plan.ts`, enumerated in Node (#180). What is left here is
+    // the effects, and the `TailPlan` type is what keeps the two in step — the
+    // gates the callers used to thread in as `committed`/`attemptedCapture`
+    // booleans are now expressed by which plan they hand over. Returns whether
+    // it exited (false keeps the sheet open on a write failure, with the reason
+    // in place).
+    const executeTail = useCallback(
+      async (plan: TailPlan): Promise<boolean> => {
         try {
-          // An edit-only close (B5): cuts/pastes with no take committed. Gated on
-          // `!attemptedCapture` so a superseded capture stop abandons the session
-          // like B4 — persisting or clearing there is the George-R5 loss.
-          if (!committed && !attemptedCapture && editor.hasEdits) {
-            if (editor.workingLength === 0) {
+          switch (plan.action) {
+            case "clear": {
               // Cut down to nothing clears the take (no 0-frame ghost). A failed
               // clear must keep the sheet open with an in-place error — closing as
               // if the erase happened would leave the original on disk under a UI
@@ -954,48 +1102,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 false
               );
               if (!cleared) {
-                setStopError(strings.clearFailed);
-                cancelPreview();
-                closing.current = false;
-                setIsClosing(false);
+                stayOpen(strings.clearFailed);
                 return false;
               }
-            } else {
+              dirty.current = true;
+              break;
+            }
+            case "save-edit":
               // A non-empty edit replaces the audio through the same never-lose
               // machinery a recording uses (owned slot → App recovery on failure),
               // so its boolean is not branched on here. It demotes an approved
               // segment to draft unless re-marked, and the mark rides the write.
-              await saveEditedSegment(
-                segmentId,
-                editor.working,
-                finishedIntent === true
-              );
-            }
-            dirty.current = true;
-            committed = true;
-          }
-          // A toggle with no new take is a direct write — there is no take to carry
-          // it. Only when the translator actually changed it from the stored value,
-          // and only when nothing was committed (a commit already carried the mark).
-          if (
-            !committed &&
-            view &&
-            finishedIntent !== null &&
-            finishedIntent !== view.finished
-          ) {
-            try {
-              await setFinished(finishedIntent);
-            } catch (cause) {
-              // The store rejects a finished mark on a segment with no take — a
-              // take deleted externally between toggle and close. Surface it
-              // (F5-#1) rather than only the console, and stay open.
-              console.error("Could not change the finished flag", cause);
-              setStopError(strings.finishedWriteFailed);
-              cancelPreview();
-              closing.current = false;
-              setIsClosing(false);
-              return false;
-            }
+              await saveEditedSegment(segmentId, editor.working, plan.finished);
+              dirty.current = true;
+              break;
+            case "mark":
+              try {
+                await setFinished(plan.finished);
+              } catch (cause) {
+                // The store rejects a finished mark on a segment with no take — a
+                // take deleted externally between toggle and close. Surface it
+                // (F5-#1) rather than only the console, and stay open.
+                console.error("Could not change the finished flag", cause);
+                stayOpen(strings.finishedWriteFailed);
+                return false;
+              }
+              break;
+            case "close":
+              break;
           }
           onExit(dirty.current);
           return true;
@@ -1008,16 +1142,31 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           return true;
         }
       },
-      [
-        editor,
-        saveEditedSegment,
-        segmentId,
+      [editor, saveEditedSegment, segmentId, setFinished, stayOpen, onExit]
+    );
+
+    /**
+     * What this session still owes when no take is being committed — read at the
+     * moment of the exit, never from a stale closure.
+     *
+     * Both no-capture exits (`close()` from idle, and `leaveHeldTake`) build it
+     * the same way, so the pending edit and the pending toggle cannot be seen
+     * differently by the two of them.
+     */
+    const pendingWork = useCallback(
+      () => ({
+        hasEdits: editor.hasEdits,
+        workingLength: editor.workingLength,
         finishedIntent,
-        view,
-        setFinished,
-        cancelPreview,
-        onExit,
-      ]
+        storedFinished: view?.finished ?? null,
+        // What the STORE will accept a Finished mark on, not what the checkbox
+        // offered: `setSegmentFinished(true)` throws with no active take, and
+        // the sheet's only answer to that throw is to stay open with the box
+        // disabled. `hasClip` is the view-layer proxy (it follows the clip
+        // resolving, so a dangling take reads false — deliberately).
+        hasTake: view?.hasClip ?? false,
+      }),
+      [editor, finishedIntent, view]
     );
 
     const close = useCallback((): Promise<boolean> => {
@@ -1043,9 +1192,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (overlayBlocksClose(menuOpen, confirmOpen, erase.erasing)) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
-        // un-inerts the sheet (its `inert` is driven by `confirmOpen`), exposing
-        // Record, whose new capture the erase's `onExit` then discards. Let the
-        // erase's own completion tear the confirm down.
+        // un-inerts the sheet, exposing Record, whose new capture the erase's
+        // `onExit` then discards. Let the erase's own completion tear the confirm
+        // down. The sheet's gate is now `overlayUp && !takeActive` (#75), not
+        // `confirmOpen` alone — but `overlayUp` folds in `erase.erasing`, and an
+        // erase is only ever reachable at idle, so R4-1 still holds exactly.
         const dismiss = overlayDismissal(menuOpen, confirmOpen, erase.erasing);
         if (dismiss.closeMenu) setMenuOpen(false);
         if (dismiss.closeConfirm) setConfirmOpen(false);
@@ -1076,15 +1227,30 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // splice what it captured into the segment's audio. `stopRecording`
         // releases the mic and never rejects; `saveRecording` never rejects and
         // turns a failure into the recovery screen App renders.
-        let committed = false;
         // A take was in play at close (live, paused, or an interruption froze it to
         // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
         // generation mid-flush — returning no samples and no error. B4 just closed
-        // then, original intact. B5 must keep that: the edit-only block below must
-        // NOT run on a superseded capture, or a cut-to-empty would clear the
-        // original recording (gone) with the replacement never landed and the cut
-        // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
-        const attemptedCapture = recording || paused || state === "processing";
+        // then, original intact. B5 must keep that: a superseded capture must NOT
+        // persist the pending edits, or a cut-to-empty would clear the original
+        // recording (gone) with the replacement never landed and the cut audio only
+        // in RAM on the clipboard — unrecoverable field loss (George R5). That rule
+        // now lives in `planClose`, where it is enumerated rather than commented.
+        //
+        // `capture` null below means no capture was attempted, which is the same
+        // question `attemptsCapture(state)` answers — so the plan reads one input,
+        // not two that can disagree. `recording || paused || state === "processing"`
+        // was that predicate spelled out; `attemptsCapture` is the same three states,
+        // enumerated over the whole of `RecorderState` in `tests/close-plan.test.ts`.
+        const attemptedCapture = attemptsCapture(state);
+        // Still synchronous (no `await` above this line since `setIsClosing(true)`
+        // ran) — batched into the same render `isClosing`'s own update triggers.
+        // An edit-only or Finished-only close reaches this function too (Frank
+        // R-resume, round 3): without this, `liveScopeShown` could not tell that
+        // close apart from an append/first-take commit and would mount a
+        // `LiveScope` with nothing in its ring to paint — a blank canvas for the
+        // whole IndexedDB write.
+        setCaptureClosing(attemptedCapture);
+        let capture: CaptureOutcome<Blob> | null = null;
         if (attemptedCapture) {
           // Do NOT await the in-flight preview decode here. `stop()` steals the
           // chunks/stream/recorder into locals BEFORE its first await, which is what
@@ -1105,14 +1271,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
           );
           const result = await audio.stopRecording();
-          if (result.samples && result.samples.length > 0) {
+          capture = {
+            samples: result.samples,
+            bytes: result.blob,
+            error: result.error,
+          };
+        }
+        // Which of the exits this close takes is decided in ONE place, enumerated
+        // in `tests/close-plan.test.ts` (#180). At most one of save-take /
+        // save-edit / clear / mark happens: a committed take already carries the
+        // pending edits (its splice base is the edited buffer, Model A) and already
+        // carries the finished mark (applied atomically in `addTake`, so a separate
+        // write cannot be clobbered by the same close's demote-to-draft).
+        const plan = planClose({ capture, ...pendingWork() });
+        switch (plan.action) {
+          case "save-take":
             // The Finished mark rides the take (applied atomically in addTake, on
-            // this attempt or a retry). Only an EXPLICIT mark this session marks
-            // it finished; a re-record the translator did not mark stays a
-            // demote-to-draft. The boolean saveRecording returns is deliberately
-            // not branched on here: on a failure App shows the recovery screen and
-            // the mark is preserved in the held take, so close() has nothing left
-            // to decide.
+            // this attempt or a retry). The boolean saveRecording returns is
+            // deliberately not branched on here: on a failure App shows the recovery
+            // screen and the mark is preserved in the held take, so close() has
+            // nothing left to decide.
             // The splice base is the WORKING buffer, not the loaded clip: any
             // cut/paste this session came first (Model A) and must be part of what
             // the recording splices into. insertionOffset was captured against the
@@ -1120,26 +1298,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             await saveRecording(
               segmentId,
               editor.working,
-              result.samples,
+              plan.samples,
               insertionOffset.current,
-              finishedIntent === true
+              plan.finished
             );
             dirty.current = true;
-            committed = true;
-          } else if (result.blob) {
+            // A committed take owes nothing else, so the tail only has to exit —
+            // and it exits through the SAME `onExit(dirty)` every other path takes.
+            return executeTail({ action: "close" });
+          case "hold":
             // The decode FAILED but the captured bytes survive (#165) — the take
             // exists only here. Hold them and hand the body to the recovery panel
             // (re-decode on a fresh gesture, or share the bytes off the phone),
-            // never a bare Notice that drops the only copy. Checked BEFORE
-            // `result.error` so a SUPERSEDED stop — a leave()/pagehide bumped the
-            // generation mid-decode, so `error` is withheld but `blob` is now kept
-            // (George R1 G2) — holds its bytes instead of falling through to the
-            // silent close below. That interruption is the #106 case #165 exists to
-            // recover, and it was the one this panel never appeared on. Do NOT
-            // onExit: leave() would close silently on a take that cannot be recorded
-            // again. An empty or silent capture carries no blob and falls to the
-            // Notice below.
-            setHeldTake(result.blob);
+            // never a bare Notice that drops the only copy. Do NOT onExit: leave()
+            // would close silently on a take that cannot be recorded again.
+            setHeldTake(plan.bytes);
             // A Back-initiated recovery exits to Segments on a successful retry — the
             // opposite of onEnterEdit's. Stamp the discriminator false so a stale true
             // from an earlier Edit-commit recovery cannot redirect this one into edit
@@ -1155,7 +1328,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             closing.current = false;
             setIsClosing(false);
             return false;
-          } else if (result.error) {
+          case "stay":
             // The stop yielded no usable audio, no bytes worth keeping, AND has
             // something to say — an empty or silent capture. Its cause travels WITH
             // the result, not the async `error` state a render closure here would
@@ -1163,21 +1336,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // permission panel). A toolbar Notice (not the permission panel — this
             // is not a permission miss), and re-enable so Back or Record works. Do
             // NOT onExit.
-            setStopError(result.error);
-            cancelPreview();
-            closing.current = false;
-            setIsClosing(false);
+            stayOpen(plan.error);
             return false;
-          }
-          // else: no samples, no bytes, and no error — a superseded stop whose
-          // capture yielded nothing to keep (a cancel/leave landed during it).
-          // Nothing to save and nothing to say, so fall through and close, rather
-          // than dead-ending the sheet open (#59). An empty capture is NOT this
-          // branch — it returns the "No sound" error above and stays open to retry.
+          // Persist any pending edit and Finished flag, then exit — the shared
+          // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
+          // Spelled out rather than defaulted, so a new `ClosePlan` action cannot
+          // reach the tail silently: it would have no case, and the switch would
+          // stop satisfying the `Promise<boolean>` return.
+          case "clear":
+          case "save-edit":
+          case "mark":
+          case "close":
+            return executeTail(plan);
         }
-        // Persist any pending edit and Finished flag, then exit — the shared
-        // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
-        return commitPendingAndExit(committed, attemptedCapture);
       })().catch((cause: unknown) => {
         // Neither call rejects by contract; this is the last net on the one path
         // where a failure would cost a recording that cannot be made again.
@@ -1188,18 +1359,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         return true;
       });
     }, [
-      recording,
-      paused,
+      // `recording` and `paused` are gone from here: they are `state ===`
+      // derivations (see their declarations above), and `attemptsCapture(state)`
+      // now asks the same question of the one input they were derived from.
+      // Deliberately not a line number — this file moves under every recorder
+      // lane, and a stale citation is worse than none.
       state,
       audio,
       saveRecording,
       editor,
       segmentId,
       onExit,
-      finishedIntent,
       abortPreview,
       cancelPreview,
-      commitPendingAndExit,
+      pendingWork,
+      executeTail,
+      stayOpen,
       menuOpen,
       confirmOpen,
       erase.erasing,
@@ -1360,11 +1535,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       const file = new File([blob], `recording.${container.ext}`, {
         type: container.type,
       });
-      if (
-        typeof navigator.share !== "function" ||
-        (typeof navigator.canShare === "function" &&
-          !navigator.canShare({ files: [file] }))
-      ) {
+      // Same seam as Share Chapter / Share Book (#336): inside the Capacitor
+      // shell the WebView may expose no `navigator.share` at all, and this panel
+      // is the last-resort escape for bytes that would otherwise be lost (#165)
+      // — the one path that must not dead-end in the APK. The route is chosen
+      // synchronously, so the web branch below still calls `navigator.share`
+      // inside this gesture's activation; the native branch needs none (the
+      // chooser is started by the plugin, not the WebView).
+      const route = selectShareRoute(readShareEnvironment(), file);
+      if (route === "unsupported") {
         setHeldShareError(strings.takeShareUnavailable);
         return;
       }
@@ -1376,13 +1555,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // both settle arms.
       heldSharingRef.current = true;
       setHeldSharing(true);
-      void navigator.share({ files: [file] }).then(
+      // On native this stages the file into the cache and then opens the
+      // chooser; the panel shows `sharing` throughout, and Discard is blocked
+      // for the whole window (George R5 P1). An async IIFE runs to its first
+      // await, and on the web branch that IS `navigator.share`, so the tap's
+      // activation is intact there.
+      const handedOver = (async () => {
+        if (route !== "native") {
+          await navigator.share({ files: [file] });
+          return;
+        }
+        const staged = await nativeShare.stage(file);
+        await nativeShare.send(staged);
+      })();
+      void handedOver.then(
         () => {
           heldSharingRef.current = false;
           setHeldSharing(false);
           // Rescued off the phone. Offer a Done exit even though the decode never
           // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
-          setHeldShared(true);
+          //
+          // ONLY where the resolve proves it, which on the native route it does
+          // not (George stand-in R4 P2, see `resolveProvesDelivery`): a chooser
+          // dismissed with Back after the activity stopped resolves as success,
+          // and `Done` is a SINGLE tap that drops the only copy of this
+          // recording. So on native the panel stays "held", the two-tap Discard
+          // stays the only exit, and the share sheet itself was the feedback.
+          // Losing an exit is recoverable; losing the take is not.
+          setHeldShared(resolveProvesDelivery(route));
           setHeldShareError(null);
         },
         (cause: unknown) => {
@@ -1409,8 +1609,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // guard blocks the window a re-decode is mid-flight.
     const leaveHeldTake = useCallback(() => {
       // The synchronous double-close latch, mirroring `close()` — a second tap
-      // during the commit must not run the tail twice.
-      if (heldRetryingRef.current || closing.current) return;
+      // during the commit must not run the tail twice — plus the busy gate the
+      // panel's Discard control renders from (George R5 P1). `sharing` joined it
+      // because a native share writes the file to cache BEFORE the chooser
+      // opens: seconds of awaits with this panel live, in which two taps used to
+      // destroy the only copy of the take mid-write.
+      if (
+        heldTakeIsBusy({
+          retrying: heldRetryingRef.current,
+          sharing: heldSharingRef.current,
+        }) ||
+        closing.current
+      )
+        return;
       // Drop the failed-decode take, then run the SAME no-capture tail `close()`
       // runs (Seth's round-5 root fix for R4-G1). It commits BOTH halves the exit
       // still owes — a pending B5 edit AND a pending Finished toggle — then exits;
@@ -1425,8 +1636,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       enterEditAfterRecover.current = false;
       closing.current = true;
       setIsClosing(true);
-      void commitPendingAndExit(false, false);
-    }, [commitPendingAndExit]);
+      // The comment above is literal: this runs the SAME no-capture tail as an
+      // edit-only close. The capture that produced `heldTake` already stopped
+      // (and failed to decode) before this ran; `heldTake` clearing to `null`
+      // here is what lets the ordinary recorder-stage (and `liveScopeShown`)
+      // render again underneath, so it must not be told a capture is live.
+      setCaptureClosing(false);
+      void executeTail(planPendingWork(pendingWork()));
+    }, [executeTail, pendingWork]);
 
     // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
     // user is not stranded on the now-`inert` list behind the modal. Mount-only —
@@ -1512,10 +1729,102 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // nothing dismissed it. That left the panel (and its Retry) inert behind the
     // scrim, with Edit greyed and no reason and Mark naming the wrong blocker, on
     // exactly the screen #135 exists to fix (George, round 4). Deriving the menu's
-    // open state kills the frame rather than reacting a frame later, and the effect
+    // open state kills the frame rather than reacting a frame later, and
     // `onRetryRecord` drops the latch, so a Retry that succeeds cannot resurrect a
     // drawer the translator never re-opened.
     const menuShown = menuOpen && !denied;
+
+    // …and DROP the latch on the denied edge, rather than only masking it
+    // (#151). Masking alone leaves a live `menuOpen` that anything clearing the
+    // mic error un-hides, and one thing does: `pagehide` → `use-audio-session`'s
+    // `leave()` (:682) → `cancelRecording()` → `use-recorder`'s `cancel()` →
+    // `setError(null)` (:956) → `micError` false → `denied` false → `menuShown`
+    // true again. Returning to the page then shows the ≡ drawer over an idle,
+    // empty segment that nobody opened. The two exits that DO drop the latch —
+    // Retry (`onRetryRecord`) and Back (which unmounts the keyed sheet) — are
+    // not on that path.
+    //
+    // Adjusted during render, the pattern React documents for deriving state
+    // from a changed input, NOT in an effect: this repo's ESLint refuses
+    // `setState` inside an effect ("cascading renders"), which is what pushed
+    // #139 into the Retry handler in the first place. It also kills the frame
+    // instead of reacting a frame later, exactly as `menuShown` above does.
+    // `denied` is true from the first render on a device with no MediaRecorder,
+    // and `prevDenied` seeds from it, so an unsupported device sees no edge.
+    const [prevDenied, setPrevDenied] = useState(denied);
+    if (denied !== prevDenied) {
+      setPrevDenied(denied);
+      if (denied) setMenuOpen(false);
+    }
+
+    // Any overlay owns the screen: the ≡ menu, the erase confirm, or the erase
+    // itself still committing after the confirm flag was cleared out from under
+    // it. One flag, because these chain within a single `inert` scope and both
+    // the inert gate below and the focus restore have to see the CHAIN, not the
+    // individual dialogs.
+    const overlayUp = menuShown || confirmOpen || erase.erasing;
+
+    // Put focus back where the overlay took it from, AFTER `inert` has lifted
+    // (#97). A layout effect, not the close handler and not a passive one: React
+    // removes the `inert` attribute in the mutation phase, layout effects run
+    // straight after that, and an element in an inert subtree cannot take focus
+    // — so a `.focus()` any earlier is dead code, the exact shape
+    // `docs/progress_tracker.md` warns about and #364 shipped again today.
+    //
+    // Keyed on `overlayUp`, so the menu → confirm chain restores ONCE, to the ≡
+    // that started it. `restore` is a no-op with nothing captured, so the
+    // re-runs the other dependencies cause are harmless.
+    //
+    // `suppressed` when a full-body panel owns the screen: each `autoFocus`es
+    // its own control in the same commit, and stealing that back would strand a
+    // screen-reader user off the Retry they were just handed. The capture is
+    // consumed either way, so it can never fire late.
+    const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
+    useLayoutEffect(() => {
+      if (overlayUp) return;
+      // HOLD the capture through the commit window rather than spending it
+      // (George R1 P1 residual). Mid-commit the header's right-hand control is
+      // `disabled` and the mode may be about to flip, so there is no stable
+      // landing yet; an early return leaves the capture untouched and this
+      // effect runs again when `isClosing` clears. Distinct from `suppressed`,
+      // which CONSUMES because somebody else has taken focus for good.
+      if (isClosing) return;
+      focusRestore.restore({
+        suppressed: panelOwnsFocus,
+        // The overlay-close landmark is the "More actions" (≡) control itself
+        // — deliberately NOT the sheet's first focusable, which is Back
+        // (George R1 P1), and NOT "the header's last button" either (George R5
+        // P2): that was correct in record mode, where the header's right-hand
+        // control IS the ≡, but wrong in edit mode, where that slot is the
+        // "Editing" pill — a control that EXITS edit mode. Landing overlay-
+        // close focus there would arm the very next Space/Enter/switch-
+        // activate to leave, the #97 hazard on the ordinary Edit row.
+        //
+        // The ≡ is safe in every mode: it reopens the very overlay that just
+        // closed, and this app renders it under the same accessible name in
+        // both places it lives (the header in record mode, the toolbar in
+        // edit mode). `overlayFallbackLabel` (`lib/a11y/focus-restore.ts`)
+        // picks it by that name, never by position, so it can only ever
+        // resolve to the ≡ or to nothing — never to Back or the pill.
+        fallback: (() => {
+          const sheet = sheetRef.current;
+          if (!sheet) return null;
+          const buttons = Array.from(
+            sheet.querySelectorAll<HTMLElement>("button")
+          );
+          const labels = buttons.map(
+            (button) => button.getAttribute("aria-label") ?? ""
+          );
+          const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
+          if (target === null) return null;
+          return (
+            buttons.find(
+              (button) => button.getAttribute("aria-label") === target
+            ) ?? null
+          );
+        })(),
+      });
+    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore]);
 
     const markReason = markRowReason({
       hasView: view !== null,
@@ -1524,22 +1833,111 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       canFinish: finishedState !== "disabled",
     });
 
+    // Whether the record stage's `LiveScope` branch is what's mounted below —
+    // named once so the ternary reads as a decision, not an inline predicate.
+    const liveScope = liveScopeShown({
+      recording,
+      paused,
+      processing: state === "processing",
+      // `isClosing` alone is not enough (Frank R-resume round 3): it is also
+      // true for an edit-only or Finished-only close, which never had a mic to
+      // show. `captureClosing` narrows it to the close that actually followed
+      // a capture — see its own docblock above.
+      isClosing: isClosing && captureClosing,
+      hasAudio,
+      meterFailed: audio.meterFailed,
+      previewShown: previewShown !== null,
+    });
+
     return (
       <div className="recorder-scrim" role="dialog" aria-modal="true">
-        {/* `inert` the sheet while the menu is open. Nested aria-modal dialogs do
-          not reliably hide the background for AT/switch users — G8 already
-          refused to trust that on the Segments list — so without this an AT user
-          could reach the covered Record while the menu is up and mutate the
-          splice base under a Redo (George R4). `erase.erasing` is folded in
-          alongside `confirmOpen` so the sheet stays inert across the whole erase
-          even if the confirm flag is cleared out from under it — Record must never
-          be tappable while a delete runs (Frank R4-1). */}
+        {/* THE INERT RULE (#75). An overlay inerts the sheet because nested
+          aria-modal dialogs do not reliably hide the background for AT/switch
+          users — G8 already refused to trust that on the Segments list — and
+          without it an AT user could reach the covered Record while the menu is
+          up and mutate the splice base under a Redo (George R4). `erase.erasing`
+          is folded in alongside `confirmOpen` so the sheet stays inert across
+          the whole erase even if the confirm flag is cleared out from under it
+          (Frank R4-1).
+
+          But an overlay never inerts the transport of a take that is ALREADY
+          RUNNING. A translator mid-take must be able to stop the capture, and a
+          drawer they opened for the level strip is not a reason to take that
+          away. Hence `&& !takeActive` here — plus the HEADER's own `inert`
+          below, which holds under any overlay and is what keeps the exemption
+          down to the transport rather than the whole sheet (George R2 P2).
+
+          The header is excluded because of its Back, whose accessible name is
+          "Close recorder" — and while an overlay is up `close()` does not close
+          the recorder: `overlayBlocksClose` makes it dismiss the overlay and
+          resolve false (:1136). Mid-take, with the sheet no longer inert, that
+          control would be newly reachable to AT under a name that promises a
+          save it will not perform, so a translator who activated it to stop and
+          save would leave the mic hot believing they had stopped. That is the
+          #97 hazard with the sign flipped — Back SAVING when it should not,
+          versus Back announcing a save it does not do — and the spoken name is
+          the contract, not this comment. The menu's own Close is the correctly
+          named dismiss, and it is right there. The ≡ goes inert with it: it is
+          in the header, and re-opening an already-open menu is a no-op.
+
+          What is exempt is therefore exactly Record/Pause and Play — and it is
+          a scoping, not a hole, because of what `takeActive` implies here:
+
+          - `overlayUp && takeActive` can only be the ≡ menu in RECORD mode. The
+            edit-mode opener is `disabled` on `isClosing`, and the Erase row
+            (the only door to the confirm) is `disabled` on `takeActive`.
+          - A take cannot START under an overlay: the confirm and the menu are
+            only reachable at idle or mid-take, and at idle this gate is still
+            inert, so Record is unreachable and `takeActive` cannot flip true.
+            The exception is a fixed point, not a race.
+          - What that leaves live behind the scrim is the transport and nothing
+            else: Record/Pause and Play. Every buffer mutator is out of reach
+            anyway — the paste marker, Cut, Select, Undo/Redo and the selection
+            handles all require `idleEditable` or edit mode, both false while a
+            take is live — and the header is inert in its own right.
+          - Play mid-take is the paused preview, and it is its own stop: this is
+            the one case George R5's "Play goes unreachable behind the scrim"
+            does not apply to, and `openMenu` still stops playback for the idle
+            case that it does.
+          - Back is NOT live: see the header's own gate above. The system Back
+            still reaches `close()` through the imperative handle and still
+            dismisses the overlay there (:1136) — that path is unchanged, and it
+            carries no misleading name because it is a gesture, not a control.
+
+          WHAT THIS ACTUALLY REACHES, stated narrowly because the first draft of
+          this comment overclaimed it (George R1 P2). `inert` governs the
+          accessibility tree and the focus/pointer tree, so what the exemption
+          restores is the AT path: VoiceOver's rotor and swipe, and a switch
+          device that scans the a11y tree, can reach Pause again. It does NOT
+          restore the other two:
+
+          - TOUCH is owned by the scrim, not by `inert`. `.menu-scrim` is
+            `position: fixed; inset: 0; z-index: 80` (`3-components.css:295`),
+            so a finger anywhere outside the panel lands on it and dismisses the
+            menu — the extra gesture #75 describes, unchanged.
+          - TAB is owned by `Menu`'s focus trap (`menu.tsx:121`), which wraps Tab
+            inside the panel on the premise that nothing behind it is reachable.
+            That premise is now false mid-take, but the trap is unchanged, so a
+            keyboard or Tab-driven switch user still cannot Tab to Pause. Escape
+            (or Close menu), then Pause, is their path — one keystroke, not a
+            deadlock. Letting Tab leave the panel mid-take, or putting the
+            transport in the menu, is tracked in #369; it changes a shared
+            component and does not belong in this lane. */}
         <div
           ref={sheetRef}
           className="recorder-sheet mx-auto max-w-md"
-          inert={menuShown || confirmOpen || erase.erasing || undefined}
+          inert={(overlayUp && !takeActive) || undefined}
         >
-          <header className="flex items-center gap-[8px] px-[4px] py-[2px]">
+          {/* The other half of the rule above: the header is inert under ANY
+            overlay, `takeActive` or not, so the transport exemption cannot
+            expose a Back whose name ("Close recorder") is not what `close()`
+            would do while an overlay is up (George R2 P2). Redundant at idle,
+            where the sheet is already inert — deliberately so: this gate states
+            the header's own invariant rather than depending on the sheet's. */}
+          <header
+            className="flex items-center gap-[8px] px-[4px] py-[2px]"
+            inert={overlayUp || undefined}
+          >
             <Control
               icon="back"
               label={strings.closeRecorder}
@@ -1567,8 +1965,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             {mode === "record" ? (
               // The menu opener lives in the header in record mode (the toolbar is
               // just the Record + Play pair). Same gate the old toolbar opener
-              // used — reachable mid-take for the VU toggle, blocked only through
-              // the close window.
+              // used — reachable mid-take (Edit commits-then-edits a live/paused
+              // take, #134), blocked only through the close window.
               <Control
                 icon="menu"
                 label={strings.recorderMenuOpen}
@@ -1709,27 +2107,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
                 >
-                  {(recording ||
-                    paused ||
-                    state === "processing" ||
-                    isClosing) &&
-                  !audio.meterFailed &&
-                  !hasAudio &&
-                  !previewShown ? (
-                    // A FIRST take with a working tap: the dedicated live scope
-                    // grows from the head and scrolls R→L (#120), sidestepping
-                    // Waveform's `!recorded` dotted rule. It stays mounted for the
-                    // WHOLE take-in-flight window — recording, paused, processing,
-                    // AND the F8 close (`isClosing`, the stop→decode→save wait,
-                    // where `stop()` has already flipped state to idle but the PCM
-                    // is not in `working` yet, so `hasAudio` is still false). That
-                    // whole predicate is `takeActive && state !== "requesting"`:
-                    // without `isClosing` the frozen take snapped back to the empty
-                    // dotted rule for the multi-MB IndexedDB write and read as
-                    // discarded (George R2/R4). `active` goes false off "recording"
-                    // (pause/processing/close), freezing the last frame (R-B6). A
-                    // punch-in/append (`hasAudio`) keeps Waveform instead, so the
-                    // existing clip and the #110 insert centerline stay visible.
+                  {liveScope ? (
+                    // The dedicated live scope drives the stage while a take is
+                    // ACTIVELY in flight (no preview up) — `liveScopeShown`
+                    // (recorder-stage.ts) owns the rule, including the #283 append
+                    // case (a 2nd take now grows live instead of waiting for
+                    // re-entry). It grows from the head and scrolls R→L (#120),
+                    // sidestepping Waveform's `!recorded` dotted rule. `active`
+                    // goes false off "recording" (pause/processing/close),
+                    // freezing the last frame (R-B6).
                     <LiveScope
                       readScope={audio.readScope}
                       peekScope={audio.peekScope}
@@ -1739,10 +2125,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       label={strings.liveWaveform}
                     />
                   ) : (
-                    // Idle / edit / playback, a punch-in/append capture, and the
-                    // tap-failed fallback: `capturing` keeps the #110 record
-                    // centerline over the existing audio (or the dotted first-take
-                    // rule when the tap failed), not a blank stage (George R1/R2).
+                    // Idle / edit / playback, a prepared preview (first take OR
+                    // append), and the tap-failed fallback. A preview ALWAYS wins
+                    // the stage over the live scope (George R-resume round 2):
+                    // `#101` Play-while-paused sounds the merged buffer regardless
+                    // of `hasAudio`, so it must be drawn here — with a working
+                    // playhead — not left silently behind a frozen live ring. A
+                    // live take-in-flight otherwise is NOT here anymore for either
+                    // a first take or an append (#283). `capturing` keeps the #110
+                    // record centerline over the existing audio (or the dotted
+                    // first-take rule when the tap failed), not a blank stage
+                    // (George R1/R2).
                     <Waveform
                       // The paused-take preview draws its own peaks over the whole
                       // buffer (#101); everything else shows the working buffer's.
@@ -1755,6 +2148,57 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       height={200}
                       recorded={hasAudio || previewShown !== null}
                       capturing={recording || paused}
+                      // The #358 display fit is suppressed only for a take with
+                      // nothing committed behind it — the paused first take
+                      // whose decoded preview replaces `LiveScope` above. A
+                      // punch-in (`hasAudio`) reaches THIS branch only via the
+                      // tap-failed fallback, an idle view, or its own Pause+Play
+                      // preview (below) — its live recording is on `LiveScope`
+                      // now (#283) — and in every one of those cases it draws
+                      // the STORED/merged clip fitted, since `working` does not
+                      // grow until the splice at close (George R2 P2). The rule
+                      // itself is pure and table-tested in
+                      // `lib/audio/display-gain.ts`, not spelled out here.
+                      //
+                      // `takeActive`, NOT `recording || paused` (George R3 #2 —
+                      // the re-run, a distinct finding from the fitFrom fix
+                      // above). `previewShown` and `LiveScope`'s mount window are
+                      // both gated on the WHOLE take-in-flight span — recording,
+                      // paused, `processing` (#59), and the `isClosing` F8
+                      // stop→decode→save wait, during which `stop()` has already
+                      // flipped `state` to idle. Gating this flag on
+                      // `recording || paused` alone let it go false the moment
+                      // Back was tapped on a paused first-take preview: the same
+                      // peaks stayed on stage (`previewShown` is still set) but
+                      // suddenly read as fitted, jumping the preview from thin to
+                      // full height under the Saving notice — the exact
+                      // quiet-mic-looks-healthy failure this flag exists to
+                      // prevent, on the one window it was built for.
+                      // `hasAudio` still gates the punch-in case unchanged: once
+                      // there is committed audio, `isFirstTakeInFlight` is false
+                      // regardless of `takeActive`, so George R2 P2 stands. An
+                      // append's own Pause+Play preview is deliberately included
+                      // in that "committed audio" case too (George R-resume round
+                      // 2): it draws FITTED to the committed clip's own gain via
+                      // `fitFrom` below, not absolute — the scale change from the
+                      // `LiveScope` it replaces is an intentional consequence of
+                      // an explicit Play tap (reviewing the take), not the
+                      // involuntary "did I lose it" edge this flag prevents.
+                      firstTakeInFlight={isFirstTakeInFlight(
+                        takeActive,
+                        hasAudio
+                      )}
+                      // Fit to the COMMITTED clip always, even on the punch-in
+                      // Pause+Play branch above where `peaks` switches to
+                      // `previewShown.peaks` (the merged buffer, insert
+                      // included). Without this the gain re-derives from
+                      // whatever the insert's level happens to be, and a louder
+                      // insert shrinks the stored speech that filled the lane a
+                      // moment earlier — then Resume, which clears the preview,
+                      // pops it back (George R3 P2). When there is no preview
+                      // this is the same array as `peaks`, so idle and a first
+                      // take are unaffected.
+                      fitFrom={editor.peaks}
                       playing={wholeView}
                       view={waveView}
                     />
@@ -1763,7 +2207,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     polls `readPlaybackElapsed` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
                     inert list behind it. Mounted always; it hides itself when
-                    nothing is sounding. */}
+                    nothing is sounding. Its fractions read `waveView`, which
+                    switches to the whole merged-preview buffer the moment one is
+                    prepared (`wholeView`) — correct here because a preview always
+                    puts `Waveform` on stage (above), never `LiveScope`, so this
+                    overlay's coordinate system always matches what is drawn
+                    underneath it (George R-resume round 2). */}
                   <PlayheadOverlay
                     readElapsedMs={audio.readPlaybackElapsed}
                     active={audio.playingBuffer}
@@ -1839,12 +2288,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 )}
               </div>
 
-              {mode === "record" && vuVisible && (
-                // Under the waveform (mockup 3), visible by default. Record-mode
-                // only — no mic take can exist in edit mode. `active` gates
-                // its own rAF loop, so it only animates while a take is live and
-                // rests empty otherwise — the sheet never re-renders per frame
-                // (D-LEVEL-PULL: it polls `audio.readLevel` on its own clock).
+              {mode === "record" && (
+                // Under the waveform (mockup 3), unconditional in record mode —
+                // the menu row that used to hide it is gone (#286: "until we
+                // have an input level control, it's just confusing" was the
+                // control, not the strip). Record-mode only — no mic take can
+                // exist in edit mode. `active` gates its own rAF loop, so it
+                // only animates while a take is live and rests empty otherwise —
+                // the sheet never re-renders per frame (D-LEVEL-PULL: it polls
+                // `audio.readLevel` on its own clock).
                 <div className="px-[16px]">
                   <VuMeter
                     readLevel={audio.readLevel}
@@ -1915,19 +2367,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // here (out of the menu); the menu opener lives at the end.
                 <div className="recorder-toolbar edit flex items-center px-[16px]">
                   <Control
+                    // The magnifier carries the ACTION (+ widens, − narrows) and
+                    // `pressed` carries the STATE — quarter view is the non-
+                    // default one, so that is the "on". Splitting the two is the
+                    // #91 fix: the old facing-arrow pair asked one glyph to do
+                    // both, and the first external tester read it the other way
+                    // round and asked whether the icons were reversed.
                     icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
                       zoom === ZOOM_WHOLE
-                        ? strings.zoomQuarter
-                        : strings.zoomWhole
+                        ? strings.zoomAtWhole
+                        : strings.zoomAtQuarter
                     }
+                    pressed={zoom === ZOOM_QUARTER}
                     variant="quiet"
                     size={24}
-                    onClick={() =>
-                      setZoom((z) =>
-                        z === ZOOM_WHOLE ? ZOOM_QUARTER : ZOOM_WHOLE
-                      )
-                    }
+                    onClick={onToggleZoom}
                   />
                   <Control
                     icon="selection"
@@ -2034,25 +2489,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 onClick={onToggleFinished}
               />
               <Control
-                icon={vuVisible ? "eye-off" : "eye"}
-                label={vuVisible ? strings.vuHide : strings.vuShow}
-                variant="quiet"
-                // Close the menu so the change to the strip behind it is visible.
-                onClick={() => {
-                  setVuVisible((v) => !v);
-                  setMenuOpen(false);
-                }}
-              />
-              <Control
                 icon="trash"
                 label={strings.eraseSegment}
                 variant="quiet"
                 // Only when there is stored audio to erase (a first, uncommitted
                 // recording has nothing on disk yet) AND only at idle: erasing the
                 // stored take out from under a live capture is nonsensical, and the
-                // menu opener is reachable mid-take for the VU toggle, so this
-                // entry must refuse there itself (George R-B6). Gate + reason from
-                // `eraseRowReason` (#135).
+                // menu opener stays reachable mid-take (Edit commits-then-edits a
+                // live/paused take, #134), so this entry must refuse there itself
+                // (George R-B6). Gate + reason from `eraseRowReason` (#135).
                 disabled={eraseReason !== null}
                 hint={rowHint(eraseReason)}
                 onClick={() => {
@@ -2256,7 +2701,11 @@ function SaveDecodeFailedPanel({
   // — the same care `SaveFailed` takes. There is no attempt count here, so the
   // retry handler disarms.
   const [armed, setArmed] = useState(false);
-  const showArmed = armed && !retrying;
+  // Any operation holding the take disarms the confirmation and blocks Discard —
+  // the same predicate the exit guard reads, so the control and the guard cannot
+  // fall out of step (George R5 P1).
+  const busy = heldTakeIsBusy({ retrying, sharing });
+  const showArmed = armed && !busy;
   return (
     <div
       role="alert"
@@ -2294,17 +2743,32 @@ function SaveDecodeFailedPanel({
       ) : null}
       <Control
         icon="share"
-        label={strings.takeRecoverShare}
+        label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt
         // the shared context the retry just resumed.
         disabled={retrying}
+        // State in place, because on the native route the chooser does NOT open
+        // in this gesture — the file is written to cache first, which on a long
+        // take is seconds of nothing (George R5 P1). Without this the panel looks
+        // untouched and the translator reaches for Discard.
+        busy={sharing}
         onClick={() => {
           setArmed(false);
           onShare();
         }}
       />
-      {shareError ? <Notice>{shareError}</Notice> : null}
+      {/* The busy Notice, not just the relabelled control (George R6 P2):
+          `Control` is icon-only, so its `label` is the accessible name and
+          never paints. Without this the panel's only visible change during the
+          native cache write — seconds on a long take — is that Try again and
+          Discard go dim, which reads as a broken screen rather than as work in
+          flight. Same shape Try again above already uses. */}
+      {sharing ? (
+        <Notice tone="busy">{strings.takeRecoverSharing}</Notice>
+      ) : shareError ? (
+        <Notice>{shareError}</Notice>
+      ) : null}
       {shared ? (
         <>
           <Notice tone="info">{strings.takeRecoverShared}</Notice>
@@ -2327,7 +2791,7 @@ function SaveDecodeFailedPanel({
           }
           variant="quiet"
           className={showArmed ? "text-[var(--s-live)]" : undefined}
-          disabled={retrying}
+          disabled={busy}
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (

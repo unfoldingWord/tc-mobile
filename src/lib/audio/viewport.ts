@@ -113,6 +113,57 @@ export function sampleToViewportX(
   return ((sample - win.start) / win.visibleSamples) * width;
 }
 
+/** The recorder's two surfaces. Kept as a literal union rather than imported:
+ *  `lib/` never reaches upward, and a third mode would fail to compile at the
+ *  call site, so the two cannot drift apart silently. */
+type RecorderMode = "record" | "edit";
+
+export interface EffectivePanInputs {
+  readonly mode: RecorderMode;
+  /** The B5 selection frame is open. */
+  readonly selectionActive: boolean;
+  /** Where the zoom moved the VIEW to keep that selection on screen (#91). */
+  readonly zoomPan: number | null;
+  /** The real pan — also the record insertion offset. `null` is the append rest. */
+  readonly panState: number | null;
+  /** The working buffer's length. */
+  readonly length: number;
+}
+
+/**
+ * Which pan the recorder draws through — and, in record mode, splices at.
+ *
+ * **This is the round-1 P1's guarantee, made readable.** `panState` is not only
+ * a view value: `null` is the append rest, and the sample under the centerline
+ * is what `onRecordButton` locks in as a take's insertion offset. The zoom's
+ * view fit (`zoomPan`) therefore must never become it, or a zoom taken with a
+ * selection open would move where the next recording splices — silently, since
+ * the centerline does not travel.
+ *
+ * So the view pan is consulted **only** in edit mode with a selection open, and
+ * both terms are independent guards rather than one restated twice: the mode
+ * term holds even if a future path leaves a selection open on the way back to
+ * record, and the selection term holds even if the mode is wrong. In record mode
+ * `zoomPan` is not read at all, whatever it holds.
+ *
+ * Lifted out of the component so that separation can be tested: it is a pure
+ * function of five values, and inside `recorder.tsx` nothing could reach it. It
+ * pins the READER half only — that the record path ignores the view pan. The
+ * WRITER half (that the zoom writes `zoomPan` and not `panState`) is still
+ * structural and untested: a node-only suite with no renderer cannot observe
+ * which setter a handler called. See the round-3 triage on #346.
+ *
+ * The fallback chain is deliberately nullish, not falsy: a pan of exactly 0 is
+ * the start of the clip and must survive, where `||` would replace it with the
+ * end. Only the UPPER bound is clamped, matching what this replaced — a cut can
+ * shorten the buffer past a pan set before it, while no writer produces a
+ * negative (the drag clamps at 0, and so does `panForZoom`).
+ */
+export function effectivePan(i: EffectivePanInputs): number {
+  const viewPan = i.mode === "edit" && i.selectionActive ? i.zoomPan : null;
+  return Math.min(viewPan ?? i.panState ?? i.length, i.length);
+}
+
 /**
  * Where an absolute pan sits after `range` is cut from the buffer.
  *
@@ -120,15 +171,112 @@ export function sampleToViewportX(
  * shifts that sample left, or the line would silently come to mark a later point
  * in the speech and a record would splice there (George R5). Subtract only the
  * removed samples that lay before the pan: a cut entirely after the line leaves
- * it, and a cut straddling it lands the line at the cut's start. A paste needs no
- * companion because it always inserts AT the centerline (`at === pan`), which
- * pushes only the audio to the line's right.
+ * it, and a cut straddling it lands the line at the cut's start.
+ *
+ * A paste needs no companion — but the reason is now CONDITIONAL, and the
+ * condition is not local to this file (George stand-in P3). It holds because
+ * paste inserts at the centerline (`at === pan`), pushing only the audio to the
+ * line's right — and the centerline is the pan only while `effectivePan` is
+ * returning `panState`, i.e. while no selection is open. The recorder's paste
+ * marker renders on exactly that condition, so today `at === pan` is always
+ * true. A paste reachable WITH a selection open would paste at the view pan
+ * instead, shifting samples under a `panState` this function would never be told
+ * about; such a path must pass `panState`, not the drawn centerline, and would
+ * need a companion here.
  */
 export function panAfterCut(pan: number, range: SampleRange): number {
   const lo = Math.min(range.start, range.end);
   const hi = Math.max(range.start, range.end);
   const removedBeforePan = Math.min(hi, pan) - Math.min(lo, pan);
   return pan - removedBeforePan;
+}
+
+/**
+ * Where the pan must sit, at `zoom`, for `selection` to stay on screen (#91).
+ *
+ * The zoom toggle used to change only the zoom, leaving the pan untouched. The
+ * window then shrank around a pan that had nothing to do with the span being
+ * edited, and the selection walked off the viewport — the first external tester
+ * reported it as the control "extending the selection off screen" and could not
+ * tell whether the button acted on the view or on the selection. Re-centring the
+ * pan is what makes the answer "on the view, and the selection stays put".
+ *
+ * Three cases:
+ *
+ * 1. **No selection** — nothing to keep in view; the pan is returned clamped and
+ *    otherwise untouched, so a plain zoom still behaves as it always has.
+ * 2. **Wider than the window** — it cannot all fit, so the START edge is pinned
+ *    to the left of the viewport. The start is where a translator reaches first,
+ *    and the end is one pan away; showing neither edge is the failure mode.
+ * 3. **Otherwise** — the span fits, so every pan in `[panAtEndEdge,
+ *    panAtStartEdge]` shows all of it, and the current pan is clamped into that
+ *    interval. That single clamp covers both of the cases the UI cares about: a
+ *    span already on screen is inside the interval and comes back **unchanged**
+ *    (moving a pan that did not need to move is its own lie about what the
+ *    control did), and a span off one edge travels the MINIMUM distance that
+ *    brings it in, landing against the edge it came in over rather than jerking
+ *    to the centre.
+ *
+ * Both selection edges are clamped to `[0, length]` before anything is
+ * computed. That is **defensive, not load-bearing for today's caller**:
+ * `SegmentEditor`'s `openSelection` and `setSelection` already clamp each
+ * endpoint to the working buffer, so the recorder cannot hand this an out-of-
+ * range span (an earlier draft of this comment claimed the opposite — George R1
+ * P3). It stays because the clamp is what makes the function total, and because
+ * the span's REAL extent is what decides the wider-than-the-window branch: a
+ * caller that measured raw handles would pin the viewport into blank space.
+ *
+ * The result is always within `[0, length]`: the pan is also the record
+ * insertion offset, and there is no such thing as inserting before the start or
+ * after the end.
+ *
+ * Note that `zoom` 1 means the viewport SPANS the clip's length — not that the
+ * whole clip is on screen. With the pan at the end (the append rest) the window
+ * is `[0.5L, 1.5L]`. Keeping a selection in view is all this promises, and it is
+ * why the zoom control's label names the magnification rather than the extent.
+ *
+ * Clamping the admissible interval to the clip cannot invert it — clamping is
+ * monotone and the raw interval is non-empty whenever the span fits — so the
+ * final `min`/`max` always names a pan that really does show the span. At
+ * `zoom` 1 the window spans the whole clip, so the span ALWAYS fits and nothing
+ * can be left off screen on the way back out.
+ */
+export function panForZoom(
+  length: number,
+  pan: number,
+  zoom: number,
+  centerFraction: number,
+  selection: SampleRange | null
+): number {
+  // The same clamp `viewportWindow` applies to `centerlineSample`, for the same
+  // reason: this value is the record insertion offset as well as the pan.
+  const clampPan = (p: number) => Math.max(0, Math.min(p, length));
+  // Nothing picked: a plain zoom, and the pan is only clamped (a `panState` set
+  // before a cut can be stale past the new end — the same reason the recorder
+  // clamps it before drawing).
+  if (selection === null) return clampPan(pan);
+
+  const lo = clampPan(Math.min(selection.start, selection.end));
+  const hi = clampPan(Math.max(selection.start, selection.end));
+  const visible = length / zoom;
+
+  // The pan that puts the span's START on the left edge of the viewport
+  // (`start = pan - centerFraction * visible`), and the one that puts its END on
+  // the right edge (`end = pan + (1 - centerFraction) * visible`).
+  const panAtStartEdge = lo + centerFraction * visible;
+  const panAtEndEdge = hi - (1 - centerFraction) * visible;
+
+  // ONE clamp, on every path. The intermediates above are deliberately left
+  // raw: with `lo`/`hi` already inside the clip, clamping each of them would add
+  // branches no input can reach — which mutation testing shows to be untestable
+  // rather than safe. There is no empty-segment guard either, for the same
+  // reason: at `length` 0 every term above is already 0 and this returns 0,
+  // matching `viewportWindow`, which likewise carries no divide-by-zero guard.
+  return clampPan(
+    hi - lo >= visible
+      ? panAtStartEdge
+      : Math.max(panAtEndEdge, Math.min(pan, panAtStartEdge))
+  );
 }
 
 /**
