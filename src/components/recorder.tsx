@@ -199,10 +199,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // open, so `"record"` is the open state with no reset effect needed. Edit is
     // entered deliberately from the record menu and is strictly idle.
     const [mode, setMode] = useState<"record" | "edit">("record");
-    // The VU strip is visible by default when the sheet opens (D-VU-DEFAULT); the
-    // menu toggles it. Per-session local state — there is no prefs layer to
-    // persist it across opens.
-    const [vuVisible, setVuVisible] = useState(true);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
     // Focus back to whatever opened an overlay, once the overlay is gone (#97).
@@ -1926,8 +1922,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             {mode === "record" ? (
               // The menu opener lives in the header in record mode (the toolbar is
               // just the Record + Play pair). Same gate the old toolbar opener
-              // used — reachable mid-take for the VU toggle, blocked only through
-              // the close window.
+              // used — reachable mid-take (Edit commits-then-edits a live/paused
+              // take, #134), blocked only through the close window.
               <Control
                 icon="menu"
                 label={strings.recorderMenuOpen}
@@ -2249,12 +2245,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 )}
               </div>
 
-              {mode === "record" && vuVisible && (
-                // Under the waveform (mockup 3), visible by default. Record-mode
-                // only — no mic take can exist in edit mode. `active` gates
-                // its own rAF loop, so it only animates while a take is live and
-                // rests empty otherwise — the sheet never re-renders per frame
-                // (D-LEVEL-PULL: it polls `audio.readLevel` on its own clock).
+              {mode === "record" && (
+                // Under the waveform (mockup 3), unconditional in record mode —
+                // the menu row that used to hide it is gone (#286: "until we
+                // have an input level control, it's just confusing" was the
+                // control, not the strip). Record-mode only — no mic take can
+                // exist in edit mode. `active` gates its own rAF loop, so it
+                // only animates while a take is live and rests empty otherwise —
+                // the sheet never re-renders per frame (D-LEVEL-PULL: it polls
+                // `audio.readLevel` on its own clock).
                 <div className="px-[16px]">
                   <VuMeter
                     readLevel={audio.readLevel}
@@ -2447,34 +2446,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 onClick={onToggleFinished}
               />
               <Control
-                // One unchanging glyph naming the THING — the level strip —
-                // with the state carried by `pressed`, which paints the same
-                // green the Finished row above it uses and sets `aria-pressed`
-                // (#286). The eye/eye-off pair it replaced did the opposite: it
-                // showed the action and left the state to be inferred, and the
-                // first external tester "never quite figured out" what it was
-                // attached to. `levels` echoes the strip's own rising fill, so
-                // the row and the thing it controls look like each other.
-                icon="levels"
-                label={vuVisible ? strings.vuShown : strings.vuHidden}
-                pressed={vuVisible}
-                variant="quiet"
-                // Close the menu so the change to the strip behind it is visible.
-                onClick={() => {
-                  setVuVisible((v) => !v);
-                  setMenuOpen(false);
-                }}
-              />
-              <Control
                 icon="trash"
                 label={strings.eraseSegment}
                 variant="quiet"
                 // Only when there is stored audio to erase (a first, uncommitted
                 // recording has nothing on disk yet) AND only at idle: erasing the
                 // stored take out from under a live capture is nonsensical, and the
-                // menu opener is reachable mid-take for the VU toggle, so this
-                // entry must refuse there itself (George R-B6). Gate + reason from
-                // `eraseRowReason` (#135).
+                // menu opener stays reachable mid-take (Edit commits-then-edits a
+                // live/paused take, #134), so this entry must refuse there itself
+                // (George R-B6). Gate + reason from `eraseRowReason` (#135).
                 disabled={eraseReason !== null}
                 hint={rowHint(eraseReason)}
                 onClick={() => {
