@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { clampRange, sliceRange } from "@/lib/audio/edit";
+import { clampRange, sliceRange, spansWholeSample } from "@/lib/audio/edit";
 import {
   canRedo as logCanRedo,
   canUndo as logCanUndo,
@@ -198,7 +198,15 @@ export function useSegmentEditor(
   const cut = useCallback((): SampleRange | null => {
     if (!selection) return null;
     const range = clampRange(selection, working.length);
-    if (range.start === range.end) return null; // nothing picked — not a no-op
+    // Nothing picked — and "picked" is the one `spansWholeSample` question the
+    // audition asks, so what Play refuses to sound, Cut refuses to remove. The
+    // float compare this replaces called a span inside a single sample a real
+    // selection: `sliceRange` then took nothing, yet the op still went onto the
+    // undo log and `clipboard.set(removed)` below REPLACED the chapter-wide
+    // clipboard with an empty buffer — a tap that did nothing, and silently
+    // dropped audio the translator was about to paste somewhere else (Frank R3).
+    // Refusing here is not a no-op: it leaves the selection open to be resized.
+    if (!spansWholeSample(range)) return null;
     const applied = runEdit(() => {
       const removed = sliceRange(working, range);
       const nextLog = pushOp(log, { kind: "cut", range });
@@ -246,10 +254,13 @@ export function useSegmentEditor(
     hasEdits: log.cursor > 0,
     selection,
     selectionActive,
+    // The scissors' enabled state asks the SAME question `cut` and the audition
+    // ask, so the control cannot be live for a span that would remove nothing
+    // (Frank R3).
     canCut:
       selectionActive &&
       selectionSpan !== null &&
-      selectionSpan.start !== selectionSpan.end,
+      spansWholeSample(selectionSpan),
     canPaste: clipboard.clip !== null && clipboard.clip.length > 0,
     canUndo: logCanUndo(log),
     canRedo: logCanRedo(log),

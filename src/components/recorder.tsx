@@ -15,10 +15,10 @@ import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
+import { liveScopeShown, stageView } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
-import { liveScopeShown } from "./recorder-stage";
 import {
   editRowReason,
   eraseRowReason,
@@ -41,8 +41,9 @@ import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
+import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
-import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { framesToMs } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
@@ -61,7 +62,7 @@ import {
   type TailPlan,
 } from "@/lib/takes/close-plan";
 import { formatDuration } from "@/lib/utils";
-import type { Peaks } from "@/types/audio";
+import type { Peaks, SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -165,8 +166,10 @@ export interface RecorderHandle {
  * The sheet is two modes (#89). RECORD mode is the hero Record + Play pair with
  * the menu opener in the header; the finished toggle lives in that menu. EDIT
  * mode — entered deliberately from the record menu, strictly idle — is the
- * [zoom] [select] [undo] [redo] [menu] spread with the selection frame, paste
- * marker and floating Cut, marked by a header "Editing" pill that also exits.
+ * [play] [zoom] [select] [undo] [redo] [menu] spread with the selection frame,
+ * paste marker and floating Cut, marked by a header "Editing" pill that also
+ * exits. Edit-mode Play is the audition (#284): it sounds the picked span, and
+ * only that span, so a cut can be heard before it is made.
  */
 export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
   function Recorder(
@@ -369,6 +372,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * P1). Null when none is in flight.
      */
     const previewPromiseRef = useRef<Promise<void> | null>(null);
+    /**
+     * Where the sounding buffer starts inside the buffer that is DRAWN, in
+     * milliseconds (#284). Zero for every record-mode play — the working buffer
+     * and the paused-take preview are each sounded whole, from their own frame 0
+     * — and the audition range's start when edit mode sounds a picked span,
+     * which is a view of the middle of `working`. `readSoundingElapsed` adds it,
+     * so the playhead overlay keeps its one job (a position within the drawn
+     * waveform) and needs no second coordinate system. A ref, not state: it is
+     * read on the overlay's own rAF clock, never during render, and it is pinned
+     * at the play tap so a selection changing underneath cannot move a line that
+     * is already travelling.
+     */
+    const soundingOffsetRef = useRef(0);
 
     // The edit-aware length: the working buffer, not the loaded clip, is the
     // pan/zoom domain and the append offset — a cut shortens it, a paste grows it.
@@ -435,13 +451,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // narrowed value so the stage reads `.buffer`/`.peaks` without a null assertion.
     const previewShown = paused || busy || isClosing ? preview : null;
 
-    // The sounding buffer's duration, for the playhead overlay's position fraction
+    // The DRAWN buffer's duration, for the playhead overlay's position fraction
     // (#102). The denominator is the buffer shown: the preview (longer than
-    // `working`, #101) while a preview is up, else `working`. The overlay PULLS
-    // `audio.readPlaybackElapsed` on its own rAF and moves a DOM line, so buffer
-    // playback re-renders nothing — not this sheet, nor the inert list behind it.
-    const soundingLength = previewShown ? previewShown.buffer.length : length;
-    const soundingDurationMs = (soundingLength / CANONICAL_SAMPLE_RATE) * 1000;
+    // `working`, #101) while a preview is up, else `working`. It is deliberately
+    // the drawn buffer and not the sounding one — an edit-mode audition sounds a
+    // view of the middle of `working` (#284) while the whole of `working` stays
+    // on screen, and the line has to travel across what the eye can see. The
+    // overlay PULLS `readSoundingElapsed` on its own rAF and moves a DOM line, so
+    // buffer playback re-renders nothing — not this sheet, nor the inert list
+    // behind it.
+    const drawnLength = previewShown ? previewShown.buffer.length : length;
+    const drawnDurationMs = framesToMs(drawnLength);
 
     // Play previews a stored/edited take at idle, and the paused take-so-far while
     // paused (#101). The preview states gate Play ONLY on the paused branch —
@@ -457,17 +477,66 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         ? previewState === "decoding" || previewState === "failed"
         : recording || !hasAudio);
 
-    // Show the WHOLE buffer while a preview is up or a buffer plays, so the
-    // sweeping playhead is always on screen and the preview's own peaks are not
-    // sliced by a pan window measured against `working` (George R1). The pan/zoom
-    // window exists to choose an insert point for a record, not to watch playback
-    // travel; the record window returns when the preview clears on Resume.
-    const wholeView = previewShown !== null || audio.playingBuffer;
+    // Which way the stage is drawn, and what that makes inert (#284). All four
+    // answers come from ONE pure derivation, `stageView`, because review rounds
+    // kept finding the same defect in a different control or overlay — one
+    // reading the pan/zoom window, or the hide rule written for a swapped view,
+    // while something else was drawn. The class, the reasoning and the
+    // deliberate exceptions are enumerated there; this file reads the answers
+    // rather than re-deriving them per control, so the next one inherits the
+    // rule instead of re-earning the bug.
+    const stage = stageView({
+      mode,
+      playingBuffer: audio.playingBuffer,
+      selectionActive: editor.selectionActive,
+      previewShown: previewShown !== null,
+    });
+    const wholeView = stage.wholeView;
     const waveView = {
       startFraction: wholeView ? 0 : hasAudio ? win.start / length : 0,
       endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
       centerFraction: CENTER_FRACTION,
     };
+
+    // The Zoom control's CHROME (pressed state, icon, label) while `wholeView`
+    // is true (#284, George R7): the canvas is drawn at clip fractions 0..1,
+    // which IS what "whole" zoom draws, whatever `zoom` itself still says. Zoom
+    // is disabled by `stage.windowControlsInert` here, so it cannot be tapped,
+    // but a disabled control still shows a state — `pressed` is the one channel
+    // a non-reader has for "which zoom level is this" (`Control`'s own
+    // contract) — and it must name the window actually on screen, not the one
+    // that returns once the buffer stops sounding. `zoom` itself is untouched:
+    // that real value is what comes back the moment `wholeView` goes false.
+    const displayedZoom = wholeView ? ZOOM_WHOLE : zoom;
+
+    // What edit-mode Play sounds (#284): the picked span when one is up, else
+    // the working buffer from the centerline on. `null` ⇒ there is nothing to
+    // audition (no audio, or a span collapsed to a point), which is the cue to
+    // leave the control inert — state-in-place, no message. The decision is pure
+    // and unit-tested in `auditionPlan`; all this does is hand it the editor's
+    // current span and the viewport's line. Record mode never builds a plan: its
+    // Play is the whole-buffer preview `onPlayButton` already owns.
+    const audition =
+      mode === "edit"
+        ? auditionPlan(
+            length,
+            editor.selectionActive ? editor.selection : null,
+            win.centerlineSample
+          )
+        : null;
+
+    // The playhead's position within the DRAWN buffer (#102 + #284). Buffer
+    // playback reports milliseconds into whatever was handed to `playBuffer`,
+    // which for an audition of a picked span is a view starting partway through
+    // `working`; adding the pinned offset here is what keeps the line over the
+    // samples being heard, and keeps the overlay itself free of any notion of a
+    // selection. `null` — the hide sentinel, distinct from 0 — passes through
+    // untouched.
+    const readPlaybackElapsed = audio.readPlaybackElapsed;
+    const readSoundingElapsed = useCallback(() => {
+      const ms = readPlaybackElapsed();
+      return ms === null ? null : soundingOffsetRef.current + ms;
+    }, [readPlaybackElapsed]);
 
     const onPointerDown = useCallback(
       (e: React.PointerEvent) => {
@@ -481,18 +550,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // handle back within reach (B5, George R2). The handles stop their own
         // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
         // never also starts a pan — only a drag on the bare canvas pans.
-        // Frozen during playback too: the canvas is showing the whole-clip view,
-        // so a drag would move the hidden record `pan`/insert offset the translator
-        // cannot see, and the viewport would jump when playback stops (Frank/George
-        // R2). Playback is listen-only — no scrub in v1 (D4).
-        if (!hasAudio || recording || paused || busy || audio.playingBuffer)
+        // Frozen during playback too — the pan is one of the window controls
+        // `stage.windowControlsInert` names, and the oldest member of that class
+        // (Frank/George R2): under a swapped view a drag moves a record offset
+        // that is not on screen, and under a picked-span audition it would slide
+        // the band off the audio it marks while that audio sounds. Playback is
+        // listen-only — no scrub in v1 (D4).
+        if (
+          !hasAudio ||
+          recording ||
+          paused ||
+          busy ||
+          stage.windowControlsInert
+        )
           return;
         setDragging(true);
         dragStartX.current = e.clientX;
         panAtDragStart.current = pan;
         e.currentTarget.setPointerCapture(e.pointerId);
       },
-      [hasAudio, recording, paused, busy, audio.playingBuffer, pan]
+      [hasAudio, recording, paused, busy, stage.windowControlsInert, pan]
     );
 
     const onPointerMove = useCallback(
@@ -503,8 +580,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // moving the first finger through the `requesting` window — sliding the
         // centerline off the sample insertionOffset already locked to at the tap
         // (#61). The pointer-down guard alone left this multitouch path open.
-        // Also frozen once playback starts mid-drag (same whole-clip desync, R2).
-        if (!dragging || recording || paused || busy || audio.playingBuffer)
+        // Also frozen once playback starts mid-drag, by the same predicate the
+        // pointer-down guard uses (R2).
+        if (
+          !dragging ||
+          recording ||
+          paused ||
+          busy ||
+          stage.windowControlsInert
+        )
           return;
         const width = stageRef.current?.clientWidth ?? 1;
         // Drag right reveals earlier audio: the sample under the centerline
@@ -530,7 +614,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         recording,
         paused,
         busy,
-        audio.playingBuffer,
+        stage.windowControlsInert,
         win.visibleSamples,
         length,
       ]
@@ -634,6 +718,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         audio.stopBuffer();
         return;
       }
+      // Record-mode playback always sounds a buffer from its own frame 0 — the
+      // whole working buffer, or a whole paused-take preview — so the playhead
+      // needs no offset into the drawn waveform (#284). Pinned once here rather
+      // than at each of the three `playBuffer` calls below, one of which fires
+      // after an await.
+      soundingOffsetRef.current = 0;
       // Idle: preview the stored/edited working buffer, as before (#89). The
       // playhead overlay (#102) positions itself off `readPlaybackElapsed`, so no
       // seed is needed on the play edge.
@@ -718,6 +808,46 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         }
       })();
     }, [audio, editor, paused, preview, previewState]);
+
+    /**
+     * Edit-mode Play — the audition (#284).
+     *
+     * The first external tester, cold, tried to play a highlighted part of a
+     * segment before deleting it, found no way to, and fell back to memorising
+     * the shape of the waveform. That fallback is all a translator who cannot
+     * read would have had either, on a cut they cannot undo once the sheet
+     * closes. So a selection sounds ONLY the selection — the exact samples the
+     * scissors would remove, `auditionPlan` sharing `cut`'s normalisation — and
+     * with nothing picked it sounds the working buffer from the centerline on,
+     * which is the record-mode preview when the line is resting.
+     *
+     * The range is sounded as a `subarray` — a VIEW, not a copy: the audition
+     * allocates nothing, so it cannot be the OOM a cut of the same span can be
+     * on a low-memory phone. (`playBuffer`'s own Int16→Float32 conversion is the
+     * one allocation, it is no larger than the record-mode Play already makes,
+     * and it is already inside that path's guard.)
+     *
+     * Tapping while it sounds stops it, through the same `stopBuffer` every
+     * other control in this sheet uses — there is one stop path, and every edit
+     * action below calls it before changing the buffer or the span beneath it.
+     */
+    const onAuditionButton = useCallback(() => {
+      // Guard the close window like the other transport handlers: a tap racing
+      // `close()` before `isClosing` disables the button must not start a sound
+      // over the commit.
+      if (closing.current) return;
+      if (audio.playingBuffer) {
+        audio.stopBuffer();
+        return;
+      }
+      if (!idleEditable || !audition) return;
+      // Pinned BEFORE the play, so the playhead is offset by the range that is
+      // actually sounding rather than by whatever the selection becomes next.
+      soundingOffsetRef.current = framesToMs(audition.range.start);
+      audio.playBuffer(
+        editor.working.subarray(audition.range.start, audition.range.end)
+      );
+    }, [audio, audition, editor.working, idleEditable]);
 
     // Enter edit mode from the record menu. Play is a record-only control, so any
     // live buffer playback is stopped first — else it would orphan itself with no
@@ -935,6 +1065,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // the record view stuck zoomed with no way to widen it (George R1). It only
     // switches mode, it never closes the sheet (that is Back/`close`).
     const onExitEdit = useCallback(() => {
+      // Silence an audition on the way out (#284). Record mode's Play is the
+      // whole-buffer preview and its own control would stop it, but the two are
+      // different sounds over different views: leaving edit mode mid-audition
+      // would drop the translator into the record bar with a selection's worth
+      // of audio still playing and the Play glyph showing a stop for a sound the
+      // mode no longer explains. This is also most of what makes "a record never
+      // starts over an audition" true, together with record-mode Record being
+      // disabled while a buffer sounds.
+      //
+      // It is not quite EVERY route, and the exception is worth naming rather
+      // than leaving for a later author to trip over (George R5 P3): the
+      // permission panel's `onRetryRecord` also sets record mode, and it neither
+      // stops playback nor closes the frame. It is not a hole today — it is
+      // reachable only while `denied`, which requires `!hasAudio`, and with no
+      // audio there is nothing to audition and Select is disabled — so nothing is
+      // added there for a state that cannot occur. If that gate ever widens, this
+      // is the sentence that says so.
+      audio.stopBuffer();
       editor.closeSelection();
       setZoom(ZOOM_WHOLE);
       // The zoom's view pan is edit-only, exactly as the zoom itself is. The
@@ -944,7 +1092,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
-    }, [editor]);
+    }, [audio, editor]);
 
     // Zoom, keeping the picked span on screen (#91).
     //
@@ -968,7 +1116,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoom(next);
     }, [zoom, editor.selectionActive, editor.selection, length, pan]);
 
+    // Every edit action stops an audition first (#284), through the ONE stop path
+    // the sheet already uses (`stopBuffer`, a no-op when nothing is sounding).
+    // The reason is not tidiness: a cut, a paste, an undo or a redo
+    // rematerialises `working`, and the sounding view is a window onto the buffer
+    // as it was — audio the segment no longer contains, under a waveform that has
+    // already changed shape, with a playhead travelling over samples that moved.
+    // Moving the span the audition was OF is the same class.
     const onToggleSelection = useCallback(() => {
+      audio.stopBuffer();
       if (editor.selectionActive) {
         editor.closeSelection();
         return;
@@ -984,9 +1140,31 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         start: win.centerlineSample - half,
         end: win.centerlineSample + half,
       });
-    }, [editor, win.centerlineSample, win.visibleSamples]);
+    }, [audio, editor, win.centerlineSample, win.visibleSamples]);
+
+    // A handle drag moves the span the audition is OF, so it silences it too.
+    // `stopBuffer` returns immediately when nothing is sounding, so this costs a
+    // predicate per pointermove, not a stop.
+    const onSelectionChange = useCallback(
+      (range: SampleRange) => {
+        audio.stopBuffer();
+        editor.setSelection(range);
+      },
+      [audio, editor]
+    );
+
+    const onUndo = useCallback(() => {
+      audio.stopBuffer();
+      editor.undo();
+    }, [audio, editor]);
+
+    const onRedo = useCallback(() => {
+      audio.stopBuffer();
+      editor.redo();
+    }, [audio, editor]);
 
     const onCut = useCallback(() => {
+      audio.stopBuffer();
       const removed = editor.cut();
       // Keep the centerline on the same audio: a cut before it shortens the buffer
       // to its left, so shift an absolute pan by what was removed (George R5). A
@@ -994,7 +1172,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (removed !== null) {
         setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
       }
-    }, [editor]);
+    }, [audio, editor]);
 
     // Paste at the drawn centerline — which is ALSO the record insertion offset,
     // and that is not a coincidence to leave unstated (George stand-in P3).
@@ -1014,8 +1192,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // would flip it — and would have to take the pan from `panState` rather than
     // from `win`.
     const onPaste = useCallback(() => {
+      audio.stopBuffer();
       editor.paste(win.centerlineSample);
-    }, [editor, win.centerlineSample]);
+    }, [audio, editor, win.centerlineSample]);
 
     const onToggleFinished = useCallback(() => {
       if (!view) return;
@@ -2141,9 +2320,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // buffer (#101); everything else shows the working buffer's.
                       // `recorded` is true whenever there is a waveform to mark —
                       // stored audio, or a prepared preview of a first take. The
-                      // centerline is suppressed whenever a preview is shown or a
-                      // buffer plays (`wholeView`), where a mid-clip red marker over
-                      // a whole-clip view would mislead (George R2).
+                      // centerline is suppressed for EVERY sounding buffer, not
+                      // only a swapped view (`stage.centerlineHidden`): over a
+                      // whole-clip view the red marker would point at a sample it
+                      // is no longer drawn over (George R2), and over a picked-span
+                      // audition it is honest but leaves a second static vertical
+                      // line beside the travelling playhead, which reads as
+                      // "insert here" to a non-reader (George R4 P3).
                       peaks={previewShown ? previewShown.peaks : editor.peaks}
                       height={200}
                       recorded={hasAudio || previewShown !== null}
@@ -2199,7 +2382,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // this is the same array as `peaks`, so idle and a first
                       // take are unaffected.
                       fitFrom={editor.peaks}
-                      playing={wholeView}
+                      playing={stage.centerlineHidden}
                       view={waveView}
                     />
                   )}
@@ -2212,13 +2395,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     prepared (`wholeView`) — correct here because a preview always
                     puts `Waveform` on stage (above), never `LiveScope`, so this
                     overlay's coordinate system always matches what is drawn
-                    underneath it (George R-resume round 2). */}
+                    underneath it (George R-resume round 2). `clampToEdge` is the
+                    one exception to "off `waveView` ⇒ hide": an in-place
+                    audition keeps the pan window, so a picked span wider than
+                    it is real, still-sounding audio walking off-screen, not the
+                    blank head/tail the hide rule exists for (#284, George R7,
+                    `stage.inPlaceAudition`). */}
                   <PlayheadOverlay
-                    readElapsedMs={audio.readPlaybackElapsed}
+                    readElapsedMs={readSoundingElapsed}
                     active={audio.playingBuffer}
-                    durationMs={soundingDurationMs}
+                    durationMs={drawnDurationMs}
                     startFraction={waveView.startFraction}
                     endFraction={waveView.endFraction}
+                    clampToEdge={stage.inPlaceAudition}
                   />
                   {mode === "edit" &&
                     editor.selectionActive &&
@@ -2227,7 +2416,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         win={win}
                         selection={editor.selection}
                         workingLength={length}
-                        onChange={editor.setSelection}
+                        onChange={onSelectionChange}
                         startLabel={strings.selectionStartHandle}
                         endLabel={strings.selectionEndHandle}
                       />
@@ -2235,10 +2424,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   {mode === "edit" &&
                     idleEditable &&
                     editor.canPaste &&
-                    !editor.selectionActive && (
+                    !editor.selectionActive &&
+                    !stage.windowControlsInert && (
                       // The paste marker rides the centerline (mockup 5): tapping it
                       // inserts the clipboard there. stopPropagation so the tap does
                       // not also arm a pan on the stage beneath it.
+                      //
+                      // Unmounted, not merely disabled, while `windowControlsInert`
+                      // (#284): it is pinned at a FIXED 50% of the stage because it
+                      // rides the centerline of the pan window, while `onPaste`
+                      // inserts at `win.centerlineSample` — so under a swapped view
+                      // it would sit over the midpoint and paste at the END. Taking
+                      // the control away takes the false POSITION away with it,
+                      // which a `disabled` would not. See `recorder-stage.ts` for
+                      // the rest of the class.
                       <button
                         type="button"
                         className="paste-marker"
@@ -2367,21 +2566,61 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // here (out of the menu); the menu opener lives at the end.
                 <div className="recorder-toolbar edit flex items-center px-[16px]">
                   <Control
+                    // The audition (#284) — the SAME glyph pair the record bar
+                    // uses, play/pause, because it is the same act: a non-reader
+                    // recognises the control by its shape, and a second play
+                    // glyph would be a second thing to learn. The name is what
+                    // differs, and it names the target (`auditionPlan`'s
+                    // `source`) so what a screen reader speaks is what sounds.
+                    icon={audio.playingBuffer ? "pause" : "play"}
+                    label={
+                      audio.playingBuffer
+                        ? strings.stopPlayback
+                        : audition?.source === "selection"
+                          ? strings.auditionSelection
+                          : audition?.source === "line"
+                            ? strings.auditionFromLine
+                            : strings.playRecording
+                    }
+                    variant="quiet"
+                    size={24}
+                    // Inert when there is nothing to hear — no audio, or a span
+                    // dragged shut — exactly as Cut is on the same span. While it
+                    // sounds it is the stop, so it stays live. `idleEditable`
+                    // carries the close window, where the sheet is committing.
+                    disabled={
+                      !audio.playingBuffer &&
+                      (!idleEditable || audition === null)
+                    }
+                    onClick={onAuditionButton}
+                  />
+                  <Control
                     // The magnifier carries the ACTION (+ widens, − narrows) and
                     // `pressed` carries the STATE — quarter view is the non-
                     // default one, so that is the "on". Splitting the two is the
                     // #91 fix: the old facing-arrow pair asked one glyph to do
                     // both, and the first external tester read it the other way
                     // round and asked whether the icons were reversed.
-                    icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
+                    //
+                    // Both read `displayedZoom`, not `zoom` (#284, George R7):
+                    // while `wholeView` swaps the canvas to the whole clip, that
+                    // IS the "whole" state on screen even though `zoom` still
+                    // holds the real value the window returns to once the buffer
+                    // stops sounding. The control is disabled either way, but a
+                    // disabled control still tells a non-reader which state it is
+                    // in, and it must name the window that is actually drawn.
+                    icon={displayedZoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
-                      zoom === ZOOM_WHOLE
+                      displayedZoom === ZOOM_WHOLE
                         ? strings.zoomAtWhole
                         : strings.zoomAtQuarter
                     }
-                    pressed={zoom === ZOOM_QUARTER}
+                    pressed={displayedZoom === ZOOM_QUARTER}
                     variant="quiet"
                     size={24}
+                    // A window control: it rebuilds the window under a line that
+                    // is already travelling. `recorder-stage.ts` carries the class.
+                    disabled={stage.windowControlsInert}
                     onClick={onToggleZoom}
                   />
                   <Control
@@ -2393,7 +2632,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     }
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
-                    disabled={!idleEditable || !hasAudio}
+                    // A window control, and the one this class was found through
+                    // (George R4 P2-1): it seeds its span from the centerline —
+                    // which is hidden while a buffer sounds — so mid-audition it
+                    // would highlight the insert point rather than the audio being
+                    // heard, at the F7 rest the END of the take. Inert in BOTH
+                    // directions: closing an open frame mid-audition would also
+                    // flip the view out from under the sound, since a picked span
+                    // is what keeps the pan window.
+                    disabled={
+                      !idleEditable || !hasAudio || stage.windowControlsInert
+                    }
                     onClick={onToggleSelection}
                   />
                   <Control
@@ -2402,7 +2651,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant="quiet"
                     size={24}
                     disabled={!idleEditable || !editor.canUndo}
-                    onClick={editor.undo}
+                    onClick={onUndo}
                   />
                   <Control
                     icon="redo"
@@ -2414,7 +2663,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // insertion offset — but `idleEditable` forbids that, and edit
                     // mode is idle-only regardless.
                     disabled={!idleEditable || !editor.canRedo}
-                    onClick={editor.redo}
+                    onClick={onRedo}
                   />
                   <Control
                     icon="menu"

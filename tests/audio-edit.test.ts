@@ -10,6 +10,7 @@ import {
   replaceRange,
   silence,
   sliceRange,
+  spansWholeSample,
 } from "@/lib/audio/edit";
 
 const seq = (n: number, from = 0): Int16Array =>
@@ -25,6 +26,49 @@ describe("clampRange", () => {
       start: 0,
       end: 10,
     });
+  });
+});
+
+/**
+ * The one predicate behind "is anything actually selected?".
+ *
+ * Selection edges are floats — pointer geometry, and a keyboard nudge of
+ * `visibleSamples / 400` — while every consumer of a range TRUNCATES: `slice`
+ * for a cut, `subarray` for an audition. So "start !== end" is the wrong
+ * question, and asking it let two controls disagree with each other and with
+ * the audio: Play went inert on a sub-sample span while Cut stayed live and
+ * applied an empty cut, which advances the undo log and REPLACES the
+ * chapter-wide clipboard with an empty buffer (Frank R3). This is the question
+ * all of them ask now, so they cannot drift apart again.
+ *
+ * It takes an already-normalised range — every call site clamps with
+ * `clampRange` first, which is also what orders a reversed span.
+ */
+describe("spansWholeSample", () => {
+  it("is true for a span containing whole samples", () => {
+    expect(spansWholeSample({ start: 10, end: 11 })).toBe(true);
+    expect(spansWholeSample({ start: 0, end: 4410 })).toBe(true);
+  });
+
+  it("is true for a fractional span that straddles a sample boundary", () => {
+    // `slice(10.2, 11.1)` is `slice(10, 11)` — one sample is taken.
+    expect(spansWholeSample({ start: 10.2, end: 11.1 })).toBe(true);
+  });
+
+  it("is false for a span living inside one sample", () => {
+    // `slice(10.2, 10.9)` is `slice(10, 10)` — nothing is taken, so nothing
+    // may act as though something were.
+    expect(spansWholeSample({ start: 10.2, end: 10.9 })).toBe(false);
+  });
+
+  it("is false for a zero-length span", () => {
+    expect(spansWholeSample({ start: 250, end: 250 })).toBe(false);
+  });
+
+  it("is false for a non-finite edge", () => {
+    // `NaN === NaN` is false, so an equality test called this "selected".
+    expect(spansWholeSample({ start: Number.NaN, end: 400 })).toBe(false);
+    expect(spansWholeSample({ start: 100, end: Number.NaN })).toBe(false);
   });
 });
 
