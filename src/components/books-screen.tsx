@@ -346,6 +346,21 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     setSavingBookName(false);
     bookShare.reset();
   }, [bookShare]);
+  // The Menu's actual `onClose` (scrim tap, Close, and Escape when no child
+  // already handled it) — guarded, unlike the plain closer above. A rename
+  // write in flight cannot be aborted, so unmounting the whole menu while it
+  // runs does not stop it: it still commits moments later with no menu open
+  // to show it (George R3 P2, #384). NameEdit's own Escape guard only covers
+  // Escape while the FIELD holds focus; Close and the scrim reach this
+  // closer directly, and Escape while Confirm (or Close itself) holds focus
+  // never touches the field's handler at all. Swallowing the dismiss here —
+  // not the promise's own success close above, which must still run — closes
+  // that gap once, centrally, the way `EraseConfirm` already guards every
+  // dismiss path while its own write is in flight.
+  const onDismissShareMenu = useCallback(() => {
+    if (savingBookName) return;
+    onCloseShareMenu();
+  }, [savingBookName, onCloseShareMenu]);
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -675,7 +690,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           panel because the flow keeps it open. */}
       <Menu
         open={shareMenuBook !== null}
-        onClose={onCloseShareMenu}
+        onClose={onDismissShareMenu}
         title={strings.bookMenuTitle}
       >
         {renamingBook && shareMenuBook ? (

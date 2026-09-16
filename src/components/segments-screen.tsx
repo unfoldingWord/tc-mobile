@@ -145,6 +145,21 @@ export const SegmentsScreen = forwardRef<
     setSavingChapterName(false);
     share.reset();
   }, [share]);
+  // The Menu's actual `onClose` (scrim tap, Close, and Escape when no child
+  // already handled it) — guarded, unlike the plain closer above. A rename
+  // write in flight cannot be aborted, so unmounting the whole menu while it
+  // runs does not stop it: it still commits moments later with no menu open
+  // to show it (George R3 P2, #384). NameEdit's own Escape guard only covers
+  // Escape while the FIELD holds focus; Close and the scrim reach this
+  // closer directly, and Escape while Confirm (or Close itself) holds focus
+  // never touches the field's handler at all. Swallowing the dismiss here —
+  // not the promise's own success close above, which must still run — closes
+  // that gap once, centrally, the way `EraseConfirm` already guards every
+  // dismiss path while its own write is in flight.
+  const onDismissChapterMenu = useCallback(() => {
+    if (savingChapterName) return;
+    onCloseChapterMenu();
+  }, [savingChapterName, onCloseChapterMenu]);
   // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
   // from a prior open cannot close this one.
   const openChapterMenu = useCallback(() => {
@@ -426,7 +441,7 @@ export const SegmentsScreen = forwardRef<
 
       <Menu
         open={chapterMenuOpen}
-        onClose={onCloseChapterMenu}
+        onClose={onDismissChapterMenu}
         title={strings.chapterMenuTitle}
       >
         {renamingChapter ? (
