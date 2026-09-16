@@ -1350,9 +1350,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         return true;
       });
     }, [
-      // `recording` and `paused` are gone from here: they were `state ===`
-      // derivations (:344-345), and `attemptsCapture(state)` now asks the same
-      // question of the one input they were derived from.
+      // `recording` and `paused` are gone from here: they are `state ===`
+      // derivations (see their declarations above), and `attemptsCapture(state)`
+      // now asks the same question of the one input they were derived from.
+      // Deliberately not a line number — this file moves under every recorder
+      // lane, and a stale citation is worse than none.
       state,
       audio,
       saveRecording,
