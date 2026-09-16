@@ -45,6 +45,14 @@ import {
   viewportWindow,
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
+import {
+  attemptsCapture,
+  classifyCapture,
+  planClose,
+  planPendingWork,
+  type CaptureOutcome,
+  type TailPlan,
+} from "@/lib/takes/close-plan";
 import { formatDuration } from "@/lib/utils";
 import type { Peaks } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -751,7 +759,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       );
       void (async () => {
         const result = await audio.stopRecording();
-        if (result.samples && result.samples.length > 0) {
+        // The SAME four-way reading of a stop result `close()` takes, by calling
+        // the same function rather than by a comment claiming the two agree
+        // (#180). What each verdict MEANS here is different — this path stays and
+        // opens edit mode where `close()` exits — but which verdict it is must
+        // never differ, and the precedence (samples, then kept bytes, then the
+        // error) is the part that was lost once.
+        const verdict = classifyCapture({
+          samples: result.samples,
+          bytes: result.blob,
+          error: result.error,
+        });
+        if (verdict.kind === "take") {
           // Splice the take into the WORKING buffer at the locked offset, exactly
           // as `close()` does; the mark rides the take through `addTake`. UNLIKE
           // `close()`, whose next step is always onExit, this path means to STAY
@@ -766,15 +785,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           const saved = await saveRecording(
             segmentId,
             editor.working,
-            result.samples,
+            verdict.samples,
             insertionOffset.current,
             finishedIntent === true
           );
           dirty.current = true;
           if (!saved) {
             // Take the SAME exit `close()`'s capture path takes: it always reaches
-            // `onExit(dirty)` after the save (`commitPendingAndExit` with
-            // `committed`), so App clears `recorder` and the recovery screen owns
+            // `onExit(dirty)` after the save (`executeTail`, once the take is
+            // committed), so App clears `recorder` and the recovery screen owns
             // the body with nothing mounted behind it. Do NOT enter edit mode.
             onExit(dirty.current);
             return;
@@ -815,23 +834,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           setMode("edit");
           return;
         }
-        // No usable audio. Mirror close()'s precedence exactly (:1063): a decode
-        // failure whose captured bytes survived (#165/#106) is the take's ONLY
-        // copy — HOLD it and hand the body to the recovery panel, checked BEFORE
-        // the plain error Notice so a superseded stop (blob kept, error withheld)
-        // cannot fall through and silently drop it. Only an empty/silent capture
-        // (blob-less, error set) stays in record mode to retry. Either way, do NOT
-        // enter edit mode.
-        if (result.blob) {
-          // The decode FAILED (or a leave() superseded the stop) but the bytes are
-          // the only copy of the take — exactly close()'s :1063 branch. Route to the
-          // recovery panel (re-decode on a fresh gesture, or share off-phone); do
-          // NOT onExit and do NOT enter edit mode. Retry/discard/share live there.
-          // Unlike close()'s identical branch, mark this recovery as Edit-initiated
-          // so a successful Try again reaches edit mode instead of exiting to
-          // Segments — the take was committed to be EDITED (#134), and the recovery
-          // is a detour, not a Back (George R3 P2 #1).
-          setHeldTake(result.blob);
+        // No usable audio. The classifier already applied close()'s precedence: a
+        // decode failure whose captured bytes survived (#165/#106) is the take's
+        // ONLY copy, so "hold" wins over "notice" and a superseded stop (bytes
+        // kept, error withheld) cannot fall through and silently drop it. Only an
+        // empty/silent capture is a "notice", and it stays in record mode to
+        // retry. Neither enters edit mode.
+        if (verdict.kind === "hold") {
+          // Route to the recovery panel (re-decode on a fresh gesture, or share
+          // off-phone); do NOT onExit and do NOT enter edit mode. Retry/discard/
+          // share live there. Unlike close()'s identical branch, mark this recovery
+          // as Edit-initiated so a successful Try again reaches edit mode instead
+          // of exiting to Segments — the take was committed to be EDITED (#134),
+          // and the recovery is a detour, not a Back (George R3 P2 #1).
+          setHeldTake(verdict.bytes);
           enterEditAfterRecover.current = true;
           setHeldShareError(null);
           setHeldRetryError(null);
@@ -841,8 +857,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           setIsClosing(false);
           return;
         }
-        if (result.error) {
-          setStopError(result.error);
+        if (verdict.kind === "notice") {
+          setStopError(verdict.error);
           cancelPreview();
         }
         closing.current = false;
@@ -1035,26 +1051,44 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       })();
     }, [erase, segmentId, onExit, audio]);
 
+    /**
+     * Reopen the sheet at idle with the reason in place, rather than exiting on
+     * audio that cannot be recorded again.
+     *
+     * Shared by every stay-open exit — a stop error, a failed clear, a failed
+     * finished write — which were three copies of the same four statements. It
+     * drops the kept preview so the stage reverts to `working` rather than a
+     * whole-clip preview with no insert line (George R4 #1).
+     */
+    const stayOpen = useCallback(
+      (reason: string) => {
+        setStopError(reason);
+        cancelPreview();
+        closing.current = false;
+        setIsClosing(false);
+      },
+      [cancelPreview]
+    );
+
     // The no-capture commit tail, shared by `close()` (when nothing was captured)
     // and `leaveHeldTake` (the recovery-panel exit). ONE path for both halves of
     // the session work an exit still owes — a pending B5 edit AND a pending
     // Finished toggle — so a recovery exit can never drop one of them again (the
     // root of the class George raised as R2 B-4, the edits half, and R4-G1, the
-    // flag half; Seth's round-5 direction). `committed`/`attemptedCapture` are
-    // threaded from the caller so the same `!committed && !attemptedCapture` gates
-    // hold; returns whether it exited (false keeps the sheet open on a write
-    // failure, with the reason in place).
-    const commitPendingAndExit = useCallback(
-      async (
-        committed: boolean,
-        attemptedCapture: boolean
-      ): Promise<boolean> => {
+    // flag half; Seth's round-5 direction).
+    //
+    // It no longer DECIDES which of them is owed: `planPendingWork` does, in
+    // `lib/takes/close-plan.ts`, enumerated in Node (#180). What is left here is
+    // the effects, and the `TailPlan` type is what keeps the two in step — the
+    // gates the callers used to thread in as `committed`/`attemptedCapture`
+    // booleans are now expressed by which plan they hand over. Returns whether
+    // it exited (false keeps the sheet open on a write failure, with the reason
+    // in place).
+    const executeTail = useCallback(
+      async (plan: TailPlan): Promise<boolean> => {
         try {
-          // An edit-only close (B5): cuts/pastes with no take committed. Gated on
-          // `!attemptedCapture` so a superseded capture stop abandons the session
-          // like B4 — persisting or clearing there is the George-R5 loss.
-          if (!committed && !attemptedCapture && editor.hasEdits) {
-            if (editor.workingLength === 0) {
+          switch (plan.action) {
+            case "clear": {
               // Cut down to nothing clears the take (no 0-frame ghost). A failed
               // clear must keep the sheet open with an in-place error — closing as
               // if the erase happened would leave the original on disk under a UI
@@ -1065,48 +1099,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 false
               );
               if (!cleared) {
-                setStopError(strings.clearFailed);
-                cancelPreview();
-                closing.current = false;
-                setIsClosing(false);
+                stayOpen(strings.clearFailed);
                 return false;
               }
-            } else {
+              dirty.current = true;
+              break;
+            }
+            case "save-edit":
               // A non-empty edit replaces the audio through the same never-lose
               // machinery a recording uses (owned slot → App recovery on failure),
               // so its boolean is not branched on here. It demotes an approved
               // segment to draft unless re-marked, and the mark rides the write.
-              await saveEditedSegment(
-                segmentId,
-                editor.working,
-                finishedIntent === true
-              );
-            }
-            dirty.current = true;
-            committed = true;
-          }
-          // A toggle with no new take is a direct write — there is no take to carry
-          // it. Only when the translator actually changed it from the stored value,
-          // and only when nothing was committed (a commit already carried the mark).
-          if (
-            !committed &&
-            view &&
-            finishedIntent !== null &&
-            finishedIntent !== view.finished
-          ) {
-            try {
-              await setFinished(finishedIntent);
-            } catch (cause) {
-              // The store rejects a finished mark on a segment with no take — a
-              // take deleted externally between toggle and close. Surface it
-              // (F5-#1) rather than only the console, and stay open.
-              console.error("Could not change the finished flag", cause);
-              setStopError(strings.finishedWriteFailed);
-              cancelPreview();
-              closing.current = false;
-              setIsClosing(false);
-              return false;
-            }
+              await saveEditedSegment(segmentId, editor.working, plan.finished);
+              dirty.current = true;
+              break;
+            case "mark":
+              try {
+                await setFinished(plan.finished);
+              } catch (cause) {
+                // The store rejects a finished mark on a segment with no take — a
+                // take deleted externally between toggle and close. Surface it
+                // (F5-#1) rather than only the console, and stay open.
+                console.error("Could not change the finished flag", cause);
+                stayOpen(strings.finishedWriteFailed);
+                return false;
+              }
+              break;
+            case "close":
+              break;
           }
           onExit(dirty.current);
           return true;
@@ -1119,16 +1139,31 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           return true;
         }
       },
-      [
-        editor,
-        saveEditedSegment,
-        segmentId,
+      [editor, saveEditedSegment, segmentId, setFinished, stayOpen, onExit]
+    );
+
+    /**
+     * What this session still owes when no take is being committed — read at the
+     * moment of the exit, never from a stale closure.
+     *
+     * Both no-capture exits (`close()` from idle, and `leaveHeldTake`) build it
+     * the same way, so the pending edit and the pending toggle cannot be seen
+     * differently by the two of them.
+     */
+    const pendingWork = useCallback(
+      () => ({
+        hasEdits: editor.hasEdits,
+        workingLength: editor.workingLength,
         finishedIntent,
-        view,
-        setFinished,
-        cancelPreview,
-        onExit,
-      ]
+        storedFinished: view?.finished ?? null,
+        // What the STORE will accept a Finished mark on, not what the checkbox
+        // offered: `setSegmentFinished(true)` throws with no active take, and
+        // the sheet's only answer to that throw is to stay open with the box
+        // disabled. `hasClip` is the view-layer proxy (it follows the clip
+        // resolving, so a dangling take reads false — deliberately).
+        hasTake: view?.hasClip ?? false,
+      }),
+      [editor, finishedIntent, view]
     );
 
     const close = useCallback((): Promise<boolean> => {
@@ -1189,15 +1224,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // splice what it captured into the segment's audio. `stopRecording`
         // releases the mic and never rejects; `saveRecording` never rejects and
         // turns a failure into the recovery screen App renders.
-        let committed = false;
         // A take was in play at close (live, paused, or an interruption froze it to
         // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
         // generation mid-flush — returning no samples and no error. B4 just closed
-        // then, original intact. B5 must keep that: the edit-only block below must
-        // NOT run on a superseded capture, or a cut-to-empty would clear the
-        // original recording (gone) with the replacement never landed and the cut
-        // audio only in RAM on the clipboard — unrecoverable field loss (George R5).
-        const attemptedCapture = recording || paused || state === "processing";
+        // then, original intact. B5 must keep that: a superseded capture must NOT
+        // persist the pending edits, or a cut-to-empty would clear the original
+        // recording (gone) with the replacement never landed and the cut audio only
+        // in RAM on the clipboard — unrecoverable field loss (George R5). That rule
+        // now lives in `planClose`, where it is enumerated rather than commented.
+        //
+        // `capture` null below means no capture was attempted, which is the same
+        // question `attemptsCapture(state)` answers — so the plan reads one input,
+        // not two that can disagree. `recording || paused || state === "processing"`
+        // was that predicate spelled out; `attemptsCapture` is the same three states,
+        // enumerated over the whole of `RecorderState` in `tests/close-plan.test.ts`.
+        const attemptedCapture = attemptsCapture(state);
         // Still synchronous (no `await` above this line since `setIsClosing(true)`
         // ran) — batched into the same render `isClosing`'s own update triggers.
         // An edit-only or Finished-only close reaches this function too (Frank
@@ -1206,6 +1247,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // `LiveScope` with nothing in its ring to paint — a blank canvas for the
         // whole IndexedDB write.
         setCaptureClosing(attemptedCapture);
+        let capture: CaptureOutcome<Blob> | null = null;
         if (attemptedCapture) {
           // Do NOT await the in-flight preview decode here. `stop()` steals the
           // chunks/stream/recorder into locals BEFORE its first await, which is what
@@ -1226,14 +1268,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
           );
           const result = await audio.stopRecording();
-          if (result.samples && result.samples.length > 0) {
+          capture = {
+            samples: result.samples,
+            bytes: result.blob,
+            error: result.error,
+          };
+        }
+        // Which of the exits this close takes is decided in ONE place, enumerated
+        // in `tests/close-plan.test.ts` (#180). At most one of save-take /
+        // save-edit / clear / mark happens: a committed take already carries the
+        // pending edits (its splice base is the edited buffer, Model A) and already
+        // carries the finished mark (applied atomically in `addTake`, so a separate
+        // write cannot be clobbered by the same close's demote-to-draft).
+        const plan = planClose({ capture, ...pendingWork() });
+        switch (plan.action) {
+          case "save-take":
             // The Finished mark rides the take (applied atomically in addTake, on
-            // this attempt or a retry). Only an EXPLICIT mark this session marks
-            // it finished; a re-record the translator did not mark stays a
-            // demote-to-draft. The boolean saveRecording returns is deliberately
-            // not branched on here: on a failure App shows the recovery screen and
-            // the mark is preserved in the held take, so close() has nothing left
-            // to decide.
+            // this attempt or a retry). The boolean saveRecording returns is
+            // deliberately not branched on here: on a failure App shows the recovery
+            // screen and the mark is preserved in the held take, so close() has
+            // nothing left to decide.
             // The splice base is the WORKING buffer, not the loaded clip: any
             // cut/paste this session came first (Model A) and must be part of what
             // the recording splices into. insertionOffset was captured against the
@@ -1241,26 +1295,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             await saveRecording(
               segmentId,
               editor.working,
-              result.samples,
+              plan.samples,
               insertionOffset.current,
-              finishedIntent === true
+              plan.finished
             );
             dirty.current = true;
-            committed = true;
-          } else if (result.blob) {
+            // A committed take owes nothing else, so the tail only has to exit —
+            // and it exits through the SAME `onExit(dirty)` every other path takes.
+            return executeTail({ action: "close" });
+          case "hold":
             // The decode FAILED but the captured bytes survive (#165) — the take
             // exists only here. Hold them and hand the body to the recovery panel
             // (re-decode on a fresh gesture, or share the bytes off the phone),
-            // never a bare Notice that drops the only copy. Checked BEFORE
-            // `result.error` so a SUPERSEDED stop — a leave()/pagehide bumped the
-            // generation mid-decode, so `error` is withheld but `blob` is now kept
-            // (George R1 G2) — holds its bytes instead of falling through to the
-            // silent close below. That interruption is the #106 case #165 exists to
-            // recover, and it was the one this panel never appeared on. Do NOT
-            // onExit: leave() would close silently on a take that cannot be recorded
-            // again. An empty or silent capture carries no blob and falls to the
-            // Notice below.
-            setHeldTake(result.blob);
+            // never a bare Notice that drops the only copy. Do NOT onExit: leave()
+            // would close silently on a take that cannot be recorded again.
+            setHeldTake(plan.bytes);
             // A Back-initiated recovery exits to Segments on a successful retry — the
             // opposite of onEnterEdit's. Stamp the discriminator false so a stale true
             // from an earlier Edit-commit recovery cannot redirect this one into edit
@@ -1276,7 +1325,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             closing.current = false;
             setIsClosing(false);
             return false;
-          } else if (result.error) {
+          case "stay":
             // The stop yielded no usable audio, no bytes worth keeping, AND has
             // something to say — an empty or silent capture. Its cause travels WITH
             // the result, not the async `error` state a render closure here would
@@ -1284,21 +1333,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // permission panel). A toolbar Notice (not the permission panel — this
             // is not a permission miss), and re-enable so Back or Record works. Do
             // NOT onExit.
-            setStopError(result.error);
-            cancelPreview();
-            closing.current = false;
-            setIsClosing(false);
+            stayOpen(plan.error);
             return false;
-          }
-          // else: no samples, no bytes, and no error — a superseded stop whose
-          // capture yielded nothing to keep (a cancel/leave landed during it).
-          // Nothing to save and nothing to say, so fall through and close, rather
-          // than dead-ending the sheet open (#59). An empty capture is NOT this
-          // branch — it returns the "No sound" error above and stays open to retry.
+          // Persist any pending edit and Finished flag, then exit — the shared
+          // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
+          // Spelled out rather than defaulted, so a new `ClosePlan` action cannot
+          // reach the tail silently: it would have no case, and the switch would
+          // stop satisfying the `Promise<boolean>` return.
+          case "clear":
+          case "save-edit":
+          case "mark":
+          case "close":
+            return executeTail(plan);
         }
-        // Persist any pending edit and Finished flag, then exit — the shared
-        // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
-        return commitPendingAndExit(committed, attemptedCapture);
       })().catch((cause: unknown) => {
         // Neither call rejects by contract; this is the last net on the one path
         // where a failure would cost a recording that cannot be made again.
@@ -1309,18 +1356,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         return true;
       });
     }, [
-      recording,
-      paused,
+      // `recording` and `paused` are gone from here: they are `state ===`
+      // derivations (see their declarations above), and `attemptsCapture(state)`
+      // now asks the same question of the one input they were derived from.
+      // Deliberately not a line number — this file moves under every recorder
+      // lane, and a stale citation is worse than none.
       state,
       audio,
       saveRecording,
       editor,
       segmentId,
       onExit,
-      finishedIntent,
       abortPreview,
       cancelPreview,
-      commitPendingAndExit,
+      pendingWork,
+      executeTail,
+      stayOpen,
       menuOpen,
       confirmOpen,
       erase.erasing,
@@ -1552,8 +1603,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // here is what lets the ordinary recorder-stage (and `liveScopeShown`)
       // render again underneath, so it must not be told a capture is live.
       setCaptureClosing(false);
-      void commitPendingAndExit(false, false);
-    }, [commitPendingAndExit]);
+      void executeTail(planPendingWork(pendingWork()));
+    }, [executeTail, pendingWork]);
 
     // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
     // user is not stranded on the now-`inert` list behind the modal. Mount-only —
