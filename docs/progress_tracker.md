@@ -11,6 +11,111 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-16 — v0.2.2 and v0.2.3 promoted and verified on staging; 16 feature/fix PRs merged; the requirements owner's five answers built; every v1-required code item done except #317
+
+A long session running from the 2026-09-15 evening through the night and the day, under the dev lead's blanket merge authority: merge a PR once both reviewers are clean at its head and CI is green, one PR at a time, rechecking the rest after each merge. It lost about four hours to two usage-limit stops (~12:10–15:00 UTC; ~15:40–16:05 UTC, resumed on a new login). Lanes were resumed by agent ID, not respawned.
+
+### Shipped
+
+| Version    | Promotion               | Staging serves it              | Carries                                                          |
+| ---------- | ----------------------- | ------------------------------ | ---------------------------------------------------------------- |
+| **v0.2.2** | #389 → #390 (`ca19f80`) | 11:37 UTC, `index-CKe4t-yv.js` | #346 #343 #356 #271 #366 #371 #368 #292 #344 #213 #347 #386 #367 |
+| **v0.2.3** | #407 → #408 (`88683c4`) | 17:57 UTC, `index-DDGrsOGJ.js` | #345 #384 #398 #401 #403 #279 #214                               |
+
+Main is still at **v0.2.0**. The **v0.2.0 milestone is closed** (29/29 issues).
+
+| PR   | What                                                                                                                                    | Closes              | Review outcome                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #366 | waveform scaled to the take's own peak                                                                                                  | #358                | dual-clean                                                                                                                                                                     |
+| #368 | recorder inert / focus cluster                                                                                                          | #75 #97 #151        | dual-clean (R6)                                                                                                                                                                |
+| #292 | live waveform grows during a 2nd take                                                                                                   | #283                | dual-clean at `647c54c`; comment-only `e3ddd72` accepted with a merge note                                                                                                     |
+| #344 | delete a Book                                                                                                                           | #337 #364           | **DRI accepted** residuals at R11: #363, #360 (→ #367), #378, #379; all four are second-copy scenarios                                                                         |
+| #213 | close decision and save orchestration lifted into tested seams; 26/26 mutations killed; a pre-existing undismissable-sheet defect fixed | #180                | dual-clean at `980ac91`; comment-only `2cc4b61` accepted with a merge note                                                                                                     |
+| #347 | native share via Capacitor                                                                                                              | refs #336           | **DRI accepted** #380 #381 #382; the A17 proof is owed on the build                                                                                                            |
+| #386 | level-meter toggle removed (requirements owner)                                                                                         | refs #286           | dual-clean                                                                                                                                                                     |
+| #367 | New Book asks for a name; first unused placeholder                                                                                      | #314 #360           | dual-clean at R7, after a conflicting rebase over #344                                                                                                                         |
+| #345 | Play in edit mode auditions the selection (requirements owner: yes)                                                                     | #284                | dual-clean; residuals #370 #396                                                                                                                                                |
+| #384 | busy and ready Control affordances                                                                                                      | #354 #383           | **DRI accepted** #393 #394 #395; the Menu dismiss guard was reverted, and the nav-layer fix is #393                                                                            |
+| #398 | Share Book warns on missing or partial chapters (Q6); manifest deferred to #353                                                         | #115                | dual-clean; #400                                                                                                                                                               |
+| #401 | centerline visible in every recorder state (requirements owner)                                                                         | #316                | dual-clean; #402                                                                                                                                                               |
+| #403 | edit/select control on the recorder's bottom bar                                                                                        | #315                | dual-clean (R2)                                                                                                                                                                |
+| #279 | 15 s encoder silence deadline, health notice, playback/decode memory                                                                    | #166 #175 #290 #291 | **DRI accepted** #404 #405 after a scoped extra round. **Browser heartbeat gate:** a real 10-minute encode in Chromium, longest silence 501 ms (about 30× inside the deadline) |
+| #214 | `navigator.storage.persist()` plus a not-persisted shelf line, suppressed inside the native shell                                       | #12                 | dual-clean (R2); #406                                                                                                                                                          |
+
+Also merged: #371 (tracker).
+
+### Decisions (dev lead, via pickers)
+
+- **Blanket merge authority** for the night and for today. **Opus** only for T1 lanes, at most two at a time.
+- **Demoted to v1.0.0:** #38, #361, #246, #253, #272.
+- **Version scheme kept:** 0.2.x are staging builds; the staging → main promotion for the training bumps to 0.3.0. Switch to `0.3.0-rc.N` only if testers are confused.
+- **Accepted residuals at the cap:** #344, #347, #384, #279 (details in the table above).
+
+### Requirements owner's answers
+
+Recorded on each issue and on the #243 register:
+
+- **#284:** yes, as built.
+- **#316:** the centerline is always visible. The two earlier decisions that hid it were miscommunication.
+- **#317:** partly answered. Scrubbing while playback runs (D4) is not understood; the clarifying question is on the issue.
+- **#286 item 3:** remove the level-meter toggle for now.
+- **Q6 / #115:** warn on missing chapters; a manifest is optional for v1.
+- **#248:** the runbook ships as written.
+
+### Issue triage
+
+- **Two-day count:** 103 open → 95 → 96 today. 27 issues closed today and 28 new ones filed, almost all of them review residuals, each with an evidence comment.
+- **Closed or folded, with the content carried over:** #120, #25, #33, #24, #263, #362, #19, #116, #241. #241's premise was false at `45a67f9` and it was folded into #172 / #235. Duplicates #388 and #397 were closed.
+- **v0.3.0:** 64 open / 50 closed. **v1-required open: 9, and none of them is code except #317.**
+  - #317 waits on the requirements owner.
+  - #243 is the register.
+  - #262 needs the signing secrets.
+  - #245, #336, #269, #59, #58 and #108 are device evidence.
+
+### Review tooling: what we learned
+
+- **George "stalls" were a watchdog defect.**
+  - grok prints nothing to stdout between tool loops, so a report-byte-growth watchdog killed healthy runs.
+  - `george-solo2.sh` now keys on grok's own log (`~/.grok/logs/unified.jsonl`) for its pid: 10 minutes of silence counts as a stall, with a 45-minute cap and a PID-group kill.
+  - Real runs took 5–17 minutes.
+  - An early `pkill -f grok` killed other lanes' runs; it was withdrawn.
+- **Dirty-tree runs are void.**
+  - George runs on a worktree that was dirty, or edited mid-run, exit 1 but still print a verdict.
+  - The script now refuses to start on a dirty tree (exit 91), and the fleet watch flags exit-1 runs as VOID.
+- **A plain subagent that enters an existing worktree by path is refused at every Bash call.** Spawn lanes with `isolation: "worktree"` and push with `HEAD:<branch>`.
+- **Lanes hand back mid-George.**
+  - The coordinator takes over the run and posts the triage itself, which prevents duplicate issues like #396/#397 and #387/#388.
+  - A fleet watch (`george-fleet-watch.sh`) flags 8 quiet minutes and reports every terminal line.
+  - The scripts live in the job tmp dir. Promoting them into `scripts/review/` is part of #220.
+- **Merging after develop moves.**
+  - If the PR's files don't overlap the new develop commits and GitHub reports CLEAN, the sign-off stands (#279 over #403).
+  - Otherwise, compare patch-ids against each merge-base; if they differ, the lane rebases and re-runs both reviewers (#367).
+- **Session continuity.**
+  - `~/.claude/settings.json` has auto-compact on (500k window), a PreCompact snapshot hook and a SessionStart(compact) re-inject hook.
+  - The rolling note is `~/.claude/handoff/tc-mobile.md`. No compaction happened today.
+
+### Blockers / needs a human
+
+- **Dev lead:** re-cut the APK and TestFlight builds from staging 0.2.3, then run the **consolidated checklist on #245**. Its top item is one multi-minute Share on an iPhone. The encoder deadline is proven only in Chromium, and if WebKit holds the heartbeat, long iOS Shares would fail at 15 s (#405). This must happen before the training build. The signing secrets are also still owed (#262).
+- **Requirements owner:** #317 (may the translator drag the waveform while playback runs?), plus the rest of #243 (Q1, Q2, Q5, Q7, #13).
+
+### Next session, in order
+
+1. `/sod`, and check the usage budget.
+2. Act on any device findings from #245.
+3. Code queue, one lane each, with recorder lanes staggered:
+   - #393 (nav-layer rename dismissal and system Back)
+   - #402 (make the centerline mean the insert point in whole-clip view)
+   - #405 item 1 (yield inside the playback fill)
+   - #404 (transcode sweep design)
+   - #406 items 1–3 (comments and copy)
+   - #400 (plurality copy)
+4. #317 as soon as the requirements owner answers.
+5. Stale drafts from other contributors (#235, #302, #289 and the #2xx batch): ask their authors whether each is live before touching it.
+6. Plan the staging → main promotion (bumps the minor to 0.3.0) ahead of training week, not on the day.
+
+---
+
 ## 2026-09-15 — L1 landed and promoted (v0.2.1), the first tester's report built as five PRs, the issue list triaged (99 → 93 → 99 with new inbound), and a strategic pause at 97 % of the usage budget
 
 **Paused deliberately at ~17:40 UTC with five Opus lanes killed mid-round** (Seth: "we may not make it… pause strategically"). Every lane had pushed; worktrees under `.claude/worktrees/agent-*` hold any uncommitted tail. **Model policy from today (memory `tc-mobile-subagent-model-policy`): Sonnet by default; Opus (= Opus 5; the Agent tool has no 4.8) only for T1/recorder-core lanes with Seth's go; ≤3 Opus at once.**
