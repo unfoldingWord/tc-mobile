@@ -2061,10 +2061,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // The #358 display fit is suppressed only for a take with
                       // nothing committed behind it — the paused first take
                       // whose decoded preview replaces `LiveScope` above. A
-                      // punch-in (`hasAudio`) draws the STORED clip while it
-                      // records, since `working` does not grow until the splice
-                      // at close, so that canvas stays fitted (George R2 P2).
-                      // The rule itself is pure and table-tested in
+                      // punch-in (`hasAudio`) reaches THIS branch only via the
+                      // tap-failed fallback, an idle view, or its own Pause+Play
+                      // preview (below) — its live recording is on `LiveScope`
+                      // now (#283) — and in every one of those cases it draws
+                      // the STORED/merged clip fitted, since `working` does not
+                      // grow until the splice at close (George R2 P2). The rule
+                      // itself is pure and table-tested in
                       // `lib/audio/display-gain.ts`, not spelled out here.
                       //
                       // `takeActive`, NOT `recording || paused` (George R3 #2 —

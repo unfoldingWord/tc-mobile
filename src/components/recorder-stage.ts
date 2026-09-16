@@ -29,8 +29,12 @@ export interface StageState {
    * during that wait leaves a blank canvas for the whole IndexedDB write
    * instead of the stored/edited waveform. The caller must narrow its own
    * `isClosing` to a capture-close before passing it here (`recorder.tsx`'s
-   * `captureClosingRef`); this module has no other way to tell the two closes
-   * apart.
+   * `captureClosing` state, ANDed in at the call site); this module has no
+   * other way to tell the two closes apart, and this field's own name stays
+   * `isClosing` because a caller that already narrowed it should not have to
+   * rename what it is narrowing (George R-resume round 3 P3: an earlier draft
+   * of this comment named a `captureClosingRef` that was converted to state
+   * before this landed).
    */
   isClosing: boolean;
   /**
