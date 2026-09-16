@@ -11,9 +11,10 @@ import { strings } from "./strings";
  * A natively disabled button can never be `document.activeElement`, so it must
  * be skipped for BOTH the initial focus (landing on it focuses nothing,
  * stranding the user behind the scrim) and the Tab-wrap boundary (a disabled
- * `last` never turns the wrap). The recorder menu's Redo and Erase are disabled
- * at idle/no-clip while the VU toggle stays live, which is exactly when a single
- * shared selector matters. Mirrors EraseConfirm.
+ * `last` never turns the wrap). The recorder menu's Erase is disabled at
+ * idle/no-clip while Edit stays live (it commits then edits a live/paused
+ * take, #134), which is exactly when a single shared selector matters. Mirrors
+ * EraseConfirm.
  *
  * A row carrying a hint (#135) is `aria-disabled` instead, and so MATCHES this
  * selector by design: it is focusable, announces its reason, and holds its place
@@ -28,8 +29,8 @@ interface MenuProps {
   onClose: () => void;
   /**
    * Panel heading, announced by a screen reader. Defaults to the global menu's
-   * title; the recorder opens the same surface with its own title (Redo now, VU
-   * and Erase in B6).
+   * title; the recorder opens the same surface with its own title (Edit, Mark
+   * finished and Erase in B6).
    */
   title?: string;
   /**

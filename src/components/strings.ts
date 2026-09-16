@@ -226,14 +226,6 @@ export const strings = {
   // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  // The level-meter row's two names (#286). Same rule as the zoom toggle: state
-  // first, action second. The old pair ("Show the level meter" / "Hide the level
-  // meter") named only the action, and paired with an eye/eye-off glyph left the
-  // first external tester unable to say which state they were in — or what the
-  // control was attached to. Naming the meter in both halves is what ties the
-  // row to the strip that appears when it is on.
-  vuShown: "Level meter is showing. Hide it.",
-  vuHidden: "Level meter is hidden. Show it.",
   eraseSegment: "Erase recording",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",

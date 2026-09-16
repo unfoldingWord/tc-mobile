@@ -32,7 +32,6 @@ export type IconName =
   | "paste"
   | "undo"
   | "redo"
-  | "levels"
   | "share";
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -351,43 +350,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-  ),
-  // The level meter: rising signal bars (#286). This replaced an eye/eye-off
-  // pair, which the first external tester could not connect to the level strip
-  // at all — "since it is audio, shouldn't it be an ear or a mouth instead of an
-  // eye?" — and which, being a show/hide pair, showed the ACTION where they
-  // looked for the state. One glyph now, unchanging, naming the THING the row
-  // controls; whether it is on is carried by `aria-pressed` and the `is-on`
-  // mark, the way the Finished row already marks itself. Bars rather than an ear
-  // because the shape echoes what appears when the row is on — the meter's own
-  // rising fill — rather than naming the sense being used.
-  levels: (
-    <>
-      <rect
-        x="4"
-        y="12.2"
-        width="3.4"
-        height="5.8"
-        rx="1.2"
-        fill="currentColor"
-      />
-      <rect
-        x="9.3"
-        y="8"
-        width="3.4"
-        height="10"
-        rx="1.2"
-        fill="currentColor"
-      />
-      <rect
-        x="14.6"
-        y="4"
-        width="3.4"
-        height="14"
-        rx="1.2"
-        fill="currentColor"
-      />
-    </>
   ),
   // Share: a tray with an up-arrow leaving it — the OS share-sheet glyph.
   share: (
