@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { dropBookCard, reportUnlessStale } from "@/hooks/use-books";
-import type { BookId } from "@/types/domain";
+import {
+  canStartAddChapter,
+  dropBookCard,
+  patchNewChapter,
+  reportUnlessStale,
+} from "@/hooks/use-books";
+import type { BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
 /**
@@ -127,5 +132,103 @@ describe("dropBookCard", () => {
 
   it("empties the shelf when it names the only book", () => {
     expect(dropBookCard([card("book-a")], "book-a" as BookId)).toEqual([]);
+  });
+});
+
+/**
+ * `useBooks`'s Add-chapter path, minus React (no jsdom, no renderer — the
+ * same constraint `tests/use-erase-segment.test.ts` documents). What is
+ * Node-testable here is the pair of pure decisions the hook's `addChapter`
+ * was missing: the fold that patches a new chapter onto its book's card in
+ * the same turn as the write, and the guard that a second tap for the same
+ * book while the first is in flight must not proceed (George R3/R4 P2 —
+ * "Create success now focuses an unlatched, non-optimistic Add-chapter
+ * control; extra chapters cannot be deleted"). `addingChapterFor`, the ref
+ * that HOLDS the guard, is React state and is review + on-device surface,
+ * same as `creatingBook` and `useEraseSegment`'s own double-tap ref.
+ */
+
+const chapterBookId = (s: string): BookId => s as BookId;
+const chapterId = (s: string): ChapterId => s as ChapterId;
+
+const chapterCard = (
+  bookId_: BookId,
+  chapters: BookCard["chapters"] = []
+): BookCard => ({
+  bookId: bookId_,
+  name: `Book ${bookId_}`,
+  chapters,
+});
+
+const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
+  id: chapterId("ch-1"),
+  bookId: chapterBookId("b-1"),
+  number: 1,
+  name: null,
+  segmentIds: [],
+  ...overrides,
+});
+
+describe("patchNewChapter", () => {
+  it("appends the new chapter as a zero-progress row on its own book's card", () => {
+    const books = [chapterCard(chapterBookId("b-1")), chapterCard(chapterBookId("b-2"))];
+    const next = patchNewChapter(books, chapterBookId("b-1"), chapter());
+
+    expect(next[0]?.chapters).toEqual([
+      {
+        chapterId: chapterId("ch-1"),
+        number: 1,
+        name: null,
+        finishedCount: 0,
+        totalCount: 0,
+      },
+    ]);
+    // The other book's card is untouched — same array reference, even.
+    expect(next[1]).toBe(books[1]);
+  });
+
+  it("appends after any existing chapters, preserving chapter order", () => {
+    const existing = [
+      {
+        chapterId: chapterId("ch-0"),
+        number: 1,
+        name: null,
+        finishedCount: 2,
+        totalCount: 2,
+      },
+    ];
+    const books = [chapterCard(chapterBookId("b-1"), existing)];
+    const next = patchNewChapter(
+      books,
+      chapterBookId("b-1"),
+      chapter({ id: chapterId("ch-1"), number: 2 })
+    );
+
+    expect(next[0]?.chapters.map((c) => c.chapterId)).toEqual([
+      chapterId("ch-0"),
+      chapterId("ch-1"),
+    ]);
+  });
+
+  it("is a no-op when the chapter's book is not on the shelf (a stale card)", () => {
+    const books = [chapterCard(chapterBookId("b-2"))];
+    const next = patchNewChapter(books, chapterBookId("b-1"), chapter());
+    expect(next).toEqual(books);
+  });
+});
+
+describe("canStartAddChapter", () => {
+  it("allows a tap when nothing is in flight for that book", () => {
+    expect(canStartAddChapter(new Set(), chapterBookId("b-1"))).toBe(true);
+  });
+
+  it("swallows a second tap for the SAME book while the first is in flight", () => {
+    const inFlight = new Set([chapterBookId("b-1")]);
+    expect(canStartAddChapter(inFlight, chapterBookId("b-1"))).toBe(false);
+  });
+
+  it("does not block a different book's Add-chapter tap", () => {
+    const inFlight = new Set([chapterBookId("b-1")]);
+    expect(canStartAddChapter(inFlight, chapterBookId("b-2"))).toBe(true);
   });
 });

@@ -20,6 +20,16 @@ interface NameEditProps {
   /** Abandon the edit, leaving the name unchanged — or, on New Book, creating
    *  nothing at all. */
   onCancel: () => void;
+  /**
+   * The commit is in flight. Disables the save Control so it carries the same
+   * visual "this is committing" signal `EraseConfirm` gives its own destructive
+   * action (`disabled={busy}` there) — the gap George R3/R4 P3 found: the field
+   * and Close/Escape/scrim still looked live for the length of a New Book
+   * write, with nothing on screen saying otherwise. Optional and defaulted
+   * false: the rename call sites have no in-flight window worth signalling
+   * (their menu already re-renders on the write's own error/close paths).
+   */
+  busy?: boolean;
 }
 
 /**
@@ -48,6 +58,7 @@ export function NameEdit({
   saveLabel = strings.saveName,
   onSave,
   onCancel,
+  busy = false,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
   return (
@@ -55,6 +66,10 @@ export function NameEdit({
       className="name-edit"
       onSubmit={(e) => {
         e.preventDefault();
+        // Enter still submits the form while busy (the input has no
+        // `disabled`/`readOnly` of its own — see below) — swallow it here so
+        // it cannot re-invoke `onSave` behind the disabled Control's back.
+        if (busy) return;
         onSave(value);
       }}
     >
@@ -99,6 +114,7 @@ export function NameEdit({
         icon="check"
         label={saveLabel}
         variant="default"
+        disabled={busy}
         onClick={() => onSave(value)}
       />
     </form>

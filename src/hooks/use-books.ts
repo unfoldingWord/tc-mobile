@@ -161,6 +161,65 @@ interface Failure {
 }
 
 /**
+ * Fold a freshly added chapter into its book's card, in the same turn as the
+ * write — the "patch now, `reload()` later" contract `createBook`'s optimistic
+ * insert and `useChapterSegments.addSegment` both use, extended to the one
+ * creation path that still only reloaded. Without this, the row stayed empty
+ * until `loadBookCards` finished, `reload()` never having flipped `loading`
+ * (George R3/R4 P2): a fast repeat activation reads as "the first tap did
+ * nothing" and invites another, and on this tree there is no way to delete
+ * the extra chapter it writes.
+ *
+ * Appended, not prepended: `ChapterRow` order is the book's chapter order —
+ * unlike `BookCard`'s `updatedAt` shelf sort — and a new chapter is the next
+ * one, not the first.
+ *
+ * Pure so the fold itself, not just the ref that gates it, has a red-first
+ * test (`tests/use-books.test.ts`).
+ */
+export function patchNewChapter(
+  books: readonly BookCard[],
+  bookId: BookId,
+  chapter: Chapter
+): BookCard[] {
+  return books.map((card) =>
+    card.bookId === bookId
+      ? {
+          ...card,
+          chapters: [
+            ...card.chapters,
+            {
+              chapterId: chapter.id,
+              number: chapter.number,
+              name: chapter.name,
+              // A brand-new chapter has no segments, so both counts are known
+              // without a read — mirrors `addSegment`'s optimistic row.
+              finishedCount: 0,
+              totalCount: 0,
+            },
+          ],
+        }
+      : card
+  );
+}
+
+/**
+ * Whether an Add-chapter tap for `bookId` should proceed, given the set of
+ * books currently mid-create. The guard itself — not just the ref that holds
+ * it — gets a red-first test: a second tap for the SAME book while the first
+ * is still in flight must be swallowed (the unlatched control George R3/R4
+ * P2 found), while a tap for a DIFFERENT book must not be blocked by it — two
+ * books' Add-chapter controls are independent, unlike the single New Book
+ * dialog's `creatingBook` latch.
+ */
+export function canStartAddChapter(
+  inFlight: ReadonlySet<BookId>,
+  bookId: BookId
+): boolean {
+  return !inFlight.has(bookId);
+}
+
+/**
  * What a create attempt resolved to: the book, or the reason it failed.
  *
  * A discriminated outcome rather than `Book | null`, because the caller needs
@@ -346,11 +405,26 @@ export function useBooks() {
     [reload, report]
   );
 
+  // The Add-chapter in-flight latch, one entry per book. A ref (like
+  // `creatingBook` in books-screen.tsx), not state: it gates re-entrancy
+  // rather than driving a render, and each book's control latches
+  // independently, so two different books' Add-chapter taps do not block
+  // each other the way the single New Book dialog's latch would.
+  const addingChapterFor = useRef<Set<BookId>>(new Set());
+
   const addChapter = useCallback(
     async (bookId: BookId): Promise<Chapter | null> => {
+      if (!canStartAddChapter(addingChapterFor.current, bookId)) return null;
+      addingChapterFor.current.add(bookId);
       try {
         const chapter = await addChapterToBook(bookId);
         report(null); // a successful write clears the slot — see `createBook`
+        // Patch the row on THIS book's card in the same turn as the write —
+        // see `patchNewChapter` — so the control's own repeated activations
+        // (fast taps, a held Enter's key-repeat landing here after a New Book
+        // success) see the row that landed instead of an empty card that
+        // reads as "nothing happened" (George R3/R4 P2).
+        setBooks((prev) => patchNewChapter(prev, bookId, chapter));
         reload();
         return chapter;
       } catch (cause) {
@@ -371,6 +445,12 @@ export function useBooks() {
           reload();
         }
         return null;
+      } finally {
+        // Released unconditionally, success or failure: unlike `creatingBook`
+        // there is no dialog to reopen and no reset to reach the next attempt
+        // through — the Add-chapter control stays mounted and reachable, so
+        // "released when this attempt is done" is the whole contract.
+        addingChapterFor.current.delete(bookId);
       }
     },
     [reload, report]

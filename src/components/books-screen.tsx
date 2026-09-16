@@ -89,6 +89,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Enter or a double-tap straddling a fast `put` starts a second create and
   // writes a second book (George R2 P2-2). There is no delete on this tree.
   const creatingBook = useRef(false);
+  // The visual half of the same latch. `creatingBook` is deliberately a ref —
+  // reading it does not re-render — but that also meant Confirm never showed
+  // busy: nothing on screen changed for the length of the write, so Close,
+  // Escape and the scrim still LOOKED live even though `onCancelNewBook`
+  // already turned them into no-ops (George R3/R4 P3). State, synced wherever
+  // the ref is, purely so `NameEdit`'s save Control can render `disabled`,
+  // matching `EraseConfirm`'s `disabled={busy}` on its own committing action.
+  const [creatingBookBusy, setCreatingBookBusy] = useState(false);
   // Where focus was when the New Book dialog opened — the corner + or the empty
   // state's CTA. Restored when the dialog closes WITHOUT creating, so a cancel
   // does not drop focus to the document (the dialog's own controls unmount).
@@ -199,6 +207,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // The open edge is where the in-flight latch resets, exactly as
     // EraseConfirm resets `inFlightRef` — a reused dialog starts clean.
     creatingBook.current = false;
+    setCreatingBookBusy(false);
     setNewBookError(null); // a fresh dialog starts with nothing to report
     setNewBookSeed(newBookPlaceholder);
   }, [newBookPlaceholder]);
@@ -234,6 +243,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     async (typed: string) => {
       if (creatingBook.current) return;
       creatingBook.current = true;
+      setCreatingBookBusy(true);
       setNewBookError(null);
       // An untouched field means "the placeholder is fine", so send "" and let
       // the store derive the name INSIDE its write transaction — the one-tap
@@ -256,6 +266,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         // name stays in the field for another try. Releasing the latch here, and
         // only here, is what makes that retry (and Cancel) work again.
         creatingBook.current = false;
+        setCreatingBookBusy(false);
         setNewBookError(outcome.message);
         return;
       }
@@ -595,6 +606,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           saveLabel={strings.createBook}
           onSave={(name) => void onConfirmNewBook(name)}
           onCancel={onCancelNewBook}
+          busy={creatingBookBusy}
         />
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
