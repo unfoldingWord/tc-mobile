@@ -137,6 +137,25 @@ export interface PendingWork {
   readonly finishedIntent: boolean | null;
   /** The segment's stored finished flag, or null when no segment is loaded. */
   readonly storedFinished: boolean | null;
+  /**
+   * Whether the segment has audio on disk that a Finished mark can attach to.
+   *
+   * The store is the reason this input exists: `setSegmentFinished` THROWS on
+   * `finished === true` when `activeTakeId === null` (`lib/storage/books.ts`),
+   * and accepts `false` there (it resets the row to not-started). Without this,
+   * a Finished box ticked while recording a FIRST take, on a capture that then
+   * produced nothing, plans a `mark` the store rejects — and the recorder's
+   * only response to that rejection is to stay open, on a sheet where the box
+   * is now disabled and so cannot be un-ticked. See the PR for #180.
+   *
+   * `view.hasClip` at the call site, which follows the clip RESOLVING rather
+   * than `activeTakeId`, so it is deliberately conservative: a dangling take
+   * (row points at a clip the database cannot produce) reads false here and its
+   * mark is skipped. That matches the F3 rule the rest of the UI already
+   * applies to a dangling take — it opens as an empty, record-only segment —
+   * and marking such a segment finished would call unreadable audio done.
+   */
+  readonly hasTake: boolean;
 }
 
 /** Everything the close decision reads. */
@@ -214,16 +233,31 @@ export function attemptsCapture(state: CaptureState): boolean {
  *
  * Only a real change, and only against a loaded segment: the store rejects a
  * finished mark on a segment with no take.
+ *
+ * That rejection is why `hasTake` is a separate input from `storedFinished`.
+ * They are NOT the same question: a never-recorded segment and a recorded
+ * draft both load as `storedFinished: false`, and only one of them can accept
+ * a mark. Asking the store and handling the throw is not equivalent either —
+ * the recorder's only answer to a failed flag write is to stay open, which on
+ * this path strands the sheet (the box that set the intent is disabled once
+ * the take is gone, so it cannot be un-ticked).
  */
 function planFinishedWrite(
   finishedIntent: boolean | null,
-  storedFinished: boolean | null
+  storedFinished: boolean | null,
+  hasTake: boolean
 ): TailPlan {
   if (
     storedFinished !== null &&
     finishedIntent !== null &&
     finishedIntent !== storedFinished
   ) {
+    // Mirrors `setSegmentFinished` exactly: it throws on `true` with no active
+    // take and accepts `false` (resetting the row to not-started). So only the
+    // marking direction is gated — an un-mark still goes through, and in any
+    // case a stored `finished` of true implies a take, so that combination
+    // cannot arrive here.
+    if (finishedIntent && !hasTake) return { action: "close" };
     return { action: "mark", finished: finishedIntent };
   }
   return { action: "close" };
@@ -234,7 +268,8 @@ function planFinishedWrite(
  * pending toggle. At most one of them — a saved edit carries the mark.
  */
 export function planPendingWork(inputs: PendingWork): TailPlan {
-  const { hasEdits, workingLength, finishedIntent, storedFinished } = inputs;
+  const { hasEdits, workingLength, finishedIntent, storedFinished, hasTake } =
+    inputs;
   if (hasEdits) {
     return workingLength === 0
       ? // Cut down to nothing clears the take, so there is no 0-frame ghost:
@@ -243,13 +278,13 @@ export function planPendingWork(inputs: PendingWork): TailPlan {
         { action: "clear" }
       : { action: "save-edit", finished: finishedIntent === true };
   }
-  return planFinishedWrite(finishedIntent, storedFinished);
+  return planFinishedWrite(finishedIntent, storedFinished, hasTake);
 }
 
 export function planClose<TBytes>(
   inputs: CloseInputs<TBytes>
 ): ClosePlan<TBytes> {
-  const { capture, finishedIntent, storedFinished } = inputs;
+  const { capture, finishedIntent, storedFinished, hasTake } = inputs;
 
   if (capture) {
     const verdict = classifyCapture(capture);
@@ -275,7 +310,7 @@ export function planClose<TBytes>(
     // superseded stop would drop the original recording while the replacement
     // never landed and the cut audio lives only in RAM on the clipboard:
     // unrecoverable field loss (George R5).
-    return planFinishedWrite(finishedIntent, storedFinished);
+    return planFinishedWrite(finishedIntent, storedFinished, hasTake);
   }
   return planPendingWork(inputs);
 }

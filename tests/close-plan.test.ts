@@ -82,7 +82,13 @@ const supersededCapture: CaptureOutcome<string> = {
   error: null,
 };
 
-/** No capture was attempted at all — the recorder was idle when Back was tapped. */
+/**
+ * No capture was attempted at all — the recorder was idle when Back was tapped.
+ *
+ * `hasTake` defaults TRUE: most cases below are about a segment that already
+ * has audio, which is the only state a Finished mark can be written on. The
+ * never-recorded case is its own describe block, where it is passed explicitly.
+ */
 const idle = (
   over: Partial<CloseInputs<string>> = {}
 ): CloseInputs<string> => ({
@@ -91,6 +97,7 @@ const idle = (
   workingLength: 0,
   finishedIntent: null,
   storedFinished: false,
+  hasTake: true,
   ...over,
 });
 
@@ -99,6 +106,7 @@ const work = (over: Partial<PendingWork> = {}): PendingWork => ({
   workingLength: 0,
   finishedIntent: null,
   storedFinished: false,
+  hasTake: true,
   ...over,
 });
 
@@ -410,6 +418,84 @@ describe("planClose — the finished mark on its own", () => {
     expect(
       planClose(idle({ finishedIntent: true, storedFinished: null })).action
     ).toBe("close");
+  });
+});
+
+/**
+ * The mark the store would throw on.
+ *
+ * `setSegmentFinished` (`lib/storage/books.ts`) rejects `finished === true`
+ * when `activeTakeId === null`, and the recorder's only answer to a failed flag
+ * write is to stay open — on a sheet where the Finished box has gone disabled
+ * with the take, so the intent that caused the throw cannot be cleared. Every
+ * later Back re-plans the same rejected write and the sheet will not dismiss.
+ *
+ * `storedFinished` cannot tell this case apart on its own: a never-recorded
+ * segment and a recorded draft both load as `false`. That is why `hasTake` is a
+ * separate input. Found by the deep-tree reviewer on #180; the behaviour is
+ * older than this PR (the pre-extraction tail wrote the same `setFinished`),
+ * so the fix ships as its own commit.
+ */
+describe("planFinishedWrite — a segment with no take to mark", () => {
+  it("does not plan a mark the store will reject", () => {
+    // Tick Finished while recording a FIRST take, then lose the capture.
+    expect(
+      planPendingWork(
+        work({ finishedIntent: true, storedFinished: false, hasTake: false })
+      )
+    ).toEqual({ action: "close" });
+  });
+
+  it("plans the mark once the segment actually has audio", () => {
+    // The same inputs with a take present: a recorded draft being approved.
+    expect(
+      planPendingWork(
+        work({ finishedIntent: true, storedFinished: false, hasTake: true })
+      )
+    ).toEqual({ action: "mark", finished: true });
+  });
+
+  it("still un-marks a segment with no take", () => {
+    // Only the marking direction throws; `setSegmentFinished(false)` resets the
+    // row to not-started and is accepted. Gating it too would be a second bug.
+    // (A stored `true` implies a take, so this combination is defensive.)
+    expect(
+      planPendingWork(
+        work({ finishedIntent: false, storedFinished: true, hasTake: false })
+      )
+    ).toEqual({ action: "mark", finished: false });
+  });
+
+  it("does not plan the rejected mark after a superseded capture either", () => {
+    // `planClose`'s own fall-through reaches the same decision, so the gate has
+    // to hold on both routes into it.
+    expect(
+      planClose(
+        idle({
+          capture: supersededCapture,
+          finishedIntent: true,
+          storedFinished: false,
+          hasTake: false,
+        })
+      ).action
+    ).toBe("close");
+  });
+
+  it("leaves the edit-only save alone — its mark rides the write", () => {
+    // `save-edit` goes through `saveTake`, which creates the take and applies
+    // the mark atomically, so there is no store rejection to avoid and the
+    // gate must NOT suppress it.
+    expect(
+      planPendingWork(
+        work({
+          hasEdits: true,
+          workingLength: 100,
+          finishedIntent: true,
+          storedFinished: false,
+          hasTake: false,
+        })
+      )
+    ).toEqual({ action: "save-edit", finished: true });
   });
 });
 

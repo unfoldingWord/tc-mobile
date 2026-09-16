@@ -1156,6 +1156,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         workingLength: editor.workingLength,
         finishedIntent,
         storedFinished: view?.finished ?? null,
+        // What the STORE will accept a Finished mark on, not what the checkbox
+        // offered: `setSegmentFinished(true)` throws with no active take, and
+        // the sheet's only answer to that throw is to stay open with the box
+        // disabled. `hasClip` is the view-layer proxy (it follows the clip
+        // resolving, so a dangling take reads false — deliberately).
+        hasTake: view?.hasClip ?? false,
       }),
       [editor, finishedIntent, view]
     );
