@@ -88,6 +88,19 @@ type DeleteBookResult = "ok" | "failed" | "busy";
  * that path the ORIGINAL mutation failure is reported: it is the operation the
  * translator actually attempted, and the stale-check's own fault is not new
  * information the screen can act on.
+ *
+ * Returns whether the failure was SWALLOWED (stale, nothing reported) rather
+ * than reported. `books` state is IndexedDB's cache, not its source of truth
+ * — a caller must `reload()` on a swallow, because the reason there was
+ * nothing to report is that the store has already moved (George, PR #344
+ * round 9). Two live copies of this app are a shape this repo already designs
+ * for (`db.ts`'s `autoUpdate`, an e2e two-tab case): a second tab or a
+ * pre-update page can delete a book while THIS copy's `books` still shows it,
+ * and without a reload here the row stays tappable with no Notice explaining
+ * why its actions silently do nothing — until a later tap into the ghost
+ * throws a raw store string into the Segments screen instead. A reported
+ * (non-stale) failure needs no extra reload: it is a live book, and nothing
+ * about it changed.
  */
 export async function reportUnlessStale(
   cause: unknown,
@@ -95,16 +108,19 @@ export async function reportUnlessStale(
   report: (cause: unknown, fromDelete?: boolean) => void,
   checkPresent: (id: BookId) => Promise<boolean> = async (id) =>
     (await getBook(id)) !== undefined
-): Promise<void> {
+): Promise<{ swallowed: boolean }> {
   let stillPresent: boolean;
   try {
     stillPresent = await checkPresent(bookId);
   } catch {
     report(cause);
-    return;
+    return { swallowed: false };
   }
-  if (isStaleBookFailure(cause, bookId, stillPresent)) return;
+  if (isStaleBookFailure(cause, bookId, stillPresent)) {
+    return { swallowed: true };
+  }
   report(cause);
+  return { swallowed: false };
 }
 
 /**
@@ -265,9 +281,15 @@ export function useBooks() {
         return chapter;
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and
-        // already reported its own outcome — see `reportUnlessStale`. Any
-        // other failure is reported as-is.
-        await reportUnlessStale(cause, bookId, report);
+        // already reported its own outcome — see `reportUnlessStale`. A
+        // swallowed (stale) failure still reloads: `books` is IndexedDB's
+        // cache, not its source of truth, and the store has already moved
+        // out from under this ghost row (George, PR #344 round 9) — the
+        // second-tab/pre-update-page shape `db.ts`'s `autoUpdate` designs for.
+        // A genuinely reported failure needs no extra reload; the book is
+        // still live and nothing about it changed.
+        const { swallowed } = await reportUnlessStale(cause, bookId, report);
+        if (swallowed) reload();
         return null;
       }
     },
@@ -287,9 +309,10 @@ export function useBooks() {
         return book;
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and
-        // already reported its own outcome — see `reportUnlessStale`. Any
-        // other failure is reported as-is.
-        await reportUnlessStale(cause, bookId, report);
+        // already reported its own outcome — see `reportUnlessStale`. Same
+        // swallow-reloads rule as `addChapter` above.
+        const { swallowed } = await reportUnlessStale(cause, bookId, report);
+        if (swallowed) reload();
         return null;
       }
     },
