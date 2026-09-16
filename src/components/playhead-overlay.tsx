@@ -95,16 +95,22 @@ export function PlayheadOverlay({
       const ms = readRef.current();
       // `null` is the hide sentinel: playback ended or was stopped and the handle
       // is gone, but this loop is still running until `active` (React state) goes
-      // false a commit later. Hide rather than treat a 0 as "draw at clip start",
-      // which would teleport the line to the left edge for that frame (George R2).
-      const px =
-        ms === null || span <= 0
-          ? -1
-          : playheadViewportX(
-              Math.min(1, Math.max(0, ms / durationMs)),
-              startFraction,
-              endFraction
-            );
+      // false a commit later. UNCONDITIONAL — `clampToEdge` governs an off-window
+      // POSITION, not a missing one, and must never override this: clamping it
+      // would put the line at the left edge for the one frame between the stop
+      // and `active` going false, reinstating exactly the flash this sentinel
+      // exists to prevent (Frank R7). Hide rather than treat a 0 as "draw at
+      // clip start" too, which would teleport the line for that frame (George R2).
+      if (ms === null || span <= 0) {
+        line.style.opacity = "0";
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const px = playheadViewportX(
+        Math.min(1, Math.max(0, ms / durationMs)),
+        startFraction,
+        endFraction
+      );
       // Off-screen in the blank head/tail of a SWAPPED pan/zoom window ⇒ hide,
       // rather than pin to an edge — the same skip the canvas playhead made.
       // `clampToEdge` (#284, George R7) is the one exception: an in-place
