@@ -211,7 +211,47 @@ export function patchNewChapter(
       },
     ],
   };
-  return [patched, ...books.slice(0, index), ...books.slice(index + 1)];
+  return moveToFront(books, index, patched);
+}
+
+/** Shared by every optimistic patch that also moves its card to the shelf's
+ * front — see `patchNewChapter` and `patchRenamedBook`. Not exported: it is
+ * an implementation detail of "where does the patched card land", not a
+ * decision either caller needs to make independently. */
+function moveToFront<T>(items: readonly T[], index: number, patched: T): T[] {
+  return [patched, ...items.slice(0, index), ...items.slice(index + 1)];
+}
+
+/**
+ * Fold a rename's result into its book's card, in the same turn as the write
+ * — no `reload()` after it. `renameBook` USED to reload rather than patch,
+ * on the theory that a rename's shelf-reorder made an in-place patch have to
+ * duplicate `listBooks`' own sort. That reload is exactly what Frank R5 P2
+ * caught breaking: `isLoadCurrent` (added for George R4 P2-2) discards ANY
+ * load whose generation has fallen behind current, and a rename's reload has
+ * no fallback if a LATER optimistic patch (`createBook`/`addChapter`) bumps
+ * the generation before the rename's own read lands — the database holds the
+ * new name, permanently, while the shelf keeps showing the old one for the
+ * rest of the session, because nothing else was ever going to re-apply it.
+ * Patching here, like the other two paths, removes the reload this bug
+ * needed to happen at all.
+ *
+ * Mirrors `renameBookInStore`'s own idempotency: a blank rename keeps the
+ * current name and does not bump `updatedAt` or write at all, so a
+ * name-unchanged result here does not reorder the shelf either — moving it
+ * would show recency that never actually happened on disk. A genuine rename
+ * moves the card to the front, matching the write's own bump, the same
+ * reasoning `patchNewChapter` already follows for `addChapter`.
+ */
+export function patchRenamedBook(
+  books: readonly BookCard[],
+  book: Book
+): BookCard[] {
+  const index = books.findIndex((card) => card.bookId === book.id);
+  const original = books[index];
+  if (index === -1 || !original) return books as BookCard[]; // stale card
+  if (book.name === original.name) return books as BookCard[]; // no-op rename
+  return moveToFront(books, index, { ...original, name: book.name });
 }
 
 /**
@@ -506,16 +546,14 @@ export function useBooks() {
 
   const renameBook = useCallback(
     async (bookId: BookId, name: string): Promise<Book | null> => {
-      // reload() rather than an in-place patch: a rename bumps the book's
-      // updatedAt, and listBooks sorts by it, so the shelf order actually
-      // changes — unlike createBook/addChapter, whose optimistic patch is
-      // already exactly what a reload would confirm, a rename's patch would
-      // have to duplicate the sort `listBooks` already does. A failed write
-      // reaches the same Notice a load failure does.
+      // No `reload()` — see `patchRenamedBook` for why this used to reload,
+      // and why that was itself the bug (Frank R5 P2). A failed write reaches
+      // the same Notice a load failure does.
       try {
         const book = await renameBookInStore(bookId, name);
         report(null); // a successful write clears the slot — see `createBook`
-        reload();
+        setBooks((prev) => patchRenamedBook(prev, book));
+        loadGen.current += 1;
         return book;
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and

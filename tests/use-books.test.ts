@@ -5,9 +5,10 @@ import {
   dropBookCard,
   isLoadCurrent,
   patchNewChapter,
+  patchRenamedBook,
   reportUnlessStale,
 } from "@/hooks/use-books";
-import type { BookId, Chapter, ChapterId } from "@/types/domain";
+import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
 /**
@@ -177,6 +178,16 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
   ...overrides,
 });
 
+const book = (overrides: Partial<Book> = {}): Book => ({
+  id: bookId("b-1"),
+  name: "Mark",
+  languageCode: null,
+  chapterIds: [],
+  createdAt: 0,
+  updatedAt: 0,
+  ...overrides,
+});
+
 describe("patchNewChapter", () => {
   it("appends the new chapter as a zero-progress row on its own book's card", () => {
     const books = [chapterCard(chapterBookId("b-1")), chapterCard(chapterBookId("b-2"))];
@@ -248,6 +259,43 @@ describe("patchNewChapter", () => {
     ]);
     // The untouched book keeps its own identity, just shifted in position.
     expect(next[1]).toBe(books[0]);
+  });
+});
+
+describe("patchRenamedBook", () => {
+  it("moves a genuinely renamed book to the front of the shelf", () => {
+    const books = [card(bookId("b-1")), card(bookId("b-2"))];
+    const next = patchRenamedBook(
+      books,
+      book({ id: bookId("b-2"), name: "Luke" })
+    );
+
+    expect(next.map((c) => c.bookId)).toEqual([bookId("b-2"), bookId("b-1")]);
+    expect(next[0]?.name).toBe("Luke");
+    // The untouched book keeps its own identity, just shifted in position.
+    expect(next[1]).toBe(books[0]);
+  });
+
+  it("does not reorder an idempotent rename (name unchanged, no write, no recency bump)", () => {
+    // Mirrors `renameBookInStore`'s own contract: a blank rename keeps the
+    // current name and does not bump `updatedAt` or write at all, so the
+    // shelf order must not move either — there is no recency to reflect.
+    const books = [card(bookId("b-1")), card(bookId("b-2"))];
+    const next = patchRenamedBook(
+      books,
+      book({ id: bookId("b-2"), name: "Book b-2" })
+    );
+
+    expect(next).toBe(books);
+  });
+
+  it("is a no-op when the renamed book is not on the shelf (a stale card)", () => {
+    const books = [card(bookId("b-2"))];
+    const next = patchRenamedBook(
+      books,
+      book({ id: bookId("b-1"), name: "Mark" })
+    );
+    expect(next).toEqual(books);
   });
 });
 
