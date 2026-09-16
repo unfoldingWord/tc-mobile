@@ -33,6 +33,18 @@ interface PlayheadOverlayProps {
    */
   startFraction: number;
   endFraction: number;
+  /**
+   * Clamp an off-window position to the nearest edge instead of hiding it
+   * (#284, George R7). The hide branch below exists for the blank head/tail of
+   * a SWAPPED view — real screen space with no audio under it. An in-place
+   * audition never swaps the view, so a position outside `[0,1]` there is real,
+   * still-sounding audio that has simply outgrown the pan/zoom window, not
+   * blank space; hiding the one cue that says "this is what you're hearing" is
+   * the wrong response to that. `stage.inPlaceAudition` names exactly this
+   * case and nothing else — every other caller (a preview, a record-mode play,
+   * a no-selection audition) leaves this `false` and keeps the original hide.
+   */
+  clampToEdge?: boolean;
   className?: string;
 }
 
@@ -57,6 +69,7 @@ export function PlayheadOverlay({
   durationMs,
   startFraction,
   endFraction,
+  clampToEdge = false,
   className,
 }: PlayheadOverlayProps) {
   const lineRef = useRef<HTMLDivElement | null>(null);
@@ -92,23 +105,28 @@ export function PlayheadOverlay({
               startFraction,
               endFraction
             );
-      // Off-screen in the blank head/tail of the pan/zoom window ⇒ hide, rather
-      // than pin to an edge — the same skip the canvas playhead made.
-      if (px < 0 || px > 1) {
+      // Off-screen in the blank head/tail of a SWAPPED pan/zoom window ⇒ hide,
+      // rather than pin to an edge — the same skip the canvas playhead made.
+      // `clampToEdge` (#284, George R7) is the one exception: an in-place
+      // audition never swaps the view, so off-screen there is real, still-
+      // sounding audio the pan/zoom window is simply too narrow to show, and
+      // the cue this feature exists to add must stay up rather than vanish.
+      if ((px < 0 || px > 1) && !clampToEdge) {
         line.style.opacity = "0";
       } else {
+        const clamped = Math.min(1, Math.max(0, px));
         // Clamp the CSS position so the whole 2px line stays inside the stage's
         // `overflow: hidden` box, the way the canvas clamped to `w - 2` — at
         // fraction 1 a bare `left: 100%` put the entire line past the edge, so
         // the last sample showed no playhead at all (George R2).
-        line.style.left = `min(${px * 100}%, calc(100% - 2px))`;
+        line.style.left = `min(${clamped * 100}%, calc(100% - 2px))`;
         line.style.opacity = "1";
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [active, durationMs, startFraction, endFraction]);
+  }, [active, durationMs, startFraction, endFraction, clampToEdge]);
 
   return (
     <div

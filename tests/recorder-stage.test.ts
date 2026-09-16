@@ -99,14 +99,16 @@ describe("liveScopeShown — the stage-owning states win", () => {
 });
 
 /**
- * The recorder stage's three view-coupled decisions, as a truth table.
+ * The recorder stage's four view-coupled decisions, as a truth table.
  *
- * Rounds 3, 4 and 5 of this PR's review each found the same defect wearing a
- * different hat — the paste marker, then zoom, then Select — and each time the
- * answer was "this control assumes the pan/zoom window while something else is
- * drawn". Three instances is a class, not a coincidence, so the decision is
- * made once, here, where it can be enumerated and pinned; `recorder.tsx` reads
- * the answers rather than re-deriving them per control.
+ * Rounds 3, 4, 5 and 7 of this PR's review each found the same defect wearing
+ * a different hat — the paste marker, then zoom, then Select, then the
+ * playhead's own hide rule — and each time the answer was "this control (or
+ * overlay) assumes the pan/zoom window while something else is drawn, or
+ * assumes every sounding buffer swapped to the whole clip when this one
+ * didn't". Repetition is a class, not a coincidence, so the decision is made
+ * once, here, where it can be enumerated and pinned; `recorder.tsx` reads the
+ * answers rather than re-deriving them per control.
  *
  * The axes are the four the recorder actually varies: which mode the sheet is
  * in, whether a buffer is sounding, whether a selection frame is up, and
@@ -127,11 +129,13 @@ describe("stageView", () => {
       wholeView: false,
       centerlineHidden: false,
       windowControlsInert: false,
+      inPlaceAudition: false,
     });
     expect(stageView({ ...base, selectionActive: true })).toEqual({
       wholeView: false,
       centerlineHidden: false,
       windowControlsInert: false,
+      inPlaceAudition: false,
     });
   });
 
@@ -143,6 +147,7 @@ describe("stageView", () => {
         wholeView: true,
         centerlineHidden: true,
         windowControlsInert: true,
+        inPlaceAudition: false,
       }
     );
   });
@@ -154,20 +159,29 @@ describe("stageView", () => {
       wholeView: true,
       centerlineHidden: true,
       windowControlsInert: true,
+      inPlaceAudition: false,
     });
   });
 
-  it("keeps the pan window for an audition of a picked span", () => {
+  it("keeps the pan window for an audition of a picked span, and marks it in-place", () => {
     // The band is positioned through that window, and hearing exactly the span
     // it marks is the point — so the view stays put. The line still hides:
     // a second static vertical line beside a travelling playhead reads as
     // "insert here" to someone who cannot read the screen (George R4 P3).
+    //
+    // `inPlaceAudition: true` is the ONLY case it is — it is what tells the
+    // playhead overlay to clamp a position outside the (unswapped) window to
+    // the edge rather than hide (George R7): a picked span wider than the
+    // pan/zoom window sounds all of it, but the window itself never widens,
+    // so without this the moving cue this whole feature exists to add
+    // vanishes the moment playback crosses `win.end`.
     expect(
       stageView({ ...base, playingBuffer: true, selectionActive: true })
     ).toEqual({
       wholeView: false,
       centerlineHidden: true,
       windowControlsInert: true,
+      inPlaceAudition: true,
     });
   });
 
@@ -179,8 +193,9 @@ describe("stageView", () => {
     // `denied`, which requires `!hasAudio`, and Select needs audio — so no frame
     // can be open there. It is pinned anyway because this is a pure function:
     // it is asked questions by its type, not by today's call sites, and the
-    // answer for this one is the whole-clip view. Mutation is what surfaced it —
-    // dropping `mode === "edit"` from the in-place rule left the suite green.
+    // answer for this one is the whole-clip view — never in-place, either.
+    // Mutation is what surfaced the original gap — dropping `mode === "edit"`
+    // from the in-place rule left the suite green.
     expect(
       stageView({
         ...base,
@@ -192,6 +207,7 @@ describe("stageView", () => {
       wholeView: true,
       centerlineHidden: true,
       windowControlsInert: true,
+      inPlaceAudition: false,
     });
   });
 
@@ -202,6 +218,7 @@ describe("stageView", () => {
       wholeView: true,
       centerlineHidden: true,
       windowControlsInert: false,
+      inPlaceAudition: false,
     });
     expect(
       stageView({ ...base, previewShown: true, selectionActive: true })
@@ -209,7 +226,27 @@ describe("stageView", () => {
       wholeView: true,
       centerlineHidden: true,
       windowControlsInert: false,
+      inPlaceAudition: false,
     });
+  });
+
+  it("never marks a preview in-place, even with a stale selection open", () => {
+    // `previewShown` forces `wholeView` regardless of `inPlace`, so
+    // `inPlaceAudition` (which requires `!wholeView`) must be false here too —
+    // a preview is not a sounding BUFFER in the sense this flag means (Play is
+    // what sounds it; the paused transport owns those controls). Mutation:
+    // dropping the `!wholeView` half of `inPlaceAudition` and leaving only
+    // `input.playingBuffer` would pass every case above but flip this one,
+    // since nothing else in the table sets `playingBuffer` and `previewShown`
+    // together — this is the case that catches it.
+    expect(
+      stageView({
+        ...base,
+        playingBuffer: true,
+        previewShown: true,
+        selectionActive: true,
+      }).inPlaceAudition
+    ).toBe(false);
   });
 
   it("inerts the window controls for every sounding buffer, in both modes", () => {

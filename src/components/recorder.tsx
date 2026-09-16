@@ -474,13 +474,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         ? previewState === "decoding" || previewState === "failed"
         : recording || !hasAudio);
 
-    // Which way the stage is drawn, and what that makes inert (#284). All three
-    // answers come from ONE pure derivation, `stageView`, because three review
-    // rounds found the same defect in three different controls — a control
-    // reading the pan/zoom window while something else was drawn. The class, the
-    // reasoning and the deliberate exceptions are enumerated there; this file
-    // reads the answers rather than re-deriving them per control, so a seventh
-    // control added later inherits the rule instead of re-earning the bug.
+    // Which way the stage is drawn, and what that makes inert (#284). All four
+    // answers come from ONE pure derivation, `stageView`, because review rounds
+    // kept finding the same defect in a different control or overlay — one
+    // reading the pan/zoom window, or the hide rule written for a swapped view,
+    // while something else was drawn. The class, the reasoning and the
+    // deliberate exceptions are enumerated there; this file reads the answers
+    // rather than re-deriving them per control, so the next one inherits the
+    // rule instead of re-earning the bug.
     const stage = stageView({
       mode,
       playingBuffer: audio.playingBuffer,
@@ -493,6 +494,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
       centerFraction: CENTER_FRACTION,
     };
+
+    // The Zoom control's CHROME (pressed state, icon, label) while `wholeView`
+    // is true (#284, George R7): the canvas is drawn at clip fractions 0..1,
+    // which IS what "whole" zoom draws, whatever `zoom` itself still says. Zoom
+    // is disabled by `stage.windowControlsInert` here, so it cannot be tapped,
+    // but a disabled control still shows a state — `pressed` is the one channel
+    // a non-reader has for "which zoom level is this" (`Control`'s own
+    // contract) — and it must name the window actually on screen, not the one
+    // that returns once the buffer stops sounding. `zoom` itself is untouched:
+    // that real value is what comes back the moment `wholeView` goes false.
+    const displayedZoom = wholeView ? ZOOM_WHOLE : zoom;
 
     // What edit-mode Play sounds (#284): the picked span when one is up, else
     // the working buffer from the centerline on. `null` ⇒ there is nothing to
@@ -2344,13 +2356,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     prepared (`wholeView`) — correct here because a preview always
                     puts `Waveform` on stage (above), never `LiveScope`, so this
                     overlay's coordinate system always matches what is drawn
-                    underneath it (George R-resume round 2). */}
+                    underneath it (George R-resume round 2). `clampToEdge` is the
+                    one exception to "off `waveView` ⇒ hide": an in-place
+                    audition keeps the pan window, so a picked span wider than
+                    it is real, still-sounding audio walking off-screen, not the
+                    blank head/tail the hide rule exists for (#284, George R7,
+                    `stage.inPlaceAudition`). */}
                   <PlayheadOverlay
                     readElapsedMs={readSoundingElapsed}
                     active={audio.playingBuffer}
                     durationMs={drawnDurationMs}
                     startFraction={waveView.startFraction}
                     endFraction={waveView.endFraction}
+                    clampToEdge={stage.inPlaceAudition}
                   />
                   {mode === "edit" &&
                     editor.selectionActive &&
@@ -2541,13 +2559,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // #91 fix: the old facing-arrow pair asked one glyph to do
                     // both, and the first external tester read it the other way
                     // round and asked whether the icons were reversed.
-                    icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
+                    //
+                    // Both read `displayedZoom`, not `zoom` (#284, George R7):
+                    // while `wholeView` swaps the canvas to the whole clip, that
+                    // IS the "whole" state on screen even though `zoom` still
+                    // holds the real value the window returns to once the buffer
+                    // stops sounding. The control is disabled either way, but a
+                    // disabled control still tells a non-reader which state it is
+                    // in, and it must name the window that is actually drawn.
+                    icon={displayedZoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
-                      zoom === ZOOM_WHOLE
+                      displayedZoom === ZOOM_WHOLE
                         ? strings.zoomAtWhole
                         : strings.zoomAtQuarter
                     }
-                    pressed={zoom === ZOOM_QUARTER}
+                    pressed={displayedZoom === ZOOM_QUARTER}
                     variant="quiet"
                     size={24}
                     // A window control: it rebuilds the window under a line that

@@ -106,14 +106,16 @@ export function liveScopeShown(s: StageState): boolean {
  *
  * The waveform is drawn one of two ways — through the pan/zoom window, or as
  * the whole clip — and half a dozen controls and overlays are only correct
- * under one of them. Three review rounds found the same defect wearing three
- * different hats: the paste marker pinned at 50% of the stage while the canvas
- * drew clip fractions 0..1 and pasted at the end instead (R3); zoom rebuilding
- * the window under a travelling playhead (R3); Select seeding a span around a
- * centerline that had been hidden, so it highlighted the end of the take rather
- * than the word being heard (R4, George). Three instances is a class, and the
- * class-level answer is to derive the question once rather than gate each
- * control by hand.
+ * under one of them. Review rounds kept finding the same defect wearing a new
+ * hat: the paste marker pinned at 50% of the stage while the canvas drew clip
+ * fractions 0..1 and pasted at the end instead (R3); zoom rebuilding the window
+ * under a travelling playhead (R3); Select seeding a span around a centerline
+ * that had been hidden, so it highlighted the end of the take rather than the
+ * word being heard (R4, George); the playhead's own off-screen HIDE rule,
+ * written for a swapped view's blank head/tail, firing instead on real audio
+ * that had simply outgrown an in-place audition's unswapped window (R7,
+ * George). Repetition is a class, and the class-level answer is to derive the
+ * question once rather than gate each consumer by hand.
  *
  * Pure and DOM-free so the truth table is a test rather than a phone.
  */
@@ -191,6 +193,25 @@ interface StageView {
    * never had this bug.
    */
   readonly windowControlsInert: boolean;
+  /**
+   * A picked-span audition sounding WITHOUT a view swap — `playingBuffer` true,
+   * `wholeView` false. The window still matches what is drawn, so a playhead
+   * that maps outside it (the picked span is wider than the pan/zoom window)
+   * is real audio that is merely off-screen, not the blank head/tail the
+   * overlay's hide rule was written for.
+   *
+   * Before this PR, `playingBuffer` implied `wholeView` unconditionally (every
+   * sounding buffer swapped to the whole clip), so that hide rule's `px < 0 ||
+   * px > 1` branch was unreachable — dead code guarding a case nothing could
+   * produce. An in-place audition (#284) is the first real path to it: select
+   * a span wider than the current zoom, audition it, and the moving cue this
+   * whole feature exists to add vanishes the moment it crosses the window edge
+   * (George R7). The overlay uses this flag to CLAMP to the edge instead of
+   * hiding — the audio is still there, still sounding, just off the visible
+   * strip — while every other `wholeView` case (a preview, a record-mode play,
+   * a no-selection audition) keeps the original hide.
+   */
+  readonly inPlaceAudition: boolean;
 }
 
 export function stageView(input: StageInput): StageView {
@@ -200,5 +221,6 @@ export function stageView(input: StageInput): StageView {
     wholeView,
     centerlineHidden: wholeView || input.playingBuffer,
     windowControlsInert: input.playingBuffer,
+    inPlaceAudition: input.playingBuffer && !wholeView,
   };
 }
