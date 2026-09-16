@@ -241,7 +241,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // the handler: the shelf is `inert` while the dialog is open, and focusing an
   // element inside an inert subtree does nothing — so this has to wait for the
   // render that removes `inert`. A create clears the ref, because `pendingFocus`
-  // hands focus to the new row's add-chapter control instead.
+  // hands focus to the new row's toggle button instead (George R5 P3 — this
+  // comment used to say "add-chapter control", which is what an earlier round
+  // targeted before George R4 P2-1 moved the landing to the toggle; see the
+  // `pendingFocus` effect above for why).
   useEffect(() => {
     if (newBookSeed !== null) return;
     const el = newBookReturnFocus.current;

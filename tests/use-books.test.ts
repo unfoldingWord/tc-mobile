@@ -179,7 +179,7 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
 });
 
 const book = (overrides: Partial<Book> = {}): Book => ({
-  id: bookId("b-1"),
+  id: chapterBookId("b-1"),
   name: "Mark",
   languageCode: null,
   chapterIds: [],
@@ -190,7 +190,10 @@ const book = (overrides: Partial<Book> = {}): Book => ({
 
 describe("patchNewChapter", () => {
   it("appends the new chapter as a zero-progress row on its own book's card", () => {
-    const books = [chapterCard(chapterBookId("b-1")), chapterCard(chapterBookId("b-2"))];
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
     const next = patchNewChapter(books, chapterBookId("b-1"), chapter());
 
     expect(next[0]?.chapters).toEqual([
@@ -240,14 +243,20 @@ describe("patchNewChapter", () => {
     // write, and `listBooks` sorts newest-first — with `reload()` gone
     // (George R4 P2-2), nothing else reconciles the shelf order, so the
     // patch itself has to move the book, not just append its chapter.
-    const books = [card(bookId("b-1")), card(bookId("b-2"))];
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
     const next = patchNewChapter(
       books,
-      bookId("b-2"),
-      chapter({ id: chapterId("ch-9"), bookId: bookId("b-2") })
+      chapterBookId("b-2"),
+      chapter({ id: chapterId("ch-9"), bookId: chapterBookId("b-2") })
     );
 
-    expect(next.map((c) => c.bookId)).toEqual([bookId("b-2"), bookId("b-1")]);
+    expect(next.map((c) => c.bookId)).toEqual([
+      chapterBookId("b-2"),
+      chapterBookId("b-1"),
+    ]);
     expect(next[0]?.chapters).toEqual([
       {
         chapterId: chapterId("ch-9"),
@@ -264,13 +273,19 @@ describe("patchNewChapter", () => {
 
 describe("patchRenamedBook", () => {
   it("moves a genuinely renamed book to the front of the shelf", () => {
-    const books = [card(bookId("b-1")), card(bookId("b-2"))];
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
     const next = patchRenamedBook(
       books,
-      book({ id: bookId("b-2"), name: "Luke" })
+      book({ id: chapterBookId("b-2"), name: "Luke" })
     );
 
-    expect(next.map((c) => c.bookId)).toEqual([bookId("b-2"), bookId("b-1")]);
+    expect(next.map((c) => c.bookId)).toEqual([
+      chapterBookId("b-2"),
+      chapterBookId("b-1"),
+    ]);
     expect(next[0]?.name).toBe("Luke");
     // The untouched book keeps its own identity, just shifted in position.
     expect(next[1]).toBe(books[0]);
@@ -280,20 +295,23 @@ describe("patchRenamedBook", () => {
     // Mirrors `renameBookInStore`'s own contract: a blank rename keeps the
     // current name and does not bump `updatedAt` or write at all, so the
     // shelf order must not move either — there is no recency to reflect.
-    const books = [card(bookId("b-1")), card(bookId("b-2"))];
+    const books = [
+      chapterCard(chapterBookId("b-1")),
+      chapterCard(chapterBookId("b-2")),
+    ];
     const next = patchRenamedBook(
       books,
-      book({ id: bookId("b-2"), name: "Book b-2" })
+      book({ id: chapterBookId("b-2"), name: "Book b-2" })
     );
 
     expect(next).toBe(books);
   });
 
   it("is a no-op when the renamed book is not on the shelf (a stale card)", () => {
-    const books = [card(bookId("b-2"))];
+    const books = [chapterCard(chapterBookId("b-2"))];
     const next = patchRenamedBook(
       books,
-      book({ id: bookId("b-1"), name: "Mark" })
+      book({ id: chapterBookId("b-1"), name: "Mark" })
     );
     expect(next).toEqual(books);
   });
