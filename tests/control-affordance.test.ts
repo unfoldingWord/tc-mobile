@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  canDismissWhileSaving,
   confirmControlAffordance,
   shareControlAffordance,
 } from "@/components/control-affordance";
@@ -64,15 +63,5 @@ describe("confirmControlAffordance", () => {
   it("busy reuses the retry glyph; idle keeps the check the Save control already wears", () => {
     expect(confirmControlAffordance(true).icon).toBe("retry");
     expect(confirmControlAffordance(false).icon).toBe("check");
-  });
-});
-
-describe("canDismissWhileSaving", () => {
-  it("refuses a dismiss while a write is in flight — Menu's scrim/Close/Escape must no-op, the same rule EraseConfirm's Cancel already follows (George R3, #384)", () => {
-    expect(canDismissWhileSaving(true)).toBe(false);
-  });
-
-  it("allows a dismiss once nothing is saving", () => {
-    expect(canDismissWhileSaving(false)).toBe(true);
   });
 });

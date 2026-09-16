@@ -8,10 +8,7 @@ import {
 } from "react";
 
 import { Control } from "./control";
-import {
-  canDismissWhileSaving,
-  shareControlAffordance,
-} from "./control-affordance";
+import { shareControlAffordance } from "./control-affordance";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
@@ -103,11 +100,6 @@ export const SegmentsScreen = forwardRef<
   // show a freshly (re)opened menu's Confirm as busy before it has been
   // tapped (Frank r1, #384).
   const [savingChapterName, setSavingChapterName] = useState(false);
-  // A synchronous mirror of `savingChapterName` (George R3/coordinator, #384):
-  // mirrors `books-screen.tsx`'s `savingBookRef` — see its comment for why the
-  // state alone lags a render (and Menu's passive `onCloseRef` re-sync) behind
-  // a dismiss that could arrive right after Save.
-  const savingChapterRef = useRef(false);
   // A monotonic token for the current chapter-menu session. It advances whenever
   // the menu opens, closes, or arms a share — every transition after which a
   // late-resolving rename must NOT run its close, or it would drop a prepared
@@ -125,7 +117,6 @@ export const SegmentsScreen = forwardRef<
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
-    savingChapterRef.current = false;
     setSavingChapterName(false);
     void share.prepare(
       chapterId,
@@ -147,31 +138,24 @@ export const SegmentsScreen = forwardRef<
   }, [share]);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File and clear state so a stale "ready" cannot linger behind a closed menu.
+  //
+  // This is Menu's actual `onClose` — a Menu-level guard that blocked it while
+  // `savingChapterName` was true (round 3/4 of #384's review) was REVERTED: it
+  // stopped the scrim/Close/Escape-elsewhere from unmounting the menu mid-write,
+  // but system Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
+  // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
+  // exit (George R5 P2) — Close used to work, so nobody reached for system Back;
+  // making it a silent no-op is what sends them there. Fixing this properly
+  // needs the nav layer's `overlayBlocksClose`/`overlayDismissal` absorbing
+  // system Back too, tracked at #393 (with #374, the same gap for Books' other
+  // menus) rather than shipped as a partial fix here.
   const onCloseChapterMenu = useCallback(() => {
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
-    savingChapterRef.current = false;
     setSavingChapterName(false);
     share.reset();
   }, [share]);
-  // The Menu's actual `onClose` (scrim tap, Close, and Escape when no child
-  // already handled it) — guarded, unlike the plain closer above. A rename
-  // write in flight cannot be aborted, so unmounting the whole menu while it
-  // runs does not stop it: it still commits moments later with no menu open
-  // to show it (George R3 P2, #384). NameEdit's own Escape guard only covers
-  // Escape while the FIELD holds focus; Close and the scrim reach this
-  // closer directly, and Escape while Confirm (or Close itself) holds focus
-  // never touches the field's handler at all. Swallowing the dismiss here —
-  // not the promise's own success close above, which must still run — closes
-  // that gap once, centrally, the way `EraseConfirm` already guards every
-  // dismiss path while its own write is in flight.
-  const onDismissChapterMenu = useCallback(() => {
-    // Reads the REF, not the `savingChapterName` state this closure would
-    // otherwise capture — see `savingChapterRef`'s own comment.
-    if (!canDismissWhileSaving(savingChapterRef.current)) return;
-    onCloseChapterMenu();
-  }, [onCloseChapterMenu]);
   // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
   // from a prior open cannot close this one.
   const openChapterMenu = useCallback(() => {
@@ -179,7 +163,6 @@ export const SegmentsScreen = forwardRef<
     setChapterMenuOpen(true);
     // A still-pending rename from the last time this menu was open must not
     // show the freshly reopened Confirm as busy before it has been tapped.
-    savingChapterRef.current = false;
     setSavingChapterName(false);
   }, []);
   // Commit the typed chapter name (#264), then close the menu on success. The
@@ -194,10 +177,6 @@ export const SegmentsScreen = forwardRef<
       // resolution closes the now-current menu and runs share.reset(),
       // discarding a prepared encode.
       const session = chapterMenuSession.current;
-      // Set synchronously, in this same tick, BEFORE the async write starts —
-      // so a dismiss arriving immediately after this tap sees it, rather than
-      // waiting for React's render and Menu's passive `onCloseRef` sync.
-      savingChapterRef.current = true;
       setSavingChapterName(true);
       void renameChapter(name)
         .then((ok) => {
@@ -208,10 +187,8 @@ export const SegmentsScreen = forwardRef<
           // Guarded like the close above: a stale settle from a session this
           // screen has already moved past must not touch state a newer
           // session (a reopen, or an armed share) now owns.
-          if (chapterMenuSession.current === session) {
-            savingChapterRef.current = false;
+          if (chapterMenuSession.current === session)
             setSavingChapterName(false);
-          }
         });
     },
     [renameChapter, onCloseChapterMenu]
@@ -225,7 +202,6 @@ export const SegmentsScreen = forwardRef<
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
     setRenamingChapter(false);
-    savingChapterRef.current = false;
     setSavingChapterName(false);
   }, []);
   const erase = useEraseSegment();
@@ -461,7 +437,7 @@ export const SegmentsScreen = forwardRef<
 
       <Menu
         open={chapterMenuOpen}
-        onClose={onDismissChapterMenu}
+        onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
       >
         {renamingChapter ? (

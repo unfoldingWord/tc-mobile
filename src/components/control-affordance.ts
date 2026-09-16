@@ -8,9 +8,10 @@
  *
  * Two tables, not one, because the two callers have different shapes: Share
  * is a three-state "prepare then send" flow (idle → preparing → ready); a
- * Confirm — New Book's, and Rename's Save, which has the identical
- * write-in-flight-with-a-silent-control gap today — is only ever idle or
- * busy, with no staged second tap.
+ * Confirm is only ever idle or busy, with no staged second tap. Today's only
+ * caller is Rename's Save, which had the identical write-in-flight-with-a-
+ * silent-control gap #383 names; New Book's own Confirm (#367) is not yet on
+ * `develop` and will reuse this same table once it rebases here.
  */
 
 import type { ShareStatus } from "@/hooks/share-flow";
@@ -85,17 +86,4 @@ export function confirmControlAffordance(
   return saving
     ? { icon: "retry", busy: true }
     : { icon: "check", busy: false };
-}
-
-/**
- * Whether a dismiss — `Menu`'s scrim tap, its Close control, or Escape when no
- * child already handled it — may proceed while a Confirm's write is in flight
- * (George R3, #384). The write itself cannot be aborted, so letting the
- * dismiss through does not stop it: it still commits moments later with no
- * menu open to show it. The same "Cancel is a no-op while in flight" rule
- * `EraseConfirm`'s Cancel already follows, pulled out as its own decision so
- * it is pinned once rather than re-derived at each call site.
- */
-export function canDismissWhileSaving(saving: boolean): boolean {
-  return !saving;
 }

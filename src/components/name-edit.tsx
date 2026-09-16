@@ -112,17 +112,18 @@ export function NameEdit({
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
-            // One Escape must resolve to ONE cancel. The Menu binds a
-            // WINDOW-level keydown that closes the whole panel, and on the
-            // rename path that also drops an armed share via `share.reset()`
-            // (G1) — so a double-fire is a real loss, not a cosmetic one.
-            // `preventDefault` above is what Menu actually checks
-            // (`menu.tsx`, `if (e.defaultPrevented) return`); `stopPropagation`
-            // is belt-and-braces, kept so this does not silently start
-            // double-firing if that check is ever removed (George R1 P3-6).
-            // What Cancel MEANS is the caller's decision: the rename steps back
-            // to the action list, New Book dismisses its dialog and creates
-            // nothing.
+            // One Escape must resolve to ONE cancel. Menu's own WINDOW-level
+            // keydown listener DOES honour `defaultPrevented` (`menu.tsx`'s
+            // Escape handler returns early when it sees it) — which is
+            // exactly why calling preventDefault/stopPropagation on this
+            // native event, before React's synthetic dispatch reaches Menu,
+            // keeps a single Escape from firing both `onCancel` (return to
+            // the action list) AND Menu's `onClose`. On the rename path that
+            // second fire would also drop an armed share via `share.reset()`
+            // (G1) — a double-fire is a real loss, not a cosmetic one. What
+            // Cancel MEANS is the caller's decision: the rename steps back to
+            // the action list, New Book dismisses its dialog and creates
+            // nothing — but either way, only on ONE keypress.
             e.stopPropagation();
             // While busy, a no-op — like EraseConfirm's Cancel while erasing —
             // NOT a call to `onCancel` (Frank r2, #384). The commit already in
