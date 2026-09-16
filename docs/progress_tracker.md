@@ -11,6 +11,44 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-16 (evening) — signing secrets moved, the release keystore created, both native lanes proven from staging behind the environment gate
+
+A short session on the Mac, DRI at the keyboard with an agent-prepared runbook (a Claude Doc, "Native signing secrets: step by step"). The morning `/sod` found the repo at v0.2.3 with #317 fully answered by the requirements owner at 14:00 UTC (the day entry above did not know it), three unmilestoned residuals (#387, #385, #377, now in v0.3.0), and the #243 register updated with the #317 answer.
+
+### Shipped
+
+| What                                        | Evidence                                                                                                                                                               |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eleven signing secrets in `release-signing` | `gh secret list --env release-signing` shows 7 iOS + 4 Android names; repository level holds only `CLOUDFLARE_ACCOUNT_ID` (seven copies deleted 21:15 UTC)             |
+| Android release keystore                    | created by the DRI (`keytool`, PKCS12, alias `tc-mobile`, valid to 2054), vaulted with its SHA-256 fingerprint; local `assembleRelease` green in 24 s, signer verified |
+| iOS lane proven behind the gate             | run 35151445350 from `staging` `88683c4`: preflight, `waiting`, approved after the yml check, uploaded 21:20:39 UTC; the build is visible in TestFlight                |
+| Android lane proven behind the gate         | run 35151461247, same ref: DRI-approved, built in 2.5 min; artifact signer SHA-256 equals the keystore fingerprint; pre-release `android-release-v0.2.3`               |
+
+Both runs started after the repository copies were deleted, so each green run is the proof that the environment copies alone suffice (#321's exit criterion, L5 "environment-gated dispatch proven").
+
+### Findings
+
+- **The five "missing" iOS secrets were never missing.** The 09-13 entry recorded them as not in the vault, DRI locating them. The .p8, the Distribution .p12, and the App Store profile were in `~/Downloads/uw-ios-signing/` on the Mac, with the certificate's raw private key beside them as a plain file. Checked before use: the profile embeds the exact certificate (SHA-1 match), the raw key matches the certificate's public key, the .p12 opens with the vaulted password and carries a shrouded key bag, cert and profile expire 2027-09-12. The folder is being vaulted and deleted.
+- **Two shell traps in the runbook, both hit.** zsh does not word-split an unquoted `$E` holding several flags (`unknown flag: --env release-signing -R …`), and a bare `read -s` prints no prompt, so an Enter exported an empty password and Gradle refused `assembleRelease`. Fixed in the Doc; the repo copies are #411.
+- **`versionName` is `1.0` on every APK** (Capacitor template default); the version code moves, the name does not. #410.
+- **Homebrew OpenSSL 3 cannot open a Keychain-exported .p12** (RC2-40 certificate bag); Apple's `/usr/bin/openssl` can. CI is unaffected (`security import`).
+- The permission classifier refused to write the API Key ID into the Doc and refused an agent-side environment approval as self-approval. Both refusals were correct: the Doc carries names and locations only, and the Android approval was the DRI's.
+
+### Blockers / needs a human
+
+- **DRI:** install `android-release-v0.2.3` on the Galaxy A17 (uninstall the debug build first) and run the #245 sheet on it; the iOS half of #245 (the multi-minute Share, #405) on the TestFlight build. Vault the iOS folder and delete it from Downloads (Doc Part B4).
+- **Requirements owner:** the rest of #243 (Q1, Q2, Q5, Q7, #13).
+- A tester confirming a TestFlight build arrived (#262).
+
+### Next session, in order
+
+1. `/sod`.
+2. **#317**, unblocked since 14:00 UTC today and the last v1-required code item (pan-then-resume: touch pauses, waveform follows, lift resumes from the sample under the centerline).
+3. The code queue from the day entry: #393, #402, #405 item 1, #404, #406, #400. Add #410 (one-liner in `build.gradle`) and #411 (docs).
+4. Plan the `staging → main` promotion (bumps to 0.3.0); it also carries the gated lanes to `main`, which restores dispatch from `main`.
+
+---
+
 ## 2026-09-16 — v0.2.2 and v0.2.3 promoted and verified on staging; 16 feature/fix PRs merged; the requirements owner's five answers built; every v1-required code item done except #317
 
 A long session running from the 2026-09-15 evening through the night and the day, under the dev lead's blanket merge authority: merge a PR once both reviewers are clean at its head and CI is green, one PR at a time, rechecking the rest after each merge. It lost about four hours to two usage-limit stops (~12:10–15:00 UTC; ~15:40–16:05 UTC, resumed on a new login). Lanes were resumed by agent ID, not respawned.
