@@ -231,8 +231,27 @@ export const strings = {
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
+  // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
+  // string for both flows it now serves — segment Erase and book Delete —
+  // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+
+  // ── Delete a book (#337) ─────────────────────────────────────────────────
+  // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
+  // the segment Erase uses, not a second one.
+  deleteBook: "Delete book",
+  // Names the book, because this dialog's title is also its accessible name and
+  // it is the only thing that says WHICH shelf row is about to go. "everything
+  // in it" is the honest scope: the chapters, the segments and every recording.
+  deleteBookConfirmTitle: (book: string): string =>
+    `Delete ${book} and everything in it?`,
+  deleteBookConfirm: "Delete",
+  // A destructive op that did NOT happen has to say so in its own words. The
+  // store's own message — a quota or connection fault, since `deleteBook` never
+  // throws on a missing book — is for a maintainer; this is the line a screen
+  // reader speaks to a translator. Mirrors `eraseFailed` (#80).
+  deleteBookFailed: "Could not delete this book. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
   chapterMenuOpen: "More actions for this chapter",

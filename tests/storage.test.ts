@@ -24,6 +24,7 @@ import {
   getSegment,
   getSegmentsOfChapter,
   isFinished,
+  isStaleBookFailure,
   listBooks,
   renameBook,
   renameChapter,
@@ -37,7 +38,7 @@ import {
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { RecordingStatus } from "@/types/domain";
+import type { BookId, RecordingStatus } from "@/types/domain";
 import { samplesOf } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
@@ -652,6 +653,53 @@ describe("rename book and chapter", () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
     );
+  });
+});
+
+/**
+ * `renameBook` and `addChapter` both throw `No such book: <id>` from an
+ * identical `if (!book) throw` guard. Once a book can be deleted (#337), an
+ * in-flight rename or add-chapter can lose its target to an unrelated,
+ * already-successful delete — and a naive catch would report that throw as a
+ * fresh failure over a shelf that just correctly dropped the row (George, PR
+ * #344 round 8). `isStaleBookFailure` is the narrow decision that tells the
+ * two apart; `use-books.ts` is the caller, and its React/DOM half is not
+ * reachable from this Node suite (#361) — this pins the decision only.
+ */
+describe("isStaleBookFailure", () => {
+  const gone = "gone-book-0000-4000-8000-000000000001" as BookId;
+  const other = "other-book-000-4000-8000-000000000002" as BookId;
+
+  it("is stale: the exact target id's own throw, once it is confirmed gone", () => {
+    const cause = new Error(`No such book: ${gone}`);
+    expect(isStaleBookFailure(cause, gone, false)).toBe(true);
+  });
+
+  it("is NOT stale when the target id is still present", () => {
+    // The book still exists, so whatever this error is, it is not the
+    // delete race — report it rather than swallow it.
+    const cause = new Error(`No such book: ${gone}`);
+    expect(isStaleBookFailure(cause, gone, true)).toBe(false);
+  });
+
+  it("is NOT stale when the message names a DIFFERENT book", () => {
+    // A stale race on `gone` must never absorb a real failure about `other`,
+    // even though both are absent and both throw the same shape.
+    const cause = new Error(`No such book: ${other}`);
+    expect(isStaleBookFailure(cause, gone, false)).toBe(false);
+  });
+
+  it("is NOT stale for any other failure, even once the book is gone", () => {
+    expect(isStaleBookFailure(new Error("quota exceeded"), gone, false)).toBe(
+      false
+    );
+  });
+
+  it("is NOT stale for a non-Error cause", () => {
+    expect(isStaleBookFailure("No such book: " + gone, gone, false)).toBe(
+      false
+    );
+    expect(isStaleBookFailure(null, gone, false)).toBe(false);
   });
 });
 

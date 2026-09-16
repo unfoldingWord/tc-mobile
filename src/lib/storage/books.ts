@@ -166,6 +166,202 @@ export async function renameBook(
   return updated;
 }
 
+/**
+ * Whether a caught failure from {@link renameBook} or {@link addChapter}
+ * describes a book that is gone because an UNRELATED delete already succeeded
+ * — not a fresh failure the screen should speak (George, PR #344 round 8).
+ *
+ * Both throw the identical `No such book: ${id}` shape from their own
+ * `if (!book) throw` guard. Once a book can be deleted (#337), that throw is
+ * reachable by a race that has nothing to do with a NEW failure: a rename or
+ * an add-chapter already in flight when a delete commits loses its target
+ * mid-flight, and a naive catch would paint "No such book: …" over a shelf
+ * that just correctly dropped the row.
+ *
+ * Deliberately narrow, so a genuine failure is never swallowed:
+ *
+ *   - The message must name the SAME id the caller was acting on — not merely
+ *     start with "No such book" — so a stale race on one book can never
+ *     absorb a real failure about another.
+ *   - `stillPresent` is the caller's own check, against the store (the system
+ *     of record, not React state), of whether that exact id exists right now.
+ *     If it does, this is not the delete race — something else produced the
+ *     same message, or the id came back some other way, and it is reported.
+ *
+ * Pure and synchronous on purpose: the caller resolves `stillPresent` (an
+ * async store read) itself, so this decision — the part that actually needs
+ * proving — is a plain function a Node test can pin without a fake database.
+ */
+export function isStaleBookFailure(
+  cause: unknown,
+  targetId: BookId,
+  stillPresent: boolean
+): boolean {
+  if (stillPresent) return false;
+  return (
+    cause instanceof Error && cause.message === `No such book: ${targetId}`
+  );
+}
+
+/**
+ * The stores a book delete touches: the tree, and both halves of every clip
+ * that goes with it.
+ */
+const DELETE_BOOK_STORES = [
+  "books",
+  "chapters",
+  "segments",
+  "takes",
+  "clipMeta",
+  "clipData",
+] as const;
+
+/**
+ * Open the transaction a book delete needs. Strict durability: this removes the
+ * only copy of a whole book of takes (#179). Split out so `DeleteBookTx` is
+ * derived from the call itself and cannot drift from what actually opens — the
+ * same shape `openTakeTx`/`TakeTx` uses above.
+ */
+function openDeleteBookTx(db: IDBPDatabase<TcMobileDb>) {
+  return db.transaction(DELETE_BOOK_STORES, "readwrite", {
+    durability: "strict",
+  });
+}
+
+type DeleteBookTx = ReturnType<typeof openDeleteBookTx>;
+
+/**
+ * Delete a book and everything under it — chapters, segments, takes and the
+ * audio behind them (#337).
+ *
+ * The first external tester could not remove a practice book, and at the
+ * training the only way to clear one would be to uninstall the app, which takes
+ * every recording with it. This is the op that makes a trial book disposable.
+ *
+ * It is also the most destructive write in the product, so it holds the same
+ * three properties `clearSegmentTake` does, at a whole tree's scale:
+ *
+ *   - **ONE readwrite transaction** over all six stores. A delete that removed
+ *     the book in one transaction and its clips in another could be interrupted
+ *     between them and leave megabytes of audio no screen can ever reach and no
+ *     delete can ever free — the storage pressure #12 exists about. Strict
+ *     durability, like every other write that removes the only copy of a take
+ *     (#179).
+ *   - **Idempotent.** A missing book resolves without error and writes nothing,
+ *     so a second tap, a retry after a failed reload, or a stale confirm is a
+ *     true no-op rather than a throw the UI has to special-case.
+ *   - **Reference-counted clips.** A clip is deleted only when no take OUTSIDE
+ *     this book still points at it. Nothing shares a clip in the shipped app —
+ *     every save mints a fresh `newClipId()` UUID, so "content-addressed" names
+ *     the intent and not the current implementation — but this deletes many
+ *     clips at once, so an unconditional delete would, the day an import
+ *     dedupes, punch a book's worth of holes in another book's audio. Same
+ *     guard `clearSegmentTake` already holds; `addTake`'s is #68.
+ *
+ * **The walk goes by the parent links, not the ordering arrays.** `chapterIds`
+ * and `segmentIds` are denormalised order; `chapter.bookId` and
+ * `segment.chapterId` (both indexed) are what says a row belongs to this book.
+ * A row the array has lost — a half-written `addChapter` — is still this book's,
+ * and once the book is gone nothing could ever reach it again. Going by the
+ * index also means an id the array holds that points at ANOTHER book's chapter
+ * is left alone rather than deleted out from under it. For the same reason the
+ * walk does not depend on the `books` row existing: the row is removed if it is
+ * there, but a tree whose book row has already gone is still collected, because
+ * this is the only reclamation path there is.
+ */
+export async function deleteBook(bookId: BookId): Promise<void> {
+  const db = await getDb();
+  const tx = openDeleteBookTx(db);
+  try {
+    await deleteBookInTx(tx, bookId);
+    await tx.done;
+  } catch (cause) {
+    // A THROWN error mid-transaction does not roll this back on its own:
+    // IndexedDB auto-commits an inactive transaction unless it is aborted. The
+    // same guard `saveTake` and `commitTranscode` hold — and it matters more
+    // here than anywhere, because the tree deletes are issued BEFORE the clip
+    // deletes. A throw in between (building the reference-count sets, or
+    // anything the idb wrapper raises) would otherwise commit a database in
+    // which the book, its chapters, its segments and its takes are gone while
+    // `clipMeta`/`clipData` still hold their audio — megabytes that nothing can
+    // reach and nothing can free, since this function is the only reclamation
+    // path there is. That is precisely the leak the one-transaction shape
+    // exists to prevent. (A failed *request* already aborts on its own; this
+    // covers the thrown case.)
+    try {
+      tx.abort();
+    } catch {
+      // Already settled — aborted by a request failure, or committed. Nothing
+      // to undo; the original cause below is what the caller needs.
+    }
+    // Observe the aborted transaction's `done` (idb creates it eagerly and it
+    // rejects with AbortError on abort), so it is not an unhandled rejection.
+    await tx.done.catch(() => {});
+    throw cause;
+  }
+}
+
+/**
+ * The walk itself, on a caller-owned transaction.
+ *
+ * Split out so `deleteBook` above is exactly the transaction's lifetime — open,
+ * run, commit, or abort — and the abort guard cannot be bypassed by an early
+ * return added to the walk later.
+ */
+async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
+  const books = tx.objectStore("books");
+  const chapters = tx.objectStore("chapters");
+  const segments = tx.objectStore("segments");
+  const takes = tx.objectStore("takes");
+
+  // Gather the whole tree first, by parent link, before deleting anything: the
+  // clip reference count below has to see every take of this book removed
+  // before it can ask what is left.
+  //
+  // This runs whether or not the `books` row is still there, and the row itself
+  // is removed below only if present. An early return on a missing book would
+  // make the orphan guarantee conditional on the one row that is itself part of
+  // what is being removed: a tree whose `books` row had gone could never be
+  // reclaimed by anything, because this is the app's only reclamation path and
+  // it would no-op on exactly the state that needs it. Idempotency is unchanged
+  // — on a database that does not hold this book the index returns nothing and
+  // the transaction commits empty.
+  const ownedChapters = await chapters.index("bookId").getAll(bookId);
+  const doomedTakes: Take[] = [];
+  const doomedSegments: SegmentId[] = [];
+  for (const chapter of ownedChapters) {
+    const ownedSegments = await segments.index("chapterId").getAll(chapter.id);
+    for (const segment of ownedSegments) {
+      doomedSegments.push(segment.id);
+      // Every take row of the segment, not just `activeTakeId`: the index is the
+      // parent link, and a stale row the pointer has moved off would otherwise
+      // survive its segment and keep a clip alive forever.
+      doomedTakes.push(...(await takes.index("segmentId").getAll(segment.id)));
+    }
+  }
+
+  for (const take of doomedTakes) await takes.delete(take.id);
+  for (const segmentId of doomedSegments) await segments.delete(segmentId);
+  for (const chapter of ownedChapters) await chapters.delete(chapter.id);
+  // `delete` on an absent key is a no-op in IndexedDB, so the orphan case needs
+  // no branch here: the row goes if it is there, and nothing is written if not.
+  await books.delete(bookId);
+
+  // The take rows are gone, so what `getAll` returns now is exactly the set of
+  // references that survive this delete. A clip nothing in that set names is
+  // unreachable audio and goes with the book; a clip something still names is
+  // another segment's only copy and stays.
+  const survivingClipIds = new Set(
+    (await takes.getAll()).map((take) => take.clipId)
+  );
+  const doomedClipIds = new Set(doomedTakes.map((take) => take.clipId));
+  for (const clipId of doomedClipIds) {
+    if (survivingClipIds.has(clipId)) continue;
+    await tx.objectStore("clipMeta").delete(clipId);
+    await tx.objectStore("clipData").delete(clipId);
+  }
+}
+
 // ── Chapters ─────────────────────────────────────────────────────────────
 
 /**
