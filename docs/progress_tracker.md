@@ -62,9 +62,44 @@ Closed #16, #170, #251 (completed); #182→#192, #150→#36 (duplicates); #285 (
 
 PM status page (v12, 15 Sep after sync-up): `https://claude.ai/code/artifact/423ff4cc-9fef-4caa-b489-51e7a943eca4`. Facilitator runbook page (private): `https://claude.ai/artifact/KQ6VzEBUqnH1TL37aJNoM2`.
 
-### Next session, in order
+### Next session, in order (as written at the 17:40 UTC pause; superseded below)
 
 1. `/sod`; check usage budget first. 2. Resume the five PRs on **Sonnet** unless T1 (#344 George run at `5a4da04` is verification-only → resume that lane, not respawn). 3. Merge in order as each goes dual-clean: #344 → #366/#367/#368 → #347 (after A17) → #345 (after Tim). 4. `chore(release): v0.2.2` develop → staging once #344 and #347 are in. 5. Re-cut the APK; Android sheet from step 2.
+
+### Late session (2026-09-15 evening → 2026-09-16 ~01:15 UTC) — lanes resumed on Sonnet, the George "stalls" explained, eight issues closed and five demoted, #366 merged, an all-night loop set up
+
+**Seth's decisions (picker, ~00:50 UTC):** blanket merge authority for the night (both lenses clean at head + CI green, incl. T1 and #371; one at a time, others re-checked after each merge); Opus allowed on T1 lanes, max two at once, Sonnet elsewhere, 3–4 lanes total; demotions to v1.0.0 approved (#38, #361, #246, #253, #272); **v0.2.2 release and promotion held for the morning.**
+
+**Merged:** #366 quiet-take waveform scale → develop `c87bd94` (squash), Frank + George clean at `bba07bf`, P3 → #373.
+
+**Lanes at the time of writing** (all `isolation: "worktree"`; a plain subagent that enters an existing worktree by path has every Bash call refused — four lanes were lost to that before the memory rule was applied; feedback filed):
+
+| PR                                        | Head                                                                                                                 | Frank   | George                                                                                                             | State                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| #367 New Book name                        | `2f5ebb7` (R4: per-book add-chapter latch + optimistic patch, NameEdit `busy`; Frank R4 P2 disabled→busy fixed)      | APPROVE | R3 REQUEST_CHANGES fixed; R4 running                                                                               | triage R4 pending George; body now `Closes #314`, `Closes #360`    |
+| #368 inert/focus                          | `6b13ee5` (rebased on develop; R6: `overlayFallbackLabel` resolver, fallback never an exit control; 3 comment fixes) | APPROVE | R5 REQUEST_CHANGES fixed; R6 running                                                                               | triage R6 pending George; #369 residual                            |
+| #344 delete a Book                        | `0755a87` (R9: `reportUnlessStale` + `checkPresent` seam)                                                            | APPROVE | R8 REQUEST_CHANGES (P2-1 → #360, fixed by #367; P2-2 fixed) · **R9 REQUEST_CHANGES: swallow path must `reload()`** | R10 lane sent; #372 filed                                          |
+| #347 native share                         | `6accc01` → R6 in a Sonnet lane (Discard-during-write P1, sending-state P2)                                          | —       | —                                                                                                                  | lane running; **A17 device proof still owed by Seth before merge** |
+| #292 / #283 2nd-take live waveform        | draft, being rebased onto develop by a Sonnet lane                                                                   | —       | —                                                                                                                  | lane running                                                       |
+| #213 / #180 save-orchestration seams (T1) | draft, being rebased by an **Opus** lane; George twice at final head                                                 | —       | —                                                                                                                  | lane running                                                       |
+| #345 audition                             | `81141d6`                                                                                                            | APPROVE | P2 → #370                                                                                                          | parked on Tim (#284)                                               |
+
+**The George "stalls" were a watchdog defect, not George.** Every lane judged a stall by report-file byte growth; grok writes nothing to stdout between tool loops. `~/.grok/logs/unified.jsonl` showed a "stalled" #344 run on loop 13, 154k prompt tokens, every `read_file`/`grep` succeeding, at the instant it was killed. Solo re-runs with a log-keyed watchdog verdicted in 11–13 min (#344, #366, #367, #368 all produced real verdicts, three of them REQUEST_CHANGES with real P2s). An early watchdog used `pkill -f grok`, which killed other lanes' runs (exit 143) — withdrawn, PID-group kill only. Rule now in memory (`tc-mobile-george-skip`): watch the grok log for the run's pid, 10 min quiet = stall, 45 min cap, expect 10–30 min. Scripts `george-solo2.sh` / `george-seq.sh` live in the job tmp dir; promote into `scripts/review/` if they earn it (#220 is the harness issue).
+
+**Issue triage (dev lead approved after reading bodies): 103 → 95 open, and five moved out of v0.3.0.** Closed completed: #120 (lib slice landed in #121/#123, no closing keyword), #25 and #33 (pivot spines; Template Library is #246/#253). Superseded/folded with content carried: #24 → #353; #263 checklist → #245; #362 → #164 item 1; #19 → #174 item 2; #116 → #115. Demoted v0.3.0 → v1.0.0 with evidence comments and v1 labels dropped: #38 (schema v6 two weeks out; persist() stays), #361 (test-infra programme; six paths stay listed as the known gap), #246/#253 (Template Library, non-blocking per sprint plan), #272 (Chrome-PWA only; #347 bypasses the gate in the APK). New: #372 (delete focus lands on Add Chapter), #373 (display-gain parameter drift guard).
+
+**Why 103 were open:** ~20 review-round P3 deferrals landing in v0.3.0 by default; ~10 audit umbrellas left open after their children split out; pivot spines whose work landed; 10 decision-blocked on Tim; 7 device-evidence items that one Android sheet run closes or converts; 26 parked in v1.0.0.
+
+**Path to v0.3.0 (recommendation stands):** the next tester build is v0.2.2 (the tester-report PRs), then re-cut the APK and run the #245 sheet on it (#269 may be Chrome-only: the tester's APK run had working playback). v1-required is down from 28 toward ~12 code items; treat #245/#108/#58/#59/#269 as one evidence run; #316/#317 only on Tim's confirmation; #262 closes when the signing secrets are in.
+
+**Session continuity:** `~/.claude/settings.json` now has `autoCompactEnabled: true`, a PreCompact hook that snapshots machine state (open PRs/heads, `.review/` verdicts, live grok/lane processes, worktrees) to `~/.claude/handoff/tc-mobile-snapshot.md`, and a SessionStart(`compact`) hook that re-injects that plus the rolling note `~/.claude/handoff/tc-mobile.md`, which is updated at every milestone.
+
+### Next session, in order (supersedes the list above)
+
+1. `/sod`; read `~/.claude/handoff/tc-mobile.md` first. Check each lane's PR for the latest triage; any George verdict still "running" → read the named watch file / `.review/george-<sha>.md`.
+2. Merge in order as each goes dual-clean + CI green (blanket go for the night only; re-confirm in the morning): #367 → #368 → #344 → #292 → #213; #347 after the A17 proof; #345 after Tim.
+3. Morning: `chore(release): v0.2.2` develop → staging, verify the served version, re-cut the APK, Android sheet (#245) from step 2.
+4. Tim: #284, #316/#317, #286, Q6 (#243). Seth: signing secrets (#262), Moto G level read (#358/#359), A17 share proof (#347).
 
 ---
 
