@@ -153,10 +153,13 @@ describe("rowHint — which reasons carry a cue", () => {
       icon: "alert",
       label: spoken(strings.blockedByTake),
     });
-    // While the ≡ menu is open the sheet is inert, so the menu must be closed
-    // BEFORE the sheet's own control is reachable. Order is the whole content of
-    // this cue; a string naming them the other way round is wrong, not just
-    // clumsy (George, round 1).
+    // While the ≡ menu is open the sheet's control is behind the scrim, so the
+    // menu must be closed BEFORE it is reachable. (The sheet is only `inert` at
+    // idle since #75, but the header — and so header Back — stays inert under
+    // any overlay regardless of `takeActive` (George R2 P2), so Back is not
+    // reachable to AT while this menu is up, mid-take or not.) Order is the
+    // whole content of this cue; a string naming them the other way round is
+    // wrong, not just clumsy (George, round 1).
     const said = strings.blockedByTake;
     expect(said.indexOf(strings.menuClose)).toBeGreaterThanOrEqual(0);
     expect(said.indexOf(strings.menuClose)).toBeLessThan(
