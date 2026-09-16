@@ -173,6 +173,24 @@ describe("encoderHealth (#166)", () => {
     expect(encoderHealth()).toBe("failing");
   });
 
+  it("rejects an ordinary encoder failure with the TYPED error, keeping the worker's words (Frank R4 P2)", async () => {
+    const { EncoderFailedError } = await import("@/hooks/mp3-codec");
+
+    const viaMessage = encode();
+    void viaMessage.catch(() => {});
+    await microtasks();
+    live().emitEncodeError("lame blew up");
+    await expect(viaMessage).rejects.toBeInstanceOf(EncoderFailedError);
+    await expect(viaMessage).rejects.toThrow("lame blew up");
+
+    const viaDeath = encode();
+    void viaDeath.catch(() => {});
+    await microtasks();
+    live().emitWorkerError("the worker script failed to start");
+    await expect(viaDeath).rejects.toBeInstanceOf(EncoderFailedError);
+    await expect(viaDeath).rejects.toThrow("failed to start");
+  });
+
   it("counts a worker that dies as an encoder failure", async () => {
     for (let i = 0; i < THRESHOLD; i++) {
       await startEncode();

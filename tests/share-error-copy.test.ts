@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { shareErrorText } from "@/components/share-error-copy";
 import { strings } from "@/components/strings";
-import { EncoderStalledError } from "@/hooks/mp3-codec";
+import { EncoderFailedError, EncoderStalledError } from "@/hooks/mp3-codec";
 import { subscribeToFailures } from "@/hooks/report-failure";
 import { classifyPrepareError, settlePrepareFailure } from "@/hooks/share-flow";
 
@@ -23,9 +23,12 @@ describe("classifyPrepareError", () => {
     expect(classifyPrepareError(stall, "failing")).toBe("encoder");
   });
 
-  it("leaves an ordinary failure `failed` while the encoder is still healthy", () => {
+  it("leaves an encoder failure `failed` while the encoder is still healthy", () => {
     // The first and second ordinary failures: the threshold is still absorbing
     // noise, and "try again" is the honest advice.
+    expect(
+      classifyPrepareError(new EncoderFailedError("lame blew up"), "ok")
+    ).toBe("failed");
     expect(classifyPrepareError(new Error("lame blew up"), "ok")).toBe(
       "failed"
     );
@@ -33,14 +36,32 @@ describe("classifyPrepareError", () => {
     expect(classifyPrepareError(undefined, "ok")).toBe("failed");
   });
 
-  it("names the encoder for ANY failure once the encoder is failing (George R3 P2-1)", () => {
+  it("names the encoder for an ENCODER failure once the encoder is failing (George R3 P2-1)", () => {
     // A purged worker chunk (#182) or a worker that dies on every encode never
     // stalls — it errors. Once those errors have tripped the threshold, the
     // encode has already moved the store, and the only place a translator on
     // Segments can learn that a restart is needed is this line.
     expect(
-      classifyPrepareError(new Error("worker failed to start"), "failing")
+      classifyPrepareError(
+        new EncoderFailedError("worker failed to start"),
+        "failing"
+      )
     ).toBe("encoder");
+  });
+
+  it("does NOT blame the encoder for a storage or export failure, even while it is failing (Frank R4 P2)", () => {
+    // An IndexedDB read inside the share `build` throws before any encode is
+    // attempted. The encoder may well be broken too, but it did not cause THIS
+    // failure, and a "restart the app" line would send the translator after
+    // the wrong problem.
+    const storage = new DOMException(
+      "The transaction was aborted",
+      "AbortError"
+    );
+    expect(classifyPrepareError(storage, "failing")).toBe("failed");
+    expect(
+      classifyPrepareError(new Error("chapter has no segments"), "failing")
+    ).toBe("failed");
   });
 });
 

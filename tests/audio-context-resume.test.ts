@@ -127,6 +127,40 @@ describe("playSamples — supersession guard (#104)", () => {
     expect(handle.duration).toBe(0);
   });
 
+  it("honours a Stop that arrives DURING the buffer fill (George R4 G-1)", async () => {
+    // The windowed fill (#175) is synchronous and scales with the clip: about
+    // 600 `copyToChannel` calls for ten minutes. A tap on Stop during it cannot
+    // run until the fill yields. If nothing between the fill and
+    // `source.start()` yields, the Stop is handled only AFTER the source
+    // started, and `settle` then kills it: the start-then-stop click #104
+    // exists to prevent. A re-check with no yield before it would be dead code,
+    // because nothing can change in the same task. So the tap is modelled the
+    // way the platform delivers it — a task queued while the fill runs — and
+    // the claim is superseded only when that task runs.
+    const ctx = new FakeAudioContext("running");
+    let superseded = false;
+    ctx.createBuffer = (
+      _channels: number,
+      length: number,
+      sampleRate: number
+    ) => ({
+      duration: length / sampleRate,
+      copyToChannel(): void {
+        setTimeout(() => {
+          superseded = true;
+        }, 0);
+      },
+    });
+    const { playSamples } = await loadAudioIo(ctx);
+
+    const handle = await playSamples(samples, {
+      isStillCurrent: () => !superseded,
+    });
+
+    expect(ctx.sourcesCreated.every((s) => s.started === 0)).toBe(true);
+    expect(handle.duration).toBe(0);
+  });
+
   it("builds and starts a source when the claim is still current", async () => {
     const ctx = new FakeAudioContext("suspended");
     const { playSamples } = await loadAudioIo(ctx);

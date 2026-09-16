@@ -430,6 +430,11 @@ export interface PlaybackHandle {
   readonly duration: number;
 }
 
+/** Resolve after the current task, so queued input gets its turn first. */
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** Play canonical PCM, optionally from an offset. Returns a stop handle. */
 export async function playSamples(
   samples: Int16Array,
@@ -437,7 +442,8 @@ export async function playSamples(
     offsetSeconds?: number;
     onEnded?: () => void;
     /**
-     * Re-checked AFTER the resume await, just before any node is built. A play
+     * Checked twice: after the resume await, before the buffer is filled; and
+     * again after the fill, once a task has passed (see the body). A play
      * claim can be superseded (a Stop, a competing take, a mic claim) during
      * `resumeAudioContext` — which on iOS is a real await that also un-suspends a
      * suspended/interrupted context. Without this the source starts and is only
@@ -469,6 +475,21 @@ export async function playSamples(
 
   const ctx = getAudioContext();
   const buffer = toAudioBuffer(samples);
+
+  // The fill above is synchronous and scales with the clip (#175): about 600
+  // `copyToChannel` calls for ten minutes. A Stop, or a Play on another row,
+  // tapped DURING it cannot run until something yields. With no yield between
+  // here and `source.start()`, that tap would be handled only after the source
+  // had started, and `settle` would kill it: the start-then-stop #104 exists
+  // to prevent (George R4 G-1). A bare re-check here would be dead code,
+  // because nothing can change within this task. So yield one TASK, not a
+  // microtask (input events are tasks), and ask again. The cost is one
+  // macrotask of latency per Play.
+  await nextTask();
+  if (!options.isStillCurrent()) {
+    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+  }
+
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   source.connect(ctx.destination);

@@ -91,10 +91,11 @@ export type Clip =
  */
 export interface AudioCodec {
   /**
-   * Canonical PCM → MP3 bytes. May reject with an `AbortError` when cancelled, or
-   * with an `EncoderStalledError` when the worker goes silent past its deadline
-   * (#166) — the browser codec's typed signals that the encode did not produce
-   * bytes, distinct from an encoder that threw.
+   * Canonical PCM → MP3 bytes. May reject with an `AbortError` when cancelled,
+   * an `EncoderStalledError` when the worker goes silent past its deadline, or
+   * an `EncoderFailedError` when the encoder itself failed (#166) — the browser
+   * codec's typed signals, so a caller can tell an encoder failure from
+   * anything else that went wrong around it.
    */
   readonly encodeMp3: (samples: Int16Array) => Promise<Uint8Array<ArrayBuffer>>;
   /** MP3 bytes → canonical PCM. */

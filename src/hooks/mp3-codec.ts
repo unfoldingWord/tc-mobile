@@ -86,6 +86,24 @@ export class EncoderStalledError extends Error {
 }
 
 /**
+ * The encoder itself failed an encode, in the ordinary way: the worker reported
+ * an error, died, would not start, or does not exist on this browser (#166).
+ *
+ * Carries PROVENANCE, which is the whole point (Frank R4 P2). A caller that sees
+ * a failure while `encoderHealth()` reads `failing` must still be able to tell
+ * "the encoder failed again" from "a storage read failed while the encoder
+ * happened to be unhealthy" — only the first earns a "restart the app" line.
+ * The worker's own words are kept in the message, and the original thrown
+ * value, when there was one, in `cause`.
+ */
+export class EncoderFailedError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "EncoderFailedError";
+  }
+}
+
+/**
  * How long the worker may stay SILENT — no progress heartbeat, no done, no error
  * — before the encode is judged stalled (#166).
  *
@@ -445,7 +463,9 @@ function encodeInWorker(
       // says the phone cannot make recordings smaller, which is exactly true.
       noteEncodeFailed();
       reject(
-        new Error("This browser cannot encode MP3: no Web Worker support")
+        new EncoderFailedError(
+          "This browser cannot encode MP3: no Web Worker support"
+        )
       );
       return;
     }
@@ -459,7 +479,12 @@ function encodeInWorker(
       // below (which rejects it).
       dropEncoderWorker();
       noteEncodeFailed();
-      reject(cause);
+      reject(
+        new EncoderFailedError(
+          `The MP3 encoder worker could not be created: ${messageOf(cause)}`,
+          { cause }
+        )
+      );
       return;
     }
 
@@ -610,7 +635,9 @@ function encodeInWorker(
         resolve(new Uint8Array(response.mp3));
       } else {
         noteEncodeFailed();
-        reject(new Error(`MP3 encoding failed: ${response.message}`));
+        reject(
+          new EncoderFailedError(`MP3 encoding failed: ${response.message}`)
+        );
       }
     };
     worker.onerror = (event) => {
@@ -623,11 +650,17 @@ function encodeInWorker(
       // a crash mid-encode — so it counts like an encode that threw.
       noteEncodeFailed();
       // `ErrorEvent.error` is the thrown value when the script threw; a script
-      // that failed to load has only a message (often empty), so say so.
+      // that failed to load has only a message (often empty), so say so. Either
+      // way the rejection is TYPED as the encoder's, with the original kept as
+      // `cause` and its words kept in the message (Frank R4 P2).
+      const thrown: unknown = event.error;
       reject(
-        event.error instanceof Error
-          ? event.error
-          : new Error(event.message || "The MP3 encoder worker failed to start")
+        new EncoderFailedError(
+          thrown instanceof Error
+            ? thrown.message
+            : event.message || "The MP3 encoder worker failed to start",
+          thrown instanceof Error ? { cause: thrown } : undefined
+        )
       );
     };
 
@@ -656,6 +689,10 @@ function encodeInWorker(
       reject(cause);
     }
   });
+}
+
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function abortReason(signal: AbortSignal): unknown {
