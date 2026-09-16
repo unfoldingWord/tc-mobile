@@ -214,6 +214,41 @@ describe("exportBookZip", () => {
     expect(entries["Chapter 1.mp3"]).not.toEqual(entries["Chapter 1 (2).mp3"]);
   });
 
+  it("rolls up missing segments from chapters that DID make it into the zip (#116)", async () => {
+    // Three chapters, each with one recorded segment and one never-recorded
+    // segment — every chapter has resolvable audio (so `missing` for whole
+    // chapters stays 0), but each one is itself partial. Before the roll-up,
+    // each chapter's own `result.missing` was read and discarded here, so a
+    // book with this exact hole reported `missing === 0` and surfaced no
+    // Notice at all, while Share Chapter of any one of these chapters would
+    // say "1 segment could not be included."
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }, null],
+      [{ n: 100, v: 150 }, null],
+      [{ n: 100, v: 200 }, null],
+    ]);
+    const result = await exportBookZip(bookId, nameChapter, testCodec());
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(3);
+    expect(result!.missing).toBe(0); // no whole chapter was left out
+    expect(result!.partialSegments).toBe(3); // one gap per chapter, summed
+  });
+
+  it("counts a whole missing chapter toward `missing` and a partial one toward `partialSegments`, not both", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }, null], // included, but partial: 1 segment missing
+      [null], // no resolvable audio at all: a whole chapter left out
+      [{ n: 100, v: 200 }], // included, fully present
+    ]);
+    const result = await exportBookZip(bookId, nameChapter, testCodec());
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(2); // chapters 1 and 3 shipped
+    expect(result!.missing).toBe(1); // chapter 2 had no audio at all
+    expect(result!.partialSegments).toBe(1); // chapter 1's own gap only
+  });
+
   it("returns null when no chapter has any audio", async () => {
     const bookId = await bookWith([[null], []]);
     expect(await exportBookZip(bookId, nameChapter, testCodec())).toBeNull();

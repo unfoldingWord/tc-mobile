@@ -311,13 +311,26 @@ export const strings = {
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
-  // `missing` here counts whole chapters left out of the zip — a chapter with no
-  // resolvable audio at all. A chapter that is merely partial still ships (its
-  // own gaps are the chapter share's concern), so this speaks in chapters.
+  // `missing` counts whole chapters left out of the zip — a chapter with no
+  // resolvable audio at all.
   shareBookMissing: (n: number): string =>
     n === 1
       ? "1 chapter could not be included."
       : `${n} chapters could not be included.`,
+  // A chapter that IS included can still be partial — one or more of its own
+  // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
+  // rolled up across every included chapter, #116). Distinct from
+  // `shareBookMissing`, which speaks in whole chapters; this speaks in
+  // segments, mirroring `shareMissing`'s chapter-grain phrasing.
+  shareBookPartial: (n: number): string =>
+    n === 1
+      ? "1 segment was left out of a chapter that was otherwise included."
+      : `${n} segments were left out of chapters that were otherwise included.`,
+  // Both gaps can occur in the same book (a whole chapter missing AND a
+  // segment missing from one that shipped). The screen surfaces ONE Notice for
+  // the book grain, so this combines rather than stacking two.
+  shareBookMissingAndPartial: (chapters: number, segments: number): string =>
+    `${strings.shareBookMissing(chapters)} ${strings.shareBookPartial(segments)}`,
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,

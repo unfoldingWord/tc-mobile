@@ -68,10 +68,17 @@ export type ShareOutcome =
  * The File tap 1 built, plus how many units it had to leave out (segments for a
  * chapter, chapters for a book). Surfaced so a share with gaps does not go out
  * "as if whole" without saying so.
+ *
+ * `partial` is a second, finer-grained count a builder MAY also carry: units
+ * left out from inside something that otherwise made it in (today, only Share
+ * Book uses it — segments missing inside chapters that did ship, #116).
+ * Omitted (or 0) for a builder with nothing at that finer grain, e.g. Share
+ * Chapter, whose `missing` is already at the finest grain there is.
  */
 interface PreparedShare {
   readonly file: File;
   readonly missing: number;
+  readonly partial?: number;
 }
 
 /**
@@ -122,6 +129,11 @@ export interface UseShareFlow {
   /** Units left out of the prepared File (segments or chapters). 0 until ready. */
   readonly missing: number;
   /**
+   * The finer-grained count a builder attached via {@link PreparedShare.partial}
+   * — 0 for a builder that never carries one. 0 until ready.
+   */
+  readonly partial: number;
+  /**
    * Tap 1: run `build` to encode and stash the File for the send gesture. Never
    * rejects — a reason surfaces through `error`.
    */
@@ -148,6 +160,7 @@ export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
+  const [partial, setPartial] = useState(0);
   // What tap 1 prepared, waiting for the send gesture, and whether tap 2 owns
   // it right now. Extracted into `share-handoff.ts` (#365) rather than a ref
   // pair: `send` still takes ownership SYNCHRONOUSLY inside the gesture —
@@ -219,6 +232,7 @@ export function useShareFlow(): UseShareFlow {
       abortRef.current = controller;
       setError(null);
       setMissing(0);
+      setPartial(0);
       setStatus("preparing");
       // Yield once so `preparing` paints before the gather starts (its awaits
       // also yield, but a tiny share can return before the browser paints).
@@ -271,6 +285,7 @@ export function useShareFlow(): UseShareFlow {
         }
         handoff.arm({ file, staged });
         setMissing(prepared.missing);
+        setPartial(prepared.partial ?? 0);
         setStatus("ready");
       } catch (cause) {
         // A stale run's rejection — including the AbortError its own cancel
@@ -365,6 +380,7 @@ export function useShareFlow(): UseShareFlow {
       // The handoff's `armed` was cleared when `take()` ran; the file went to the OS.
       setStatus("idle");
       setMissing(0);
+      setPartial(0);
       return "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
@@ -394,6 +410,7 @@ export function useShareFlow(): UseShareFlow {
       // when `take()` ran.
       setStatus("idle");
       setMissing(0);
+      setPartial(0);
       if (outcome === "failed") setError("failed");
       return outcome;
     } finally {
@@ -423,7 +440,8 @@ export function useShareFlow(): UseShareFlow {
     setStatus("idle");
     setError(null);
     setMissing(0);
+    setPartial(0);
   }, [handoff]);
 
-  return { status, error, missing, prepare, send, reset };
+  return { status, error, missing, partial, prepare, send, reset };
 }
