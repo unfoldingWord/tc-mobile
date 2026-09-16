@@ -72,9 +72,10 @@ let lastStalledSegmentId: SegmentId | null = null;
  * ONE case is not covered by the promise it hands back: a request that lands
  * while a run is in flight is covered by that run's next pass UNLESS the run
  * stalls a second time, which ends it (see `runSweeps`). Those segments keep
- * their PCM and are picked up by the next launch or the next transition. Every call site `void`s this promise, so nothing observes the
- * difference today; it is written down because the next reader of the
- * coalescing contract would otherwise re-break #290 (George R1 P3-6).
+ * their PCM and are picked up by the next launch or the next transition. Every
+ * call site `void`s this promise, so nothing observes the difference today; it
+ * is written down because the next reader of the coalescing contract would
+ * otherwise re-break #290 (George R1 P3-6).
  */
 export function requestTranscodeSweep(): Promise<void> {
   if (running) {
