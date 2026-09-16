@@ -99,7 +99,7 @@ describe("liveScopeShown — the stage-owning states win", () => {
 });
 
 /**
- * The recorder stage's four view-coupled decisions, as a truth table.
+ * The recorder stage's three view-coupled decisions, as a truth table.
  *
  * Rounds 3, 4, 5 and 7 of this PR's review each found the same defect wearing
  * a different hat — the paste marker, then zoom, then Select, then the
@@ -114,14 +114,14 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * in, whether a buffer is sounding, whether a selection frame is up, and
  * whether a paused-take preview is on the stage.
  *
- * `centerlineHidden` is pinned `false` in every row below as of #316
- * (requirements owner, 2026-09-16): the vertical centerline is visible
- * ALWAYS in record/edit mode, which reverses this table's own prior values
- * for a swapped whole-clip view and a picked-span in-place audition (both
- * used to be `true`). Mutation check: reintroducing
- * `wholeView || input.playingBuffer` as `centerlineHidden`'s derivation
- * flips every case below except the two idle/no-selection rows back to
- * `true`, and this table dies.
+ * A fourth decision, `centerlineHidden`, lived in this table from R2 through
+ * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the centerline is
+ * visible in every state, so `Waveform` now draws it unconditionally
+ * whenever a recorder `view` is present, with nothing left for this pure
+ * module to decide — see the module docblock above `stageView`. There is
+ * deliberately no test here pinning "always visible": that claim now lives
+ * entirely in `Waveform`'s canvas draw, which this repo's convention treats
+ * as review-only (see this PR's body for what is and is not verified).
  */
 
 const base = {
@@ -132,55 +132,45 @@ const base = {
 } as const;
 
 describe("stageView", () => {
-  it("draws the pan window and shows the line when nothing is sounding", () => {
+  it("draws the pan window when nothing is sounding", () => {
     // Edit mode, idle: the ordinary editing state.
     expect(stageView(base)).toEqual({
       wholeView: false,
-      centerlineHidden: false,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
     expect(stageView({ ...base, selectionActive: true })).toEqual({
       wholeView: false,
-      centerlineHidden: false,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
   });
 
-  it("swaps to the whole clip for a record-mode play, but keeps the centerline (#316)", () => {
+  it("swaps to the whole clip for a record-mode play", () => {
     // The playhead must stay on screen and the pan window is not what a
-    // listener is following (George R1 G1 on #102). The centerline used to
-    // hide here too (George R2: it would mark a sample no longer drawn under
-    // it) — the requirements owner reversed that in #316, so the line is
-    // visible regardless.
+    // listener is following (George R1 G1 on #102).
     expect(stageView({ ...base, mode: "record", playingBuffer: true })).toEqual(
       {
         wholeView: true,
-        centerlineHidden: false,
         windowControlsInert: true,
         inPlaceAudition: false,
       }
     );
   });
 
-  it("swaps to the whole clip for an audition with no span picked, but keeps the centerline (#316)", () => {
+  it("swaps to the whole clip for an audition with no span picked", () => {
     // "line"/"whole": nothing is drawn through the pan window that has to stay
     // aligned, and keeping that window would sound audio that is off screen.
     expect(stageView({ ...base, playingBuffer: true })).toEqual({
       wholeView: true,
-      centerlineHidden: false,
       windowControlsInert: true,
       inPlaceAudition: false,
     });
   });
 
-  it("keeps the pan window for an audition of a picked span, marks it in-place, and keeps the centerline (#316)", () => {
+  it("keeps the pan window for an audition of a picked span, and marks it in-place", () => {
     // The band is positioned through that window, and hearing exactly the span
-    // it marks is the point — so the view stays put. The line used to hide
-    // here too: a second static vertical line beside a travelling playhead
-    // read as "insert here" to someone who cannot read the screen (George R4
-    // P3) — reversed by the requirements owner in #316, so it stays visible.
+    // it marks is the point — so the view stays put.
     //
     // `inPlaceAudition: true` is the ONLY case it is — it is what tells the
     // playhead overlay to clamp a position outside the (unswapped) window to
@@ -192,7 +182,6 @@ describe("stageView", () => {
       stageView({ ...base, playingBuffer: true, selectionActive: true })
     ).toEqual({
       wholeView: false,
-      centerlineHidden: false,
       windowControlsInert: true,
       inPlaceAudition: true,
     });
@@ -218,18 +207,16 @@ describe("stageView", () => {
       })
     ).toEqual({
       wholeView: true,
-      centerlineHidden: false,
       windowControlsInert: true,
       inPlaceAudition: false,
     });
   });
 
-  it("swaps to the whole clip for a paused-take preview, span or not, but keeps the centerline (#316)", () => {
+  it("swaps to the whole clip for a paused-take preview, span or not", () => {
     // The preview draws its own peaks across the whole stage (#101), so it is
     // never shown through the pan window.
     expect(stageView({ ...base, mode: "record", previewShown: true })).toEqual({
       wholeView: true,
-      centerlineHidden: false,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
@@ -237,7 +224,6 @@ describe("stageView", () => {
       stageView({ ...base, previewShown: true, selectionActive: true })
     ).toEqual({
       wholeView: true,
-      centerlineHidden: false,
       windowControlsInert: false,
       inPlaceAudition: false,
     });
@@ -285,33 +271,4 @@ describe("stageView", () => {
       false
     );
   });
-});
-
-describe("stageView — the centerline is visible in EVERY record/edit state (#316)", () => {
-  // Requirements owner, 2026-09-16, on #316: "having the line always visible
-  // is important in segment record/edit mode" — reversing two decisions this
-  // module used to encode (a swapped whole-clip view, George R2; a
-  // picked-span in-place audition, George R4 P3). Exhaustive over every
-  // `StageInput` combination `stageView` accepts, not just the named
-  // scenarios above, so a future edit cannot reintroduce a suppressed case
-  // this table happens not to enumerate by name. Mutation check: restoring
-  // `centerlineHidden: wholeView || input.playingBuffer` fails every case
-  // below where `wholeView` or `playingBuffer` is true.
-  const modes = ["record", "edit"] as const;
-  const bools = [false, true] as const;
-
-  for (const mode of modes) {
-    for (const playingBuffer of bools) {
-      for (const selectionActive of bools) {
-        for (const previewShown of bools) {
-          it(`stays visible for mode=${mode} playingBuffer=${playingBuffer} selectionActive=${selectionActive} previewShown=${previewShown}`, () => {
-            expect(
-              stageView({ mode, playingBuffer, selectionActive, previewShown })
-                .centerlineHidden
-            ).toBe(false);
-          });
-        }
-      }
-    }
-  }
 });

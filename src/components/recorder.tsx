@@ -2324,9 +2324,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       // centerline itself is no longer suppressed for a sounding
                       // buffer or a swapped view — the requirements owner reversed
                       // both suppressions in #316 (2026-09-16); see
-                      // `recorder-stage.ts`'s `centerlineHidden` docblock for the
-                      // superseded George R2 / R4 P3 findings that used to justify
-                      // hiding it.
+                      // `recorder-stage.ts`'s module docblock for the superseded
+                      // George R2 / R4 P3 findings that used to justify hiding it.
                       peaks={previewShown ? previewShown.peaks : editor.peaks}
                       height={200}
                       recorded={hasAudio || previewShown !== null}
@@ -2533,12 +2532,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     }
                     variant="record"
                     // Disabled while the buffer plays ONLY when idle: the visible
-                    // whole-clip view hides the insert centerline, so a new record
-                    // would splice at an offset the translator cannot see (George
-                    // R2). While PAUSED the button is Resume, whose offset is already
-                    // locked — resuming stops a sounding preview and continues the
-                    // take, so it must stay enabled (George R3 #4). Stop playback
-                    // (tap Play) first only in the idle case.
+                    // whole-clip view draws the centerline at a fixed screen
+                    // position that no longer corresponds to the stored insertion
+                    // offset (#316 keeps the line itself visible; it is the
+                    // COORDINATE that goes stale under a swapped view, not the
+                    // line's presence), so a new record would splice at a sample
+                    // the translator cannot see is different from what is drawn
+                    // (George R2). While PAUSED the button is Resume, whose offset
+                    // is already locked — resuming stops a sounding preview and
+                    // continues the take, so it must stay enabled (George R3 #4).
+                    // Stop playback (tap Play) first only in the idle case.
                     disabled={
                       busy ||
                       isClosing ||

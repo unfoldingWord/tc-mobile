@@ -117,6 +117,15 @@ export function liveScopeShown(s: StageState): boolean {
  * George). Repetition is a class, and the class-level answer is to derive the
  * question once rather than gate each consumer by hand.
  *
+ * A fourth decision, `centerlineHidden`, lived here from R2 (whole-clip
+ * playback) through R4 P3 (in-place audition) until #316 (requirements
+ * owner, 2026-09-16: "having the line always visible is important in
+ * segment record/edit mode") retired it — the line is never suppressed, in
+ * any state, so there is no longer a decision to derive. `Waveform` draws it
+ * unconditionally whenever a recorder `view` is present; see its
+ * `drawCenterline` for the current (unconditional) rule and this module's
+ * git history for the retired one.
+ *
  * Pure and DOM-free so the truth table is a test rather than a phone.
  */
 
@@ -141,27 +150,6 @@ interface StageView {
    * window the listener is not following.
    */
   readonly wholeView: boolean;
-  /**
-   * Suppress the red insert centerline (`Waveform`'s `playing`).
-   *
-   * **Always `false` as of #316** (requirements owner, 2026-09-16: "having
-   * the line always visible is important in segment record/edit mode"). This
-   * used to go `true` in two cases — a swapped whole-clip view (a record-mode
-   * play, a no-selection audition, or a paused-take preview), where the line
-   * would mark a sample no longer drawn under it (George R2), and a
-   * picked-span in-place audition, where a second static line beside the
-   * travelling playhead read as "insert here" to someone who cannot read the
-   * screen (George R4 P3). Both findings are accurate history — they are not
-   * being relitigated — but the requirements owner read the resulting
-   * suppression as miscommunication, not intent, and overruled it: the
-   * line's fixed screen position is drawn regardless of what it does or does
-   * not correspond to while a buffer sounds. Kept as a named field, not
-   * deleted, so this stays one of the enumerated view-coupled decisions in
-   * this module (see the module docblock) rather than a `false` inlined at
-   * the `Waveform` call site — a future reversal has one tested place to
-   * change the value back.
-   */
-  readonly centerlineHidden: boolean;
   /**
    * Every control that READS OR MOVES the pan/zoom window is inert.
    *
@@ -232,8 +220,6 @@ export function stageView(input: StageInput): StageView {
   const wholeView = input.previewShown || (input.playingBuffer && !inPlace);
   return {
     wholeView,
-    // Always visible — see the field's docblock (#316, 2026-09-16).
-    centerlineHidden: false,
     windowControlsInert: input.playingBuffer,
     inPlaceAudition: input.playingBuffer && !wholeView,
   };

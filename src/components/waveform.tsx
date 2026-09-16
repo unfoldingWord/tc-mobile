@@ -125,8 +125,8 @@ export function Waveform({
     // never-recorded segment used to show no line (the requirements owner's
     // own earlier build feedback, now read as miscommunication), and the line
     // used to hide while a buffer sounded / the view swapped to the whole
-    // clip (George R2; `recorder-stage.ts`'s `centerlineHidden`, now a
-    // constant `false` — see its docblock for the reversed findings). A row
+    // clip (George R2 / R4 P3 — see `recorder-stage.ts`'s module docblock for
+    // the retired `centerlineHidden` decision that used to gate this). A row
     // never passes `view`, so this canvas still never draws the line outside
     // the recorder.
     const drawCenterline = () => {
