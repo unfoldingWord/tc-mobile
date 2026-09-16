@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { focusRestoreTarget } from "@/lib/a11y/focus-restore";
+import {
+  focusRestoreTarget,
+  overlayFallbackLabel,
+} from "@/lib/a11y/focus-restore";
 
 /**
  * #97 — where focus goes when an overlay closes.
@@ -119,5 +122,50 @@ describe("focusRestoreTarget", () => {
         focusable: false,
       })
     ).toBe("fallback");
+  });
+});
+
+describe("overlayFallbackLabel — #368 George R5 P2", () => {
+  const menuOpenLabel = "More actions";
+
+  it("never resolves to the header's last button — the modepill, an exit control", () => {
+    // Edit mode's header is [Back, modepill]. The old fallback query picked
+    // "the last header button" positionally and landed on the modepill
+    // ("Done editing"), which EXITS edit mode — arming the very next
+    // Space/Enter/switch-activate to leave. This is the exact case George
+    // reported: no menu-opener present in this candidate list at all, so the
+    // only correct answer is `null`, never "Done editing".
+    expect(
+      overlayFallbackLabel(["Close recorder", "Done editing"], menuOpenLabel)
+    ).toBeNull();
+  });
+
+  it("resolves to the menu opener when it is present, in record mode's header", () => {
+    expect(
+      overlayFallbackLabel(["Close recorder", menuOpenLabel], menuOpenLabel)
+    ).toBe(menuOpenLabel);
+  });
+
+  it("resolves to the menu opener when it is present, in edit mode's toolbar", () => {
+    // The edit-mode ≡ lives in the toolbar, not the header, and shares the
+    // header opener's exact accessible name — the one label safe in both
+    // modes.
+    expect(
+      overlayFallbackLabel(
+        ["Zoom in", "Select", "Undo", "Redo", menuOpenLabel],
+        menuOpenLabel
+      )
+    ).toBe(menuOpenLabel);
+  });
+
+  it("is not positional — the menu opener wins regardless of where it sits in the list", () => {
+    expect(
+      overlayFallbackLabel([menuOpenLabel, "Done editing"], menuOpenLabel)
+    ).toBe(menuOpenLabel);
+  });
+
+  it("gives up rather than guessing when nothing safe is present", () => {
+    expect(overlayFallbackLabel([], menuOpenLabel)).toBeNull();
+    expect(overlayFallbackLabel(["Close recorder"], menuOpenLabel)).toBeNull();
   });
 });

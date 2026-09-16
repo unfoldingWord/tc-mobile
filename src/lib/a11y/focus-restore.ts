@@ -80,3 +80,35 @@ export function focusRestoreTarget(input: FocusRestoreInput): FocusRestore {
   // Alive but unreachable, or gone. A named landmark beats the document.
   return input.hasFallback ? "fallback" : "none";
 }
+
+/**
+ * WHICH element the caller should hand `restore()` as its `fallback` — chosen
+ * by ROLE, not position (#368 George R5 P2).
+ *
+ * The recorder's own fallback query used to be "the last button in the
+ * header." That is correct in record mode: the header's right-hand control is
+ * the ≡ menu opener. It is wrong in edit mode: the header's right-hand control
+ * there is the modepill ("Done editing"), and tapping it EXITS edit mode.
+ * Landing overlay-close focus on it arms the very next Space / Enter /
+ * switch-activate to leave edit mode — the #97 hazard (`use-focus-restore.ts`'s
+ * "a landmark that saves, deletes or leaves is then armed under the next
+ * activation") on the ordinary Edit row, not an edge case.
+ *
+ * The one landmark that is safe in EVERY mode is the "More actions" control
+ * itself: it reopens the very overlay that just closed, never saves, deletes
+ * or leaves, and this app renders it under the same accessible name in both
+ * places it exists (the header in record mode, the toolbar in edit mode).
+ *
+ * This function has exactly one branch that returns non-null, and it is keyed
+ * on that label — not on "last," "first," or any other position. A future
+ * header/toolbar control, however it is placed, cannot become the fallback by
+ * accident the way the modepill did; only the control carrying
+ * `menuOpenLabel` ever can. Structurally, it never returns an exiting
+ * control, because it never returns anything but that one label or `null`.
+ */
+export function overlayFallbackLabel(
+  candidateLabels: readonly string[],
+  menuOpenLabel: string
+): string | null {
+  return candidateLabels.includes(menuOpenLabel) ? menuOpenLabel : null;
+}

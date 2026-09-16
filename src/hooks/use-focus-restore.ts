@@ -14,9 +14,14 @@ export interface FocusRestore {
    * the app, and nothing said so.
    *
    * Re-entrant by design: a second `capture()` while one is held keeps the
-   * FIRST. The recorder's ≡ opener stays reachable to AT while the menu is up
-   * over a live take (#75), so a second tap must not overwrite the real trigger
-   * with a row inside the panel.
+   * FIRST. Before the header went inert under any overlay regardless of
+   * `takeActive` (George R2 P2), the recorder's ≡ opener stayed reachable to AT
+   * while the menu was up over a live take (#75), and a second tap on it had to
+   * not overwrite the real trigger with a row inside the panel. The header
+   * fix closes that specific path — the ≡ is now inert whenever an overlay is
+   * up, mode or `takeActive` regardless — but the guard is kept as the
+   * defensive rule for any future caller that captures again before the
+   * previous overlay's `inert` has committed.
    */
   capture: () => void;
   /**

@@ -193,12 +193,13 @@ export const strings = {
   // hand. Short and literal, like `previewUnavailable`.
   // Names both steps in the order the overlay allows — while this menu is open
   // the sheet's control is behind the scrim (and, at idle, behind its `inert`
-  // too), so it is out of reach until the menu closes. Mid-take the sheet is no
-  // longer inert (#75), so AT can reach the header Back while the menu is up —
-  // but that Back dismisses the MENU rather than saving (`close()` refuses while
-  // an overlay is up), so the two steps this cue names are still the way to
-  // save. The order is what matters, and it is unchanged. Named by the
-  // accessible names those two controls
+  // too), so it is out of reach until the menu closes. Mid-take the SHEET is no
+  // longer inert (#75), but the HEADER — and so header Back — stays inert under
+  // any overlay regardless of `takeActive` (George R2 P2), so Back is not
+  // reachable to AT at all while this menu is up. The two steps this cue names
+  // are still the way to save: close the menu, then close the recorder. The
+  // order is what matters, and it is unchanged. Named by the accessible names
+  // those two controls
   // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu

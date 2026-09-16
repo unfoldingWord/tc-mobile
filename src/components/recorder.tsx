@@ -32,6 +32,7 @@ import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
+import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
@@ -1670,27 +1671,37 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (isClosing) return;
       focusRestore.restore({
         suppressed: panelOwnsFocus,
-        // The overlay-close landmark is the header's RIGHT-HAND control — the ≡
-        // in record mode, the "Editing" pill in edit mode — and deliberately
-        // NOT the sheet's first focusable, which is Back (George R1 P1). The
-        // open-edge effect above lands on Back on purpose: that is entering the
-        // dialog. Landing there on overlay CLOSE is the opposite, and recreates
-        // the exact hazard #97 was filed about — Back is `close()`, which SAVES,
-        // so a switch user's next activation after "Edit" would commit and exit
-        // the sheet instead. The paths that reach it are the ordinary ones: the
-        // menu's Edit row and its Done-editing row both unmount the captured
-        // trigger by flipping the mode, so the fallback is what runs.
+        // The overlay-close landmark is the "More actions" (≡) control itself
+        // — deliberately NOT the sheet's first focusable, which is Back
+        // (George R1 P1), and NOT "the header's last button" either (George R5
+        // P2): that was correct in record mode, where the header's right-hand
+        // control IS the ≡, but wrong in edit mode, where that slot is the
+        // "Editing" pill — a control that EXITS edit mode. Landing overlay-
+        // close focus there would arm the very next Space/Enter/switch-
+        // activate to leave, the #97 hazard on the ordinary Edit row.
         //
-        // Both header controls always render (Back, then the ≡/pill ternary),
-        // so the right-hand slot is the last `button` in the header. Fewer than
-        // two means the header's shape changed under this: hand back nothing
-        // rather than guess and arm Back. Focus then stays on the document,
-        // which is where it sat before this PR — no worse, and never armed.
+        // The ≡ is safe in every mode: it reopens the very overlay that just
+        // closed, and this app renders it under the same accessible name in
+        // both places it lives (the header in record mode, the toolbar in
+        // edit mode). `overlayFallbackLabel` (`lib/a11y/focus-restore.ts`)
+        // picks it by that name, never by position, so it can only ever
+        // resolve to the ≡ or to nothing — never to Back or the pill.
         fallback: (() => {
-          const buttons =
-            sheetRef.current?.querySelectorAll<HTMLElement>("header button");
-          if (!buttons || buttons.length < 2) return null;
-          return buttons[buttons.length - 1] ?? null;
+          const sheet = sheetRef.current;
+          if (!sheet) return null;
+          const buttons = Array.from(
+            sheet.querySelectorAll<HTMLElement>("button")
+          );
+          const labels = buttons.map(
+            (button) => button.getAttribute("aria-label") ?? ""
+          );
+          const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
+          if (target === null) return null;
+          return (
+            buttons.find(
+              (button) => button.getAttribute("aria-label") === target
+            ) ?? null
+          );
         })(),
       });
     }, [overlayUp, isClosing, panelOwnsFocus, focusRestore]);
