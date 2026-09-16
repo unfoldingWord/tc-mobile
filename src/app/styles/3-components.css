@@ -560,8 +560,11 @@
      Still named "pair" — the class predates the third control and nothing
      else keys off the name; renaming is a pure churn diff. At 320px: 68 + 52
      + 44 = 164px of controls plus 2 * 28px gaps = 220px, inside the row's
-     ~288px budget (320 less the sheet's two 8px flanks and the toolbar's own
-     16px each side) — arithmetic, not observation; not rendered at 320px. */
+     272px budget (320 less the sheet's two 8px flanks and the toolbar's own
+     16px each side — the SAME 272px the edit toolbar's own comment below
+     derives; an earlier draft of this comment said ~288px, which was simply
+     wrong arithmetic, George #403 R1 P3) — arithmetic, not observation; not
+     rendered at 320px. */
   .recorder-toolbar.pair {
     justify-content: center;
     gap: var(--c-gap-blocks);
