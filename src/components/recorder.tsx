@@ -2711,14 +2711,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // file's own `catch (cause)` shapes can silence that rule (#212).
     const panelOwnedFocus = useRef(false);
     useLayoutEffect(() => {
-      if (
-        panelRecoveryFocus({
-          ownedLastCommit: panelOwnedFocus.current,
-          ownsNow: panelOwnsFocus,
-          closing: isClosing,
-        })
-      )
-        focusSheet();
+      const action = panelRecoveryFocus({
+        ownedLastCommit: panelOwnedFocus.current,
+        ownsNow: panelOwnsFocus,
+        closing: isClosing,
+      });
+      // `hold` changes NOTHING — not focus, and not the history below. That is
+      // the whole point of the third value (QA review P2 on #457): a close can
+      // fail and leave this sheet mounted (`leaveHeldTake` → `executeTail` →
+      // `stayOpen` resets `isClosing`), and writing the ref on the closing
+      // commit would spend the pending recovery before that landed, stranding
+      // focus on <body> — the #199 defect reached through the failure path.
+      // Same lesson, and the same wording, as the overlay restore above: hold
+      // through the commit window rather than spending it. A sheet that really
+      // does exit never renders again, so unmounting consumes the hold and
+      // nothing has to spend it explicitly.
+      if (action === "hold") return;
+      if (action === "focus") focusSheet();
       panelOwnedFocus.current = panelOwnsFocus;
     }, [panelOwnsFocus, isClosing, focusSheet]);
 

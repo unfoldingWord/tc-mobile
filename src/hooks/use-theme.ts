@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { reportFailure } from "./report-failure";
 import {
@@ -13,9 +13,25 @@ import {
  * chrome in step.
  *
  * `lib/theme.ts` owns the decision and is DOM-free; everything that touches the
- * document lives here, per AGENTS.md's layering. Nothing in this file is
- * covered by an automated test — there is no DOM runner in this repo (#197) —
- * and it is not claimed as tested. `lib/theme.ts`'s table is what is pinned.
+ * document lives here, per AGENTS.md's layering.
+ *
+ * WHAT IS AND IS NOT COVERED, split apart because this file's first draft said
+ * flatly "nothing here is covered", which was already untrue when it shipped
+ * (QA review, #457) and understated the gate a later change would have to keep
+ * passing:
+ *
+ *   - COVERED, in real Chromium against the shipped `dist/` build
+ *     (`e2e/theme-toggle.spec.ts`): the toggle flips `data-theme`, the computed
+ *     `--s-floor` and the `theme-color` meta both follow, two taps return, the
+ *     choice survives a reload, and — since the QA round — a theme whose WRITE
+ *     THROWS still survives a Books → chapter → Books round trip.
+ *   - NOT COVERED: `readTheme`'s catch path (an accessor that throws on READ,
+ *     as opposed to on write), and `applyTheme`'s empty-`--s-floor` early
+ *     return. Both are engine-specific states this suite cannot produce.
+ *   - NOT COVERED, and not coverable here: any of it on a phone. Capacitor's
+ *     Android WebView has never run this app at all (#245), and headless
+ *     Chromium in a container is not the sunlit screen the light theme exists
+ *     for. `lib/theme.ts`'s Node table remains what pins the decision.
  *
  * WHY `localStorage` AND NOT IndexedDB. Every byte this app stores in IndexedDB
  * is a translator's recording or the structure around it: losing it is
@@ -27,6 +43,49 @@ import {
  * deliberately NOT synced with the recordings: two facilitators handing out
  * the same book to phones in different light should not fight over the theme.
  */
+
+/**
+ * THE LIVE THEME, above the component tree.
+ *
+ * Module scope, not `useState` alone, because `App` renders `BooksScreen` XOR
+ * `SegmentsScreen` (`src/app/App.tsx`) — so opening a chapter UNMOUNTS the only
+ * component that calls `useTheme`. With the state seeded from storage on each
+ * mount, a theme whose write had failed came back as the default on the way
+ * back to Books: light on the toggle, light inside the chapter, dark on return,
+ * with no reload (QA review P2 on #457).
+ *
+ * That defeated exactly the fallback this hook's `toggle` sets out to give —
+ * "the theme still CHANGES, it just will not survive a reload" — and it failed
+ * hardest for the person the light theme exists for, who is outdoors, whose
+ * storage is most likely to be full, and who is navigating between screens
+ * while they work.
+ *
+ * So `localStorage` is now used for exactly two things: hydrating this value
+ * once at launch, and best-effort persistence. Everything on screen reads
+ * THIS, which is why a failed write costs a relaunch and not a navigation.
+ */
+let liveTheme: Theme | null = null;
+
+/** Subscribers, so every mounted `useTheme` sees one toggle. */
+const listeners = new Set<() => void>();
+
+/**
+ * The current theme, hydrating from storage on first read.
+ *
+ * Lazy rather than initialised at module load: `installStoredTheme()` runs
+ * before React renders and is what populates this, and a module-load read
+ * would put a `localStorage` access in the import graph of anything that
+ * touches this file — including the Node test suite.
+ */
+function currentTheme(): Theme {
+  liveTheme ??= readTheme();
+  return liveTheme;
+}
+
+function setLiveTheme(next: Theme): void {
+  liveTheme = next;
+  for (const listener of listeners) listener();
+}
 
 /**
  * Read `localStorage` without letting it take the app down.
@@ -84,7 +143,7 @@ function applyTheme(theme: Theme): void {
  * file has been run on a phone.
  */
 export function installStoredTheme(): void {
-  applyTheme(readTheme());
+  applyTheme(currentTheme());
 }
 
 export interface UseTheme {
@@ -94,12 +153,13 @@ export interface UseTheme {
 }
 
 export function useTheme(): UseTheme {
-  // Seeded from storage, not from a constant: `installStoredTheme` has already
-  // put that theme on the element, and seeding "dark" here would make the
-  // hook's first render disagree with the screen.
-  const [theme, setTheme] = useState<Theme>(readTheme);
+  // Subscribed to the module-level value, NOT seeded from storage per mount —
+  // see `liveTheme` above for the navigation defect that caused. Every mounted
+  // copy of this hook therefore agrees, and a remount picks up the live theme
+  // rather than re-deriving one from a write that may have failed.
+  const theme = useSyncExternalStore(subscribe, currentTheme, currentTheme);
 
-  // Re-apply on mount so the attribute and this hook's state cannot diverge if
+  // Re-apply on mount so the attribute and the live value cannot diverge if
   // something else has written `data-theme` in between. Idempotent, which is
   // the property AGENTS.md asks of every write.
   useEffect(() => {
@@ -107,22 +167,28 @@ export function useTheme(): UseTheme {
   }, [theme]);
 
   const toggle = useCallback(() => {
-    setTheme((current) => {
-      const next = nextTheme(current);
-      try {
-        window.localStorage.setItem(THEME_STORAGE_KEY, next);
-      } catch (cause) {
-        // The theme still CHANGES — it just will not survive a reload. Failing
-        // the toggle over a failed write would deny the accommodation to
-        // exactly the contexts where storage is blocked, which is the wrong
-        // trade for a cosmetic preference. Reported, not shown: the control's
-        // own glyph flipping is the feedback, and there is no honest way to say
-        // "this will not be remembered" without text.
-        reportFailure(cause, "use-theme: persist");
-      }
-      return next;
-    });
+    const next = nextTheme(currentTheme());
+    // The live value moves FIRST, so the screen is correct whatever storage
+    // does next.
+    setLiveTheme(next);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch (cause) {
+      // The theme still CHANGES, and now it survives navigation too — it just
+      // will not survive a relaunch. Failing the toggle over a failed write
+      // would deny the accommodation to exactly the contexts where storage is
+      // blocked, which is the wrong trade for a cosmetic preference. Reported,
+      // not shown: the control's own glyph flipping is the feedback, and there
+      // is no honest way to say "this will not be remembered" without text.
+      reportFailure(cause, "use-theme: persist");
+    }
   }, []);
 
   return { theme, toggle };
+}
+
+/** `useSyncExternalStore`'s subscribe half. Stable, so it never resubscribes. */
+function subscribe(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => listeners.delete(onStoreChange);
 }

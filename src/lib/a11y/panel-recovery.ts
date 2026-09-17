@@ -49,20 +49,59 @@ interface PanelRecoveryInput {
    * the same, so a cleared panel is not by itself evidence of a recovery.
    * Focusing inside an unmounting sheet is dead code at best, and at worst
    * fights the Segments screen's own hand-off.
+   *
+   * But a close can FAIL and leave the sheet mounted (`stayOpen`), so this
+   * yields `hold` rather than `idle` — see `panelRecoveryFocus` below. A sheet
+   * that really does exit simply never renders again, which consumes the held
+   * recovery by unmounting; nothing has to spend it explicitly.
    */
   readonly closing: boolean;
 }
 
 /**
- * True on exactly one edge: a panel that owned the body no longer does, and
- * the sheet is staying open. Deliberately not `ownedLastCommit !== ownsNow`,
- * which would also fire on the panel APPEARING and steal the `autoFocus` it
- * just set.
+ * What the caller should do on this commit.
+ *
+ * - `focus` — a panel that owned the body no longer does and the sheet is
+ *   staying open. Land focus inside the sheet.
+ * - `hold` — the sheet is closing. Do nothing, and **remember nothing**: the
+ *   caller must not advance its previous-commit state, so a pending recovery
+ *   survives a close that turns out to fail.
+ * - `idle` — nothing to do, and the caller records this commit normally.
+ */
+export type PanelRecoveryAction = "focus" | "hold" | "idle";
+
+/**
+ * The decision, three-valued because two of the answers need the caller to do
+ * different things with its history.
+ *
+ * `hold` is the one that is easy to get wrong, and the first version of this
+ * module did (QA review P2 on #457). It returned a boolean, so the caller
+ * updated its previous-commit ref on every commit — including the closing one,
+ * which SPENT the pending recovery. There is a real path where the sheet then
+ * stays open: `leaveHeldTake()` clears `heldTake` and sets `isClosing = true`,
+ * then `executeTail()` awaits, and a failed clear or Finished write calls
+ * `stayOpen()`, which sets `isClosing = false` and leaves the recorder mounted.
+ * By that commit the history said no panel had been up, so the removed panel's
+ * control never got its hand-off and focus stayed on `<body>` — the exact #199
+ * defect, reached through the failure path instead of the success one.
+ *
+ * `recorder.tsx`'s overlay-restore effect already carried this lesson in its
+ * own comment — "HOLD the capture through the commit window rather than
+ * spending it" — for the same reason on the same screen. Three values make the
+ * distinction impossible to drop at the call site, rather than something the
+ * caller has to remember.
+ *
+ * `focus` is deliberately not `ownedLastCommit !== ownsNow`, which would also
+ * fire on the panel APPEARING and steal the `autoFocus` it just set.
  */
 export function panelRecoveryFocus({
   ownedLastCommit,
   ownsNow,
   closing,
-}: PanelRecoveryInput): boolean {
-  return ownedLastCommit && !ownsNow && !closing;
+}: PanelRecoveryInput): PanelRecoveryAction {
+  // Checked FIRST, and before reading the other two: while the sheet is
+  // closing there is no correct landing yet and no way to know whether there
+  // will be one, so the only safe answer is to change nothing.
+  if (closing) return "hold";
+  return ownedLastCommit && !ownsNow ? "focus" : "idle";
 }

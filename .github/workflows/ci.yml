@@ -315,27 +315,42 @@ jobs:
       # every spec here would fail on the next PR that did trip the gate
       # (round-2 Frank F2 / George G-3).
       #
-      # `theme-toggle.spec.ts` (#171) widened this gate, and the entries it
-      # needed are derived from what that spec actually reads — per AGENTS.md,
-      # "derive a CI path filter from what the suite imports, never from issue
-      # prose". Unlike the harness specs it drives real UI, so its dependencies
-      # reach layers this gate did not cover at all:
+      # `theme-toggle.spec.ts` (#171) drives the REAL SHIPPED UI, which is why
+      # the source half of this filter is now simply `src/`.
       #
-      #   - `src/lib/theme.ts` — the decision it exercises. The gate had only
-      #     `src/lib/audio/` and `src/lib/storage/`, so a change here ran
-      #     nothing.
-      #   - `src/components/books-screen.tsx` — the ONLY mount point of the
-      #     toggle. Delete the control and every other gated path is untouched,
-      #     so the gate would read `smoke=false` and CI would go green with the
-      #     light theme unreachable again, which is the exact #171 defect.
-      #   - `src/components/strings.ts` — the spec locates the control by its
-      #     ACCESSIBLE NAME (`/light screen/i`). Reword the string and the spec
-      #     stops finding it; that must run here, not on the next unrelated PR.
-      #   - `src/app/styles/` — it asserts the resolved token values in the
-      #     shipped cascade (`--s-ink-faint: #626d7b` and the rest of #164's AA
-      #     fix). A layer-2 edit is precisely what it exists to catch.
-      #   - `index.html` — carries the `meta[name="theme-color"]` the spec
-      #     reads, and the viewport policy `tests/touch-policy.test.ts` gates.
+      # An enumerated list was tried first and was wrong within one review
+      # round. It named `src/lib/theme.ts`, `books-screen.tsx`, `strings.ts`,
+      # `src/app/styles/` and `index.html` — each genuinely a dependency — and
+      # still returned `smoke=false` for `src/app/globals.css` (where the
+      # `@theme` colour bridge and the `@import` of the whole style layer
+      # live), `src/app/App.tsx` (which decides whether `BooksScreen` is
+      # mounted at all), `menu.tsx` (which renders the toggle's children) and
+      # `control.tsx` (which IS the toggle). Dropping the styles import in
+      # globals.css, or failing to render `Menu` children, breaks the
+      # user-visible theme while skipping this gate entirely. That is the QA
+      # finding on #457, and it is the second time enumerating transitive deps
+      # of this suite has missed one (round-1 Frank C2 was the first).
+      #
+      # The lesson is that a spec which drives the shipped app depends on the
+      # shipped app. Enumerating the transitive UI and CSS closure of that is
+      # not maintainable and the failure mode is silent — a skipped browser
+      # gate looks exactly like a passing one. `src/` is coarser and costs a
+      # ~90s job on source PRs that could not have affected it; a missed run
+      # costs a green CI over a broken light theme, which is the #171 defect
+      # returning undetected. AGENTS.md's rule is to derive the filter from
+      # what the suite depends on, and what it depends on is `src/`.
+      #
+      # Still enumerated, because these are NOT under `src/` and each is a real
+      # dependency: `index.html` (the `meta[name="theme-color"]` the spec reads
+      # and the viewport policy `tests/touch-policy.test.ts` gates), `e2e/` and
+      # `playwright.config.ts` (the suite and its projects), `vite.config.ts`
+      # (which decides what `dist/` and `dist-e2e/` contain at all) and the two
+      # lockfile/manifest paths.
+      #
+      # `tests/smoke-path-filter.test.ts` reads this exact regex out of this
+      # file and pins BOTH gate states — every path the suite depends on
+      # matches, and docs/markdown still do not, so a documentation commit
+      # cannot burn a browser run.
       #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
@@ -357,7 +372,7 @@ jobs:
           # then reads a here-string, not a pipe: no pipeline whose exit status
           # could be confused with the match result.
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/lib/theme\.ts$|src/components/books-screen\.tsx$|src/components/strings\.ts$|src/app/styles/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|index\.html$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+          if grep -qE '^(src/|index\.html$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
             echo "smoke=true" >> "$GITHUB_OUTPUT"
           else
             echo "smoke=false" >> "$GITHUB_OUTPUT"

@@ -20,9 +20,15 @@ import {
  * unaddressed while its maintenance cost was already being paid.
  *
  * This module is the pure half. The DOM half — setting the attribute, reading
- * `localStorage`, repainting the `theme-color` meta — is `hooks/use-theme.ts`
- * and is not covered here or anywhere (#361); it is review and on-device
- * surface and is not claimed as tested.
+ * `localStorage`, repainting the `theme-color` meta — is `hooks/use-theme.ts`,
+ * and it is NOT uncovered: `e2e/theme-toggle.spec.ts` drives it in real
+ * Chromium against the shipped build, including the failing-write path. An
+ * earlier draft of this header said it was covered "nowhere", which was wrong
+ * in the same PR that added that spec (QA review, #457).
+ *
+ * What genuinely remains uncovered is narrower: `readTheme`'s throw-on-READ
+ * catch, `applyTheme`'s empty-token early return, and everything about a real
+ * phone (#245). See that hook's own docblock, which splits the three.
  */
 describe("readStoredTheme (#171)", () => {
   it("returns the stored theme when it is one this app has", () => {

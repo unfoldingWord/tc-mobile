@@ -168,3 +168,81 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(inks.voiceText).toBe("#8a5a12");
   });
 });
+
+test.describe("the theme survives navigation when persistence fails (#457 QA P2)", () => {
+  test("a failed write still keeps the theme across Books → chapter → Books", async ({
+    page,
+  }) => {
+    // The reviewer's reproduction, kept as the regression. `localStorage` does
+    // not merely go absent in the field — the write THROWS (Safari with cookies
+    // blocked, a WebView with storage disabled, a full quota), which is why
+    // `use-theme.ts` catches it and keeps going. This proves what "keeps going"
+    // has to mean: `App` renders BooksScreen XOR SegmentsScreen, so opening a
+    // chapter unmounts the only component that calls `useTheme`, and a theme
+    // re-derived from storage on remount came back as the default.
+    //
+    // Scoped to this app's own key so nothing else in the page is perturbed.
+    await page.addInitScript(() => {
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key === "tc-mobile.theme") {
+          const error = new Error("QuotaExceededError");
+          error.name = "QuotaExceededError";
+          throw error;
+        }
+        return setItem.call(this, key, value);
+      };
+    });
+    await page.goto("/");
+
+    // A book and a chapter, so there is somewhere to navigate TO.
+    await page.getByRole("button", { name: "New book" }).click();
+    await page
+      .getByRole("dialog", { name: "Name your new book" })
+      .getByRole("button", { name: "Create book" })
+      .click();
+    const addChapter = page.getByRole("button", { name: /^Add chapter to / });
+    await expect(addChapter).toBeVisible();
+    await addChapter.click();
+    // Wait for the row itself, not a fixed delay: it appears once the write
+    // lands.
+    const openChapter = page.getByRole("button", { name: /^Open Chapter/ });
+    await expect(openChapter).toBeVisible();
+
+    // Switch to light, with the write failing underneath.
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await page
+      .getByRole("dialog", { name: "Menu" })
+      .getByRole("button", { name: /light screen/i })
+      .click();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    // Into the chapter — this is the unmount. `/^Open Chapter/`, deliberately,
+    // not `/^Open /`: the latter also matches the hamburger's "Open menu", and
+    // a `.first()` on it silently reopened the menu instead of navigating.
+    await openChapter.click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    // And back to Books, which is where it used to revert to dark.
+    await page.getByRole("button", { name: "Back to books" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
+    // The OS chrome too: it is repainted by the same effect, so a reverted
+    // theme would have taken the status bar back to dark with it.
+    expect(await resolved(page, (await themeColor(page)) ?? "")).toBe(
+      LIGHT_FLOOR
+    );
+
+    // And the failure was REPORTED, not swallowed — the one sink (#167). Proved
+    // by the write having actually thrown: storage holds nothing for our key,
+    // so the theme above came from the live value and not from a read.
+    const stored = await page.evaluate(() =>
+      window.localStorage.getItem("tc-mobile.theme")
+    );
+    expect(
+      stored,
+      "the write did not actually fail, so this proved nothing"
+    ).toBeNull();
+  });
+});
