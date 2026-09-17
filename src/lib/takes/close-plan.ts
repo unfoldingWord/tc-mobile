@@ -212,8 +212,13 @@ export type ClosePlan<TBytes = unknown> =
  * the two together: `recorder.tsx` passes a `RecorderState`, so a state added
  * there and not here fails typecheck at that call rather than silently reading
  * as "no capture in play".
+ *
+ * Exported because `lib/audio/pagehide.ts` asks the same question of the same
+ * five states (#58) — ONE union, shared, rather than a second copy that a sixth
+ * state could be added to only half of. The reason above is about reaching into
+ * `hooks/`; it says nothing against two `lib/` modules sharing this.
  */
-type CaptureState =
+export type CaptureState =
   "idle" | "requesting" | "recording" | "paused" | "processing";
 
 /**

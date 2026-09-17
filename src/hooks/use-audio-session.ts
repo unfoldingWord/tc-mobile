@@ -15,6 +15,7 @@ import {
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
+import { pageHideAction } from "@/lib/audio/pagehide";
 import {
   preemptPausedMic,
   reclaimAfterPreview,
@@ -707,11 +708,77 @@ export function useAudioSession(): UseAudioSession {
 
   useEffect(() => {
     // The page may be discarded without ever unmounting. A hot microphone on a
-    // page that is going away is not arguable.
-    const onPageHide = () => leave();
+    // page that is going away is not arguable — but a page the browser only
+    // SUSPENDED is not going away, and tearing the take down there is #58: under
+    // commit-on-close nothing is written yet, so `leave()` → `cancel()` dropped
+    // the whole recording and left no pending slot to recover from. What each
+    // state owes is the pure `pageHideAction`, so all ten cells are proven in
+    // Node; this is only the wiring.
+    const onPageHide = (event: PageTransitionEvent) => {
+      // `recorderStateRef`, not the render closure: the mirror at :237-240 is
+      // what every other imperative read in this hook uses, and it keeps this
+      // effect's dependencies free of `recorderState` — a dep that changes on
+      // every transport tap would tear down and re-add the listener through the
+      // whole take. The mirror lags by one commit, and both directions of that
+      // window are inert: a `pagehide` between `pauseRecording()` and the mirror
+      // reads "recording" and pauses an already-paused recorder, which `pause()`
+      // guards to a no-op (use-recorder.ts:655); one between `startRecording()`
+      // and the mirror reads "idle"/"requesting" and leaves a just-started
+      // capture running rather than cancelling it, which is the safe side of the
+      // miss. `resumeRecording` already writes the mirror eagerly (:625).
+      const action = pageHideAction(recorderStateRef.current, event.persisted);
+      if (action === "release") {
+        leave();
+        return;
+      }
+
+      // The capture first: it is the only thing here that can lose audio, and a
+      // hidden page may be frozen at any point in this handler.
+      if (action === "pause") {
+        try {
+          // Holds the recorder, the stream and the chunks; the restored page
+          // finds a "paused" take that Resume continues and close commits.
+          pauseRecording();
+        } catch (cause) {
+          // Not silent, and not fatal: a pause that fails leaves the capture
+          // running, which is still better than the discard this replaced.
+          console.error("Could not pause the recorder for pagehide", cause);
+        }
+      }
+
+      // Nothing should keep SOUNDING into a hidden page, whichever way the
+      // capture went — so playback is silenced on both non-release branches,
+      // exactly as the old unconditional `leave()` did. Not `session.stopAll()`
+      // plus the flags, which is what `leave()` uses: that would take the floor
+      // away from a mic this branch is deliberately keeping paused-alive. These
+      // are the two existing per-source stops instead, each a no-op when its
+      // source is not sounding (`stopBuffer` early-returns at :402; the
+      // `playingIdRef` guard mirrors `playTake`'s own toggle-off at :310-316),
+      // and `stopBuffer` hands the floor back to a still-paused mic on its way
+      // out (`reclaimAfterPreview`). A buffer can be sounding at `paused` (a
+      // #101 preview) and at `idle` (recorder.tsx's edit audition); a list take
+      // only at `idle`. Neither can sound while recording — `claim("take")` is
+      // refused under a live mic (session.ts:88) — so on the "pause" branch both
+      // are defence.
+      stopBuffer();
+      if (playingIdRef.current !== null) {
+        if (session.live === "take") session.stopAll();
+        setPlaying(null);
+      }
+      // As `leave()` does: a stale "Could not play this recording." must not be
+      // the first thing on screen when the page comes back.
+      setPlaybackError(null);
+    };
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
-  }, [leave]);
+    // Every one of these is referentially stable for the hook's life — `session`
+    // is a lazy `useState` (:201), `setPlaying` a `useCallback([])` (:262),
+    // `stopBuffer` a `useCallback` over two stable values (:398), `pauseRecording`
+    // a `useCallback` over `use-recorder`'s `pause`, itself `useCallback([clearTick])`
+    // with `clearTick` `useCallback([])`, and `leave` a `useCallback` over four
+    // stable values (:668) — so the widened list still attaches exactly ONE
+    // listener for the hook's lifetime, as `[leave]` alone did.
+  }, [leave, pauseRecording, stopBuffer, session, setPlaying]);
 
   useEffect(() => () => leave(), [leave]);
 
