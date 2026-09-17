@@ -138,13 +138,18 @@ export class EncoderFailedError extends Error {
 export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
 
 /**
- * How long an UNPROVEN snapshot-built worker may take to say `ready` before the
- * snapshot is judged unusable and the codec falls back to the chunk URL (#192).
+ * How long an UNPROVEN snapshot-built worker may take to say `ready` before this
+ * job gives up on that HANDLE and builds another (#192).
  *
- * Nothing else waits on this. It is paid at most once per snapshot — the first
- * encode on a blob-built worker, before any PCM is handed over — and never again
- * once that blob has answered anything, because proof latches on the snapshot.
- * A chunk-built worker never waits at all.
+ * Nothing else waits on this, and a chunk-built worker never waits at all. The
+ * budget a caller should assume is `SNAPSHOT_MUTE_STRIKES` windows, not one
+ * (George R3 P3): the first silent window costs a rebuild from the same snapshot
+ * and a second window on the same `encodeMp3` call, and only the strike that
+ * reaches the limit throws the snapshot away and sends the rebuild to the chunk
+ * URL. After that nothing waits again, because the wait exists to judge a blob
+ * and there is no blob left. Nor does it recur while the blob is good: proof
+ * latches on the snapshot at its first message of any kind, so a page pays these
+ * windows once between them, not once per worker.
  *
  * Short on purpose, and deliberately NOT `ENCODER_SILENCE_TIMEOUT_MS`: waiting
  * fifteen seconds before falling back is exactly the hole in storage relief
@@ -440,14 +445,15 @@ let snapshotProven = false;
 /**
  * The script the next worker is built from: the snapshot if we have one.
  *
- * `preferChunk` is the one exception, and it is a per-CONSTRUCTION choice rather
- * than a change of mind about the snapshot (George R2 P2): a blob that has let a
- * visible handshake window pass in silence is stepped around for this job while
- * the snapshot itself is kept, because a single timeout is not evidence that the
- * bytes cannot run. A later construction tries the blob again.
+ * There is no "prefer the chunk this once" argument, and round 3 removed the one
+ * there was (George R3 P2). The chunk URL is not a safe harbour to step aside
+ * into — on the page this module exists to protect, a page that has lived across
+ * a deploy, it is the URL `cleanupOutdatedCaches` has already deleted. So the
+ * only thing that sends a construction to the chunk is the snapshot being GONE,
+ * and the rules for throwing it away live in `discardWorkerSnapshot`'s two
+ * callers.
  */
-function workerScriptUrl(preferChunk: boolean): string {
-  if (preferChunk) return encoderChunkUrl;
+function workerScriptUrl(): string {
   return snapshotUrl ?? encoderChunkUrl;
 }
 
@@ -468,9 +474,9 @@ function constructWorker(url: string, fromSnapshot: boolean): Worker {
   return fromSnapshot ? new Worker(url) : new Worker(url, { type: "module" });
 }
 
-function encoderWorker(preferChunk = false): Worker {
+function encoderWorker(): Worker {
   if (!sharedWorker) {
-    const url = workerScriptUrl(preferChunk);
+    const url = workerScriptUrl();
     let fromSnapshot = url === snapshotUrl;
     let worker: Worker;
     try {
@@ -761,26 +767,41 @@ async function encodeInWorker(
   let worker = obtainWorker();
   // #192's HANDSHAKE, and the reason a bad snapshot costs nobody an encode.
   //
-  // Only an unproven blob waits, so this is at most one wait per page and a
-  // chunk-built worker never pays it. What it buys is the ORDER: the blob is
-  // judged before `postMessage` transfers a chapter's PCM into it, so a snapshot
-  // that turns out not to run is stepped around, the worker rebuilt from the
-  // chunk URL, and THIS job simply runs there. Before the handshake the first
-  // encode on a bad blob was the job that died for it — a failed Share, or a
-  // sweep segment recorded as failed — and the fallback only arrived for whoever
-  // came next (George R1 P1).
-  if (workerFromSnapshot && !snapshotProven && !workerReady) {
+  // Only an unproven blob waits, so a chunk-built worker never pays this. What
+  // it buys is the ORDER: the blob is judged before `postMessage` transfers a
+  // chapter's PCM into it, so a snapshot that turns out not to run is stepped
+  // around and THIS job simply runs on the next worker. Before the handshake the
+  // first encode on a bad blob was the job that died for it — a failed Share, or
+  // a sweep segment recorded as failed — and the fallback only arrived for
+  // whoever came next (George R1 P1).
+  //
+  // THE FALLBACK IS ANOTHER BLOB, NOT THE CHUNK URL (George R3 P2). The chunk
+  // URL is the one this whole PR exists because a translator's phone may no
+  // longer be able to fetch: `cleanupOutdatedCaches` deletes the hashed chunk
+  // when a new service worker activates, and the page that has lived across that
+  // deploy is exactly the page holding the snapshot. Falling back there on a
+  // TIMEOUT put the discovering job back on the dead URL — with its PCM already
+  // transferred — which is #192 re-opened, in the only environment the snapshot
+  // is for. So while the snapshot is still held we rebuild from the snapshot and
+  // spend a second window on it; only once the strikes have thrown it away, or
+  // an `error`/synchronous construction throw has (both of which say this
+  // platform CANNOT run these bytes, and neither of which says anything about
+  // whether the chunk is still cached), do we build from the chunk.
+  //
+  // Bounded by `SNAPSHOT_MUTE_STRIKES` by construction: every timeout counts a
+  // strike, and the strike that reaches the limit clears `snapshotUrl`, so the
+  // next `obtainWorker` is chunk-built and the loop's condition is false.
+  while (workerFromSnapshot && !snapshotProven && !workerReady) {
     const outcome = await awaitWorkerReady(worker, signal);
-    if (!workerReady) {
-      // A TIMEOUT is not a verdict on the blob — see `noteHandshakeTimeout`.
-      // An `error` already was one, and the durable listener has discarded the
-      // snapshot and dropped the handle by the time we get here.
-      if (outcome === "timeout") noteHandshakeTimeout();
-      dropEncoderWorker();
-      // Force the chunk for THIS job: on the timeout path the snapshot usually
-      // survives, so a plain rebuild would hand us the same silent blob again.
-      worker = obtainWorker(true);
-    }
+    if (workerReady) break;
+    // A TIMEOUT is not a verdict on the blob — see `noteHandshakeTimeout`.
+    // An `error` already was one, and the durable listener has discarded the
+    // snapshot and dropped the handle by the time we get here.
+    if (outcome === "timeout") noteHandshakeTimeout();
+    dropEncoderWorker();
+    // No argument, and that is the point: `workerScriptUrl` returns the snapshot
+    // while there is one and the chunk URL only once there is not.
+    worker = obtainWorker();
   }
   // The abort may have landed while we waited, and `ready` may have won the race
   // to settle the handshake — in which case nothing rejected this job and the
@@ -808,9 +829,9 @@ async function encodeInWorker(
  * durable listener (which drops the handle) and the job's `onerror` (which
  * rejects it).
  */
-function obtainWorker(preferChunk = false): Worker {
+function obtainWorker(): Worker {
   try {
-    return encoderWorker(preferChunk);
+    return encoderWorker();
   } catch (cause) {
     dropEncoderWorker();
     noteEncodeFailed();
@@ -1056,22 +1077,31 @@ function runEncodeOnWorker(
       // terminate that itself throws still lets us reject and release the lane —
       // never a hung lane (P3b) — with the failure logged to a channel rather than
       // swallowed.
-      // A stall here is ALWAYS a real one — never a bad blob snapshot wearing
-      // #166's clothes (George R1 P2-4).
+      // A stall here is treated as a real one, with no branch for "the blob
+      // snapshot is bad" — and that is a narrower claim than it looks, so it is
+      // worth writing down exactly (George R1 P2-4, corrected by George R3 P3).
       //
-      // That used to need deciding. An unproven blob could be handed a chapter's
-      // PCM, go silent, and reject as `EncoderStalledError` fifteen seconds
-      // later — which the Finished sweep reads as a wedged worker: it names the
-      // clip poison (`finish-transcode.ts`), spends its one drain pass and ends
-      // the run, and the health store latches `failing` past the three-strike
-      // threshold. A false "this phone cannot make recordings smaller", while
-      // the chunk-URL worker was one construction away.
+      // What the handshake removed is the UNPROVEN blob's first job. An unproven
+      // blob could be handed a chapter's PCM, go silent, and reject as
+      // `EncoderStalledError` fifteen seconds later — which the Finished sweep
+      // reads as a wedged worker: it names the clip poison
+      // (`finish-transcode.ts`), spends its one drain pass and ends the run, and
+      // the health store latches `failing` past the three-strike threshold. A
+      // false "this phone cannot make recordings smaller", while a working
+      // worker was one construction away. `encodeInWorker` now judges the blob
+      // before any PCM is transferred, so that job cannot exist.
       //
-      // `encodeInWorker`'s `ready` handshake removes the case rather than
-      // classifying it: a snapshot-built worker reaching this function has
-      // already answered, so `snapshotProven` is true here by construction, and
-      // an unproven blob never carries a job at all. There is deliberately no
-      // branch for it — a branch nothing can reach is a claim nothing can test.
+      // What it does NOT remove is a mute worker built from a PROVEN snapshot.
+      // Proof is about the bytes, not about this handle: once the blob has
+      // answered once, every later construction skips the handshake, so an OOM
+      // that drops the handle under memory pressure can be replaced by one that
+      // never answers either — and this function will see that as a stall,
+      // because on the evidence available here it IS one, indistinguishable from
+      // the same worker dying mid-encode. The sweep will treat it the same way.
+      // `tests/mp3-codec.test.ts`'s "still reports a real stall on a PROVEN blob
+      // as a stall" pins exactly that, and it is a residual of the #166 design,
+      // not something the snapshot introduced: a chunk-built worker in the same
+      // state gets the same verdict.
       try {
         teardownAndRecover();
       } catch (recoverError) {

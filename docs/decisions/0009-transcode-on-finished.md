@@ -261,6 +261,18 @@ Two mechanics are load-bearing and were verified against `dist/`, not assumed:
    is still in the Workbox precache manifest — which is what makes the snapshot's
    `fetch` succeed offline.
 
+   The **e2e** build's graph holds both forms — `?worker&url` here and the
+   `new URL("../hooks/mp3.worker.ts", import.meta.url)` literal in
+   `src/app/e2e-harness.ts`, where a probe needs a worker of its own — and George
+   R3 P3-4 asked whether that emits a second chunk. Measured, on
+   `npm run build:e2e`: it does not. `dist-e2e/assets/` holds exactly one
+   `mp3.worker-CQgI_WP3.js`, at the same hash and byte length as `dist/`'s, and
+   `Mp3Encoder` appears in that file and no other. Vite resolves both forms to
+   the same module and emits one chunk. Production could not have been affected
+   either way — `vite.config.ts` marks the harness external for every mode but
+   `"e2e"` — but the rule above is about the emitted graph, so it is worth having
+   the number rather than the reasoning.
+
 The blob worker is constructed **classic** — `new Worker(blobUrl)` with no
 options. Vite emits the chunk as a zero-import IIFE, so module semantics buy
 nothing, while declaring `module` asks the platform to parse a blob as an ES
@@ -293,15 +305,19 @@ goes silent forever.
 one `ready` at the foot of its module, after its `message` listener is
 registered; an unproven blob-built worker is given no PCM until it has, bounded
 by `ENCODER_READY_TIMEOUT_MS` (3 s — this measures script load of an in-memory
-blob, not an encode). A blob that does not answer costs this job nothing but the
-wait: the worker is rebuilt from the chunk URL and **the same job runs there**,
-its PCM never having left this thread.
+blob, not an encode). A handle that does not answer costs this job nothing but
+the wait: another worker is built and **the same job runs there**, its PCM never
+having left this thread. Which script that worker comes from is the subject of
+the timeout rules below, and the answer is "the snapshot again" far more often
+than it is "the chunk URL".
 
 The constant rests on a measurement rather than on reasoning about one. The
 Chromium smoke times a fresh worker from `new Worker` to `ready` and logs it:
-**5.8 ms, 7.8 ms and 9.6 ms across three runs, against a 3000 ms window**. That is one engine on a desktop, and a
-phone may be an order of magnitude slower — which is why the window is made
-_safe_ rather than merely long, below.
+**5.8, 7.8, 9.6 and 23.2 ms across four runs, against a 3000 ms window**. That is
+one engine on a desktop, the runs spread by a factor of four between themselves
+on an idle machine, and a phone may be an order of magnitude slower again —
+which is why the window is made _safe_ rather than merely long, below, and why a
+window that expires is not treated as a verdict.
 
 The order is the point (George R1 P1). Judging the blob only once it had failed
 an encode meant the discovering job was the job that died for it — a failed
@@ -310,9 +326,20 @@ whoever came next. Worse, a mute blob rejected as `EncoderStalledError`, which
 the Finished sweep reads as a wedged worker: it names the clip poison, spends its
 one drain pass and ends the run, and the health store latches `failing` past the
 three-strike threshold — a false "this phone cannot make recordings smaller"
-while the chunk-URL worker was one construction away (George R1 P2-4). With the
-handshake there is no such case to classify, so `onStall` carries no branch for
-it.
+while a working worker was one construction away (George R1 P2-4). With the
+handshake that job cannot exist, so `onStall` carries no branch for it.
+
+**That is a narrower claim than "a stall is never blob-shaped"** (George R3 P3).
+Proof is about the bytes, not about a handle: once the blob has answered once,
+every later construction skips the handshake, so an OOM that drops the handle
+under memory pressure can be replaced by one that never answers either — and
+`onStall` will read that as a stall, because on the evidence available there it
+_is_ one, indistinguishable from the same worker dying mid-encode. The sweep will
+treat it accordingly. That is a residual of #166's design rather than something
+the snapshot introduced (a chunk-built worker in the same state gets the same
+verdict), it is pinned by the "still reports a real stall on a PROVEN blob as a
+stall" test, and the comment at `onStall` now says exactly this rather than
+claiming the case away.
 
 An **abort** during the handshake deliberately judges nothing: that is the app
 stopping the job, not evidence about the blob, and no PCM was transferred, so
@@ -337,10 +364,30 @@ lived across a deploy sends every later encode to a purged chunk URL: #192
 re-opened by its own guard, the same shape as the proof bug above. An `error`
 event and a synchronous `new Worker(blob)` throw still discard, because those
 say the platform CANNOT run these bytes; silence only says "not yet". A visible
-timeout costs THIS job a fallback to the chunk URL — a per-construction choice
-that leaves the snapshot alone — and the next construction tries the blob again.
-`SNAPSHOT_MUTE_STRIKES` = 2 bounds the cost of being wrong twice, at two more
-handshake windows.
+timeout costs THIS job a rebuild and a second window, and `SNAPSHOT_MUTE_STRIKES`
+= 2 bounds the cost of being wrong twice.
+
+**And the fallback is another blob, not the chunk URL** (George R3 P2). Round 3's
+first cut stepped aside onto `encoderChunkUrl` for the timed-out job while
+keeping the snapshot — which reads as conservative and is the opposite. The chunk
+URL is not a neutral place to retry: on a page that has lived across a deploy —
+the only page a snapshot is _for_ — it is precisely the URL
+`cleanupOutdatedCaches` deleted. A blob that is merely slow (lamejs still
+evaluating, a WebView throttling a worker without ever setting `document.hidden`)
+would put the discovering job on the dead URL with a chapter's PCM already
+transferred: `EncoderFailedError`, a Share that must re-gather from IndexedDB,
+and — after a second such job hit the strike limit — every later encode on the
+purged chunk until the health store latches `failing`. #192, re-opened by its own
+guard, in the one environment it exists for.
+
+So a timeout rebuilds from the **snapshot** and spends a second
+`ENCODER_READY_TIMEOUT_MS` on the same `encodeMp3` call. The only thing that ever
+sends a construction to the chunk URL is the snapshot being gone — the strikes,
+an `error` event, or the synchronous `new Worker(blob)` throw. Those last two say
+this platform cannot run these bytes, which is a claim about the blob and says
+nothing either way about whether the chunk is still cached; silence says neither.
+The "prefer the chunk this once" argument is gone from `workerScriptUrl`
+entirely: there is no longer any caller that wants one.
 
 **The abort is re-asked, not only listened for** (George R2 P3). An abort that
 has already fired is never delivered again, and every settle path below the
@@ -382,16 +429,18 @@ the object-URL pair. What those tests pin is the **decision** — which URL each
 worker is built from, when the snapshot is taken, and when a snapshot is thrown
 away — not that a real blob worker runs the real chunk; that is the Chromium
 smoke's job, below. Mutation-proven, each mutation restored afterwards: building
-always from the chunk URL kills seventeen tests; skipping the `ready` handshake
-kills seven; and dropping the production gate, the once-only fetch guard, the
+always from the chunk URL kills eighteen tests; skipping the `ready` handshake
+kills eight; and dropping the production gate, the once-only fetch guard, the
 error arm of the guard, the retry after a synchronous
-construction throw, the classic-worker choice, proof-on-the-snapshot, or the
-per-construction fallback each kills exactly the tests named for it. Letting an
+construction throw, the classic-worker choice, or proof-on-the-snapshot each
+kills exactly the tests named for it. Letting an
 abort during the handshake discard the snapshot kills the abort test; judging
 the handshake while the page is hidden, refusing a fresh window after a freeze,
 setting `SNAPSHOT_MUTE_STRIKES` to 1, and never discarding on silence at all
 each kill the test named for them. So does each of the two abort re-checks,
-separately — which is the reason there are two and not three. The worker's own
+separately — which is the reason there are two and not three. Restoring round
+3's step-aside-onto-the-chunk-URL on a handshake timeout kills five, including
+the one that encodes through a slow blob while the chunk URL is gone. The worker's own
 `ready` ping has no Node coverage by construction — removing it is caught by the
 Chromium spec below, which is where it is proven.
 
