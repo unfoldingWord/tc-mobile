@@ -288,6 +288,7 @@ async function encodeWithHeartbeat(
  * observation costs.
  */
 async function encodeAfterAbortRebuild(frameCount: number): Promise<{
+  transferred: boolean;
   aborted: boolean;
   chunkRequestsBefore: number;
   chunkRequestsAfter: number;
@@ -312,12 +313,22 @@ async function encodeAfterAbortRebuild(frameCount: number): Promise<{
   const deadline = performance.now() + 5_000;
   while (pcm.byteLength !== 0 && performance.now() < deadline)
     await new Promise((resolve) => setTimeout(resolve, 0));
+  // REPORTED, never assumed (Frank R3 P2). If the deadline expired with the
+  // buffer still attached, nothing was in flight, so the abort below terminated
+  // nothing and the "rebuild" the spec goes on to measure is just the original
+  // warm worker still running. The spec asserts on this, so that case is a
+  // failure rather than a pass that proved nothing.
+  const transferred = pcm.byteLength === 0;
   controller.abort();
   let aborted = false;
   try {
     await inFlight;
-  } catch {
-    aborted = true;
+  } catch (cause) {
+    // Only THIS signal's reason counts. A worker error, a stall, or an encode
+    // failure also rejects here, and each of them leaves a different worker
+    // state behind — classifying them all as "aborted" is how the assertion
+    // below stops describing what happened.
+    aborted = cause === controller.signal.reason;
   }
 
   // The abort re-warms; this encode runs on whatever that rebuild produced.
@@ -326,6 +337,7 @@ async function encodeAfterAbortRebuild(frameCount: number): Promise<{
     codec.encodeMp3(syntheticPcm(frameCount))
   );
   return {
+    transferred,
     aborted,
     chunkRequestsBefore,
     chunkRequestsAfter: chunkRequestCount(),

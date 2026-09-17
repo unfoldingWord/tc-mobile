@@ -299,7 +299,7 @@ its PCM never having left this thread.
 
 The constant rests on a measurement rather than on reasoning about one. The
 Chromium smoke times a fresh worker from `new Worker` to `ready` and logs it:
-**5.8 ms and 9.6 ms on two runs, against a 3000 ms window**. That is one engine on a desktop, and a
+**5.8 ms, 7.8 ms and 9.6 ms across three runs, against a 3000 ms window**. That is one engine on a desktop, and a
 phone may be an order of magnitude slower — which is why the window is made
 _safe_ rather than merely long, below.
 

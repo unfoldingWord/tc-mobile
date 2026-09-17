@@ -87,6 +87,7 @@ declare global {
         deadlineMs: number;
       }>;
       encodeAfterAbortRebuild: (frameCount: number) => Promise<{
+        transferred: boolean;
         aborted: boolean;
         chunkRequestsBefore: number;
         chunkRequestsAfter: number;
@@ -377,6 +378,14 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     // worker was never dropped, no rebuild happened, and the MP3 below would be
     // the ORIGINAL worker's — green for the wrong reason (#270: a gate has to be
     // able to fail).
+    //
+    // Two claims, and each can fail on its own (Frank R3 P2). The PCM buffer
+    // was detached, so an encode was genuinely in flight when the abort landed:
+    // the harness waits for that with a deadline, and reports the deadline
+    // expiring rather than carrying on as if it had not.
+    expect(result.transferred).toBe(true);
+    // And the job rejected with THIS signal's reason — not with a worker error
+    // or a stall, which reject too and leave a different worker behind.
     expect(result.aborted).toBe(true);
     // The rebuild fetched nothing. A worker built from the chunk URL would have
     // issued another request — and the route would have failed it.
