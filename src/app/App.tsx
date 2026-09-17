@@ -101,6 +101,18 @@ export function App() {
   // `suppressPop` marks the resulting popstate as ours, same as `closeRecorder`
   // below already does for its own programmatic close.
   const consumeOverlayEntry = useCallback(() => {
+    // Frank round 1 P2 (#393, second pass): a reopen already deferred ITS push
+    // (`pendingOverlayOpen`, above) because the previous close's `back()` was
+    // still in flight — so THIS close has nothing real to consume; the entry
+    // it would be undoing was never pushed. Cancel the deferred push and stop:
+    // issuing a second `back()` here would race the still-pending first one,
+    // and the drain below would then push an entry for an overlay that is
+    // already closed again. Chains of further rapid toggles collapse the same
+    // way, one cancellation at a time, until an actual push or consume runs.
+    if (pendingOverlayOpen.current) {
+      pendingOverlayOpen.current = false;
+      return;
+    }
     suppressPop.current = true;
     window.history.back();
   }, []);
