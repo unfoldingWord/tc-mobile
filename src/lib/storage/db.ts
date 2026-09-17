@@ -213,8 +213,22 @@ let coordinator: UpgradeCoordinator | null = null;
  * connection can die on: it checks for itself that the connection it captured
  * is still the app's, does nothing if it is not, and is replaced by the next
  * refusal.
+ *
+ * `owner` is who may SPEAK for it. Running a stale refusal is harmless — it
+ * returns on its own identity check — but `terminated` reads the slot the other
+ * way round, as proof that the connection now dying is the one that refused, and
+ * that reading has to be true. A later connection's abnormal death would
+ * otherwise be reported as this copy giving way, and the report latches: the
+ * panel says "out of date" and every subsequent `getDb()` is refused, on a copy
+ * that never yielded anything (Frank R6 P2).
  */
-let deferredUpgrade: (() => void) | null = null;
+interface DeferredUpgrade {
+  /** The open that installed it — an identity, never dereferenced. */
+  readonly owner: object;
+  readonly run: () => void;
+}
+
+let deferredUpgrade: DeferredUpgrade | null = null;
 
 /**
  * This copy has GIVEN UP its connection for another copy's upgrade, so it must
@@ -259,7 +273,7 @@ function markYielded(): void {
 export function yieldDeferredUpgrade(): void {
   const pending = deferredUpgrade;
   deferredUpgrade = null;
-  pending?.();
+  pending?.run();
 }
 
 /**
@@ -329,6 +343,14 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   const invalidate = (): void => {
     if (dbPromise === handle) dbPromise = null;
   };
+
+  /**
+   * This attempt's identity in the `deferredUpgrade` slot. `handle` cannot serve:
+   * it is reassigned as the open settles, and `invalidate()` has already run by
+   * the time `terminated` asks, so a comparison against it can no longer tell
+   * "this connection's refusal" from "somebody else's".
+   */
+  const openToken = {};
 
   const raced = new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
     const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
@@ -458,13 +480,16 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           // take was saved and this connection stopped being worth protecting.
           // `yieldDeferredUpgrade()` runs this the moment the app says the work
           // is gone.
-          deferredUpgrade = () => {
-            // Unless the connection went in the meantime — a `closeDb()`, or the
-            // browser terminating it. There is nothing left to give up then, and
-            // nothing to tell the app: it is not out of date because of a
-            // connection nothing holds any more.
-            if (dbPromise !== handle) return;
-            yieldNow();
+          deferredUpgrade = {
+            owner: openToken,
+            run: () => {
+              // Unless the connection went in the meantime — a `closeDb()`, or
+              // the browser terminating it. There is nothing left to give up
+              // then, and nothing to tell the app: it is not out of date because
+              // of a connection nothing holds any more.
+              if (dbPromise !== handle) return;
+              yieldNow();
+            },
           };
           return;
         }
@@ -489,7 +514,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // fine while the disk version moves past its `DB_VERSION`, and the next
         // save of a held take fails `VersionError` → `DatabaseDowngradeError`
         // forever, with the panel never raised because the status is still "ok".
-        if (deferredUpgrade !== null) {
+        // Only THIS connection's refusal, which is the whole of the claim being
+        // made: a refusal parked by some earlier connection says nothing about
+        // the one dying now, and reporting it would latch the app out of date
+        // over a death that cost the other copy nothing (Frank R6 P2).
+        if (deferredUpgrade?.owner === openToken) {
           deferredUpgrade = null;
           // Latched like any other yield: the connection is gone and the other
           // copy will upgrade, so a reopen here would block it exactly as one
@@ -617,6 +646,14 @@ export async function closeDb(): Promise<void> {
   // later `getDb()` refused by a latch from a previous case would be debugging
   // the harness rather than the code.
   yielded = false;
+  // A refusal this call's connections made is deliberately NOT cleared here.
+  // `deferredUpgrade` carries its owner, so the two ways it is read both handle a
+  // stale one already: running it is a no-op (its own `dbPromise !== handle`
+  // check) and `terminated` speaks only for the connection that installed it.
+  // Clearing as well would be defensiveness no test can distinguish from its
+  // absence, on the one path where an extra reset is easy to get subtly wrong —
+  // a `getDb()` during the wait below installs a refusal this call has no
+  // business retiring (Frank R6 P2, the half of the fix that is not needed).
 
   // Snapshot both before awaiting anything, and free the cache slot now: what
   // arrives during the wait belongs to whoever asked for it, not to this call.

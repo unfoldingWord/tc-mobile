@@ -698,6 +698,47 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     expect(app.onYielded).toHaveBeenCalledTimes(1);
   });
 
+  it("does not carry a refusal past the connection that made it, onto a later one", async () => {
+    // The refusal belongs to the connection that made it. `terminated` asking
+    // only whether the module slot is non-null makes any later connection's
+    // abnormal death look like this copy giving way — and that answer latches:
+    // the panel says "out of date" and every subsequent `getDb()` is refused,
+    // on a copy that never yielded anything (Frank R6 P2).
+    //
+    // A DELETE elsewhere, rather than a newer copy, is what fires the
+    // `versionchange` here: it takes the same refusal path, and when the delete
+    // finally proceeds it leaves the disk EMPTY rather than a version above this
+    // build's — so the reopen below is the ordinary one this case is about,
+    // not a downgrade.
+    const app = registerCoordinator(() => true);
+    await getDb();
+
+    const deleting = indexedDB.deleteDatabase(DB_NAME);
+    let deleteWasBlocked = false;
+    deleting.onblocked = () => {
+      deleteWasBlocked = true;
+    };
+    await delay(200);
+    // The held work refused it, so a deferred upgrade is parked in the slot.
+    expect(deleteWasBlocked).toBe(true);
+    expect(app.onYielded).not.toHaveBeenCalled();
+
+    // The connection that refused is closed and the delete goes through.
+    await closeDb();
+    await requestSettled(deleting);
+
+    const second = await getDb();
+    forceCloseDatabase(unwrap(second) as never);
+    await delay(0);
+
+    // Nothing was given up by this connection, so the app is told nothing...
+    expect(app.onYielded).not.toHaveBeenCalled();
+    // ...and, the harm that answer causes, it can still open.
+    const third = await getDb();
+    expect(third.version).toBe(APP_VERSION);
+    await closeDb();
+  });
+
   it("honours a refused upgrade when the app unregisters, so the other copy is not stranded", async () => {
     // `ErrorBoundary` unmounts `App` on a render throw, taking the held take
     // with it (#167). The reason for the refusal is gone, but without this the
