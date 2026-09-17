@@ -10,6 +10,21 @@
  */
 import { filenameSafe } from "@/lib/utils";
 
+/**
+ * The verb every "did not make it into what's being shared" sentence uses.
+ * `shareMissing`, `shareBookMissing`, and `shareBookMissingAndPartial`'s own
+ * two extra clauses all end here, so a future tightening of the wording
+ * lands in one place. Before this, the combined Notice's clauses were typed
+ * out separately from `shareMissing` — the alias `shareBookPartial` added
+ * (George #423 round 2) protected the partial-only Notice, but not the one
+ * Notice the book menu actually shows when both gaps exist, which a verb
+ * edit to `shareMissing` alone would silently miss (George #423 round 3
+ * P3-2).
+ */
+function couldNotBeIncluded(subject: string): string {
+  return `${subject} could not be included.`;
+}
+
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -17,8 +32,24 @@ export const strings = {
   menuTitle: "Menu",
   menuClose: "Close menu",
   booksEmpty: "Start your first book",
-  booksEmptyTeach:
-    "A book holds the chapters you record — and everything stays on this phone.",
+  // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
+  // an earlier fix hedged this line with "unless space runs low" instead of
+  // removing the durability claim, but the empty shelf shows with NONE of
+  // `storageMarker`'s three gates checked — not native, `persisted === false`,
+  // `hasContent` (`lib/storage/persistence.ts`, `showEmpty` at
+  // `books-screen.tsx` never consults any of them). `hasContent` going false
+  // retracts the eviction *warning*, not a persistence *promise* — "`false`
+  // from a stale read is not evidence about a shelf that no longer has
+  // anything on it" (`persistence.ts`). So an un-gated durability line here
+  // would warn on the training APK's first launch (native storage is not
+  // evicted this way), assert a false warning on an origin that already
+  // granted `persist()` and deleted its last book, and claim an answer this
+  // repo deliberately stays silent on when `navigator.storage` is absent
+  // (iOS Safari). Vocabulary only, no durability claim — matches
+  // `segmentsEmptyTeach` below, which never mentions durability either.
+  // "Space runs low" stays solely on `storageNotPersisted`, which has all
+  // three gates.
+  booksEmptyTeach: "A book holds the chapters you record.",
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
@@ -294,9 +325,7 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    n === 1
-      ? "1 segment could not be included."
-      : `${n} segments could not be included.`,
+    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -314,23 +343,81 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    n === 1
-      ? "1 chapter could not be included."
-      : `${n} chapters could not be included.`,
+    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
-  // `shareBookMissing`, which speaks in whole chapters; this speaks in
-  // segments, mirroring `shareMissing`'s chapter-grain phrasing.
-  shareBookPartial: (n: number): string =>
-    n === 1
-      ? "1 segment was left out of a chapter that was otherwise included."
-      : `${n} segments were left out of chapters that were otherwise included.`,
+  // `shareBookMissing`, which speaks in whole chapters; this speaks only in
+  // segments. `n` is `partialSegments`, a SUM across every included chapter's
+  // own `missing` (`src/lib/export/book.ts`), not a count of chapters —
+  // `gatherChapterPcm` can return `missing > 1` for a single chapter — so no
+  // chapter-grain wording is tied to `n` here (#400, George #398 P3). A first
+  // attempt kept "chapters" as a supposedly uncounted noun, but Frank (diff
+  // review, #423) caught that bare "chapters" still reads as "more than one"
+  // even with exactly one included chapter — the same defect this fix exists
+  // to remove.
+  //
+  // An alias of `shareMissing`, not a second copy of its wording: George
+  // round 2 (#423) named the byte-for-byte duplicate as drift-prone — a later
+  // edit to one could tighten the segment-grain phrasing and forget the
+  // other, and only `shareBookPartial` was pinned. One wording, one function.
+  shareBookPartial: (n: number): string => strings.shareMissing(n),
   // Both gaps can occur in the same book (a whole chapter missing AND a
   // segment missing from one that shipped). The screen surfaces ONE Notice for
   // the book grain, so this combines rather than stacking two.
+  //
+  // `exportBookZip` counts a chapter toward at most one of `missing` and
+  // `partialSegments` (`src/lib/export/book.ts`) — a chapter never contributes
+  // to both. Plainly concatenating `shareBookMissing` and `shareBookPartial`
+  // verbatim used to carry that invariant because the old `shareBookPartial`
+  // named its own chapter's scope; once it became the `shareMissing` twin
+  // (#400, this file above), the two sentences read identically shaped and a
+  // reader could take "1 chapter could not be included. 1 segment could not
+  // be included." as one gap double-counted, or as an unrelated,
+  // under-counted hole (George #423 round 1 P3).
+  //
+  // One missing segment is always exactly one chapter, so the
+  // `segments === 1` case can safely name that chapter's scope without
+  // misstating a count. George round 2 caught that the first attempt at that
+  // clause ("...was left out of a chapter that shipped") used maintainer
+  // vocabulary that collides with two unchanged contracts: "shipped" reads as
+  // past-tense send while the share menu is only `ready` (Share now — `hooks/
+  // share-flow.ts` — has not been tapped), and "was left out" implies a
+  // deliberate omit, against `shareMissing`'s own cause-neutrality comment
+  // (the count also includes a dangling take or a half-missing clip, never a
+  // choice). The fix keeps the chapter-scope disambiguation but uses the
+  // table's own verb, "could not be included".
+  //
+  // `segments > 1` cannot name a chapter's scope — `partialSegments` sums
+  // across an unknown number of shipped chapters, and this string does not
+  // track how many of them are distinct, so naming "a chapter" or
+  // pluralizing "chapters" off it would reintroduce the #400/#423 bug. George
+  // round 2 caught that falling back to `shareBookPartial` verbatim just
+  // re-concatenates two identically-shaped "could not be included" sentences
+  // — the exact ambiguity the n===1 clause exists to prevent. "additional"
+  // blocks that double-count reading.
+  //
+  // George round 3 then caught that "additional" alone still drops the
+  // producer invariant: `partialSegments` only ever comes from chapters that
+  // DID make it into the zip (`book.ts:105-107,130-148`), and the n===1
+  // clause says so ("of an included chapter") while the n>1 clause did not.
+  // Concrete failure: one chapter partial (two never-recorded segments,
+  // still ships) plus a second chapter never recorded at all — `missing ===
+  // 1`, `partialSegments === 2` (`tests/book-export.test.ts:238-254` pins
+  // the partial-chapter half of that shape). "2 additional segments could
+  // not be included" does not say those two segments sit in a chapter that
+  // shipped, so a translator could read both facts as about the one omitted
+  // chapter and never look at the one that actually has holes. "of included
+  // audio" is the uncounted locator: it names the scope `book.ts` guarantees
+  // without pluralizing "chapter" off `n`, which would reintroduce #400/#423.
   shareBookMissingAndPartial: (chapters: number, segments: number): string =>
-    `${strings.shareBookMissing(chapters)} ${strings.shareBookPartial(segments)}`,
+    `${strings.shareBookMissing(chapters)} ${
+      segments === 1
+        ? couldNotBeIncluded("1 segment of an included chapter")
+        : couldNotBeIncluded(
+            `${segments} additional segments of included audio`
+          )
+    }`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
   // the first thing to do — the encoder was restarted — and the restart hint is
