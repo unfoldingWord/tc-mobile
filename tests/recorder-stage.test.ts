@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  frozenPan,
   liveScopeShown,
   panGesture,
   resumesOnLift,
@@ -415,5 +416,105 @@ describe("resumesOnLift", () => {
 
   it("never resumes on an empty segment", () => {
     expect(resumesOnLift(true, 0, 0)).toBe(false);
+  });
+});
+
+/**
+ * Where the view is left when playback stops (#416), and why it is not simply
+ * "the last position the frame loop saw".
+ *
+ * The scrolling position is pulled on an rAF, so the newest value a ref can
+ * hold is up to one frame old — and the audio position is gone the instant the
+ * handle is cleared. Freezing that stale value would undo the promise the issue
+ * makes ("the waveform and the playhead stay exactly where playback had
+ * reached") in two different ways, both of which Frank's round-1 P2 names: a
+ * Pause would rewind by a frame's worth of audio, and a clip that ran out would
+ * park the line ~16 ms SHORT of the end, where the next Record inserts instead
+ * of appending.
+ *
+ * So the two endings are told apart rather than averaged. An explicit stop
+ * samples the true position synchronously, before the handle goes; running out
+ * has an exact answer that needs no sampling at all — the end of the range that
+ * was sounding.
+ */
+describe("frozenPan", () => {
+  const RANGE = { start: 1000, end: 9000 };
+  const LEN = 10_000;
+
+  it("freezes an explicit stop at the position it sampled", () => {
+    // Pause, a finger landing on the waveform (#317), the menu, Back: each
+    // reads the sounding position in its own handler, so `observed` is the
+    // true one and nothing is a frame behind.
+    expect(
+      frozenPan({
+        observed: 4321,
+        ...RANGE,
+        stopRequested: true,
+        length: LEN,
+      })
+    ).toBe(4321);
+  });
+
+  it("freezes a clip that ran out at the END of the range, exactly", () => {
+    // The rAF's last reading is up to a frame short of the end and the handle
+    // is already gone, but no sampling is needed: playback that was not stopped
+    // ended where the range ends. Mutation: use `observed` here and the line
+    // parks short of the end, which is the append-becomes-an-insert defect.
+    expect(
+      frozenPan({
+        observed: 8992,
+        ...RANGE,
+        stopRequested: false,
+        length: LEN,
+      })
+    ).toBe(RANGE.end);
+  });
+
+  it("leaves the line alone when the buffer never sounded", () => {
+    // A `playBuffer` that fails flips `playingBuffer` true optimistically and
+    // then false again; the frame loop only ever read the range's start, so
+    // nothing played and the line must not travel to the end of a range that
+    // was never heard.
+    expect(
+      frozenPan({
+        observed: RANGE.start,
+        ...RANGE,
+        stopRequested: false,
+        length: LEN,
+      })
+    ).toBe(RANGE.start);
+  });
+
+  it("clamps to the clip, above and below", () => {
+    // The frozen pan is also the record insertion offset, so it gets
+    // `viewportWindow`'s clamp for `viewportWindow`'s reason.
+    expect(
+      frozenPan({
+        observed: LEN * 3,
+        start: 0,
+        end: LEN * 3,
+        stopRequested: true,
+        length: LEN,
+      })
+    ).toBe(LEN);
+    expect(
+      frozenPan({
+        observed: -50,
+        start: -100,
+        end: LEN,
+        stopRequested: true,
+        length: LEN,
+      })
+    ).toBe(0);
+    // A range that outlived a cut cannot park the line past the new end either.
+    expect(
+      frozenPan({
+        observed: 500,
+        start: 0,
+        end: LEN * 2,
+        stopRequested: false,
+        length: LEN,
+      })
+    ).toBe(LEN);
   });
 });

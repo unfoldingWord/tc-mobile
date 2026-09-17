@@ -292,6 +292,58 @@ export function panGesture(input: PanGestureInput): PanGesture {
   return input.render === "scroll" ? "interrupt" : "ignore";
 }
 
+interface FrozenPanInput {
+  /** The last position the frame loop saw, in samples. */
+  readonly observed: number;
+  /** The range that was sounding — `soundRange`'s arguments. */
+  readonly start: number;
+  readonly end: number;
+  /** A stop was ASKED for (Pause, a #317 touch, the menu, Back, an edit). */
+  readonly stopRequested: boolean;
+  /** The working buffer's length, for the clamp. */
+  readonly length: number;
+}
+
+/**
+ * Where the view is left when a scrolling playback stops — #416's fix, and the
+ * answer to Frank's round-1 P2.
+ *
+ * "Pause only pauses. The waveform and the playhead stay exactly where playback
+ * had reached; nothing jumps." The naive reading of that is "freeze the last
+ * position the frame loop saw", and it is wrong twice over: the loop's newest
+ * value is up to one frame old, and the audio position is gone the instant the
+ * handle is cleared. A Pause would rewind by a frame of audio, and a clip that
+ * ran out would park the line ~16 ms SHORT of the end — where the next Record
+ * INSERTS instead of appending, which is the same class of silent-wrong-offset
+ * defect the pan guards exist for.
+ *
+ * The two endings have different exact answers, so they are told apart:
+ *
+ * - **Asked to stop** — the caller samples the true position synchronously in
+ *   its own handler, before `stopBuffer` clears the handle, so `observed` is
+ *   exact and is what freezes.
+ * - **Ran out** — no sampling can help (the handle is gone by the time anything
+ *   observes it) and none is needed: playback that nobody stopped ended where
+ *   the range ends.
+ * - **Never sounded** — a `playBuffer` that fails flips `playingBuffer` true
+ *   optimistically and then false again, so the loop only ever read the range's
+ *   START. Parking the line at the end of a range that was never heard would
+ *   move the record insertion offset on the strength of a failure, so this case
+ *   leaves the line where it was. `observed > start` is what separates it from
+ *   the one above, exactly rather than by a tolerance.
+ *
+ * Clamped to the clip for `viewportWindow`'s reason: the pan is also the record
+ * insertion offset, and there is no inserting before the start or after the end.
+ */
+export function frozenPan(input: FrozenPanInput): number {
+  const reached = input.stopRequested
+    ? input.observed
+    : input.observed > input.start
+      ? input.end
+      : input.observed;
+  return Math.max(0, Math.min(reached, input.length));
+}
+
 /**
  * Whether lifting the finger resumes playback (#317).
  *

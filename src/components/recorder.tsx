@@ -16,6 +16,7 @@ import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import {
+  frozenPan,
   liveScopeShown,
   panGesture,
   resumesOnLift,
@@ -608,10 +609,46 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const resumeAfterDragRef = useRef(false);
     /** The pan the last drag move wrote, read on lift before React catches up. */
     const draggedPanRef = useRef(0);
+    /**
+     * The range the scrolling playback was asked to sound (`soundRange`'s
+     * arguments). `frozenPan` needs both ends: the START tells a play that never
+     * sounded from one that did, and the END is the exact resting place of a
+     * clip that ran out — which no sampling could recover, since the handle is
+     * gone before anything can observe it.
+     */
+    const soundingRangeRef = useRef({ start: 0, end: 0 });
+    /**
+     * This playback was ASKED to stop, as opposed to running out. Written by
+     * `stopPlayback` — the one stop path in this sheet — and reset when the
+     * stage enters the scroll mode, so every play decides afresh.
+     */
+    const stopRequestedRef = useRef(false);
 
     const notePlaybackSample = useCallback((sample: number) => {
       playbackSampleRef.current = sample;
     }, []);
+
+    /**
+     * Stop buffer playback, sampling the true position first.
+     *
+     * The ONE stop path this sheet uses, and the reason is #416's promise
+     * (Frank R1 P2): `playbackSampleRef` is written on the scroller's rAF, so
+     * it is up to a frame stale, and `stopBuffer` clears the handle that knows
+     * better. Reading `readPlaybackSample()` synchronously HERE — in whatever
+     * handler is stopping, before the handle goes — is what makes "the waveform
+     * stays exactly where playback had reached" true rather than approximately
+     * true. A frame of drift is ~700 samples, which is also a Record splicing
+     * 16 ms before the end of a take instead of appending to it.
+     *
+     * `audio.stopBuffer` is a no-op when nothing is sounding, and so is this.
+     */
+    const stopBuffer = audio.stopBuffer;
+    const stopPlayback = useCallback(() => {
+      const sample = readPlaybackSample();
+      if (sample !== null) playbackSampleRef.current = sample;
+      stopRequestedRef.current = true;
+      stopBuffer();
+    }, [stopBuffer, readPlaybackSample]);
 
     /**
      * Freeze the view where playback stopped — #416's whole fix.
@@ -628,13 +665,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * (#317), and for every other `stopBuffer` caller in this sheet — the ≡
      * menu, Back, entering edit, an edit action — because it keys on the stage
      * leaving the scroll mode rather than on any one handler remembering to
-     * call it. Clamped for the same reason `viewportWindow` clamps: this value
-     * is also the record insertion offset.
+     * call it.
+     *
+     * WHICH sample it freezes is a decision of its own, and an exact one rather
+     * than "whatever the last frame saw": `frozenPan` carries the three endings
+     * and why they differ (Frank R1 P2).
      */
     const freezePlaybackPan = useCallback(() => {
       if (!scrollPendingRef.current) return;
       scrollPendingRef.current = false;
-      setPanState(Math.max(0, Math.min(playbackSampleRef.current, length)));
+      setPanState(
+        frozenPan({
+          observed: playbackSampleRef.current,
+          start: soundingRangeRef.current.start,
+          end: soundingRangeRef.current.end,
+          stopRequested: stopRequestedRef.current,
+          length,
+        })
+      );
     }, [length]);
 
     // A LAYOUT effect, so the frozen pan is committed before the browser paints
@@ -646,6 +694,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     useLayoutEffect(() => {
       if (scrolling) {
         scrollPendingRef.current = true;
+        // A fresh play decides its own ending. Reset here rather than in
+        // `soundRange` so a scroll that somehow began by another door cannot
+        // inherit the previous play's verdict.
+        stopRequestedRef.current = false;
         return;
       }
       freezePlaybackPan();
@@ -666,6 +718,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // Pinned BEFORE the play, so the playhead is offset by the range that
         // is actually sounding rather than by whatever the line becomes next.
         soundingOffsetRef.current = framesToMs(start);
+        // The same range, for `frozenPan`: its END is where a clip that runs
+        // out comes to rest, which no frame loop can observe (the handle is
+        // cleared before the next tick).
+        soundingRangeRef.current = { start, end };
         audio.playBuffer(editor.working.subarray(start, end));
       },
       [audio, editor.working]
@@ -712,7 +768,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           resumeAfterDragRef.current = true;
           // "Playback never runs while the finger is down" — synchronously, in
           // the gesture's own handler, before anything moves.
-          audio.stopBuffer();
+          stopPlayback();
         }
         setDragging(true);
         dragStartX.current = e.clientX;
@@ -720,7 +776,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         draggedPanRef.current = from;
         e.currentTarget.setPointerCapture(e.pointerId);
       },
-      [hasAudio, recording, paused, busy, audio, stage.render, pan, length]
+      [
+        hasAudio,
+        recording,
+        paused,
+        busy,
+        audio,
+        stage.render,
+        pan,
+        length,
+        stopPlayback,
+      ]
     );
 
     const onPointerMove = useCallback(
@@ -829,18 +895,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // interruption freezing the take to "processing" while a preview is sounding —
     // must still stop playback and invalidate an in-flight decode, or the preview
     // plays on with Play/Record both disabled by `busy` (George R2 #4). Runs on any
-    // leave from `paused`. `stopBuffer` is a callback, not a direct set-state, so
+    // leave from `paused`. `stopPlayback` is a callback, not a direct set-state, so
     // this effect stays within the hooks rules; the leftover `previewState` is inert
     // (`playDisabled` gates it only while paused) and the kept `preview` object
     // still draws on stage through `busy`/`isClosing` (`previewShown`) — the R3 #1
     // no-blank-on-interruption behaviour.
-    const stopBuffer = audio.stopBuffer;
     useEffect(() => {
       if (paused) return;
       previewGenRef.current++;
       previewDecodeRef.current = false;
-      stopBuffer();
-    }, [paused, stopBuffer]);
+      stopPlayback();
+    }, [paused, stopPlayback]);
 
     const onRecordButton = useCallback(() => {
       if (closing.current || !view) return;
@@ -892,7 +957,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // button would otherwise start a preview over the commit (George R9 P3-4).
       if (closing.current) return;
       if (audio.playingBuffer) {
-        audio.stopBuffer();
+        stopPlayback();
         return;
       }
       // Idle: sound the working buffer FROM THE CENTERLINE (#317, via
@@ -985,7 +1050,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           if (gen === previewGenRef.current) previewDecodeRef.current = false;
         }
       })();
-    }, [audio, editor, paused, playPlan, preview, previewState, soundRange]);
+    }, [
+      audio,
+      editor,
+      paused,
+      playPlan,
+      preview,
+      previewState,
+      soundRange,
+      stopPlayback,
+    ]);
 
     /**
      * Edit-mode Play — the audition (#284).
@@ -1015,12 +1089,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // over the commit.
       if (closing.current) return;
       if (audio.playingBuffer) {
-        audio.stopBuffer();
+        stopPlayback();
         return;
       }
       if (!idleEditable || !playPlan) return;
       soundRange(playPlan.range.start, playPlan.range.end);
-    }, [audio, playPlan, idleEditable, soundRange]);
+    }, [audio, playPlan, idleEditable, soundRange, stopPlayback]);
 
     // Enter edit mode from the record menu. Play is a record-only control, so any
     // live buffer playback is stopped first — else it would orphan itself with no
@@ -1038,7 +1112,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // Stop any buffer playback (Play is record-only) and, on the no-take path,
       // invalidate any in-flight preview decode — Edit is a record-menu action,
       // the same boundary `openMenu` and a record tap clean up.
-      audio.stopBuffer();
+      stopPlayback();
       setMenuOpen(false);
       // No live/paused take: edit the stored/edited working buffer as before (#89).
       // The gate only offers Edit with a take while recording or paused, so nothing
@@ -1180,6 +1254,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       });
     }, [
       audio,
+      stopPlayback,
       recording,
       paused,
       saveRecording,
@@ -1227,10 +1302,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // could read it; #96's attempt captured that `body` and its restore was a
       // silent no-op for every menu in the app.
       focusRestore.capture();
-      audio.stopBuffer();
+      stopPlayback();
       abortPreview();
       setMenuOpen(true);
-    }, [audio, abortPreview, focusRestore]);
+    }, [abortPreview, focusRestore, stopPlayback]);
 
     // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
     // row share this. Close any open selection AND reset zoom to whole: record
@@ -1255,7 +1330,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // audio there is nothing to audition and Select is disabled — so nothing is
       // added there for a state that cannot occur. If that gate ever widens, this
       // is the sentence that says so.
-      audio.stopBuffer();
+      stopPlayback();
       editor.closeSelection();
       setZoom(ZOOM_WHOLE);
       // The zoom's view pan is edit-only, exactly as the zoom itself is. The
@@ -1265,7 +1340,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
-    }, [audio, editor]);
+    }, [editor, stopPlayback]);
 
     // Zoom, keeping the picked span on screen (#91).
     //
@@ -1297,7 +1372,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // already changed shape, with a playhead travelling over samples that moved.
     // Moving the span the audition was OF is the same class.
     const onToggleSelection = useCallback(() => {
-      audio.stopBuffer();
+      stopPlayback();
       if (editor.selectionActive) {
         editor.closeSelection();
         return;
@@ -1313,31 +1388,31 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         start: win.centerlineSample - half,
         end: win.centerlineSample + half,
       });
-    }, [audio, editor, win.centerlineSample, win.visibleSamples]);
+    }, [editor, win.centerlineSample, win.visibleSamples, stopPlayback]);
 
     // A handle drag moves the span the audition is OF, so it silences it too.
     // `stopBuffer` returns immediately when nothing is sounding, so this costs a
     // predicate per pointermove, not a stop.
     const onSelectionChange = useCallback(
       (range: SampleRange) => {
-        audio.stopBuffer();
+        stopPlayback();
         editor.setSelection(range);
       },
-      [audio, editor]
+      [editor, stopPlayback]
     );
 
     const onUndo = useCallback(() => {
-      audio.stopBuffer();
+      stopPlayback();
       editor.undo();
-    }, [audio, editor]);
+    }, [editor, stopPlayback]);
 
     const onRedo = useCallback(() => {
-      audio.stopBuffer();
+      stopPlayback();
       editor.redo();
-    }, [audio, editor]);
+    }, [editor, stopPlayback]);
 
     const onCut = useCallback(() => {
-      audio.stopBuffer();
+      stopPlayback();
       const removed = editor.cut();
       // Keep the centerline on the same audio: a cut before it shortens the buffer
       // to its left, so shift an absolute pan by what was removed (George R5). A
@@ -1345,7 +1420,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (removed !== null) {
         setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
       }
-    }, [audio, editor]);
+    }, [editor, stopPlayback]);
 
     // Paste at the drawn centerline — which is ALSO the record insertion offset,
     // and that is not a coincidence to leave unstated (George stand-in P3).
@@ -1365,9 +1440,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // would flip it — and would have to take the pan from `panState` rather than
     // from `win`.
     const onPaste = useCallback(() => {
-      audio.stopBuffer();
+      stopPlayback();
       editor.paste(win.centerlineSample);
-    }, [audio, editor, win.centerlineSample]);
+    }, [editor, win.centerlineSample, stopPlayback]);
 
     const onToggleFinished = useCallback(() => {
       if (!view) return;
@@ -1393,7 +1468,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // stop control — is unreachable across the whole IDB write (George R5).
       // Reaching the confirm already goes through `openMenu`, which stops it; this
       // is the belt to that suspenders, and matches the Segments list's leave().
-      audio.stopBuffer();
+      stopPlayback();
       void (async () => {
         const result = await erase.erase(segmentId);
         // "ok": success unmounts this sheet; the working buffer and any pending
@@ -1404,7 +1479,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         if (result === "ok") onExit(true);
         else if (result === "failed") setConfirmOpen(false);
       })();
-    }, [erase, segmentId, onExit, audio]);
+    }, [erase, segmentId, onExit, stopPlayback]);
 
     /**
      * Reopen the sheet at idle with the reason in place, rather than exiting on
@@ -1573,7 +1648,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // property that makes it safe ahead of the `stopRecording` commit path:
       // `claim("mic")` moves the floor, it does not touch the MediaRecorder, and
       // `stopRecording`'s `finally` stops whichever claim is current (George G4).
-      audio.stopBuffer();
+      stopPlayback();
       return (async () => {
         // Commit on close (F8): if the mic is live or paused, stop it, then
         // splice what it captured into the segment's audio. `stopRecording`
@@ -1718,6 +1793,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // lane, and a stale citation is worse than none.
       state,
       audio,
+      stopPlayback,
       saveRecording,
       editor,
       segmentId,
