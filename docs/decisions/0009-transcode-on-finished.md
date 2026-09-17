@@ -261,8 +261,12 @@ Two mechanics are load-bearing and were verified against `dist/`, not assumed:
    is still in the Workbox precache manifest — which is what makes the snapshot's
    `fetch` succeed offline.
 
-`{ type: "module" }` is correct for the blob: Vite emits the chunk as a
-zero-import IIFE, which is valid module source.
+The blob worker is constructed **classic** — `new Worker(blobUrl)` with no
+options. Vite emits the chunk as a zero-import IIFE, so module semantics buy
+nothing, while declaring `module` asks the platform to parse a blob as an ES
+module and to apply whatever module-worker rules it has for `blob:` (George R1
+P1). The direct chunk URL keeps `{ type: "module" }`, which dev's live-import
+ESM needs.
 
 **A snapshot that cannot run must not brick the encoder.** Node has no `Worker`
 and no real blob worker, and the browsers that matter here — iOS Safari, the
@@ -283,21 +287,47 @@ names only `worker.onerror`. That arm catches the snapshot that will not parse o
 load — a wrong format, a CSP that forbids blob workers. It does not catch the
 snapshot that **loads and then answers nothing**: a truncated fetch ending on a
 statement boundary is valid JS with no `message` listener, which errors never and
-goes silent forever. Judging only the error arm would leave every rebuild coming
-from the same mute blob, each encode burning a full `ENCODER_SILENCE_TIMEOUT_MS`
-before rejecting — an encoder wedged for the life of the page, strictly worse
-than the #182 behaviour the fallback exists to reach, and reached by the very
-mechanism meant to prevent it. So a **stall** on an unproven snapshot-built
-worker discards the snapshot too. An **abort** deliberately does not: that is the
-app terminating a healthy worker, and its re-warm is meant to come from the
-snapshot.
+goes silent forever.
 
-What keeps the stall arm safe is that `mp3.worker.ts` posts its first heartbeat
-on the first frame it encodes, so a running worker is **proven** within
-milliseconds of the request — a slow-but-progressing encode can never be read as
-a bad snapshot, and only a worker that has said nothing at all for a full visible
-window is. Proof is therefore taken from ANY message, a heartbeat included, not
-only from the one that settles the encode.
+**`ready` is how that one is caught, and caught EARLY.** `mp3.worker.ts` posts
+one `ready` at the foot of its module, after its `message` listener is
+registered; an unproven blob-built worker is given no PCM until it has, bounded
+by `ENCODER_READY_TIMEOUT_MS` (3 s — this measures script load of an in-memory
+blob, not an encode). A blob that does not answer is discarded, the worker
+rebuilt from the chunk URL, and **the same job runs there**, its PCM never having
+left this thread.
+
+The order is the point (George R1 P1). Judging the blob only once it had failed
+an encode meant the discovering job was the job that died for it — a failed
+Share, or a sweep segment recorded as failed — and the fallback arrived only for
+whoever came next. Worse, a mute blob rejected as `EncoderStalledError`, which
+the Finished sweep reads as a wedged worker: it names the clip poison, spends its
+one drain pass and ends the run, and the health store latches `failing` past the
+three-strike threshold — a false "this phone cannot make recordings smaller"
+while the chunk-URL worker was one construction away (George R1 P2-4). With the
+handshake there is no such case to classify, so `onStall` carries no branch for
+it.
+
+An **abort** during the handshake deliberately judges nothing: that is the app
+stopping the job, not evidence about the blob, and no PCM was transferred, so
+there is not even an in-flight encode for `terminate()` to stop.
+
+A **synchronous** `new Worker(blob)` throw is a verdict too (George R1 P2-3). A
+CSP with `worker-src 'self'`, or a WebView that throws on `blob:`, never reaches
+the error event, so the snapshot stayed set and every later construction threw on
+the same blob while the chunk URL went untried. `encoderWorker` now discards and
+retries once on the chunk URL, which also covers `warmEncoder`'s swallowing
+catch.
+
+**Proof lives on the snapshot, not on the worker handle** (George R1 P2-2). It
+was on the handle first, and dropping the handle cleared it — so a proven blob
+worker that OOMed came back unproven, and if the device was still under memory
+pressure the replacement's failure revoked a blob that had already been observed
+running, sending the next construction to a chunk URL a deploy had deleted: #192
+re-opened by its own guard. Proof is recorded by a durable `message` listener on
+ANY message — `ready`, a heartbeat, a result, even the worker reporting an encode
+error — because all four are the script executing, and cleared only where the
+snapshot itself is.
 
 Everything about the snapshot is best-effort. A failed fetch, an absent `fetch`,
 `Blob` or `createObjectURL`, and a synchronous `new Worker` throw all leave the
@@ -309,13 +339,14 @@ the object-URL pair. What those tests pin is the **decision** — which URL each
 worker is built from, when the snapshot is taken, and when a snapshot is thrown
 away — not that a real blob worker runs the real chunk; that is the Chromium
 smoke's job, below. Mutation-proven, each mutation restored afterwards: building
-always from the chunk URL kills eight tests; dropping the production gate, the
-once-only fetch guard, the discard-on-unproven-error arm or the stall arm each
-kills exactly the test named for it; dropping the `proven` condition kills the
-three tests that assert a proven snapshot is kept; marking `proven` only on the
-settling message rather than on any message kills the heartbeat-is-proof test;
-and letting `recoverEncoderWorker` judge the snapshot — so an abort discards it —
-kills the abort test.
+always from the chunk URL kills thirteen tests; skipping the `ready` handshake
+kills five; and dropping the production gate, the once-only fetch guard, the
+error arm of the guard, the discard on a mute blob, the retry after a synchronous
+construction throw, the classic-worker choice, proof-on-the-snapshot, or the
+short ready deadline each kills exactly the tests named for it. Letting an abort
+during the handshake discard the snapshot kills the abort test. The worker's own
+`ready` ping has no Node coverage by construction — removing it is caught by the
+Chromium spec below, which is where it is proven.
 
 **Verified in a real browser**, which #192 did not expect to be possible — the
 issue was written before the headless-Chromium smoke (#251) landed.
@@ -324,11 +355,12 @@ issue was written before the headless-Chromium smoke (#251) landed.
 whole spec reads one clock — then fails every later request for the hashed chunk
 — the purge, simulated the only way a test can — aborts an in-flight encode to
 force the rebuild, and encodes.
-A real MP3 comes back from a worker built entirely from the blob, and the
-rebuild issued no new chunk request. The gate fails in the other state, which
-is what makes it a gate (#270): with the snapshot ignored and the rebuild back
-on the chunk URL, the spec fails with `The MP3 encoder worker failed to start`
-— the bug's own symptom.
+A real MP3 comes back from a worker built entirely from the blob — a CLASSIC
+blob worker, since round 2 — and the rebuild issued no new chunk request. The
+gate fails in the other state, which is what makes it a gate (#270): with the
+snapshot ignored and the rebuild back on the chunk URL, the rebuild goes to the
+network and the spec fails on the request count. Removing the worker's `ready`
+ping fails it the same way, which is what proves that half.
 
 **Still not device-verified, and the distinction matters.** What Chromium now
 proves is that a blob-built worker runs the real chunk and that a rebuild does
