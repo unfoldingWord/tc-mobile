@@ -199,6 +199,20 @@ export function App() {
   // instead (George R5 P2).
   const holdsCutAudio = (clipboard?.length ?? 0) > 0;
 
+  // This copy has given up its connection and cannot open another: `getDb()` is
+  // latched and rejects before it opens, for the rest of the page's life.
+  //
+  // Told to the recorder because the panel that says so is WITHHELD while the
+  // sheet is up — rightly, since mounting it unmounts the sheet and `leave()`
+  // cancels a live capture. The consequence was that every failure path inside
+  // the sheet reported a permanent condition as a retryable one, with the honest
+  // screen unreachable behind it (#450, then George R6 P2). `failureExit` in
+  // `lib/takes` turns this one bit into that decision, in one place.
+  //
+  // `blocked` is deliberately NOT folded in here: it ends when the other copy
+  // closes, and the app is told so, so a retry under it is exactly right.
+  const databaseUnreachable = databaseStatus === "reloadNeeded";
+
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
@@ -467,6 +481,7 @@ export function App() {
           saveEditedSegment={saveEditedSegment}
           clipboard={clipboard}
           onClipboardChange={setClipboard}
+          databaseUnreachable={databaseUnreachable}
           onExit={closeRecorder}
           onRequestBack={goBack}
         />

@@ -104,8 +104,26 @@ export interface TcMobileDb extends DBSchema {
  * data a newer one already wrote (the `autoUpdate` service worker can leave the
  * two running side by side). IndexedDB refuses the open with a `VersionError`;
  * "recovering" by deleting would destroy the newer build's recordings, so this
- * surfaces as a deliberate, retryable failure instead. Its `message` is what the
- * Books-screen Notice shows, so it is written for a person, not a log.
+ * surfaces as a deliberate failure instead.
+ *
+ * **Not retryable, and no caller should offer a retry for it (#221).** Nothing
+ * this copy does can clear it: the data has moved past this build's
+ * `DB_VERSION`, and after a yield `getDb()` refuses before it even opens, so
+ * every attempt fails identically for the rest of the page's life. A restart is
+ * the only exit, because it is what picks up the newer build the service worker
+ * has already activated.
+ *
+ * The product paths are `DatabasePanel` (`useDatabaseStatus` reports
+ * `reloadNeeded` through `onYielded`) and `SaveFailed` with
+ * `kind === "downgrade"`, both of which offer that restart and no retry, and
+ * `failureExit` in `lib/takes` for the recorder's own failure sites. This
+ * comment used to say the opposite — "retryable", surfaced through the
+ * Books-screen Notice — which was true before those existed and would now
+ * invite a "try again" onto a condition that is already decided (George R6 P3).
+ *
+ * `message` is still written for a person rather than a log: the unchanged
+ * Notice paths in `use-books.ts` and `use-chapter-segments.ts` still show it,
+ * and removing that is #437's business, not this class's.
  */
 class DatabaseDowngradeError extends Error {
   constructor() {

@@ -67,6 +67,7 @@ import {
   viewportWindow,
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
+import { failureExit } from "@/lib/takes/failure-exit";
 import {
   attemptsCapture,
   classifyCapture,
@@ -129,6 +130,22 @@ interface RecorderProps {
    */
   clipboard: Int16Array | null;
   onClipboardChange: (clip: Int16Array | null) => void;
+  /**
+   * The database can no longer be opened at all: this copy has yielded its
+   * connection to another copy's upgrade and `getDb()` is latched (#221).
+   *
+   * The sheet has to be told, because `DatabasePanel` — the screen that says so
+   * and offers the restart — is withheld while the recorder is open, so no
+   * failure in here can be answered by "the panel will explain". Every one of
+   * them used to report this permanent condition with retryable copy, and on the
+   * close tails the retry control IS Back, so the sheet could not be left at all
+   * (#450, then George R6 P2). `failureExit` turns this bit into the
+   * stay-or-leave decision at each of the four sites.
+   *
+   * `blocked` is not this: it ends when the other copy closes, and a retry then
+   * succeeds.
+   */
+  databaseUnreachable: boolean;
   /**
    * Close the sheet. `dirty` ⇒ the segment changed (a take committed, an edit
    * persisted, or the finished flag toggled), so App reloads the Segments screen
@@ -198,6 +215,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       saveEditedSegment,
       clipboard,
       onClipboardChange,
+      databaseUnreachable,
       onExit,
       onRequestBack,
     },
@@ -220,6 +238,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       clip: clipboard,
       set: onClipboardChange,
     });
+    // #450, the first instance of the class George R6 P2 is the second of. The
+    // load goes through `getDb()`, so once the yield has latched it fails
+    // identically every time — and `LoadErrorPanel`'s auto-focused Retry re-runs
+    // exactly that. Rather than relabel a control that cannot work, leave: the
+    // sheet is what withholds `DatabasePanel`, so leaving IS what puts the
+    // restart on screen. `false` because nothing changed, so Segments has no
+    // reason to reload.
+    //
+    // An effect, not a render-time call: this is a condition arriving from
+    // outside React (the browser closed a connection), and the exit must happen
+    // after the commit that observed it, not during it.
+    useEffect(() => {
+      if (loadError === null) return;
+      if (failureExit("load", databaseUnreachable) === "exit") onExit(false);
+    }, [loadError, databaseUnreachable, onExit]);
+
     const [menuOpen, setMenuOpen] = useState(false);
     // The sheet is two modes over one segment (#89): a record mode (the hero
     // Record + Play + Edit trio, #315) and an edit mode (the waveform-editing
@@ -1760,9 +1794,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // ignore it, the first call still owns the dialog (else the confirm would
         // vanish mid-erase, exposing Back and its save path over the delete).
         if (result === "ok") onExit(true);
-        else if (result === "failed") setConfirmOpen(false);
+        else if (result === "failed") {
+          // A failed erase leaves the take on disk, so this is not a loss — but
+          // it goes through the same `clearSegmentTake`, so once the database is
+          // unreachable it fails identically every time, and the confirm's
+          // notice would invite a retry that cannot land (George R6 P2). Exit
+          // with `false`: nothing changed, and the panel takes the screen.
+          if (failureExit("erase", databaseUnreachable) === "exit")
+            onExit(false);
+          else setConfirmOpen(false);
+        }
       })();
-    }, [erase, segmentId, onExit, stopPlayback]);
+    }, [erase, segmentId, onExit, stopPlayback, databaseUnreachable]);
 
     /**
      * Reopen the sheet at idle with the reason in place, rather than exiting on
@@ -1812,6 +1855,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 false
               );
               if (!cleared) {
+                // Terminal once the database cannot be reopened. An empty-buffer
+                // save does NOT go through the never-lose slot — it calls
+                // `clearSegmentTake` and returns false — so nothing reaches
+                // `pendingTake`, `SaveFailed` cannot mount, and the panel cannot
+                // either while this sheet is up. Staying would leave "Could not
+                // clear the audio. Try again." over a call that can never
+                // succeed, on a screen whose only exit is the Back that just
+                // failed (George R6 P2). Nothing is lost by leaving: the clear
+                // never committed, so the original take is still on disk.
+                if (failureExit("clear", databaseUnreachable) === "exit") {
+                  onExit(dirty.current);
+                  return true;
+                }
                 stayOpen(strings.clearFailed);
                 return false;
               }
@@ -1834,6 +1890,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // take deleted externally between toggle and close. Surface it
                 // (F5-#1) rather than only the console, and stay open.
                 console.error("Could not change the finished flag", cause);
+                // Same trap as the clear above, over a flag rather than audio.
+                if (failureExit("mark", databaseUnreachable) === "exit") {
+                  onExit(dirty.current);
+                  return true;
+                }
                 stayOpen(strings.finishedWriteFailed);
                 return false;
               }
@@ -1852,7 +1913,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           return true;
         }
       },
-      [editor, saveEditedSegment, segmentId, setFinished, stayOpen, onExit]
+      [
+        editor,
+        saveEditedSegment,
+        segmentId,
+        setFinished,
+        stayOpen,
+        onExit,
+        databaseUnreachable,
+      ]
     );
 
     /**
