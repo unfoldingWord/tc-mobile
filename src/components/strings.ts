@@ -17,8 +17,14 @@ export const strings = {
   menuTitle: "Menu",
   menuClose: "Close menu",
   booksEmpty: "Start your first book",
+  // Not an unconditional promise: the browser may refuse the durability
+  // request `useStoragePersistence` makes once a book exists
+  // (`storageNotPersisted` below), and the eviction warning that names that
+  // takes itself down once the shelf empties back out to this state
+  // (`storageMarker`'s `hasContent` gate) — so this line must not assert what
+  // that gate just retracted (George round-2 residual, #406 item 3).
   booksEmptyTeach:
-    "A book holds the chapters you record — and everything stays on this phone.",
+    "A book holds the chapters you record — and stays on this phone unless space runs low.",
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
@@ -320,11 +326,17 @@ export const strings = {
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
-  // `shareBookMissing`, which speaks in whole chapters; this speaks in
-  // segments, mirroring `shareMissing`'s chapter-grain phrasing.
+  // `shareBookMissing`, which speaks in whole chapters; this speaks only in
+  // segments. `n` is `partialSegments`, a SUM across every included chapter's
+  // own `missing` (`src/lib/export/book.ts`), not a count of chapters —
+  // `gatherChapterPcm` can return `missing > 1` for a single chapter. So
+  // "chapter(s)" is a generic, uncounted reference to the set of included
+  // chapters and must never be pluralized off `n` (#400, George #398 P3):
+  // doing so read as "more than one chapter" even when one chapter held every
+  // missing segment.
   shareBookPartial: (n: number): string =>
     n === 1
-      ? "1 segment was left out of a chapter that was otherwise included."
+      ? "1 segment was left out of chapters that were otherwise included."
       : `${n} segments were left out of chapters that were otherwise included.`,
   // Both gaps can occur in the same book (a whole chapter missing AND a
   // segment missing from one that shipped). The screen surfaces ONE Notice for
