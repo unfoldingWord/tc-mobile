@@ -65,6 +65,10 @@ class FakeWorker {
     for (const fn of [...this.errorListeners]) fn(event);
     this.onerror?.(event);
   }
+  /** A liveness heartbeat (#166): no result, but the worker's code RAN. */
+  emitProgress(fraction: number): void {
+    this.onmessage?.({ data: { kind: "progress", fraction } });
+  }
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -124,6 +128,8 @@ const nth = (n: number): FakeWorker => {
 type Codec = typeof import("@/hooks/mp3-codec");
 let withEncoder: Codec["withEncoder"];
 let warmEncoder: Codec["warmEncoder"];
+let EncoderStalledError: Codec["EncoderStalledError"];
+let TIMEOUT: number;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -132,6 +138,8 @@ beforeEach(async () => {
   const mod = await import("@/hooks/mp3-codec");
   withEncoder = mod.withEncoder;
   warmEncoder = mod.warmEncoder;
+  EncoderStalledError = mod.EncoderStalledError;
+  TIMEOUT = mod.ENCODER_SILENCE_TIMEOUT_MS;
 });
 
 afterEach(() => {
@@ -369,5 +377,132 @@ describe("the worker chunk's blob snapshot (#192)", () => {
     expect(nth(2).url).toBe(BLOB_URL);
     nth(2).emitDone(new Uint8Array([4]).buffer);
     await expect(p2).resolves.toBeInstanceOf(Uint8Array);
+  });
+});
+
+/**
+ * The SECOND way a bad snapshot shows itself (#192 × #166).
+ *
+ * The self-healing guard #192 shipped judges one signal: an `error` event from a
+ * snapshot-built worker that has never answered. #166's silence deadline landed
+ * in between and added another failure mode to the same worker — source that
+ * LOADS and then answers nothing errors never, so the error arm never fires,
+ * every rebuild comes from the same mute blob, and each encode burns a full
+ * `ENCODER_SILENCE_TIMEOUT_MS` before rejecting. That is strictly worse than the
+ * #182 behaviour the fallback exists to reach, so a stall on an UNPROVEN
+ * snapshot-built worker discards the snapshot too.
+ *
+ * Fake timers, like `encoder-deadline.test.ts` — the deadline is 15 s and no
+ * suite waits that out. Node has no `document`, so the page counts as visible
+ * and `onStall` is free to judge, which is the state under test.
+ */
+describe("a stall judges the blob snapshot too (#192 × #166)", () => {
+  beforeEach(() => {
+    stubSnapshotEnvironment();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Let `withEncoder`'s microtask chain, and the fetch's, run to completion. */
+  const microtasks = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+
+  /**
+   * Warm, land the snapshot, then force the abort-driven REBUILD — so the live
+   * worker (index 1) is the blob's, which is the one this guard judges.
+   */
+  const rebuildFromSnapshot = async (): Promise<FakeWorker> => {
+    warmEncoder();
+    chunkFetch.land("/* the built worker chunk */");
+    await microtasks();
+
+    const controller = new AbortController();
+    const aborted = encode(Int16Array.of(1), controller.signal);
+    await microtasks();
+    controller.abort();
+    await expect(aborted).rejects.toBeInstanceOf(DOMException);
+
+    expect(nth(1).url).toBe(BLOB_URL);
+    return nth(1);
+  };
+
+  it("throws away a snapshot whose worker stalls without ever answering", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    // It loaded, and then said nothing at all: no heartbeat, no done, no error.
+    const p = encode(Int16Array.of(2));
+    await microtasks();
+    // Attached BEFORE the advance, or the rejection the timer raises mid-tick
+    // is an unhandled rejection rather than this test's assertion.
+    const rejection = expect(p).rejects.toBeInstanceOf(EncoderStalledError);
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    await rejection;
+    expect(blobWorker.terminated).toBe(true);
+
+    // The snapshot is the suspect, so it goes — and the re-warm the stall
+    // recovery performs is already back on the chunk URL.
+    expect(revoked).toEqual([BLOB_URL]);
+    expect(isChunkUrl(nth(2).url)).toBe(true);
+
+    // And the encoder works again, rather than stalling for the page's life.
+    const p2 = encode(Int16Array.of(3));
+    await microtasks();
+    nth(2).emitDone(new Uint8Array([3]).buffer);
+    await expect(p2).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("keeps a snapshot whose worker answered once and stalled later", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    // It answers, which PROVES the blob runs on this browser.
+    const ok = encode(Int16Array.of(2));
+    await microtasks();
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
+    await expect(ok).resolves.toBeInstanceOf(Uint8Array);
+
+    // A later stall is a worker killed under memory pressure, not a snapshot
+    // that cannot run. Discarding here would re-expose #192 after one OOM.
+    const p = encode(Int16Array.of(3));
+    await microtasks();
+    const rejection = expect(p).rejects.toBeInstanceOf(EncoderStalledError);
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    await rejection;
+    expect(revoked).toEqual([]);
+    expect(nth(2).url).toBe(BLOB_URL);
+  });
+
+  it("counts a progress heartbeat as proof, so a slow blob worker is kept", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    const p = encode(Int16Array.of(2));
+    await microtasks();
+    // A heartbeat and nothing else. The worker's own code demonstrably RAN, so
+    // the snapshot is proven even though no encode has ever completed on it —
+    // `mp3.worker.ts` beats on its first frame, so this is what a slow but
+    // running blob worker looks like when the device then kills it.
+    blobWorker.emitProgress(0.1);
+    const rejection = expect(p).rejects.toBeInstanceOf(EncoderStalledError);
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    await rejection;
+    expect(revoked).toEqual([]);
+    expect(nth(2).url).toBe(BLOB_URL);
+  });
+
+  it("does not judge the snapshot when WE terminate the worker (abort)", async () => {
+    await rebuildFromSnapshot();
+
+    // The blob worker has answered nothing, and an abort terminates it — but an
+    // abort is us stopping a healthy worker, not evidence against the snapshot.
+    const controller = new AbortController();
+    const p = encode(Int16Array.of(2), controller.signal);
+    await microtasks();
+    controller.abort();
+    await expect(p).rejects.toBeInstanceOf(DOMException);
+
+    expect(revoked).toEqual([]);
+    expect(nth(2).url).toBe(BLOB_URL);
   });
 });
