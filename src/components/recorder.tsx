@@ -15,7 +15,12 @@ import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
-import { liveScopeShown, stageView } from "./recorder-stage";
+import {
+  liveScopeShown,
+  panGesture,
+  resumesOnLift,
+  stageView,
+} from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
@@ -29,6 +34,7 @@ import {
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
+import { WaveformScroller } from "./waveform-scroller";
 import { classifyShareError } from "@/hooks/share-flow";
 import {
   nativeShare,
@@ -44,13 +50,14 @@ import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
 import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
-import { framesToMs } from "@/lib/audio/format";
+import { framesToMs, msToFrames } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   effectivePan,
   panAfterCut,
   panForZoom,
+  playbackStrip,
   viewportWindow,
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
@@ -498,12 +505,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       selectionActive: editor.selectionActive,
       previewShown: previewShown !== null,
     });
-    const wholeView = stage.wholeView;
-    const waveView = {
-      startFraction: wholeView ? 0 : hasAudio ? win.start / length : 0,
-      endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
-      centerFraction: CENTER_FRACTION,
-    };
+    const wholeView = stage.render === "whole";
+    // The waveform scrolls under the fixed centerline (#415/#416/#417). While
+    // it does, the canvas is not a window that follows the pan: it is one strip
+    // — the clip plus a viewport of blank, drawn at the CURRENT zoom (#417) —
+    // that `WaveformScroller` translates each frame so the sounding sample
+    // stays under the line. `null` in every other state, which is what keeps
+    // the static geometry below exactly what it was.
+    const strip =
+      stage.render === "scroll" && hasAudio
+        ? playbackStrip(length, win.visibleSamples, CENTER_FRACTION)
+        : null;
+    // ONE spelling of "the waveform is scrolling", so the scroller and the
+    // playhead overlay cannot disagree about it: the overlay hides exactly when
+    // the centerline takes over as the playhead. (`hasAudio` is belt to the
+    // braces — `playBuffer` refuses an empty buffer — but if the two ever did
+    // come apart, a state with neither cue would be the worst of both.)
+    const scrolling = strip !== null;
+    const waveView = strip
+      ? {
+          startFraction: strip.startFraction,
+          endFraction: strip.endFraction,
+          centerFraction: CENTER_FRACTION,
+        }
+      : {
+          startFraction: wholeView ? 0 : hasAudio ? win.start / length : 0,
+          endFraction: wholeView ? 1 : hasAudio ? win.end / length : 1,
+          centerFraction: CENTER_FRACTION,
+        };
 
     // The Zoom control's CHROME (pressed state, icon, label) while `wholeView`
     // is true (#284, George R7): the canvas is drawn at clip fractions 0..1,
@@ -516,21 +545,30 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // that real value is what comes back the moment `wholeView` goes false.
     const displayedZoom = wholeView ? ZOOM_WHOLE : zoom;
 
-    // What edit-mode Play sounds (#284): the picked span when one is up, else
-    // the working buffer from the centerline on. `null` ⇒ there is nothing to
-    // audition (no audio, or a span collapsed to a point), which is the cue to
-    // leave the control inert — state-in-place, no message. The decision is pure
-    // and unit-tested in `auditionPlan`; all this does is hand it the editor's
-    // current span and the viewport's line. Record mode never builds a plan: its
-    // Play is the whole-buffer preview `onPlayButton` already owns.
-    const audition =
-      mode === "edit"
-        ? auditionPlan(
-            length,
-            editor.selectionActive ? editor.selection : null,
-            win.centerlineSample
-          )
-        : null;
+    // What Play sounds, in BOTH modes (#284, widened by #317): the picked span
+    // when one is up, else the working buffer from the centerline on. `null` ⇒
+    // there is nothing to play (no audio, or a span collapsed to a point),
+    // which is the cue to leave the control inert — state-in-place, no message.
+    //
+    // Record mode used to build no plan at all: its Play sounded the whole
+    // working buffer from frame 0. The requirements owner's #317 rule — "Play
+    // starts from the sample under the line" — makes that the same question
+    // edit mode already asks, so it is asked once, in the pure, unit-tested
+    // `auditionPlan`, rather than twice. The rest-position case comes for free
+    // with it: with the line at the end of the take (F7, where a freshly opened
+    // sheet sits) "from the line" would be silence, and `auditionPlan` already
+    // answers that by sounding the WHOLE buffer — so an untouched Play still
+    // plays the whole segment, exactly as it did before.
+    //
+    // The selection is read only in edit mode, the same reader gate
+    // `effectivePan` applies to `zoomPan` and for the same reason: a span left
+    // open on a path back to record mode must not change what record-mode Play
+    // sounds.
+    const playPlan = auditionPlan(
+      length,
+      mode === "edit" && editor.selectionActive ? editor.selection : null,
+      win.centerlineSample
+    );
 
     // The playhead's position within the DRAWN buffer (#102 + #284). Buffer
     // playback reports milliseconds into whatever was handed to `playBuffer`,
@@ -545,6 +583,94 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       return ms === null ? null : soundingOffsetRef.current + ms;
     }, [readPlaybackElapsed]);
 
+    // The same position in SAMPLES, which is the unit the strip, the pan and
+    // the record insertion offset all speak (#415). Pulled on the scroller's
+    // rAF, never during render.
+    const readPlaybackSample = useCallback(() => {
+      const ms = readSoundingElapsed();
+      return ms === null ? null : msToFrames(ms);
+    }, [readSoundingElapsed]);
+
+    /**
+     * Where the scrolling playback had reached, written every frame by
+     * `WaveformScroller` and read when it stops. A ref, not state: at 60 Hz it
+     * is the whole reason the waveform moves by DOM instead of by render.
+     */
+    const playbackSampleRef = useRef(0);
+    /**
+     * A scrolling playback is in flight and still owes the pan a freeze. Set
+     * when the stage enters the scroll mode, consumed by the first
+     * `freezePlaybackPan` after it leaves — so the freeze happens exactly once
+     * per play, and an idle re-render never writes the pan.
+     */
+    const scrollPendingRef = useRef(false);
+    /** A #317 drag interrupted playback and owes it a resume on lift. */
+    const resumeAfterDragRef = useRef(false);
+    /** The pan the last drag move wrote, read on lift before React catches up. */
+    const draggedPanRef = useRef(0);
+
+    const notePlaybackSample = useCallback((sample: number) => {
+      playbackSampleRef.current = sample;
+    }, []);
+
+    /**
+     * Freeze the view where playback stopped — #416's whole fix.
+     *
+     * "Pause only pauses. The waveform and the playhead stay exactly where
+     * playback had reached; nothing jumps. Play resumes from that same point."
+     * Before this, nothing recorded where playback had reached: the moment
+     * `playingBuffer` went false the window recomputed from `panState`, which
+     * had been sitting at the end of the take the whole time — the instant jump
+     * to the end the issue reports.
+     *
+     * Route-independent on purpose. It runs for the Pause tap, for playback
+     * reaching the end of the clip, for a finger landing on the waveform
+     * (#317), and for every other `stopBuffer` caller in this sheet — the ≡
+     * menu, Back, entering edit, an edit action — because it keys on the stage
+     * leaving the scroll mode rather than on any one handler remembering to
+     * call it. Clamped for the same reason `viewportWindow` clamps: this value
+     * is also the record insertion offset.
+     */
+    const freezePlaybackPan = useCallback(() => {
+      if (!scrollPendingRef.current) return;
+      scrollPendingRef.current = false;
+      setPanState(Math.max(0, Math.min(playbackSampleRef.current, length)));
+    }, [length]);
+
+    // A LAYOUT effect, so the frozen pan is committed before the browser paints
+    // the frame in which playback stopped — in a plain effect the stage would
+    // show one frame of the pre-play pan, which is the jump #416 is about,
+    // merely briefer. The set-state goes through a `useCallback` rather than
+    // sitting in the effect body, the same shape the paused-exit effect below
+    // uses to stay inside the hooks rules.
+    useLayoutEffect(() => {
+      if (scrolling) {
+        scrollPendingRef.current = true;
+        return;
+      }
+      freezePlaybackPan();
+    }, [scrolling, freezePlaybackPan]);
+
+    /**
+     * Sound a range of the working buffer, with the playhead's coordinate
+     * pinned to it.
+     *
+     * One path for all three plays — record-mode Play, the edit-mode audition,
+     * and the #317 resume-on-lift — so "what sounds" and "what the overlay
+     * thinks is sounding" cannot be set from two places and disagree. The range
+     * is a `subarray`: a VIEW, not a copy, so no allocation beyond what
+     * `playBuffer`'s own Int16→Float32 conversion already makes.
+     */
+    const soundRange = useCallback(
+      (start: number, end: number) => {
+        // Pinned BEFORE the play, so the playhead is offset by the range that
+        // is actually sounding rather than by whatever the line becomes next.
+        soundingOffsetRef.current = framesToMs(start);
+        audio.playBuffer(editor.working.subarray(start, end));
+      },
+      [audio, editor.working]
+    );
+
     const onPointerDown = useCallback(
       (e: React.PointerEvent) => {
         // Nothing to pan on an empty segment (F11): the baseline does not slide.
@@ -557,26 +683,44 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // handle back within reach (B5, George R2). The handles stop their own
         // pointerdown from bubbling here, so grabbing a handle adjusts an edge and
         // never also starts a pan — only a drag on the bare canvas pans.
-        // Frozen during playback too — the pan is one of the window controls
-        // `stage.windowControlsInert` names, and the oldest member of that class
-        // (Frank/George R2): under a swapped view a drag moves a record offset
-        // that is not on screen, and under a picked-span audition it would slide
-        // the band off the audio it marks while that audio sounds. Playback is
-        // listen-only — no scrub in v1 (D4).
-        if (
-          !hasAudio ||
-          recording ||
-          paused ||
-          busy ||
-          stage.windowControlsInert
-        )
-          return;
+        //
+        // Playback used to freeze the pan outright — the pan was the oldest
+        // member of the `windowControlsInert` class (Frank/George R2), under
+        // D4's "playback is listen-only — no scrub in v1". The requirements
+        // owner reversed that for this one gesture (#317, 2026-09-16), so the
+        // decision is now three-valued and lives in the pure, enumerated
+        // `panGesture` rather than as a predicate here where nothing could
+        // reach it: `"interrupt"` is the reversal (pause, pan, resume on lift),
+        // and the two sounding states it did NOT reverse still answer
+        // `"ignore"`. Its docblock carries the whole rule.
+        const gesture = panGesture({
+          hasAudio,
+          recording,
+          paused,
+          busy,
+          playingBuffer: audio.playingBuffer,
+          render: stage.render,
+        });
+        if (gesture === "ignore") return;
+        // Start from where playback had REACHED, not from `panState`, which is
+        // still the pre-play value for one more commit (the freeze runs in a
+        // layout effect after `stopBuffer` lands). Taking it from the ref is
+        // what keeps the waveform from jumping under the finger on touch-down.
+        let from = pan;
+        if (gesture === "interrupt") {
+          from = Math.max(0, Math.min(playbackSampleRef.current, length));
+          resumeAfterDragRef.current = true;
+          // "Playback never runs while the finger is down" — synchronously, in
+          // the gesture's own handler, before anything moves.
+          audio.stopBuffer();
+        }
         setDragging(true);
         dragStartX.current = e.clientX;
-        panAtDragStart.current = pan;
+        panAtDragStart.current = from;
+        draggedPanRef.current = from;
         e.currentTarget.setPointerCapture(e.pointerId);
       },
-      [hasAudio, recording, paused, busy, stage.windowControlsInert, pan]
+      [hasAudio, recording, paused, busy, audio, stage.render, pan, length]
     );
 
     const onPointerMove = useCallback(
@@ -587,25 +731,31 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // moving the first finger through the `requesting` window — sliding the
         // centerline off the sample insertionOffset already locked to at the tap
         // (#61). The pointer-down guard alone left this multitouch path open.
-        // Also frozen once playback starts mid-drag, by the same predicate the
-        // pointer-down guard uses (R2).
-        if (
-          !dragging ||
-          recording ||
-          paused ||
-          busy ||
-          stage.windowControlsInert
-        )
-          return;
+        // Playback is NOT in this guard anymore (#317): a drag can only begin
+        // through `onPointerDown`, which stops a scrolling playback before it
+        // sets `dragging` and refuses the other two sounding states outright —
+        // so by the time a move arrives, either nothing is sounding or the stop
+        // has not yet been through a commit, and in both cases this drag is the
+        // one the translator asked for. Nothing else can start a sound
+        // mid-drag: Play and Record are both disabled while `dragging` cannot
+        // reach them (they are controls, not the stage), and the resume this
+        // gesture owes happens on LIFT.
+        if (!dragging || recording || paused || busy) return;
         const width = stageRef.current?.clientWidth ?? 1;
         // Drag right reveals earlier audio: the sample under the centerline
         // decreases. The move is scaled by what the viewport spans at this zoom,
         // so a fixed thumb travel pans less when zoomed in.
         const dx = e.clientX - dragStartX.current;
         const delta = -(dx / width) * win.visibleSamples;
-        setPanState(
-          Math.max(0, Math.min(panAtDragStart.current + delta, length))
+        const next = Math.max(
+          0,
+          Math.min(panAtDragStart.current + delta, length)
         );
+        setPanState(next);
+        // The same value, where the LIFT can read it (#317): `pointerup` needs
+        // the sample now under the line to resume there, and the render that
+        // carries this `setPanState` may not have happened yet.
+        draggedPanRef.current = next;
         // A real drag is the translator choosing this view deliberately, so the
         // pan becomes the REAL one — insertion offset included — and the zoom's
         // view-only fit is handed over rather than continuing to override it.
@@ -616,18 +766,37 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // point.
         setZoomPan(null);
       },
-      [
-        dragging,
-        recording,
-        paused,
-        busy,
-        stage.windowControlsInert,
-        win.visibleSamples,
-        length,
-      ]
+      [dragging, recording, paused, busy, win.visibleSamples, length]
     );
 
-    const onPointerUp = useCallback(() => setDragging(false), []);
+    /**
+     * Lift — and, if this gesture interrupted playback, resume it (#317).
+     *
+     * "When the finger lifts, playback RESUMES from the sample under the
+     * centerline. Playback never runs while the finger is down." It resumes
+     * from `draggedPanRef`, which the moves above keep current, rather than
+     * from `pan`: the last move's render may still be pending.
+     *
+     * With the line dragged to the very END there is nothing left to sound, so
+     * nothing resumes and the take stays parked there — the position Record and
+     * Paste then act on, which is the point of the gesture. That is deliberately
+     * NOT `auditionPlan`'s rest-position fallback ("from the line" at the end
+     * means the whole buffer): as a fresh Play that reads as "play the segment",
+     * but as a RESUME it would restart from the beginning, which is not what
+     * dragging to the end asks for. Flagged as such on #317.
+     *
+     * Also runs on `pointercancel` (the same handler): the finger is gone
+     * either way, and leaving playback stopped after a cancelled gesture would
+     * be a sound the translator can no longer explain.
+     */
+    const onPointerUp = useCallback(() => {
+      setDragging(false);
+      const interrupted = resumeAfterDragRef.current;
+      resumeAfterDragRef.current = false;
+      const from = Math.max(0, Math.min(draggedPanRef.current, length));
+      if (!resumesOnLift(interrupted, from, length)) return;
+      soundRange(from, length);
+    }, [length, soundRange]);
 
     // Abort an in-flight decode and drop the synchronous guard, but KEEP a prepared
     // preview on the stage (#101). A first take's `LiveScope` remounts blank once it
@@ -708,7 +877,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       cancelPreview,
     ]);
 
-    // Play the in-memory WORKING buffer from offset 0 (D3/D4): the segment's
+    // Play the in-memory WORKING buffer from the centerline on (D3/D4, #317):
+    // the segment's
     // stored recording plus any unsaved edits (cut/paste) made this session. It is
     // NOT a just-captured take — a new recording is decoded and spliced only on
     // close (Model A, commit-on-close), so a fresh capture becomes playable after
@@ -725,19 +895,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         audio.stopBuffer();
         return;
       }
-      // Record-mode playback always sounds a buffer from its own frame 0 — the
-      // whole working buffer, or a whole paused-take preview — so the playhead
-      // needs no offset into the drawn waveform (#284). Pinned once here rather
-      // than at each of the three `playBuffer` calls below, one of which fires
-      // after an await.
-      soundingOffsetRef.current = 0;
-      // Idle: preview the stored/edited working buffer, as before (#89). The
-      // playhead overlay (#102) positions itself off `readPlaybackElapsed`, so no
-      // seed is needed on the play edge.
+      // Idle: sound the working buffer FROM THE CENTERLINE (#317, via
+      // `playPlan` — see its derivation for why the rest position still plays
+      // the whole segment). `soundRange` pins the playhead's coordinate to the
+      // range it sounds; the stage scrolls that position under the line
+      // (#415), so nothing seeds a travelling overlay on this path anymore.
       if (!paused) {
-        audio.playBuffer(editor.working);
+        if (playPlan === null) return;
+        soundRange(playPlan.range.start, playPlan.range.end);
         return;
       }
+      // A paused-take preview sounds a DIFFERENT buffer (the merged take, #101)
+      // from its own frame 0, drawn whole with the travelling overlay over it —
+      // so it keeps the zero offset it always had.
+      soundingOffsetRef.current = 0;
       // Paused: preview the take captured SO FAR without committing it (#101).
       // Replay a prepared preview immediately; otherwise decode the paused capture
       // and splice it into `working` at the same `insertionOffset` `close()` commits
@@ -814,7 +985,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           if (gen === previewGenRef.current) previewDecodeRef.current = false;
         }
       })();
-    }, [audio, editor, paused, preview, previewState]);
+    }, [audio, editor, paused, playPlan, preview, previewState, soundRange]);
 
     /**
      * Edit-mode Play — the audition (#284).
@@ -847,14 +1018,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         audio.stopBuffer();
         return;
       }
-      if (!idleEditable || !audition) return;
-      // Pinned BEFORE the play, so the playhead is offset by the range that is
-      // actually sounding rather than by whatever the selection becomes next.
-      soundingOffsetRef.current = framesToMs(audition.range.start);
-      audio.playBuffer(
-        editor.working.subarray(audition.range.start, audition.range.end)
-      );
-    }, [audio, audition, editor.working, idleEditable]);
+      if (!idleEditable || !playPlan) return;
+      soundRange(playPlan.range.start, playPlan.range.end);
+    }, [audio, playPlan, idleEditable, soundRange]);
 
     // Enter edit mode from the record menu. Play is a record-only control, so any
     // live buffer playback is stopped first — else it would orphan itself with no
@@ -2330,7 +2496,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               <div className="recorder-stage flex-1">
                 <div
                   ref={stageRef}
-                  className="recorder-canvas"
+                  // `overflow-hidden`: while a buffer sounds the waveform is
+                  // drawn on a strip up to five stage widths wide and slid
+                  // under the centerline (#415), so the stage has to be the
+                  // window that clips it. A utility rather than a rule in
+                  // `3-components.css` because the cascade order makes
+                  // utilities win, and because nothing else needs to know.
+                  className="recorder-canvas overflow-hidden"
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
@@ -2361,76 +2533,117 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // of `hasAudio`, so it must be drawn here — with a working
                     // playhead — not left silently behind a frozen live ring. A
                     // live take-in-flight otherwise is NOT here anymore for either
-                    // a first take or an append (#283). The canvas's own #110/#316
-                    // centerline is drawn unconditionally whenever `view` is set,
-                    // so it covers the existing audio here (or the dotted
-                    // first-take rule when the tap failed) without a capturing
-                    // flag, not a blank stage (George R1/R2).
-                    <Waveform
-                      // The paused-take preview draws its own peaks over the whole
-                      // buffer (#101); everything else shows the working buffer's.
-                      // `recorded` is true whenever there is a waveform to mark —
-                      // stored audio, or a prepared preview of a first take. The
-                      // centerline itself is no longer suppressed for a sounding
-                      // buffer or a swapped view — the requirements owner reversed
-                      // both suppressions in #316 (2026-09-16); see
-                      // `recorder-stage.ts`'s module docblock for the superseded
-                      // George R2 / R4 P3 findings that used to justify hiding it.
-                      peaks={previewShown ? previewShown.peaks : editor.peaks}
-                      height={200}
-                      recorded={hasAudio || previewShown !== null}
-                      // The #358 display fit is suppressed only for a take with
-                      // nothing committed behind it — the paused first take
-                      // whose decoded preview replaces `LiveScope` above. A
-                      // punch-in (`hasAudio`) reaches THIS branch only via the
-                      // tap-failed fallback, an idle view, or its own Pause+Play
-                      // preview (below) — its live recording is on `LiveScope`
-                      // now (#283) — and in every one of those cases it draws
-                      // the STORED/merged clip fitted, since `working` does not
-                      // grow until the splice at close (George R2 P2). The rule
-                      // itself is pure and table-tested in
-                      // `lib/audio/display-gain.ts`, not spelled out here.
-                      //
-                      // `takeActive`, NOT `recording || paused` (George R3 #2 —
-                      // the re-run, a distinct finding from the fitFrom fix
-                      // above). `previewShown` and `LiveScope`'s mount window are
-                      // both gated on the WHOLE take-in-flight span — recording,
-                      // paused, `processing` (#59), and the `isClosing` F8
-                      // stop→decode→save wait, during which `stop()` has already
-                      // flipped `state` to idle. Gating this flag on
-                      // `recording || paused` alone let it go false the moment
-                      // Back was tapped on a paused first-take preview: the same
-                      // peaks stayed on stage (`previewShown` is still set) but
-                      // suddenly read as fitted, jumping the preview from thin to
-                      // full height under the Saving notice — the exact
-                      // quiet-mic-looks-healthy failure this flag exists to
-                      // prevent, on the one window it was built for.
-                      // `hasAudio` still gates the punch-in case unchanged: once
-                      // there is committed audio, `isFirstTakeInFlight` is false
-                      // regardless of `takeActive`, so George R2 P2 stands. An
-                      // append's own Pause+Play preview is deliberately included
-                      // in that "committed audio" case too (George R-resume round
-                      // 2): it draws FITTED to the committed clip's own gain via
-                      // `fitFrom` below, not absolute — the scale change from the
-                      // `LiveScope` it replaces is an intentional consequence of
-                      // an explicit Play tap (reviewing the take), not the
-                      // involuntary "did I lose it" edge this flag prevents.
-                      firstTakeInFlight={isFirstTakeInFlight(
-                        takeActive,
-                        hasAudio
-                      )}
-                      // Fit to the COMMITTED clip always, even on the punch-in
-                      // Pause+Play branch above where `peaks` switches to
-                      // `previewShown.peaks` (the merged buffer, insert
-                      // included). Without this the gain re-derives from
-                      // whatever the insert's level happens to be, and a louder
-                      // insert shrinks the stored speech that filled the lane a
-                      // moment earlier — then Resume, which clears the preview,
-                      // pops it back (George R3 P2). When there is no preview
-                      // this is the same array as `peaks`, so idle and a first
-                      // take are unaffected.
-                      fitFrom={editor.peaks}
-                      view={waveView}
+                    // a first take or an append (#283). The #110/#316 centerline
+                    // is the fixed overlay below, not a bar in this canvas
+                    // (#415), so it covers the existing audio here (or the
+                    // dotted first-take rule when the tap failed) without a
+                    // capturing flag, not a blank stage (George R1/R2).
+                    //
+                    // The scroller is what MOVES this canvas while a buffer
+                    // sounds: it is one strip, drawn once, translated per frame
+                    // under the fixed line (#415). Outside the scroll mode its
+                    // width factor is 1 and it holds no transform, so the
+                    // canvas sits exactly where it always did.
+                    <WaveformScroller
+                      active={scrolling}
+                      widthFactor={strip ? strip.widthFactor : 1}
+                      length={length}
+                      visibleSamples={win.visibleSamples}
+                      readPositionSample={readPlaybackSample}
+                      onPosition={notePlaybackSample}
+                    >
+                      <Waveform
+                        // The paused-take preview draws its own peaks over the whole
+                        // buffer (#101); everything else shows the working buffer's.
+                        // `recorded` is true whenever there is a waveform to mark —
+                        // stored audio, or a prepared preview of a first take. The
+                        // centerline itself is no longer suppressed for a sounding
+                        // buffer or a swapped view — the requirements owner reversed
+                        // both suppressions in #316 (2026-09-16); see
+                        // `recorder-stage.ts`'s module docblock for the superseded
+                        // George R2 / R4 P3 findings that used to justify hiding it.
+                        peaks={previewShown ? previewShown.peaks : editor.peaks}
+                        height={200}
+                        recorded={hasAudio || previewShown !== null}
+                        // The #358 display fit is suppressed only for a take with
+                        // nothing committed behind it — the paused first take
+                        // whose decoded preview replaces `LiveScope` above. A
+                        // punch-in (`hasAudio`) reaches THIS branch only via the
+                        // tap-failed fallback, an idle view, or its own Pause+Play
+                        // preview (below) — its live recording is on `LiveScope`
+                        // now (#283) — and in every one of those cases it draws
+                        // the STORED/merged clip fitted, since `working` does not
+                        // grow until the splice at close (George R2 P2). The rule
+                        // itself is pure and table-tested in
+                        // `lib/audio/display-gain.ts`, not spelled out here.
+                        //
+                        // `takeActive`, NOT `recording || paused` (George R3 #2 —
+                        // the re-run, a distinct finding from the fitFrom fix
+                        // above). `previewShown` and `LiveScope`'s mount window are
+                        // both gated on the WHOLE take-in-flight span — recording,
+                        // paused, `processing` (#59), and the `isClosing` F8
+                        // stop→decode→save wait, during which `stop()` has already
+                        // flipped `state` to idle. Gating this flag on
+                        // `recording || paused` alone let it go false the moment
+                        // Back was tapped on a paused first-take preview: the same
+                        // peaks stayed on stage (`previewShown` is still set) but
+                        // suddenly read as fitted, jumping the preview from thin to
+                        // full height under the Saving notice — the exact
+                        // quiet-mic-looks-healthy failure this flag exists to
+                        // prevent, on the one window it was built for.
+                        // `hasAudio` still gates the punch-in case unchanged: once
+                        // there is committed audio, `isFirstTakeInFlight` is false
+                        // regardless of `takeActive`, so George R2 P2 stands. An
+                        // append's own Pause+Play preview is deliberately included
+                        // in that "committed audio" case too (George R-resume round
+                        // 2): it draws FITTED to the committed clip's own gain via
+                        // `fitFrom` below, not absolute — the scale change from the
+                        // `LiveScope` it replaces is an intentional consequence of
+                        // an explicit Play tap (reviewing the take), not the
+                        // involuntary "did I lose it" edge this flag prevents.
+                        firstTakeInFlight={isFirstTakeInFlight(
+                          takeActive,
+                          hasAudio
+                        )}
+                        // Fit to the COMMITTED clip always, even on the punch-in
+                        // Pause+Play branch above where `peaks` switches to
+                        // `previewShown.peaks` (the merged buffer, insert
+                        // included). Without this the gain re-derives from
+                        // whatever the insert's level happens to be, and a louder
+                        // insert shrinks the stored speech that filled the lane a
+                        // moment earlier — then Resume, which clears the preview,
+                        // pops it back (George R3 P2). When there is no preview
+                        // this is the same array as `peaks`, so idle and a first
+                        // take are unaffected.
+                        fitFrom={editor.peaks}
+                        view={waveView}
+                      />
+                    </WaveformScroller>
+                  )}
+                  {!liveScope && (
+                    // The fixed centerline (#110/#316), a DOM element rather
+                    // than a bar in the canvas (#415). The canvas is what
+                    // MOVES during playback, so a painted line would travel
+                    // with it — exactly the thing this line is defined by not
+                    // doing ("the waveform pans under a FIXED centerline; the
+                    // line never travels"). Same shape as `PlayheadOverlay`:
+                    // absolute, 2px, `z-[1]` so it paints over the selection
+                    // band, `pointer-events-none` so it never takes the stage's
+                    // pan. `translateX(-1px)` centres it on the fraction, which
+                    // is what the canvas' `round(cf * w) - 1` did.
+                    //
+                    // Mounted on the `Waveform` path only — `LiveScope` draws
+                    // its own record head while capturing — so WHEN the line
+                    // shows is unchanged by this move: every record/edit state,
+                    // per #316.
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
+                      style={{
+                        left: `${CENTER_FRACTION * 100}%`,
+                        transform: "translateX(-1px)",
+                        background: "var(--s-live)",
+                      }}
                     />
                   )}
                   {/* The playback playhead, a pull-model DOM overlay (#102): it
@@ -2446,15 +2659,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     one exception to "off `waveView` ⇒ hide": an in-place
                     audition keeps the pan window, so a picked span wider than
                     it is real, still-sounding audio walking off-screen, not the
-                    blank head/tail the hide rule exists for (#284, George R7,
-                    `stage.inPlaceAudition`). */}
+                    blank head/tail the hide rule exists for (#284, George R7).
+
+                    `active` is OFF in the scroll mode (#415): there the red
+                    centerline IS the playhead and the waveform moves under it,
+                    so keeping this one up is the two-lines screenshot the issue
+                    was filed from. It stays up for the two states where the
+                    view does NOT follow the sound — a paused-take preview and
+                    an in-place audition — which are the only ones left where a
+                    travelling marker is the cue. */}
                   <PlayheadOverlay
                     readElapsedMs={readSoundingElapsed}
-                    active={audio.playingBuffer}
+                    active={audio.playingBuffer && !scrolling}
                     durationMs={drawnDurationMs}
                     startFraction={waveView.startFraction}
                     endFraction={waveView.endFraction}
-                    clampToEdge={stage.inPlaceAudition}
+                    clampToEdge={stage.render === "inPlace"}
                   />
                   {mode === "edit" &&
                     editor.selectionActive &&
@@ -2685,9 +2905,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     label={
                       audio.playingBuffer
                         ? strings.stopPlayback
-                        : audition?.source === "selection"
+                        : playPlan?.source === "selection"
                           ? strings.auditionSelection
-                          : audition?.source === "line"
+                          : playPlan?.source === "line"
                             ? strings.auditionFromLine
                             : strings.playRecording
                     }
@@ -2699,7 +2919,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // carries the close window, where the sheet is committing.
                     disabled={
                       !audio.playingBuffer &&
-                      (!idleEditable || audition === null)
+                      (!idleEditable || playPlan === null)
                     }
                     onClick={onAuditionButton}
                   />

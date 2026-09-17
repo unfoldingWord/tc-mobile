@@ -113,27 +113,14 @@ export function Waveform({
       styles.getPropertyValue("--s-voice").trim() ||
       "#e6a444";
     const faint = styles.getPropertyValue("--s-ink-faint").trim() || "#5f6b7a";
-    const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
     const mid = h / 2;
 
-    // The fixed centerline (recorder mode): drawn last so it sits over the
-    // audio, and in the record colour because it is where recording starts.
-    // ALWAYS drawn whenever a recorder `view` is present — every record/edit
-    // state, per the requirements owner's #316 answer (2026-09-16): "having
-    // the line always visible is important in segment record/edit mode".
-    // This reverses two decisions recorded here previously: an idle,
-    // never-recorded segment used to show no line (the requirements owner's
-    // own earlier build feedback, now read as miscommunication), and the line
-    // used to hide while a buffer sounded / the view swapped to the whole
-    // clip (George R2 / R4 P3 — see `recorder-stage.ts`'s module docblock for
-    // the retired `centerlineHidden` decision that used to gate this). A row
-    // never passes `view`, so this canvas still never draws the line outside
-    // the recorder.
-    const drawCenterline = () => {
-      if (!view) return;
-      ctx.fillStyle = live;
-      ctx.fillRect(Math.round(view.centerFraction * w) - 1, 0, 2, h);
-    };
+    // The centerline is NOT painted here (#415). It used to be, unconditionally
+    // whenever a recorder `view` was present (#316). But the recorder now
+    // translates this canvas under a line that must not move with it, so the
+    // line is a fixed element on the stage instead — see `recorder.tsx`'s
+    // centerline overlay, and `recorder-stage.ts` for the history. Nothing
+    // about WHEN it shows changed.
 
     if (!peaks || !recorded) {
       // Not "an empty waveform" — a distinct dotted rule, so an unrecorded
@@ -142,7 +129,6 @@ export function Waveform({
       ctx.globalAlpha = 0.55;
       for (let x = 0; x < w; x += 6) ctx.fillRect(x, mid - 1, 3, 2);
       ctx.globalAlpha = 1;
-      drawCenterline();
       return;
     }
 
@@ -169,11 +155,23 @@ export function Waveform({
     // docblock). Every other call site leaves this undefined and fits the
     // buffer it draws, same as before.
     const gain = displayGain(fitFrom ?? peaks, firstTakeInFlight);
-    ctx.fillStyle = stroke;
     if (view) {
+      // The amplitude axis, faint, across the whole drawn width and UNDER the
+      // bars (#415: "left of the centerline there is no audio yet, so show only
+      // a grayed-out horizontal line... at the end... the same grayed-out
+      // horizontal line running to the right edge"). Where there IS audio the
+      // bars cover it — a silent stretch draws a 1.5px bar of its own — so what
+      // this actually renders is the blank head and tail the window (or, during
+      // playback, the strip) overhangs the clip by. Recorder only: a row draws
+      // no `view` and is unchanged.
+      ctx.fillStyle = faint;
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(0, mid - 1, w, 2);
+      ctx.globalAlpha = 1;
       // A bucket's fraction of the clip maps to a screen x by where the visible
       // window falls; a bucket outside the window is simply skipped. The span
       // is never zero (zoom ≥ 1, length ≥ 1), so no divide-by-zero guard.
+      ctx.fillStyle = stroke;
       const span = view.endFraction - view.startFraction;
       const barW = Math.max(1, w / buckets / span - 1);
       for (let i = 0; i < buckets; i++) {
@@ -186,12 +184,13 @@ export function Waveform({
         const bottom = mid - clampUnit((peaks.min[i] ?? 0) * gain) * mid;
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       }
-      drawCenterline();
-      // The playback playhead is a DOM overlay now (`PlayheadOverlay`, #102), not
-      // a bar here — so this draw effect no longer re-runs per position tick.
+      // Neither the playhead (`PlayheadOverlay`, #102) nor the centerline
+      // (#415) is a bar here — both are DOM elements over this canvas — so this
+      // draw effect re-runs on peaks/window changes only, never per frame.
       return;
     }
 
+    ctx.fillStyle = stroke;
     const barW = Math.max(1, w / buckets - 1);
     for (let i = 0; i < buckets; i++) {
       const x = (i / buckets) * w;

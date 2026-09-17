@@ -104,9 +104,10 @@ export function liveScopeShown(s: StageState): boolean {
 /**
  * The recorder stage's view-coupled decisions, in one place (#284).
  *
- * The waveform is drawn one of two ways — through the pan/zoom window, or as
+ * The waveform is drawn one of FOUR ways — through the pan/zoom window, as a
+ * strip scrolling under the centerline, in place under a travelling line, or as
  * the whole clip — and half a dozen controls and overlays are only correct
- * under one of them. Review rounds kept finding the same defect wearing a new
+ * under some of them. Review rounds kept finding the same defect wearing a new
  * hat: the paste marker pinned at 50% of the stage while the canvas drew clip
  * fractions 0..1 and pasted at the end instead (R3); zoom rebuilding the window
  * under a travelling playhead (R3); Select seeding a span around a centerline
@@ -117,14 +118,15 @@ export function liveScopeShown(s: StageState): boolean {
  * George). Repetition is a class, and the class-level answer is to derive the
  * question once rather than gate each consumer by hand.
  *
- * A fourth decision, `centerlineHidden`, lived here from R2 (whole-clip
- * playback) through R4 P3 (in-place audition) until #316 (requirements
- * owner, 2026-09-16: "having the line always visible is important in
- * segment record/edit mode") retired it — the line is never suppressed, in
- * any state, so there is no longer a decision to derive. `Waveform` draws it
- * unconditionally whenever a recorder `view` is present; see its
- * `drawCenterline` for the current (unconditional) rule and this module's
- * git history for the retired one.
+ * A decision that used to live here, `centerlineHidden`, ran from R2
+ * (whole-clip playback) through R4 P3 (in-place audition) until #316
+ * (requirements owner, 2026-09-16: "having the line always visible is important
+ * in segment record/edit mode") retired it — the line is never suppressed, in
+ * any state, so there is no longer a decision to derive. Since #415 the line is
+ * not painted into the canvas at all: a strip that translates would carry a
+ * painted line with it, so it is a fixed element on the stage
+ * (`recorder.tsx`'s centerline overlay), mounted wherever the `Waveform` path
+ * is on stage. `LiveScope` still draws its own record head during capture.
  *
  * Pure and DOM-free so the truth table is a test rather than a phone.
  */
@@ -139,25 +141,40 @@ interface StageInput {
   readonly previewShown: boolean;
 }
 
+/**
+ * The four ways the recorder stage can be drawn.
+ *
+ * ONE value rather than a bag of booleans (#415): the three questions the
+ * stage used to answer separately — "whole clip?", "in place?", and now "does
+ * the waveform scroll?" — are answers to the same question, and a bag can
+ * disagree with itself in a way an enum cannot.
+ *
+ * - **`static`** — nothing is sounding: the pan/zoom window, as panned.
+ * - **`scroll`** — a sounding buffer that is the working buffer sounded from
+ *   the centerline (record-mode Play, and edit-mode Play with no span picked).
+ *   The clip is drawn on a strip at the current zoom and translated so that the
+ *   sounding sample stays under the fixed red line — #415's model, and #417's
+ *   "Play works at whatever zoom is current".
+ * - **`inPlace`** — an audition of a PICKED span (#284). The window stays put,
+ *   because the band and its handles are positioned through it and hearing
+ *   exactly the span they mark is the point; the travelling overlay is the cue,
+ *   clamped at the window's edges rather than hidden.
+ * - **`whole`** — a paused-take preview (#101), which paints its own peaks for
+ *   a DIFFERENT buffer (the merged take) across clip fractions 0..1. No pan
+ *   into `working` means anything there, so it can be neither scrolled nor
+ *   in-place.
+ */
+type StageRender = "static" | "scroll" | "inPlace" | "whole";
+
 interface StageView {
-  /**
-   * Draw clip fractions 0..1 rather than the pan/zoom window.
-   *
-   * True for a preview and for any sounding buffer EXCEPT an audition of a
-   * picked span: that one plays in place, because the band is positioned
-   * through the pan window and hearing exactly the span it marks is the point.
-   * Everything else swaps, so the playhead cannot travel off-screen through a
-   * window the listener is not following.
-   */
-  readonly wholeView: boolean;
+  /** How the stage is drawn — see {@link StageRender}. */
+  readonly render: StageRender;
   /**
    * Every control that READS OR MOVES the pan/zoom window is inert.
    *
    * The enumeration, so the next reader sees the class rather than a scatter of
    * guards. IN — each is wrong while a buffer sounds:
    *
-   * - **the stage pan** (`onPointerDown`/`onPointerMove`): moves the window,
-   *   and under a swapped view moves a record offset that is not on screen;
    * - **Zoom**: rebuilds the window around the centerline under a line that is
    *   already travelling, and does nothing visible at all while swapped;
    * - **the paste marker**: pinned at the centerline's screen position but
@@ -173,6 +190,18 @@ interface StageView {
    *
    * OUT, deliberately — each stays live, and why:
    *
+   * - **the stage pan** (`onPointerDown`/`onPointerMove`): the oldest member of
+   *   this class until the requirements owner reversed it for this one gesture
+   *   (#317, 2026-09-16): "the moment the finger touches the waveform, playback
+   *   PAUSES; the waveform follows the finger; when the finger lifts, playback
+   *   resumes from the sample under the centerline. Playback never runs while
+   *   the finger is down." That supersedes D4 ("playback is listen-only — no
+   *   scrub in v1") for the gesture and nothing else. What made the pan wrong
+   *   here was moving a window while a line travelled across it; pausing first
+   *   removes that, so the guard is now the pan's own (`recorder.tsx`) and
+   *   reads the render mode: a drag takes over a `scroll` playback, and is
+   *   still refused under `whole` and `inPlace`, where the view is deliberately
+   *   pinned to what is being heard;
    * - **Play/stop itself**: the way out of this state, and the only control
    *   that must never be inert while sounding;
    * - **Cut**: acts on the visible band, never on the window. It is enabled
@@ -189,38 +218,112 @@ interface StageView {
    * - **Back, the ≡ menu, the Editing pill**: they leave or suspend this state
    *   rather than acting inside it, and each stops playback on the way.
    *
-   * Mode-independent on purpose: it is the same condition the stage pan has
-   * always used, which is why the pan is the one control in the class that
-   * never had this bug.
+   * Mode-independent on purpose: it is the same condition it has always been.
    */
   readonly windowControlsInert: boolean;
-  /**
-   * A picked-span audition sounding WITHOUT a view swap — `playingBuffer` true,
-   * `wholeView` false. The window still matches what is drawn, so a playhead
-   * that maps outside it (the picked span is wider than the pan/zoom window)
-   * is real audio that is merely off-screen, not the blank head/tail the
-   * overlay's hide rule was written for.
-   *
-   * Before this PR, `playingBuffer` implied `wholeView` unconditionally (every
-   * sounding buffer swapped to the whole clip), so that hide rule's `px < 0 ||
-   * px > 1` branch was unreachable — dead code guarding a case nothing could
-   * produce. An in-place audition (#284) is the first real path to it: select
-   * a span wider than the current zoom, audition it, and the moving cue this
-   * whole feature exists to add vanishes the moment it crosses the window edge
-   * (George R7). The overlay uses this flag to CLAMP to the edge instead of
-   * hiding — the audio is still there, still sounding, just off the visible
-   * strip — while every other `wholeView` case (a preview, a record-mode play,
-   * a no-selection audition) keeps the original hide.
-   */
-  readonly inPlaceAudition: boolean;
+}
+
+/**
+ * How the stage is drawn, and what that makes inert.
+ *
+ * The order of the branches is the whole decision. A preview outranks
+ * everything (it is a different buffer); a picked span outranks the scroll (its
+ * band must not slide out from under the audio it marks); every other sounding
+ * buffer scrolls under the centerline.
+ */
+/** What a finger landing on the waveform does. */
+type PanGesture =
+  /** Not a pan: the stage does not move and playback is untouched. */
+  | "ignore"
+  /** An ordinary pan, from the drawn pan. */
+  | "pan"
+  /** A pan that must PAUSE playback first, and resume it on lift (#317). */
+  | "interrupt";
+
+interface PanGestureInput {
+  /** `length > 0` — there is a waveform to slide (F11). */
+  readonly hasAudio: boolean;
+  readonly recording: boolean;
+  /** A paused TAKE — the microphone, not paused playback. */
+  readonly paused: boolean;
+  /** `requesting` or `processing`. */
+  readonly busy: boolean;
+  /** A buffer is sounding right now. */
+  readonly playingBuffer: boolean;
+  /** How the stage is drawn — see {@link StageRender}. */
+  readonly render: StageRender;
+}
+
+/**
+ * Whether a finger landing on the waveform pans, and what it owes playback
+ * (#317).
+ *
+ * The requirements owner (2026-09-16): "dragging while playing is fine. The
+ * moment the finger touches the waveform, playback PAUSES; the waveform follows
+ * the finger; when the finger lifts, playback RESUMES from the sample under the
+ * centerline. Playback never runs while the finger is down." That reverses D4
+ * ("playback is listen-only — no scrub in v1") for this gesture and nothing
+ * else, which is why the answer is three-valued rather than a boolean: a drag
+ * that takes over a sounding buffer is a different act from one that starts at
+ * idle, and the component has to know which it is holding.
+ *
+ * The order is load-bearing. The take terms come FIRST: a live or paused mic
+ * has locked its insertion offset at the Record tap (#61, F9), and sliding the
+ * line out from under it is the defect those guards exist for — stopping a
+ * sound would not make that safe. Only then does the sounding buffer decide,
+ * and only the scroll mode yields:
+ *
+ * - **`whole`** is a paused-take preview: a DIFFERENT buffer (#101), whose
+ *   samples have no relationship to the pan the drag would move;
+ * - **`inPlace`** is an audition of a picked span (#284): the band and its two
+ *   handles are positioned through the pan window, so panning would slide them
+ *   off the audio they mark while that audio sounds.
+ *
+ * `playingBuffer` is asked separately from `render` on purpose, and is not
+ * redundant with it: `previewShown` outlives the sound (the preview stays on
+ * stage through `busy` and the close window), so `"whole"` with nothing
+ * sounding is an ordinary pan — as it was before #317 — while `"whole"` with a
+ * buffer sounding is refused.
+ */
+export function panGesture(input: PanGestureInput): PanGesture {
+  if (!input.hasAudio || input.recording || input.paused || input.busy)
+    return "ignore";
+  if (!input.playingBuffer) return "pan";
+  return input.render === "scroll" ? "interrupt" : "ignore";
+}
+
+/**
+ * Whether lifting the finger resumes playback (#317).
+ *
+ * Only a gesture that PAUSED playback resumes it — a pan begun at idle has
+ * nothing to resume, and starting a sound on a lift the translator never
+ * associated with one would be the app speaking unasked.
+ *
+ * With the line dragged to the very end (or past it, which a pan left over from
+ * before a cut can be) there is nothing left to sound, so it stays parked
+ * there: that is the position Record and Paste act on, which is the whole point
+ * of the gesture. This deliberately does NOT reuse `auditionPlan`'s
+ * rest-position fallback — at the end, "from the line" sounds the WHOLE buffer,
+ * which reads correctly for a fresh Play ("play the segment") and wrong for a
+ * resume, where dragging to the end would restart from the beginning. Called
+ * out as an inference on #317 rather than left implicit.
+ */
+export function resumesOnLift(
+  interrupted: boolean,
+  pan: number,
+  length: number
+): boolean {
+  return interrupted && pan < length;
 }
 
 export function stageView(input: StageInput): StageView {
   const inPlace = input.mode === "edit" && input.selectionActive;
-  const wholeView = input.previewShown || (input.playingBuffer && !inPlace);
-  return {
-    wholeView,
-    windowControlsInert: input.playingBuffer,
-    inPlaceAudition: input.playingBuffer && !wholeView,
-  };
+  const render: StageRender = input.previewShown
+    ? "whole"
+    : !input.playingBuffer
+      ? "static"
+      : inPlace
+        ? "inPlace"
+        : "scroll";
+  return { render, windowControlsInert: input.playingBuffer };
 }

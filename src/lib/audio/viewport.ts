@@ -321,6 +321,96 @@ export function captureWindow(headFraction: number): WaveformWindow {
 }
 
 /**
+ * The strip the waveform is drawn on while a buffer sounds (#415/#417).
+ *
+ * Playback does not move a line across a still waveform; it moves the WAVEFORM
+ * under a line that never leaves the centre (#415, the requirements owner:
+ * "there is ONE playhead: the red line, always at the horizontal center").
+ * Sliding a pan/zoom window one sample at a time would mean a new `view` — and
+ * so a full canvas repaint plus a React render — every frame, which is #102's
+ * finding at 60 Hz. So the clip is drawn ONCE, on a strip wider than the stage,
+ * and the frame loop moves that strip with a single transform
+ * ({@link playbackStripOffset}).
+ *
+ * The strip is the clip plus exactly ONE viewport of blank, split at the
+ * centerline: `centerFraction` of a viewport ahead of the first sample, the rest
+ * past the last. That is the blank #415 describes at both ends ("left of the
+ * centerline there is no audio yet... at the end... the same grayed-out
+ * horizontal line running to the right edge"), and it is the least padding that
+ * lets both extremes of the position — 0 and `length` — sit under the line with
+ * no gap at the stage edge.
+ */
+export interface PlaybackStrip {
+  /** Clip fraction at the strip's left edge (always < 0 — the blank head). */
+  readonly startFraction: number;
+  /** Clip fraction at the strip's right edge (always > 1 — the blank tail). */
+  readonly endFraction: number;
+  /**
+   * The strip's width as a multiple of the STAGE width: `(length + visible) /
+   * visible`, i.e. `zoom + 1`. The component sets `width: widthFactor * 100%`,
+   * so the strip needs no pixel measurement and survives a rotation.
+   */
+  readonly widthFactor: number;
+}
+
+/**
+ * The strip to draw for a playback at this zoom. See {@link PlaybackStrip}.
+ *
+ * `visibleSamples` is what the STAGE spans at the current zoom (`length /
+ * zoom`) — the same quantity {@link viewportWindow} computes, passed in rather
+ * than recomputed so the scrolling view and the static one cannot drift to
+ * different scales. Bar width works out identical to the static window's at the
+ * same zoom, which is why starting playback does not rescale the waveform.
+ *
+ * `length > 0` is the precondition, as it is for `viewportWindow`: there is no
+ * playback without audio, and the recorder never mounts the strip without it.
+ */
+export function playbackStrip(
+  length: number,
+  visibleSamples: number,
+  centerFraction: number
+): PlaybackStrip {
+  const start = -centerFraction * visibleSamples;
+  const end = length + (1 - centerFraction) * visibleSamples;
+  return {
+    startFraction: start / length,
+    endFraction: end / length,
+    widthFactor: (length + visibleSamples) / visibleSamples,
+  };
+}
+
+/**
+ * Where to put the strip so that `position` sits under the centerline, as a
+ * fraction of the STRIP's own width (what a percentage `translateX` resolves
+ * against). Runs from 0 at the clip's first sample to `-length / (length +
+ * visibleSamples)` at its last.
+ *
+ * **`centerFraction` is deliberately absent, and that is not an omission.** The
+ * strip already carries the line's position in its blank head (`-c * visible`
+ * of it), so aligning the strip's left edge with the stage's left edge is
+ * exactly what puts sample 0 under the line. What is left to do per frame is
+ * only "how far has the clip travelled", which is the position over the strip's
+ * span. The two must be built from the same `centerFraction` for that to hold —
+ * they are, at the one call site — and `tests/audio-viewport.test.ts` asserts
+ * the composition rather than either half.
+ *
+ * The clamp is the REQUIREMENT, not a defensive guard (#416: "The playhead must
+ * not scroll past the end of the recorded waveform. The end sample is the
+ * clamp... Symmetrically, it cannot scroll before the first sample."). A
+ * sounding position cannot exceed the buffer today — `PlaybackHandle.elapsed`
+ * clamps to the clip duration — but the same offset places a FROZEN position on
+ * pause and a dragged one on lift (#317), and those have no such promise.
+ */
+export function playbackStripOffset(
+  position: number,
+  length: number,
+  visibleSamples: number
+): number {
+  const clamped = Math.max(0, Math.min(position, length));
+  return -clamped / (length + visibleSamples);
+}
+
+/**
  * Map a playback position — a fraction `[0,1]` of the WHOLE clip — to its x as a
  * fraction of the current viewport width, given the window's clip-fraction edges
  * (`startFraction`/`endFraction`, the same `view` the bars are drawn through).
