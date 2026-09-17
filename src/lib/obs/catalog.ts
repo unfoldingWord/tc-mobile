@@ -9,6 +9,7 @@
  * chunk is precached nowhere (ADR 0006, 2026-09-04 amendment).
  */
 
+import type { Template } from "@/lib/storage/templates";
 import type { ObsCatalog, ObsStory } from "@/types/obs";
 
 let cached: ObsCatalog | null = null;
@@ -19,10 +20,11 @@ async function loadCatalog(): Promise<ObsCatalog> {
 }
 
 /**
- * @pivotpending No caller yet. The app no longer boots from OBS (G2: the empty
- * Books screen). B7's Template Library (#33) reads a chosen story to seed a
- * book's segments, which is this seam's next reader. Tagged rather than left to
- * the test-only knip blind spot the OBS tests would otherwise hide it behind.
+ * @pivotpending No caller yet. #253's `obsTemplate` (below) only needs each
+ * story's frame COUNT to build a chapter's segments, which `listStories`
+ * already gives it — so this stays unwired until something needs a frame's
+ * `image`/`text` (the Recorder view showing OBS artwork while recording an
+ * OBS-derived segment), which is #246's UI half, not this storage lane's.
  */
 export async function getStory(n: number): Promise<ObsStory | undefined> {
   const catalog = await loadCatalog();
@@ -30,9 +32,8 @@ export async function getStory(n: number): Promise<ObsStory | undefined> {
 }
 
 /**
- * @pivotpending No caller yet. Listing the available stories is the core read
- * of B7's Template Library (#33), where this module becomes a template
- * provider rather than the hard-wired OBS path it is today.
+ * The available stories, cheap to list (no frame text/artwork). The
+ * Template Library picker's read (#246); also what `obsTemplate` maps over.
  */
 export async function listStories(): Promise<
   readonly { story: number; title: string; frameCount: number }[]
@@ -43,6 +44,53 @@ export async function listStories(): Promise<
     title: s.title,
     frameCount: s.frames.length,
   }));
+}
+
+/**
+ * The "Open Bible Stories" template: one Book, one Chapter per story, one
+ * Segment per frame — referenced via `obsFrameScope` so an OBS-derived book
+ * addresses its content the same way the catalogue itself does. Structure
+ * *and* content (Q2's other half of the union): the reference is real data
+ * the catalogue supplies, not a placeholder the translator fills in.
+ *
+ * Async because the catalogue is a dynamic `import()` (see module header);
+ * the returned `Template`'s `chapters()` is itself synchronous — the
+ * catalogue is fully resolved before this returns, per the `Template`
+ * contract (`lib/storage/templates.ts`).
+ *
+ * `catalogVersion` stamps `catalog.generatedFrom` (the vendored snapshot's
+ * source ref, e.g. "en_obs master") onto `Book.provenance` — the CC BY-SA
+ * attribution trail ADR 0006 requires (#15), and the reason `createBookFromTemplate`
+ * counts a repeated import against `source` rather than the title string: two
+ * catalogue versions imported later would be distinguishable provenance, not
+ * a naming collision.
+ *
+ * @pivotpending No caller yet — #246 (Template Library UI) is the picker
+ * that calls this and hands the result to `createBookFromTemplate`. This
+ * lane (#253, part of #33) builds only the storage/lib half.
+ */
+export async function obsTemplate(): Promise<Template> {
+  const catalog = await loadCatalog();
+  // Sequential, not `Promise.all`: `loadCatalog` above has already resolved
+  // and cached the module by the time this runs, so `listStories`'s own
+  // `loadCatalog` call returns the cached value immediately rather than
+  // racing a second dynamic `import()` of the same chunk.
+  const stories = await listStories();
+  return {
+    id: "obs",
+    title: "Open Bible Stories",
+    source: { kind: "obs", catalogVersion: catalog.generatedFrom },
+    chapters: () =>
+      stories.map((story) => ({
+        number: story.story,
+        segments: Array.from({ length: story.frameCount }, (_, i) => ({
+          reference: {
+            book: OBS_BOOK_CODE,
+            scope: obsFrameScope(story.story, i + 1),
+          },
+        })),
+      })),
+  };
 }
 
 /**

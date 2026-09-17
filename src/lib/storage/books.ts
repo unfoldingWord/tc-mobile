@@ -150,6 +150,7 @@ export async function createBook(
     id: uuid() as BookId,
     name: resolvedName,
     languageCode,
+    provenance: null,
     chapterIds: [],
     createdAt: now,
     updatedAt: now,

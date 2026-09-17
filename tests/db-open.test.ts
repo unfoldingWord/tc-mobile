@@ -17,7 +17,7 @@ import {
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,
@@ -104,9 +104,10 @@ function openNewerCopy(): {
 
 /**
  * Stand up the real v3 pivot schema and KEEP the connection open, so the app's
- * open is blocked by it. It must be the real v3 shape (not an empty DB): once
- * this connection closes, the app's blocked open proceeds and runs the genuine
- * v3→v4→v5 backfills, which read the `clipMeta` and `chapters` stores v3 created.
+ * open (at `APP_VERSION`) is blocked by it. It must be the real v3 shape (not
+ * an empty DB): once this connection closes, the app's blocked open proceeds
+ * and runs the genuine v3→v4→v5→v6 backfills in sequence, which read the
+ * `clipMeta`, `chapters` and `books` stores v3 created.
  */
 function openLegacyV3Open(): Promise<IDBPDatabase> {
   return openDB(DB_NAME, 3, {
@@ -252,9 +253,10 @@ describe("getDb — blocked open (an older connection elsewhere)", () => {
 
 describe("getDb — version downgrade (stored data is newer than this build)", () => {
   it("rejects with a downgrade error rather than an opaque VersionError", async () => {
-    // A newer build already wrote v5 on this device; this (older) build asks for
-    // v4. IndexedDB refuses with a VersionError — deleting to 'fix' it would
-    // destroy the newer build's recordings, so the open must fail deliberately.
+    // A newer build already wrote a version above this one on this device;
+    // this (older) build asks for `APP_VERSION`. IndexedDB refuses with a
+    // VersionError — deleting to 'fix' it would destroy the newer build's
+    // recordings, so the open must fail deliberately.
     const newer = await openNewerThanApp();
     newer.close();
 

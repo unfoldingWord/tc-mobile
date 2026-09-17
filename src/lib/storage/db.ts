@@ -46,6 +46,28 @@
  * step stamps `name: null` on every pre-existing chapter row, so a reader never
  * meets `undefined` and the display fallback keys on one shape. Additive, like
  * v4: no store dropped, no other field touched.
+ *
+ * ── v6 (#253): Book.provenance — additive backfill ──
+ *
+ * `Book` gained `provenance` (`BookProvenance | null`, `src/types/domain.ts`),
+ * stamped by the new `createBookFromTemplate` (`lib/storage/templates.ts`).
+ * Every pre-existing `books` row is backfilled `provenance: null` — "no
+ * template behind this book", the honest reading for anything created before
+ * this field existed. No store is dropped, no other field touched.
+ *
+ * This was originally drafted as v5 (#253), but #264 (chapter names) landed
+ * on `develop` first and claimed v5 for itself. Rebased here to v6 rather
+ * than collapsing the two into one step — each additive slice stays owned by
+ * the issue that needed it, and `oldVersion < 6` simply runs after the v5
+ * step above.
+ *
+ * This is also a deliberately smaller slice than #174's planned migration
+ * (which also covers a `pendingTakes` store and `updatedAt`/`deletedAt` on
+ * every entity store): #174 had not landed when #253 needed this field, and
+ * blocking #253 on it would trade the Template Library for a schema that was
+ * still being planned. #174's remaining pieces land as their own additive
+ * bump later — append-only discipline does not care how many small steps get
+ * there, only that none of them destroy a v3+ device's data.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -64,7 +86,7 @@ import type {
 import type { ClipMeta } from "@/types/audio";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -76,6 +98,12 @@ type ClipMetaV3 = Pick<
   "id" | "sampleRate" | "frameCount" | "durationMs" | "createdAt"
 > &
   Partial<ClipMeta>;
+
+/**
+ * The pre-v6 shape of a `books` row, before `provenance` existed. Only the v6
+ * backfill reads it; the typed store below already speaks the v6 shape.
+ */
+type BookV4 = Omit<Book, "provenance"> & Partial<Pick<Book, "provenance">>;
 
 export interface TcMobileDb extends DBSchema {
   books: { key: BookId; value: Book };
@@ -441,6 +469,23 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             const legacy = cursor.value as Chapter & { name?: string | null };
             if (legacy.name === undefined) {
               await cursor.update({ ...legacy, name: null });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v6 (#253): stamp every pre-existing book as having no template
+        // behind it. Additive — the row and everything it points at (chapters,
+        // segments, takes, audio) are kept untouched; only the new field is
+        // added. On a fresh install, or straight after the v3 recreate, the
+        // store is empty and this loops zero times.
+        if (oldVersion < 6) {
+          const store = tx.objectStore("books");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as BookV4;
+            if (legacy.provenance === undefined) {
+              await cursor.update({ ...legacy, provenance: null });
             }
             cursor = await cursor.continue();
           }
