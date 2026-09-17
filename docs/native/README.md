@@ -135,7 +135,10 @@ the JS toolchain never formats or lints generated native files. **No root
 Generated project facts (evidence, from the scaffolded projects):
 
 - **Android:** `minSdk 24`, `compile/targetSdk 36`, Gradle `8.14.3`,
-  `applicationId org.unfoldingword.tcmobile`, `versionCode 1`, `versionName "1.0"`.
+  `applicationId org.unfoldingword.tcmobile`, `versionCode 1` (default; a
+  build passes `-PversionCode`), `versionName` read from `package.json`'s
+  `version` at build time (`0.2.3` as of this writing — was the Capacitor
+  template default `"1.0"` until #410).
 - **iOS:** deployment target `15.0`, bundle id `org.unfoldingword.tcmobile`,
   `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
@@ -548,18 +551,37 @@ The lane has not been dispatched yet; the first run is the end-to-end proof.
 ## 6. Versioning
 
 `package.json` `version` is the **web/PWA** build number and moves only in the
-`chore(release)` promotion PR (AGENTS.md → _Versions and milestones_). The
-native builds carry their **own** version fields:
+`chore(release)` promotion PR (AGENTS.md → _Versions and milestones_). The two
+native platforms **diverge on whether their user-facing version field tracks
+it**: iOS's stays independent by design; Android's does not (#410). Each
+platform's separate build-number field (`versionCode` / `CURRENT_PROJECT_VERSION`)
+stays native/CI-owned either way — a unix timestamp stamped at build or upload
+time, never read from `package.json`.
 
-- **iOS:** `MARKETING_VERSION` (user-facing) + `CURRENT_PROJECT_VERSION`
+- **iOS:** `MARKETING_VERSION` (user-facing) is **independent** of
+  `package.json` by design — still `1.0` — + `CURRENT_PROJECT_VERSION`
   (build, must increase every upload — and the CI lane uploads unix-timestamp
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).
-- **Android:** `versionName` (user-facing) + `versionCode` (integer, must
-  increase every install). The CI lane (§5a) stamps `versionCode` with a unix
-  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` must
-  pass the same, because the committed default is `1`, and once any CI APK is
-  on a phone a `1` is a downgrade that Android refuses (§5 step 3).
+- **Android:** `versionName` (user-facing) is sourced from `package.json`'s
+  `version` at Gradle configuration time (#410) — **not** independent the way
+  iOS's `MARKETING_VERSION` is, so it moves with every PWA version bump, with
+  no separate `-PversionName` property to remember or pass in CI — +
+  `versionCode` (integer, must increase every install). The CI lane (§5a)
+  stamps `versionCode` with a unix timestamp via `-PversionCode=$(date +%s)`;
+  a manual `assembleRelease` must pass the same, because the committed
+  default is `1`, and once any CI APK is on a phone a `1` is a downgrade that
+  Android refuses (§5 step 3).
+
+  Settings → Apps on the phone now shows the same version number as the `v…`
+  half of the in-app build stamp (`src/components/build-stamp.tsx`), instead
+  of a permanent `"1.0"`. That is **not** the same thing the facilitator
+  runbook asks testers to report: `docs/training/facilitator-runbook.md` §5
+  asks for the full build stamp — version **and** build SHA — because
+  Settings alone cannot distinguish two builds that share a `package.json`
+  version (for example, two CI dispatches of the same `staging` ref, or an
+  `allow_any_ref` build off `develop`). Point testers at the stamp; Settings
+  is a fallback only when the app will not open at all.
 
 ---
 
