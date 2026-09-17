@@ -70,6 +70,8 @@ npm run format         # prettier --write
 npm run verify         # everything above, in one command
 npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
+npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
+npm run check:deploy:prod # confirm a staging -> main deploy; requires the production origin explicitly
 ```
 
 ## Architecture — onion layers
@@ -349,6 +351,128 @@ the Android lane signs with its own keystore secrets — neither is Cloudflare's
 Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
 native lanes, `ios-testflight.yml` and `android-apk.yml`.
 
+### Confirming a deploy and rolling one back
+
+A merged promotion PR is not a deployed build (#143 was exactly that: green on
+GitHub, never deployed). This is the machine-checkable version signal and the
+runbook for undoing a bad one.
+
+**The version signal.** Every build emits `dist/version.json` (a small Vite
+plugin in `vite.config.ts`, `generateBundle`, reusing the same `pkg.version`
+and `buildSha` the footer build stamp uses) —
+`{ "version": "0.1.x", "sha": "<short sha>", "builtAt": "<ISO timestamp>" }`.
+It is deliberately not a build asset the PWA precaches (`.json` is outside
+`workbox.globPatterns` in `vite.config.ts`), so fetching it always reaches the
+origin, never a cached copy. `navigateFallbackDenylist` in the same Workbox
+config (round-3 George #2) keeps that true for a browser _navigation_ to
+`/version.json` too, not just `check:deploy`'s script-side fetch — without it,
+Workbox's SPA-shell fallback would intercept a navigation there on an
+installed PWA even though `.json` was never precached.
+
+Each promotion type has its own explicit command — **the two are not
+interchangeable**, and the production one is deliberately not just "the same
+command with a different URL pasted in" (round-1 George G2: a bare
+`check:deploy` run from a checkout still pointed at staging silently PASSed
+for what should have been checking production, because the default origin is
+always staging and nothing forced a promoter to say otherwise):
+
+```bash
+# develop -> staging: bare command, defaults to the staging Worker.
+npm run check:deploy                        # expected sha from origin/staging
+node scripts/check-deploy.mjs <origin> --sha=<short-sha> --version=<x.y.z>
+
+# staging -> main (production, the highest-stakes gate in the repo):
+# --require-origin makes the script itself refuse to run without an explicit
+# origin, so this can never silently fall back to checking staging instead.
+npm run check:deploy:prod                   # expected sha from origin/main
+node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> --version=<x.y.z>
+```
+
+**Which sha is compared, and how the check keeps it fresh itself.** Cloudflare
+Workers Builds deploys the promoted branch's tip — for this repo's merge-PR
+promotion flow, that tip is a **merge commit**, not the feature/develop
+branch tip a promoter's local checkout usually has `HEAD` on (round-3
+George #1: `docs/progress_tracker.md:102,118` recorded the v0.1.12
+`develop -> staging` promotion (#202) as merge commit `afdfa6e`, not
+develop's pre-merge tip `7152289`). So the bare commands above do **not**
+compare against local `HEAD` by default: for the staging and production
+default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
+(`scripts/check-deploy.mjs`) read the corresponding **remote-tracking ref**
+instead — `origin/staging` for `check:deploy`, `origin/main` for
+`check:deploy:prod`. Falling back to local `HEAD`/this checkout's
+`package.json` (and printing why) only ever happens for an origin that
+**isn't** one of these two known defaults (a hand-typed preview-Worker
+URL) — there is no promoted branch to be stale there. For a known origin,
+see the fail-closed behavior below: nothing falls back.
+
+Earlier drafts of this section said to run `git fetch origin` yourself
+before either bare command — a **documented** prerequisite the gate itself
+did nothing to enforce, and a promoter who forgot it (merging the promotion
+PR on GitHub without ever fetching locally) on a checkout where Cloudflare
+_also_ failed to deploy got a **false PASS**: the stale local ref and the
+also-stale deployed build happened to agree, and neither reflected the new
+promotion (the exact #143 failure mode this check exists to catch — found
+in this PR's takeover round of dual review, Frank P1). The check now runs
+that fetch itself, scoped to the one branch it's about to read
+(`git fetch origin staging` / `git fetch origin main`, with an explicit
+destination refspec so it updates the remote-tracking ref even on a
+`--single-branch` clone), before resolving either half — and **fails
+closed** if the fetch itself fails, if the ref still can't be resolved
+after a successful fetch, or if the ref's `package.json` can't be read,
+rather than silently falling back to whatever the local ref or working
+tree already had. The fetch is skipped only when **both**
+`--sha=<short-sha>` and `--version=<x.y.z>` are given explicitly — there is
+then nothing left to resolve from the ref. Giving only one of the two still
+triggers the fetch, to resolve the other half.
+
+**The fetch also refuses to trust a non-canonical `origin`** (round-2
+George P2). A fork's `origin` copies `staging`/`main` at fork time, and an
+unrepointed pre-transfer clone's `origin` may not track this repo at all
+(see "The transfer broke Cloudflare Workers Builds" below) — either way,
+the fetch above would otherwise succeed against that stale branch and let
+a stale deployed build coincidentally match it, the exact #143 false PASS
+this check exists to close, just moved one level up the trust chain.
+Before fetching, the check runs `git remote get-url origin` and fails
+closed unless it resolves to `https://github.com/unfoldingWord/tc-mobile`
+(https or ssh, with or without `.git`). Repoint `origin` (see the transfer
+section) if this check fails on a clone that should be trusted.
+
+`check:deploy:prod` is
+`node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
+(`package.json`) — the `tc-mobile` Worker's URL, written down here because
+nowhere else in the tree was. `check:deploy`'s (staging's) is
+`https://tc-mobile-staging.unfoldingword.workers.dev`, also used in "Device
+testing" below.
+
+Either command fetches `<origin>/version.json?t=<timestamp>` (the query
+string busts any intermediate cache), compares `sha` and `version` against
+what was expected, prints a pass/fail line, and exits non-zero on a mismatch
+or a fetch failure — so it can gate a promoter's next step without anyone
+reading a diff by eye.
+
+**Rolling back.** Two ways to move the deployed Worker back to a prior build,
+independent of the version check above:
+
+- **Cloudflare dashboard** — the Worker's **Deployments** tab offers rolling
+  back to a previous deployment; see the Cloudflare Workers docs for the
+  current steps, which are not reproduced here to avoid drifting from what the
+  dashboard actually shows.
+- **`npx wrangler rollback`** — run against the `tc-mobile` Worker for
+  production, or `npx wrangler rollback --env staging` for
+  `tc-mobile-staging`. This targets the Worker directly, without going through
+  a build.
+
+**What rollback does not do.** Either path moves the deployed Worker only — it
+does not touch `staging` or `main`. The branch still points at the bad commit,
+so a rollback must be followed by a revert PR against the affected branch, or
+the next promotion will simply redeploy the same regression. And a PWA client
+already installed keeps running its current service worker until it next
+checks for an update (`registerType: "autoUpdate"` in `vite.config.ts` checks
+on its own schedule, not instantly) — so a rollback is not immediately visible
+on a phone that already has the app open or installed, and `check:deploy`
+confirming the origin has rolled back is not the same claim as confirming a
+given device has.
+
 ## Device testing — the HTTPS caveat
 
 `getUserMedia` requires a secure context. `localhost` qualifies;
@@ -493,9 +617,11 @@ redirect. Issue and PR numbers carried over unchanged.
 bound to the repo under its old owner, and the first promotion after the move
 (#142, staging v0.1.11) merged green on GitHub without ever deploying. Until
 both Workers are re-linked to the org repo, **a merged promotion PR is not a
-deployed build** — confirm the served bundle's version string on the staging
-URL, not the merge. The AGENTS.md rule that the Cloudflare account is
-unfoldingWord was already true; only the GitHub side moved.
+deployed build** — confirm the served bundle's version string with
+`npm run check:deploy` / `npm run check:deploy:prod` (see "Confirming a
+deploy and rolling one back" above), not the merge. The AGENTS.md rule that
+the Cloudflare account is unfoldingWord was already true; only the GitHub
+side moved.
 
 Other contributors now push here (Jesse, `jag3773`, from 2026-09-02),
 which is what the version/milestone scheme above and the reviewer/author split
