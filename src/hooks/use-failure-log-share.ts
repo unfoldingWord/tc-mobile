@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatFailureLog } from "@/lib/failure-text";
-import { readFailureLog } from "./failure-log";
+import { readFailureLog, useLogGeneration } from "./failure-log";
 import { reportFailure } from "./report-failure";
 import {
   classifyShareError,
@@ -439,6 +439,41 @@ export function useFailureLogShare(): UseFailureLogShare {
     setStatus("idle");
     setError(null);
   }, []);
+
+  // ── An armed payload is only true while the ROWS it was read from are ──
+  //
+  // Tap 1 renders a snapshot of the log to a File; tap 2 hands that File over.
+  // A failure landing in between leaves the person sending something that does
+  // not match what the screen says — and at the ring's limit it is worse than
+  // stale, because an append there also prunes, so the File is missing the
+  // newest row AND still contains one that has been deleted. Re-arming costs one
+  // tap and is the honest answer.
+  //
+  // **This lives in the flow, not in a surface, and that is the fix** (George R4
+  // P2-1). It was written in `FailureLogPanel`, which meant every screen that
+  // sends the log had to re-derive it — and the second one, `SendLogControl` on
+  // the crash screen, did not. That is the screen the runbook tells a
+  // facilitator to use FIRST, with `install-failure-listeners.ts`'s window
+  // listeners still live and a module-scoped transcode sweep that `App`'s
+  // unmount does not cancel still reporting into the log behind it. A guard a
+  // new surface has to remember is a guard a new surface will forget; one here
+  // cannot be missed, because there is no way to arm a payload without it.
+  //
+  // Keyed on the generation, never on the count: at the limit the count does not
+  // move at all. `useLogGeneration` moves on every landed write and clear and on
+  // nothing else — a routine foreground re-read leaves an armed share alone.
+  const generation = useLogGeneration();
+  const armedGeneration = useRef(generation);
+  useEffect(() => {
+    if (status === "idle") {
+      armedGeneration.current = generation;
+      return;
+    }
+    if (generation !== armedGeneration.current) {
+      armedGeneration.current = generation;
+      reset();
+    }
+  }, [generation, status, reset]);
 
   return { status, error, prepare, send, reset };
 }

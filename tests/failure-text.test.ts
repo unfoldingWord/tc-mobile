@@ -93,6 +93,127 @@ describe("describeCause", () => {
   });
 });
 
+/**
+ * The `cause` chain (George R4 P2-2).
+ *
+ * `finish-transcode.ts` wraps every sweep and segment failure as
+ * `new Error("Transcoding finished segment <id> failed; its PCM is kept",
+ * { cause })` so `context` can stay a short, stable site key. It is the only
+ * high-volume production reporter this log receives, and before this the row
+ * that named the segment was the row that had lost the reason — browsers do not
+ * fold the chain into `error.stack`, that concatenation is Node's.
+ */
+describe("describeCause and the cause chain", () => {
+  it("keeps the reason a wrapper was built to carry", () => {
+    class EncoderStalledError extends Error {
+      override name = "EncoderStalledError";
+    }
+    const wrapped = new Error("Transcoding finished segment s1 failed", {
+      cause: new EncoderStalledError("no progress for 15000 ms"),
+    });
+
+    const { message } = describeCause(wrapped);
+
+    // The wrapper still leads: it is what names the segment.
+    expect(message).toContain("Transcoding finished segment s1 failed");
+    // And the line that makes the row diagnosable at all.
+    expect(message).toContain(
+      "Caused by: EncoderStalledError: no progress for 15000 ms"
+    );
+  });
+
+  it("keeps the OUTERMOST stack, not the cause's", () => {
+    const inner = new Error("inner");
+    inner.stack = "INNER STACK";
+    const outer = new Error("outer", { cause: inner });
+    outer.stack = "OUTER STACK";
+
+    const { stack } = describeCause(outer);
+
+    // The outer stack names the site. The inner frames are from the same tick
+    // and would spend the shared character budget on repetition.
+    expect(stack).toBe("OUTER STACK");
+    expect(stack).not.toContain("INNER STACK");
+  });
+
+  it("walks more than one link", () => {
+    const deep = new Error("a", {
+      cause: new Error("b", { cause: new Error("c") }),
+    });
+
+    const { message } = describeCause(deep);
+
+    expect(message).toContain("Caused by: Error: b");
+    expect(message).toContain("Caused by: Error: c");
+  });
+
+  it("stops at the depth cap and says that it did", () => {
+    const deep = new Error("1", {
+      cause: new Error("2", {
+        cause: new Error("3", {
+          cause: new Error("4", { cause: new Error("5") }),
+        }),
+      }),
+    });
+
+    const { message } = describeCause(deep);
+
+    expect(message).toContain("Caused by: Error: 2");
+    expect(message).toContain("Caused by: Error: 4");
+    // The fifth is past the cap, and the reader is told rather than left to
+    // believe the chain ended — the same honesty `boundText`'s marker carries.
+    expect(message).not.toContain("Error: 5");
+    expect(message).toContain("[cause chain cut]");
+  });
+
+  it("terminates on a cycle instead of hanging the sink", () => {
+    // Legal JavaScript, and the sink runs at the moment the app is already
+    // failing — an unbounded walk here would be a hang, not a bad log line.
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as { cause?: unknown }).cause = b;
+
+    const { message } = describeCause(a);
+
+    expect(message).toContain("Caused by: Error: b");
+    expect(message).toContain("[cause chain cut]");
+  });
+
+  it("survives a cause getter that throws", () => {
+    const hostile = new Error("outer");
+    Object.defineProperty(hostile, "cause", {
+      get() {
+        throw new Error("no");
+      },
+    });
+
+    // The outer message still stands; losing the chain must not lose the entry.
+    expect(describeCause(hostile).message).toContain("Error: outer");
+  });
+
+  it("writes no line for an absent or null cause", () => {
+    expect(describeCause(new Error("plain")).message).not.toContain(
+      "Caused by"
+    );
+    expect(
+      describeCause(new Error("nulled", { cause: null })).message
+    ).not.toContain("Caused by");
+  });
+
+  it("bounds the whole chain, not just the first link", () => {
+    const long = "x".repeat(1500);
+    const chained = new Error(long, { cause: new Error(long) });
+
+    const { message } = describeCause(chained);
+
+    // Both links together exceed the limit, so the field is still cut — the
+    // chain must not be a way around the bound on a ring in the same database
+    // the recordings live in.
+    expect(message.endsWith("…[cut]")).toBe(true);
+    expect(message.length).toBeLessThanOrEqual(2000 + "…[cut]".length);
+  });
+});
+
 describe("formatFailureLog", () => {
   const entry = (over: Partial<StoredFailure> = {}): StoredFailure => ({
     at: Date.UTC(2026, 8, 10, 7, 30, 0),

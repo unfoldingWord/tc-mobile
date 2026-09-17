@@ -1,4 +1,10 @@
-import { Component, useCallback, type ErrorInfo, type ReactNode } from "react";
+import {
+  Component,
+  useCallback,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from "react";
 
 import { flushFailureLog } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
@@ -42,10 +48,63 @@ const TEACH_ID = "app-failed-teach";
  * lane is kept settled by its own `enqueue`. If it somehow never settles the
  * reload does not happen, which is the safe side — the screen stays up with the
  * Send control on it.
+ *
+ * **And there is deliberately no timeout on that wait** (George R4 P2-3, put to
+ * the DRI at the round cap and decided 2026-09-17: `busy` yes, timeout no).
+ * George's reading was that the screen must recover even at the cost of the
+ * crash row; the decision went the other way, because a lane that never settles
+ * means IndexedDB is wedged — a second copy of the app holding an upgrade,
+ * `DatabaseBlockedError`, #221 — and reloading into that destroys the one record
+ * of the crash and lands on the same broken open. The screen staying up with a
+ * working Send on it is the better of two bad states. Anyone reading this later:
+ * the absence of a timeout is a decision, not an oversight.
  */
 async function reload(): Promise<void> {
   await flushFailureLog();
   window.location.reload();
+}
+
+/**
+ * Restart, with the wait shown.
+ *
+ * A function component for the same reason `SendLogControl` is one:
+ * `ErrorBoundary` is a class (there is still no hook form of
+ * `getDerivedStateFromError`) and this needs state.
+ *
+ * What it fixes (George R4 P2-3): `reload()` awaits the whole log lane, and on a
+ * device coming from v3/v4/v5 the crash row's own write is often the first
+ * `getDb` open — so it runs the v4 and v5 backfills before `failures` is even
+ * created, with any queued transcode-sweep appends on the lane in front of it.
+ * Until that settles the screen's PRIMARY recovery control did nothing visible,
+ * and `SendLogControl.prepare` is queued on the same lane, so BOTH controls on
+ * the screen were inert at once with no affordance. On a screen with almost no
+ * text, for a person who may not read, two dead controls is the worst state to
+ * be in and the hardest to describe over a phone call.
+ *
+ * `busy` is never cleared, and that is right rather than lazy: there are exactly
+ * two ends to this. The reload happens and the document is replaced, or the
+ * flush never settles and the control should still be saying so. A control that
+ * quietly went un-busy while nothing had changed would be the dead button again,
+ * wearing a spinner first.
+ */
+function RestartControl() {
+  const [restarting, setRestarting] = useState(false);
+  return (
+    <>
+      <Control
+        icon="retry"
+        label={restarting ? strings.appReloading : strings.appReload}
+        variant="primary"
+        size={30}
+        busy={restarting}
+        onClick={() => {
+          setRestarting(true);
+          void reload();
+        }}
+      />
+      {restarting && <Notice tone="busy">{strings.appReloading}</Notice>}
+    </>
+  );
 }
 
 /**
@@ -219,13 +278,7 @@ export class ErrorBoundary extends Component<
             {strings.appReloadTeach}
           </p>
 
-          <Control
-            icon="retry"
-            label={strings.appReload}
-            variant="primary"
-            size={30}
-            onClick={() => void reload()}
-          />
+          <RestartControl />
 
           {/* The log's only door once the tree is gone. */}
           <SendLogControl />

@@ -451,6 +451,12 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+  // In place of `appReload` while Restart waits for the crash row to finish
+  // being written, and as the busy Notice under it — the same in-place relabel
+  // `loadRetrying` and `takeRecoverRetrying` use (#137 G2). The wait is real on
+  // a device whose first open is also the v6 upgrade, and an unlabelled wait on
+  // the only recovery control this screen has is a button that looks dead.
+  appReloading: "Restarting…",
 
   // ── The encoder has stopped working (#166) ───────────────────────────────
   // Shown once on the shelf when `encoderHealth()` reads `failing` — one stall,

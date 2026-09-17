@@ -37,6 +37,56 @@ export function boundText(text: string): string {
 }
 
 /**
+ * How many `cause` links are followed past the value that was thrown.
+ *
+ * Three, because the wrapping in this app is shallow by construction — a sweep
+ * wraps a codec error, a codec error wraps a worker or an IndexedDB one — and
+ * because the cap is also the cycle guard: `a.cause = b; b.cause = a` is legal
+ * JavaScript and a `while` without a bound would hang the sink at the exact
+ * moment the app is already failing.
+ */
+const MAX_CAUSE_DEPTH = 3;
+
+/** One value, rendered. Never throws; see {@link describeCause}. */
+function renderValue(cause: unknown): string {
+  try {
+    // `Error` first: `String(err)` gives "Name: message", which is the line a
+    // maintainer wants, and skips the `[object Object]` a plain cast can give.
+    return cause instanceof Error
+      ? `${cause.name}: ${cause.message}`
+      : typeof cause === "string"
+        ? cause
+        : String(cause);
+  } catch {
+    // The conversion itself failed. Say what little is knowable rather than
+    // dropping the report — that a failure happened at all is the fact the log
+    // exists to keep.
+    return `[unstringifiable ${typeof cause}]`;
+  }
+}
+
+/** One value's stack, if it has a readable one. Never throws. */
+function readStack(cause: unknown): string | undefined {
+  try {
+    const raw = (cause as { stack?: unknown } | null | undefined)?.stack;
+    return typeof raw === "string" && raw !== "" ? boundText(raw) : undefined;
+  } catch {
+    // A throwing `stack` getter — a `Proxy`, or a subclass with a getter that
+    // depends on state the failure destroyed. The message still stands.
+    return undefined;
+  }
+}
+
+/** One link of the chain. Never throws: `cause` can be a throwing getter too. */
+function readCause(cause: unknown): unknown {
+  try {
+    return (cause as { cause?: unknown } | null | undefined)?.cause;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Render a thrown value to a bounded message, plus its stack when it has one.
  *
  * Never throws. `String(cause)` is itself a hazard — an object whose `toString`
@@ -47,35 +97,54 @@ export function boundText(text: string): string {
  * Reading `.stack` is guarded separately: a value can be an `Error` with a
  * perfectly good message and still be a `Proxy` (or a subclass) whose `stack`
  * getter throws. Losing the stack must not lose the message with it.
+ *
+ * ── The `cause` chain, and why it is not optional here (George R4 P2-2) ──
+ *
+ * This function used to read `name`, `message` and `stack` and stop. That is
+ * fine for a value thrown raw, and wrong for the only high-volume production
+ * reporter this log receives: `finish-transcode.ts` wraps every sweep and
+ * segment failure as `new Error("Transcoding finished segment <id> failed; its
+ * PCM is kept", { cause })` so that `context` can stay a short, stable site key
+ * rather than becoming an unbounded dedup set of segment ids. The wrapper names
+ * WHICH segment; the cause is the only thing that says whether the encoder
+ * stalled, the worker died, storage refused the write, or the commit failed.
+ * Browsers do not fold the chain into `error.stack` — that concatenation is
+ * Node's — so without this walk, the row that named the segment was the row
+ * that had lost the reason. `mp3-codec.ts` folds `messageOf(cause)` into its own
+ * wrapper message and so never had the problem; transcode does not, and every
+ * row it writes went out undiagnosable.
+ *
+ * Messages only, deliberately: each link's stack is NOT appended. The chain's
+ * diagnostic value is the sequence of reasons, the frames below a wrapper are
+ * from the same tick as the frames above it, and the whole field shares one
+ * {@link MAX_TEXT} budget that a second stack would mostly spend on repetition.
+ * The outermost stack is kept because it is the one that names the site.
+ *
+ * `null` and `undefined` both end the walk. A `{ cause: null }` renders as
+ * nothing rather than as the line "Caused by: null", which is noise dressed as
+ * information.
  */
 export function describeCause(cause: unknown): {
   message: string;
   stack?: string;
 } {
-  let message: string;
-  try {
-    // `Error` first: `String(err)` gives "Name: message", which is the line a
-    // maintainer wants, and skips the `[object Object]` a plain cast can give.
-    message =
-      cause instanceof Error
-        ? `${cause.name}: ${cause.message}`
-        : typeof cause === "string"
-          ? cause
-          : String(cause);
-  } catch {
-    // The conversion itself failed. Say what little is knowable rather than
-    // dropping the report — that a failure happened at all is the fact the log
-    // exists to keep.
-    message = `[unstringifiable ${typeof cause}]`;
+  let message = renderValue(cause);
+
+  let inner = readCause(cause);
+  let depth = 0;
+  while (inner !== undefined && inner !== null) {
+    if (depth === MAX_CAUSE_DEPTH) {
+      // Say that it was cut rather than letting a reader believe the chain
+      // ended here — the same honesty `boundText`'s "…[cut]" marker carries.
+      message += `\nCaused by: …[cause chain cut]`;
+      break;
+    }
+    depth += 1;
+    message += `\nCaused by: ${renderValue(inner)}`;
+    inner = readCause(inner);
   }
 
-  let stack: string | undefined;
-  try {
-    const raw = (cause as { stack?: unknown } | null | undefined)?.stack;
-    if (typeof raw === "string" && raw !== "") stack = boundText(raw);
-  } catch {
-    // A throwing `stack` getter. The message above still stands.
-  }
+  const stack = readStack(cause);
 
   return stack === undefined
     ? { message: boundText(message) }

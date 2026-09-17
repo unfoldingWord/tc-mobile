@@ -367,8 +367,10 @@ export function clearFailureLog(): Promise<void> {
 /**
  * Resolve once everything currently queued on the lane has settled.
  *
- * The crash screen's Restart is a synchronous `location.reload()`, and a
- * render-phase throw reports through this module BEFORE any effect has run — so
+ * The crash screen's Restart awaits THIS — it is what the `await` in
+ * `error-boundary.tsx`'s `reload()` is waiting on, and the reason that control
+ * now paints `busy` while it waits. A render-phase throw reports through this
+ * module BEFORE any effect has run — so
  * that write is often the `getDb` open itself, and on a device coming from v5 it
  * carries the v6 upgrade too. Reloading into that unloads the page mid-open, and
  * this repo already treats an iOS `pagehide` as a real race rather than a

@@ -716,6 +716,39 @@ describe("every read of the log is on the write lane", () => {
    * hook's `prepare` without a renderer. So the rule is asserted directly — one
    * module owns the store, and everything else asks that module.
    */
+  /**
+   * The same shape, one layer up (George R4 P2-1).
+   *
+   * The armed-snapshot drop was written in `FailureLogPanel`, which meant every
+   * surface that sends the log had to re-derive it — and the second one,
+   * `SendLogControl` on the crash screen, did not. It now lives in
+   * `useFailureLogShare`, so a surface cannot arm a payload without it. This is
+   * what keeps it there: the moment a component imports `useLogGeneration` to
+   * roll its own, the guard is two places again and one of them will drift.
+   *
+   * A test rather than a comment because nothing else here would notice. knip
+   * sees a used export, ESLint sees a legal layer (`components` may import
+   * `hooks`), and no runtime test can reach either surface's effects without a
+   * renderer.
+   */
+  it("only the share flow consumes the log's generation", () => {
+    const root = new URL("../src/", import.meta.url).pathname;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((found) => {
+        const full = join(dir, found.name);
+        if (found.isDirectory()) return walk(full);
+        return /\.tsx?$/.test(found.name) ? [full] : [];
+      });
+
+    const consumers = walk(root)
+      .filter((file) => file !== join(root, "hooks/failure-log.ts"))
+      .filter((file) => /\buseLogGeneration\b/.test(readFileSync(file, "utf8")))
+      .map((file) => file.slice(root.length))
+      .sort();
+
+    expect(consumers).toEqual(["hooks/use-failure-log-share.ts"]);
+  });
+
   it("nothing in src/ reaches the store except the log module itself", () => {
     const root = new URL("../src/", import.meta.url).pathname;
     const walk = (dir: string): string[] =>

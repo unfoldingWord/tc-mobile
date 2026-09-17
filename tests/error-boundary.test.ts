@@ -129,6 +129,16 @@ describe("ErrorBoundary", () => {
     // autofocus of its own.
     expect(html).not.toContain("autofocus");
     expect(html).toContain('tabindex="-1"');
+    // Restart is NOT busy in this state, and carries its idle label. That is
+    // the legitimate-state half of the gate, and it fails if anyone wires
+    // `busy` on unconditionally. The BUSY half — the relabel, `aria-busy`, and
+    // the busy Notice under it (George R4 P2-3) — needs a click and a pending
+    // flush, which needs a renderer this suite does not have AND a render throw
+    // the e2e harness cannot produce without adding product surface to force
+    // one. Verified by reading, and said so rather than implied.
+    expect(html).not.toContain("aria-busy");
+    expect(html).not.toContain(strings.appReloading);
+
     // The property this screen exists to keep: no cause, ever.
     expect(html).not.toContain("Error");
     expect(html).not.toContain("stack");
