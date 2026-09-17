@@ -320,9 +320,16 @@ jobs:
       # `src/` (#205). The list was derivable while every spec drove either the
       # harness or the service worker. `e2e/failure-log.spec.ts` does neither:
       # it loads `/` from the shipped `dist/` build and asserts the real UI —
-      # the ≡ marker on Books, the menu panel, the crash boundary's copy, the
-      # shared File's contents. Its dependency set is therefore the whole app
-      # graph reachable from `main.tsx`, not a subdirectory of it. A
+      # the ≡ marker on Books, the menu panel, the log surviving a reload, the
+      # shared File's contents. (It does NOT reach the crash boundary; this
+      # comment claimed it did until George R1 P3-3, and a CI comment is as
+      # capable of claiming a test that does not exist as a docblock is.
+      # Reaching the fallback needs a throw seam inside the shipped tree, which
+      # is product scaffolding this repo has refused before; what covers that
+      # control is `tests/error-boundary.test.ts`, in Node, on the rendered
+      # markup.) The spec's dependency set is nonetheless the whole app graph
+      # reachable from `main.tsx`, not a subdirectory of it, because what it
+      # loads is the built bundle. A
       # components-only PR that removed the marker (or the panel's mount, which
       # is one `count > 0` away) would, under the old list, have skipped all
       # thirteen of its cases and merged green — the "a gate is tested in both

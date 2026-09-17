@@ -91,7 +91,23 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // shelf read included, which is precisely when a facilitator needs the report.
   // Kept current as failures land, so a rejection that happens while the shelf
   // is open marks the control without a reload.
-  const failureCount = useFailureCount();
+  //
+  // The token is the shelf's Try again, forwarded (George R1 P2, takeover). The
+  // count's own read has a retry ladder that eventually gives up and waits for
+  // the app to be backgrounded — but the recovery this screen OFFERS is a
+  // button, and the blocked-database copy tells the user to close the other copy
+  // and then press it. Without the forward, a user who does exactly that gets
+  // the shelf back and a log that stays invisible, because the ≡ mark and the
+  // panel are both gated on this number. `reload()` is called with it, never
+  // instead of it.
+  const [failureRetryToken, setFailureRetryToken] = useState(0);
+  const failureCount = useFailureCount(failureRetryToken);
+  // Both halves of Try again, in one handler so a later edit cannot drop one:
+  // re-read the shelf, and hand the failure count's ladder back.
+  const onRetryShelf = useCallback(() => {
+    setFailureRetryToken((t) => t + 1);
+    reload();
+  }, [reload]);
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
   // value the name field is seeded with — the "Book NNN" placeholder the hook
   // derives from the loaded shelf. Held as the seed rather than a boolean so the
@@ -694,7 +710,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               label={strings.tryAgain}
               variant="quiet"
               size={20}
-              onClick={reload}
+              onClick={onRetryShelf}
             />
           )}
         </Notice>

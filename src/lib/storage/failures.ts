@@ -48,7 +48,22 @@ import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
  */
 export async function appendFailure(entry: StoredFailure): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction("failures", "readwrite");
+  const tx = db.transaction(
+    "failures",
+    "readwrite",
+    // Strict durability, the bar `openTakeTx` and `commitTranscode` already hold
+    // (George R1 P3-2, this takeover). Under the browser default — relaxed on
+    // Chromium — a transaction can report success before the bytes are flushed.
+    // That default is survivable for most writes and is NOT survivable for this
+    // one: the crash screen's Restart awaits `flushFailureLog()` and then calls
+    // `location.reload()`, so a `done` that resolves ahead of the flush unloads
+    // the page in the window the flush was added to close, and the row lost is
+    // the record of the crash the user is recovering from. Inference rather than
+    // a measurement — nobody here has observed Chromium's flush timing — but the
+    // repo's own invariant says so, the option costs nothing, and WebKit
+    // ignoring it makes this a no-op rather than a regression.
+    { durability: "strict" }
+  );
   const done = tx.done;
   // Observe `done` NOW, not only on the happy path (Frank, takeover round 2).
   //
@@ -127,5 +142,16 @@ export async function countFailures(): Promise<number> {
  */
 export async function clearFailures(): Promise<void> {
   const db = await getDb();
-  await db.clear("failures");
+  // Same strict durability as the append, and for the mirror-image reason: a
+  // facilitator who cleared the log and then had the app killed must not find it
+  // back. `db.clear` would open a default-durability transaction, so the
+  // transaction is opened here instead of using the shortcut.
+  const tx = db.transaction("failures", "readwrite", { durability: "strict" });
+  const done = tx.done;
+  // Observed on every exit path, exactly as in `appendFailure` above — see the
+  // comment there for why an unobserved `done` rejection is a loop rather than a
+  // lint nit.
+  void done.catch(() => undefined);
+  await tx.objectStore("failures").clear();
+  await done;
 }

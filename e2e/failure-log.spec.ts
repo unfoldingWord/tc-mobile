@@ -427,6 +427,108 @@ test("the count recovers after a transient failed read, without a reload", async
   await expect(marker(page)).toHaveCount(1);
 });
 
+test("a SPENT retry ladder is revived by the shelf's Try again", async ({
+  page,
+}) => {
+  // The other state of the gate above (George R1 P2, takeover). The ladder is
+  // bounded — five retries, then it waits for the app to be backgrounded and
+  // brought forward. But the recovery this screen OFFERS is a button, and the
+  // blocked-database copy tells the user to close the other copy and THEN press
+  // it: a sequence that can outlast the ladder and that ends with the user still
+  // in the app. Before the fix the shelf came back and the log did not, because
+  // the ≡ mark and the panel are both gated on the count.
+  //
+  // **This case waits the ladder out in real time, and that is deliberate.**
+  // `MAX_COUNT_RETRIES` × `RETRY_BACKOFF_MS` is 1+2+4+8+16 s, so the give-up
+  // happens ~31 s after the first failed read. Clamping `setTimeout` from an
+  // init script was tried first and is not worth what it costs: it patches a
+  // browser primitive out from under the code under test, and the first draft of
+  // this case passed with the fix reverted because the clamp silently did not
+  // take. Forty seconds once per CI run buys a case that asserts the shipped
+  // timings on the shipped build, with nothing about the browser faked except
+  // the database refusal itself.
+  test.setTimeout(90_000);
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+
+  await page.addInitScript(() => {
+    const flags = window as unknown as { __refuseIdb?: boolean };
+    flags.__refuseIdb = true;
+    const realOpen = indexedDB.open.bind(indexedDB);
+    Object.defineProperty(indexedDB, "open", {
+      configurable: true,
+      value: (...args: Parameters<typeof realOpen>) => {
+        if (flags.__refuseIdb === true) {
+          throw new DOMException("another copy is open", "InvalidStateError");
+        }
+        return realOpen(...args);
+      },
+    });
+    // No log WRITE may succeed on this load, for the whole load, and this is the
+    // difference between a test and a test-shaped thing. The shelf's own failed
+    // read reports a failure, which the sink queues; once the database comes
+    // back that write lands and `notifyWatchers` refreshes the count — bringing
+    // the marker in with the ladder still spent and the fix reverted. The first
+    // draft of this case passed exactly that way. Reads (`countFailures` is
+    // `readonly`) are untouched, so the only thing left that can paint the
+    // marker is the read path this case exists for.
+    const realTransaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (
+      this: IDBDatabase,
+      stores: string | string[] | DOMStringList,
+      mode?: IDBTransactionMode,
+      options?: IDBTransactionOptions
+    ): IDBTransaction {
+      const names =
+        typeof stores === "string"
+          ? [stores]
+          : (Array.from(stores) as string[]);
+      if (mode === "readwrite" && names.includes("failures")) {
+        throw new DOMException(
+          "no log writes in this case",
+          "InvalidStateError"
+        );
+      }
+      return realTransaction.call(this, stores, mode, options);
+    };
+  });
+  await page.reload();
+
+  // The shelf read failed too, so the screen offers its own recovery.
+  const tryAgain = page.getByRole("button", { name: "Try again" });
+  await expect(tryAgain).toBeVisible();
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+
+  // Outlast the ladder: 31 s of retries, every one of them refused, plus a
+  // margin. This is the wait the `DatabaseBlockedError` copy invites — read the
+  // Notice, find the other tab, close it, come back.
+  await page.waitForTimeout(36_000);
+
+  // Release the blocker WITHOUT touching the app, the way closing the other copy
+  // does. Nothing brings the count in by itself now: the ladder is spent by
+  // construction, no write can succeed to fire a watcher, and the app has not
+  // been backgrounded.
+  await page.evaluate(() => {
+    (window as unknown as { __refuseIdb?: boolean }).__refuseIdb = false;
+  });
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+  await expect(marker(page)).toHaveCount(0);
+
+  // The one gesture the screen offers. The row was written on the PREVIOUS load
+  // and no write can succeed on this one, so the marker can only appear if the
+  // tap handed the count's ladder back.
+  await tryAgain.click();
+
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded.",
+    { timeout: 10_000 }
+  );
+  await expect(marker(page)).toHaveCount(1);
+});
+
 test("a failure landing between the two gestures drops the armed snapshot", async ({
   page,
 }) => {

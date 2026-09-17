@@ -202,14 +202,47 @@ export function flushFailureLog(): Promise<void> {
  * the stacks behind it. A read that fails resolves to 0 — a marker that cannot
  * be trusted to appear is better than a screen that reports the log's own read
  * failure to a translator (#172).
+ *
+ * `recoveryToken` is the caller saying **the user has just tried to fix
+ * whatever was broken** — on Books, the shelf's Try again (George R1 P2, this
+ * takeover). Bumping it starts the retry ladder over from zero and re-reads at
+ * once.
+ *
+ * Why that is not a nicety. The ladder below spends roughly half a minute and
+ * then waits for the app to be backgrounded and brought forward. The copy on
+ * `DatabaseBlockedError` tells the user to close the other copy of the app and
+ * THEN try again — a sequence that can easily outlast the ladder, and one that
+ * ends with the user still looking at the app rather than leaving it. Without
+ * this the shelf would repaint, the recordings would come back, and the log
+ * would stay invisible with rows on disk: the ≡ mark quiet and `FailureLogPanel`
+ * unmounted, because both are gated on this count. That is round 2's
+ * "log on disk, marker never appears" defect again, minus the one recovery the
+ * screen actually offers.
+ *
+ * It is a dependency of the whole effect rather than a second effect: a bump
+ * should re-arm everything this hook holds — the ladder, the watcher
+ * subscription and the foreground listeners — from the state a fresh mount would
+ * have. `count` is React state and survives the re-run, so the number on screen
+ * does not flash to 0 on the way past.
  */
-export function useFailureCount(): number {
+export function useFailureCount(recoveryToken = 0): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let attempt = 0;
+
+    // One pending retry at a time (George R1 P3-4). `refresh` is reached from
+    // three places — the ladder, the watchers after a write, and the foreground
+    // listeners — so two of them arriving while a retry is pending used to leave
+    // an orphan timer that only the LAST handle's `clearTimeout` could reach.
+    // Extra reads rather than a stuck marker, but the cleanup then lied about
+    // what it cancelled.
+    const armRetry = (delayMs: number) => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(refresh, delayMs);
+    };
 
     const refresh = () => {
       void countFailures().then(
@@ -232,17 +265,23 @@ export function useFailureCount(): number {
           // count.
           attempt += 1;
           if (attempt > MAX_COUNT_RETRIES) return;
-          timer = setTimeout(refresh, RETRY_BACKOFF_MS * 2 ** (attempt - 1));
+          armRetry(RETRY_BACKOFF_MS * 2 ** (attempt - 1));
         }
       );
     };
 
     // Coming back to the app is the moment the blocking copy is most likely to
     // be gone, and it resets the ladder so a returning user is never stuck with
-    // a spent one.
+    // a spent one. It is NOT the only such moment, which is what `recoveryToken`
+    // is for: a user who fixes the problem without ever leaving the app is the
+    // case the shelf's own Try again covers.
     const onForeground = () => {
       if (document.hidden) return;
       attempt = 0;
+      // A pending retry from the spent ladder would otherwise fire on top of
+      // this read and spend an attempt the reset just handed back.
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
       refresh();
     };
 
@@ -257,7 +296,7 @@ export function useFailureCount(): number {
       document.removeEventListener("visibilitychange", onForeground);
       window.removeEventListener("focus", onForeground);
     };
-  }, []);
+  }, [recoveryToken]);
 
   return count;
 }
