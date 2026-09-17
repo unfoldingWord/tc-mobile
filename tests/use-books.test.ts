@@ -182,6 +182,7 @@ const book = (overrides: Partial<Book> = {}): Book => ({
   id: chapterBookId("b-1"),
   name: "Mark",
   languageCode: null,
+  provenance: null,
   chapterIds: [],
   createdAt: 0,
   updatedAt: 0,
