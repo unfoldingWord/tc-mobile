@@ -439,8 +439,20 @@ export function useRecorder(): UseRecorder {
    * deadlock the sheet. Null on every other path, which is what keeps the
    * iOS-verified "recorder already inactive" interruption behaving exactly as it
    * did before this change.
+   *
+   * Tagged with the recorder it belongs to, and awaited only by a `stop()`
+   * holding that SAME recorder. Without the tag a take whose own interruption
+   * never drove a flush could consume a previous take's promise and sit on the
+   * processing screen for the rest of its five-second bound — recording A
+   * interrupted while active, then a cancel, then recording B interrupted with
+   * its recorder already inactive, then Back (Frank R1 P2). The stale promise
+   * still settles on its own and still releases A's microphone; it is simply no
+   * longer anything B waits for.
    */
-  const pendingFlushRef = useRef<Promise<void> | null>(null);
+  const pendingFlushRef = useRef<{
+    readonly recorder: MediaRecorder;
+    readonly flushed: Promise<void>;
+  } | null>(null);
 
   const supported = isRecordingSupported();
 
@@ -756,9 +768,12 @@ export function useRecorder(): UseRecorder {
         // can call `finalize`; the no-op initialiser is only so the binding
         // needs no definite-assignment assertion.
         let settle = () => {};
-        pendingFlushRef.current = new Promise<void>((resolve) => {
-          settle = resolve;
-        });
+        pendingFlushRef.current = {
+          recorder,
+          flushed: new Promise<void>((resolve) => {
+            settle = resolve;
+          }),
+        };
 
         const finalize = () => {
           if (finalized) return;
@@ -962,15 +977,18 @@ export function useRecorder(): UseRecorder {
       // `dataavailable` may still be in flight: `MediaRecorder.stop()` flips
       // `state` to `"inactive"` synchronously, so we can arrive here microseconds
       // after the stop was issued and the macrotask below would seal the blob
-      // WITHOUT the last slice. Wait for that flush to complete first. Read and
-      // cleared here, at its only consumer, so a later take can never await a
-      // previous one's promise; null on every path but the driven one, where
-      // this whole await is skipped and the behaviour is exactly as before.
-      // Bounded, not open-ended — the driven flush settles this from the same
-      // `STOP_FLUSH_TIMEOUT_MS` timer that releases its microphone.
+      // WITHOUT the last slice. Wait for that flush to complete first — but only
+      // THIS recorder's. A promise left by an earlier, superseded take is
+      // nothing this stop has reason to wait for, and waiting for it would hold
+      // the processing screen for the rest of its bound (Frank R1 P2). Cleared
+      // either way: nothing else ever reads it. Null on every path but the
+      // driven one, where this whole await is skipped and the behaviour is
+      // exactly as before. Bounded, not open-ended — the driven flush settles it
+      // from the same `STOP_FLUSH_TIMEOUT_MS` timer that releases its
+      // microphone, so this can never hang the sheet.
       const pendingFlush = pendingFlushRef.current;
       pendingFlushRef.current = null;
-      if (pendingFlush) await pendingFlush;
+      if (pendingFlush?.recorder === recorder) await pendingFlush.flushed;
       await new Promise((resolve) => setTimeout(resolve, 0));
       blob = new Blob(chunks, { type: recorder.mimeType });
     } else {

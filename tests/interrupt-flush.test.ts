@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decideInterruptFinalize,
+  type InterruptFinalizeDecision,
   type RecorderLifecycleState,
 } from "@/lib/audio/interrupt-flush";
 
@@ -71,17 +72,27 @@ describe("decideInterruptFinalize", () => {
   });
 
   it("decides for every lifecycle state the recorder can report", () => {
-    // Exhaustive over the union, so a future state added to
-    // `RecorderLifecycleState` cannot fall through this suite untested.
-    const states: readonly RecorderLifecycleState[] = [
-      "inactive",
-      "recording",
-      "paused",
-    ];
-    for (const recorderState of states) {
+    // Exhaustive at COMPILE time, not by hand: a `Record` over the union means
+    // adding a state to `RecorderLifecycleState` without adding it here fails
+    // `npm run typecheck`. A hand-written array would have type-checked while
+    // silently stopping short of the new state, so the claim in this test's
+    // name would have quietly become false (Frank R1 P3).
+    const expected: Record<RecorderLifecycleState, InterruptFinalizeDecision> =
+      {
+        inactive: "already-flushed",
+        recording: "drive-flush",
+        paused: "drive-flush",
+      };
+    // Indexing `expected` is what ties each literal below to the union: a state
+    // that is not a key of the record is a type error here too.
+    for (const recorderState of ["inactive", "recording", "paused"] as const) {
       expect(
         decideInterruptFinalize({ recorderState, isCurrentGeneration: true })
-      ).not.toBe("skip-stale");
+      ).toBe(expected[recorderState]);
+      // And the generation always wins, whatever the state.
+      expect(
+        decideInterruptFinalize({ recorderState, isCurrentGeneration: false })
+      ).toBe("skip-stale");
     }
   });
 });
