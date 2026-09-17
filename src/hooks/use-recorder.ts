@@ -867,10 +867,9 @@ export function useRecorder(): UseRecorder {
         // seen here. It is the last statement of a Promise executor, so ANY
         // throw rejects the blob promise — and nothing between here and
         // `stopRecording()`'s backstop catch handles it, so the take comes back
-        // `{ samples: null, blob: null }` and is gone, even though the timer
-        // armed three lines up would have sealed whatever `chunks` already
-        // holds. Losing a confirmed take to a failed teardown call is the one
-        // outcome this bounded flush exists to prevent.
+        // `{ samples: null, blob: null }` and is gone. Losing a confirmed take
+        // to a failed teardown call is the one outcome this bounded flush
+        // exists to prevent.
         //
         // Reachability, honestly: per the MediaStream Recording spec `stop()`
         // throws `InvalidStateError` only when the recorder is already
@@ -883,6 +882,30 @@ export function useRecorder(): UseRecorder {
           recorder.stop();
         } catch (cause) {
           reportFailure(cause, "recorder-stop");
+          // Catching is not enough on its own: the bound above exists to wait
+          // out a flush that is IN FLIGHT, and a throw may mean there is none.
+          // So the state decides which of the two outcomes this is.
+          //
+          // Still active — the stop did not take. No `dataavailable` is coming
+          // and `onstop` will not fire, so waiting would buy nothing and cost
+          // everything: five seconds of hot microphone AFTER a confirmed stop,
+          // unreachable by `cancel()`/pagehide because this stop already stole
+          // the stream and tap out of the shared refs, and five seconds of
+          // audio the translator never confirmed still appending to `chunks`.
+          // Seal what is already captured and let the continuation release the
+          // microphone. It stops the tracks on the very next line after the
+          // await — a microtask, so no further `dataavailable` task can run in
+          // between — and that track-stop is also what finally ends this
+          // recorder. It cannot re-enter `onInterrupted`: this invocation
+          // detached `recorder.onerror` and every `track.onended` at the top.
+          //
+          // Already inactive — the engine threw but the stop DID take, so a
+          // final slice may still be in flight. Leave the bound alone and let
+          // `onstop` or the timer seal it, exactly as a healthy stop would.
+          if (recorder.state !== "inactive") {
+            clearTimeout(timer);
+            finish();
+          }
         }
       });
 

@@ -79,4 +79,36 @@ describe("both native recorder.stop() calls are guarded (#59)", () => {
       /catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-cancel-stop"\s*\);/
     );
   });
+
+  it("seals the take immediately when a thrown stop() left the recorder active", () => {
+    // Reporting alone would leave the blob promise waiting out the full
+    // STOP_FLUSH_TIMEOUT_MS for an `onstop` that cannot come — five seconds of
+    // hot microphone after a CONFIRMED stop, unreachable by cancel()/pagehide
+    // because this stop already stole the stream and tap out of the shared
+    // refs, and five seconds of unconfirmed audio still appending to `chunks`.
+    // The bound is for a flush in flight; a throw may mean there is none, so
+    // the catch has to branch on the recorder's own state.
+    //
+    // Deleting the branch, or dropping either statement inside it, must fail
+    // here: nothing else in the suite notices, because there is no
+    // MediaRecorder to throw.
+    expect(code).toMatch(
+      /catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop"\s*\);\s*if\s*\(\s*recorder\.state\s*!==\s*"inactive"\s*\)\s*\{\s*clearTimeout\(\s*timer\s*\);\s*finish\(\s*\);\s*\}\s*\}/
+    );
+  });
+
+  it("arms the bound BEFORE the call whose catch clears it", () => {
+    // `timer` and `finish` are both read inside that catch, so both must
+    // already be initialised when it runs. They are `const`s in the same
+    // Promise-executor block declared above the `try`; a declaration moved
+    // below it would be a TDZ ReferenceError raised from inside a catch
+    // handler — on the one path that exists to keep a confirmed take alive.
+    // Order, asserted by position rather than trusted.
+    const executor = code.slice(code.indexOf("const finish ="));
+    expect(executor).not.toHaveLength(0);
+    const timerDecl = executor.indexOf("const timer =");
+    const guardedCall = executor.indexOf("recorder.stop()");
+    expect(timerDecl).toBeGreaterThan(0);
+    expect(guardedCall).toBeGreaterThan(timerDecl);
+  });
 });
