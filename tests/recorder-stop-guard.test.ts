@@ -96,19 +96,18 @@ describe("both native recorder.stop() calls are guarded (#59)", () => {
       /catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop"\s*\);\s*if\s*\(\s*recorder\.state\s*!==\s*"inactive"\s*\)\s*\{\s*clearTimeout\(\s*timer\s*\);\s*finish\(\s*\);\s*\}\s*\}/
     );
   });
-
-  it("arms the bound BEFORE the call whose catch clears it", () => {
-    // `timer` and `finish` are both read inside that catch, so both must
-    // already be initialised when it runs. They are `const`s in the same
-    // Promise-executor block declared above the `try`; a declaration moved
-    // below it would be a TDZ ReferenceError raised from inside a catch
-    // handler — on the one path that exists to keep a confirmed take alive.
-    // Order, asserted by position rather than trusted.
-    const executor = code.slice(code.indexOf("const finish ="));
-    expect(executor).not.toHaveLength(0);
-    const timerDecl = executor.indexOf("const timer =");
-    const guardedCall = executor.indexOf("recorder.stop()");
-    expect(timerDecl).toBeGreaterThan(0);
-    expect(guardedCall).toBeGreaterThan(timerDecl);
-  });
 });
+
+/*
+ * NOT asserted here, deliberately: that `timer` and `finish` are declared
+ * ABOVE the `try`, so both are initialised when the catch reads them. The
+ * property matters — a declaration moved below would be a TDZ ReferenceError
+ * raised from inside a catch handler, on the one path that exists to keep a
+ * confirmed take alive — but `tsc` already enforces it. Moving
+ * `const timer = …` below the `try` was run as a mutation and produced
+ * `TS2448: Block-scoped variable 'timer' used before its declaration` and
+ * `TS2454: Variable 'timer' is used before being assigned`, so `npm run
+ * typecheck` (and CI, and the pre-commit hook) fail on it already. A test
+ * restating a compiler guarantee is the duplication AGENTS.md's "no sprawl"
+ * rule is about; the evidence is recorded here instead.
+ */
