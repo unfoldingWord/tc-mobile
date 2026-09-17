@@ -12,11 +12,19 @@
  * bundles this file and its lamejs import as their own chunk, so the LGPL
  * encoder sits behind one message interface rather than inside the app bundle.
  *
- * The protocol is one request, a throttled stream of `progress` HEARTBEATS, then
- * one `done`/`error`. The heartbeat is not a UI meter (nothing consumes a meter
- * yet); it is the client's liveness signal — `hooks/mp3-codec.ts` bounds every
- * encode by how long the worker stays SILENT, and each heartbeat resets that
- * window so a long encode is not judged stalled while a wedged one still is
+ * The protocol opens with one `ready`, then per request a throttled stream of
+ * `progress` HEARTBEATS and one `done`/`error`. `ready` is posted once, at the
+ * foot of this module, and it says the only thing a client cannot otherwise
+ * learn without giving the worker work: THIS SCRIPT RAN. `hooks/mp3-codec.ts`
+ * builds workers from a blob snapshot of this chunk (#192) and cannot test that
+ * blob any other way — a snapshot that will not parse fires `error`, but one
+ * truncated on a statement boundary is valid JS with no `message` listener, and
+ * that one is silent forever. Waiting for `ready` before handing over a
+ * chapter's PCM is what lets the client fall back to the chunk URL with the
+ * audio still in its hands. The heartbeat is not a UI meter (nothing consumes a
+ * meter yet); it is the client's liveness signal — `hooks/mp3-codec.ts` bounds
+ * every encode by how long the worker stays SILENT, and each heartbeat resets
+ * that window so a long encode is not judged stalled while a wedged one still is
  * (#166). `hooks/mp3-codec.ts` keeps ONE worker warm and reuses it across
  * encodes, serialised so only one request is ever in flight (#182); this handler
  * holds no state between messages — every value is built inside the callback —
@@ -75,3 +83,13 @@ addEventListener("message", (event: MessageEvent<EncodeRequest>) => {
   // no `DedicatedWorkerGlobalScope`), so no cast of `self` is needed.
   postMessage(response, { transfer });
 });
+
+// AFTER the listener is registered, never before. The client treats `ready` as
+// permission to hand over a chapter's PCM, and a `ready` posted ahead of the
+// listener would invite a request this worker is not yet able to answer.
+//
+// Posted unconditionally rather than only for blob workers: this module cannot
+// know which URL it was built from, and a client that does not care simply
+// takes it as one more sign of life.
+const ready: EncodeResponse = { kind: "ready" };
+postMessage(ready);

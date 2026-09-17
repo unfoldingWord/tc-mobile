@@ -118,6 +118,13 @@ export function App() {
     // Keep the encoder worker warm from launch, while this build's precache
     // still holds its chunk — so a Finished transcode or a Share after a
     // service-worker update does not depend on a purged chunk URL (#182).
+    //
+    // This call is also the app's one SNAPSHOT window (#192, George R5 P3-1):
+    // the same `warmEncoder` fetches that chunk and keeps a blob copy of it, so
+    // every later rebuild — after an abort, a stall or a crash, possibly hours
+    // after `cleanupOutdatedCaches` has deleted the hashed file — has bytes to
+    // build from. Launch is the only moment that fetch is certain to succeed,
+    // which is why it lives here and not at the first encode.
     warmEncoder();
     void requestTranscodeSweep();
   }, []);
