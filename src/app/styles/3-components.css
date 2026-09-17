@@ -786,7 +786,12 @@
     font-weight: var(--p-weight-strong);
     letter-spacing: 0.01em;
     cursor: pointer;
-    color: var(--s-voice);
+    /* `--s-voice-text`, not `--s-voice`: this is 12px text on a wash of the
+       accent itself, and in the light theme the fill value is only 3.0:1
+       against that wash (#164 R-9). The BACKGROUND below stays `--s-voice`,
+       so the pill's colour identity is unchanged — only its ink darkens,
+       and only on light. */
+    color: var(--s-voice-text);
     background: color-mix(in srgb, var(--s-voice) 15%, transparent);
     transition: filter var(--p-dur-base) var(--p-ease);
   }

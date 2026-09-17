@@ -1,0 +1,204 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+/**
+ * The AA gate for the roles that paint SMALL TEXT (#164 R-9, and the contrast
+ * caveat #171 asked to land with the light theme).
+ *
+ * Why a gate and not a one-time fix: the ratios in #164 were computed by hand,
+ * once, and nothing in the tree re-derived them — AGENTS.md says outright that
+ * "nothing in this repo reads CSS at all", so a later token nudge in layer 1 or
+ * layer 2 could put a text role back under AA with every check green. This
+ * reads the SOURCE token values and recomputes the ratios, so the next nudge
+ * fails here.
+ *
+ * What it does NOT claim: nothing here is measured on a screen. WCAG's formula
+ * over the declared sRGB values is what this computes, exactly as #164's own
+ * evidence class says ("computed from the token values with the WCAG formula,
+ * not measured on a device or in a browser"). A phone's panel, its brightness
+ * and direct sun are the conditions this cannot speak to — which is the whole
+ * reason the light theme exists (#171).
+ */
+const ROOT = path.resolve(import.meta.dirname, "..");
+const STYLES = path.join(ROOT, "src", "app", "styles");
+
+const primitives = readFileSync(path.join(STYLES, "1-primitives.css"), "utf8");
+const semantic = readFileSync(path.join(STYLES, "2-semantic.css"), "utf8");
+
+/** Every `--name: value;` declaration in a block of CSS text. */
+function declarations(css: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const match of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/gi)) {
+    const [, name, value] = match;
+    // Both groups are non-optional in the pattern, so a match always carries
+    // them; the guard is what `noUncheckedIndexedAccess` needs to see.
+    if (name === undefined || value === undefined) continue;
+    out.set(name, value.trim());
+  }
+  return out;
+}
+
+/**
+ * The two theme blocks of layer 2, sliced by their selectors. `:root,
+ * :root[data-theme="dark"]` is the dark block; `:root[data-theme="light"]` is
+ * the light one. Sliced rather than regex-matched per token because both blocks
+ * declare the SAME token names — the point of the layer — so a whole-file match
+ * would silently read the dark value for a light assertion.
+ */
+function themeBlock(theme: "dark" | "light"): Map<string, string> {
+  const marker =
+    theme === "dark"
+      ? ':root,\n  :root[data-theme="dark"] {'
+      : ':root[data-theme="light"] {';
+  const start = semantic.indexOf(marker);
+  if (start === -1) throw new Error(`no ${theme} block in 2-semantic.css`);
+  const from = start + marker.length;
+  const end = semantic.indexOf("\n  }", from);
+  if (end === -1) throw new Error(`unterminated ${theme} block`);
+  return declarations(semantic.slice(from, end));
+}
+
+const p = declarations(primitives);
+const themes = { dark: themeBlock("dark"), light: themeBlock("light") };
+
+/**
+ * Resolve a token to a `#rrggbb` literal, following `var(--…)` through layer 2
+ * and into layer 1. Only the two forms these roles actually use are supported —
+ * a bare hex and a single `var()` — so a token that grows a `color-mix()` or a
+ * fallback chain throws here rather than being silently scored wrong.
+ */
+function resolve(theme: "dark" | "light", token: string): string {
+  let value = themes[theme].get(token) ?? p.get(token);
+  if (value === undefined) throw new Error(`unknown token ${token}`);
+  for (let hops = 0; hops < 8; hops++) {
+    if (/^#[0-9a-f]{6}$/i.test(value)) return value.toLowerCase();
+    const ref = /^var\((--[a-z0-9-]+)\)$/i.exec(value);
+    if (!ref?.[1]) throw new Error(`${token} is not a plain colour: ${value}`);
+    const next = themes[theme].get(ref[1]) ?? p.get(ref[1]);
+    if (next === undefined) throw new Error(`unknown token ${ref[1]}`);
+    value = next.trim();
+  }
+  throw new Error(`${token} did not resolve in 8 hops`);
+}
+
+function channels(hex: string): [number, number, number] {
+  const n = hex.replace("#", "");
+  return [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16) / 255) as [
+    number,
+    number,
+    number,
+  ];
+}
+
+/** WCAG 2.x relative luminance. */
+function luminance(hex: string): number {
+  const [r, g, b] = channels(hex).map((c) =>
+    c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  ) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG 2.x contrast ratio, 1–21. */
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [
+    number,
+    number,
+  ];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** `color-mix(in srgb, <fg> <pct>%, transparent)` composited over `over`. */
+function wash(fg: string, over: string, pct: number): string {
+  const F = channels(fg);
+  const O = channels(over);
+  const hex = (n: number) =>
+    Math.round(n * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${[0, 1, 2].map((i) => hex(F[i]! * pct + O[i]! * (1 - pct))).join("")}`;
+}
+
+/** WCAG AA for text below 18.66px bold / 24px regular. Every site below is 11–16px. */
+const AA_SMALL_TEXT = 4.5;
+
+describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)", () => {
+  // The surfaces `--s-ink-faint` is ACTUALLY painted on today, each with the
+  // call site that puts it there — so this list is falsifiable by reading the
+  // tree rather than being a blanket sweep of every surface in layer 2.
+  //
+  // `--s-overlay` is deliberately absent: no current site paints faint ink on
+  // it. If one appears, it must be added here (dark faint clears AA on floor,
+  // surface, raised and the scrim, but not on overlay).
+  const faintSites = [
+    ["--s-floor", "`.build-stamp`, 11px (3-components.css)"],
+    ["--s-raised", "`.name-input::placeholder`, 16px (3-components.css)"],
+    ["--s-surface", "the same faint ink on a raised panel"],
+  ] as const;
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const [surface, site] of faintSites) {
+      it(`${theme}: --s-ink-faint on ${surface} — ${site}`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-ink-faint"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+      });
+    }
+
+    // `save-failed.tsx:184` paints 12px faint ink over the scrim, which is a
+    // translucent wash rather than a surface token — composited here over the
+    // floor it covers, which is what a full-screen scrim sits on.
+    it(`${theme}: --s-ink-faint over the scrim — save-failed.tsx, 12px`, () => {
+      const scrim = /rgba\(([^)]+)\)/.exec(
+        themes[theme].get("--s-scrim") ?? ""
+      );
+      expect(scrim?.[1], "--s-scrim is still an rgba() wash").toBeTruthy();
+      const [r, g, b, a] = scrim![1]!.split(",").map((n) => Number(n.trim()));
+      const hex = (n: number) => Math.round(n).toString(16).padStart(2, "0");
+      const over = contrast(
+        resolve(theme, "--s-ink-faint"),
+        wash(`#${hex(r!)}${hex(g!)}${hex(b!)}`, resolve(theme, "--s-floor"), a!)
+      );
+      expect(over).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+    });
+
+    // `.modepill` (3-components.css) is 12px `--p-weight-strong` text painted
+    // in the voice accent on a 15% voice wash. In the DARK theme the accent
+    // clears AA as text; on light it does not (~3.0:1), which is what
+    // `--s-voice-text` exists for — see the light block's own comment.
+    it(`${theme}: --s-voice-text on the .modepill voice wash — 12px`, () => {
+      const voiceText = resolve(theme, "--s-voice-text");
+      for (const surface of ["--s-floor", "--s-surface", "--s-raised"]) {
+        const ratio = contrast(
+          voiceText,
+          wash(resolve(theme, "--s-voice"), resolve(theme, surface), 0.15)
+        );
+        expect(
+          ratio,
+          `--s-voice-text on a 15% voice wash over ${surface}`
+        ).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+      }
+    });
+  }
+
+  // The three ink roles must stay TELLABLE APART, or raising faint to AA has
+  // quietly collapsed the ladder into two roles that look the same — the
+  // regression the obvious fix (set faint := muted) would have shipped.
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: the ink ladder keeps three distinguishable steps`, () => {
+      const floor = resolve(theme, "--s-floor");
+      const steps = (
+        ["--s-ink", "--s-ink-muted", "--s-ink-faint"] as const
+      ).map((t) => contrast(resolve(theme, t), floor));
+      // Monotonic: ink is the strongest, faint the weakest.
+      expect(steps[0]).toBeGreaterThan(steps[1]!);
+      expect(steps[1]).toBeGreaterThan(steps[2]!);
+      // And separated by more than a rounding error at each step.
+      expect(steps[0]! - steps[1]!).toBeGreaterThan(1);
+      expect(steps[1]! - steps[2]!).toBeGreaterThan(1);
+    });
+  }
+});
