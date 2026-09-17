@@ -6,7 +6,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { flushFailureLog, renderFailureStored } from "@/hooks/failure-log";
+import {
+  flushFailureLog,
+  renderFailureStored,
+  retryRenderFailureWrite,
+} from "@/hooks/failure-log";
 import { quiesceTranscodeSweep } from "@/hooks/finish-transcode";
 import { reportFailure } from "@/hooks/report-failure";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
@@ -72,7 +76,16 @@ async function reload(): Promise<boolean> {
   await flushFailureLog();
   // `false` only. `null` is a boundary that caught something the sink never
   // tried to store, which is not evidence that storage refused anything.
-  if (renderFailureStored() === false) return false;
+  //
+  // And a refusal is retried HERE rather than treated as final (Frank, round 6).
+  // The state this guards is recoverable, and the person holding the phone is
+  // who recovers it: a blocked open means another copy of the app is holding an
+  // upgrade, and closing it is precisely what this screen's copy asks for. A
+  // held Restart that could never succeed would spend the one recovery they
+  // have — and the copy under it would be a promise the code does not keep.
+  if (renderFailureStored() === false && !(await retryRenderFailureWrite())) {
+    return false;
+  }
   window.location.reload();
   return true;
 }

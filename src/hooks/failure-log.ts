@@ -304,6 +304,22 @@ export function readFailureLog(): Promise<{
 let renderRowLanded: boolean | null = null;
 
 /**
+ * The render row itself, kept only while it has NOT landed.
+ *
+ * Without it, "held" is a dead end (Frank, round 6): `renderRowLanded` goes
+ * `false` once and nothing ever re-appends, so a facilitator who closes the
+ * blocking copy of the app and taps Restart again is refused forever — while the
+ * screen's own copy tells them to try again. A control that says "try again" and
+ * cannot succeed is worse than one that does nothing, because it spends the one
+ * recovery the person actually has.
+ *
+ * One bounded row for the life of a crashed page: `describeCause` and
+ * `boundText` have already cut every field by the time it gets here. Cleared the
+ * moment it lands, so nothing is retained once there is nothing to retry.
+ */
+let pendingRenderRow: StoredFailure | null = null;
+
+/**
  * Has the row for this page's render crash reached the store?
  *
  * `true` landed, `false` refused, `null` none attempted — and `null` must not be
@@ -311,6 +327,29 @@ let renderRowLanded: boolean | null = null;
  */
 export function renderFailureStored(): boolean | null {
   return renderRowLanded;
+}
+
+/**
+ * Try the render row again, on the lane. Resolves to whether it is stored now.
+ *
+ * The crash screen's Restart calls this before deciding to reload. The state it
+ * exists for is recoverable and the person is the one who recovers it: a
+ * `DatabaseBlockedError` means another copy of the app is holding an upgrade
+ * (#221), and closing that copy is exactly what the crash screen's copy asks
+ * for. Without a retry, the first refusal would be permanent and that ask would
+ * be a lie.
+ *
+ * Idempotent, and cheap when there is nothing owed: with no pending row it
+ * reports the state it already has rather than writing anything. It cannot
+ * duplicate the row either — {@link pendingRenderRow} is cleared the moment an
+ * append succeeds, so a second tap after a successful retry writes nothing.
+ */
+export function retryRenderFailureWrite(): Promise<boolean> {
+  const owed = pendingRenderRow;
+  if (owed === null) return Promise.resolve(renderRowLanded !== false);
+  // `writeEntry` swallows its own failure and updates both flags, so this
+  // resolves either way and the answer is read from the state it left.
+  return enqueue(() => writeEntry(owed)).then(() => renderRowLanded !== false);
 }
 
 /**
@@ -359,7 +398,10 @@ export function installFailureLog(): () => void {
 async function writeEntry(entry: StoredFailure): Promise<void> {
   try {
     await appendFailure(entry);
-    if (entry.context === "render") renderRowLanded = true;
+    if (entry.context === "render") {
+      renderRowLanded = true;
+      pendingRenderRow = null;
+    }
     // Direct, not `refreshCount`: this function is ALREADY a lane op, and
     // re-entering `enqueue` here would wait on a lane that is waiting on this.
     // Awaited, so the store update stays inside the op that caused it — which
@@ -370,7 +412,10 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
     // Recorded before the swallow, so the crash screen can tell a refused write
     // from a settled lane. The swallow itself stays: this function IS the
     // channel's terminal and reporting its own failure would recurse.
-    if (entry.context === "render") renderRowLanded = false;
+    if (entry.context === "render") {
+      renderRowLanded = false;
+      pendingRenderRow = entry;
+    }
     console.error("[failure-log] could not store a failure", writeFailure);
   }
 }

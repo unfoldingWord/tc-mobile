@@ -14,6 +14,7 @@ import {
   installFailureLog,
   readFailureLog,
   renderFailureStored,
+  retryRenderFailureWrite,
   useFailureCount,
   useLogGeneration,
 } from "@/hooks/failure-log";
@@ -852,6 +853,56 @@ describe("whether the crash's own row reached the store", () => {
     await flushFailureLog();
 
     // The lane settled, as it is designed to. The row did not land.
+    expect(renderFailureStored()).toBe(false);
+  });
+
+  it("a retry lands the row once storage will take it — held is not a dead end", async () => {
+    // The state this guards is recoverable, and the person holding the phone is
+    // who recovers it: a blocked open means another copy of the app is holding
+    // an upgrade (#221), and closing that copy is exactly what the crash
+    // screen's copy asks for. Without this, the first refusal was permanent and
+    // that ask was a promise the code did not keep (Frank, round 6).
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValueOnce(
+      new Error("DatabaseBlockedError")
+    );
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+    expect(renderFailureStored()).toBe(false);
+    expect(await countFailures()).toBe(0);
+
+    // The blocking copy is closed. The same row, re-appended on the lane.
+    await expect(retryRenderFailureWrite()).resolves.toBe(true);
+
+    expect(renderFailureStored()).toBe(true);
+    const rows = await readFailures();
+    expect(rows.map((row) => row.context)).toEqual(["render"]);
+    expect(rows[0]?.message).toContain("the tree threw");
+  });
+
+  it("a second retry writes nothing — one row, not one per tap", async () => {
+    // Restart can be tapped repeatedly. The pending row is dropped the moment
+    // it lands, so the retry is idempotent rather than a way to fill the ring
+    // with copies of the same crash.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValueOnce(
+      new Error("DatabaseBlockedError")
+    );
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+
+    await expect(retryRenderFailureWrite()).resolves.toBe(true);
+    await expect(retryRenderFailureWrite()).resolves.toBe(true);
+
+    expect(await countFailures()).toBe(1);
+  });
+
+  it("a retry that is still refused keeps the screen held", async () => {
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValue(
+      new Error("DatabaseBlockedError")
+    );
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+
+    await expect(retryRenderFailureWrite()).resolves.toBe(false);
     expect(renderFailureStored()).toBe(false);
   });
 
