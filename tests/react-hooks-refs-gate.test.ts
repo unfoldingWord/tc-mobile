@@ -28,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * and stranger than "try/catch/finally inside useCallback" (this issue's
  * working theory) — it is the closure-over-the-catch-binding specifically.
  *
- * This test pins three probes. It does NOT, by itself, prevent a future hook
+ * This test pins four probes. It does NOT, by itself, prevent a future hook
  * from combining a real render-time ref violation with the bail-out shape
  * below and shipping undetected — that would still slip past `react-hooks/refs`
  * exactly as #212 did, because the bail-out is a property of ESLint's own
@@ -68,6 +68,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *     both branches — the exact pattern `use-save-take.ts` had, minus its
  *     real imports. Kept alongside the minimal case so the realistic shape
  *     that actually shipped stays pinned too, not just its reduction.
+ *   - the FIX shape, which MUST fire: a `catch (cause)` block that still
+ *     defines a nested function, but where that function closes over a value
+ *     already read from `cause` (a hoisted `const`), never over `cause`
+ *     itself — the `use-books.ts` hoist from George round 3 on #433, plus a
+ *     render-time ref write elsewhere in the hook. Without this probe,
+ *     nothing pins that "hoist the value first" is what actually escapes the
+ *     bail-out, as opposed to "any nested function inside `catch`" being the
+ *     trigger — which would make the `use-books.ts` fix a no-op while both
+ *     silent probes above kept passing (George round 4).
  */
 
 const REPO = join(import.meta.dirname, "..");
@@ -294,5 +303,51 @@ export function useBailedRefsProbe(onSaved?: () => void) {
 `
     );
     expect(rules).not.toContain("react-hooks/refs");
+  }, 15000);
+
+  it("fires on a render-time ref write next to a catch(cause) that hoists the caught value before its nested updater (the use-books.ts fix shape, George round 4 on #433)", () => {
+    // Pins the FIX, not just the trigger: `catch (cause)` can still define a
+    // nested function here — the guard is that the nested function closes
+    // over a value already read from `cause` BEFORE the closure, never over
+    // `cause` itself. Without this probe, "any nested function inside catch"
+    // could be (mis)read as the trigger, the src/hooks/use-books.ts hoist
+    // would be a no-op, both silent probes above would still pass, and a
+    // render-time ref write on the Books shelf would ship the same way #212
+    // did.
+    //
+    // Standalone reproduction of the shape use-books.ts's load effect has
+    // after the round-3 fix: a `useEffect` running an async IIFE, `catch
+    // (cause)` hoisting `message` before a `setState` updater that
+    // references `message`, not `cause` — plus a render-time ref write
+    // elsewhere in the hook, which MUST still fire. Proven by mutation: with
+    // the updater's `message` reverted to reference `cause` directly (the
+    // pre-hoist shape), this assertion fails — see the PR body / triage
+    // comment for the exact reversion and the failure it produced.
+    const rules = lintProbe(
+      "hoisted-cause-still-fires",
+      `import { useEffect, useRef, useState } from "react";
+
+export function useHoistedCauseRefsProbe(value: number) {
+  const ref = useRef(value);
+  ref.current = value;
+
+  const [failure, setFailure] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await Promise.resolve();
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setFailure((prev) => prev ?? message);
+      }
+    })();
+  }, []);
+
+  return { ref, failure };
+}
+`
+    );
+    expect(rules).toContain("react-hooks/refs");
   }, 15000);
 });
