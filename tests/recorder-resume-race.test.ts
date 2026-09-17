@@ -79,6 +79,21 @@ describe("raceAudioResume (#108)", () => {
     expect(reportFailure).not.toHaveBeenCalled();
   });
 
+  it("calls resumeAudioContext synchronously, before the first await — the iOS user-gesture contract (George R1 P3-2)", async () => {
+    resumeAudioContext.mockResolvedValue(undefined);
+
+    // No await before this assertion: `resumeAudioContext()` must already
+    // have been called by the time `raceAudioResume()` returns its promise,
+    // the same "still inside the user gesture" timing every other
+    // `resumeAudioContext()` call site in this file relies on. A rewrite that
+    // deferred the real call (e.g. behind a `.then`) would spend the
+    // activation and still pass every other case here if the mock already
+    // resolves.
+    const p = raceAudioResume();
+    expect(resumeAudioContext).toHaveBeenCalledTimes(1);
+    await p;
+  });
+
   it("THE #108 REGRESSION ITSELF — resolves after the timeout when resume never settles", async () => {
     resumeAudioContext.mockReturnValue(new Promise(() => {}));
 
