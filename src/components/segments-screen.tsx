@@ -16,6 +16,7 @@ import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { shareErrorText as shareErrorCopy } from "./share-error-copy";
+import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { strings } from "./strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -263,6 +264,8 @@ export const SegmentsScreen = forwardRef<
   // (#354) — the same table Share Book and NameEdit's Confirm use.
   const shareAffordance = shareControlAffordance(share.status);
   const shareErrorText = shareErrorCopy(share.error, "chapter");
+  // Hoisted: the same mark for a chapter and a book, from one table.
+  const sharePartial = shareOutcomeGlyph("partial");
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -511,9 +514,21 @@ export const SegmentsScreen = forwardRef<
               <Notice tone="busy">{strings.sharePreparing}</Notice>
             )}
             {share.status === "ready" && share.missing > 0 && (
-              <Notice tone="info">{strings.shareMissing(share.missing)}</Notice>
+              // Its own mark, not `info`'s generic ring-and-i (#178): that
+              // glyph also carries storage durability (#214/#406), so share
+              // would otherwise share a shape with an unrelated condition.
+              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
+                {strings.shareMissing(share.missing)}
+              </Notice>
             )}
-            {shareErrorText && <Notice>{shareErrorText}</Notice>}
+            {shareErrorText && (
+              // `nothing` and `failed` both wear the `alert` tone — that split
+              // is #147's open question — so the mark is the only thing
+              // separating "record a segment first" from "try again" (#178).
+              <Notice icon={shareErrorGlyph(share.error)}>
+                {shareErrorText}
+              </Notice>
+            )}
           </>
         )}
       </Menu>

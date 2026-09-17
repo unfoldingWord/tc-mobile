@@ -1,4 +1,4 @@
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
 import { noticePresentation, type NoticeTone } from "./notice-tone";
 
 interface NoticeProps {
@@ -12,6 +12,18 @@ interface NoticeProps {
    * shouts in the colour of failure teaches people to ignore the colour.
    */
   tone?: NoticeTone;
+  /**
+   * A MORE SPECIFIC mark within the tone (#178). The tone still decides the
+   * colour and the ARIA role; this only substitutes the shape.
+   *
+   * It exists because `nothing` and `failed` share the `alert` tone — that
+   * split is #147's open question, not this prop's to answer — so the mark is
+   * the only thing separating "record something first" from "try again" for a
+   * translator who cannot read. Callers do not pick a glyph freely: the share
+   * screens read `shareOutcomeGlyph`, a table, for exactly the reason
+   * `share-error-copy.ts` is a table.
+   */
+  icon?: IconName;
   children: React.ReactNode;
 }
 
@@ -40,12 +52,14 @@ interface NoticeProps {
  * thing this file decides now; `notice-tone.ts` maps it to the role and the
  * glyph, and the stylesheet maps it to colour.
  */
-export function Notice({ tone = "alert", children }: NoticeProps) {
-  const { role, icon } = noticePresentation(tone);
+export function Notice({ tone = "alert", icon, children }: NoticeProps) {
+  // `role` is taken from the tone and is NOT overridable — a caller may
+  // substitute the mark, never how urgently a screen reader interrupts.
+  const { role, icon: toneIcon } = noticePresentation(tone);
   return (
     <div role={role} data-tone={tone} className="notice">
       <span className="notice-glyph">
-        <Icon name={icon} size={20} />
+        <Icon name={icon ?? toneIcon} size={20} />
       </span>
       {children}
     </div>

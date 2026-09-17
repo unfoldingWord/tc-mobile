@@ -17,6 +17,7 @@ import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
 import { shareErrorText } from "./share-error-copy";
+import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { strings } from "./strings";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
@@ -446,6 +447,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. Map its error code to copy here.
   const bookShareErrorText = shareErrorText(bookShare.error, "book");
+  const sharePartial = shareOutcomeGlyph("partial");
   // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,
@@ -866,9 +868,19 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               // A heads-up once the zip is armed, not a wait (#112). Covers
               // both whole chapters left out AND segments missing inside
               // chapters that shipped (#116) — see `bookShareGapText` above.
-              <Notice tone="info">{bookShareGapText}</Notice>
+              // Its own mark since #178, so "some of the book went" does not
+              // wear the same glyph as an unrelated standing condition.
+              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
+                {bookShareGapText}
+              </Notice>
             )}
-            {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
+            {bookShareErrorText && (
+              // See the Segments menu: `nothing` and `failed` share the
+              // `alert` tone (#147), so the mark carries the difference (#178).
+              <Notice icon={shareErrorGlyph(bookShare.error)}>
+                {bookShareErrorText}
+              </Notice>
+            )}
             {/* Destructive, so it sits last — the same place Delete holds in the
                 Segments row menu (#80). It arms the shared two-tap confirm; it
                 never deletes on this tap. */}
