@@ -76,6 +76,7 @@ function registerCoordinator(holdsUnsavedWork: () => boolean): {
     holdsUnsavedWork: vi.fn(holdsUnsavedWork),
     onYielded: vi.fn(),
     onBlocked: vi.fn(),
+    onUnblocked: vi.fn(),
   };
   setUpgradeCoordinator(app);
   return app;
@@ -657,5 +658,51 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       stale.close();
       await closeDb();
     }
+  });
+
+  it("tells it the block is over when the other copy closes on its own", async () => {
+    // `blocked` fires once, for the open being processed; a second open queues
+    // behind it and is told nothing. So an app showing "another copy is open"
+    // cannot find out by asking that it no longer is — and it has to find out,
+    // because the panel is deferred while a take is held and the block can end
+    // while that take is still in hand. Without this the deferred panel would go
+    // up over a database this copy can read perfectly well.
+    const opens = trackOpens();
+    try {
+      const app = registerCoordinator(() => false);
+      const stale = await openLegacyV3Open();
+
+      await expect(getDb()).rejects.toBeInstanceOf(Error);
+      expect(app.onBlocked).toHaveBeenCalledTimes(1);
+      expect(app.onUnblocked).not.toHaveBeenCalled();
+
+      // The person closes the other copy. The open that was blocked comes
+      // through and is cached, so the database is reachable with no further
+      // action. Waited on by the request itself rather than a delay: how many
+      // turns that takes is fake-indexeddb's business, not this case's.
+      const appOpen = lastRequest(opens.requests);
+      stale.close();
+      await requestSettled(appOpen);
+      await delay(0);
+
+      expect(app.onUnblocked).toHaveBeenCalledTimes(1);
+      await expect(
+        (await getDb()).get("clipMeta", "absent" as never)
+      ).resolves.toBeUndefined();
+      await closeDb();
+    } finally {
+      opens.restore();
+    }
+  });
+
+  it("says nothing about a block for an open that was never blocked", async () => {
+    // The other half of that gate. `onUnblocked` withdraws a panel, so an open
+    // that reports it when there was nothing to withdraw would be a screen
+    // taken down for no reason — or, once more states exist, the wrong one.
+    const app = registerCoordinator(() => false);
+    await getDb();
+    expect(app.onBlocked).not.toHaveBeenCalled();
+    expect(app.onUnblocked).not.toHaveBeenCalled();
+    await closeDb();
   });
 });

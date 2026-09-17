@@ -26,6 +26,11 @@ export type DatabaseStatus = "ok" | "blocked" | "reloadNeeded";
  * question has to be answered. `holdsUnsavedWork` is called from inside a
  * `versionchange` handler, so it must answer synchronously — hence a plain
  * predicate rather than anything awaited.
+ *
+ * What comes back is the database's CONDITION, not an instruction to render.
+ * `blocked` is reported the moment it happens and withdrawn if the other copy
+ * closes on its own; whether a screen may be taken over to say so is the
+ * caller's decision, and in `App` it waits for nothing to be held.
  */
 export function useDatabaseStatus(
   holdsUnsavedWork: () => boolean
@@ -55,13 +60,22 @@ export function useDatabaseStatus(
     const coordinator: UpgradeCoordinator = {
       holdsUnsavedWork: () => predicateRef.current(),
       onYielded: () => setStatus("reloadNeeded"),
-      onBlocked: () => {
-        // This panel takes over the screen, which unmounts what is under it.
-        // While work is held that would cost more than it explains — the
-        // save-failure screen and each screen's own retry are the paths for
-        // that — so it waits until nothing is in hand.
-        if (!predicateRef.current()) setStatus("blocked");
-      },
+      // Recorded whether or not anything can be shown for it. WHEN to show the
+      // panel is the caller's decision, because the panel takes the screen over
+      // and unmounts what is under it — which must not happen while a take is
+      // held. Deciding it here instead, by checking the predicate and dropping
+      // the event when work is in hand, loses the fact permanently: `blocked`
+      // fires once per open, and nothing re-reads storage when a take is
+      // discarded (`performDiscardTake` returns without touching the database
+      // when there is no orphan clip), so the app would go on showing an
+      // ordinary screen over a database it cannot reach (Frank R1 P2).
+      onBlocked: () => setStatus("blocked"),
+      // And taken back down when the block ends on its own — the other copy
+      // closed and the queued open came through. Never over `reloadNeeded`:
+      // that one is this copy having given its connection away, which no
+      // storage event undoes. Only a restart does.
+      onUnblocked: () =>
+        setStatus((current) => (current === "blocked" ? "ok" : current)),
     };
     setUpgradeCoordinator(coordinator);
     return () => setUpgradeCoordinator(null);

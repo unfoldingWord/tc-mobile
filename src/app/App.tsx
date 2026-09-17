@@ -156,6 +156,16 @@ export function App() {
   );
   const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
 
+  // The condition above is reported as it happens; this is where it is allowed
+  // to take the screen over. It waits until nothing is held, because the panel
+  // unmounts everything under it — including the sheet holding a recording and
+  // the recovery screen that could still save one. The wait is the whole reason
+  // the hook reports rather than decides: a `blocked` arriving while a take is
+  // in hand is remembered here, and shows the moment the take is let go, rather
+  // than being dropped on the floor.
+  const databasePanel =
+    databaseStatus === "ok" || holdsUnsavedWork() ? null : databaseStatus;
+
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
@@ -322,12 +332,12 @@ export function App() {
   // The database panel below takes the screen over the same way, and for the
   // same reason needs the same call: the Segments list can be playing a segment
   // back when the panel replaces it, and `useAudioSession` lives up here, so the
-  // sound would carry on under a screen with no stop on it. Nothing held is
-  // dropped by this — the panel is only ever reached when `holdsUnsavedWork()`
-  // answered false, so there is no take and no open recorder to cancel.
+  // sound would carry on under a screen with no stop on it. Keyed on the PANEL
+  // and not on the status — `leave()` cancels an in-progress take, and the
+  // status goes to `blocked` while one may still be held.
   useEffect(() => {
-    if (databaseStatus !== "ok") leave();
-  }, [databaseStatus, leave]);
+    if (databasePanel) leave();
+  }, [databasePanel, leave]);
 
   if (recovery) {
     return (
@@ -347,12 +357,12 @@ export function App() {
 
   // Behind the held take, never in front of it: this says the database cannot
   // be reached, and a held recording is the one thing that outranks that.
-  // Reaching here means nothing is held — the guard above refuses to yield
-  // while anything is, and the blocked state waits for the same answer.
-  if (databaseStatus !== "ok") {
+  // `databasePanel` is null while anything is held, so reaching here means the
+  // screen is free to be taken over.
+  if (databasePanel) {
     return (
       <main className="app-shell grid h-full place-items-center">
-        <DatabasePanel status={databaseStatus} />
+        <DatabasePanel status={databasePanel} />
       </main>
     );
   }

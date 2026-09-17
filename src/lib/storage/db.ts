@@ -185,6 +185,17 @@ export interface UpgradeCoordinator {
   onYielded: () => void;
   /** An open failed because another copy holds an older connection open. */
   onBlocked: () => void;
+  /**
+   * A blocked open has since come through: the other copy closed and the
+   * database is reachable again.
+   *
+   * This exists because `blocked` is a one-shot event on the open being
+   * processed — opening again queues behind it and is told nothing — so an app
+   * that is still showing "another copy is open" has no way to find out that it
+   * no longer is. Without this the only honest screen would be one that cannot
+   * take itself down.
+   */
+  onUnblocked: () => void;
 }
 
 let coordinator: UpgradeCoordinator | null = null;
@@ -235,6 +246,16 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   // await in between, so a later `closeDb()` is guaranteed to have snapshotted
   // this open — and to be waiting to close whatever it produces.
   const bornAt = closeGeneration;
+
+  /**
+   * Whether this open was told it was blocked.
+   *
+   * It is what makes the recovery reportable. A `blocked` event fires once, for
+   * the open being processed; a second open queues BEHIND that one and is told
+   * nothing at all, so an app cannot learn "is it still blocked?" by opening
+   * again. The answer has to come from this open when it finally settles.
+   */
+  let wasBlocked = false;
 
   /**
    * The promise THIS attempt owns in `dbPromise`, and the identity every
@@ -326,6 +347,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       blocked() {
         if (settled) return;
         settled = true;
+        wasBlocked = true;
         reject(new DatabaseBlockedError());
         // The rejection reaches whoever called `getDb()`; this reaches the app
         // as a whole, which is what puts the "close the other copy" screen up
@@ -379,6 +401,15 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
     void opening.then(
       (db) => {
         if (pendingOpen === opening) pendingOpen = null;
+        // This open was told it was blocked and has now come through, so the
+        // other copy has closed and the database is reachable again. Said
+        // whichever branch below takes the connection: in both of them the
+        // block is over, and an app still showing "another copy is open" is
+        // showing something that stopped being true.
+        if (wasBlocked) {
+          wasBlocked = false;
+          coordinator?.onUnblocked();
+        }
         if (settled) {
           // `blocked` already rejected this open; the connection finally came
           // through once the other copy closed. Keep it if nothing has taken
@@ -402,6 +433,9 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       },
       (cause) => {
         if (pendingOpen === opening) pendingOpen = null;
+        // Deliberately no `onUnblocked` here: an open that was blocked and then
+        // FAILED leaves the database no more reachable than it was.
+        wasBlocked = false;
         if (settled) return;
         settled = true;
         reject(cause);
