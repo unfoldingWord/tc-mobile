@@ -60,69 +60,32 @@ function marker(page: import("@playwright/test").Page) {
 }
 
 /**
- * Reset the origin's log between cases by CLEARING every object store.
+ * Every case starts from an empty log, and that is **asserted, not arranged**.
  *
- * Never `deleteDatabase` (George #3, round 1): AGENTS.md bans exactly the shape
- * this used to have — a delete that resolves on `onblocked`. After `goto("/")`
- * the app already holds a connection, so the delete blocks, `onblocked` fires,
- * a handler that resolves there reports success, and the database is still
- * there with the previous case's rows in it. `tests/support.ts` clears stores
- * for this reason and this is the browser-side twin of it.
+ * There used to be a reset helper here. George's round-1 finding had two halves:
+ * the first version of it used `deleteDatabase` and resolved on `onblocked`,
+ * exactly the shape AGENTS.md bans (the app already holds a connection after
+ * `goto("/")`, so the delete blocks, the handler reports success, and the
+ * database is still there with the previous case's rows). That half was
+ * confirmed and fixed. The LEAK half never reproduced: with the reset removed
+ * entirely every case still passed, and a probe that deliberately left a row
+ * behind read `0` rows in the next case, because Playwright gives each test a
+ * fresh browser context and that isolates the origin's IndexedDB.
  *
- * `indexedDB.open` with no version opens at whatever version is on disk, so it
- * runs no upgrade and blocks nobody.
+ * So the corrected helper was kept as belt-and-braces — and a helper that
+ * provably does nothing is the sprawl AGENTS.md forbids, not insurance. **It is
+ * deleted** (DRI, 2026-09-17); the measurement is recorded on the PR.
  *
- * **What this does and does not buy, measured rather than assumed.** George's
- * finding had two halves. The mechanism half is confirmed: the old reset did not
- * do what its comment said. The LEAK half does not reproduce under this config —
- * with the reset removed entirely, all cases still pass, and a probe that left a
- * row behind on purpose read `0` rows in the next case, because Playwright gives
- * each test a fresh browser context and that isolates the origin's IndexedDB.
- * So this helper is belt-and-braces today, kept so the invariant survives a
- * config change (a shared context, `reuseExistingServer` with parallel workers)
- * rather than because a case leaks now. The part that actually carries weight
- * against a false pass is the ASSERTION below, which fails loudly if a case ever
- * does start dirty — where the old reset would have passed quietly.
+ * What carries the weight against a false pass is below, and always did.
+ * `useFailureCount` starts at `0` and reads IndexedDB in an effect, so a case
+ * that merely found "no marker" could be seeing the pre-effect state. Waiting
+ * for the control to SETTLE on its quiet name is what distinguishes "read the
+ * empty log" from "has not read yet" — and it fails loudly if a case ever does
+ * start dirty, where the old reset passed quietly.
  */
-async function clearAllStores(page: import("@playwright/test").Page) {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open("tc-mobile");
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          const db = request.result;
-          const stores = Array.from(db.objectStoreNames);
-          if (stores.length === 0) {
-            db.close();
-            resolve();
-            return;
-          }
-          const tx = db.transaction(stores, "readwrite");
-          for (const name of stores) tx.objectStore(name).clear();
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-          tx.onabort = () => reject(tx.error);
-        };
-      })
-  );
-}
-
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
-  // Wait for the app to be up before clearing, so the store list is the real
-  // v6 schema and not an empty database this reset just created.
   await expect(menuControl(page)).toBeVisible();
-  await clearAllStores(page);
-  await page.reload();
-  // Assert the RESET took, rather than assuming it. `useFailureCount` starts at
-  // 0 and reads IndexedDB in an effect, so a case that merely found "no marker"
-  // could be seeing the pre-effect state; waiting for the control to settle on
-  // its quiet name is what distinguishes "read the empty log" from "has not
-  // read yet". Every case starts from this known state.
   await expect(menuControl(page)).toHaveAccessibleName("Open menu");
   await expect(marker(page)).toHaveCount(0);
 });
@@ -187,9 +150,10 @@ test("the panel says so when the browser cannot share at all", async ({
   page,
 }) => {
   // Headless desktop Chromium genuinely has no `navigator.share`, so this is
-  // the real capability path, not a stub: `useShareFlow` refuses BEFORE doing
-  // the work and the panel shows its failure Notice. Worth pinning here because
-  // a desktop browser is what a facilitator may well open this on.
+  // the real capability path, not a stub: `selectLogShareShape` reads
+  // `unsupported` BEFORE the log is read and the panel shows its failure Notice.
+  // Worth pinning here because a desktop browser is what a facilitator may well
+  // open this on.
   await forceFailure(page);
   await expect(menuControl(page)).toHaveAccessibleName(
     "Open menu. 1 problem recorded."
