@@ -14,7 +14,7 @@ import {
   stageView,
   type StageState,
 } from "@/components/recorder-stage";
-import { effectivePan } from "@/lib/audio/viewport";
+import { effectivePan, viewportWindow } from "@/lib/audio/viewport";
 
 /**
  * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
@@ -1014,6 +1014,51 @@ describe("panOrRest", () => {
         length: 12_000,
       })
     ).toBe(12_000);
+  });
+});
+
+/**
+ * #442, literally: an ORDINARY idle drag (no playback, no interrupt) that
+ * parks the line at the very end, followed by a Paste that grows the buffer.
+ *
+ * This is the plain-drag sibling of the "unmeasured interrupt" composition
+ * above — same `panOrRest` rule, reached by `onPointerMove`'s everyday clamp
+ * (`recorder.tsx`) rather than by `dragOriginAfterInterrupt`. The issue
+ * described `onPointerMove` as writing the absolute sample `length` instead
+ * of the `null` rest; round 5 of #432 (`33aee7a`) changed
+ * `setPanState(next)` to `setPanState(panOrRest(next, length))`, which is the
+ * exact one-line fix #442 proposed. This test pins that composition at the
+ * `viewportWindow` layer too, since that is what `recorder.tsx` actually
+ * reads at the Record tap (`insertionOffset.current = win.centerlineSample`).
+ */
+describe("#442 — drag to the end, then Paste grows the buffer", () => {
+  it("keeps Record appending after a paste, once the drag write goes through panOrRest", () => {
+    const length = 10_000;
+    // The everyday onPointerMove clamp, `Math.max(0, Math.min(from + delta, length))`,
+    // with a delta large enough to run the finger past the end.
+    const next = Math.max(0, Math.min(0 + 50_000, length));
+    expect(next).toBe(length); // the finger parked exactly on the last sample
+
+    // What onPointerMove actually persists (recorder.tsx:1126).
+    const written = panOrRest(next, length);
+    expect(written).toBeNull();
+
+    // Paste grows the working buffer; panState is untouched by onPaste
+    // (recorder.tsx:1802-1805) — only `effectivePan`/`viewportWindow`, read
+    // fresh next render, can still find the true end.
+    const grownLength = 16_000;
+    const pan = effectivePan({
+      mode: "record",
+      selectionActive: false,
+      zoomPan: null,
+      panState: written,
+      length: grownLength,
+    });
+    expect(pan).toBe(grownLength);
+
+    // What `onRecordButton` actually locks into `insertionOffset.current`.
+    const win = viewportWindow(grownLength, pan, 1, 0.5);
+    expect(win.centerlineSample).toBe(grownLength);
   });
 });
 
