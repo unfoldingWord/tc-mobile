@@ -169,8 +169,13 @@ describe("stop() re-arms the audio context in the gesture (#58 / George R2 P2-2)
   });
 
   it("routes a rejected resume to a sink rather than swallowing it", () => {
-    // AGENTS.md: never swallow an error silently. Mirrors `resume()`'s own
-    // handling exactly — an empty `.catch(() => {})` must fail this.
-    expect(stopBody()).toMatch(/resumeAudioContext\s*\(\s*\)\s*\.catch\s*\(/);
+    // AGENTS.md: never swallow an error silently. The handler must BIND the
+    // cause and report it, exactly as `resume()`, `retryDecode()` and
+    // `previewCapture()` do. Asserting only that some `.catch(` follows is not
+    // enough — `.catch(() => {})` satisfies that and swallows everything, which
+    // is what the empty-catch mutation proved when it survived the looser form.
+    expect(stopBody()).toMatch(
+      /resumeAudioContext\s*\(\s*\)\s*\.catch\s*\(\s*\(\s*cause[^)]*\)\s*=>\s*\{\s*console\.error/
+    );
   });
 });
