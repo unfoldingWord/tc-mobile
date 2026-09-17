@@ -37,3 +37,37 @@ describe("strings.shareBookPartial", () => {
     expect(strings.shareBookPartial(2)).not.toMatch(/chapter/i);
   });
 });
+
+/**
+ * George (#423 round 1 P3) — once `shareBookPartial` became the `shareMissing`
+ * twin (the #400 fix above), the combined composer's plain concatenation lost
+ * the export invariant that a chapter counts toward at most one of `missing`
+ * and `partialSegments` (`src/lib/export/book.ts`). "1 chapter could not be
+ * included. 1 segment could not be included." reads as either double-counting
+ * the omitted chapter's own gap, or as an unrelated, under-counted hole.
+ *
+ * One segment is always exactly one chapter, so the `segments === 1` case can
+ * safely name that chapter's scope ("a chapter that shipped") without
+ * misstating a count. `segments > 1` cannot: `partialSegments` sums across an
+ * unknown number of shipped chapters, and naming "a chapter" (singular) or
+ * pluralizing "chapters" off it would reintroduce the #400/#423 bug — so it
+ * keeps `shareBookPartial`'s chapter-free wording verbatim, same as the
+ * standalone Notice. Pinned here so a later edit cannot make the two
+ * sentences indistinguishable by accident.
+ */
+describe("strings.shareBookMissingAndPartial", () => {
+  it("scopes the n===1 partial segment to a chapter that shipped", () => {
+    expect(strings.shareBookMissingAndPartial(1, 1)).toBe(
+      "1 chapter could not be included. 1 segment was left out of a chapter that shipped."
+    );
+  });
+
+  it("keeps the n>1 partial clause chapter-free, matching shareBookPartial", () => {
+    expect(strings.shareBookMissingAndPartial(1, 2)).toBe(
+      `1 chapter could not be included. ${strings.shareBookPartial(2)}`
+    );
+    expect(strings.shareBookMissingAndPartial(2, 3)).toBe(
+      `2 chapters could not be included. ${strings.shareBookPartial(3)}`
+    );
+  });
+});

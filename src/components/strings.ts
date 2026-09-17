@@ -17,14 +17,24 @@ export const strings = {
   menuTitle: "Menu",
   menuClose: "Close menu",
   booksEmpty: "Start your first book",
-  // Not an unconditional promise: the browser may refuse the durability
-  // request `useStoragePersistence` makes once a book exists
-  // (`storageNotPersisted` below), and the eviction warning that names that
-  // takes itself down once the shelf empties back out to this state
-  // (`storageMarker`'s `hasContent` gate) — so this line must not assert what
-  // that gate just retracted (George round-2 residual, #406 item 3).
-  booksEmptyTeach:
-    "A book holds the chapters you record — and stays on this phone unless space runs low.",
+  // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
+  // an earlier fix hedged this line with "unless space runs low" instead of
+  // removing the durability claim, but the empty shelf shows with NONE of
+  // `storageMarker`'s three gates checked — not native, `persisted === false`,
+  // `hasContent` (`lib/storage/persistence.ts`, `showEmpty` at
+  // `books-screen.tsx` never consults any of them). `hasContent` going false
+  // retracts the eviction *warning*, not a persistence *promise* — "`false`
+  // from a stale read is not evidence about a shelf that no longer has
+  // anything on it" (`persistence.ts`). So an un-gated durability line here
+  // would warn on the training APK's first launch (native storage is not
+  // evicted this way), assert a false warning on an origin that already
+  // granted `persist()` and deleted its last book, and claim an answer this
+  // repo deliberately stays silent on when `navigator.storage` is absent
+  // (iOS Safari). Vocabulary only, no durability claim — matches
+  // `segmentsEmptyTeach` below, which never mentions durability either.
+  // "Space runs low" stays solely on `storageNotPersisted`, which has all
+  // three gates.
+  booksEmptyTeach: "A book holds the chapters you record.",
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
@@ -344,8 +354,28 @@ export const strings = {
   // Both gaps can occur in the same book (a whole chapter missing AND a
   // segment missing from one that shipped). The screen surfaces ONE Notice for
   // the book grain, so this combines rather than stacking two.
+  //
+  // `exportBookZip` counts a chapter toward at most one of `missing` and
+  // `partialSegments` (`src/lib/export/book.ts`) — a chapter never contributes
+  // to both. Plainly concatenating `shareBookMissing` and `shareBookPartial`
+  // verbatim used to carry that invariant because the old `shareBookPartial`
+  // named its own chapter's scope; once it became the `shareMissing` twin
+  // (#400, this file above), the two sentences read identically shaped and a
+  // reader could take "1 chapter could not be included. 1 segment could not
+  // be included." as one gap double-counted, or as an unrelated,
+  // under-counted hole (George #423 round 1 P3). One missing segment is
+  // always exactly one chapter, so the `segments === 1` case can safely name
+  // that chapter's scope without misstating a count. `segments > 1` cannot —
+  // `partialSegments` sums across an unknown number of shipped chapters, and
+  // this string does not track how many of them are distinct — so it falls
+  // back to `shareBookPartial`'s chapter-free wording, same as the standalone
+  // Notice.
   shareBookMissingAndPartial: (chapters: number, segments: number): string =>
-    `${strings.shareBookMissing(chapters)} ${strings.shareBookPartial(segments)}`,
+    `${strings.shareBookMissing(chapters)} ${
+      segments === 1
+        ? "1 segment was left out of a chapter that shipped."
+        : strings.shareBookPartial(segments)
+    }`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
   // the first thing to do — the encoder was restarted — and the restart hint is
