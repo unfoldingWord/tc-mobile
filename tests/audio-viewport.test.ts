@@ -4,6 +4,8 @@ import {
   effectivePan,
   panAfterCut,
   panForZoom,
+  playbackStrip,
+  playbackStripOffset,
   sampleToViewportX,
   viewportWindow,
   viewportXToSample,
@@ -451,5 +453,124 @@ describe("panForZoom", () => {
   it("is safe on an empty segment", () => {
     expect(panForZoom(0, 0, 4, CF, { start: 0, end: 0 })).toBe(0);
     expect(panForZoom(0, 50, 1, CF, null)).toBe(0);
+  });
+});
+
+/**
+ * The playback strip (#415/#416/#417): during playback the waveform scrolls
+ * under a centerline that never moves, so the drawn geometry stops being "a
+ * window that follows the pan" and becomes "one strip, translated".
+ *
+ * The strip is drawn ONCE per play — the clip plus a viewport's worth of blank
+ * split across its two ends — and each frame moves it by a single transform.
+ * That is why both halves are here as arithmetic: `playbackStrip` says what to
+ * draw and how wide it is, `playbackStripOffset` says where to put it, and the
+ * property that matters (the sounding sample sits under the line, always) is a
+ * composition of the two rather than something either can promise alone.
+ */
+describe("playbackStrip / playbackStripOffset", () => {
+  const CENTER = 0.5;
+  const LEN = 1000;
+
+  /**
+   * Where a sample lands across the STAGE, as a fraction of the stage width —
+   * 0 the left edge, 1 the right, `CENTER` the centerline. This is the
+   * composition the component performs in CSS (`width: widthFactor * 100%`
+   * plus `translateX(offset * 100%)` of the strip's own width), written out
+   * here so the invariant is asserted end to end rather than one function at a
+   * time. It calls the production functions; it does not restate their math.
+   */
+  function stageX(sample: number, position: number, zoom: number): number {
+    const visible = LEN / zoom;
+    const strip = playbackStrip(LEN, visible, CENTER);
+    const offset = playbackStripOffset(position, LEN, visible);
+    const withinStrip =
+      (sample / LEN - strip.startFraction) /
+      (strip.endFraction - strip.startFraction);
+    return (withinStrip + offset) * strip.widthFactor;
+  }
+
+  it("pads the clip with a viewport of blank, split at the centerline", () => {
+    // Whole zoom: half a viewport (= half the clip) of blank at each end.
+    const whole = playbackStrip(LEN, LEN, CENTER);
+    expect(whole.startFraction).toBeCloseTo(-0.5);
+    expect(whole.endFraction).toBeCloseTo(1.5);
+    expect(whole.widthFactor).toBeCloseTo(2);
+
+    // Quarter zoom: the blank is half a VIEWPORT, not half a clip, so the strip
+    // is five viewports wide and the overhang is an eighth of the clip.
+    const quarter = playbackStrip(LEN, LEN / 4, CENTER);
+    expect(quarter.startFraction).toBeCloseTo(-0.125);
+    expect(quarter.endFraction).toBeCloseTo(1.125);
+    expect(quarter.widthFactor).toBeCloseTo(5);
+  });
+
+  it("splits the blank by centerFraction, keeping the width the same", () => {
+    // A line at a quarter of the width needs only a quarter viewport of blank
+    // ahead of the clip's start, and three quarters after its end. The total
+    // padding — and so the strip's width — is one viewport either way.
+    const strip = playbackStrip(LEN, LEN, 0.25);
+    expect(strip.startFraction).toBeCloseTo(-0.25);
+    expect(strip.endFraction).toBeCloseTo(1.75);
+    expect(strip.widthFactor).toBeCloseTo(2);
+  });
+
+  it("puts the sounding sample under the centerline, at every position and zoom", () => {
+    for (const zoom of [1, 4]) {
+      for (const position of [0, 1, 250, 500, 999, LEN]) {
+        expect(stageX(position, position, zoom)).toBeCloseTo(CENTER);
+      }
+    }
+  });
+
+  it("clamps the position to the clip — the line never runs past either end", () => {
+    // #416: "The playhead must not scroll past the end of the recorded
+    // waveform. The end sample is the clamp... Symmetrically, it cannot scroll
+    // before the first sample."
+    expect(playbackStripOffset(LEN * 3, LEN, LEN)).toBeCloseTo(
+      playbackStripOffset(LEN, LEN, LEN)
+    );
+    expect(playbackStripOffset(-LEN, LEN, LEN)).toBeCloseTo(
+      playbackStripOffset(0, LEN, LEN)
+    );
+    // And the clamp is what keeps the clip's own edge on the line rather than
+    // letting blank space drift under it.
+    expect(stageX(LEN, LEN * 3, 1)).toBeCloseTo(CENTER);
+    expect(stageX(0, -LEN, 1)).toBeCloseTo(CENTER);
+  });
+
+  it("starts with the clip's first sample on the line and blank to its left", () => {
+    // #415, "at the start": the waveform begins under the red line, there is no
+    // audio to the left of it, and the clip runs off the right edge.
+    expect(stageX(0, 0, 1)).toBeCloseTo(0.5);
+    expect(stageX(LEN, 0, 1)).toBeCloseTo(1.5);
+  });
+
+  it("shows the whole clip exactly once, at the midpoint (whole zoom)", () => {
+    // #415, "at the exact midpoint: the whole waveform is on screen (half left
+    // of centre, half right). This is the ONLY moment the entire segment is
+    // visible in the editor." Both edges land on the stage edges.
+    expect(stageX(0, LEN / 2, 1)).toBeCloseTo(0);
+    expect(stageX(LEN, LEN / 2, 1)).toBeCloseTo(1);
+    // A hair either side and one edge has left the screen, which is what makes
+    // the midpoint the only such moment.
+    expect(stageX(0, LEN / 2 + 10, 1)).toBeLessThan(0);
+    expect(stageX(LEN, LEN / 2 - 10, 1)).toBeGreaterThan(1);
+  });
+
+  it("ends with the clip's last sample on the line and blank to its right", () => {
+    // #415, "at the end": the waveform has scrolled off the left, and the blank
+    // runs from the line to the right edge.
+    expect(stageX(LEN, LEN, 1)).toBeCloseTo(0.5);
+    expect(stageX(0, LEN, 1)).toBeCloseTo(-0.5);
+  });
+
+  it("scrolls the waveform leftward as playback advances, never rightward", () => {
+    let previous = Infinity;
+    for (const position of [0, 100, 200, 500, 800, LEN]) {
+      const offset = playbackStripOffset(position, LEN, LEN);
+      expect(offset).toBeLessThan(previous);
+      previous = offset;
+    }
   });
 });

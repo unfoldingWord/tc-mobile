@@ -465,9 +465,13 @@
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
   }
-  /* The waveform stage. `position: relative` anchors the recording indicator;
-     the centerline itself is drawn on the canvas so it stays pixel-aligned
-     with the bars at any zoom. */
+  /* The waveform stage. `position: relative` anchors the recording indicator
+     and every overlay the recorder lays over the canvas — the centerline
+     included: since #415 the line is a DOM element in `recorder.tsx`, not a bar
+     painted on the canvas, because during playback the canvas is a strip that
+     TRANSLATES under it and a painted line would travel with it. `overflow:
+     hidden` here is what clips that strip, which is up to five stage widths
+     wide. */
   .recorder-stage {
     position: relative;
     display: flex;
