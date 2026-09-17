@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { Notice } from "./notice";
 import {
   recoveryAttempts,
   recoverySafetyLine,
@@ -9,7 +10,10 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { strings } from "./strings";
+import { flushFailureLog } from "@/hooks/failure-log";
 import type { SaveFailureKind } from "@/hooks/save-failure";
+import { restartAfterFlush } from "@/lib/restart-after-flush";
 
 /**
  * Restart the app from disk — the same exit `DatabasePanel` and `ErrorBoundary`
@@ -81,6 +85,12 @@ export function SaveFailed({
   // takes two taps too (Frank R4 P1). Two slots rather than one so arming one
   // control never arms the other.
   const [restartArmedAt, setRestartArmedAt] = useState<number | null>(null);
+  // Set on the second tap of the terminal restart, before the flush; never
+  // cleared, on purpose (#458) — the two ends of this are the reload happening
+  // (the document is replaced) or the flush never settling, and a control that
+  // quietly went un-busy while nothing had changed would be a dead button
+  // wearing a spinner first, the same reasoning `RestartControl` documents.
+  const [restarting, setRestarting] = useState(false);
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
   const restartArmed = restartArmedAt === attempts && !saving;
@@ -145,11 +155,13 @@ export function SaveFailed({
             icon="retry"
             label={
               terminal
-                ? restartLabel(
-                    editOnly ? "changes" : "recording",
-                    restartArmed,
-                    holdsCutAudio
-                  )
+                ? restarting
+                  ? strings.appReloading
+                  : restartLabel(
+                      editOnly ? "changes" : "recording",
+                      restartArmed,
+                      holdsCutAudio
+                    )
                 : "Try saving again"
             }
             variant="primary"
@@ -157,15 +169,28 @@ export function SaveFailed({
             className={
               terminal && restartArmed ? "text-[var(--s-live)]" : undefined
             }
+            busy={terminal && restarting}
             autoFocus
             onClick={
               terminal
-                ? () => (restartArmed ? reload() : setRestartArmedAt(attempts))
+                ? () =>
+                    restartArmed
+                      ? void restartAfterFlush(
+                          restarting,
+                          () => setRestarting(true),
+                          flushFailureLog,
+                          reload
+                        )
+                      : setRestartArmedAt(attempts)
                 : onRetry
             }
           />
 
-          {terminal && restartArmed && (
+          {terminal && restarting && (
+            <Notice tone="busy">{strings.appReloading}</Notice>
+          )}
+
+          {terminal && restartArmed && !restarting && (
             <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
               {restartConsequence(
                 editOnly ? "changes" : "recording",
