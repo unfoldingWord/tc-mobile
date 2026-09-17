@@ -17,7 +17,7 @@ import {
  * render and the two `window` listeners in `src/app/main.tsx` are verified by
  * hand in a browser and recorded on the PR — not here, and not claimed here.
  *
- * The module holds process-wide state (the one sink slot, and the last cause
+ * The module holds process-wide state (the subscriber set, and the last cause
  * seen), so every case installs through the `subscribe` helper below — which
  * undoes the subscription after the case whether it passed or not — and uses
  * its own distinct cause object.
@@ -26,9 +26,9 @@ describe("reportFailure", () => {
   let logged: unknown[][];
   /**
    * Every subscription made in a case, undone after it — including a case that
-   * fails partway. A leaked sink is not a tidiness problem here: the next case
-   * would find the slot occupied, take the "second sink replaced" log, and fail
-   * for a reason that has nothing to do with what it asserts.
+   * fails partway. A leaked subscriber is not a tidiness problem here: the set
+   * is process-wide, so the next case would push into a previous case's array
+   * and fail for a reason that has nothing to do with what it asserts.
    */
   let installed: (() => void)[];
 
@@ -94,21 +94,123 @@ describe("reportFailure", () => {
     expect(seen).toEqual([]);
   });
 
-  it("keeps one sink, says so, and lets the replaced unsubscribe be harmless", () => {
+  it("delivers to every subscriber, and a second does not displace the first", () => {
+    // This was one slot until #205. That shape had a displacement bug (#188
+    // round 3, Frank P2): a second subscription REPLACED the first, and the
+    // second's unsubscribe then emptied the only slot — so a transient UI
+    // subscriber could take the durable log offline and leave nothing behind.
     const first: FailureReport[] = [];
     const second: FailureReport[] = [];
-    const offFirst = subscribe((report) => first.push(report));
+    subscribe((report) => first.push(report));
     subscribe((report) => second.push(report));
 
-    // The replacement is reported, not silent.
-    expect(logged).toHaveLength(1);
-
-    // The displaced subscriber's unsubscribe must not clear the live slot.
-    offFirst();
     reportFailure(new Error("two sinks"), "render");
 
-    expect(first).toEqual([]);
+    expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
+    // Still one line: subscribers do not multiply the log.
+    expect(logged).toHaveLength(1);
+  });
+
+  it("keeps the durable subscriber when a transient one unsubscribes", () => {
+    // The exact sequence the single slot got wrong, in the order it happens in
+    // the app: the durable log installs at the entry, a panel subscribes when it
+    // opens, and the panel closes.
+    const durable: FailureReport[] = [];
+    subscribe((report) => durable.push(report));
+    const offTransient = subscribe(() => {});
+    offTransient();
+
+    reportFailure(new Error("after the panel closed"), "render");
+
+    expect(durable).toHaveLength(1);
+  });
+
+  it("subscribing the same listener twice delivers once", () => {
+    const seen: FailureReport[] = [];
+    const listener = (report: FailureReport) => seen.push(report);
+    subscribe(listener);
+    subscribe(listener);
+
+    reportFailure(new Error("once"), "render");
+
+    expect(seen).toHaveLength(1);
+  });
+
+  it("one subscription's removal does not cancel another's", () => {
+    // Delivery is per LISTENER; lifetime is per SUBSCRIPTION. Collapsing the two
+    // is the single slot's displacement bug at one remove: the first caller's
+    // unsubscribe emptied the only entry and took the second caller's live
+    // subscription with it, silently, leaving the funnel with a subscriber it
+    // believed it still had (Frank, takeover round 6).
+    const seen: FailureReport[] = [];
+    const listener = (report: FailureReport) => seen.push(report);
+    const offFirst = subscribe(listener);
+    subscribe(listener);
+
+    offFirst();
+    reportFailure(new Error("the second subscription is still live"), "render");
+    expect(seen).toHaveLength(1);
+
+    // And idempotent: a caller that releases in both a cleanup and an unmount
+    // must not spend the other subscription's count doing it.
+    offFirst();
+    reportFailure(new Error("still live after a repeated removal"), "render");
+    expect(seen).toHaveLength(2);
+  });
+
+  it("stops delivering once the LAST subscription holding a listener goes", () => {
+    const seen: FailureReport[] = [];
+    const listener = (report: FailureReport) => seen.push(report);
+    const offFirst = subscribe(listener);
+    const offSecond = subscribe(listener);
+
+    offFirst();
+    offSecond();
+    reportFailure(new Error("nobody is listening"), "render");
+
+    expect(seen).toEqual([]);
+  });
+
+  it("a throwing subscriber does not cost the others their report", () => {
+    // Caught per listener, not around the loop: the durable log must still get
+    // the row when a UI subscriber throws, which is the whole reason the funnel
+    // can now hold more than one.
+    const durable: FailureReport[] = [];
+    subscribe(() => {
+      throw new Error("subscriber blew up");
+    });
+    subscribe((report) => durable.push(report));
+
+    reportFailure(new Error("delivered anyway"), "render");
+
+    expect(durable).toHaveLength(1);
+    expect(
+      logged.some((args) =>
+        String(args[0]).includes("a failure subscriber threw")
+      )
+    ).toBe(true);
+  });
+
+  it("a subscriber added DURING a dispatch does not receive that report", () => {
+    // The dispatch walks a COPY of the set, and this is the case that needs it.
+    // Deleting from a live Set mid-iteration is well-defined and skips nothing,
+    // so removal alone would pass either way; ADDING is what a live Set gets
+    // wrong — `Set` iteration visits entries inserted after the walk started, so
+    // the newcomer would be handed a report from before it existed.
+    const seen: string[] = [];
+    const late = () => seen.push("late");
+    subscribe(() => {
+      seen.push("first");
+      subscribe(late);
+    });
+
+    reportFailure(new Error("mid-walk insert"), "render");
+    expect(seen).toEqual(["first"]);
+
+    // And it does get the NEXT one.
+    reportFailure(new Error("the next one"), "render");
+    expect(seen).toEqual(["first", "first", "late"]);
   });
 
   it("collapses the same object reported twice under the SAME context", () => {

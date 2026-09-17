@@ -129,6 +129,25 @@ export function resolveProvesDelivery(route: ShareRoute): boolean {
 }
 
 /**
+ * Are we inside the Capacitor shell? The ONE question that can be asked without
+ * touching the WebView's Web Share implementation at all.
+ *
+ * Separate from {@link readShareEnvironment} because a caller that only needs to
+ * know whether the native plugin is available should not have to read
+ * `navigator.share` and `navigator.canShare` to find out. On the WebViews this
+ * module exists for (#336) those reads are not guaranteed safe — a throwing
+ * `canShare` getter is the same class of defect — and the native route does not
+ * depend on either answer (Frank, takeover round 5).
+ *
+ * `readShareEnvironment` is unchanged and still answers all three at once, which
+ * is what `useShareFlow` wants: `selectShareRoute` takes native first, so the
+ * two web fields it carries are never consulted on the native route.
+ */
+export function isNativeShell(): boolean {
+  return Capacitor.isNativePlatform();
+}
+
+/**
  * Probe the platform. Browser globals, so this is the hooks layer's job and it
  * is NOT unit-tested — {@link selectShareRoute} takes the result as data, which
  * is the part with the decisions in it.
