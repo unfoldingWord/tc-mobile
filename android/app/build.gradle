@@ -11,6 +11,20 @@ def keyAliasVal  = System.getenv("ANDROID_KEY_ALIAS") ?: ""
 def keyPass      = System.getenv("ANDROID_KEY_PASSWORD") ?: ""
 def releaseSigningReady = keystorePath && storePass && keyAliasVal && keyPass
 
+// versionName mirrors package.json's "version" (#410) so Settings -> Apps on
+// the phone shows the same version number as the "v..." half of the in-app
+// build stamp (src/components/build-stamp.tsx), instead of the Capacitor
+// template's permanent "1.0". Settings alone still cannot distinguish two
+// builds that share a package.json version (e.g. two CI dispatches of the
+// same staging ref) -- that is why the facilitator runbook
+// (docs/training/facilitator-runbook.md) asks testers to report the full
+// build stamp, version + build SHA, not Settings. Read at configuration time
+// so every build type stays in sync with no separate -PversionName property
+// to remember, unlike versionCode (which stays a CI timestamp — see
+// docs/native/README.md #6).
+def packageJson = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+def appVersionName = packageJson.version as String
+
 android {
     namespace = "org.unfoldingword.tcmobile"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -21,7 +35,7 @@ android {
         // CI passes -PversionCode=$(date +%s) for a strictly-increasing build
         // number; local builds default to 1 (debug/dev only, never shipped).
         versionCode project.hasProperty('versionCode') ? project.versionCode.toInteger() : 1
-        versionName "1.0"
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

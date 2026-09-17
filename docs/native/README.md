@@ -135,7 +135,10 @@ the JS toolchain never formats or lints generated native files. **No root
 Generated project facts (evidence, from the scaffolded projects):
 
 - **Android:** `minSdk 24`, `compile/targetSdk 36`, Gradle `8.14.3`,
-  `applicationId org.unfoldingword.tcmobile`, `versionCode 1`, `versionName "1.0"`.
+  `applicationId org.unfoldingword.tcmobile`, `versionCode 1` (default; a
+  build passes `-PversionCode`), `versionName` read from `package.json`'s
+  `version` at build time (`0.2.3` as of this writing — was the Capacitor
+  template default `"1.0"` until #410).
 - **iOS:** deployment target `15.0`, bundle id `org.unfoldingword.tcmobile`,
   `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
@@ -422,6 +425,24 @@ for the audio store (PR #265).
    properties, not env vars, and the guard below would report all four as
    missing. The build fails loudly if any is unset, so it cannot silently
    produce an unsigned APK. **Never commit the keystore or passwords.**
+
+   The Mac's login shell is **zsh**, not bash — a bare `read -s VAR` (the bash
+   idiom) prints no prompt in zsh, so hitting Enter without noticing exports
+   an **empty** password and `assembleRelease` fails opaquely (hit for real,
+   2026-09-16, #411). Use zsh's `name?prompt` form, which shows a prompt while
+   still suppressing echo:
+
+   ```bash
+   export ANDROID_KEYSTORE_PATH="/absolute/path/to/tc-mobile-release.jks"
+   export ANDROID_KEY_ALIAS="tc-mobile"
+   read -s "ANDROID_STORE_PASSWORD?ANDROID_STORE_PASSWORD: "; export ANDROID_STORE_PASSWORD
+   read -s "ANDROID_KEY_PASSWORD?ANDROID_KEY_PASSWORD: "; export ANDROID_KEY_PASSWORD
+   ```
+
+   (bash's equivalent is `read -s -p "ANDROID_STORE_PASSWORD: " ANDROID_STORE_PASSWORD`
+   — the flag/prompt order is reversed between the two shells, which is the
+   trap.)
+
 3. Build a signed APK — **always with a `versionCode`**, the same unix
    timestamp the CI lane uses:
    ```bash
@@ -466,17 +487,28 @@ forced uninstall wipes IndexedDB, i.e. every recording (§0). A debug-signed APK
 (§0's Monday route) is therefore a dead end for anyone who will later get a CI
 build: never hand one to a tester once the release keystore exists.
 
-**Tester distribution:** workflow artifacts require a GitHub login to download,
-and the lane attaches the APK **only** as a run artifact — nothing creates a
-GitHub release or pre-release today (the repo's first tag is the v0.2.0
-promotion). The repo is public, so "a GitHub login" means **any** signed-in
-GitHub user can fetch the artifact for as long as it is retained; it is a
-convenience, not a private channel (the keystore is not in the APK — this is an
-access-boundary note, not a signing leak). So the channel is: a team member downloads the
-`android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
-the team drive; §5
-step 4 covers installation on the phone. Attaching the APK to a release is a
-follow-up once a release step exists, not a documented path.
+`keytool` on Java 21 (§5 step 1) writes the keystore as **PKCS12**, which has a
+single password for both the store and every key inside it — so
+`ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD` are, in practice, **the
+same value** for a keystore generated this way. Confirm the two secrets match
+before assuming a typo when only one of them fails the presence check.
+
+**Tester distribution:** the lane itself attaches the APK **only** as a run
+artifact, and workflow artifacts require a GitHub login to download. The repo
+is public, so "a GitHub login" means **any** signed-in GitHub user can fetch
+the artifact for as long as it is retained; it is a convenience, not a private
+channel (the keystore is not in the APK — this is an access-boundary note, not
+a signing leak). **In practice the working channel is a manually published
+GitHub pre-release** with the run's `app-release.apk` attached as an asset —
+`android-release-v0.2.3` (published 2026-09-16, the first release-signed
+build) is the first instance — because USB did not enumerate the test device
+on the DRI's Mac, so a tester opens the release page directly in the phone's
+browser and downloads the `.apk` from there; §5 step 4 covers installation
+once it lands on the phone. Nothing in `android-apk.yml` creates the release
+automatically: a person downloads the run's `android-apk-<commit sha>`
+artifact and publishes it by hand as a pre-release with that file attached.
+Sharing the artifact through a team drive (the previously documented path)
+still works when USB or a browser download is not the constraint.
 
 ### One-time setup
 
@@ -519,18 +551,37 @@ The lane has not been dispatched yet; the first run is the end-to-end proof.
 ## 6. Versioning
 
 `package.json` `version` is the **web/PWA** build number and moves only in the
-`chore(release)` promotion PR (AGENTS.md → _Versions and milestones_). The
-native builds carry their **own** version fields:
+`chore(release)` promotion PR (AGENTS.md → _Versions and milestones_). The two
+native platforms **diverge on whether their user-facing version field tracks
+it**: iOS's stays independent by design; Android's does not (#410). Each
+platform's separate build-number field (`versionCode` / `CURRENT_PROJECT_VERSION`)
+stays native/CI-owned either way — a unix timestamp stamped at build or upload
+time, never read from `package.json`.
 
-- **iOS:** `MARKETING_VERSION` (user-facing) + `CURRENT_PROJECT_VERSION`
+- **iOS:** `MARKETING_VERSION` (user-facing) is **independent** of
+  `package.json` by design — still `1.0` — + `CURRENT_PROJECT_VERSION`
   (build, must increase every upload — and the CI lane uploads unix-timestamp
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).
-- **Android:** `versionName` (user-facing) + `versionCode` (integer, must
-  increase every install). The CI lane (§5a) stamps `versionCode` with a unix
-  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` must
-  pass the same, because the committed default is `1`, and once any CI APK is
-  on a phone a `1` is a downgrade that Android refuses (§5 step 3).
+- **Android:** `versionName` (user-facing) is sourced from `package.json`'s
+  `version` at Gradle configuration time (#410) — **not** independent the way
+  iOS's `MARKETING_VERSION` is, so it moves with every PWA version bump, with
+  no separate `-PversionName` property to remember or pass in CI — +
+  `versionCode` (integer, must increase every install). The CI lane (§5a)
+  stamps `versionCode` with a unix timestamp via `-PversionCode=$(date +%s)`;
+  a manual `assembleRelease` must pass the same, because the committed
+  default is `1`, and once any CI APK is on a phone a `1` is a downgrade that
+  Android refuses (§5 step 3).
+
+  Settings → Apps on the phone now shows the same version number as the `v…`
+  half of the in-app build stamp (`src/components/build-stamp.tsx`), instead
+  of a permanent `"1.0"`. That is **not** the same thing the facilitator
+  runbook asks testers to report: `docs/training/facilitator-runbook.md` §5
+  asks for the full build stamp — version **and** build SHA — because
+  Settings alone cannot distinguish two builds that share a `package.json`
+  version (for example, two CI dispatches of the same `staging` ref, or an
+  `allow_any_ref` build off `develop`). Point testers at the stamp; Settings
+  is a fallback only when the app will not open at all.
 
 ---
 

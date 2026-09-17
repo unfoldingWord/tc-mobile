@@ -235,6 +235,24 @@ describe("exportBookZip", () => {
     expect(result!.partialSegments).toBe(3); // one gap per chapter, summed
   });
 
+  it("sums BOTH gaps from a single partial chapter, not one per chapter (#400)", async () => {
+    // George (#398 round 1 P3, #400): the earlier tests above happen to have
+    // exactly one missing segment per partial chapter, so they cannot tell
+    // "sum of missing segments" (the actual contract) apart from "count of
+    // partial chapters" — a regression to the wrong grain would still pass
+    // them. One chapter, two never-recorded segments: `partialSegments` must
+    // read 2, not 1.
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }, null, null], // one chapter, TWO never-recorded segments
+    ]);
+    const result = await exportBookZip(bookId, nameChapter, testCodec());
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(1); // the chapter ships — it has resolvable audio
+    expect(result!.missing).toBe(0); // no whole chapter was left out
+    expect(result!.partialSegments).toBe(2); // both gaps, from the ONE chapter
+  });
+
   it("counts a whole missing chapter toward `missing` and a partial one toward `partialSegments`, not both", async () => {
     const bookId = await bookWith([
       [{ n: 100, v: 100 }, null], // included, but partial: 1 segment missing

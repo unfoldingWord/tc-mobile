@@ -406,13 +406,24 @@ export function useBooks() {
         // store string AND get no Retry, because `loaded` has already latched
         // so `loadFailed` is false. The book is still on disk in that state, so
         // the delete's copy is the one that has to survive (George R4 P2-1).
+        //
+        // `message` is extracted BEFORE the updater, not inside it: the
+        // updater must not reference `cause` itself, only a value already
+        // read from it. A nested function inside a `catch (cause)` block that
+        // DOES reference `cause` silences eslint-plugin-react-hooks 7.1.1's
+        // analysis for this WHOLE hook, including any unrelated render-time
+        // ref write elsewhere in `useBooks` (#212,
+        // tests/react-hooks-refs-gate.test.ts). George round 3 on #433 found
+        // this exact shape still live here. (Not the same fix as
+        // `use-save-take.ts` #213 — that moved the catch OUT of the hook
+        // entirely into the module-level `performSaveTake`, which still
+        // closes over `cause` there; a module-level function is not a hook,
+        // so it is outside what eslint-plugin-react-hooks analyses at all.
+        // This hoist stays inside the hook and only changes what the nested
+        // closure references.)
+        const message = cause instanceof Error ? cause.message : String(cause);
         setFailure((prev) =>
-          prev?.fromDelete
-            ? prev
-            : {
-                message: cause instanceof Error ? cause.message : String(cause),
-                fromDelete: false,
-              }
+          prev?.fromDelete ? prev : { message, fromDelete: false }
         );
       } finally {
         if (!stale()) setLoading(false);

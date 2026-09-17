@@ -5,9 +5,13 @@ interface EmptyStateProps {
   /** A confident headline — a beginning, not an apology (ui-craft §21). */
   headline: string;
   /**
-   * One line that teaches the vocabulary and reassures on offline. On a screen
-   * built for people who may not read, this is spoken by a screen reader and is
-   * the attach point for a future spoken-prompt layer (see `strings.ts`).
+   * One line that teaches the vocabulary. On a screen built for people who
+   * may not read, this is spoken by a screen reader and is the attach point
+   * for a future spoken-prompt layer (see `strings.ts`). Neither caller's
+   * `teach` string makes an offline/durability claim: `booksEmptyTeach`
+   * dropped one it could not honour (`storageMarker`'s gates never fire while
+   * the shelf is empty — George #423 round 3 P3-3), and `segmentsEmptyTeach`
+   * never had one.
    */
   teach: string;
   /**

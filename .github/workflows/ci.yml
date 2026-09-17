@@ -119,11 +119,45 @@ jobs:
       - name: Confirm the PWA artefacts were emitted
         # A build that silently stops producing a service worker or manifest
         # would leave the app installable-looking but not actually offline —
-        # the one property this project cannot lose.
+        # the one property this project cannot lose. `version.json` is checked
+        # here too (round-1 George G1): `scripts/check-deploy.mjs` and the
+        # whole "Confirming a deploy" runbook (AGENTS.md) depend on every real
+        # build emitting it, and nothing else was asserting that.
         run: |
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          test -f dist/version.json || { echo "::error::dist/version.json missing"; exit 1; }
+          node -e '
+            const fs = require("fs");
+            const v = JSON.parse(fs.readFileSync("dist/version.json", "utf8"));
+            if (typeof v.version !== "string" || typeof v.sha !== "string") {
+              console.error("::error::dist/version.json is missing a string version/sha field:", JSON.stringify(v));
+              process.exit(1);
+            }
+          '
           echo "PWA artefacts present."
+
+      - name: version.json stays out of the precache manifest
+        # tests/precache-manifest.test.ts's "never contains version.json"
+        # assertion reads dist/sw.js directly, but `npm run verify`/CI's
+        # Quality job runs tests BEFORE `npm run build` — no dist/ exists
+        # yet, so `describe.skipIf(!existsSync(SW))` skips it there (George,
+        # round 1, P3-3). This Build-job step is the only place that
+        # invariant is actually enforced end to end: version.json must stay
+        # outside `workbox.globPatterns` (vite.config.ts) so `check:deploy`'s
+        # fetch (and a browser's) always reaches the origin, never a
+        # service-worker-cached copy (see "Confirming a deploy" in
+        # AGENTS.md). `-F` (fixed string) matters here: the emitted
+        # `navigateFallbackDenylist` regex source contains the *escaped*
+        # substring `version\.json` (backslash then dot), which a literal
+        # search for `version.json` does not match — only an actual
+        # `url:"version.json"` precache-manifest entry would.
+        run: |
+          if grep -qF "version.json" dist/sw.js; then
+            echo "::error::dist/sw.js's precache manifest contains version.json — it must stay outside workbox.globPatterns in vite.config.ts so a deploy check (and a browser) always fetches it from the origin, never a cached copy. See tests/precache-manifest.test.ts and AGENTS.md, 'Confirming a deploy and rolling one back'."
+            exit 1
+          fi
+          echo "version.json absent from dist/sw.js's precache manifest."
 
       - name: OBS thumbnails stay out of the precache manifest
         # tests/precache-manifest.test.ts pins `workbox.globPatterns` in
@@ -151,6 +185,31 @@ jobs:
             exit 1
           fi
           echo "obs/thumbs absent from dist/sw.js."
+
+      # tests/dist-css.test.ts and tests/precache-manifest.test.ts's
+      # `dist/sw.js`-reading block both read the actual build output, but the
+      # Quality job (above) runs `npm test` BEFORE this job's `npm run build`
+      # even exists, so their `describe.skipIf(build artifact missing)`
+      # guards skip both there, every run (Frank, round 6 on #414/#420, for
+      # dist-css; the same gap has applied to precache-manifest's `dist/sw.js`
+      # block since #436). This job produces the build but, until now, ran no
+      # tests against it at all — so a regression either test exists to catch
+      # could ship through a fully green CI with neither job ever evaluating
+      # either assertion.
+      #
+      # `REQUIRE_DIST_BUILD=1` turns each file's added "fails, not skips,
+      # when required to find a build and does not" case from a no-op into a
+      # real assertion — proving this step is a gate and not just another
+      # place these tests quietly skip: with a real `dist/` (the normal case,
+      # right after the build above) every test runs and passes; strip
+      # `dist/` first and this same invocation goes red instead of green,
+      # which is what makes it catch a Build job that silently stopped
+      # producing output, not just a Build job that never asked at all. Scoped
+      # to this one step — Quality and local `npm test`/`npm run verify` never
+      # set this var, so their existing skip-when-unbuilt behavior is
+      # unchanged.
+      - name: Build-artifact tests actually run here, not just skip
+        run: REQUIRE_DIST_BUILD=1 npm test -- tests/dist-css.test.ts tests/precache-manifest.test.ts
 
       # The e2e smoke harness (#251) must never reach a shipped build. What
       # keeps it out is `vite.config.ts`'s `build.rollupOptions.external`, not

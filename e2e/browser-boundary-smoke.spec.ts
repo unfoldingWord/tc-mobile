@@ -44,6 +44,19 @@ import { expect, test } from "@playwright/test";
  */
 const HEARTBEAT_CLIP_FRAMES = 44_100 * 600;
 
+/**
+ * One minute of canonical PCM for the #192 purge spec.
+ *
+ * The clip has one job: be long enough that the encode cannot possibly finish
+ * before the abort. One SECOND was tried first and is not — it encodes in a few
+ * milliseconds on this container, so `done` could beat the abort and the spec
+ * would flake on `aborted` (George R1 P3-6). The harness no longer guesses at
+ * the timing either: it waits for the PCM buffer to be detached, which is the
+ * transfer itself. A minute keeps the whole spec well under a second while
+ * leaving a margin of two orders of magnitude.
+ */
+const PURGE_CLIP_FRAMES = 44_100 * 60;
+
 /** Samples per MPEG-1 Layer III granule (`lib/audio/mp3-align.ts`). */
 const MP3_GRANULE = 1152;
 /** A standard decoder's own delay, which some decoders trim and some do not. */
@@ -73,6 +86,18 @@ declare global {
         maxGapMs: number;
         deadlineMs: number;
       }>;
+      encodeAfterAbortRebuild: (frameCount: number) => Promise<{
+        transferred: boolean;
+        aborted: boolean;
+        chunkRequestsBefore: number;
+        chunkRequestsAfter: number;
+        mp3Length: number;
+      }>;
+      measureWorkerReady: () => Promise<{
+        readyMs: number;
+        deadlineMs: number;
+      }>;
+      workerSnapshotReady: () => boolean;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
       versionChangeFired?: boolean;
@@ -198,7 +223,7 @@ test.describe("the encoder heartbeat through a real busy worker (#166, #279 Geor
 });
 
 test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () => {
-  test("the app's real connection sees a native versionchange; a concurrent delete stays blocked", async ({
+  test("the app's real connection sees a native versionchange and yields, so a concurrent delete proceeds", async ({
     browser,
   }) => {
     const context = await browser.newContext();
@@ -251,18 +276,27 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
           )
       );
 
-      // `src/lib/storage/db.ts` on `develop` HEAD attaches no `blocking()`
-      // handler (that lands in #236/#240, both open drafts, unmerged as of
-      // this PR) — so the app's own connection never closes itself on a
-      // native `versionchange`, and a concurrent delete from another tab
-      // stays genuinely `blocked` rather than proceeding. This is real
-      // Chromium IndexedDB behaviour through the app's real connection, not
-      // an inference from `fake-indexeddb`. Once #236/#240 land and `db.ts`
-      // closes on `versionchange`, this assertion is expected to flip to
-      // `"success"` — updating it then is that change's job, not a
-      // regression in this one. `.github/workflows/ci.yml`'s paths gate
-      // covers `src/lib/storage/` so that PR cannot land without running this.
-      expect(outcome).toBe("blocked");
+      // FLIPPED, deliberately, by the PR that superseded #236/#240 — which is
+      // the change this assertion was written to wait for, in as many words:
+      // "Once #236/#240 land and `db.ts` closes on `versionchange`, this
+      // assertion is expected to flip to `success` — updating it then is that
+      // change's job, not a regression in this one."
+      //
+      // `db.ts` now attaches `blocking()`. Both documents have the app mounted,
+      // so both have registered an upgrade coordinator, and with nothing held
+      // both answer "yield": each closes its own connection when the delete's
+      // native `versionchange` reaches it, and the delete proceeds instead of
+      // sitting on `onblocked`.
+      //
+      // This is the one piece of REAL-BROWSER evidence behind #221's P2. Node
+      // and `fake-indexeddb` can show that the close is reached synchronously
+      // inside the handler; only this can show that a real Chromium connection
+      // really lets go and that the operation waiting on it really proceeds.
+      // What it does NOT prove is the strict "before the handler returns"
+      // property — a close deferred by a microtask would very likely also
+      // satisfy a delete — and that half stays pinned by `tests/db-open.test.ts`,
+      // "gives up the connection inside the handler".
+      expect(outcome).toBe("success");
 
       const versionChangeFired = await pageA.evaluate(
         () => window.__e2e!.versionChangeFired
@@ -274,5 +308,98 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
       // even though nothing here awaits that completion.
       await context.close();
     }
+  });
+});
+
+test.describe("how long the worker takes to say ready (#192, George R2 P2)", () => {
+  test("a worker evaluates its whole chunk and answers far inside the handshake window", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const result = await page.evaluate(
+      async () => await window.__e2e!.measureWorkerReady()
+    );
+    // Logged, not just asserted: the number is the point. `ENCODER_READY_TIMEOUT_MS`
+    // has to cover evaluation of the whole chunk — lamejs included, since `ready`
+    // is posted at the foot of the module — and until this ran, the constant rested
+    // on reasoning about that rather than on a measurement of it.
+    console.log(
+      `[ready] worker construction → ready: ${result.readyMs.toFixed(1)} ms ` +
+        `(window ${result.deadlineMs} ms)`
+    );
+
+    // It answered at all, which is the load-bearing half: a worker that never
+    // posts `ready` would hang this evaluate and fail the test.
+    expect(result.readyMs).toBeGreaterThan(0);
+    // And with room to spare. A tenth of the window is a deliberately loose
+    // bound — this is one engine on one machine, and a phone may be an order of
+    // magnitude slower, which is exactly why the window is freeze-aware and
+    // forgives one expiry rather than simply being long.
+    expect(result.readyMs).toBeLessThan(result.deadlineMs / 10);
+  });
+});
+
+test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => {
+  test("an abort-driven rebuild still encodes after the chunk URL is unreachable", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    // Wait until the snapshot EXISTS. Purging before it does would leave nothing
+    // to rebuild from, and the assertion below would fail for a reason that has
+    // nothing to do with the fix. This asks the codec for `snapshotUrl` itself;
+    // it used to watch for the chunk's fetch in the resource timeline, which
+    // fires a `response.text()` and a `createObjectURL` too early and cannot see
+    // a non-ok response at all (George R1 P3-5).
+    //
+    // The `message` is not decoration. `captureWorkerSnapshot` is gated on
+    // `import.meta.env.PROD`, which Vite derives from NODE_ENV — so a shell that
+    // exports `NODE_ENV=development` (this dev container does) compiles the whole
+    // snapshot path out of the build and this poll times out on a bare "expected
+    // true, received false" that says nothing about why. CI sets no NODE_ENV, so
+    // it does not hit this; a laptop can.
+    await expect
+      .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotReady()), {
+        timeout: 10_000,
+        message:
+          "captureWorkerSnapshot never produced a blob URL. It is gated on " +
+          "import.meta.env.PROD — if NODE_ENV is set to development in this " +
+          "shell, Vite builds with PROD=false and the snapshot path is compiled " +
+          "out. Re-run with NODE_ENV unset.",
+      })
+      .toBe(true);
+
+    // The purge. The harness build is served over HTTP with no service worker
+    // evicting anything, so it is simulated the only way a test can: every
+    // later request for the hashed chunk fails, exactly as a
+    // `cleanupOutdatedCaches` eviction leaves it for an offline page.
+    await page.route(/assets\/mp3\.worker-.*\.js$/, (route) => route.abort());
+
+    const result = await page.evaluate(
+      async (frames) => await window.__e2e!.encodeAfterAbortRebuild(frames),
+      PURGE_CLIP_FRAMES
+    );
+
+    // The abort really terminated an in-flight encode. Without this the warm
+    // worker was never dropped, no rebuild happened, and the MP3 below would be
+    // the ORIGINAL worker's — green for the wrong reason (#270: a gate has to be
+    // able to fail).
+    //
+    // Two claims, and each can fail on its own (Frank R3 P2). The PCM buffer
+    // was detached, so an encode was genuinely in flight when the abort landed:
+    // the harness waits for that with a deadline, and reports the deadline
+    // expiring rather than carrying on as if it had not.
+    expect(result.transferred).toBe(true);
+    // And the job rejected with THIS signal's reason — not with a worker error
+    // or a stall, which reject too and leave a different worker behind.
+    expect(result.aborted).toBe(true);
+    // The rebuild fetched nothing. A worker built from the chunk URL would have
+    // issued another request — and the route would have failed it.
+    expect(result.chunkRequestsAfter).toBe(result.chunkRequestsBefore);
+    // And a real MP3 came back, so the blob worker genuinely ran the encoder.
+    expect(result.mp3Length).toBeGreaterThan(0);
   });
 });

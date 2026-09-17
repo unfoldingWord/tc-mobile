@@ -23,7 +23,13 @@
  * a fake-microphone UI flow would be far more brittle than this.
  */
 
-import { ENCODER_SILENCE_TIMEOUT_MS, withEncoder } from "@/hooks/mp3-codec";
+import {
+  ENCODER_READY_TIMEOUT_MS,
+  ENCODER_SILENCE_TIMEOUT_MS,
+  encoderSnapshotTaken,
+  warmEncoder,
+  withEncoder,
+} from "@/hooks/mp3-codec";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -202,6 +208,12 @@ async function encodeWithHeartbeat(
       (resolve, reject) => {
         let count = 0;
         worker.onmessage = (event: MessageEvent<{ kind: string }>) => {
+          // `ready` (#192) is posted once when the worker's script has run, and
+          // belongs to no job: it arrives before this encode's request is even
+          // answered, so counting it would put a gap in the measurement that is
+          // about script load rather than about the heartbeat, and resolving on
+          // it would end the encode before it started.
+          if (event.data.kind === "ready") return;
           arrivals.push(performance.now());
           if (event.data.kind === "progress") {
             count += 1;
@@ -244,6 +256,167 @@ async function encodeWithHeartbeat(
   }
 }
 
+/**
+ * Force the abort-driven REBUILD of the encoder worker, then encode through it
+ * (#192).
+ *
+ * This is the path #182 left exposed and #192 closes. A warm worker survives a
+ * service-worker update because it holds its compiled script; an abort
+ * `terminate()`s it — the only way to stop an in-flight encode — and the
+ * rebuild that follows is what used to go back to the hashed chunk URL the
+ * update had purged.
+ *
+ * The spec BLOCKS that chunk URL before calling this, which is the purge. So
+ * the rebuilt worker can only have come from the blob snapshot taken at warmup,
+ * and a returned MP3 is that blob worker actually running — the one claim the
+ * Node tests cannot make, because they stub `fetch`, `Blob` and
+ * `createObjectURL`.
+ *
+ * The abort must land while an encode is genuinely IN FLIGHT: an abort before
+ * `withEncoder` reaches the codec rejects at the lane and never terminates
+ * anything, which would leave the warm worker alive and this assertion green
+ * for the wrong reason.
+ *
+ * A `setTimeout(0)` was not enough to guarantee that (George R1 P3-6). One
+ * second of PCM encodes in a few milliseconds on this container — the heartbeat
+ * spec needs ten MINUTES of audio to get a measurable encode — so `done` could
+ * beat the abort and the spec would flake on `aborted`. The wait is now the
+ * event itself rather than a guess at how long it takes: `encodeMp3` TRANSFERS
+ * the PCM's `ArrayBuffer` to the worker, which detaches it on this thread, so
+ * `byteLength === 0` is the exact moment the request has been posted. The clip
+ * is also long enough that the encode cannot plausibly finish in the turn that
+ * observation costs.
+ */
+async function encodeAfterAbortRebuild(frameCount: number): Promise<{
+  transferred: boolean;
+  aborted: boolean;
+  chunkRequestsBefore: number;
+  chunkRequestsAfter: number;
+  mp3Length: number;
+}> {
+  // A first encode proves the warm worker is up and the lane is clear, so the
+  // abort below cannot be rejected while merely waiting for a previous job.
+  await withEncoder(undefined, (codec) =>
+    codec.encodeMp3(syntheticPcm(MP3_GRANULE))
+  );
+
+  const chunkRequestsBefore = chunkRequestCount();
+
+  const controller = new AbortController();
+  const pcm = syntheticPcm(frameCount);
+  const inFlight = withEncoder(controller.signal, (codec) =>
+    codec.encodeMp3(pcm)
+  );
+  // Wait for the PCM to be TRANSFERRED — the detach is what says the worker has
+  // the request and an encode is genuinely in flight. Bounded, so a failure to
+  // post shows up as an assertion rather than a hung page.
+  const deadline = performance.now() + 5_000;
+  while (pcm.byteLength !== 0 && performance.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  // REPORTED, never assumed (Frank R3 P2). If the deadline expired with the
+  // buffer still attached, nothing was in flight, so the abort below terminated
+  // nothing and the "rebuild" the spec goes on to measure is just the original
+  // warm worker still running. The spec asserts on this, so that case is a
+  // failure rather than a pass that proved nothing.
+  const transferred = pcm.byteLength === 0;
+  controller.abort();
+  let aborted = false;
+  try {
+    await inFlight;
+  } catch (cause) {
+    // Only THIS signal's reason counts. A worker error, a stall, or an encode
+    // failure also rejects here, and each of them leaves a different worker
+    // state behind — classifying them all as "aborted" is how the assertion
+    // below stops describing what happened.
+    aborted = cause === controller.signal.reason;
+  }
+
+  // The abort re-warms; this encode runs on whatever that rebuild produced.
+  warmEncoder();
+  const mp3 = await withEncoder(undefined, (codec) =>
+    codec.encodeMp3(syntheticPcm(frameCount))
+  );
+  return {
+    transferred,
+    aborted,
+    chunkRequestsBefore,
+    chunkRequestsAfter: chunkRequestCount(),
+    mp3Length: mp3.length,
+  };
+}
+
+/**
+ * How many times this page has requested the hashed worker chunk, counted from
+ * the page's OWN resource timeline.
+ *
+ * Both numbers the caller compares come from here, so the comparison never
+ * straddles two measurement systems: Playwright's request events and this
+ * timeline agree today, but a worker script load shows up here with
+ * `initiatorType: "other"`, which is a Chromium detail and not a contract.
+ */
+function chunkRequestCount(): number {
+  return performance
+    .getEntriesByType("resource")
+    .filter((entry) => /assets\/mp3\.worker-.*\.js$/.test(entry.name)).length;
+}
+
+/**
+ * How long does a worker take to say `ready` (#192, George R2 P2)?
+ *
+ * `ENCODER_READY_TIMEOUT_MS` has to cover evaluation of the whole worker chunk,
+ * lamejs included, because `ready` is posted at the FOOT of `mp3.worker.ts`. The
+ * constant was chosen by reasoning about that; this measures it.
+ *
+ * What it measures precisely: a FRESH worker built from the same module URL the
+ * codec's chunk path uses, from `new Worker` to the `ready` message, on this
+ * browser. It is NOT the blob — the codec keeps its worker private and there is
+ * no seam to borrow one — so it bounds the evaluation cost, not the blob's own
+ * construction. And it is one engine: a phone may be an order of magnitude
+ * slower, which is why the window is made freeze-aware and forgiving of one
+ * expiry rather than merely long.
+ */
+async function measureWorkerReady(): Promise<{
+  readyMs: number;
+  deadlineMs: number;
+}> {
+  const worker = new Worker(
+    new URL("../hooks/mp3.worker.ts", import.meta.url),
+    {
+      type: "module",
+    }
+  );
+  try {
+    const started = performance.now();
+    const readyMs = await new Promise<number>((resolve, reject) => {
+      worker.onmessage = (event: MessageEvent<{ kind: string }>) => {
+        if (event.data.kind !== "ready") return;
+        resolve(performance.now() - started);
+      };
+      worker.onerror = (event) => reject(new Error(event.message));
+    });
+    return { readyMs, deadlineMs: ENCODER_READY_TIMEOUT_MS };
+  } finally {
+    worker.terminate();
+  }
+}
+
+/**
+ * Does the blob snapshot EXIST yet?
+ *
+ * The spec waits on this before simulating the purge: blocking the chunk before
+ * the snapshot exists would leave nothing to rebuild from and the assertion
+ * would fail for the wrong reason.
+ *
+ * It used to ask the resource timeline whether a `fetch`-initiated request for
+ * the chunk had landed, which is a PROXY and a lossy one (George R1 P3-5): that
+ * entry appears when the response arrives, one `response.text()` and one
+ * `createObjectURL` before `snapshotUrl` is assigned, and it cannot see a
+ * non-ok response at all. This asks the codec for the state itself.
+ */
+function workerSnapshotReady(): boolean {
+  return encoderSnapshotTaken();
+}
+
 /** Open the app's real IndexedDB connection through its real singleton. */
 async function openDb(): Promise<{ name: string; version: number }> {
   const db = await getDb();
@@ -266,6 +439,9 @@ declare global {
     __e2e?: {
       encodeAndDecode: typeof encodeAndDecode;
       encodeWithHeartbeat: typeof encodeWithHeartbeat;
+      encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
+      measureWorkerReady: typeof measureWorkerReady;
+      workerSnapshotReady: typeof workerSnapshotReady;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -277,6 +453,9 @@ declare global {
 window.__e2e = {
   encodeAndDecode,
   encodeWithHeartbeat,
+  encodeAfterAbortRebuild,
+  measureWorkerReady,
+  workerSnapshotReady,
   openDb,
   watchVersionChange,
 };

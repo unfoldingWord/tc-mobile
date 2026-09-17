@@ -227,8 +227,14 @@ export function useSegmentEditor(
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
       applyLog(pushOp(log, { kind: "paste", at, clip }));
+      // The slot is NOT emptied, and nothing is told about the paste. One cut
+      // goes into several segments across a chapter (G3), and two rounds of
+      // review established that nothing derived from a paste can safely say the
+      // phrase is now somewhere else — an undo or an erase takes it back again.
+      // The upgrade guard holds on the samples themselves until the chapter
+      // changes (`lib/takes/pending-take.ts`, George R4 P2).
     },
-    [clipboard.clip, working.length, log, applyLog]
+    [clipboard, working.length, log, applyLog]
   );
 
   // Undo/redo re-materialise from base and clear any open selection, whose

@@ -104,8 +104,26 @@ export interface TcMobileDb extends DBSchema {
  * data a newer one already wrote (the `autoUpdate` service worker can leave the
  * two running side by side). IndexedDB refuses the open with a `VersionError`;
  * "recovering" by deleting would destroy the newer build's recordings, so this
- * surfaces as a deliberate, retryable failure instead. Its `message` is what the
- * Books-screen Notice shows, so it is written for a person, not a log.
+ * surfaces as a deliberate failure instead.
+ *
+ * **Not retryable, and no caller should offer a retry for it (#221).** Nothing
+ * this copy does can clear it: the data has moved past this build's
+ * `DB_VERSION`, and after a yield `getDb()` refuses before it even opens, so
+ * every attempt fails identically for the rest of the page's life. A restart is
+ * the only exit, because it is what picks up the newer build the service worker
+ * has already activated.
+ *
+ * The product paths are `DatabasePanel` (`useDatabaseStatus` reports
+ * `reloadNeeded` through `onYielded`) and `SaveFailed` with
+ * `kind === "downgrade"`, both of which offer that restart and no retry, and
+ * `failureExit` in `lib/takes` for the recorder's own failure sites. This
+ * comment used to say the opposite — "retryable", surfaced through the
+ * Books-screen Notice — which was true before those existed and would now
+ * invite a "try again" onto a condition that is already decided (George R6 P3).
+ *
+ * `message` is still written for a person rather than a log: the unchanged
+ * Notice paths in `use-books.ts` and `use-chapter-segments.ts` still show it,
+ * and removing that is #437's business, not this class's.
  */
 class DatabaseDowngradeError extends Error {
   constructor() {
@@ -141,7 +159,162 @@ function isVersionError(cause: unknown): boolean {
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 
 /**
- * Open the database, wiring the three lifecycle callbacks `idb` only attaches
+ * The `openDB` call that is still in flight, or null when none is.
+ *
+ * `getDb()`'s promise is NOT this one: a blocked open rejects there while the
+ * open itself stays queued, and settles only when the other copy closes. So
+ * this is the only handle on the connection that open will eventually receive,
+ * and `closeDb()` needs it — without it that connection is orphaned, open, and
+ * holding the database against the next upgrade or delete.
+ */
+let pendingOpen: Promise<IDBPDatabase<TcMobileDb>> | null = null;
+
+/**
+ * How many `closeDb()` calls have begun.
+ *
+ * An open that was already in flight when one began hands its connection to
+ * that close, not to the cache: `closeDb` frees the cache slot before it waits,
+ * and a connection dropping itself into that freed slot would be a connection
+ * the close is about to close — dead the moment the next read is handed it.
+ */
+let closeGeneration = 0;
+
+/**
+ * What the app registers so this layer can ask, at the one instant it matters,
+ * whether giving up the connection would cost a translator work — and can say
+ * afterwards what it did.
+ *
+ * The judgement lives in the app, not here: only the screens know whether a
+ * take is held or a recording is running. This layer knows only when the
+ * question has to be answered, which is inside a `versionchange` handler — so
+ * `holdsUnsavedWork` must answer synchronously.
+ */
+export interface UpgradeCoordinator {
+  /**
+   * True while closing the connection would strand work that exists only in
+   * memory. Called from inside the `versionchange` handler: synchronous, and
+   * cheap. If it throws, the connection is NOT given up — the throw leaves the
+   * close below unreached, which is the safe way round.
+   */
+  holdsUnsavedWork: () => boolean;
+  /** The connection has been closed for another copy's upgrade. This build
+   * cannot reopen the database (its version is now the older one), so the app
+   * has to say so and offer a restart. */
+  onYielded: () => void;
+  /** An open failed because another copy holds an older connection open. */
+  onBlocked: () => void;
+  /**
+   * A blocked open has since come through: the other copy closed and the
+   * database is reachable again.
+   *
+   * This exists because `blocked` is a one-shot event on the open being
+   * processed — opening again queues behind it and is told nothing — so an app
+   * that is still showing "another copy is open" has no way to find out that it
+   * no longer is. Without this the only honest screen would be one that cannot
+   * take itself down.
+   */
+  onUnblocked: () => void;
+}
+
+let coordinator: UpgradeCoordinator | null = null;
+
+/**
+ * A `versionchange` this copy refused because work was held, kept so it can
+ * still be honoured once that work is gone.
+ *
+ * `versionchange` fires once per upgrade attempt. The other copy does not ask
+ * again — it simply sits on its blocked screen — so a refusal with nothing to
+ * replay it is permanent, and "wait while a take is in hand" quietly becomes
+ * "wait until this tab is closed".
+ *
+ * A stale one is left in the slot rather than cleared from every path a
+ * connection can die on: it checks for itself that the connection it captured
+ * is still the app's, does nothing if it is not, and is replaced by the next
+ * refusal.
+ *
+ * `owner` is who may SPEAK for it. Running a stale refusal is harmless — it
+ * returns on its own identity check — but `terminated` reads the slot the other
+ * way round, as proof that the connection now dying is the one that refused, and
+ * that reading has to be true. A later connection's abnormal death would
+ * otherwise be reported as this copy giving way, and the report latches: the
+ * panel says "out of date" and every subsequent `getDb()` is refused, on a copy
+ * that never yielded anything (Frank R6 P2).
+ */
+interface DeferredUpgrade {
+  /** The open that installed it — an identity, never dereferenced. */
+  readonly owner: object;
+  readonly run: () => void;
+}
+
+let deferredUpgrade: DeferredUpgrade | null = null;
+
+/**
+ * This copy has GIVEN UP its connection for another copy's upgrade, so it must
+ * never open one again.
+ *
+ * Closing the connection is only half of yielding. Nothing about `dbPromise`
+ * being null stops the next `getDb()` from opening a fresh connection at this
+ * build's older `DB_VERSION` — and if the other copy's upgrade has not committed
+ * yet, that open SUCCEEDS and stands in its way all over again, from a
+ * connection it never saw (George R3 P2-2).
+ *
+ * The caller that does this is not a screen the panel can unmount: the
+ * transcode sweep is module-scoped, survives the tree being replaced, and calls
+ * `getDb()` again in `commitTranscode` after an encode that takes seconds — a
+ * live open on the far side of a yield.
+ *
+ * Set only where this copy actually gave something up. NOT set when it merely
+ * MEETS newer data on an open: that open holds no connection and blocks nobody,
+ * and latching there would break the recovery `getDb` is documented and tested
+ * to have — "once the newer data is gone, getDb reopens" — for no gain.
+ */
+let yielded = false;
+
+/**
+ * Give up, and remember it. The latch and the notification always move together;
+ * every path that tells the app it is out of date because THIS copy let go goes
+ * through here.
+ */
+function markYielded(): void {
+  yielded = true;
+  coordinator?.onYielded();
+}
+
+/**
+ * Honour a `versionchange` this copy refused earlier, now that the work it was
+ * refused to protect has been let go.
+ *
+ * Called by the app, because only the app knows when that is (`use-database-
+ * status.ts`, as the answer changes). Does nothing if no upgrade was refused,
+ * which is the ordinary case.
+ */
+export function yieldDeferredUpgrade(): void {
+  const pending = deferredUpgrade;
+  deferredUpgrade = null;
+  pending?.run();
+}
+
+/**
+ * Register the app's coordinator, or `null` to unregister.
+ *
+ * With none registered the connection is given up on request: nothing is
+ * mounted that could be holding a recording, and refusing would block another
+ * copy of the app with no screen anywhere to explain why.
+ *
+ * That default is only ever reached before the app has mounted or after it has
+ * unmounted, and it is on the caller to keep it that way: the registration is
+ * made ONCE and torn down only on unmount (`hooks/use-database-status.ts`).
+ * Re-registering as the app's answer changes would leave a window with no
+ * coordinator — and the window would open exactly when a take became held,
+ * which is when yielding costs the most. The registered `holdsUnsavedWork` is
+ * expected to read the current answer at call time rather than close over one.
+ */
+export function setUpgradeCoordinator(next: UpgradeCoordinator | null): void {
+  coordinator = next;
+}
+
+/**
+ * Open the database, wiring the four lifecycle callbacks `idb` only attaches
  * when supplied, and settling on the FIRST of {open resolves, open rejects,
  * `blocked` fires}. `blocked` is the reason for the manual race: `idb`'s open
  * promise never settles while an older connection blocks it, so the callback is
@@ -149,8 +322,56 @@ let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
  */
 function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   let settled = false;
-  return new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
-    void openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+
+  /**
+   * The connection THIS open produced, once it has — the synchronous handle
+   * `blocking()` closes.
+   *
+   * It has to be readable without awaiting: `idb` attaches `blocking` as a
+   * `versionchange` listener, and a close deferred to a microtask lands after
+   * the handler returns, by which time the copy that wants to upgrade has
+   * already been told it is blocked (#221). `dbPromise` cannot answer
+   * synchronously; this can, and it is per-open, so a callback still attached
+   * to a superseded connection acts on that one and not on whatever is current.
+   */
+  let connection: IDBPDatabase<TcMobileDb> | null = null;
+
+  // Which close this open began under. `pendingOpen` is set below without an
+  // await in between, so a later `closeDb()` is guaranteed to have snapshotted
+  // this open — and to be waiting to close whatever it produces.
+  const bornAt = closeGeneration;
+
+  /**
+   * Whether this open was told it was blocked.
+   *
+   * It is what makes the recovery reportable. A `blocked` event fires once, for
+   * the open being processed; a second open queues BEHIND that one and is told
+   * nothing at all, so an app cannot learn "is it still blocked?" by opening
+   * again. The answer has to come from this open when it finally settles.
+   */
+  let wasBlocked = false;
+
+  /**
+   * The promise THIS attempt owns in `dbPromise`, and the identity every
+   * invalidation below is checked against. A later `getDb()` may already have
+   * installed its own live connection there; clearing the cache unconditionally
+   * would drop it and leave that connection open with nothing holding it.
+   */
+  let handle: Promise<IDBPDatabase<TcMobileDb>>;
+  const invalidate = (): void => {
+    if (dbPromise === handle) dbPromise = null;
+  };
+
+  /**
+   * This attempt's identity in the `deferredUpgrade` slot. `handle` cannot serve:
+   * it is reassigned as the open settles, and `invalidate()` has already run by
+   * the time `terminated` asks, so a comparison against it can no longer tell
+   * "this connection's refusal" from "somebody else's".
+   */
+  const openToken = {};
+
+  const raced = new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
+    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         // One-time destructive recreate to the pivot schema (v3). See the header
         // for why append-only is waived here. Gated on `oldVersion < 3` so this
@@ -228,43 +449,185 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       blocked() {
         if (settled) return;
         settled = true;
+        wasBlocked = true;
         reject(new DatabaseBlockedError());
+        // The rejection reaches whoever called `getDb()`; this reaches the app
+        // as a whole, which is what puts the "close the other copy" screen up
+        // wherever the person happens to be standing.
+        coordinator?.onBlocked();
+      },
+      blocking() {
+        // Another copy of the app is upgrading the database and THIS connection
+        // is what stands in its way.
+        //
+        // Everything here is synchronous on purpose. `idb` attaches this as a
+        // `versionchange` listener, so a close deferred to a microtask lands
+        // after the handler has returned — and the other copy has already been
+        // told it is blocked by then, which is the bug this shape exists to
+        // avoid (#221).
+        if (connection === null) return;
+
+        // The decision this implements: unsaved audio outranks the upgrade.
+        // Refusing leaves the other copy waiting on its blocked screen, which
+        // costs a person time; yielding closes the only connection that could
+        // ever store the take this copy is holding, which costs a translator
+        // work they cannot record again.
+        //
+        // If the guard throws, the close below is never reached — the safe way
+        // round, and deliberately not caught. The throw is left to escape the
+        // handler rather than swallowed: this layer may not import the failure
+        // sink (it lives in `hooks/`, and the onion rule forbids the upward
+        // import), and a browser turns an exception thrown from an event
+        // listener into a window `error`, which `app/install-failure-listeners`
+        // reports. Escaping IS the channel here.
+        const held = connection;
+        const yieldNow = (): void => {
+          invalidate();
+          held.close();
+          // Said last, and only after the close: this build asks for a version
+          // the database no longer has, so it cannot reopen. The app's only
+          // honest exit from here is a restart — and the latch is what makes
+          // "cannot reopen" true rather than merely intended.
+          markYielded();
+        };
+
+        if (coordinator?.holdsUnsavedWork() === true) {
+          // Refused, NOT forgotten. `versionchange` fires once: dropping it here
+          // would turn "the other copy waits while a take is in hand" into "the
+          // other copy is stuck for the rest of this tab's life", long after the
+          // take was saved and this connection stopped being worth protecting.
+          // `yieldDeferredUpgrade()` runs this the moment the app says the work
+          // is gone.
+          deferredUpgrade = {
+            owner: openToken,
+            run: () => {
+              // Unless the connection went in the meantime — a `closeDb()`, or
+              // the browser terminating it. There is nothing left to give up
+              // then, and nothing to tell the app: it is not out of date because
+              // of a connection nothing holds any more.
+              if (dbPromise !== handle) return;
+              yieldNow();
+            },
+          };
+          return;
+        }
+
+        yieldNow();
       },
       terminated() {
         // The browser abnormally closed the connection (resource pressure, a
         // discarded tab). Drop the handle so the next getDb reopens a live one —
-        // recoverable without a page reload.
-        dbPromise = null;
+        // recoverable without a page reload. Identity-checked: a `terminated`
+        // from a superseded connection must not drop the live one.
+        invalidate();
+
+        // If an upgrade was being refused on THIS connection, the refusal has
+        // just been overruled by the browser: the connection is gone, so the
+        // other copy is free to upgrade and will. Nothing is left to close, but
+        // the app still has to be told, and the deferred closure cannot do it —
+        // it checks `dbPromise !== handle`, which `invalidate()` has just made
+        // true, and would return silently (George R1 P2-1).
+        //
+        // Saying nothing here is not neutral. This copy goes on believing it is
+        // fine while the disk version moves past its `DB_VERSION`, and the next
+        // save of a held take fails `VersionError` → `DatabaseDowngradeError`
+        // forever, with the panel never raised because the status is still "ok".
+        // Only THIS connection's refusal, which is the whole of the claim being
+        // made: a refusal parked by some earlier connection says nothing about
+        // the one dying now, and reporting it would latch the app out of date
+        // over a death that cost the other copy nothing (Frank R6 P2).
+        if (deferredUpgrade?.owner === openToken) {
+          deferredUpgrade = null;
+          // Latched like any other yield: the connection is gone and the other
+          // copy will upgrade, so a reopen here would block it exactly as one
+          // after a deliberate yield would.
+          markYielded();
+        }
       },
-    }).then(
+    });
+
+    pendingOpen = opening;
+
+    void opening.then(
       (db) => {
+        if (pendingOpen === opening) pendingOpen = null;
+        // This open was told it was blocked and has now come through, so the
+        // other copy has closed and the database is reachable again. Said
+        // whichever branch below takes the connection: in both of them the
+        // block is over, and an app still showing "another copy is open" is
+        // showing something that stopped being true.
+        if (wasBlocked) {
+          wasBlocked = false;
+          coordinator?.onUnblocked();
+        }
         if (settled) {
           // `blocked` already rejected this open; the connection finally came
-          // through once the other copy closed. Close it so it does not linger
-          // as an orphan holding the database open.
-          db.close();
+          // through once the other copy closed. Keep it if nothing has taken
+          // the cache in the meantime — recovery then costs the one Try again
+          // the person already made, not a second one. If a later attempt got
+          // there first, or a `closeDb()` began after this open did and is
+          // waiting to close what it produces, close this one rather than leave
+          // it an orphan holding the database open.
+          if (dbPromise === null && closeGeneration === bornAt) {
+            connection = db;
+            handle = Promise.resolve(db);
+            dbPromise = handle;
+          } else {
+            db.close();
+          }
           return;
         }
         settled = true;
+        connection = db;
         resolve(db);
       },
       (cause) => {
+        if (pendingOpen === opening) pendingOpen = null;
+        // Deliberately no `onUnblocked` here: an open that was blocked and then
+        // FAILED leaves the database no more reachable than it was.
+        wasBlocked = false;
         if (settled) return;
         settled = true;
         reject(cause);
       }
     );
   });
+
+  handle = raced.catch((cause: unknown) => {
+    // Never cache a rejected open: one failed attempt must not poison every
+    // later call. Clear the handle — identity-checked, so a concurrent getDb
+    // that already installed a live connection keeps it — so the next call, a
+    // Notice's Try again or the next storage read, reopens from scratch.
+    invalidate();
+    if (!isVersionError(cause)) throw cause;
+
+    // The stored data is newer than this build asks for, which is the same
+    // condition the "this copy is out of date" panel exists for — reached the
+    // other way round. `blocking()` gets there when this copy gives its
+    // connection up; this is what happens when the upgrade went through without
+    // it, because the connection had already gone (`terminated`, a discarded
+    // tab) or because this copy was started after the newer one had written.
+    //
+    // Told to the app as a whole, not just to whoever called `getDb()`: every
+    // unchanged caller — `saveTake`, `use-books`, `use-chapter-segments` — meets
+    // this as a rejection it can only turn into its own local failure, and none
+    // of them can say the one true thing, which is that no read or write from
+    // this copy will ever succeed again (George R1 P2-1).
+    coordinator?.onYielded();
+    throw new DatabaseDowngradeError();
+  });
+  return handle;
 }
 
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
-  dbPromise ??= openDatabase().catch((cause: unknown) => {
-    // Never cache a rejected open: one failed attempt must not poison every
-    // later call. Clear the handle so the next call — a Notice's Try again, or
-    // the next storage read — reopens from scratch.
-    dbPromise = null;
-    throw isVersionError(cause) ? new DatabaseDowngradeError() : cause;
-  });
+  // Refused BEFORE `indexedDB.open` — the point is not to fail, it is not to
+  // hold a connection. A caller that reaches here after this copy yielded is
+  // one the panel could not stop (the module-scoped transcode sweep finishing
+  // an encode), and an open at this build's version would stand in the way of
+  // the upgrade this copy just stepped aside for. A fresh rejection each time,
+  // never a cached one, so nothing is poisoned for a build that reloads.
+  if (yielded) return Promise.reject(new DatabaseDowngradeError());
+  dbPromise ??= openDatabase();
   return dbPromise;
 }
 
@@ -274,11 +637,56 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
  * Closing matters: an open connection blocks `indexedDB.deleteDatabase`
  * indefinitely, so clearing the cached promise alone is not enough to let a
  * test (or a future "delete all data" action) actually remove the database.
+ *
+ * An open that is still in flight is awaited first. An IndexedDB open request
+ * cannot be cancelled, so the alternative is to return while a connection is
+ * still on its way and leave it open with nothing holding it. The cost is that
+ * this waits as long as that open does: an open blocked by another copy of the
+ * app settles only once that copy closes.
+ *
+ * It closes exactly what existed when it was called — the cached handle and the
+ * open already in flight, both snapshotted before that wait. A `getDb()` during
+ * the wait installs a connection of its own, and closing THAT would hand the app
+ * a dead handle it has no reason to expect.
+ *
+ * **Nothing in `src/` calls this: the only callers are tests.** Keep it that
+ * way until the wait above is bounded. Wiring it to a product control — the
+ * "delete all data" this function was written for — puts an unbounded wait
+ * behind a button: another copy of the app holding the upgrade blocked would
+ * leave the person on a control that never returns, with no way to say why.
+ * Bounding it (timeout, then abandon the connection and report) is follow-up
+ * work on #221, not something to add here unasked (jag3773, QA on #236).
  */
 export async function closeDb(): Promise<void> {
-  const pending = dbPromise;
-  if (!pending) return;
+  closeGeneration += 1;
+  // Back to a build that has not given anything up. There is no product caller
+  // (see above), and a test that tore the connection down only to find every
+  // later `getDb()` refused by a latch from a previous case would be debugging
+  // the harness rather than the code.
+  yielded = false;
+  // A refusal this call's connections made is deliberately NOT cleared here.
+  // `deferredUpgrade` carries its owner, so the two ways it is read both handle a
+  // stale one already: running it is a no-op (its own `dbPromise !== handle`
+  // check) and `terminated` speaks only for the connection that installed it.
+  // Clearing as well would be defensiveness no test can distinguish from its
+  // absence, on the one path where an extra reset is easy to get subtly wrong —
+  // a `getDb()` during the wait below installs a refusal this call has no
+  // business retiring (Frank R6 P2, the half of the fix that is not needed).
+
+  // Snapshot both before awaiting anything, and free the cache slot now: what
+  // arrives during the wait belongs to whoever asked for it, not to this call.
+  const cached = dbPromise;
+  const opening = pendingOpen;
   dbPromise = null;
-  const db = await pending.catch(() => null);
-  db?.close();
+
+  // A failed open is the caller's to see through `getDb()`, not this
+  // function's: closeDb closes what exists and reports nothing.
+  const connections = await Promise.all([
+    cached?.catch(() => null) ?? null,
+    opening?.catch(() => null) ?? null,
+  ]);
+  // The two are the same connection on the ordinary path (the cached handle IS
+  // this open's), and two different ones after a blocked open. `close()` is
+  // idempotent, so closing both needs no bookkeeping to tell those apart.
+  for (const db of connections) db?.close();
 }

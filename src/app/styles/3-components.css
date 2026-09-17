@@ -31,6 +31,14 @@
     --c-control-lg: 52px;
     --c-control-xl: 68px;
 
+    /* The vertical cost of the recorder's reserved `.recorder-paste` row
+       (#414 R3 P3) — the one place this is computed, so `.recorder-paste`'s
+       own `min-height` below and the edit-mode canvas shrink
+       (`recorder.tsx`, read via `getComputedStyle`) cannot drift apart if
+       `--c-control-md` or `--p-space-2` ever changes (the #362 40→44
+       question already open in this file is exactly that kind of change). */
+    --c-recorder-paste-row: calc(var(--c-control-md) + var(--p-space-2));
+
     --c-row-radius: var(--p-radius-lg);
     /* The disabled-row hint badge (#135). The badge's geometry is named once,
        here, so `.control-hint` below and anything that has to line up with it
@@ -269,6 +277,7 @@
 @layer components {
   @media (prefers-reduced-motion: reduce) {
     .control,
+    .paste-marker,
     .row {
       transition: none;
     }
@@ -465,9 +474,13 @@
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
   }
-  /* The waveform stage. `position: relative` anchors the recording indicator;
-     the centerline itself is drawn on the canvas so it stays pixel-aligned
-     with the bars at any zoom. */
+  /* The waveform stage. `position: relative` anchors the recording indicator
+     and every overlay the recorder lays over the canvas — the centerline
+     included: since #415 the line is a DOM element in `recorder.tsx`, not a bar
+     painted on the canvas, because during playback the canvas is a strip that
+     TRANSLATES under it and a painted line would travel with it. `overflow:
+     hidden` here is what clips that strip, which is up to five stage widths
+     wide. */
   .recorder-stage {
     position: relative;
     display: flex;
@@ -477,15 +490,89 @@
        CENTER_FRACTION=0.5 line off the stage's true centre. */
     flex-direction: column;
     align-items: center;
+    /* `safe center` (George R3 P2): plain `center` overflows toward BOTH
+       edges equally when the column is taller than the stage, so on a short
+       stage `overflow: hidden` clips the same amount off the top as the
+       bottom — and the reserved paste row, first in DOM order, is what sits
+       in that top slice. `safe` falls back to `start` alignment only once
+       the group no longer fits, which keeps the paste row (and its sole
+       `onPaste` entry point) inside the visible box and pushes the overflow
+       onto Cut instead, which readable/hittable is nice-to-have but not the
+       only way to finish an edit. A fitting group (the overwhelming case)
+       centers exactly as before — `safe` only changes behaviour once the
+       column already does not fit.
+
+       That last clause used to be false (George R7 P2-1, round 8, measured
+       with a real browser layout, not argued): `.recorder-canvas` carries
+       the `overflow-hidden` UTILITY class, and CSS Flexbox §4.5 gives a
+       flex item with `overflow` other than `visible` an AUTOMATIC MINIMUM
+       SIZE of 0 — not its content size. `.recorder-paste` and
+       `.recorder-cut` cannot shrink below their own content, but nothing
+       stopped `.recorder-canvas` shrinking all the way to 0 with default
+       `flex-shrink: 1`, so ordinary flex-shrink absorbed the ENTIRE deficit
+       into the canvas alone, silently, long before this column was ever
+       tall enough to overflow its container and make `safe center` do
+       anything. Measured: a 151px stage shrank the canvas wrapper to 55px
+       (its own `<canvas>` stayed a fixed 150px box, so it was CLIPPED, not
+       redrawn — the amplitude midline ended up 20px below the visible box)
+       while the group and the stage summed to exactly 151px each — no
+       overflow, so `safe center` above was a complete no-op. The activation
+       boundary this used to leave was the sum of `.recorder-paste`'s and
+       `.recorder-cut`'s own floors (96px in this file's current button
+       sizes) rather than the group's full ~246px intrinsic height — nearly
+       the entire intended range did nothing. `flex-shrink: 0` below, on all
+       three stage children, is what makes "the column already does not
+       fit" a real, reachable state instead of one flex-shrink quietly
+       prevented: with it, a short stage genuinely overflows and THIS rule's
+       `safe center` clips Cut, as this comment has claimed since round 3.
+
+       The base rule below is plain `center`, NOT `center` then `safe
+       center` in the same declaration block (George R4 P2-1's original fix,
+       then George R5's `dist/` finding on THAT fix, round 6): two
+       declarations of the same property in one rule is exactly the
+       redundancy Vite's default CSS minifier (esbuild) collapses, keeping
+       only the last — so the shipped build had `safe center` alone, with no
+       fallback at all for an engine that rejects it, silently reintroducing
+       the un-centered-fitting-stage regression P2-1 exists to prevent. A
+       minifier can drop a whole declaration it judges redundant; it does
+       not reach into a DIFFERENT rule to do the same collapse. The
+       `@supports` block below is what carries `safe center`, in its own
+       block, so this rule's plain `center` survives the build regardless of
+       what that block does. `tests/dist-css.test.ts` pins the shipped
+       output so this cannot regress silently again. */
     justify-content: center;
     min-height: 0;
     background: var(--s-surface);
     border-radius: var(--c-row-radius);
     overflow: hidden;
   }
+  /* Progressive enhancement for `.recorder-stage`'s `justify-content`
+     (George R4 P2-1, round 6): only an engine that understands flex
+     `<overflow-position>` (`safe`/`unsafe`) applies this block at all, so
+     there is no cross-engine ambiguity to resolve in the cascade — the base
+     rule's plain `center` above is this property's ONLY declaration for
+     every other engine, and can't be minified away since it isn't a
+     redundant repeat of anything in ITS OWN rule. */
+  @supports (justify-content: safe center) {
+    .recorder-stage {
+      justify-content: safe center;
+    }
+  }
   .recorder-canvas {
     position: relative;
     width: 100%;
+    /* `flex-shrink: 0` (George R7 P2-1, round 8): without this, `overflow:
+       hidden` above gives this item CSS Flexbox §4.5's automatic minimum
+       size of 0, so ordinary flex-shrink absorbed a short stage's ENTIRE
+       height deficit into this element alone — silently clipping the fixed-
+       height `<canvas>` inside it — before `.recorder-stage`'s `safe
+       center` (above) ever saw an actual overflow to react to. Pinning this
+       to 0 makes the column's height genuinely fixed, so a short stage
+       overflows for real and `safe center` does what its own comment
+       claims instead of nothing. `tests/dist-css.test.ts` pins this
+       surviving the build, the same way it already pins `safe center`
+       itself. */
+    flex-shrink: 0;
     /* A horizontal drag pans the waveform; let a vertical gesture do nothing
        here rather than fighting the pan. */
     touch-action: none;
@@ -528,23 +615,94 @@
     outline: 2px solid var(--s-focus);
     outline-offset: -2px;
   }
-  /* The paste marker rides the centerline when the clipboard is full. */
+  /* The paste row sits above the canvas — a normal flex item, not an overlay —
+     so the circular drop icon never covers the waveform band it used to hide
+     the target sample under (#414). `padding-bottom` mirrors `.recorder-cut`'s
+     `padding-top` below the canvas: same gap, opposite side.
+
+     `min-height` reserves the button's box even while the button itself is
+     unmounted (George R1 P2): `.recorder-stage` is a centered, clipping
+     column, so an in-flow row that comes and goes — rather than one that
+     stays the same size — recenters the group under it. Without this, the
+     canvas would visibly jump every time the clipboard toggles `canPaste`,
+     every Select toggle, and every no-selection audition once a cut has
+     filled the clipboard, which is exactly the "the stage moved under the
+     sound / under the band" failure `recorder-stage.ts` exists to prevent.
+     The value matches the button-present box exactly (border-box, via
+     Tailwind Preflight): `--c-control-md` content + this rule's own
+     `padding-bottom`, so reserving the row costs no extra height over what
+     mounting the button already costs — both now read from
+     `--c-recorder-paste-row` above (George R3 P3), the same token
+     `recorder.tsx`'s edit-mode canvas shrink reads via `getComputedStyle`,
+     so the two cannot drift apart if `--c-control-md` or `--p-space-2`
+     changes.
+
+     `flex-shrink: 0` (George R7 P2-1, round 8): `min-height` alone already
+     stops THIS item shrinking below it, but `.recorder-canvas` below has no
+     such floor — its `overflow: hidden` gives it an automatic minimum size
+     of 0 (CSS Flexbox §4.5), so it was the one absorbing a short stage's
+     entire deficit while this row's own reserved space stood still. Adding
+     `flex-shrink: 0` here too is belt-and-suspenders with that fix: it
+     keeps this row's behaviour explicit rather than relying on `min-height`
+     alone to imply it, and matches the same declaration on the other two
+     stage children so the three read as one deliberate policy, not one
+     real fix plus an accident. */
+  .recorder-paste {
+    min-height: var(--c-recorder-paste-row);
+    padding-bottom: var(--p-space-2);
+    flex-shrink: 0;
+  }
+  /* Sized to the 44px touch floor explicitly (#164/#362) rather than relying
+     on padding around the 26px glyph, which alone falls short of it.
+
+     States copied from `.control` rather than rendered through it (George
+     R3 P3): as an in-canvas overlay `.paste-marker` never needed hover/
+     active/focus states of its own — it is now a first-class sibling of Cut
+     in the stage column, and the file's own header says every interactive
+     part styles all of its states. `:focus-visible` uses an INWARD offset
+     like `.selection-handle` above, not `.control`'s outward one — this
+     button can sit at the very top edge of `.recorder-stage`'s
+     `overflow: hidden` box, and an outward ring would be the first thing
+     clipped. */
   .paste-marker {
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
     display: grid;
     place-items: center;
-    padding: var(--p-space-2);
+    width: var(--c-control-md);
+    height: var(--c-control-md);
     color: var(--s-voice);
     background: var(--s-raised);
     border: 1px solid var(--s-voice);
     border-radius: 999px;
+    cursor: pointer;
     pointer-events: auto;
+    transition:
+      filter var(--p-dur-base) var(--p-ease),
+      transform var(--p-dur-fast) var(--p-ease);
+  }
+  .paste-marker:hover {
+    filter: brightness(1.12);
+  }
+  .paste-marker:active {
+    transform: translateY(1px);
+  }
+  .paste-marker:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: -2px;
   }
   .recorder-cut {
     padding-top: var(--p-space-2);
     color: var(--s-voice);
+    /* `flex-shrink: 0` (George R7 P2-1, round 8): this row's `min-height:
+       auto` (unset, and it is not `overflow: hidden`) already gives it an
+       automatic minimum size equal to its own content, so it could not
+       shrink below that anyway — but `.recorder-canvas` above COULD shrink
+       to 0, and did, absorbing the entire deficit invisibly on a short
+       stage instead of the whole column overflowing as `.recorder-stage`'s
+       `safe center` assumes. Explicit here for the same reason as
+       `.recorder-paste`'s: one deliberate policy across all three stage
+       children, not an accident of two different defaults happening to
+       agree. */
+    flex-shrink: 0;
   }
   .recorder-status {
     position: absolute;

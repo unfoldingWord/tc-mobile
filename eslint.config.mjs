@@ -119,6 +119,8 @@ export default tseslint.config(
   // `.lib-boundary-probe` is written by tests/lib-boundary.test.ts and removed
   // in afterAll. An interrupted run leaves it behind, and it contains
   // deliberately-invalid code — gitignored, so it must be lint-ignored too.
+  // `.react-hooks-refs-probe` is the same pattern for
+  // tests/react-hooks-refs-gate.test.ts.
   {
     // `dist-e2e` is build output too (`npm run build:e2e`, #251) and was
     // missing here while `dist` was listed — round-1 George G5.
@@ -129,6 +131,7 @@ export default tseslint.config(
       ".wrangler",
       "public",
       ".lib-boundary-probe",
+      ".react-hooks-refs-probe",
       // Capacitor native projects (#262) — generated/managed by the `cap` CLI.
       // No first-party TS/TSX lives here; skip them so ESLint never trips on a
       // generated file inside the iOS/Android shells.
@@ -145,6 +148,22 @@ export default tseslint.config(
       "react-refresh": pluginReactRefresh,
     },
     rules: {
+      // #212: eslint-plugin-react-hooks 7.1.1's static analysis (which
+      // `refs` and every other rule here depend on) bails out on a hook body
+      // where a `catch (cause) { ... }` block contains ANY nested function
+      // that references `cause` — a `setState` updater is the shape found
+      // twice so far (use-save-take.ts, use-books.ts), but nothing about
+      // `setState` specifically is required — silencing e.g. an unrelated
+      // render-time `ref.current = x` write earlier in the same function.
+      // Scoped to that one hook function, not the whole file. This is
+      // exactly the shape `commit` had in src/hooks/use-save-take.ts before
+      // #180 simplified it, which is how a real `react-hooks/refs` violation
+      // passed `npm run lint` there for as long as that shape stood.
+      // tests/react-hooks-refs-gate.test.ts pins both halves: a plain ref
+      // write fires, and this shape stays silent — but it lints only
+      // synthetic probes, never `src/`, so it does not by itself find a live
+      // occurrence; that is still on review (a second one, use-books.ts, was
+      // found by George round 3 on #433, not by this gate).
       ...pluginReactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": [
         "warn",
@@ -278,6 +297,8 @@ export default tseslint.config(
         TextEncoder: "readonly",
         TextDecoder: "readonly",
         setTimeout: "readonly",
+        // check-deploy.mjs's fetch timeout (round-1 Frank F2).
+        AbortSignal: "readonly",
       },
     },
   }

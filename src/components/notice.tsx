@@ -4,10 +4,12 @@ import { noticePresentation, type NoticeTone } from "./notice-tone";
 interface NoticeProps {
   /**
    * What kind of thing is being said. See `notice-tone.ts` for the three: a
-   * failure (`alert`), a wait (`busy`), and a heads-up about something already
-   * done (`info`, #112). The status tones are the same one line in the same
-   * place as the failure, but neutral and announced politely, because a status
-   * that shouts in the colour of failure teaches people to ignore the colour.
+   * failure (`alert`), a wait (`busy`), and a heads-up (`info`, #112) that
+   * covers both a completeness caveat about something already done and a
+   * standing condition worth naming on its own (e.g. storage durability,
+   * #214/#406). The status tones are the same one line in the same place as
+   * the failure, but neutral and announced politely, because a status that
+   * shouts in the colour of failure teaches people to ignore the colour.
    */
   tone?: NoticeTone;
   children: React.ReactNode;
