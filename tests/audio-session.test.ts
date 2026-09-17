@@ -65,8 +65,11 @@ describe("createAudioSession", () => {
     // symptom: B has to be the handle the session can still reach. A stale
     // branch that stops the loser *and* adopts it leaves both assertions above
     // true while the winner plays on with nothing able to silence it, so the
-    // floor is asked directly — `stopAll` is what `leave()` and the pagehide
-    // handler call.
+    // floor is asked directly — `stopAll` is what `leave()` calls, and what the
+    // pagehide handler calls through it on a DISCARDING pagehide
+    // (`event.persisted === false`). Since #58 a PERSISTED one does not call
+    // `leave()` at all: it stops only the sounding source, so a paused mic keeps
+    // the floor it is holding.
     session.stopAll();
     expect(hB.stops).toBe(1);
     expect(hA.stops).toBe(1);

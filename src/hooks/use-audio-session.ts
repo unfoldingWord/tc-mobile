@@ -594,7 +594,26 @@ export function useAudioSession(): UseAudioSession {
     // task as the tap, or iOS treats the prompt as unprompted.
     void beginRecording()
       .then((started) => {
-        if (started || token === null) return;
+        if (started) {
+          // Mirror "recording" in THIS turn, not one commit later (George R1
+          // P3-3). The `:238-241` effect lags a commit, and the `pagehide`
+          // handler reads the ref: inside that window it would see "idle" or
+          // "requesting", answer "none", and leave a live microphone capturing
+          // unpaused into a suspended page. The symmetric write already exists
+          // on `resumeRecording` for the same reason (#101 R2).
+          //
+          // Guarded on the floor token, which is this hook's existing test for
+          // "is this attempt still the current one": a `leave()` during the
+          // await calls `session.stopAll()`, which invalidates every token, and
+          // a newer `startRecording` supersedes this one and writes the mirror
+          // from its own completion. Either way a cancelled start must not
+          // claim "recording".
+          if (token !== null && session.isCurrent(token)) {
+            recorderStateRef.current = "recording";
+          }
+          return;
+        }
+        if (token === null) return;
         // The floor is handed back HERE, on the completion path, rather than
         // left to the effect below. A denied permission takes the recorder
         // idle -> requesting -> idle, and nothing guarantees a consumer ever
@@ -611,7 +630,19 @@ export function useAudioSession(): UseAudioSession {
   // Pause keeps the same take and the same floor: the microphone still owns the
   // floor while paused, so there is nothing to release here — only the capture is
   // suspended.
-  const pauseRecording = useCallback(() => pauseCapture(), [pauseCapture]);
+  //
+  // The mirror is written in the SAME turn, and only when `pause()` reports that
+  // it actually froze — the symmetric half of `resumeRecording`'s eager write
+  // below, and for the same reason it exists (George R1 P2-1). A page frozen
+  // after `MediaRecorder.pause()` but before the `:238-241` effect would
+  // otherwise restore with `recorderStateRef` still reading "recording" over a
+  // paused recorder, and `preemptPausedMic`/`reclaimAfterPreview` gate on exactly
+  // that value. Mirroring unconditionally would be the opposite bug: a refused
+  // pause (no recorder, or a #59 interruption already took it inactive) would
+  // claim "paused" while React stayed elsewhere.
+  const pauseRecording = useCallback(() => {
+    if (pauseCapture()) recorderStateRef.current = "paused";
+  }, [pauseCapture]);
   // Resume must RECLAIM the floor, because a preview (#101, approach B) may have
   // released the mic's claim to sound the paused take — so the floor is then held
   // by that "take", or by nothing once the preview ended. `claim("mic")` stops a
@@ -715,17 +746,19 @@ export function useAudioSession(): UseAudioSession {
     // state owes is the pure `pageHideAction`, so all ten cells are proven in
     // Node; this is only the wiring.
     const onPageHide = (event: PageTransitionEvent) => {
-      // `recorderStateRef`, not the render closure: the mirror at :237-240 is
-      // what every other imperative read in this hook uses, and it keeps this
-      // effect's dependencies free of `recorderState` — a dep that changes on
-      // every transport tap would tear down and re-add the listener through the
-      // whole take. The mirror lags by one commit, and both directions of that
-      // window are inert: a `pagehide` between `pauseRecording()` and the mirror
-      // reads "recording" and pauses an already-paused recorder, which `pause()`
-      // guards to a no-op (use-recorder.ts:655); one between `startRecording()`
-      // and the mirror reads "idle"/"requesting" and leaves a just-started
-      // capture running rather than cancelling it, which is the safe side of the
-      // miss. `resumeRecording` already writes the mirror eagerly (:625).
+      // `recorderStateRef`, not the render closure: the mirror is what every
+      // other imperative read in this hook uses, and it keeps this effect's
+      // dependencies free of `recorderState` — a dep that changes on every
+      // transport tap would tear down and re-add the listener through the whole
+      // take.
+      //
+      // Its `:238-241` effect lags a commit, so every transport that moves the
+      // recorder writes the ref eagerly as well, and all three windows are now
+      // closed: `startRecording`'s completion writes "recording" (George R1
+      // P3-3), `pauseRecording` writes "paused" when the pause actually froze
+      // (P2-1), and `resumeRecording` writes "recording" (#101 R2). A `pagehide`
+      // landing between any transport and its commit therefore reads the state
+      // that transport just produced, not the one before it.
       const action = pageHideAction(recorderStateRef.current, event.persisted);
       if (action === "release") {
         leave();
@@ -737,10 +770,20 @@ export function useAudioSession(): UseAudioSession {
       if (action === "pause") {
         try {
           // Holds the recorder, the stream and the chunks; the restored page
-          // finds a "paused" take that Resume continues and close commits.
+          // finds a "paused" take that Resume continues and close commits. It
+          // freezes even if the user agent got there first and already paused
+          // the recorder (`pausePlan`), so the restored UI cannot claim a live
+          // take over a recorder that stopped capturing.
+          //
+          // It REFUSES, without freezing, when the recorder has gone inactive —
+          // a #59 mic interruption. That is legitimate and deliberately not
+          // handled here: `onInterrupted` owns that transition and takes the
+          // recorder to "processing", where `stop()` still recovers the chunks.
+          // Freezing to "paused" instead would paint a Resume the recorder
+          // cannot honour, and race the interruption handler for the state.
           pauseRecording();
         } catch (cause) {
-          // Not silent, and not fatal: a pause that fails leaves the capture
+          // Not silent, and not fatal: a pause that throws leaves the capture
           // running, which is still better than the discard this replaced.
           console.error("Could not pause the recorder for pagehide", cause);
         }

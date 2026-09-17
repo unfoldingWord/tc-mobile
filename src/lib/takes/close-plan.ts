@@ -83,8 +83,11 @@ export type CaptureVerdict<TBytes = unknown> =
   /** No audio and nothing kept, but something worth saying — an empty capture. */
   | { readonly kind: "notice"; readonly error: string }
   /**
-   * Nothing at all: a `leave()`/pagehide bumped the generation mid-flush, so a
-   * newer owner speaks for the screen and this stop has no UI of its own.
+   * Nothing at all: a `leave()` bumped the generation mid-flush — navigation,
+   * unmount, a newer recording, or a DISCARDING pagehide (`persisted === false`;
+   * since #58 a persisted one does NOT supersede a stop in flight, so a restored
+   * page reaches the `take` arm and saves normally) — so a newer owner speaks for
+   * the screen and this stop has no UI of its own.
    */
   | { readonly kind: "superseded" };
 

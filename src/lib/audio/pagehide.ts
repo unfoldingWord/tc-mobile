@@ -68,6 +68,25 @@ type PageHideAction = "release" | "pause" | "none";
  *   processing  nothing, and emphatically not "release". A #59 mic interruption
  *               freezes a REAL take here whose chunks `stop()` recovers; so does
  *               a stop already in flight. Cancelling either loses audio.
+ *
+ *               This is the one cell that changes a CONTRACT the unchanged tree
+ *               was written against (George R1 P2-2): `stop()` steals the chunks,
+ *               stream and tap into locals before its first await precisely
+ *               because a `pagehide` used to mean `cancel()`. It still does, on
+ *               `persisted === false`. On `persisted === true` the stop stays
+ *               CURRENT, and every consumer of supersession — `classifyCapture`,
+ *               `classifyStopDecode`, `planClose` — treats it as a case it
+ *               handles, never an invariant it requires, so none of them breaks;
+ *               supersession still arrives from a newer `start()`, from `cancel()`
+ *               on unmount, and from every `leave()`. The outcomes both ways:
+ *               RESTORED, the in-flight stop resumes and `close()` reaches
+ *               `save-take` instead of the superseded arm, which drops the take
+ *               and its pending edits — strictly better. DISCARDED, nothing
+ *               further runs in EITHER design: `cancel()` only mutated heap refs,
+ *               so the old teardown persisted nothing a discard now loses. The
+ *               #165 held blob is produced after those awaits and is in memory
+ *               too, so it is equally unreachable. Nothing that was kept before
+ *               is lost now.
  *   requesting  nothing. A `getUserMedia` prompt is up and no recorder exists; a
  *               frozen page cannot resolve it either way.
  *   idle        nothing. Nothing has been captured.

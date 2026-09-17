@@ -20,14 +20,29 @@ import type { CaptureState } from "@/lib/takes/close-plan";
  * `tests/audio-session.test.ts` and the PR body's device-checks section.
  */
 
-/** Every `CaptureState`, so a state added to the union cannot skip the table. */
-const STATES: readonly CaptureState[] = [
-  "idle",
-  "requesting",
-  "recording",
-  "paused",
-  "processing",
-];
+/**
+ * Every `CaptureState` and what it owes a PERSISTED `pagehide`, as a TOTAL map.
+ *
+ * `Record<CaptureState, ...>` is the load-bearing part (George R1 P3-4). A bare
+ * `readonly CaptureState[]` was a subset assignment: a sixth member of the union
+ * still typechecked, so the comment claiming "a state added to the union cannot
+ * skip the table" was a comment that cost CI time rather than a gate. With the
+ * `satisfies`, a new state is a missing property — a type error in THIS file as
+ * well as in the implementation's exhaustive switch.
+ *
+ * Spelled against `ReturnType<typeof pageHideAction>` rather than an imported
+ * action union: the module exports one function, and an exported type only a
+ * test imports is dead surface that knip's entry-point rule cannot see through.
+ */
+const WHEN_PERSISTED = {
+  idle: "none",
+  requesting: "none",
+  recording: "pause",
+  paused: "none",
+  processing: "none",
+} satisfies Record<CaptureState, ReturnType<typeof pageHideAction>>;
+
+const STATES = Object.keys(WHEN_PERSISTED) as CaptureState[];
 
 describe("pageHideAction", () => {
   it("releases everything from every state when the page is NOT persisted", () => {
@@ -37,6 +52,12 @@ describe("pageHideAction", () => {
     // guarantee that an async stop → decode → write started here would finish.
     for (const state of STATES) {
       expect(pageHideAction(state, false)).toBe("release");
+    }
+  });
+
+  it("answers every state the same way the map does when it IS persisted", () => {
+    for (const [state, action] of Object.entries(WHEN_PERSISTED)) {
+      expect(pageHideAction(state as CaptureState, true)).toBe(action);
     }
   });
 

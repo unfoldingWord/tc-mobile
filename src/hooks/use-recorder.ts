@@ -10,6 +10,7 @@ import {
   type MicPermissionState,
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
+import { pausePlan } from "@/lib/audio/pause-plan";
 import {
   classifyStopDecode,
   type StopDecodeError,
@@ -142,7 +143,8 @@ export interface StopResult {
    * The captured container bytes, kept whenever a decode FAILED — on a current
    * stop AND on a superseded one (George R1 G2). A failed decode is the one case
    * where the take exists nowhere else, so dropping the blob would lose it for
-   * good (#165); and a `leave()`/pagehide bumping the generation mid-decode is
+   * good (#165); and a `leave()` — navigation, unmount, or a DISCARDING
+   * (`persisted === false`) pagehide (#58) — bumping the generation mid-decode is
    * the very #106 interruption most likely to fail it, so the bytes are kept even
    * when the stop is superseded — only the shared `error` is withheld then, since
    * a newer owner speaks for the screen. `close()` DEPENDS on this: it holds the
@@ -287,9 +289,17 @@ export interface UseRecorder {
   start: () => Promise<boolean>;
   /**
    * Pause capture without ending the take. The same take resumes with
-   * `resume()`; the elapsed timer freezes. No-op unless currently recording.
+   * `resume()`; the elapsed timer freezes.
+   *
+   * Returns whether the take was actually frozen — true when the recorder was
+   * recording OR the user agent had already paused it under us, false when there
+   * is no recorder or it has gone inactive (a #59 interruption, which
+   * `onInterrupted` owns). The caller needs the answer because a pause is half of
+   * a pair: `use-audio-session` mirrors `"paused"` into `recorderStateRef` in the
+   * same turn, and a void refusal would desync the mirror from the state
+   * (George R1 P2-1).
    */
-  pause: () => void;
+  pause: () => boolean;
   /** Resume a paused take into the SAME recording. No-op unless paused. */
   resume: () => void;
   /**
@@ -745,19 +755,57 @@ export function useRecorder(): UseRecorder {
    * but keeps the recorder and stream alive, so `resume()` continues the same
    * clip. The span that just ran is banked and the timer stopped, so the paused
    * gap is not counted toward the take's length.
+   *
+   * Which of those three things to do is `pausePlan` (`lib/audio/pause-plan.ts`),
+   * where it is enumerated and mutation-tested, because since #58 this is called
+   * from a native lifecycle event as well as from the Record control and the two
+   * disagree about what the recorder is doing. An already-paused recorder still
+   * gets the freeze — skipping it was George R1 P2-1, a UI left claiming a live
+   * take over a recorder that had stopped capturing. An INACTIVE one does not:
+   * that is a #59 interruption, `onInterrupted` owns it and takes the recorder to
+   * `"processing"` where `stop()` recovers the chunks, and painting a Resume the
+   * recorder cannot honour over it would be worse than doing nothing.
+   *
+   * The elapsed bank on the already-paused path is an honest OVER-COUNT, chosen
+   * deliberately over the alternatives. `MediaRecorder` reports no timestamp for
+   * when the agent paused it, so `performance.now() - startedAtRef` includes the
+   * gap between that moment and this call. The size of the gap is UNKNOWN on
+   * every device — nobody has observed an agent pausing a recorder here — but in
+   * the shape this branch exists for the agent pauses capture as part of the same
+   * hide transition that dispatches the event, which is one turn. Note also that
+   * `performance.now()` is wall-clock-monotonic and is NOT believed to stop while
+   * a page is frozen, so this must be banked BEFORE the freeze, not after a
+   * restore; that is why there is no `pageshow` half. The error is display-only
+   * and does not compound: the stored take's duration comes from the decoded
+   * frame count (`ClipMeta.durationMs`), never from `elapsedMs`, and `resume()`
+   * re-bases the span. Under-counting instead (skip the bank) would be equally
+   * arbitrary and loses the span the recorder really did capture.
+   *
+   * Returns whether it froze, so the caller can mirror the state in the same turn.
    */
-  const pause = useCallback(() => {
+  const pause = useCallback((): boolean => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state !== "recording") return;
-    recorder.pause();
+    if (!recorder) return false;
+    const plan = pausePlan(recorder.state);
+    if (plan === "ignore") return false;
+    if (plan === "pause-and-freeze") recorder.pause();
     // Freeze the live scope the instant capture pauses: the analyser stays live
     // (R-B6), so without this a queued rAF would fold a room-tone column into
     // the freeze before the state effect catches up (George R3).
     recordingRef.current = false;
     baseElapsedRef.current += performance.now() - startedAtRef.current;
+    // Re-base the span so a second freeze banks ~nothing instead of the whole
+    // span again. Two freezes in one React commit are reachable now that a
+    // lifecycle event can call this: a double-tap on Record, or a tap racing a
+    // `pagehide`, both arrive while React still reads `"recording"`. Inert on the
+    // path that existed before — `clearTick()` on the next line kills the only
+    // other reader of this ref, and `resume()` overwrites it before restarting
+    // the tick — so the Record control's behaviour is unchanged.
+    startedAtRef.current = performance.now();
     clearTick();
     setElapsedMs(baseElapsedRef.current);
     setState("paused");
+    return true;
   }, [clearTick]);
 
   /** Resume the paused take into the same recording. */
@@ -790,9 +838,12 @@ export function useRecorder(): UseRecorder {
     // The rule the two awaits below force: **the audio belongs to this
     // invocation, the UI state belongs to the current generation.**
     //
-    // Stop is the translator confirming a take. A `pagehide` landing while we
-    // decode must release the microphone without destroying what they already
-    // confirmed — so the chunks and the stream are held as locals. `cancel()`
+    // Stop is the translator confirming a take. A DISCARDING `pagehide` landing
+    // while we decode (`event.persisted === false`, the only one that still
+    // reaches `leave()` since #58 — a persisted one leaves a `processing` stop
+    // alone so it can finish on restore) must release the microphone without
+    // destroying what they already confirmed — so the chunks and the stream are
+    // held as locals. `cancel()`
     // reassigns `chunksRef.current` to a fresh array and clears `streamRef`;
     // neither reaches the array and stream this call is holding. That holds
     // for the still-live `ondataavailable` too, and only because it is bound
@@ -802,7 +853,8 @@ export function useRecorder(): UseRecorder {
     const stream = streamRef.current;
     // OWN the VU tap exactly as the stream is owned (below): steal it into a
     // local and null the ref. Two flush-window races this closes (Frank + George
-    // R-B6): (1) a concurrent cancel()/leave()/pagehide runs releaseStream() ->
+    // R-B6): (1) a concurrent cancel()/leave()/discarding pagehide (#58: only
+    // `persisted === false` still reaches leave()) runs releaseStream() ->
     // closeTap() during our flush await — reading the ref, it would stop THIS
     // take's clone mid-`dataavailable` and, on a WebKit build where clone-stop
     // reaches the shared source, truncate the final slice; nulling the ref makes
@@ -819,7 +871,7 @@ export function useRecorder(): UseRecorder {
     recorder.onerror = null;
     stream?.getTracks().forEach((track) => (track.onended = null));
     // Take the stream OUT of the shared ref before the flush await. A cancel()
-    // (pagehide, navigation, unmount) landing during the wait calls
+    // (a DISCARDING pagehide, navigation, unmount — #58) landing during the wait calls
     // releaseStream(), which stops whatever streamRef holds — and stopping THIS
     // stream mid-flush truncates the final `dataavailable`, which for a
     // sub-timeslice take is the entire recording. Held only as the local
@@ -900,8 +952,11 @@ export function useRecorder(): UseRecorder {
     // pure `classifyStopDecode`, so the load-bearing #106/#165 contract (a decode
     // THROW keeps the bytes even when superseded; a zero-sample decode keeps
     // nothing) is pinned by a Node test rather than living only here (George R3
-    // G-3). `current` is re-read after each await, so it reflects a `leave()`/
-    // pagehide that landed during the decode.
+    // G-3). `current` is re-read after each await, so it reflects a `leave()` —
+    // from navigation, unmount, or a DISCARDING (`persisted === false`) pagehide
+    // — that landed during the decode. Since #58 a PERSISTED pagehide does not
+    // supersede a stop in flight: it leaves `processing` alone, so a restored
+    // page finishes this decode and `close()` saves the take normally.
     try {
       const samples = await decodeToCanonical(blob);
       const current2 = generation === generationRef.current;

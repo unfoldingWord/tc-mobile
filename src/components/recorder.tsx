@@ -2054,8 +2054,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // releases the mic and never rejects; `saveRecording` never rejects and
         // turns a failure into the recovery screen App renders.
         // A take was in play at close (live, paused, or an interruption froze it to
-        // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
-        // generation mid-flush — returning no samples and no error. B4 just closed
+        // processing). Its stop can be SUPERSEDED — a leave() bumped the
+        // generation mid-flush: navigation, unmount, a newer recording, or a
+        // DISCARDING pagehide (`persisted === false`; since #58 a persisted one
+        // leaves a stop in flight alone, so a restored page saves normally) —
+        // returning no samples and no error. B4 just closed
         // then, original intact. B5 must keep that: a superseded capture must NOT
         // persist the pending edits, or a cut-to-empty would clear the original
         // recording (gone) with the replacement never landed and the cut audio only
@@ -2080,7 +2083,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         if (attemptedCapture) {
           // Do NOT await the in-flight preview decode here. `stop()` steals the
           // chunks/stream/recorder into locals BEFORE its first await, which is what
-          // lets a `pagehide`/`leave()` during the flush cancel the mic without
+          // lets a discarding `pagehide`/`leave()` during the flush cancel the mic without
           // destroying a confirmed take. Delaying `stopRecording()` behind the
           // preview promise re-opened that window: a lock/background between Back and
           // the decode settling would `cancel()` the refs, and the late `stop()`
@@ -2563,8 +2566,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // …and DROP the latch on the denied edge, rather than only masking it
     // (#151). Masking alone leaves a live `menuOpen` that anything clearing the
-    // mic error un-hides, and one thing does: `pagehide` → `use-audio-session`'s
-    // `leave()` (:682) → `cancelRecording()` → `use-recorder`'s `cancel()` →
+    // mic error un-hides, and one thing does: a DISCARDING `pagehide`
+    // (`event.persisted === false`, the only one that still reaches it since
+    // #58) → `use-audio-session`'s
+    // `leave()` → `cancelRecording()` → `use-recorder`'s `cancel()` →
     // `setError(null)` (:956) → `micError` false → `denied` false → `menuShown`
     // true again. Returning to the page then shows the ≡ drawer over an idle,
     // empty segment that nobody opened. The two exits that DO drop the latch —
