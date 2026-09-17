@@ -4,6 +4,7 @@ import {
   frozenPan,
   heldByDrag,
   liveScopeShown,
+  panAfterRematerialize,
   panGesture,
   recordDisabled,
   resumesOnLift,
@@ -417,7 +418,13 @@ describe("panGesture", () => {
 
 describe("resumesOnLift", () => {
   const LEN = 1000;
-  const lift = { interrupted: true, pan: 500, length: LEN, takeActive: false };
+  const lift = {
+    interrupted: true,
+    pan: 500,
+    length: LEN,
+    takeActive: false,
+    othersDown: false,
+  };
 
   it("resumes only when this gesture was the one that paused playback", () => {
     expect(resumesOnLift(lift)).toBe(true);
@@ -454,6 +461,16 @@ describe("resumesOnLift", () => {
 
   it("never resumes on an empty segment", () => {
     expect(resumesOnLift({ ...lift, pan: 0, length: 0 })).toBe(false);
+  });
+
+  it("never sounds while another finger is still on the stage (#317)", () => {
+    // The requirements owner's rule is about FINGERS, not about the one this
+    // gesture happens to track: "playback never runs while the finger is down"
+    // (George R3 P1-2). A second contact that the stage ignored is still a
+    // finger on the waveform, so the owner lifting first must leave silence —
+    // the resume is owed until the stage is clear, and a later Play is how it
+    // is collected.
+    expect(resumesOnLift({ ...lift, othersDown: true })).toBe(false);
   });
 });
 
@@ -669,6 +686,65 @@ describe("frozenPan", () => {
       length: 12_000,
     });
     expect(pan).toBe(12_000);
+  });
+
+  it("lets the boundary outrank a stop that lands in the same turn", () => {
+    // George R3's adjacent risk, settled rather than left unpinned. `onEnded`
+    // fires from the audio boundary and sets `ranOut`; if a handler stops in
+    // the same turn — a Pause tapped as the last syllable finishes, or a close
+    // — `stopRequested` is true as well, and the earlier branch order took the
+    // rAF's `observed`. That parks a clip which actually FINISHED one frame
+    // short of the end, where the next Record punches in instead of appending:
+    // exactly the #416 defect this function exists to prevent, by a race
+    // rather than by a stale ref. Running out is a fact about the audio; a
+    // stop after it is a no-op on a clip that is already over.
+    expect(
+      frozenPan({
+        observed: 9992,
+        end: 10_000,
+        stopRequested: true,
+        ranOut: true,
+        length: 10_000,
+      })
+    ).toEqual({ kind: "pan", pan: null });
+  });
+});
+
+/**
+ * Where the line goes when the edit log REPLACES the working buffer.
+ *
+ * George R3 P1-1. Round 2 dropped the pan of an in-flight play before Undo
+ * rematerialised the buffer (`stopPlaybackDroppingPan`), but a freeze that had
+ * already COMMITTED survived: scroll-play, pause at sample 4 000 — `panState`
+ * is 4 000 — then tap Undo, where nothing is sounding so the dropping stop is
+ * a no-op and 4 000 is left naming different speech in the restored buffer.
+ * The next Record locks `insertionOffset` there and punches into the middle of
+ * a word. It is the same "index in the wrong buffer" defect one tap later.
+ */
+describe("panAfterRematerialize", () => {
+  it("drops an absolute index — there is no mapping for a history jump", () => {
+    expect(panAfterRematerialize(4000)).toBeNull();
+    expect(panAfterRematerialize(0)).toBeNull();
+  });
+
+  it("leaves a resting line resting", () => {
+    expect(panAfterRematerialize(null)).toBeNull();
+  });
+
+  it("puts the line at the end of whatever comes back", () => {
+    // The composition that matters: the rest is not "no pan", it is F7's "the
+    // end, whatever the end becomes" — so after an undo that restores 2 000
+    // samples the line is at 2 000 and Record APPENDS. Mutation: hand the old
+    // index back and this reads 4 000, inside audio the translator never
+    // pointed at.
+    const pan = effectivePan({
+      mode: "record",
+      selectionActive: false,
+      zoomPan: null,
+      panState: panAfterRematerialize(4000),
+      length: 2000,
+    });
+    expect(pan).toBe(2000);
   });
 });
 

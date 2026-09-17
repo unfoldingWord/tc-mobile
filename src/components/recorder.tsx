@@ -19,6 +19,7 @@ import {
   frozenPan,
   heldByDrag,
   liveScopeShown,
+  panAfterRematerialize,
   panGesture,
   recordDisabled,
   resumesOnLift,
@@ -251,6 +252,33 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const dragStartX = useRef(0);
     const panAtDragStart = useRef(0);
     const [dragging, setDragging] = useState(false);
+    /**
+     * The pointer that owns the stage, and every contact currently on it
+     * (George R3 P1-2).
+     *
+     * A drag was a single shared slot — one origin, one resume flag, an up
+     * handler that did not look at which pointer it was — while
+     * `setPointerCapture` is per pointer. So a second finger landing mid-drag
+     * overwrote the first one's origin with the stale pre-play pan, and
+     * whichever finger lifted first ran the resume: playback jumped backwards,
+     * or restarted while the other finger was still down, which is precisely
+     * what #317 says must never happen.
+     *
+     * `ownerRef` is the one pointer whose move/up/cancel the stage answers;
+     * every other `pointerdown` is ignored outright. `contactsRef` is the wider
+     * question the resume asks — the requirements owner's rule is about
+     * FINGERS, not about the one we happen to track — and it is a ref, not
+     * state, because the answer is needed synchronously inside the lift that
+     * would start the sound.
+     *
+     * A contact that leaves the stage before lifting can be missed (it has no
+     * capture, so its `pointerup` lands elsewhere), which would leave a stale
+     * id in the set. That fails SAFE — the owed resume is skipped, the take
+     * stays parked, and Play collects it — and it is bounded to one gesture,
+     * because the lift clears the set outright.
+     */
+    const ownerRef = useRef<number | null>(null);
+    const contactsRef = useRef<Set<number>>(new Set());
     /** The insertion offset captured at the idle→recording edge (fixed, F9). */
     const insertionOffset = useRef(0);
     /** A take was committed or the finished flag toggled — App should reload. */
@@ -823,6 +851,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     const onPointerDown = useCallback(
       (e: React.PointerEvent) => {
+        // Every contact is recorded, even one this handler then ignores: the
+        // resume asks whether the STAGE is clear, not whether our own pointer
+        // has lifted (George R3 P1-2).
+        contactsRef.current.add(e.pointerId);
+        // One owner at a time. A second finger landing mid-drag used to be a
+        // fresh `"pan"` — after the interrupt's stop, `playingBuffer` is false,
+        // so `panGesture` answered "pan" — and it overwrote the drag origin
+        // with `pan`, the stale pre-play value the interrupt path exists to
+        // avoid. Ignoring it is both the fix and the honest model: the stage
+        // has one centerline, so it can follow one finger.
+        if (ownerRef.current !== null) return;
         // Nothing to pan on an empty segment (F11): the baseline does not slide.
         // Also frozen while `busy` (requesting/processing): insertionOffset is
         // captured at the Record tap, so a pan during a slow first-time permission
@@ -872,6 +911,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // (George R2 P1), and this is the one stop that owes a new one.
           resumeAfterDragRef.current = true;
         }
+        ownerRef.current = e.pointerId;
         setDragging(true);
         dragStartX.current = e.clientX;
         panAtDragStart.current = from;
@@ -893,6 +933,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     const onPointerMove = useCallback(
       (e: React.PointerEvent) => {
+        // Only the pointer that owns the stage moves the pan (George R3 P1-2).
+        // `setPointerCapture` is per pointer, so a second finger's moves arrive
+        // here too, and they used to pan from the OWNER's origin — a second
+        // thumb sliding the centerline the first one was holding still.
+        if (e.pointerId !== ownerRef.current) return;
         // Freeze a drag ALREADY in flight the moment the take goes non-idle, not
         // just its start (onPointerDown). A pan begun while idle keeps its pointer
         // capture, so with a second finger the translator can tap Record and keep
@@ -958,21 +1003,49 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Also runs on `pointercancel` (the same handler): the finger is gone
      * either way, and leaving playback stopped after a cancelled gesture would
      * be a sound the translator can no longer explain.
+     *
+     * It answers only the OWNER's lift, and only with the stage clear (George
+     * R3 P1-2). A non-owner's lift used to run this whole handler — resuming
+     * from the owner's pan while the owner was still holding the waveform, or
+     * consuming the owed resume so the real lift did nothing.
      */
-    const onPointerUp = useCallback(() => {
-      setDragging(false);
-      const interrupted = resumeAfterDragRef.current;
-      resumeAfterDragRef.current = false;
-      const from = Math.max(0, Math.min(draggedPanRef.current, length));
-      // `takeActive` is the mic outranking the gesture (George R1 P2 #3): a
-      // Record tapped in the same frame as the pointer-down is ahead of the
-      // render that disables it, and a resume into a live or paused mic is
-      // either refused by the floor — failing silently — or sounds over a
-      // capture. `resumesOnLift` carries the rest of the rule.
-      if (!resumesOnLift({ interrupted, pan: from, length, takeActive }))
-        return;
-      soundRange(from, length);
-    }, [length, soundRange, takeActive]);
+    const onPointerUp = useCallback(
+      (e: React.PointerEvent) => {
+        contactsRef.current.delete(e.pointerId);
+        if (e.pointerId !== ownerRef.current) return;
+        ownerRef.current = null;
+        // Whether any OTHER finger is still on the stage, asked before the set
+        // is cleared. The rule is about fingers: a second contact the stage
+        // ignored is still a finger on the waveform, and sounding under it is
+        // the thing #317 forbids.
+        const othersDown = contactsRef.current.size > 0;
+        // Bounded to this gesture: a contact that left the stage before lifting
+        // never sends its `pointerup` here, and a stale id must not suppress
+        // every future resume.
+        contactsRef.current.clear();
+        setDragging(false);
+        const interrupted = resumeAfterDragRef.current;
+        resumeAfterDragRef.current = false;
+        const from = Math.max(0, Math.min(draggedPanRef.current, length));
+        // `takeActive` is the mic outranking the gesture (George R1 P2 #3): a
+        // Record tapped in the same frame as the pointer-down is ahead of the
+        // render that disables it, and a resume into a live or paused mic is
+        // either refused by the floor — failing silently — or sounds over a
+        // capture. `resumesOnLift` carries the rest of the rule.
+        if (
+          !resumesOnLift({
+            interrupted,
+            pan: from,
+            length,
+            takeActive,
+            othersDown,
+          })
+        )
+          return;
+        soundRange(from, length);
+      },
+      [length, soundRange, takeActive]
+    );
 
     // Abort an in-flight decode and drop the synchronous guard, but KEEP a prepared
     // preview on the stage (#101). A first take's `LiveScope` remounts blank once it
@@ -1528,16 +1601,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // playback WITHOUT freezing a position in it (George R1 P2 #2): a sample
     // index measured in the buffer that was sounding names different audio in
     // the one that comes back, and unlike a cut there is no mapping to repair
-    // it with. The pan is left exactly as the translator last set it — which,
-    // at the F7 rest, is what keeps the next Record appending.
+    // it with.
+    //
+    // ...and they drop the pan that is ALREADY there, which is the half round 2
+    // missed (George R3 P1-1). Dropping the in-flight freeze only covers an undo
+    // tapped while a buffer sounds. Pause at sample 4 000 first and the freeze
+    // has committed: `panState` is 4 000, nothing is sounding, the stop above is
+    // a no-op on the pan, and 4 000 is left naming different speech in the
+    // restored buffer — where the next Record locks `insertionOffset` and
+    // punches into the middle of a word. `panAfterRematerialize` carries the
+    // reasoning and returns the F7 rest, so the line follows whatever comes back
+    // and Record appends. Functional, so neither callback has to close over the
+    // pan (and `onCut`'s own `setPanState` still composes with it).
     const onUndo = useCallback(() => {
       stopPlaybackDroppingPan();
       editor.undo();
+      setPanState(panAfterRematerialize);
     }, [editor, stopPlaybackDroppingPan]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
       editor.redo();
+      setPanState(panAfterRematerialize);
     }, [editor, stopPlaybackDroppingPan]);
 
     const onCut = useCallback(() => {

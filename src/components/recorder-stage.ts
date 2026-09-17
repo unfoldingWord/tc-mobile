@@ -391,7 +391,13 @@ export function frozenPan(
   input: FrozenPanInput
 ): { kind: "keep" } | { kind: "pan"; pan: number | null } {
   if (!input.stopRequested && !input.ranOut) return { kind: "keep" };
-  const reached = input.stopRequested ? input.observed : input.end;
+  // Running OUT outranks being stopped when both land in the same turn (George
+  // R3's adjacent risk). `onEnded` is a fact about the audio — the clip is over
+  // — and a stop arriving after it (a Pause tapped on the last syllable, a
+  // close) is a no-op on a clip that has already finished. Taking `observed`
+  // there would park a completed play up to one rAF short of the end, which is
+  // the #416 defect by a race rather than by a stale ref.
+  const reached = input.ranOut ? input.end : input.observed;
   const clamped = Math.max(0, Math.min(reached, input.length));
   return { kind: "pan", pan: clamped >= input.length ? null : clamped };
 }
@@ -427,8 +433,43 @@ export function resumesOnLift(input: {
   readonly length: number;
   /** A take is live, paused, or being committed — the mic outranks the lift. */
   readonly takeActive: boolean;
+  /** Another contact is still on the stage (George R3 P1-2). */
+  readonly othersDown: boolean;
 }): boolean {
-  return input.interrupted && !input.takeActive && input.pan < input.length;
+  return (
+    input.interrupted &&
+    !input.takeActive &&
+    !input.othersDown &&
+    input.pan < input.length
+  );
+}
+
+/**
+ * Where the centerline goes when the edit log REPLACES the working buffer —
+ * Undo and Redo (George R3 P1-1).
+ *
+ * The answer does not depend on where the line was, and that is the finding:
+ * `panState` is an absolute sample index measured in the buffer that has just
+ * been thrown away, and an arbitrary history jump has no mapping for it. (A cut
+ * does — `panAfterCut` shifts the index by what was removed to its left — which
+ * is exactly why undo/redo needing one is easy to assume and wrong.)
+ *
+ * Round 2 already dropped the pan of an IN-FLIGHT play before a rematerialiser
+ * ran (`stopPlaybackDroppingPan`). What survived was a freeze that had already
+ * committed: scroll-play, pause at sample 4 000 so `panState` is 4 000, then
+ * tap Undo — nothing is sounding, so the dropping stop is a no-op, and 4 000 is
+ * left naming different speech in the restored buffer. The next Record locks
+ * `insertionOffset` there (#61, F9) and punches into the middle of a word.
+ *
+ * So the line returns to the F7 REST. `null` is not "no pan": `effectivePan`
+ * reads it as "the end, whatever the end turns out to be", so the line follows
+ * the restored buffer and Record appends — which is what these controls did
+ * before playback ever wrote the pan, and the only position that is honest
+ * about a buffer nobody has looked at yet.
+ */
+export function panAfterRematerialize(pan: number | null): number | null {
+  if (pan === null) return null; // already the rest; nothing to drop
+  return null; // an absolute index has no meaning in the new buffer
 }
 
 /**
