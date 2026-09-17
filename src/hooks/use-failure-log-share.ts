@@ -10,7 +10,9 @@ import {
   type ShareStatus,
 } from "./share-flow";
 import {
+  type ShareEnvironment,
   type StagedShare,
+  isNativeShell,
   nativeShare,
   readShareEnvironment,
 } from "./share-target";
@@ -24,22 +26,29 @@ import {
  * nullable booleans so the two questions cannot be answered from different
  * platforms.
  *
- * The two answers are THUNKS, and that is load-bearing (Frank, takeover round
- * 2). An eagerly built capability object asks the WebView both questions before
- * the decision is even made, which makes "native asks the WebView nothing" false
- * in the only place it matters: a WebView whose `canShare` throws — the class of
- * WebView this whole native route exists for (#336) — would take the native
- * route down with it, for an answer that route never reads. Lazy, the claim is a
- * property of the function below rather than a comment above it, and a test can
- * hold it to it.
+ * Everything about the WEB platform is a THUNK, and that is load-bearing (Frank,
+ * takeover rounds 2 and 5). An eagerly built capability object asks the WebView
+ * its questions before the decision is even made, which makes "native asks the
+ * WebView nothing" false in the only place it matters: a WebView whose `share`
+ * or `canShare` is a throwing getter — the class of WebView this whole native
+ * route exists for (#336) — would take the native route down with it, for
+ * answers that route never reads. Only `native` is eager, because it is the one
+ * question answered without touching the WebView at all (`isNativeShell`).
+ *
+ * Lazy, the claim is a property of the function below rather than a comment
+ * above it, and a test can hold it to it.
  */
 export interface LogShareCapabilities {
   /** Running inside the Capacitor shell (the APK / the iOS app). */
   readonly native: boolean;
-  /** The browser has `navigator.share`. */
-  readonly webShare: boolean;
-  /** Asks `navigator.canShare` about each shape, or `null` if it has none. */
-  readonly canShare: {
+  /** Whether the browser has `navigator.share`. */
+  readonly webShare: () => boolean;
+  /**
+   * Asks `navigator.canShare` about each shape — or resolves to `null` for a
+   * browser that has no `navigator.canShare` at all, which is Web Share
+   * **Level 1** and NOT the same statement as a `canShare` that answered no.
+   */
+  readonly canShare: () => {
     readonly file: () => boolean;
     readonly text: () => boolean;
   } | null;
@@ -77,10 +86,11 @@ export function selectLogShareShape(
   caps: LogShareCapabilities
 ): "native" | "file" | "text" | "unsupported" {
   if (caps.native) return "native";
-  if (!caps.webShare) return "unsupported";
-  if (caps.canShare === null) return "text";
-  if (caps.canShare.file()) return "file";
-  return caps.canShare.text() ? "text" : "unsupported";
+  if (!caps.webShare()) return "unsupported";
+  const canShare = caps.canShare();
+  if (canShare === null) return "text";
+  if (canShare.file()) return "file";
+  return canShare.text() ? "text" : "unsupported";
 }
 
 export interface UseFailureLogShare {
@@ -213,21 +223,26 @@ export function useFailureLogShare(): UseFailureLogShare {
     aborter.current = controller;
     setError(null);
     try {
-      // INSIDE the try, probe included (Frank, takeover round 3). This function
+      // INSIDE the try, probes included (Frank, takeover round 3). This function
       // promises never to reject — the panel and the crash screen both call it
       // as `void share.prepare()`, so a rejection is an unhandled one, and the
       // control it came from would sit there looking idle with no Notice under
-      // it. The probe reads `navigator.share` and `navigator.canShare` off a
-      // WebView, and a property read is not a safe operation on the class of
-      // WebView this route exists for: a throwing getter is exactly the shape
-      // that produced #336. Nothing between the tap and the catch is assumed
-      // safe.
-      const env = readShareEnvironment();
-      // Fail before the read, not after: a platform that cannot share this in
-      // any shape should not pay for an IndexedDB open first. The gate is the
+      // it. Reading `navigator.share` or `navigator.canShare` off a WebView is
+      // not a safe operation on the class of WebView this route exists for: a
+      // throwing getter is exactly the shape that produced #336. Nothing between
+      // the tap and the catch is assumed safe.
+      const native = isNativeShell();
+      // Read at most ONCE, and only if something asks (Frank, takeover round 5).
+      // `isNativeShell` touches no Web Share API at all, so inside the shell
+      // this never runs and a broken WebView cannot cost the native route the
+      // send.
+      let env: ShareEnvironment | null = null;
+      const webEnv = (): ShareEnvironment => (env ??= readShareEnvironment());
+      // Fail before the IndexedDB read, not after: a platform that cannot share
+      // this in any shape should not pay for an open first. The gate is the
       // ROUTE, not `navigator.share` — inside the shell there is nothing here to
       // fail on.
-      if (!env.native && !env.webShare) {
+      if (!native && !webEnv().webShare) {
         setError("failed");
         return;
       }
@@ -246,22 +261,21 @@ export function useFailureLogShare(): UseFailureLogShare {
         type: "text/plain",
       });
       // The whole branch matrix is {@link selectLogShareShape}, which is pure
-      // and unit-tested; what is left here is carrying out its answer.
-      const canShareFiles = env.canShareFiles;
+      // and unit-tested; what is left here is carrying out its answer. Nothing
+      // below is evaluated on the native route — that is what the thunks are
+      // for, and a test holds the function to it.
       const shape = selectLogShareShape({
-        native: env.native,
-        webShare: env.webShare,
-        // Neither thunk runs on the native route — that is the point of them
-        // being thunks. `readShareEnvironment` has already read whether
-        // `navigator.canShare` EXISTS, which is a property lookup and not a
-        // call into the WebView's implementation.
-        canShare:
-          canShareFiles === null
+        native,
+        webShare: () => webEnv().webShare,
+        canShare: () => {
+          const canShareFiles = webEnv().canShareFiles;
+          return canShareFiles === null
             ? null
             : {
                 file: () => canShareFiles(file),
                 text: () => navigator.canShare({ text }),
-              },
+              };
+        },
       });
       if (shape === "unsupported") {
         // Nothing a retry can change, so this is a failure the panel should
@@ -337,9 +351,13 @@ export function useFailureLogShare(): UseFailureLogShare {
     if (payload.kind === "native") armed.current = null;
     const id = runId.current;
     const current = () => id === runId.current;
-    // Read immediately before `share`: whether activation is live decides how a
-    // NotAllowedError reads. See `classifyShareError`.
-    const hadActivation = navigator.userActivation?.isActive ?? false;
+    // Whether activation was live decides how a `NotAllowedError` reads (see
+    // `classifyShareError`), so it is read immediately before `share` — and ONLY
+    // on the web route, inside the try (Frank, takeover round 5). It is another
+    // `navigator` read, the native chooser does not depend on it, and this
+    // function has the same never-rejects contract `prepare` does: both callers
+    // invoke it fire-and-forget.
+    let hadActivation = false;
     try {
       // Exactly ONE call on either route, invoked synchronously — an async
       // function runs to its first await, and this call IS that boundary, so
@@ -351,6 +369,7 @@ export function useFailureLogShare(): UseFailureLogShare {
       if (payload.kind === "native") {
         await nativeShare.send(payload.staged);
       } else {
+        hadActivation = navigator.userActivation?.isActive ?? false;
         await navigator.share(
           payload.kind === "file"
             ? { files: [payload.file] }
