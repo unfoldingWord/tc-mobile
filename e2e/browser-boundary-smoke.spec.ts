@@ -44,6 +44,19 @@ import { expect, test } from "@playwright/test";
  */
 const HEARTBEAT_CLIP_FRAMES = 44_100 * 600;
 
+/**
+ * One minute of canonical PCM for the #192 purge spec.
+ *
+ * The clip has one job: be long enough that the encode cannot possibly finish
+ * before the abort. One SECOND was tried first and is not — it encodes in a few
+ * milliseconds on this container, so `done` could beat the abort and the spec
+ * would flake on `aborted` (George R1 P3-6). The harness no longer guesses at
+ * the timing either: it waits for the PCM buffer to be detached, which is the
+ * transfer itself. A minute keeps the whole spec well under a second while
+ * leaving a margin of two orders of magnitude.
+ */
+const PURGE_CLIP_FRAMES = 44_100 * 60;
+
 /** Samples per MPEG-1 Layer III granule (`lib/audio/mp3-align.ts`). */
 const MP3_GRANULE = 1152;
 /** A standard decoder's own delay, which some decoders trim and some do not. */
@@ -79,7 +92,7 @@ declare global {
         chunkRequestsAfter: number;
         mp3Length: number;
       }>;
-      workerSnapshotFetched: () => boolean;
+      workerSnapshotReady: () => boolean;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
       versionChangeFired?: boolean;
@@ -291,11 +304,12 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     await page.goto("/");
     await waitForHarness(page);
 
-    // Wait for `captureWorkerSnapshot`'s OWN fetch of the chunk to land. Purging
-    // before the snapshot exists would leave nothing to rebuild from, and the
-    // assertion below would fail for a reason that has nothing to do with the
-    // fix. Asked of the page's resource timeline rather than Playwright's
-    // request events, so the whole test reads one clock.
+    // Wait until the snapshot EXISTS. Purging before it does would leave nothing
+    // to rebuild from, and the assertion below would fail for a reason that has
+    // nothing to do with the fix. This asks the codec for `snapshotUrl` itself;
+    // it used to watch for the chunk's fetch in the resource timeline, which
+    // fires a `response.text()` and a `createObjectURL` too early and cannot see
+    // a non-ok response at all (George R1 P3-5).
     //
     // The `message` is not decoration. `captureWorkerSnapshot` is gated on
     // `import.meta.env.PROD`, which Vite derives from NODE_ENV — so a shell that
@@ -304,10 +318,10 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     // true, received false" that says nothing about why. CI sets no NODE_ENV, so
     // it does not hit this; a laptop can.
     await expect
-      .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotFetched()), {
+      .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotReady()), {
         timeout: 10_000,
         message:
-          "captureWorkerSnapshot never fetched the worker chunk. It is gated on " +
+          "captureWorkerSnapshot never produced a blob URL. It is gated on " +
           "import.meta.env.PROD — if NODE_ENV is set to development in this " +
           "shell, Vite builds with PROD=false and the snapshot path is compiled " +
           "out. Re-run with NODE_ENV unset.",
@@ -321,7 +335,8 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     await page.route(/assets\/mp3\.worker-.*\.js$/, (route) => route.abort());
 
     const result = await page.evaluate(
-      async () => await window.__e2e!.encodeAfterAbortRebuild(44_100)
+      async (frames) => await window.__e2e!.encodeAfterAbortRebuild(frames),
+      PURGE_CLIP_FRAMES
     );
 
     // The abort really terminated an in-flight encode. Without this the warm

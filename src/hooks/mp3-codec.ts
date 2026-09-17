@@ -73,12 +73,18 @@ export interface EncodeRequest {
 }
 
 /**
- * The messages the worker sends back. `progress` is a liveness HEARTBEAT (#166),
- * throttled by the worker (`mp3.worker.ts`): it carries no result and the encode
- * keeps waiting, but each one tells the client the worker is still alive so a
- * long encode is not judged stalled. `done`/`error` settle the encode.
+ * The messages the worker sends back.
+ *
+ * `ready` is posted once, when the worker script has run (#192): it settles
+ * nothing and belongs to no job, and it is the only evidence that a blob built
+ * from the snapshot actually EXECUTES, short of giving it a chapter's PCM.
+ * `progress` is a liveness HEARTBEAT (#166), throttled by the worker
+ * (`mp3.worker.ts`): it carries no result and the encode keeps waiting, but each
+ * one tells the client the worker is still alive so a long encode is not judged
+ * stalled. `done`/`error` settle the encode.
  */
 export type EncodeResponse =
+  | { readonly kind: "ready" }
   | { readonly kind: "progress"; readonly fraction: number }
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
   | { readonly kind: "error"; readonly message: string };
@@ -130,6 +136,23 @@ export class EncoderFailedError extends Error {
  * worker's own progress-throttle interval.
  */
 export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
+
+/**
+ * How long an UNPROVEN snapshot-built worker may take to say `ready` before the
+ * snapshot is judged unusable and the codec falls back to the chunk URL (#192).
+ *
+ * Nothing else waits on this. It is paid at most once per snapshot — the first
+ * encode on a blob-built worker, before any PCM is handed over — and never again
+ * once that blob has answered anything, because proof latches on the snapshot.
+ * A chunk-built worker never waits at all.
+ *
+ * Short on purpose, and deliberately NOT `ENCODER_SILENCE_TIMEOUT_MS`. This
+ * measures script load and evaluation of a ~170 KB zero-import IIFE from an
+ * in-memory blob — no network, no decode, no encode — so seconds are already
+ * generous for a slow phone, whereas waiting fifteen of them is exactly the hole
+ * in storage relief (#12) that finding P2-4 is about.
+ */
+export const ENCODER_READY_TIMEOUT_MS = 3_000;
 
 /**
  * Is the page currently hidden (locked, backgrounded)? Guarded so the encoder
@@ -365,50 +388,87 @@ let sharedWorker: Worker | null = null;
 
 /**
  * Whether the live `sharedWorker` came from the blob snapshot, and whether it
- * has ever answered a message.
+ * has said `ready` yet.
+ *
+ * BOTH belong to the handle and are cleared when it is dropped. Proof that the
+ * blob itself runs does NOT — see `snapshotProven`.
+ */
+let workerFromSnapshot = false;
+let workerReady = false;
+
+/**
+ * The blob snapshot of the worker chunk, the one attempt to take it, and
+ * whether a worker built from it has ever answered anything.
  *
  * The blob worker has never run on a phone, so it ships with a self-healing
  * guard rather than on faith: a snapshot-built worker that FAILS WITHOUT EVER
  * HAVING ANSWERED is treated as a bad snapshot and thrown away, so the next
  * rebuild falls back to the chunk URL and the encoder degrades to the #182
- * behaviour instead of bricking. A worker that has answered at least once has
- * proven the snapshot runs, so a later crash — an OOM mid-encode — keeps it.
+ * behaviour instead of bricking. Once a worker built from this blob has answered
+ * anything, the blob is PROVEN to run on this browser, and a later failure is
+ * the device's, not the snapshot's.
+ *
+ * Proof lives on the SNAPSHOT, not on the handle (George R1 P2-2). It was on the
+ * handle first, and `dropEncoderWorker` cleared it — so a proven blob worker
+ * that OOMed mid-encode came back unproven, and if the device was still under
+ * memory pressure the replacement's failure revoked a blob that had already been
+ * observed running. The next construction then went to `encoderChunkUrl`, which
+ * on a page that has lived across a deploy is exactly the URL that is gone:
+ * #192 re-opened by the guard that exists to close it. The blob either runs on
+ * this browser or it does not, and one success settles that for the page.
  *
  * "Fails" is BOTH ways a worker can fail, because #166's silence deadline added
  * a second one after #192's shape was written. An `error` event is the snapshot
  * that will not parse or load — a wrong format, a CSP that forbids blob workers.
- * A STALL is the snapshot that loads and then answers nothing: a truncated fetch
- * ending on a statement boundary is valid JS with no `message` listener, and it
- * errors never and goes silent forever. Judging only the error arm would leave
- * every rebuild coming from the same mute blob, each encode burning a full
- * `ENCODER_SILENCE_TIMEOUT_MS` before rejecting — an encoder wedged strictly
- * WORSE than the #182 behaviour the fallback exists to reach.
- *
- * `workerProven` is what makes the stall arm safe. `mp3.worker.ts` posts its
- * first heartbeat on the first frame it encodes, so a running worker is proven
- * within milliseconds of the request and a slow-but-progressing encode can never
- * be read as a bad snapshot; only a worker that has said NOTHING for a full
- * visible window is, and such a worker has not run at all.
+ * The other is the snapshot that loads and then answers NOTHING: a truncated
+ * fetch ending on a statement boundary is valid JS with no `message` listener,
+ * and it errors never and goes silent forever. `ready` is what catches that one,
+ * and catches it before a chapter's PCM has been handed over — see
+ * `awaitWorkerReady`.
  */
-let workerFromSnapshot = false;
-let workerProven = false;
-
-/** The blob snapshot of the worker chunk, and the one attempt to take it. */
 let snapshotUrl: string | null = null;
 let snapshotStarted = false;
+let snapshotProven = false;
 
 /** The script every worker is built from: the snapshot if we have one. */
 function workerScriptUrl(): string {
   return snapshotUrl ?? encoderChunkUrl;
 }
 
+/**
+ * `new Worker`, with the right module-ness for the URL (George R1 P1).
+ *
+ * The CHUNK URL keeps `{ type: "module" }`: in dev Vite serves `mp3.worker.ts`
+ * as a real ES module with live imports, and only a module worker can run it.
+ *
+ * The BLOB is classic. The snapshot is production-only and the production chunk
+ * is a zero-import IIFE — verified against `dist/`, `(function(){"use strict";…`
+ * — so there is nothing for module semantics to do, while declaring `module`
+ * asks the platform to parse a blob as an ES module and to honour whatever
+ * module-worker restrictions it applies to `blob:`. Classic is the weaker claim
+ * and the one that matches the bytes.
+ */
+function constructWorker(url: string, fromSnapshot: boolean): Worker {
+  return fromSnapshot ? new Worker(url) : new Worker(url, { type: "module" });
+}
+
 function encoderWorker(): Worker {
   if (!sharedWorker) {
-    const fromSnapshot = snapshotUrl !== null;
-    // `{ type: "module" }` matches the built chunk either way: Vite emits it as
-    // a zero-import IIFE (verified against `dist/`), which is valid module
-    // source, and dev serves it as a real module.
-    const worker = new Worker(workerScriptUrl(), { type: "module" });
+    let fromSnapshot = snapshotUrl !== null;
+    let worker: Worker;
+    try {
+      worker = constructWorker(workerScriptUrl(), fromSnapshot);
+    } catch (cause) {
+      // A SYNCHRONOUS throw is the platform refusing this URL outright — a CSP
+      // with `worker-src 'self'`, a WebView that throws on `blob:` (George R1
+      // P2-3). The error-event arm never sees it, so without this the snapshot
+      // stayed set and every later construction threw on the same blob while the
+      // chunk URL — possibly still cached — was never tried.
+      if (!fromSnapshot) throw cause;
+      discardWorkerSnapshot();
+      fromSnapshot = false;
+      worker = constructWorker(encoderChunkUrl, false);
+    }
     // Durable, for the worker's whole life: a load failure or a between-encodes
     // crash arrives here even when no per-job `onerror` is attached, so the dead
     // handle is dropped instead of reused (R1). `addEventListener` survives a
@@ -419,9 +479,19 @@ function encoderWorker(): Worker {
       discardUnprovenSnapshot();
       dropEncoderWorker();
     });
+    // Also durable, and the ONE place proof is recorded. Any message will do —
+    // `ready`, a heartbeat, a result, even the worker reporting an encode error
+    // — because all four are this script executing. Keeping it here rather than
+    // in the per-job `onmessage` means a `ready` that lands while the worker is
+    // idle counts, which is the common case for a warm worker.
+    worker.addEventListener("message", () => {
+      if (sharedWorker !== worker) return;
+      workerReady = true;
+      if (workerFromSnapshot) snapshotProven = true;
+    });
     sharedWorker = worker;
     workerFromSnapshot = fromSnapshot;
-    workerProven = false;
+    workerReady = false;
   }
   return sharedWorker;
 }
@@ -440,7 +510,9 @@ function dropEncoderWorker(): void {
   const worker = sharedWorker;
   sharedWorker = null;
   workerFromSnapshot = false;
-  workerProven = false;
+  workerReady = false;
+  // `snapshotProven` is deliberately NOT cleared: it is a fact about the blob,
+  // which outlives every handle built from it (George R1 P2-2).
   try {
     worker?.terminate();
   } catch (cause) {
@@ -456,9 +528,8 @@ function dropEncoderWorker(): void {
  * have purged (R2). A stalled worker is recovered exactly as an abort is (#166).
  *
  * It does NOT judge the snapshot. An abort is US killing a healthy worker, and
- * the re-warm is meant to come from the snapshot; only the two FAILURE paths —
- * the durable `error` listener and `onStall` — call `discardUnprovenSnapshot`
- * first.
+ * the re-warm is meant to come from the snapshot; the durable `error` listener
+ * is the one path that calls `discardUnprovenSnapshot` first.
  */
 function recoverEncoderWorker(): void {
   dropEncoderWorker();
@@ -466,24 +537,46 @@ function recoverEncoderWorker(): void {
 }
 
 /**
- * The self-healing half of #192: a snapshot-built worker that failed without
- * ever answering is a snapshot this browser cannot run, so throw it away.
+ * The self-healing half of #192: a snapshot-built worker that failed without the
+ * blob ever having answered is a snapshot this browser cannot run, so throw it
+ * away.
  *
- * Call it BEFORE `dropEncoderWorker`, which clears both flags it reads. A no-op
+ * Call it BEFORE `dropEncoderWorker`, which clears `workerFromSnapshot`. A no-op
  * for a chunk-built worker — there is no snapshot to blame — and for a proven
- * one, where discarding on an ordinary later crash would re-expose #192 after a
+ * blob, where discarding on an ordinary later crash would re-expose #192 after a
  * single OOM.
  */
 function discardUnprovenSnapshot(): void {
-  if (workerFromSnapshot && !workerProven) discardWorkerSnapshot();
+  if (workerFromSnapshot && !snapshotProven) discardWorkerSnapshot();
 }
 
 /** Throw away a snapshot that cannot run, and stop trying to take another. */
 function discardWorkerSnapshot(): void {
   if (snapshotUrl) URL.revokeObjectURL(snapshotUrl);
   snapshotUrl = null;
+  // The only place proof is cleared, because it is the only place the thing it
+  // is about stops existing.
+  snapshotProven = false;
   // `snapshotStarted` stays true: re-fetching the same chunk would produce the
   // same unusable blob.
+}
+
+/**
+ * Has the blob snapshot been taken? For the #251 smoke's readiness probe only
+ * (George R1 P3-5).
+ *
+ * The spec must not simulate the purge until the snapshot EXISTS, and it used to
+ * wait on a resource-timing entry for the chunk fetch — which fires when the
+ * response arrives, one `response.text()` and one `createObjectURL` before
+ * `snapshotUrl` is assigned, and which cannot see a non-ok response at all. This
+ * is the state itself rather than a proxy for it.
+ *
+ * Tree-shaken out of a production build: `src/app/e2e-harness.ts` is its only
+ * importer and `vite.config.ts` marks that file external for every mode but
+ * `"e2e"`.
+ */
+export function encoderSnapshotTaken(): boolean {
+  return snapshotUrl !== null;
 }
 
 /**
@@ -585,47 +678,128 @@ export function warmEncoder(): void {
  * of the page. Silence rather than elapsed time is what makes an iOS lock/
  * background freeze safe: the freeze suspends page and worker together, so the
  * timer is not judged while `document.hidden`, and a resume grants a fresh window.
+ *
+ * An encode on an UNPROVEN blob-built worker waits for its `ready` first, and a
+ * blob that does not answer is thrown away and the job re-run on a chunk-built
+ * worker — in THIS turn, with the PCM still in hand (George R1 P1). A caller
+ * never sees that happen; it costs at most `ENCODER_READY_TIMEOUT_MS`, once per
+ * snapshot.
  */
-function encodeInWorker(
+async function encodeInWorker(
+  samples: Int16Array,
+  signal?: AbortSignal
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (signal?.aborted) throw abortReason(signal);
+  if (typeof Worker === "undefined") {
+    // A phone with no `Worker` cannot encode, ever. Counted like any other
+    // encode failure rather than special-cased: three attempts and the shelf
+    // says the phone cannot make recordings smaller, which is exactly true.
+    noteEncodeFailed();
+    throw new EncoderFailedError(
+      "This browser cannot encode MP3: no Web Worker support"
+    );
+  }
+
+  let worker = obtainWorker();
+  // #192's HANDSHAKE, and the reason a bad snapshot costs nobody an encode.
+  //
+  // Only an unproven blob waits, so this is at most one wait per page and a
+  // chunk-built worker never pays it. What it buys is the ORDER: the blob is
+  // judged before `postMessage` transfers a chapter's PCM into it, so a snapshot
+  // that turns out not to run is discarded, the worker rebuilt from the chunk
+  // URL, and THIS job simply runs there. Before the handshake the first encode
+  // on a bad blob was the job that died for it — a failed Share, or a sweep
+  // segment recorded as failed — and the fallback only arrived for whoever came
+  // next (George R1 P1).
+  if (workerFromSnapshot && !snapshotProven && !workerReady) {
+    await awaitWorkerReady(worker, signal);
+    if (!workerReady) {
+      discardUnprovenSnapshot();
+      dropEncoderWorker();
+      worker = obtainWorker();
+    }
+  }
+  return runEncodeOnWorker(worker, samples, signal);
+}
+
+/**
+ * The shared worker, or an {@link EncoderFailedError} — the preamble every
+ * encode shares.
+ *
+ * `new Worker` rarely throws synchronously (a SecurityError, say), and
+ * `encoderWorker` already retries such a throw once on the chunk URL when the
+ * first attempt was the blob's. Reaching the `catch` means BOTH failed. An async
+ * load failure is NOT this path — it arrives as an `error` event, handled by the
+ * durable listener (which drops the handle) and the job's `onerror` (which
+ * rejects it).
+ */
+function obtainWorker(): Worker {
+  try {
+    return encoderWorker();
+  } catch (cause) {
+    dropEncoderWorker();
+    noteEncodeFailed();
+    throw new EncoderFailedError(
+      `The MP3 encoder worker could not be created: ${messageOf(cause)}`,
+      { cause }
+    );
+  }
+}
+
+/**
+ * Wait until `worker` has answered ANYTHING, errored, or spent
+ * `ENCODER_READY_TIMEOUT_MS` (#192). Rejects only on abort.
+ *
+ * It resolves no value: the caller reads `workerReady`, which the durable
+ * message listener owns, so a message that lands in the gap between this
+ * resolving and the caller looking is still counted. A worker that errors has
+ * already been discarded and dropped by the durable `error` listener before this
+ * returns.
+ */
+function awaitWorkerReady(
+  worker: Worker,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (workerReady) {
+      resolve();
+      return;
+    }
+    let done = false;
+    // Declared before `timer` and reading it from the closure: every caller is
+    // an event or the timer itself, so none can run before the synchronous
+    // block below has assigned it.
+    const detach = () => {
+      done = true;
+      clearTimeout(timer);
+      worker.removeEventListener("message", onSettle);
+      worker.removeEventListener("error", onSettle);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    function onSettle(): void {
+      if (done) return;
+      detach();
+      resolve();
+    }
+    function onAbort(): void {
+      if (done) return;
+      detach();
+      reject(abortReason(signal!));
+    }
+    worker.addEventListener("message", onSettle);
+    worker.addEventListener("error", onSettle);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const timer = setTimeout(onSettle, ENCODER_READY_TIMEOUT_MS);
+  });
+}
+
+/** Run one encode on `worker`, with the silence deadline armed (#166). */
+function runEncodeOnWorker(
+  worker: Worker,
   samples: Int16Array,
   signal?: AbortSignal
 ): Promise<Uint8Array<ArrayBuffer>> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(abortReason(signal));
-      return;
-    }
-    if (typeof Worker === "undefined") {
-      // A phone with no `Worker` cannot encode, ever. Counted like any other
-      // encode failure rather than special-cased: three attempts and the shelf
-      // says the phone cannot make recordings smaller, which is exactly true.
-      noteEncodeFailed();
-      reject(
-        new EncoderFailedError(
-          "This browser cannot encode MP3: no Web Worker support"
-        )
-      );
-      return;
-    }
-    let worker: Worker;
-    try {
-      worker = encoderWorker();
-    } catch (cause) {
-      // `new Worker` rarely throws synchronously (a SecurityError, say). An async
-      // load failure is NOT this path — it arrives as an `error` event, handled
-      // by the durable listener (which drops the handle) and this job's `onerror`
-      // below (which rejects it).
-      dropEncoderWorker();
-      noteEncodeFailed();
-      reject(
-        new EncoderFailedError(
-          `The MP3 encoder worker could not be created: ${messageOf(cause)}`,
-          { cause }
-        )
-      );
-      return;
-    }
-
     // The silence heartbeat (#166). `lastMessageAt` is the last sign of life from
     // the worker; the timer measures how long it has been quiet, NOT how long the
     // encode has run — so a page freeze, which stops the worker too, cannot make
@@ -731,12 +905,23 @@ function encodeInWorker(
       // terminate that itself throws still lets us reject and release the lane —
       // never a hung lane (P3b) — with the failure logged to a channel rather than
       // swallowed.
+      // A stall here is ALWAYS a real one — never a bad blob snapshot wearing
+      // #166's clothes (George R1 P2-4).
+      //
+      // That used to need deciding. An unproven blob could be handed a chapter's
+      // PCM, go silent, and reject as `EncoderStalledError` fifteen seconds
+      // later — which the Finished sweep reads as a wedged worker: it names the
+      // clip poison (`finish-transcode.ts`), spends its one drain pass and ends
+      // the run, and the health store latches `failing` past the three-strike
+      // threshold. A false "this phone cannot make recordings smaller", while
+      // the chunk-URL worker was one construction away.
+      //
+      // `encodeInWorker`'s `ready` handshake removes the case rather than
+      // classifying it: a snapshot-built worker reaching this function has
+      // already answered, so `snapshotProven` is true here by construction, and
+      // an unproven blob never carries a job at all. There is deliberately no
+      // branch for it — a branch nothing can reach is a claim nothing can test.
       try {
-        // The second way a bad snapshot shows itself (#192 × #166): source that
-        // loads but never answers. Judged BEFORE the teardown, which clears the
-        // flags it reads. An abort never reaches here, which is the point — see
-        // `recoverEncoderWorker`.
-        discardUnprovenSnapshot();
         teardownAndRecover();
       } catch (recoverError) {
         // To the app's ONE sink, not the console (George R1 P3-5): sweep
@@ -751,12 +936,20 @@ function encodeInWorker(
 
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
       if (settled) return;
-      // It answered, so the script it was built from RUNS — see `workerProven`.
-      // Set before the progress branch below, deliberately: a heartbeat IS the
-      // worker's own code executing, and taking it as proof is what keeps a
-      // slow-but-running blob worker out of the stall arm of the guard.
-      if (sharedWorker === worker) workerProven = true;
+      // Proof that the script runs is NOT recorded here — the durable `message`
+      // listener in `encoderWorker` owns it, so a `ready` that lands while the
+      // worker is idle counts too.
       const response = event.data;
+      // `ready` belongs to the worker, not to this job: it says the script ran
+      // and nothing about the encode. Treated exactly like a heartbeat — reset
+      // the window and keep waiting — because a `ready` from a worker rebuilt
+      // inside this very job can arrive after the handlers below are attached.
+      if (response.kind === "ready") {
+        lastMessageAt = Date.now();
+        if (!pageHidden()) mightHaveFrozen = false;
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
       // A progress heartbeat is a sign of life, not a result: reset the silence
       // window and keep waiting for done/error. The freeze latch is cleared
       // only while the page is VISIBLE — a beat then means the worker is running

@@ -24,25 +24,40 @@ type ErrorEventish = { error?: Error; message?: string };
 /** A `Worker` stand-in: records construction, lets a test drive its events. */
 class FakeWorker {
   static instances: FakeWorker[] = [];
+  /**
+   * URLs whose construction throws SYNCHRONOUSLY — a CSP that forbids `blob:`
+   * workers, a WebView that refuses one (George R1 P2-3). A `Set`, not a flag,
+   * because the point of that finding is that the BLOB throws while the chunk
+   * URL would have worked.
+   */
+  static throwOnUrl = new Set<string>();
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: ((event: ErrorEventish) => void) | null = null;
   terminated = false;
   posted: unknown[] = [];
   private errorListeners: ((event: ErrorEventish) => void)[] = [];
+  private messageListeners: ((event: { data: unknown }) => void)[] = [];
 
   constructor(
     public url: string | URL,
     public options?: unknown
   ) {
     FakeWorker.instances.push(this);
+    if (FakeWorker.throwOnUrl.has(String(url)))
+      throw new Error(`refusing to construct a worker from ${String(url)}`);
   }
 
-  addEventListener(type: string, fn: (event: ErrorEventish) => void): void {
-    if (type === "error") this.errorListeners.push(fn);
+  addEventListener(type: string, fn: (event: never) => void): void {
+    if (type === "error")
+      this.errorListeners.push(fn as (event: ErrorEventish) => void);
+    if (type === "message")
+      this.messageListeners.push(fn as (event: { data: unknown }) => void);
   }
-  removeEventListener(type: string, fn: (event: ErrorEventish) => void): void {
+  removeEventListener(type: string, fn: (event: never) => void): void {
     if (type === "error")
       this.errorListeners = this.errorListeners.filter((f) => f !== fn);
+    if (type === "message")
+      this.messageListeners = this.messageListeners.filter((f) => f !== fn);
   }
   postMessage(message: unknown): void {
     this.posted.push(message);
@@ -51,9 +66,24 @@ class FakeWorker {
     this.terminated = true;
   }
 
+  /**
+   * Deliver one message the way a real `Worker` does: the durable
+   * `addEventListener("message")` registered at construction first, then the
+   * per-job `onmessage =` assigned later. Same ordering rule as `emitError`.
+   */
+  private deliver(data: unknown): void {
+    const event = { data };
+    for (const fn of [...this.messageListeners]) fn(event);
+    this.onmessage?.(event);
+  }
+
+  /** The worker's script has run (#192). Posted once, before any job. */
+  emitReady(): void {
+    this.deliver({ kind: "ready" });
+  }
   /** The worker answers a job successfully. */
   emitDone(mp3: ArrayBuffer): void {
-    this.onmessage?.({ data: { kind: "done", mp3 } });
+    this.deliver({ kind: "done", mp3 });
   }
   /** The worker errors — a load failure or a crash. Fires both handler kinds.
    *  Real order (round-2 F1): the durable `addEventListener("error")` runs
@@ -67,7 +97,7 @@ class FakeWorker {
   }
   /** A liveness heartbeat (#166): no result, but the worker's code RAN. */
   emitProgress(fraction: number): void {
-    this.onmessage?.({ data: { kind: "progress", fraction } });
+    this.deliver({ kind: "progress", fraction });
   }
 }
 
@@ -129,17 +159,24 @@ type Codec = typeof import("@/hooks/mp3-codec");
 let withEncoder: Codec["withEncoder"];
 let warmEncoder: Codec["warmEncoder"];
 let EncoderStalledError: Codec["EncoderStalledError"];
+let EncoderFailedError: Codec["EncoderFailedError"];
+let encoderHealth: Codec["encoderHealth"];
 let TIMEOUT: number;
+let READY_TIMEOUT: number;
 
 beforeEach(async () => {
   vi.resetModules();
   FakeWorker.instances = [];
+  FakeWorker.throwOnUrl = new Set();
   globalThis.Worker = FakeWorker as unknown as typeof Worker;
   const mod = await import("@/hooks/mp3-codec");
   withEncoder = mod.withEncoder;
   warmEncoder = mod.warmEncoder;
   EncoderStalledError = mod.EncoderStalledError;
+  EncoderFailedError = mod.EncoderFailedError;
+  encoderHealth = mod.encoderHealth;
   TIMEOUT = mod.ENCODER_SILENCE_TIMEOUT_MS;
+  READY_TIMEOUT = mod.ENCODER_READY_TIMEOUT_MS;
 });
 
 afterEach(() => {
@@ -252,6 +289,20 @@ describe("the worker chunk's blob snapshot (#192)", () => {
     return warmed;
   };
 
+  /**
+   * Let an encode through #192's `ready` handshake.
+   *
+   * An UNPROVEN blob-built worker is not given PCM until it has answered, so a
+   * test driving the first encode on one has to say `ready` first — exactly as
+   * `mp3.worker.ts` does at the foot of its module. A chunk-built or already
+   * proven worker never waits, and calling this on one is harmless.
+   */
+  const handshake = async (worker: FakeWorker): Promise<void> => {
+    await flush();
+    worker.emitReady();
+    await flush();
+  };
+
   it("builds the warm worker from the chunk URL, before any snapshot exists", () => {
     warmEncoder();
     // Nothing to snapshot from yet — the first worker is what MAKES the fetch
@@ -286,8 +337,29 @@ describe("the worker chunk's blob snapshot (#192)", () => {
     const p2 = encode(Int16Array.of(2));
     await flush();
     expect(nth(1).url).toBe(BLOB_URL);
+    await handshake(nth(1));
     nth(1).emitDone(new Uint8Array([2]).buffer);
     await expect(p2).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("builds the blob worker CLASSIC and the chunk worker as a module", async () => {
+    await warmWithSnapshot();
+    // The dev chunk is a real ES module with live imports, so the chunk URL
+    // needs `{ type: "module" }`...
+    expect(nth(0).options).toEqual({ type: "module" });
+
+    const controller = new AbortController();
+    const p = encode(Int16Array.of(1), controller.signal);
+    await flush();
+    controller.abort();
+    await expect(p).rejects.toBeInstanceOf(DOMException);
+
+    // ...while the snapshot is production-only and the production chunk is a
+    // zero-import IIFE, so the blob is constructed with no options at all
+    // (George R1 P1). `{ type: "module" }` there asks the platform to parse a
+    // blob as an ES module for no benefit.
+    expect(nth(1).url).toBe(BLOB_URL);
+    expect(nth(1).options).toBeUndefined();
   });
 
   it("fetches the chunk once, however many times it is warmed", async () => {
@@ -360,7 +432,7 @@ describe("the worker chunk's blob snapshot (#192)", () => {
 
     // It answers, which PROVES the blob runs.
     const ok = encode(Int16Array.of(2));
-    await flush();
+    await handshake(nth(1));
     nth(1).emitDone(new Uint8Array([2]).buffer);
     await expect(ok).resolves.toBeInstanceOf(Uint8Array);
 
@@ -372,31 +444,78 @@ describe("the worker chunk's blob snapshot (#192)", () => {
     await expect(p).rejects.toThrow("out of memory");
     expect(revoked).toEqual([]);
 
+    // AND THE REPLACEMENT FAILS TOO, before it has answered anything (George R1
+    // P2-2). This is the case that made proof-on-the-handle wrong: the device is
+    // still under memory pressure, so the worker rebuilt from the blob dies on
+    // load. Proof belongs to the BLOB, which has already been observed running,
+    // so this must not revoke it — the alternative is falling back to a chunk
+    // URL that a service-worker update deleted, i.e. #192 re-opened by the very
+    // guard that closes it.
     const p2 = encode(Int16Array.of(4));
     await flush();
     expect(nth(2).url).toBe(BLOB_URL);
-    nth(2).emitDone(new Uint8Array([4]).buffer);
+    nth(2).emitError(new Error("out of memory again"));
+    await expect(p2).rejects.toThrow("out of memory again");
+    expect(revoked).toEqual([]);
+
+    // Still the blob, and it still works once the device recovers.
+    const p3 = encode(Int16Array.of(5));
+    await flush();
+    expect(nth(3).url).toBe(BLOB_URL);
+    nth(3).emitDone(new Uint8Array([5]).buffer);
+    await expect(p3).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("falls back to the chunk URL when the platform refuses to construct a blob worker", async () => {
+    await warmWithSnapshot();
+    // A CSP with `worker-src 'self'`, or a WebView that throws on `blob:`. This
+    // throw is SYNCHRONOUS, so the durable `error` listener never sees it — and
+    // before the retry, `snapshotUrl` stayed set and every later construction
+    // threw on the same blob while the chunk URL went untried (George R1 P2-3).
+    FakeWorker.throwOnUrl.add(BLOB_URL);
+
+    const controller = new AbortController();
+    const p = encode(Int16Array.of(1), controller.signal);
+    await flush();
+    controller.abort();
+    await expect(p).rejects.toBeInstanceOf(DOMException);
+
+    // The re-warm tried the blob, was refused, discarded it, and built from the
+    // chunk — inside one `encoderWorker()` call, so even `warmEncoder`'s
+    // swallowing try/catch never saw a throw.
+    expect(revoked).toEqual([BLOB_URL]);
+    expect(isChunkUrl(nth(2).url)).toBe(true);
+
+    const p2 = encode(Int16Array.of(2));
+    await flush();
+    nth(2).emitDone(new Uint8Array([2]).buffer);
     await expect(p2).resolves.toBeInstanceOf(Uint8Array);
   });
 });
 
 /**
- * The SECOND way a bad snapshot shows itself (#192 × #166).
+ * The `ready` HANDSHAKE (#192 × #166) — the second way a bad snapshot shows
+ * itself, and the reason it now costs nobody an encode.
  *
- * The self-healing guard #192 shipped judges one signal: an `error` event from a
+ * The guard #192 shipped judges one signal: an `error` event from a
  * snapshot-built worker that has never answered. #166's silence deadline landed
  * in between and added another failure mode to the same worker — source that
- * LOADS and then answers nothing errors never, so the error arm never fires,
- * every rebuild comes from the same mute blob, and each encode burns a full
- * `ENCODER_SILENCE_TIMEOUT_MS` before rejecting. That is strictly worse than the
- * #182 behaviour the fallback exists to reach, so a stall on an UNPROVEN
- * snapshot-built worker discards the snapshot too.
+ * LOADS and then answers nothing errors never. Two things followed, and both
+ * were wrong. Every rebuild came from the same mute blob, each encode burning a
+ * full `ENCODER_SILENCE_TIMEOUT_MS`; and the encode that discovered it was the
+ * one that died for it, its PCM already transferred into a worker that was about
+ * to be terminated, reported to the Finished sweep as a wedged encoder.
  *
- * Fake timers, like `encoder-deadline.test.ts` — the deadline is 15 s and no
- * suite waits that out. Node has no `document`, so the page counts as visible
+ * `mp3.worker.ts` now posts `ready` when its script has run, and an unproven
+ * blob-built worker is not given a chapter's PCM until it has. A blob that never
+ * answers is discarded and the job re-run on a chunk-built worker in the same
+ * turn, so the caller never learns it happened.
+ *
+ * Fake timers, like `encoder-deadline.test.ts` — the deadlines are seconds and
+ * no suite waits them out. Node has no `document`, so the page counts as visible
  * and `onStall` is free to judge, which is the state under test.
  */
-describe("a stall judges the blob snapshot too (#192 × #166)", () => {
+describe("the ready handshake on an unproven blob (#192 × #166)", () => {
   beforeEach(() => {
     stubSnapshotEnvironment();
     vi.useFakeTimers();
@@ -412,7 +531,7 @@ describe("a stall judges the blob snapshot too (#192 × #166)", () => {
 
   /**
    * Warm, land the snapshot, then force the abort-driven REBUILD — so the live
-   * worker (index 1) is the blob's, which is the one this guard judges.
+   * worker (index 1) is the blob's, unproven, which is the one under test.
    */
   const rebuildFromSnapshot = async (): Promise<FakeWorker> => {
     warmEncoder();
@@ -429,42 +548,108 @@ describe("a stall judges the blob snapshot too (#192 × #166)", () => {
     return nth(1);
   };
 
-  it("throws away a snapshot whose worker stalls without ever answering", async () => {
+  it("hands no PCM to an unproven blob worker until it says ready", async () => {
     const blobWorker = await rebuildFromSnapshot();
 
-    // It loaded, and then said nothing at all: no heartbeat, no done, no error.
     const p = encode(Int16Array.of(2));
     await microtasks();
-    // Attached BEFORE the advance, or the rejection the timer raises mid-tick
-    // is an unhandled rejection rather than this test's assertion.
-    const rejection = expect(p).rejects.toBeInstanceOf(EncoderStalledError);
-    await vi.advanceTimersByTimeAsync(TIMEOUT);
-    await rejection;
-    expect(blobWorker.terminated).toBe(true);
+    // The whole point of the handshake: the chapter's PCM is still on this
+    // thread, so a blob that turns out not to run costs nothing.
+    expect(blobWorker.posted).toEqual([]);
 
-    // The snapshot is the suspect, so it goes — and the re-warm the stall
-    // recovery performs is already back on the chunk URL.
+    blobWorker.emitReady();
+    await microtasks();
+    expect(blobWorker.posted).toHaveLength(1);
+
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+    // No fallback happened: one ready, one job, one worker.
+    expect(revoked).toEqual([]);
+    expect(FakeWorker.instances).toHaveLength(2);
+  });
+
+  it("discards a blob that never says ready and runs THIS job on the chunk worker", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    const p = encode(Int16Array.of(2));
+    await microtasks();
+    // It loaded, and then said nothing at all — the truncated-fetch case, which
+    // errors never.
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+
+    // Judged, discarded, rebuilt from the chunk — and the job is still alive.
     expect(revoked).toEqual([BLOB_URL]);
+    expect(blobWorker.terminated).toBe(true);
+    expect(blobWorker.posted).toEqual([]);
     expect(isChunkUrl(nth(2).url)).toBe(true);
 
-    // And the encoder works again, rather than stalling for the page's life.
-    const p2 = encode(Int16Array.of(3));
+    // The caller never sees the fallback: the encode it asked for RESOLVES.
+    // Before the handshake this job rejected, and only whoever came next got a
+    // working encoder (George R1 P1).
+    nth(2).emitDone(new Uint8Array([2]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("never latches encoder health for a mute blob", async () => {
+    await rebuildFromSnapshot();
+    expect(encoderHealth()).toBe("ok");
+
+    const p = encode(Int16Array.of(2));
     await microtasks();
-    nth(2).emitDone(new Uint8Array([3]).buffer);
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+
+    // A stall verdict would have set this to `failing` on the spot — the
+    // threshold is bypassed for a stall — putting "this phone cannot make
+    // recordings smaller" on the Books shelf because a SNAPSHOT did not run,
+    // while the chunk worker that replaced it is healthy (George R1 P2-4).
+    expect(encoderHealth()).toBe("ok");
+
+    nth(2).emitDone(new Uint8Array([2]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+    expect(encoderHealth()).toBe("ok");
+  });
+
+  it("waits only once: a proven blob is never held up again", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    const first = encode(Int16Array.of(2));
+    await microtasks();
+    blobWorker.emitReady();
+    await microtasks();
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
+    await expect(first).resolves.toBeInstanceOf(Uint8Array);
+
+    // A crash drops the handle; the rebuild is the blob's again, and unproven as
+    // a HANDLE — but the blob itself has been observed running, so no second
+    // handshake. Without proof living on the snapshot this encode would sit
+    // waiting for a `ready` on every rebuild for the life of the page.
+    const p = encode(Int16Array.of(3));
+    await microtasks();
+    blobWorker.emitError(new Error("out of memory"));
+    await expect(p).rejects.toThrow("out of memory");
+
+    const p2 = encode(Int16Array.of(4));
+    await microtasks();
+    expect(nth(2).url).toBe(BLOB_URL);
+    expect(nth(2).posted).toHaveLength(1);
+    nth(2).emitDone(new Uint8Array([4]).buffer);
     await expect(p2).resolves.toBeInstanceOf(Uint8Array);
   });
 
-  it("keeps a snapshot whose worker answered once and stalled later", async () => {
+  it("still reports a real stall on a PROVEN blob as a stall", async () => {
     const blobWorker = await rebuildFromSnapshot();
 
-    // It answers, which PROVES the blob runs on this browser.
     const ok = encode(Int16Array.of(2));
+    await microtasks();
+    blobWorker.emitReady();
     await microtasks();
     blobWorker.emitDone(new Uint8Array([2]).buffer);
     await expect(ok).resolves.toBeInstanceOf(Uint8Array);
 
-    // A later stall is a worker killed under memory pressure, not a snapshot
-    // that cannot run. Discarding here would re-expose #192 after one OOM.
+    // Now it goes quiet mid-encode: a worker killed under memory pressure, which
+    // IS #166's condition. The snapshot is not the suspect and must survive.
     const p = encode(Int16Array.of(3));
     await microtasks();
     const rejection = expect(p).rejects.toBeInstanceOf(EncoderStalledError);
@@ -474,35 +659,48 @@ describe("a stall judges the blob snapshot too (#192 × #166)", () => {
     expect(nth(2).url).toBe(BLOB_URL);
   });
 
-  it("counts a progress heartbeat as proof, so a slow blob worker is kept", async () => {
+  it("does not judge the snapshot when an abort lands during the handshake", async () => {
     const blobWorker = await rebuildFromSnapshot();
 
-    const p = encode(Int16Array.of(2));
-    await microtasks();
-    // A heartbeat and nothing else. The worker's own code demonstrably RAN, so
-    // the snapshot is proven even though no encode has ever completed on it —
-    // `mp3.worker.ts` beats on its first frame, so this is what a slow but
-    // running blob worker looks like when the device then kills it.
-    blobWorker.emitProgress(0.1);
-    const rejection = expect(p).rejects.toBeInstanceOf(EncoderStalledError);
-    await vi.advanceTimersByTimeAsync(TIMEOUT);
-    await rejection;
-    expect(revoked).toEqual([]);
-    expect(nth(2).url).toBe(BLOB_URL);
-  });
-
-  it("does not judge the snapshot when WE terminate the worker (abort)", async () => {
-    await rebuildFromSnapshot();
-
-    // The blob worker has answered nothing, and an abort terminates it — but an
-    // abort is us stopping a healthy worker, not evidence against the snapshot.
+    // The blob has answered nothing and we cancel while it is still being
+    // waited on. An abort is us stopping the job, not evidence against the blob.
     const controller = new AbortController();
     const p = encode(Int16Array.of(2), controller.signal);
     await microtasks();
     controller.abort();
     await expect(p).rejects.toBeInstanceOf(DOMException);
 
+    // Nothing was revoked, and the worker is left WARM rather than terminated:
+    // no PCM was ever handed over, so there is no in-flight encode for
+    // `terminate()` to stop — the one thing an abort exists to do.
     expect(revoked).toEqual([]);
-    expect(nth(2).url).toBe(BLOB_URL);
+    expect(blobWorker.terminated).toBe(false);
+    expect(FakeWorker.instances).toHaveLength(2);
+
+    // And it is still usable: the next encode handshakes and runs on it.
+    const p2 = encode(Int16Array.of(3));
+    await microtasks();
+    blobWorker.emitReady();
+    await microtasks();
+    blobWorker.emitDone(new Uint8Array([3]).buffer);
+    await expect(p2).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("an ordinary failure, not a stall, if the fallback worker also fails", async () => {
+    await rebuildFromSnapshot();
+
+    const p = encode(Int16Array.of(2));
+    await microtasks();
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+
+    // The chunk URL is gone too — the purge this whole mechanism is about. The
+    // job fails, but as an ordinary encode failure the sweep can step past, not
+    // as the wedged-encoder verdict that ends its run.
+    expect(isChunkUrl(nth(2).url)).toBe(true);
+    const rejection = expect(p).rejects.toBeInstanceOf(EncoderFailedError);
+    nth(2).emitError(new Error("chunk failed to load"));
+    await rejection;
+    await expect(p).rejects.not.toBeInstanceOf(EncoderStalledError);
   });
 });

@@ -25,6 +25,7 @@
 
 import {
   ENCODER_SILENCE_TIMEOUT_MS,
+  encoderSnapshotTaken,
   warmEncoder,
   withEncoder,
 } from "@/hooks/mp3-codec";
@@ -206,6 +207,12 @@ async function encodeWithHeartbeat(
       (resolve, reject) => {
         let count = 0;
         worker.onmessage = (event: MessageEvent<{ kind: string }>) => {
+          // `ready` (#192) is posted once when the worker's script has run, and
+          // belongs to no job: it arrives before this encode's request is even
+          // answered, so counting it would put a gap in the measurement that is
+          // about script load rather than about the heartbeat, and resolving on
+          // it would end the encode before it started.
+          if (event.data.kind === "ready") return;
           arrivals.push(performance.now());
           if (event.data.kind === "progress") {
             count += 1;
@@ -267,8 +274,17 @@ async function encodeWithHeartbeat(
  * The abort must land while an encode is genuinely IN FLIGHT: an abort before
  * `withEncoder` reaches the codec rejects at the lane and never terminates
  * anything, which would leave the warm worker alive and this assertion green
- * for the wrong reason. Hence the large frame count and the yield below — and
- * hence the spec also asserts the rebuild really happened.
+ * for the wrong reason.
+ *
+ * A `setTimeout(0)` was not enough to guarantee that (George R1 P3-6). One
+ * second of PCM encodes in a few milliseconds on this container — the heartbeat
+ * spec needs ten MINUTES of audio to get a measurable encode — so `done` could
+ * beat the abort and the spec would flake on `aborted`. The wait is now the
+ * event itself rather than a guess at how long it takes: `encodeMp3` TRANSFERS
+ * the PCM's `ArrayBuffer` to the worker, which detaches it on this thread, so
+ * `byteLength === 0` is the exact moment the request has been posted. The clip
+ * is also long enough that the encode cannot plausibly finish in the turn that
+ * observation costs.
  */
 async function encodeAfterAbortRebuild(frameCount: number): Promise<{
   aborted: boolean;
@@ -285,12 +301,16 @@ async function encodeAfterAbortRebuild(frameCount: number): Promise<{
   const chunkRequestsBefore = chunkRequestCount();
 
   const controller = new AbortController();
+  const pcm = syntheticPcm(frameCount);
   const inFlight = withEncoder(controller.signal, (codec) =>
-    codec.encodeMp3(syntheticPcm(frameCount))
+    codec.encodeMp3(pcm)
   );
-  // Yield so `withEncoder` reaches `encodeMp3` and the PCM is posted; only then
-  // does the abort go through `onAbort` and terminate the worker.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  // Wait for the PCM to be TRANSFERRED — the detach is what says the worker has
+  // the request and an encode is genuinely in flight. Bounded, so a failure to
+  // post shows up as an assertion rather than a hung page.
+  const deadline = performance.now() + 5_000;
+  while (pcm.byteLength !== 0 && performance.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 0));
   controller.abort();
   let aborted = false;
   try {
@@ -328,21 +348,20 @@ function chunkRequestCount(): number {
 }
 
 /**
- * Has `captureWorkerSnapshot`'s own `fetch` of the chunk completed?
+ * Does the blob snapshot EXIST yet?
  *
  * The spec waits on this before simulating the purge: blocking the chunk before
  * the snapshot exists would leave nothing to rebuild from and the assertion
- * would fail for the wrong reason. The `fetch` initiator is what distinguishes
- * it from the warm worker's script load.
+ * would fail for the wrong reason.
+ *
+ * It used to ask the resource timeline whether a `fetch`-initiated request for
+ * the chunk had landed, which is a PROXY and a lossy one (George R1 P3-5): that
+ * entry appears when the response arrives, one `response.text()` and one
+ * `createObjectURL` before `snapshotUrl` is assigned, and it cannot see a
+ * non-ok response at all. This asks the codec for the state itself.
  */
-function workerSnapshotFetched(): boolean {
-  return performance
-    .getEntriesByType("resource")
-    .some(
-      (entry) =>
-        /assets\/mp3\.worker-.*\.js$/.test(entry.name) &&
-        (entry as PerformanceResourceTiming).initiatorType === "fetch"
-    );
+function workerSnapshotReady(): boolean {
+  return encoderSnapshotTaken();
 }
 
 /** Open the app's real IndexedDB connection through its real singleton. */
@@ -368,7 +387,7 @@ declare global {
       encodeAndDecode: typeof encodeAndDecode;
       encodeWithHeartbeat: typeof encodeWithHeartbeat;
       encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
-      workerSnapshotFetched: typeof workerSnapshotFetched;
+      workerSnapshotReady: typeof workerSnapshotReady;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -381,7 +400,7 @@ window.__e2e = {
   encodeAndDecode,
   encodeWithHeartbeat,
   encodeAfterAbortRebuild,
-  workerSnapshotFetched,
+  workerSnapshotReady,
   openDb,
   watchVersionChange,
 };
