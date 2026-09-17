@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
   liftOutcome,
   liveScopeShown,
   panAfterRematerialize,
+  panOrRest,
   panGesture,
   recordDisabled,
   resumesOnLift,
@@ -884,6 +886,127 @@ describe("frozenPan", () => {
  * The next Record locks `insertionOffset` there and punches into the middle of
  * a word. It is the same "index in the wrong buffer" defect one tap later.
  */
+/**
+ * Where a #317 drag starts when the touch interrupted playback (George R5 P1).
+ *
+ * The round-5 fix taught the FREEZE not to trust `playBuffer`'s optimistic
+ * pre-handle position, and stopped there. The drag origin is a second
+ * rememberer of the same number: `onPointerDown` seeded `panAtDragStart` and
+ * `draggedPanRef` from whatever the stop sampled, and the first `pointermove`
+ * writes that straight into `panState` — which is the record insertion offset.
+ * The move handler has no movement threshold at all, so a finger's jitter is
+ * enough; that was harmless only while the origin was the pan itself, where the
+ * write put the same value back.
+ *
+ * So on the default Play from the F7 rest — `auditionPlan` sounds the whole
+ * buffer, the range starts at 0 — a finger landing before the handle settled
+ * took the line from the END of the take to sample 0, and the next Record
+ * punched into the first syllable instead of appending.
+ */
+describe("dragOriginAfterInterrupt", () => {
+  const LEN = 10_000;
+
+  it("starts from the existing pan when the position was never measured", () => {
+    // The George R5 case, exactly: the stop sampled the range start (0) in the
+    // optimistic window, and the line is at the rest, so `pan` is the end. The
+    // drag must begin where the insertion offset actually is.
+    expect(
+      dragOriginAfterInterrupt({
+        measured: false,
+        reached: 0,
+        pan: LEN,
+        length: LEN,
+      })
+    ).toBe(LEN);
+  });
+
+  it("starts from where playback had REACHED when that was real", () => {
+    // Both states of the gate. #416's promise is that a pause leaves the view
+    // exactly where the audio got to, and the drag continues from there — so
+    // `measured` must not become a blanket refusal to use the position.
+    expect(
+      dragOriginAfterInterrupt({
+        measured: true,
+        reached: 4321,
+        pan: LEN,
+        length: LEN,
+      })
+    ).toBe(4321);
+  });
+
+  it("clamps a measured position to the clip", () => {
+    expect(
+      dragOriginAfterInterrupt({
+        measured: true,
+        reached: -50,
+        pan: 10,
+        length: LEN,
+      })
+    ).toBe(0);
+    expect(
+      dragOriginAfterInterrupt({
+        measured: true,
+        reached: LEN + 500,
+        pan: 10,
+        length: LEN,
+      })
+    ).toBe(LEN);
+  });
+});
+
+/**
+ * The one rule for "is this sample an absolute position, or the F7 rest?".
+ *
+ * `frozenPan` has always answered it for a freeze — an absolute sample is kept
+ * only when it is strictly INSIDE the clip, because the end means "append,
+ * whatever the end becomes" and freezing the number `length` there turns that
+ * promise into a stale index. The pan a DRAG writes is the same kind of value
+ * and needs the same answer, which is what keeps the rest a rest through the
+ * accidental touch George R5 describes.
+ */
+describe("panOrRest", () => {
+  it("answers the REST at the end, and past it", () => {
+    expect(panOrRest(1000, 1000)).toBeNull();
+    expect(panOrRest(1500, 1000)).toBeNull();
+  });
+
+  it("keeps an absolute sample strictly inside the clip", () => {
+    expect(panOrRest(999, 1000)).toBe(999);
+    expect(panOrRest(0, 1000)).toBe(0);
+  });
+
+  it("clamps below zero", () => {
+    expect(panOrRest(-20, 1000)).toBe(0);
+  });
+
+  it("keeps the rest a rest through an unmeasured interrupt and a jitter move", () => {
+    // The composition that matters for #317 + F7, and the reason both halves of
+    // this round are one fix. Line at the rest, default Play, a finger lands
+    // before the handle settles, and the move handler fires with no real
+    // movement: the origin is the end (not 0), the move writes the end, and
+    // `panOrRest` turns that back into the rest — so a later paste or a longer
+    // take still finds the line at the END and Record APPENDS.
+    const origin = dragOriginAfterInterrupt({
+      measured: false,
+      reached: 0,
+      pan: 10_000,
+      length: 10_000,
+    });
+    const afterZeroDeltaMove = Math.max(0, Math.min(origin + 0, 10_000));
+    const written = panOrRest(afterZeroDeltaMove, 10_000);
+    expect(written).toBeNull();
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: null,
+        panState: written,
+        length: 12_000,
+      })
+    ).toBe(12_000);
+  });
+});
+
 describe("panAfterRematerialize", () => {
   it("drops an absolute index — there is no mapping for a history jump", () => {
     expect(panAfterRematerialize(4000)).toBeNull();

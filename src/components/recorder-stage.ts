@@ -418,8 +418,66 @@ export function frozenPan(
   // there would park a completed play up to one rAF short of the end, which is
   // the #416 defect by a race rather than by a stale ref.
   const reached = input.ranOut ? input.end : input.observed;
-  const clamped = Math.max(0, Math.min(reached, input.length));
-  return { kind: "pan", pan: clamped >= input.length ? null : clamped };
+  return { kind: "pan", pan: panOrRest(reached, input.length) };
+}
+
+/**
+ * An absolute sample, or the F7 REST — the one rule, for every writer of the
+ * pan.
+ *
+ * `null` is not "no pan": it is "the end, whatever the end becomes", which
+ * `effectivePan` resolves against the CURRENT length and `onCut` preserves. An
+ * absolute sample is kept only when it is strictly INSIDE the clip, where it
+ * names one specific place in the audio; at the end it would be a stale index
+ * the moment anything is pasted or appended, and the next Record would splice
+ * into the new audio instead of following it.
+ *
+ * It started inside {@link frozenPan}, where a clip that ran out had to come to
+ * rest rather than park on the number `length`. A DRAG writes the same kind of
+ * value and needs the same answer (George R5 P1): a finger that lands during
+ * the optimistic window and jitters would otherwise convert the rest into a
+ * number without the translator ever asking for a pan.
+ */
+export function panOrRest(sample: number, length: number): number | null {
+  const clamped = Math.max(0, Math.min(sample, length));
+  return clamped >= length ? null : clamped;
+}
+
+/**
+ * Where a #317 drag starts when the touch interrupted playback (George R5 P1).
+ *
+ * The touch pauses playback and the drag continues from where the audio had
+ * REACHED — that is #416's promise, and it is why this takes the stop's own
+ * sampled position rather than the pan. But `playBuffer` flips its sounding
+ * flag before the graph has a handle, and everything reading a position in that
+ * window gets the range's START. Honest for drawing; a fiction to build a
+ * gesture on.
+ *
+ * Round 5 gated the FREEZE on that provenance and stopped there. The drag
+ * origin is the second rememberer of the same number: `onPointerMove` writes it
+ * into `panState` — the record insertion offset — with no movement threshold at
+ * all, so a finger's jitter is enough. On the default Play from the rest, where
+ * `auditionPlan` sounds the whole buffer from sample 0, that took the line from
+ * the end of the take to the first sample and the next Record punched into the
+ * first syllable.
+ *
+ * So an unmeasured interrupt starts from the pan the sheet already had. The
+ * touch still STOPS playback — "playback never runs while the finger is down"
+ * is not negotiable, which is why this is not the other available fix (answer
+ * `"pan"` instead of `"interrupt"` until a handle exists: that leaves sound
+ * running under the finger).
+ */
+export function dragOriginAfterInterrupt(input: {
+  /** The stop sampled a position from a real handle. */
+  readonly measured: boolean;
+  /** What the stop sampled, in samples. */
+  readonly reached: number;
+  /** The pan the sheet is already drawing (`effectivePan`). */
+  readonly pan: number;
+  readonly length: number;
+}): number {
+  if (!input.measured) return input.pan;
+  return Math.max(0, Math.min(input.reached, input.length));
 }
 
 /**

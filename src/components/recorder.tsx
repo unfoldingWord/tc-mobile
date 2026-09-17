@@ -16,11 +16,13 @@ import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import {
+  dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
   liftOutcome,
   liveScopeShown,
   panAfterRematerialize,
+  panOrRest,
   panGesture,
   recordDisabled,
   stageView,
@@ -762,7 +764,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * not read the ref itself: `playbackSampleRef` is the stale rAF value until
      * the line below replaces it, so a #317 drag that captured its start before
      * calling this began a frame behind the audio it had just paused (Frank R2
-     * P2 #1).
+     * P2 #1). It returns that position's PROVENANCE with it (George R5 P1) — a
+     * caller that is going to persist the number needs the same answer the
+     * freeze needs, and handing back a bare sample is what let the drag origin
+     * keep trusting a position the freeze had just refused.
      *
      * It also DROPS any resume the #317 gesture still owes (George R2 P1). A
      * stop is the translator asking for silence, and every non-lift route out
@@ -786,13 +791,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           soundingOffsetRef.current + pos.ms
         );
       }
-      measuredRef.current = pos !== null && pos.measured;
+      const measured = pos !== null && pos.measured;
+      measuredRef.current = measured;
       stopRequestedRef.current = true;
       // Any stop VOIDS an owed #317 resume (George R2 P1). See the docblock.
       resumeAfterDragRef.current = false;
       stopBuffer();
       freezePlaybackPan();
-      return playbackSampleRef.current;
+      return { sample: playbackSampleRef.current, measured };
     }, [stopBuffer, readPlaybackPosition, freezePlaybackPan]);
 
     /**
@@ -961,7 +967,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // about to overwrite: the ref is the last rAF value, up to a frame
           // behind, and a drag begun there would rewind the waveform under the
           // finger and resume early on lift (Frank R2 P2 #1).
-          from = Math.max(0, Math.min(stopPlayback(), length));
+          //
+          // ...and only when that position was REAL (George R5 P1). Before the
+          // handle settles the stop can only report the range's start, and the
+          // freeze already refuses to keep it; taking it here instead wrote it
+          // into `panState` on the first move. `dragOriginAfterInterrupt` holds
+          // the rule and the reasoning.
+          const stopped = stopPlayback();
+          from = dragOriginAfterInterrupt({
+            measured: stopped.measured,
+            reached: stopped.sample,
+            pan,
+            length,
+          });
           // AFTER the stop, never before: `stopPlayback` voids an owed resume
           // (George R2 P1), and this is the one stop that owes a new one.
           resumeAfterDragRef.current = true;
@@ -1020,7 +1038,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           0,
           Math.min(panAtDragStart.current + delta, length)
         );
-        setPanState(next);
+        // Through the same rule a freeze writes by (George R5 P1): a pan that
+        // lands ON the end is the F7 REST, not the number `length`. Without it
+        // the accidental touch this round is about — a finger landing during
+        // the optimistic window, jitter, no intended pan — would still convert
+        // a resting line into a stale absolute index, and the next paste or
+        // append would leave Record splicing at the OLD end instead of the new
+        // one. `draggedPanRef` below stays numeric: the lift resumes from a
+        // sample, and "the end" is where it declines to resume at all.
+        setPanState(panOrRest(next, length));
         // The same value, where the LIFT can read it (#317): `pointerup` needs
         // the sample now under the line to resume there, and the render that
         // carries this `setPanState` may not have happened yet.
