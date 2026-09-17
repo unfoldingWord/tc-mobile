@@ -157,9 +157,15 @@ describe("stop() re-arms the audio context in the gesture (#58 / George R2 P2-2)
     // gone, and every `await` below this line is a chance to lose it. Moving the
     // call down past the flush — where it would be useless — must fail this.
     const body = stopBody();
-    expect(body.indexOf("resumeAudioContext")).toBeLessThan(
-      body.indexOf("await")
-    );
+    const resumeAt = body.indexOf("resumeAudioContext");
+    const firstAwaitAt = body.indexOf("await");
+    // Both anchors asserted present FIRST. Without this, deleting the call
+    // outright makes `indexOf` return -1, which is "less than" any index and
+    // passes — a gate that goes green on the state it exists to catch. The
+    // deletion mutation found exactly that here.
+    expect(resumeAt).toBeGreaterThan(-1);
+    expect(firstAwaitAt).toBeGreaterThan(-1);
+    expect(resumeAt).toBeLessThan(firstAwaitAt);
   });
 
   it("routes a rejected resume to a sink rather than swallowing it", () => {
