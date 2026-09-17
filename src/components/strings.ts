@@ -327,17 +327,20 @@ export const strings = {
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
   // `shareBookMissing`, which speaks in whole chapters; this speaks only in
-  // segments. `n` is `partialSegments`, a SUM across every included chapter's
-  // own `missing` (`src/lib/export/book.ts`), not a count of chapters —
-  // `gatherChapterPcm` can return `missing > 1` for a single chapter. So
-  // "chapter(s)" is a generic, uncounted reference to the set of included
-  // chapters and must never be pluralized off `n` (#400, George #398 P3):
-  // doing so read as "more than one chapter" even when one chapter held every
-  // missing segment.
+  // segments, mirroring `shareMissing`'s phrasing exactly. `n` is
+  // `partialSegments`, a SUM across every included chapter's own `missing`
+  // (`src/lib/export/book.ts`), not a count of chapters — `gatherChapterPcm`
+  // can return `missing > 1` for a single chapter — so no chapter-grain
+  // wording is tied to `n` here (#400, George #398 P3). A first attempt kept
+  // "chapters" as a supposedly uncounted noun, but Frank (diff review, #423)
+  // caught that bare "chapters" still reads as "more than one" even with
+  // exactly one included chapter — the same defect this fix exists to remove.
+  // Dropping the chapter reference entirely is the only wording that cannot
+  // misstate a count nothing here actually knows.
   shareBookPartial: (n: number): string =>
     n === 1
-      ? "1 segment was left out of chapters that were otherwise included."
-      : `${n} segments were left out of chapters that were otherwise included.`,
+      ? "1 segment could not be included."
+      : `${n} segments could not be included.`,
   // Both gaps can occur in the same book (a whole chapter missing AND a
   // segment missing from one that shipped). The screen surfaces ONE Notice for
   // the book grain, so this combines rather than stacking two.
