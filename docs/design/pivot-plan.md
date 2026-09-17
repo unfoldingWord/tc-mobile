@@ -207,6 +207,10 @@ reason to revisit it — they are work items.
    is the build's addition, not a requirement — **confirm with the requirements
    owner before B7 settles the share semantics.**
 
+   **Decided — no, requirements owner, 2026-09-15 (Q1 in the register below,
+   [#243](https://github.com/unfoldingWord/tc-mobile/issues/243)).** B7 shipped
+   without a Share Segment entry; nothing needs to come out.
+
 ### Open questions — the standing register
 
 **Working principle: it is easier to steer a moving car than a parked one.** Each
@@ -215,15 +219,15 @@ not stall. The defaults are chosen to be cheap to reverse, and the question stay
 open until someone answers it — a default is not an answer, and none of these are
 closed by having been guessed at.
 
-| #      | Question                                                             | Status                                                              | Owner              | Best-effort default while it is open                                                                                                                                                                                                                               |
-| ------ | -------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Q1** | Does **Share Segment** exist? A4 specifies chapter and book only.    | **Pending the requirements owner**                                  | Requirements owner | Build share as one code path with a scope parameter. Ship chapter and book; segment stays behind a flag. Adding or dropping it is one line.                                                                                                                        |
-| **Q2** | Is a template a **content pack** or a **structure generator**?       | **Waiting**                                                         | Requirements owner | Model it as a structure generator that _may_ carry content. OBS is structure + content; a Bible book is structure only. One interface, optional payload — the union, not a guess between them.                                                                     |
-| **Q3** | lamejs is LGPL-3.0 in an MIT repo.                                   | **Decided 23 Aug**                                                  | —                  | **Keep lamejs.** ADR 0003 carries the five obligations; #36 tracks the two outstanding. Closed #14.                                                                                                                                                                |
-| **Q4** | Where does per-segment artwork go? No mockup places it anywhere.     | **Answered no — B0 (#26), 24 Aug**                                  | DRI                | The OBS media cache is **removed** and #1 closed as moot. No mockup places artwork and no batch was scheduled to wire it, so a kept-for-later cache was the sprawl the bar rejects. Per-segment artwork is greenfield if a later phase asks; recoverable from git. |
-| **Q5** | Can a **finished** segment be edited once D3 has dropped its PCM?    | **Pending — built against the default, B8 / ADR 0009 (2026-09-02)** | DRI                | Allow it, re-decoding from the MP3, and record a generation count on the clip. A translator who cannot fix a mistake after marking it done will stop marking things done — which breaks the progress model _and_ the storage saving D3 exists for.                 |
-| **Q6** | Does Phase 1 need a **project archive**, distinct from share? (#24)  | **Pending**                                                         | Requirements owner | Build no archive, but give the Share Book zip predictable folder names and a small manifest, so a future import is possible without changing the export format. Roughly twenty lines now against a format migration later.                                         |
-| **Q7** | Do **spoken prompts** carry the instructional load instead of icons? | **Pending**                                                         | Requirements owner | Do not build a prompt recorder. Route every chrome string through one table — which the ten-odd strings need anyway — so a prompt layer can attach later. See the note below on why this is not another timing seam.                                               |
+| #      | Question                                                             | Status                                                                                                | Owner              | Best-effort default while it is open                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | Does **Share Segment** exist? A4 specifies chapter and book only.    | **Decided — no, requirements owner, 2026-09-15**                                                      | Requirements owner | **No Share Segment for v1.** Chapter and book only, per A4; the row-menu entry stays behind a flag or is left out. Verified 2026-09-17: no `Share Segment` / `shareSegment` code exists in `src/components/segment-row.tsx`'s row menu on `develop` (only Erase Segment is wired there), so this closes by omission — no code change needed. [#243](https://github.com/unfoldingWord/tc-mobile/issues/243) (14:49 UTC).                                                                         |
+| **Q2** | Is a template a **content pack** or a **structure generator**?       | **Decided — accepted the default, requirements owner, 2026-09-15**                                    | Requirements owner | **Accepted as modeled**: a structure generator that _may_ carry content. OBS is structure + content; a Bible book is structure only. [#243](https://github.com/unfoldingWord/tc-mobile/issues/243) → [issue #33 comment](https://github.com/unfoldingWord/tc-mobile/issues/33#issuecomment-5682095029) (14:37 UTC).                                                                                                                                                                             |
+| **Q3** | lamejs is LGPL-3.0 in an MIT repo.                                   | **Decided 23 Aug**                                                                                    | —                  | **Keep lamejs.** ADR 0003 carries the five obligations; #36 tracks the two outstanding. Closed #14.                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Q4** | Where does per-segment artwork go? No mockup places it anywhere.     | **Answered no — B0 (#26), 24 Aug**                                                                    | DRI                | The OBS media cache is **removed** and #1 closed as moot. No mockup places artwork and no batch was scheduled to wire it, so a kept-for-later cache was the sprawl the bar rejects. Per-segment artwork is greenfield if a later phase asks; recoverable from git.                                                                                                                                                                                                                              |
+| **Q5** | Can a **finished** segment be edited once D3 has dropped its PCM?    | **Decided — yes, requirements owner, 2026-09-15**                                                     | Requirements owner | **Yes.** Editing a Finished segment stays allowed, re-decoding from the MP3 with the generation count recorded, as built ([ADR 0009](../decisions/0009-transcode-on-finished.md)). [#243](https://github.com/unfoldingWord/tc-mobile/issues/243) (14:49 UTC).                                                                                                                                                                                                                                   |
+| **Q6** | Does Phase 1 need a **project archive**, distinct from share? (#24)  | **Decided — flat zip, warn on missing chapters, requirements owner, 2026-09-15 (amended 2026-09-16)** | Requirements owner | **Flat zip is sufficient for v1.** Share Book warns when chapters are missing or partial (#116: yes). The manifest and a predictable folder layout are optional for v1, not required (amended 2026-09-16). Built in #398 (warns on missing/partial chapters); the manifest stays deferred to #353. [#243](https://github.com/unfoldingWord/tc-mobile/issues/243), [#115](https://github.com/unfoldingWord/tc-mobile/issues/115), [#116](https://github.com/unfoldingWord/tc-mobile/issues/116). |
+| **Q7** | Do **spoken prompts** carry the instructional load instead of icons? | **Decided — defer past October, requirements owner, 2026-09-15**                                      | Requirements owner | **Deferred past October.** No spoken-prompt recorder for v1; icons only. [#249](https://github.com/unfoldingWord/tc-mobile/issues/249) (the training's icon-recognition check) is the evidence that will decide it later. [#243](https://github.com/unfoldingWord/tc-mobile/issues/243) (14:49 UTC).                                                                                                                                                                                            |
 
 **Q7 is a string table, not a seam.** G1 has just deleted one speculative
 provider registry, and the reasoning there applies here: a seam built for a
@@ -232,6 +236,31 @@ for the app's handful of strings is needed whether or not spoken prompts ever
 happen, and it is where they would attach if they did. If that ever grows a
 provider registry before someone commits to prompts, it has become the same
 mistake and should be deleted the same way.
+
+**Register closed 2026-09-15/16 — see [#243](https://github.com/unfoldingWord/tc-mobile/issues/243).**
+Every row above (Q1, Q2, Q5, Q6, Q7) now carries the requirements owner's
+answer rather than a default. #243 closes with this write-back.
+
+### Decided since — #317, waveform panning during playback (2026-09-16)
+
+Outside this register but touching the same "listen-only" default: on
+[#317](https://github.com/unfoldingWord/tc-mobile/issues/317), the requirements
+owner's answer (14:00 UTC, 2026-09-16) is **pan-then-resume**. Touching the
+waveform while playback is running pauses it; the waveform follows the finger;
+lifting resumes playback from the sample under the centerline. Playback never
+runs while the finger is down — this is panning, not live scrubbing with audio
+following the drag. This **supersedes** the "playback is listen-only — no
+scrub in v1" default for that one gesture; everything else on #317 stands.
+
+**Inference / documentation-consistency finding:** the superseded default is
+cited in code as "D4" (`src/components/recorder.tsx:565` and `:711`, and the
+09-15 sizing comment on #317), but no design doc in this repo — this file
+included, whose own **D4** (line 51) is the unrelated MicroSD/share-sheet
+decision — documents a "listen-only, no scrub" decision under that or any
+other label. It was not found in the B4/B5 batch issues (#30, #31) either.
+Recorded here, in the plan of record, as the closest canonical home; the
+mislabelled code comments are unchanged (this is a docs-only pass — see the
+PR that added this note).
 
 ### Also carried in their batches
 
@@ -322,8 +351,10 @@ the app unrenderable and an issue that lets it be signed off anyway.
 
 - **Whether the five-value `RecordingStatus` enum stays** beneath a binary UI
   toggle. Probably yes; Phase 2 needs it and ADR 0004's migration reasoning applies.
-- **The register's pending items.** Q1, Q2, Q5, Q6 and Q7 each have a default,
-  not an answer. Building against a default does not close the question.
+- **The register's pending items are now answered.** Q1, Q2, Q5, Q6 and Q7 each
+  had a default, not an answer; the requirements owner's answers, recorded
+  2026-09-15 (Q6 amended 2026-09-16), close all five — see the register above
+  and [#243](https://github.com/unfoldingWord/tc-mobile/issues/243).
 - **Issue #19 (provenance)** is now required rather than insurance: the
   requirements owner confirmed on 22 Aug that OBS-derived recordings **are** CC
   BY-SA derivative works (#15), so the model must be able to tell an OBS-derived

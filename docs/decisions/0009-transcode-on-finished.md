@@ -3,9 +3,14 @@
 **Status:** Accepted · **Date:** 2026-09-02 · **Batch:** B8 (#34) · **DRI:** the maintainer · **Amended:** 2026-09-03 (#182) — see [Amendments](#amendments)
 
 Implements decision **D3** (2026-08-23) and builds against the recorded
-**Q5** default (the DRI, on #34, 2026-08-23). Q5 itself stays open in the
-register in `docs/design/pivot-plan.md`: a default built against is not an
-answer, and the generation count below is what keeps the evidence to answer it.
+**Q5** default (the DRI, on #34, 2026-08-23).
+
+**Decided 2026-09-15** — the requirements owner confirmed the default as the
+answer: yes, keep allowing an edit after a segment is Finished, as built here
+(requirements owner, 2026-09-15, [#243](https://github.com/unfoldingWord/tc-mobile/issues/243)).
+Q5 is closed in the register in
+[`docs/design/pivot-plan.md`](../design/pivot-plan.md); the generation count
+below remains the mechanism it always was, not open evidence-gathering.
 
 ## Context
 
@@ -99,8 +104,10 @@ which is exact while every save over an existing take is a merge into the
 decoded buffer — the only way the recorder saves today. If a "replace the whole
 take" gesture ever exists, that gesture must stamp 0, or fresh microphone audio
 would be counted as lossy (noted by the DRI in round 1). Nothing reads it yet.
-It exists so the Q5 call — disallow, warn, or leave it — can be made later on
-evidence from real devices rather than argued in the abstract.
+It was built so the Q5 call — disallow, warn, or leave it — could be made later
+on evidence from real devices rather than argued in the abstract. **Decided
+2026-09-15: leave it** (see above) — nothing reads `generation` to disallow or
+warn as of this writing, and that is now the answer, not an open call.
 
 ### Schema — v4, append-only
 
