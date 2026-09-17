@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { BooksScreen } from "@/components/books-screen";
+import { BooksScreen, type BooksScreenHandle } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
@@ -40,6 +40,9 @@ export function App() {
   } | null>(null);
 
   const segmentsRef = useRef<SegmentsScreenHandle>(null);
+  // Books' own overlays (#374) — the hamburger Menu, New Book, the book ≡ menu,
+  // the delete confirm — none of which push a history entry of their own.
+  const booksRef = useRef<BooksScreenHandle>(null);
   // System-Back handling (#168). The recorder sheet, Segments and Books each
   // push one history entry, so a standalone-PWA Back gesture is a `popstate` we
   // route in-app instead of leaving the app — which on the recorder fired
@@ -72,6 +75,16 @@ export function App() {
     const index = ++nextIndex.current;
     window.history.pushState({ tc: true, index }, "");
     navIndex.current = index;
+  }, []);
+
+  // The programmatic half of #393/#374's overlay-entry bookkeeping: consume the
+  // entry `pushHistoryEntry` pushed for an open Books/Segments overlay, once it
+  // closes by a NON-popstate path (a tap on Close/scrim, a successful rename).
+  // `suppressPop` marks the resulting popstate as ours, same as `closeRecorder`
+  // below already does for its own programmatic close.
+  const consumeOverlayEntry = useCallback(() => {
+    suppressPop.current = true;
+    window.history.back();
   }, []);
 
   // Stamp the entry the app loaded on, so its index is known (0) and a Back from
@@ -220,7 +233,27 @@ export function App() {
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
       const screen = screenFor(chapterId !== null, recorder !== null);
-      switch (popAction(direction, screen, committing.current, recovering)) {
+      // Read the CURRENT screen's own overlay state (#393/#374) — Books' and
+      // Segments' own React state, still whatever it was the instant BEFORE
+      // this gesture, since nothing here has touched it yet. The recorder's
+      // overlays are handled entirely inside `commit-close-recorder` below and
+      // never reach this flag (`popAction` itself never checks it for that
+      // screen either).
+      const screenOverlayOpen =
+        screen === "books"
+          ? (booksRef.current?.hasOpenOverlay() ?? false)
+          : screen === "segments"
+            ? (segmentsRef.current?.hasOpenOverlay() ?? false)
+            : false;
+      switch (
+        popAction(
+          direction,
+          screen,
+          committing.current,
+          recovering,
+          screenOverlayOpen
+        )
+      ) {
         case "trap-recovery":
           // The `SaveFailed` recovery screen is a modal, not a navigation level
           // (George R2 G2), and the only in-memory copy of the held take lives in
@@ -282,6 +315,21 @@ export function App() {
           // The Books shelf pushed no entry, so this popstate is the browser
           // already leaving. Nothing to do — and nothing is lost at the shelf.
           return;
+        case "dismiss-screen-overlay": {
+          // The browser already popped the entry Books'/Segments' own overlay
+          // pushed when it opened (#393/#374). Re-arm SYNCHRONOUSLY, the same
+          // shape `commit-close-recorder` uses above, so there is no moment
+          // with no entry protecting the screen from a second Back — then let
+          // the screen dismiss its own overlay exactly the way its scrim/
+          // Close would. That state change flips `hasOpenOverlay()` false,
+          // which the screen's own effect answers by consuming THIS re-armed
+          // entry (`onOverlayClose` → `consumeOverlayEntry`), landing the
+          // stack back where it was before the overlay opened.
+          pushHistoryEntry();
+          if (screen === "books") booksRef.current?.dismissOverlay();
+          else if (screen === "segments") segmentsRef.current?.dismissOverlay();
+          return;
+        }
       }
     };
     window.addEventListener("popstate", onPopState);
@@ -323,7 +371,12 @@ export function App() {
           propagates to its flat-tree descendants. */}
       <div className="contents" inert={recorder !== null || undefined}>
         {chapterId === null ? (
-          <BooksScreen onOpenChapter={openChapter} />
+          <BooksScreen
+            ref={booksRef}
+            onOpenChapter={openChapter}
+            onOverlayOpen={pushHistoryEntry}
+            onOverlayClose={consumeOverlayEntry}
+          />
         ) : (
           <SegmentsScreen
             ref={segmentsRef}
@@ -331,6 +384,8 @@ export function App() {
             audio={audio}
             onBack={goBack}
             onOpenRecorder={openRecorder}
+            onOverlayOpen={pushHistoryEntry}
+            onOverlayClose={consumeOverlayEntry}
           />
         )}
       </div>

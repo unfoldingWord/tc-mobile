@@ -12,6 +12,15 @@
  * The mapping that matters is `"recorder" → "commit-close-recorder"`: Back on the
  * recorder must run the commit path (`close()`), never the take-dropping
  * `leave()`. That is the line the test pins and a mutation must break.
+ *
+ * Books and Segments each open their own overlays (a ≡ menu, New Book, a rename,
+ * a delete/erase confirm) that push no history entry of their own and have no
+ * `popstate` awareness — only their OWN scrim/Close/Escape can dismiss them
+ * (#393, #374). `popAction`'s `screenOverlayOpen` parameter and the
+ * `"dismiss-screen-overlay"` effect close that gap the same way the recorder's
+ * `overlayBlocksClose`/`overlayDismissal` already close it for its own ≡
+ * menu/erase-confirm: the screen, not the popstate handler, decides whether an
+ * overlay absorbs the gesture, and the handler re-arms a fresh entry either way.
  */
 
 export type Screen = "books" | "segments" | "recorder";
@@ -89,37 +98,71 @@ export function navDirection(from: number, to: number): NavDirection {
  *
  * `trap-recovery` and `rearm-during-commit` both re-arm by pushing a fresh entry;
  * they are named apart so the handler's intent — and each test row — stays legible.
+ *
+ * - **Books or Segments has an open overlay (`screenOverlayOpen`)** →
+ *   `dismiss-screen-overlay`, checked after every trap/trip above but BEFORE the
+ *   plain `backEffectFor` mapping (#393, #374). Books' ≡ menu, New Book, a
+ *   rename, and Books'/Segments' delete/erase confirm push no history entry of
+ *   their own and have no `popstate` awareness, so a system Back used to walk
+ *   straight past them to `to-books`/`exit-app` — silently abandoning a typed
+ *   name, or (worse) leaving a rename/delete committing with no menu open to
+ *   show it, exactly the class of loss `commit-close-recorder` exists to
+ *   prevent for the recorder. Never checked for `screen === "recorder"`: that
+ *   screen's own overlays are handled entirely inside `commit-close-recorder`
+ *   via `overlayBlocksClose`/`overlayDismissal`, unchanged.
  */
 export type PopAction =
   | "trap-recovery"
   | "rearm-during-commit"
   | "trap-forward"
   | "ignore"
+  | "dismiss-screen-overlay"
   | BackEffect;
 
 export function popAction(
   direction: NavDirection,
   screen: Screen,
   committing: boolean,
-  recovering: boolean
+  recovering: boolean,
+  // Optional and defaulted false so `screen === "recorder"` call sites (and
+  // every existing test row) do not need to know this parameter exists — the
+  // recorder's own overlays never reach it (guarded below), and the app only
+  // ever passes true when Books' or Segments' OWN state says an overlay of its
+  // own is open.
+  screenOverlayOpen = false
 ): PopAction {
   if (recovering) return "trap-recovery";
   if (committing) return "rearm-during-commit";
   if (direction === "forward") return "trap-forward";
   if (direction === "same") return "ignore";
+  if (screen !== "recorder" && screenOverlayOpen)
+    return "dismiss-screen-overlay";
   return backEffectFor(screen);
 }
 
 /**
- * Whether a Back must be spent dismissing a recorder overlay instead of running
- * the commit (George R2 G1). The sheet's `inert` blocks the on-screen Back while
- * the ≡ menu or the erase-confirm is up, but the SYSTEM gesture reaches
- * `close()` through the imperative handle and never saw those flags — so a Back
- * during an in-flight erase raced `saveEditedSegment` against the erase (last
- * IndexedDB writer wins, the confirmed-erased take written back), and a Back
- * over the confirm dialog committed instead of cancelling. When this returns
- * true, `close()` dismisses the overlay and resolves `false` (the sheet stays,
- * its history entry re-armed); it commits only when nothing is in the way.
+ * Whether a Back must be spent dismissing an open overlay instead of running
+ * the screen's own effect — originally the recorder's commit (George R2 G1),
+ * now shared with Books and Segments' ≡ menus and delete/erase confirms
+ * (#393, #374, generalised from the recorder-only version).
+ *
+ * On the recorder, the HEADER's `inert` — not the sheet's, which stays reachable
+ * for the transport during an active take (#75, corrected here per #376; the
+ * sheet is inert only at idle) — is what blocks the ON-SCREEN Back while the ≡
+ * menu or the erase-confirm is up. The SYSTEM gesture reaches `close()` through
+ * the imperative handle regardless of either `inert` flag, so without this a
+ * Back during an in-flight erase raced `saveEditedSegment` against the erase
+ * (last IndexedDB writer wins, the confirmed-erased take written back), and a
+ * Back over the confirm dialog committed instead of cancelling. Books and
+ * Segments have the identical gap for their OWN ≡ menu / delete-confirm: they
+ * push no history entry and have no `popstate` awareness at all, so a system
+ * Back walked straight past them to `exit-app`/`to-books`.
+ *
+ * When this returns true, the screen dismisses the overlay instead of running
+ * its Back effect: the recorder's `close()` resolves `false` (the sheet stays,
+ * its history entry re-armed); Books/Segments call their own overlay-dismiss
+ * and the popstate handler re-arms a fresh entry (`"dismiss-screen-overlay"`)
+ * the same way. It commits/navigates only when nothing is in the way.
  */
 export function overlayBlocksClose(
   menuOpen: boolean,
@@ -130,14 +173,28 @@ export function overlayBlocksClose(
 }
 
 /**
- * When a system Back is absorbed by an open recorder overlay (`overlayBlocksClose`
- * is true), WHICH overlays `close()` may dismiss (Frank R4-1). The ≡ menu and a
- * confirm dialog still awaiting the user are dismissed; but a confirm whose erase
- * is ALREADY IN FLIGHT is NOT. `onConfirmErase` deliberately holds `confirmOpen`
- * true across the whole IndexedDB delete precisely to keep the sheet `inert`, and
- * clearing it mid-erase un-inerts the sheet and exposes Record — whose newly
- * started capture the erase's own completion (`onExit`) then discards. So while
- * `erasing`, leave the confirm alone and let the erase tear itself down.
+ * When a system Back is absorbed by an open overlay (`overlayBlocksClose` is
+ * true), WHICH overlays may be dismissed (Frank R4-1, generalised for #393/#374).
+ * The menu and a confirm dialog still awaiting the user ARE dismissed; a confirm
+ * whose destructive action is ALREADY IN FLIGHT is NOT — `erasing` is the
+ * recorder's and Segments' shared `EraseConfirm`/`erase.erasing`, and the same
+ * shape guards Books' delete confirm against `deleting`.
+ *
+ * On the recorder, `onConfirmErase` deliberately holds `confirmOpen` true across
+ * the whole IndexedDB delete so the overlay stays up throughout — `erase.erasing`
+ * is folded into the sheet's `overlayUp` flag directly (not only read as a reason
+ * to hold `confirmOpen`, per #376's correction), which is what keeps the HEADER
+ * inert for the whole erase even if `confirmOpen` were ever cleared out from
+ * under it. Dismissing the confirm mid-erase would let a system Back reach
+ * Record again — whose newly started capture the erase's own completion
+ * (`onExit`) then discards. So while erasing/deleting, leave the confirm alone
+ * and let the operation tear itself down.
+ *
+ * A rename in flight (Books'/Segments' `NameEdit`) is deliberately NOT held this
+ * way: the menu dismisses under a saving rename exactly like an on-screen Close
+ * already does, since #384's own Menu-level guard against that was reverted —
+ * the write lands silently, the same as it did before #384. Only the
+ * confirm/`erasing` pairing above blocks a dismiss; `menuOpen` alone never does.
  */
 export function overlayDismissal(
   menuOpen: boolean,

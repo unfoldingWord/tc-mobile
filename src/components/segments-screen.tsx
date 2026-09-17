@@ -21,16 +21,30 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { overlayDismissal } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
 /**
- * What App (slice 4) can drive from outside: a rebuild after a recorder commit.
- * The screen stays mounted (dimmed) behind the recorder sheet, so when the
- * sheet saves a take, App calls `reload()` and the row's waveform appears.
+ * What App (slice 4) can drive from outside: a rebuild after a recorder commit,
+ * and (#393) whether THIS screen's own chapter ≡ menu / erase-confirm currently
+ * owns a system Back gesture, and how to dismiss it if so — the Segments half
+ * of the same nav-layer fix the recorder already has via
+ * `overlayBlocksClose`/`overlayDismissal`. The per-row overflow menu
+ * (`rowMenuOpen`) is deliberately NOT covered here: unlike the chapter menu it
+ * holds no in-flight write, and closing it needs a controlled prop on
+ * `SegmentRow` that does not exist today — out of scope for this fix, tracked
+ * as a residual in the PR rather than silently left unmentioned.
  */
 export interface SegmentsScreenHandle {
   reload: () => void;
+  /** True while the chapter ≡ menu or its erase-confirm is open — the two
+   *  overlays `dismissOverlay` below can act on. */
+  hasOpenOverlay: () => boolean;
+  /** Dismiss the open overlay the same way its own scrim/Close/Escape would —
+   *  a rename in flight lands silently (matching #384's accepted Close
+   *  behaviour); an erase in flight is left alone (`overlayDismissal`). */
+  dismissOverlay: () => void;
 }
 
 interface SegmentsScreenProps {
@@ -43,6 +57,15 @@ interface SegmentsScreenProps {
   audio: UseAudioSession;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /**
+   * The chapter ≡ menu or its erase-confirm just opened/closed (#393). App
+   * pushes/consumes ONE history entry across that transition — mirroring
+   * `openChapter`/`openRecorder` — so a system Back while it is open produces a
+   * `popstate` `dismissOverlay` can answer, instead of leaving no entry to pop
+   * and falling straight through to `to-books`.
+   */
+  onOverlayOpen: () => void;
+  onOverlayClose: () => void;
 }
 
 /**
@@ -55,7 +78,10 @@ interface SegmentsScreenProps {
 export const SegmentsScreen = forwardRef<
   SegmentsScreenHandle,
   SegmentsScreenProps
->(function SegmentsScreen({ chapterId, audio, onBack, onOpenRecorder }, ref) {
+>(function SegmentsScreen(
+  { chapterId, audio, onBack, onOpenRecorder, onOverlayOpen, onOverlayClose },
+  ref
+) {
   const {
     bookName,
     chapterNumber,
@@ -74,8 +100,6 @@ export const SegmentsScreen = forwardRef<
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
   const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
-
-  useImperativeHandle(ref, () => ({ reload }), [reload]);
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -237,6 +261,58 @@ export const SegmentsScreen = forwardRef<
   // The list is hidden from AT while a dialog is up, mirroring the recorder
   // sheet (G8: aria-modal alone is not trusted to hide the background).
   const listInert = eraseTarget !== null || rowMenuOpen || chapterMenuOpen;
+
+  // #393 — the chapter ≡ menu and its erase-confirm, the two overlays this
+  // screen can dismiss on command (`rowMenuOpen` is deliberately excluded, see
+  // `SegmentsScreenHandle`'s docblock). `hasChapterOverlay` — not `listInert`,
+  // which also includes `rowMenuOpen` — is what App's popstate handler traps.
+  const hasChapterOverlay = chapterMenuOpen || eraseTarget !== null;
+  // Whether THIS screen has pushed the extra history entry `hasChapterOverlay`
+  // needs — a ref, not derived from `hasChapterOverlay` itself, so the effect
+  // below can tell "just opened" from "just closed" on each transition rather
+  // than re-pushing on every render the condition happens to be true.
+  const overlayEntryPushed = useRef(false);
+  useEffect(() => {
+    if (hasChapterOverlay && !overlayEntryPushed.current) {
+      overlayEntryPushed.current = true;
+      onOverlayOpen();
+    } else if (!hasChapterOverlay && overlayEntryPushed.current) {
+      overlayEntryPushed.current = false;
+      onOverlayClose();
+    }
+  }, [hasChapterOverlay, onOverlayOpen, onOverlayClose]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      reload,
+      hasOpenOverlay: () => hasChapterOverlay,
+      dismissOverlay: () => {
+        // The SAME decision the recorder's system Back already makes for its
+        // own ≡ menu/erase-confirm (`overlayBlocksClose`/`overlayDismissal`,
+        // `lib/nav/navigation.ts`) — a rename in flight dismisses like an
+        // on-screen Close always has (#384's Menu-level guard against that was
+        // reverted); an erase in flight does not, so a system Back cannot race
+        // `saveEditedSegment` against it.
+        const dismissal = overlayDismissal(
+          chapterMenuOpen,
+          eraseTarget !== null,
+          erase.erasing
+        );
+        if (dismissal.closeMenu) onCloseChapterMenu();
+        if (dismissal.closeConfirm) closeErase();
+      },
+    }),
+    [
+      reload,
+      hasChapterOverlay,
+      chapterMenuOpen,
+      eraseTarget,
+      erase.erasing,
+      onCloseChapterMenu,
+      closeErase,
+    ]
+  );
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.

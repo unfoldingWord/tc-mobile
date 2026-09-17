@@ -120,6 +120,59 @@ describe("popAction", () => {
     expect(popAction("same", "segments", false, true)).toBe("trap-recovery");
     expect(popAction("back", "recorder", true, true)).toBe("trap-recovery");
   });
+
+  describe("screenOverlayOpen (#393, #374)", () => {
+    it("dismisses Books'/Segments' own overlay instead of exit-app/to-books", () => {
+      // The load-bearing #393/#374 row: a system Back used to walk straight past
+      // an open Menu/rename/delete-confirm to the plain screen effect, silently
+      // abandoning a typed name or leaving a write committing with nothing open
+      // to show it. `screenOverlayOpen` must outrank `backEffectFor`.
+      expect(popAction("back", "books", false, false, true)).toBe(
+        "dismiss-screen-overlay"
+      );
+      expect(popAction("back", "segments", false, false, true)).toBe(
+        "dismiss-screen-overlay"
+      );
+    });
+
+    it("defaults to false and preserves the pre-#393 mapping when nothing is open", () => {
+      // Every existing call site (and every row above) omits this argument —
+      // it must default to false, not to an overlay always being open.
+      expect(popAction("back", "books", false, false)).toBe("exit-app");
+      expect(popAction("back", "segments", false, false)).toBe("to-books");
+      expect(popAction("back", "books", false, false, false)).toBe("exit-app");
+      expect(popAction("back", "segments", false, false, false)).toBe(
+        "to-books"
+      );
+    });
+
+    it("never applies to the recorder — its own overlays stay inside commit-close-recorder", () => {
+      // The recorder's ≡ menu/erase-confirm are handled entirely by
+      // `overlayBlocksClose`/`overlayDismissal` inside `commit-close-recorder`
+      // (unchanged). If this ever routed the recorder to
+      // `dismiss-screen-overlay` instead, Back would stop running the commit
+      // path at all — the exact #58 regression `backEffectFor("recorder")`
+      // guards above, reached through a different door.
+      expect(popAction("back", "recorder", false, false, true)).toBe(
+        "commit-close-recorder"
+      );
+    });
+
+    it("is outranked by recovery, an in-flight commit, and Forward/same", () => {
+      // Screen-overlay dismissal is real navigation-effect work; every trap
+      // above it in the decision must still win regardless of it.
+      expect(popAction("back", "segments", false, true, true)).toBe(
+        "trap-recovery"
+      );
+      expect(popAction("back", "segments", true, false, true)).toBe(
+        "rearm-during-commit"
+      );
+      expect(popAction("forward", "segments", false, false, true)).toBe(
+        "trap-forward"
+      );
+      expect(popAction("same", "segments", false, false, true)).toBe("ignore");
+    });
+  });
 });
 
 describe("overlayBlocksClose", () => {
@@ -141,9 +194,11 @@ describe("overlayBlocksClose", () => {
 
 describe("overlayDismissal", () => {
   it("does NOT dismiss the confirm while an erase is in flight (Frank R4-1)", () => {
-    // The load-bearing R4 row: clearing `confirmOpen` mid-erase un-inerts the
-    // sheet and exposes Record, whose new capture the erase completion discards.
-    // While erasing, the confirm is left alone — the erase tears itself down.
+    // The load-bearing R4 row: clearing `confirmOpen` mid-erase would let a
+    // system Back reach Record again (the HEADER's `inert` — not only the
+    // sheet's, corrected here per #376 — is what the confirm/erase keep up),
+    // whose new capture the erase completion then discards. While erasing, the
+    // confirm is left alone — the erase tears itself down.
     expect(overlayDismissal(false, true, true)).toEqual({
       closeMenu: false,
       closeConfirm: false,
