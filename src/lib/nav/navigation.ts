@@ -334,3 +334,48 @@ export function reconcilePopState(
       remainingOutstanding > 0 ? "hold" : remaining > 0 ? "drop" : "drain",
   };
 }
+
+/**
+ * What `App.tsx`'s `pushHistoryEntry` did with a request to protect a new
+ * screen or overlay with a history entry (George round 5 P1, #393):
+ *
+ * - `"pushed"` — a real `pushState` ran immediately; the entry exists now.
+ * - `"queued"` — deferred behind an outstanding, app-issued `back()`
+ *   (`outstandingBacks`) that is expected to fully resolve; `reconcilePopState`
+ *   drains it once that happens (`queuedPushAction: "drain"`), so the entry
+ *   still lands, just not synchronously.
+ * - `"refused"` — an on-screen Back (`goBack`) already has its OWN routed
+ *   `back()` outstanding (`backRequested`). Unlike `"queued"`, nothing here
+ *   will ever push this entry: `goBack`'s popstate is what decides the next
+ *   screen, and it is decided from live state read fresh when that popstate
+ *   lands, not from an entry this call could have pushed underneath it.
+ */
+export type HistoryPushOutcome = "pushed" | "queued" | "refused";
+
+/**
+ * Whether a caller that asked for a protective history entry may go ahead
+ * with the UI change that entry was meant to protect (George round 5 P1,
+ * #393). Round 5 introduced `pushHistoryEntry`'s `"refused"` outcome (a
+ * REFUSE, not a queue, while an on-screen Back's own `back()` is outstanding)
+ * but left every caller unconditional — `openRecorder`/`openChapter` still
+ * called `setRecorder`/`setChapterId`, and the Books/Segments overlay layout
+ * effects still latched `overlayEntryPushed = true`, regardless of the
+ * outcome. That desynced the screen the user was looking at from the history
+ * stack meant to model it: the in-flight `goBack` popstate, once it lands,
+ * reads LIVE `screenFor`/`hasOpenOverlay()` state to decide where to route —
+ * state this now-unconditional UI change had already moved out from under it
+ * with no matching entry to show for it (App.tsx `onPopState`, `screenFor`).
+ *
+ * `"pushed"` and `"queued"` both still get an entry — the second, later,
+ * once `outstandingBacks` drains — so proceeding is safe either way; only
+ * `"refused"` means no entry is ever coming and the in-flight `goBack` is
+ * what owns the screen instead. This is deliberately the ONLY thing this
+ * fix changes: the "stronger" variants George also offered (keep
+ * `backRequested` set past `popAction` itself; route from a screen/overlay
+ * snapshot taken at `goBack`-issue time rather than live state) are a
+ * history-stack model change, scoped out of this round to a design-pass
+ * issue instead (#393's round-5 P2-2/P2-3 are the same family of concern).
+ */
+export function shouldProceedAfterPush(outcome: HistoryPushOutcome): boolean {
+  return outcome !== "refused";
+}

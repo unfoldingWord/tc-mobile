@@ -8,6 +8,7 @@ import {
   popAction,
   reconcilePopState,
   screenFor,
+  shouldProceedAfterPush,
 } from "@/lib/nav/navigation";
 
 /**
@@ -425,5 +426,44 @@ describe("reconcilePopState (#393, George round 3 P3-3)", () => {
         }
       }
     });
+  });
+});
+
+/**
+ * George round 5 P1 (#393): round 4's `pushHistoryEntry` fix (refuse, not
+ * queue, while `goBack`'s own `back()` is outstanding) stopped at the guard
+ * itself — every CALLER stayed unconditional, so `openRecorder`/`openChapter`
+ * still ran `setRecorder`/`setChapterId`, and the Books/Segments overlay
+ * effects still latched `overlayEntryPushed = true`, even on a `"refused"`
+ * outcome. This is the two reachable scenarios George traced:
+ *
+ * - Scenario A: the header/on-screen Back is tapped (`backRequested` latches,
+ *   `window.history.back()` is in flight) and, before that popstate lands,
+ *   Record is tapped — `openRecorder` used to open the sheet regardless.
+ * - Scenario B: the same in-flight Back, but a row's ≡ (chapter menu) is
+ *   opened instead — the overlay layout effect used to latch
+ *   `overlayEntryPushed` regardless.
+ *
+ * `App.tsx`/`segments-screen.tsx`/`books-screen.tsx` are browser-only and
+ * untestable here (no jsdom/renderer — see AGENTS.md and this file's own
+ * top-of-file doc) — scenarios A and B themselves stay review-only, verified
+ * by reading the call sites (`openChapter`/`openRecorder` in `App.tsx`, both
+ * screens' overlay `useLayoutEffect`s), not by a test here. What IS lifted to
+ * a pure, tested decision is the ONE predicate every one of those call sites
+ * now shares: whether a `"refused"` outcome permits the caller's own UI
+ * change to proceed. `shouldProceedAfterPush` is that predicate, and this is
+ * its table.
+ */
+describe("shouldProceedAfterPush (#393, George round 5 P1)", () => {
+  it("refuses to proceed on a refused push — scenario A/B's fix, in one line", () => {
+    expect(shouldProceedAfterPush("refused")).toBe(false);
+  });
+
+  it("proceeds on a pushed entry — the ordinary case", () => {
+    expect(shouldProceedAfterPush("pushed")).toBe(true);
+  });
+
+  it("proceeds on a queued entry — it still lands once outstandingBacks drains", () => {
+    expect(shouldProceedAfterPush("queued")).toBe(true);
   });
 });

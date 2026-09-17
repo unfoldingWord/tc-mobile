@@ -25,7 +25,11 @@ import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
-import { overlayDismissal } from "@/lib/nav/navigation";
+import {
+  type HistoryPushOutcome,
+  overlayDismissal,
+  shouldProceedAfterPush,
+} from "@/lib/nav/navigation";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -63,8 +67,13 @@ interface BooksScreenProps {
    * being the navigation root — so a system Back while one is open produces a
    * `popstate` `dismissOverlay` can answer, instead of leaving the app
    * (`exit-app`, with nothing to pop).
+   *
+   * Returns the same `HistoryPushOutcome` `pushHistoryEntry` does (George
+   * round 5 P1, #393) — see `SegmentsScreenProps.onOverlayOpen`'s identical
+   * doc and this screen's own effect below for what a `"refused"` outcome
+   * means here.
    */
-  onOverlayOpen: () => void;
+  onOverlayOpen: () => HistoryPushOutcome;
   onOverlayClose: () => void;
 }
 
@@ -668,8 +677,38 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
     // multi-open-site version of that same guarantee.
     useLayoutEffect(() => {
       if (hasBooksOverlay && !overlayEntryPushed.current) {
+        const outcome = onOverlayOpen();
+        // George round 5 P1 (#393): `hasBooksOverlay` is already true by the
+        // time this effect runs — whichever state set it (`newBookSeed`,
+        // `shareMenuBook`, `menuOpen`, `deleteTargetId`) committed in this
+        // SAME paint, before this effect could run at all, so there is no
+        // "don't open it" left available on a `"refused"` outcome, only
+        // "close it again". Mutually exclusive per this screen's own
+        // contract (opening any one makes the shelf `inert`, so the triggers
+        // for the others are unreachable), so at most one of these actually
+        // does anything; mirrors `dismissOverlay`'s own closeMenu/closeConfirm
+        // branches below, minus their in-flight guards (`creatingBook.current`,
+        // `isDeleting()`) — neither can be true yet at the instant its own
+        // dialog has JUST opened, only once that dialog's own Confirm is
+        // tapped, so closing here drops nothing.
+        //
+        // The close is pushed past a microtask, not called synchronously in
+        // this effect body — `react-hooks/set-state-in-effect` flags exactly
+        // that shape (this screen's own `closeDeleteConfirm` effect above has
+        // the same idiom). A microtask still drains before the browser can
+        // paint a new frame or dispatch the next event (a `popstate` is a
+        // macrotask), so this is not a meaningfully later close than a
+        // synchronous one would have been for what this guards against.
+        if (!shouldProceedAfterPush(outcome)) {
+          void Promise.resolve().then(() => {
+            if (newBookSeed !== null) onCancelNewBook();
+            else if (shareMenuBook !== null) onCloseShareMenu();
+            else if (menuOpen) setMenuOpen(false);
+            else if (deleteTargetId !== null) closeDeleteConfirm();
+          });
+          return;
+        }
         overlayEntryPushed.current = true;
-        onOverlayOpen();
       } else if (!hasBooksOverlay && overlayEntryPushed.current) {
         overlayEntryPushed.current = false;
         onOverlayClose();
@@ -691,7 +730,18 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
           onOverlayClose();
         }
       };
-    }, [hasBooksOverlay, onOverlayOpen, onOverlayClose]);
+    }, [
+      hasBooksOverlay,
+      onOverlayOpen,
+      onOverlayClose,
+      newBookSeed,
+      shareMenuBook,
+      menuOpen,
+      deleteTargetId,
+      onCancelNewBook,
+      onCloseShareMenu,
+      closeDeleteConfirm,
+    ]);
 
     useImperativeHandle(
       ref,

@@ -13,10 +13,12 @@ import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
+  type HistoryPushOutcome,
   navDirection,
   popAction,
   reconcilePopState,
   screenFor,
+  shouldProceedAfterPush,
 } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
@@ -164,7 +166,7 @@ export function App() {
   // `outstandingBacks.current` is proven 0 (see the handler's own comment),
   // so this guard is a proven no-op for them.
   const queuedPushes = useRef(0);
-  const pushHistoryEntry = useCallback(() => {
+  const pushHistoryEntry = useCallback((): HistoryPushOutcome => {
     // George round 4 P2-1 (#393): REFUSE, not queue, while `goBack`'s own
     // routed `back()` is outstanding (`backRequested`) — checked FIRST,
     // ahead of `outstandingBacks`. Those two latches mean different things:
@@ -179,19 +181,24 @@ export function App() {
     // would land a chapter/recorder/overlay entry on the BOOKS shelf, which
     // never asked for it (the coalescing pair `goBack`'s own comment already
     // documents, reached through this door instead of a second `back()`).
-    // Refusing instead leaves whatever UI change already ran synchronously
-    // before this call (`setRecorder(...)`, `setChapterId(...)`) to be
-    // resolved by that SAME routed popstate once it lands —
-    // `commit-close-recorder` immediately closing a sheet that never got its
-    // own history entry is safe (it never drops a take, only ever commits or
-    // leaves it open), just a transient open-then-close UI flicker, not the
-    // history desync this guard exists to prevent.
-    if (backRequested.current) return;
+    //
+    // George round 5 P1 (#393): round 4's fix stopped there, leaving every
+    // CALLER unconditional — `openRecorder`/`openChapter` still ran
+    // `setRecorder(...)`/`setChapterId(...)`, and the overlay layout effects
+    // still latched `overlayEntryPushed = true`, even on `"refused"`. That
+    // let the screen the user was looking at drift out of step with the
+    // history stack meant to model it, with nothing routing `goBack`'s own
+    // popstate correctly once it landed (see `shouldProceedAfterPush`'s own
+    // doc, `lib/nav/navigation.ts`, for the full trace). Returning the
+    // outcome — rather than only refusing internally — lets every caller
+    // gate its own UI change on it via that one pure, tested predicate.
+    if (backRequested.current) return "refused";
     if (outstandingBacks.current > 0) {
       queuedPushes.current += 1;
-      return;
+      return "queued";
     }
     pushRawHistoryEntry();
+    return "pushed";
   }, [pushRawHistoryEntry]);
 
   // The programmatic half of #393/#374's overlay-entry bookkeeping: consume the
@@ -328,7 +335,13 @@ export function App() {
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
-      pushHistoryEntry(); // Books → Segments: a Back now returns here
+      const outcome = pushHistoryEntry(); // Books → Segments: a Back now returns here
+      // George round 5 P1 (#393): a `"refused"` outcome means `goBack`'s own
+      // in-flight `back()` already owns the screen — its popstate, once it
+      // lands, decides where the app ends up; opening Segments HERE on top of
+      // that would desync `screenFor`'s live read from a history stack that
+      // never got an entry for it. See `shouldProceedAfterPush`'s doc.
+      if (!shouldProceedAfterPush(outcome)) return;
       setClipboard(null); // chapter-scoped (G3)
       setRecorder(null);
       setChapterId(id);
@@ -348,7 +361,12 @@ export function App() {
       // Opening the recorder stops any row that was playing — the same single
       // `leave()` every navigation makes.
       leave();
-      pushHistoryEntry(); // Segments → Recorder: Back becomes the commit
+      const outcome = pushHistoryEntry(); // Segments → Recorder: Back becomes the commit
+      // George round 5 P1 (#393): see `openChapter`'s identical guard, just
+      // above — the in-flight `goBack` this defers to already owns the
+      // screen on a `"refused"` outcome (scenario A: header Back tapped,
+      // then Record before that Back's popstate lands).
+      if (!shouldProceedAfterPush(outcome)) return;
       // Resume the audio context in THIS tap (#184): the sheet loads and decodes
       // the segment one commit later, after this gesture's activation is spent,
       // so an iOS `"interrupted"` context would otherwise meet the first decode

@@ -22,7 +22,11 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
-import { overlayDismissal } from "@/lib/nav/navigation";
+import {
+  type HistoryPushOutcome,
+  overlayDismissal,
+  shouldProceedAfterPush,
+} from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
@@ -69,8 +73,15 @@ interface SegmentsScreenProps {
    * `openChapter`/`openRecorder` — so a system Back while it is open produces a
    * `popstate` `dismissOverlay` can answer, instead of leaving no entry to pop
    * and falling straight through to `to-books`.
+   *
+   * Returns the same `HistoryPushOutcome` `pushHistoryEntry` does (George
+   * round 5 P1, #393): a `"refused"` push means an in-flight `goBack` already
+   * owns the screen, and this screen's own overlay state was already flipped
+   * open by whatever triggered it (the ≡ tap, a row's Edit) BEFORE this effect
+   * runs — there is no "don't open it" left to do, only "close it again"; see
+   * the effect below.
    */
-  onOverlayOpen: () => void;
+  onOverlayOpen: () => HistoryPushOutcome;
   onOverlayClose: () => void;
 }
 
@@ -306,8 +317,38 @@ export const SegmentsScreen = forwardRef<
   // that same guarantee.
   useLayoutEffect(() => {
     if (hasScreenOverlay && !overlayEntryPushed.current) {
+      const outcome = onOverlayOpen();
+      // George round 5 P1 (#393): `hasScreenOverlay` is already true by the
+      // time this effect runs — whichever state set it (`chapterMenuOpen`,
+      // `rowMenuOpen`, `eraseTarget`) committed in this SAME paint, before
+      // this effect could run at all, so there is no "don't open it" left
+      // available on a `"refused"` outcome, only "close it again". Mutually
+      // exclusive per this screen's own contract (opening any one inerts the
+      // others' triggers), so at most one of these three actually does
+      // anything; mirrors `dismissOverlay`'s own closeMenu branch below,
+      // minus its in-flight-erase guard — erase cannot be in-flight yet at
+      // the instant its confirm dialog has JUST opened, only once its own
+      // Confirm is tapped, so closing it here drops nothing.
+      //
+      // The close is pushed past a microtask, not called synchronously in
+      // this effect body — `react-hooks/set-state-in-effect` flags exactly
+      // that shape (`books-screen.tsx`'s `closeDeleteConfirm` effect has the
+      // same idiom, with the same reasoning). A microtask still drains
+      // before the browser can paint a new frame or dispatch the next event
+      // (a `popstate` is a macrotask), so this is not a meaningfully later
+      // close than a synchronous one would have been for what this guards
+      // against.
+      if (!shouldProceedAfterPush(outcome)) {
+        void Promise.resolve().then(() => {
+          if (chapterMenuOpen) onCloseChapterMenu();
+          else if (rowMenuOpen) {
+            setRowMenuCloseSignal((n) => n + 1);
+            setRowMenuOpen(false);
+          } else if (eraseTarget !== null) closeErase();
+        });
+        return;
+      }
       overlayEntryPushed.current = true;
-      onOverlayOpen();
     } else if (!hasScreenOverlay && overlayEntryPushed.current) {
       overlayEntryPushed.current = false;
       onOverlayClose();
@@ -329,7 +370,16 @@ export const SegmentsScreen = forwardRef<
         onOverlayClose();
       }
     };
-  }, [hasScreenOverlay, onOverlayOpen, onOverlayClose]);
+  }, [
+    hasScreenOverlay,
+    onOverlayOpen,
+    onOverlayClose,
+    chapterMenuOpen,
+    rowMenuOpen,
+    eraseTarget,
+    onCloseChapterMenu,
+    closeErase,
+  ]);
 
   useImperativeHandle(
     ref,
