@@ -227,4 +227,48 @@ describe("overlayDismissal", () => {
       closeConfirm: false,
     });
   });
+
+  it("refuses a busy menu close (Back during create, create in flight, #393)", () => {
+    // The load-bearing regression row (Frank, on 25faf3f): Books' New Book
+    // dialog refuses to close mid-create (`onCancelNewBook`'s own
+    // `creatingBook.current` guard) — the write cannot be recalled, unlike a
+    // rename, which lands silently underneath a closed menu instead.
+    // `menuBusy=true` must make `closeMenu` false even though the menu IS
+    // open, exactly mirroring how `erasing` already refuses `closeConfirm`
+    // above. App's `dismissingOverlay` latch reads `closeMenu || closeConfirm`
+    // back from this function, so a wrong `true` here would strand every
+    // later Back on `rearm-during-commit` even once the create settles.
+    expect(overlayDismissal(true, false, false, true)).toEqual({
+      closeMenu: false,
+      closeConfirm: false,
+    });
+  });
+
+  it("Back during create, create fails, next Back dismisses (Frank, #393)", () => {
+    // The exact scenario Frank named: while `menuBusy` is true (a create in
+    // flight) a Back is refused — nothing closes, so the screen keeps
+    // whatever protective history entry it already holds. Once the create
+    // SETTLES (fails, and the dialog stays open but is cancellable again —
+    // `creatingBook.current` back to false), the very next Back must dismiss
+    // for real. Two calls, same inputs but for `menuBusy`, standing in for
+    // "before the write settles" and "after" on the one boolean this
+    // function actually decides on.
+    expect(overlayDismissal(true, false, false, true)).toEqual({
+      closeMenu: false,
+      closeConfirm: false,
+    });
+    expect(overlayDismissal(true, false, false, false)).toEqual({
+      closeMenu: true,
+      closeConfirm: false,
+    });
+  });
+
+  it("defaults menuBusy to false, preserving every pre-#393 call site (recorder, Segments)", () => {
+    // Neither the recorder's nor Segments' call site passes a 4th argument —
+    // both must keep behaving exactly as before this parameter existed.
+    expect(overlayDismissal(true, false, false)).toEqual({
+      closeMenu: true,
+      closeConfirm: false,
+    });
+  });
 });

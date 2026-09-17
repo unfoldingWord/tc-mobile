@@ -402,18 +402,31 @@ export function App() {
           //
           // `suppressPop.current` is guaranteed false here (the early-return
           // above already caught it if true), so `pushHistoryEntry` always
-          // pushes for real. `dismissingOverlay` (George round 1 P2-1) is set
-          // synchronously BEFORE `dismissOverlay()` runs, so ANY popstate that
-          // lands before the resulting consume's own — the consume's
-          // traversal itself, or a genuinely new system Back arriving in that
-          // window — is absorbed as `rearm-during-commit` above rather than
-          // routed against an overlay that may already read as closed in
-          // React state ahead of history catching up. Cleared where
-          // `suppressPop` is, once that consume's own popstate lands.
+          // pushes for real. `dismissingOverlay` (George round 1 P2-1) latches
+          // on `dismissOverlay()`'s OWN return value, not unconditionally, so
+          // ANY popstate landing before the resulting consume's own — the
+          // consume's traversal itself, or a genuinely new system Back
+          // arriving in that window — is absorbed as `rearm-during-commit`
+          // above rather than routed against an overlay that may already read
+          // as closed in React state ahead of history catching up. Cleared
+          // where `suppressPop` is, once that consume's own popstate lands.
+          //
+          // The return value matters because a screen's own closer can refuse
+          // (Books' `onCancelNewBook`, mid-create) — nothing then closes, so
+          // no consume ever follows to clear the latch. Setting it true
+          // regardless would strand every later Back on `rearm-during-commit`
+          // forever, even once the refusal lifts (Frank, on 25faf3f, #393).
+          // The re-armed entry from `pushHistoryEntry()` above still stands
+          // guard either way — a refused dismissal just means the NEXT Back
+          // re-reads `screenOverlayOpen` (still true) and retries this same
+          // case, rather than this one silently trapping it.
           pushHistoryEntry();
-          dismissingOverlay.current = true;
-          if (screen === "books") booksRef.current?.dismissOverlay();
-          else if (screen === "segments") segmentsRef.current?.dismissOverlay();
+          dismissingOverlay.current =
+            screen === "books"
+              ? (booksRef.current?.dismissOverlay() ?? false)
+              : screen === "segments"
+                ? (segmentsRef.current?.dismissOverlay() ?? false)
+                : false;
           return;
         }
       }

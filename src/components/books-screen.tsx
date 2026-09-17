@@ -46,8 +46,12 @@ export interface BooksScreenHandle {
    *  a rename in flight lands silently (matching #384's accepted Close
    *  behaviour); New Book while creating, or a delete in flight, does not
    *  (both already guard their own dismissal; `overlayDismissal` mirrors the
-   *  latter for the delete confirm here). */
-  dismissOverlay: () => void;
+   *  latter for the delete confirm here). Returns whether a dismissal
+   *  actually started — New Book mid-create refuses (see `onCancelNewBook`)
+   *  and reports `false`, so App's `dismissingOverlay` latch does not arm
+   *  itself over a no-op and strand every later Back on `rearm-during-commit`
+   *  forever (Frank, on 25faf3f, #393). */
+  dismissOverlay: () => boolean;
 }
 
 interface BooksScreenProps {
@@ -682,10 +686,24 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
           // Close (`onCloseShareMenu`) already know how to no-op or not on their
           // own — the priority order below just picks whichever ONE overlay is
           // actually open, mirroring the `inert` calculation further down.
+          // `menuBusy` (Frank, on 25faf3f, #393): New Book mid-create is the
+          // one menu branch below with its own internal refusal —
+          // `onCancelNewBook` silently no-ops while `creatingBook.current` is
+          // true (see its own comment), so nothing closes. Passing that
+          // through here, rather than checking `creatingBook.current` again
+          // after the fact, makes `dismissal.closeMenu` itself already say
+          // whether the New Book branch will actually run — which is what
+          // this function returns to App below. App latches its own
+          // `dismissingOverlay` on that return value to absorb the popstate
+          // its re-armed entry is about to cause; latching it over a refusal
+          // would never see the consume that clears it, trapping every later
+          // Back on `rearm-during-commit` even once the dialog is cancellable
+          // again.
           const dismissal = overlayDismissal(
             hasMenuOverlay,
             deleteTargetId !== null,
-            deleting
+            deleting,
+            newBookSeed !== null && creatingBook.current
           );
           if (dismissal.closeMenu) {
             if (newBookSeed !== null) onCancelNewBook();
@@ -693,6 +711,7 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
             else if (menuOpen) setMenuOpen(false);
           }
           if (dismissal.closeConfirm) closeDeleteConfirm();
+          return dismissal.closeMenu || dismissal.closeConfirm;
         },
       }),
       [

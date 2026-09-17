@@ -44,8 +44,13 @@ export interface SegmentsScreenHandle {
   hasOpenOverlay: () => boolean;
   /** Dismiss the open overlay the same way its own scrim/Close/Escape would —
    *  a rename in flight lands silently (matching #384's accepted Close
-   *  behaviour); an erase in flight is left alone (`overlayDismissal`). */
-  dismissOverlay: () => void;
+   *  behaviour); an erase in flight is left alone (`overlayDismissal`).
+   *  Returns whether a dismissal actually started, matching
+   *  `BooksScreenHandle`'s contract (Frank, on 25faf3f, #393) — always `true`
+   *  here once `overlayDismissal` says to close, since none of this screen's
+   *  own closers (unlike Books' `onCancelNewBook`) has an internal refusal of
+   *  its own. */
+  dismissOverlay: () => boolean;
 }
 
 interface SegmentsScreenProps {
@@ -322,6 +327,13 @@ export const SegmentsScreen = forwardRef<
           eraseTarget !== null,
           erase.erasing
         );
+        // Whether a dismissal actually started (Frank, on 25faf3f, #393) —
+        // matches `BooksScreenHandle.dismissOverlay`'s contract. Returning
+        // `dismissal`'s own flags directly (rather than tracking a separate
+        // `dismissed` local) is safe here in a way it is not for Books:
+        // neither branch below has Books' `onCancelNewBook`-style internal
+        // refusal, so once `overlayDismissal` says to close, the corresponding
+        // branch always runs.
         if (dismissal.closeMenu) {
           if (chapterMenuOpen) onCloseChapterMenu();
           else if (rowMenuOpen) {
@@ -338,6 +350,7 @@ export const SegmentsScreen = forwardRef<
           }
         }
         if (dismissal.closeConfirm) closeErase();
+        return dismissal.closeMenu || dismissal.closeConfirm;
       },
     }),
     [

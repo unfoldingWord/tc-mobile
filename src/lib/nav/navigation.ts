@@ -195,11 +195,27 @@ export function overlayBlocksClose(
  * already does, since #384's own Menu-level guard against that was reverted —
  * the write lands silently, the same as it did before #384. Only the
  * confirm/`erasing` pairing above blocks a dismiss; `menuOpen` alone never does.
+ *
+ * `menuBusy` is the ONE menu-side exception to that: Books' New Book dialog
+ * (`onCancelNewBook`) refuses to close while its own create write is in
+ * flight — the write cannot be recalled, unlike a rename, which just lands
+ * silently underneath the closed menu. Optional and defaulted false so the
+ * recorder's and Segments' call sites (neither has a menu with this shape)
+ * do not need to know this parameter exists (Frank, on 25faf3f, #393): App's
+ * `dismissingOverlay` latch reads `closeMenu || closeConfirm` back from this
+ * function's own result, so hoisting the refusal here — rather than
+ * duplicating `creatingBook.current`'s check inline at the call site — is
+ * what keeps that "did anything actually close" decision a single, tested
+ * source of truth instead of two copies that can drift.
  */
 export function overlayDismissal(
   menuOpen: boolean,
   confirmOpen: boolean,
-  erasing: boolean
+  erasing: boolean,
+  menuBusy = false
 ): { closeMenu: boolean; closeConfirm: boolean } {
-  return { closeMenu: menuOpen, closeConfirm: confirmOpen && !erasing };
+  return {
+    closeMenu: menuOpen && !menuBusy,
+    closeConfirm: confirmOpen && !erasing,
+  };
 }
