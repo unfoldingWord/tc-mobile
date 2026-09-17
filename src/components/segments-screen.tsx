@@ -324,7 +324,18 @@ export const SegmentsScreen = forwardRef<
         );
         if (dismissal.closeMenu) {
           if (chapterMenuOpen) onCloseChapterMenu();
-          else if (rowMenuOpen) setRowMenuCloseSignal((n) => n + 1);
+          else if (rowMenuOpen) {
+            // George round 1 P2-1: bump the broadcast signal (the row's OWN
+            // effects still have to actually close its `Menu`), but ALSO flip
+            // the screen's own mirror synchronously in the SAME turn, so
+            // `hasOpenOverlay()` reads false immediately rather than waiting
+            // on the row's `closeMenuSignal` → `menuOpen` → `onMenuOpenChange`
+            // round trip to reach this screen. Without this, a Back landing
+            // during that round trip still saw `rowMenuOpen` true and looked
+            // like a no-op.
+            setRowMenuCloseSignal((n) => n + 1);
+            setRowMenuOpen(false);
+          }
         }
         if (dismissal.closeConfirm) closeErase();
       },

@@ -53,6 +53,21 @@ export function App() {
   // so a second Back cannot escape the recorder and drop the uncommitted take
   // (Frank R1 F1). Cleared when the commit settles.
   const committing = useRef(false);
+  // George round 1 P2-1 (#393): the SAME shape as `committing`, for the window
+  // between `dismiss-screen-overlay` re-arming and Books'/Segments' own
+  // overlay-close consume actually landing as a popstate. Without this, a
+  // popstate arriving in that window — the resulting consume's own traversal,
+  // OR a genuinely new system Back — had nothing marking it as "absorb, don't
+  // route": the overlay could already read as closed in React state (`Menu`'s
+  // scrim/Close cascade, or the row menu's multi-hop `onMenuOpenChange` before
+  // this same PR's fix made it synchronous) while history had not yet caught
+  // up, so `popAction` ran `to-books`/`exit-app` on a screen that was mid-
+  // dismiss rather than actually left. OR'd into `committing` at the call
+  // site below rather than given `popAction` a new parameter: the effect
+  // (re-arm, absorb) is identical to an in-flight recorder commit, and the
+  // existing `"rearm-during-commit"` row already covers it once this is true.
+  // Cleared where `pendingPush`/`suppressPop` are (the consume's own popstate).
+  const dismissingOverlay = useRef(false);
   // Ignore exactly one popstate: the one our own `history.back()` fires to
   // consume an entry (a programmatic close, or the forward-trap re-assertion).
   const suppressPop = useRef(false);
@@ -68,7 +83,7 @@ export function App() {
   const nextIndex = useRef(0);
   const navIndex = useRef(0);
 
-  const pushHistoryEntry = useCallback(() => {
+  const pushRawHistoryEntry = useCallback(() => {
     // A marker entry whose only job is to be there for Back to consume, carrying
     // the monotonic index that tells Back from Forward. Routing reads live React
     // state for the screen, so the entry needs nothing more than its index.
@@ -77,40 +92,49 @@ export function App() {
     navIndex.current = index;
   }, []);
 
-  // Frank round 1 P2 (#393): `window.history.back()` is asynchronous — its
-  // `popstate` lands on a LATER task, not synchronously. If an overlay closes
-  // (scheduling a consume below) and is reopened before that `popstate`
-  // arrives, an unguarded push here would land while `suppressPop` is still
-  // armed for the pending consume, and the traversal the browser eventually
-  // runs is no longer guaranteed to target the entry it was issued for. Held
-  // as a ref, not fired immediately, whenever a consume is still outstanding;
-  // the suppressed-popstate branch below drains it once that traversal lands,
-  // so a push and a pending consume never overlap.
-  const pendingOverlayOpen = useRef(false);
-  const pushOverlayEntry = useCallback(() => {
+  // George round 1 P2-2 (#393, widened from Frank round 1's overlay-only
+  // version): `window.history.back()` is asynchronous — its `popstate` lands
+  // on a LATER task, not synchronously. ANY push while a consume's `back()` is
+  // still outstanding (`suppressPop`) lands while the browser's still-pending
+  // traversal is no longer guaranteed to target the entry it was issued for —
+  // not only an overlay reopening (Frank's original finding), but also
+  // `openChapter`/`openRecorder`: closing a Books/Segments overlay and
+  // immediately tapping a chapter/Edit, before that close's `back()` lands,
+  // used to push the new screen's entry unguarded, leaving the UI on a screen
+  // history did not agree it had reached. EVERY push now goes through this ONE
+  // guard — held as a ref, not fired immediately, whenever a consume is still
+  // outstanding; the suppressed-popstate branch below drains it once that
+  // traversal lands, so a push and a pending consume never overlap. The
+  // internal re-arm pushes in the popstate switch below (trap-recovery,
+  // rearm-during-commit, commit-close-recorder, dismiss-screen-overlay) all
+  // run AFTER the `suppressPop` early-return, so `suppressPop.current` is
+  // always false there and this guard is a proven no-op for them.
+  const pendingPush = useRef(false);
+  const pushHistoryEntry = useCallback(() => {
     if (suppressPop.current) {
-      pendingOverlayOpen.current = true;
+      pendingPush.current = true;
       return;
     }
-    pushHistoryEntry();
-  }, [pushHistoryEntry]);
+    pushRawHistoryEntry();
+  }, [pushRawHistoryEntry]);
 
   // The programmatic half of #393/#374's overlay-entry bookkeeping: consume the
-  // entry `pushOverlayEntry` pushed for an open Books/Segments overlay, once it
+  // entry `pushHistoryEntry` pushed for an open Books/Segments overlay, once it
   // closes by a NON-popstate path (a tap on Close/scrim, a successful rename).
   // `suppressPop` marks the resulting popstate as ours, same as `closeRecorder`
   // below already does for its own programmatic close.
   const consumeOverlayEntry = useCallback(() => {
-    // Frank round 1 P2 (#393, second pass): a reopen already deferred ITS push
-    // (`pendingOverlayOpen`, above) because the previous close's `back()` was
-    // still in flight — so THIS close has nothing real to consume; the entry
-    // it would be undoing was never pushed. Cancel the deferred push and stop:
-    // issuing a second `back()` here would race the still-pending first one,
-    // and the drain below would then push an entry for an overlay that is
-    // already closed again. Chains of further rapid toggles collapse the same
-    // way, one cancellation at a time, until an actual push or consume runs.
-    if (pendingOverlayOpen.current) {
-      pendingOverlayOpen.current = false;
+    // Frank round 1 P2 (#393, second pass): a reopen (or any other deferred
+    // push) already deferred ITS push (`pendingPush`, above) because the
+    // previous close's `back()` was still in flight — so THIS close has
+    // nothing real to consume; the entry it would be undoing was never
+    // pushed. Cancel the deferred push and stop: issuing a second `back()`
+    // here would race the still-pending first one, and the drain below would
+    // then push an entry for an overlay that is already closed again. Chains
+    // of further rapid toggles collapse the same way, one cancellation at a
+    // time, until an actual push or consume runs.
+    if (pendingPush.current) {
+      pendingPush.current = false;
       return;
     }
     suppressPop.current = true;
@@ -258,12 +282,19 @@ export function App() {
       if (suppressPop.current) {
         suppressPop.current = false;
         navIndex.current = toIndex;
-        // A reopen arrived while THIS consume was still in flight
-        // (`pushOverlayEntry`, Frank round 1 P2) — the traversal that just
-        // landed is now accounted for, so it is safe to push the deferred
-        // entry for real.
-        if (pendingOverlayOpen.current) {
-          pendingOverlayOpen.current = false;
+        // George round 1 P2-1: whatever popped just now is the overlay
+        // dismiss's own expected consume — the window `dismissingOverlay`
+        // exists to absorb further popstates through is over.
+        dismissingOverlay.current = false;
+        // A reopen (or any other deferred push, George round 1 P2-2) arrived
+        // while THIS consume was still in flight (`pushHistoryEntry`, Frank
+        // round 1 P2) — the traversal that just landed is now accounted for,
+        // so it is safe to push the deferred entry for real. `suppressPop` is
+        // already false here, so the guard inside `pushHistoryEntry` is a
+        // pass-through; called through it (not `pushRawHistoryEntry`
+        // directly) so this stays the one place a push happens.
+        if (pendingPush.current) {
+          pendingPush.current = false;
           pushHistoryEntry();
         }
         return;
@@ -287,7 +318,12 @@ export function App() {
         popAction(
           direction,
           screen,
-          committing.current,
+          // George round 1 P2-1: `dismissingOverlay` OR'd in here, not given
+          // `popAction` a new parameter — the effect it needs (re-arm,
+          // absorb) is exactly what `"rearm-during-commit"` already does for
+          // an in-flight recorder commit, and this is the identical shape for
+          // an in-flight overlay-dismiss consume.
+          committing.current || dismissingOverlay.current,
           recovering,
           screenOverlayOpen
         )
@@ -363,7 +399,19 @@ export function App() {
           // which the screen's own effect answers by consuming THIS re-armed
           // entry (`onOverlayClose` → `consumeOverlayEntry`), landing the
           // stack back where it was before the overlay opened.
+          //
+          // `suppressPop.current` is guaranteed false here (the early-return
+          // above already caught it if true), so `pushHistoryEntry` always
+          // pushes for real. `dismissingOverlay` (George round 1 P2-1) is set
+          // synchronously BEFORE `dismissOverlay()` runs, so ANY popstate that
+          // lands before the resulting consume's own — the consume's
+          // traversal itself, or a genuinely new system Back arriving in that
+          // window — is absorbed as `rearm-during-commit` above rather than
+          // routed against an overlay that may already read as closed in
+          // React state ahead of history catching up. Cleared where
+          // `suppressPop` is, once that consume's own popstate lands.
           pushHistoryEntry();
+          dismissingOverlay.current = true;
           if (screen === "books") booksRef.current?.dismissOverlay();
           else if (screen === "segments") segmentsRef.current?.dismissOverlay();
           return;
@@ -412,7 +460,7 @@ export function App() {
           <BooksScreen
             ref={booksRef}
             onOpenChapter={openChapter}
-            onOverlayOpen={pushOverlayEntry}
+            onOverlayOpen={pushHistoryEntry}
             onOverlayClose={consumeOverlayEntry}
           />
         ) : (
@@ -422,7 +470,7 @@ export function App() {
             audio={audio}
             onBack={goBack}
             onOpenRecorder={openRecorder}
-            onOverlayOpen={pushOverlayEntry}
+            onOverlayOpen={pushHistoryEntry}
             onOverlayClose={consumeOverlayEntry}
           />
         )}

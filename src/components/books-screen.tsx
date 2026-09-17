@@ -637,8 +637,15 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
     // ever open at a time (opening any of them sets the shelf `inert`, so the
     // triggers for the others are unreachable) — the "which one" check lives in
     // `dismissOverlay` below, not here.
+    // `shareMenuBook !== null`, not `shareMenuBookId !== null` (George round 1
+    // P3-3): `inert` and `<Menu open>` below already key off `shareMenuBook`
+    // (resolved from the live shelf), which reads null the instant the book
+    // vanishes (deleted from another tab). Keying THIS on `shareMenuBookId`
+    // instead left an invisible overlay — the menu unmounted, the shelf live —
+    // still reporting `hasOpenOverlay() === true`, trapping a system Back on a
+    // dialog nobody could see.
     const hasMenuOverlay =
-      menuOpen || newBookSeed !== null || shareMenuBookId !== null;
+      menuOpen || newBookSeed !== null || shareMenuBook !== null;
     const hasBooksOverlay = hasMenuOverlay || deleteTargetId !== null;
     // Whether THIS screen has pushed the extra history entry `hasBooksOverlay`
     // needs — Books otherwise pushes none at all, being the navigation root — so
@@ -682,7 +689,7 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
           );
           if (dismissal.closeMenu) {
             if (newBookSeed !== null) onCancelNewBook();
-            else if (shareMenuBookId !== null) onCloseShareMenu();
+            else if (shareMenuBook !== null) onCloseShareMenu();
             else if (menuOpen) setMenuOpen(false);
           }
           if (dismissal.closeConfirm) closeDeleteConfirm();
@@ -692,7 +699,7 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
         hasBooksOverlay,
         hasMenuOverlay,
         newBookSeed,
-        shareMenuBookId,
+        shareMenuBook,
         menuOpen,
         deleteTargetId,
         deleting,

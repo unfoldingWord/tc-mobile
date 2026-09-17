@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -98,7 +105,17 @@ export function SegmentRow({
   // An effect, not a call inside each setter, so it fires once per real change;
   // the cleanup releases the list if the row unmounts while its menu is open.
   // Re-reporting `false` when already closed is a no-op React bails out on.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect` (George round 1 P3-4/P2-1, #393): a
+  // passive effect fires after paint, and this one chains into the SCREEN's
+  // own `hasScreenOverlay` bookkeeping (`onMenuOpenChange` → the screen's
+  // `rowMenuOpen` mirror → its own layout effect), so a passive version here
+  // left `hasScreenOverlay` true for two extra commits after the menu visibly
+  // closed — long enough that the FIRST system Back looked like a no-op and a
+  // frustrated second Back could land as a genuinely new gesture while the
+  // dismiss was still resolving. A layout effect collapses the whole chain
+  // into the same commit the menu closes in.
+  useLayoutEffect(() => {
     onMenuOpenChange?.(menuOpen);
     return () => {
       if (menuOpen) onMenuOpenChange?.(false);
@@ -108,8 +125,10 @@ export function SegmentRow({
   // own scrim/Close/Escape would. A ref, not a straight prop compare, so the
   // initial render (where `closeMenuSignal` first arrives already-defined at
   // 0) does not itself read as a change and close a menu nobody opened yet.
+  // `useLayoutEffect` for the same reason as the effect above — one synchronous
+  // chain, not two more passive hops before the screen sees the menu as closed.
   const prevCloseMenuSignal = useRef(closeMenuSignal);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (closeMenuSignal !== prevCloseMenuSignal.current) {
       prevCloseMenuSignal.current = closeMenuSignal;
       setMenuOpen(false);
@@ -334,7 +353,18 @@ export function SegmentRow({
               label={strings.editSegment(ordinal)}
               variant="quiet"
               onClick={() => {
-                setMenuOpen(false);
+                // George round 1 P2-2: Edit both closes this menu AND
+                // navigates to the recorder in one gesture, so
+                // `onOpenRecorder`'s own history push must not run before
+                // this close's cascade (this row's `menuOpen` → the screen's
+                // `rowMenuOpen` mirror → its overlay-close consume) has had a
+                // chance to set `suppressPop`. `flushSync` forces that whole
+                // chain through synchronously, in this same tick, rather than
+                // leaving it for a later commit `onOpenRecorder`'s push would
+                // otherwise race — the layout effects above (also switched
+                // for this fix) are what makes flushing here reach the SCREEN's
+                // own consume, not just this row's local state.
+                flushSync(() => setMenuOpen(false));
                 onOpenRecorder();
               }}
             />

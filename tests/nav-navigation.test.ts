@@ -107,6 +107,18 @@ describe("popAction", () => {
     );
   });
 
+  it("re-arms on Books too, the same way (George round 1 P2-1, #393)", () => {
+    // App now OR's a second ref (`dismissingOverlay`) into the `committing`
+    // argument for the window between `dismiss-screen-overlay` re-arming and
+    // Books'/Segments' own overlay-close consume actually landing as a
+    // popstate — reusing this exact row rather than adding a new `PopAction`
+    // case, since the effect (re-arm, absorb) is identical. `committing`
+    // could previously only ever be true for "recorder"/"segments" (an
+    // in-flight recorder commit); this pins the previously-untested "books"
+    // combination the new caller introduces.
+    expect(popAction("back", "books", true, false)).toBe("rearm-during-commit");
+  });
+
   it("traps every gesture under the failed-save recovery modal (R3 G-R3-1)", () => {
     // The load-bearing R3 row. A Back under the `SaveFailed` modal must NOT run
     // `to-books`/`exit-app` — those walk one entry farther toward the document
