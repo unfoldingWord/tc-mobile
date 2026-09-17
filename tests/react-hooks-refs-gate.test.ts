@@ -28,11 +28,30 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * and stranger than "try/catch/finally inside useCallback" (this issue's
  * working theory) — it is the closure-over-the-catch-binding specifically.
  *
- * This test pins three probes:
+ * This test pins three probes. It does NOT, by itself, prevent a future hook
+ * from combining a real render-time ref violation with the bail-out shape
+ * below and shipping undetected — that would still slip past `react-hooks/refs`
+ * exactly as #212 did, because the bail-out is a property of ESLint's own
+ * analysis, not something a test on the side can intercept. What this file
+ * pins is narrower and is what #212 actually asked for: (1) that the rule
+ * still fires at all on an ordinary violation — so a future ESLint/plugin
+ * upgrade, or a config accident, that disables `react-hooks/refs` outright is
+ * caught here, in CI, rather than only in a reviewer's head — and (2) that
+ * the specific bail-out shape is characterised, so a plugin fix that starts
+ * reporting it again is noticed (the assertion flips) instead of the blind
+ * spot silently narrowing further unremarked. The actual hazardous instance
+ * (`use-save-take.ts`) is fixed separately by #213, and a tree sweep (see the
+ * third commit's message) found no other hook in `src/` with this shape as of
+ * that commit — closing the concrete risk is out-of-band from this gate, by
+ * design; AGENTS.md and eslint.config.mjs both carry the same caveat beside
+ * the rule so a reviewer sees it without needing to find this file.
+ *
  *   - a plain render-time ref write, which MUST fire. This is the guarding
- *     assertion: it is what would have caught #212 before the fact, and
- *     mutation (see the eslint.config.mjs edit below, done by hand and
- *     reverted) is how it is proven to guard anything at all.
+ *     assertion, proven non-vacuous by mutation (see the eslint.config.mjs
+ *     edit below, done by hand and reverted) — it establishes that the check
+ *     mechanism actually distinguishes a violation from silence, not that
+ *     this specific probe reproduces #212's shape (it deliberately does not;
+ *     the two probes below do).
  *   - the MINIMAL bisected trigger: the same render-time ref write, plus
  *     nothing but a `catch (cause)` whose body defines a closure referencing
  *     `cause`. No `useCallback`, no `finally`, no `setState` — so a later
@@ -51,12 +70,23 @@ const ESLINT = join(REPO, "node_modules", "eslint", "bin", "eslint.js");
 
 interface EslintMessage {
   ruleId: string | null;
+  fatal?: boolean;
 }
 interface EslintResult {
   messages: EslintMessage[];
 }
 
-/** Lint `source` as a standalone probe file; return the rule ids ESLint reported. */
+/** Lint `source` as a standalone probe file; return the rule ids ESLint reported.
+ *
+ * A `not.toContain("react-hooks/refs")` assertion (the two blind-spot probes
+ * below) is satisfied just as well by an EMPTY rule list from a genuine
+ * "silent" analysis as by an empty list from ESLint never analysing the file
+ * at all — a parse/fatal error on the probe source would produce the same
+ * `[]` and pass the assertion vacuously (Frank, round 1). ESLint marks a
+ * parse failure with `fatal: true` on the message rather than a `ruleId`, so
+ * that case is checked for and thrown on BEFORE reducing to rule ids, turning
+ * a silently-vacuous pass into a loud test failure instead.
+ */
 function lintProbe(name: string, source: string): string[] {
   const file = join(PROBE_DIR, `${name}.tsx`);
   writeFileSync(file, source);
@@ -77,7 +107,15 @@ function lintProbe(name: string, source: string): string[] {
     stdout = String((err as { stdout?: string }).stdout ?? "");
   }
   const [result] = JSON.parse(stdout) as EslintResult[];
-  return (result?.messages ?? [])
+  const messages = result?.messages ?? [];
+  const fatal = messages.filter((m) => m.fatal);
+  if (fatal.length > 0) {
+    throw new Error(
+      `ESLint could not analyse probe "${name}" (fatal/parse error), so its ` +
+        `messages prove nothing about react-hooks/refs: ${JSON.stringify(fatal)}`
+    );
+  }
+  return messages
     .map((m) => m.ruleId)
     .filter((id): id is string => id !== null);
 }
