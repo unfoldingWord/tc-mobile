@@ -33,7 +33,9 @@ export type IconName =
   | "paste"
   | "undo"
   | "redo"
-  | "share";
+  | "share"
+  | "sun"
+  | "moon";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -405,6 +407,36 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinejoin="round"
       />
     </>
+  ),
+  /* The theme toggle's two faces (#171). Deliberately the most conventional
+     shapes in the set — a disc with rays, and a crescent — because this is the
+     one control in the app whose meaning cannot be learned by watching what it
+     does to audio, and the icon-recognition check at the training (#249) is
+     where a text-free glyph earns or loses its place. */
+  sun: (
+    <>
+      <circle
+        cx="11"
+        cy="11"
+        r="3.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M11 2.6v2.2M11 17.2v2.2M2.6 11h2.2M17.2 11h2.2M5.1 5.1l1.6 1.6M15.3 15.3l1.6 1.6M16.9 5.1l-1.6 1.6M6.7 15.3l-1.6 1.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  moon: (
+    <path
+      d="M14.6 14.1A6 6 0 0 1 9.2 4.6a7 7 0 1 0 7.3 10.8 6 6 0 0 1-1.9-1.3z"
+      fill="currentColor"
+    />
   ),
 };
 

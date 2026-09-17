@@ -315,6 +315,28 @@ jobs:
       # every spec here would fail on the next PR that did trip the gate
       # (round-2 Frank F2 / George G-3).
       #
+      # `theme-toggle.spec.ts` (#171) widened this gate, and the entries it
+      # needed are derived from what that spec actually reads — per AGENTS.md,
+      # "derive a CI path filter from what the suite imports, never from issue
+      # prose". Unlike the harness specs it drives real UI, so its dependencies
+      # reach layers this gate did not cover at all:
+      #
+      #   - `src/lib/theme.ts` — the decision it exercises. The gate had only
+      #     `src/lib/audio/` and `src/lib/storage/`, so a change here ran
+      #     nothing.
+      #   - `src/components/books-screen.tsx` — the ONLY mount point of the
+      #     toggle. Delete the control and every other gated path is untouched,
+      #     so the gate would read `smoke=false` and CI would go green with the
+      #     light theme unreachable again, which is the exact #171 defect.
+      #   - `src/components/strings.ts` — the spec locates the control by its
+      #     ACCESSIBLE NAME (`/light screen/i`). Reword the string and the spec
+      #     stops finding it; that must run here, not on the next unrelated PR.
+      #   - `src/app/styles/` — it asserts the resolved token values in the
+      #     shipped cascade (`--s-ink-faint: #626d7b` and the rest of #164's AA
+      #     fix). A layer-2 edit is precisely what it exists to catch.
+      #   - `index.html` — carries the `meta[name="theme-color"]` the spec
+      #     reads, and the viewport policy `tests/touch-policy.test.ts` gates.
+      #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
       # diff and a genuinely empty one both read as "no match", so the suite
@@ -335,7 +357,7 @@ jobs:
           # then reads a here-string, not a pipe: no pipeline whose exit status
           # could be confused with the match result.
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/lib/theme\.ts$|src/components/books-screen\.tsx$|src/components/strings\.ts$|src/app/styles/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|index\.html$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
             echo "smoke=true" >> "$GITHUB_OUTPUT"
           else
             echo "smoke=false" >> "$GITHUB_OUTPUT"

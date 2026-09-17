@@ -130,6 +130,13 @@ export const strings = {
   // NOT the breadcrumb: that is empty until the segment loads, and a name that
   // is sometimes absent is the gap this closes.
   recorderDialog: "Recorder",
+  // The theme toggle (#171). Names the DESTINATION, not the current state: a
+  // control labelled "Dark theme" while the screen is dark tells a
+  // screen-reader user what they already have. These are what AT reads; the
+  // sun/moon glyph is what a non-reader sees, and #249's recognition check at
+  // the training is where that glyph is tested rather than assumed.
+  useLightTheme: "Switch to the light screen, for bright sunlight",
+  useDarkTheme: "Switch to the dark screen, for low light",
   closeRecorder: "Close recorder",
   recorderBreadcrumb: (
     book: string,

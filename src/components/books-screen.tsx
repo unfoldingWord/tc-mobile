@@ -22,6 +22,7 @@ import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
+import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -84,6 +85,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
+  // #171. The global menu is the only place a theme switch belongs: it is a
+  // once-per-session decision about the light you are standing in, not a
+  // per-screen action, and putting it in the header would spend a header slot
+  // on a control nobody taps twice a day.
+  const theme = useTheme();
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
   // value the name field is seeded with — the "Book NNN" placeholder the hook
   // derives from the loaded shelf. Held as the seed rather than a boolean so the
@@ -724,7 +730,31 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      {/* The global menu. Its first entry is the theme toggle (#171): a
+          complete light theme has existed in `2-semantic.css` since the pivot
+          with nothing able to select it, written for the one condition that
+          makes this app unusable — direct equatorial sun on a dark screen.
+
+          ONE control that flips, not two rows or a three-state cycle: its
+          label names the DESTINATION so AT does not announce the state a user
+          already has, and `nextTheme` is an involution so the only promise a
+          text-free glyph can make — tap twice and you are back — holds. The
+          menu stays OPEN across the tap, so the translator sees the screen
+          change behind the scrim and can tap straight back if they guessed
+          wrong; that is the affordance doing the explaining, which is the
+          `state-in-place` rule this repo prefers over a message. */}
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        <Control
+          icon={theme.theme === "dark" ? "sun" : "moon"}
+          label={
+            theme.theme === "dark"
+              ? strings.useLightTheme
+              : strings.useDarkTheme
+          }
+          variant="quiet"
+          onClick={theme.toggle}
+        />
+      </Menu>
 
       {/* New Book asks for the name before it creates anything (#314). The same
           panel surface the rename uses — so the focus trap, Escape, the scrim

@@ -83,7 +83,13 @@ export default defineConfig({
     },
     {
       name: "chromium-shipped-build",
-      testMatch: /service-worker-precache\.spec\.ts$/,
+      // Both specs that assert what USERS get, against the real build. The
+      // theme spec belongs here and not in the harness project for exactly the
+      // reason the comment above gives: `dist-e2e/` carries an extra chunk, so
+      // its cascade is not the one anyone installs, and a light theme dropped
+      // by the production minifier or by Tailwind's layer ordering would pass
+      // there (#171).
+      testMatch: /(service-worker-precache|theme-toggle)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
   ],
