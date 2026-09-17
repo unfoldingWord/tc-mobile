@@ -316,15 +316,24 @@ takes precedence for the gated job, but a repository secret of the same name
 stays readable by **any** workflow in the repository — so the repository-level
 copies must be deleted once the environment copies are verified (below):
 
+**Spell the `--env`/`-R` flags out on every line — do not collect them into a
+shared variable.** A `E="--env release-signing -R unfoldingWord/tc-mobile"`
+followed by `gh secret set NAME $E` works in bash, which word-splits an
+unquoted `$E` on spaces into four separate arguments. zsh — the Mac's login
+shell — does **not** word-split an unquoted parameter by default, so `$E`
+arrives at `gh` as one argument and it fails with `unknown flag: --env
+release-signing -R unfoldingWord/tc-mobile`. Hit for real running this section
+on 2026-09-16 (#411); spelling the flags out on each line sidesteps the shell
+difference entirely:
+
 ```bash
-E="--env release-signing -R unfoldingWord/tc-mobile"
-gh secret set ASC_KEY_ID             $E   # the 10-char Key ID
-gh secret set ASC_ISSUER_ID          $E   # the Issuer UUID
-gh secret set APPLE_TEAM_ID          $E   # the 10-char Team ID
-gh secret set IOS_DIST_CERT_PASSWORD $E   # the .p12 export password (§5.5)
-base64 -i ~/Downloads/AuthKey_XXXXXXXXXX.p8   | gh secret set ASC_KEY_P8_BASE64 $E
-base64 -i ~/path/to/dist_cert.p12             | gh secret set IOS_DIST_CERT_P12_BASE64 $E
-base64 -i ~/path/to/tc-mobile.mobileprovision | gh secret set IOS_PROVISION_PROFILE_BASE64 $E
+gh secret set ASC_KEY_ID             --env release-signing -R unfoldingWord/tc-mobile   # the 10-char Key ID
+gh secret set ASC_ISSUER_ID          --env release-signing -R unfoldingWord/tc-mobile   # the Issuer UUID
+gh secret set APPLE_TEAM_ID          --env release-signing -R unfoldingWord/tc-mobile   # the 10-char Team ID
+gh secret set IOS_DIST_CERT_PASSWORD --env release-signing -R unfoldingWord/tc-mobile   # the .p12 export password (§5.5)
+base64 -i ~/Downloads/AuthKey_XXXXXXXXXX.p8   | gh secret set ASC_KEY_P8_BASE64 --env release-signing -R unfoldingWord/tc-mobile
+base64 -i ~/path/to/dist_cert.p12             | gh secret set IOS_DIST_CERT_P12_BASE64 --env release-signing -R unfoldingWord/tc-mobile
+base64 -i ~/path/to/tc-mobile.mobileprovision | gh secret set IOS_PROVISION_PROFILE_BASE64 --env release-signing -R unfoldingWord/tc-mobile
 ```
 
 The stdin-prompt forms (no value on the command line) keep the value out of
@@ -368,25 +377,23 @@ only that something is set. The first dispatch is the first test of the values.
 ## 9. Step H — the first dispatch, and the ref trap
 
 **Read this before clicking Run workflow.** The lane's preflight refuses any ref
-except `staging` or `main` unless you tick **`allow_any_ref`** — but as of
-2026-09-12 the pipeline exists **only on `develop`**:
+except `staging` or `main` unless you tick **`allow_any_ref`**. Both native
+lanes (`ios-testflight.yml` and `android-apk.yml`) were **proven end to end
+dispatched from `staging`** on 2026-09-16, with the `release-signing`
+environment gate live (#262, #318, #321):
 
 | Ref       | `ios-testflight.yml` | `Gemfile.lock` | `fastlane/Fastfile` | shared `App.xcscheme` |
 | --------- | -------------------- | -------------- | ------------------- | --------------------- |
 | `develop` | ✅                   | ✅             | ✅                  | ✅                    |
-| `staging` | ❌                   | ❌             | ❌                  | ❌                    |
-| `main`    | ❌                   | ❌             | ❌                  | ❌                    |
+| `staging` | ✅                   | ✅             | ✅                  | ✅                    |
+| `main`    | ✅                   | ✅             | ✅                  | ✅                    |
 
-`staging` is still v0.1.13 (2026-09-09); the pipeline merged to `develop` on
-2026-09-11. So the two workable first dispatches are:
-
-- **`develop` with `allow_any_ref` ticked** — available now, and the honest
-  choice for a first smoke test of signing; or
-- **promote v0.1.14 to `staging` first**, then dispatch from `staging` — what
-  [README §7](README.md#7-coexistence-with-the-cloudflare-pwa-deploy) means by
-  "build tester IPAs from `staging` or `main`". A promotion is owed anyway.
-
-Do not spend a dispatch discovering that `staging` has no workflow file to run.
+**`staging` is the workable first dispatch** — no `allow_any_ref` override
+needed. `staging` was at v0.1.13 when this section was first written
+(2026-09-12); it carried v0.2.3 by the 2026-09-16 proving run, well past that
+snapshot. `develop` with `allow_any_ref` ticked remains available for a
+feature-branch experiment, but it is no longer the first choice now that the
+lane lives on `staging`.
 
 **The run will stop and wait — that is the gate working.** After the preflight
 goes green, the _Build and upload to TestFlight_ job sits yellow in **Waiting**

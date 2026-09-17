@@ -422,6 +422,24 @@ for the audio store (PR #265).
    properties, not env vars, and the guard below would report all four as
    missing. The build fails loudly if any is unset, so it cannot silently
    produce an unsigned APK. **Never commit the keystore or passwords.**
+
+   The Mac's login shell is **zsh**, not bash — a bare `read -s VAR` (the bash
+   idiom) prints no prompt in zsh, so hitting Enter without noticing exports
+   an **empty** password and `assembleRelease` fails opaquely (hit for real,
+   2026-09-16, #411). Use zsh's `name?prompt` form, which shows a prompt while
+   still suppressing echo:
+
+   ```bash
+   export ANDROID_KEYSTORE_PATH="/absolute/path/to/tc-mobile-release.jks"
+   export ANDROID_KEY_ALIAS="tc-mobile"
+   read -s "ANDROID_STORE_PASSWORD?ANDROID_STORE_PASSWORD: "; export ANDROID_STORE_PASSWORD
+   read -s "ANDROID_KEY_PASSWORD?ANDROID_KEY_PASSWORD: "; export ANDROID_KEY_PASSWORD
+   ```
+
+   (bash's equivalent is `read -s -p "ANDROID_STORE_PASSWORD: " ANDROID_STORE_PASSWORD`
+   — the flag/prompt order is reversed between the two shells, which is the
+   trap.)
+
 3. Build a signed APK — **always with a `versionCode`**, the same unix
    timestamp the CI lane uses:
    ```bash
@@ -466,17 +484,28 @@ forced uninstall wipes IndexedDB, i.e. every recording (§0). A debug-signed APK
 (§0's Monday route) is therefore a dead end for anyone who will later get a CI
 build: never hand one to a tester once the release keystore exists.
 
-**Tester distribution:** workflow artifacts require a GitHub login to download,
-and the lane attaches the APK **only** as a run artifact — nothing creates a
-GitHub release or pre-release today (the repo's first tag is the v0.2.0
-promotion). The repo is public, so "a GitHub login" means **any** signed-in
-GitHub user can fetch the artifact for as long as it is retained; it is a
-convenience, not a private channel (the keystore is not in the APK — this is an
-access-boundary note, not a signing leak). So the channel is: a team member downloads the
-`android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
-the team drive; §5
-step 4 covers installation on the phone. Attaching the APK to a release is a
-follow-up once a release step exists, not a documented path.
+`keytool` on Java 21 (§5 step 1) writes the keystore as **PKCS12**, which has a
+single password for both the store and every key inside it — so
+`ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD` are, in practice, **the
+same value** for a keystore generated this way. Confirm the two secrets match
+before assuming a typo when only one of them fails the presence check.
+
+**Tester distribution:** the lane itself attaches the APK **only** as a run
+artifact, and workflow artifacts require a GitHub login to download. The repo
+is public, so "a GitHub login" means **any** signed-in GitHub user can fetch
+the artifact for as long as it is retained; it is a convenience, not a private
+channel (the keystore is not in the APK — this is an access-boundary note, not
+a signing leak). **In practice the working channel is a manually published
+GitHub pre-release** with the run's `app-release.apk` attached as an asset —
+`android-release-v0.2.3` (published 2026-09-16, the first release-signed
+build) is the first instance — because USB did not enumerate the test device
+on the DRI's Mac, so a tester opens the release page directly in the phone's
+browser and downloads the `.apk` from there; §5 step 4 covers installation
+once it lands on the phone. Nothing in `android-apk.yml` creates the release
+automatically: a person downloads the run's `android-apk-<commit sha>`
+artifact and publishes it by hand as a pre-release with that file attached.
+Sharing the artifact through a team drive (the previously documented path)
+still works when USB or a browser download is not the constraint.
 
 ### One-time setup
 
