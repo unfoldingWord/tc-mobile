@@ -17,6 +17,14 @@ export declare function isMainEntry(
 
 export declare function remoteRefForOrigin(origin: string): string | undefined;
 
+export declare function ensureRemoteRefFresh(
+  origin: string,
+  options?: {
+    runGit?: (cmd: string) => string;
+    warn?: (message: string) => void;
+  }
+): void;
+
 export declare function resolveExpectedSha(
   origin: string,
   options?: {

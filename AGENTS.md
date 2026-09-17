@@ -368,23 +368,36 @@ npm run check:deploy:prod                   # expected sha from origin/main
 node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> --version=<x.y.z>
 ```
 
-**Which sha is compared, and why `git fetch` first.** Cloudflare Workers
-Builds deploys the promoted branch's tip — for this repo's merge-PR promotion
-flow, that tip is a **merge commit**, not the feature/develop branch tip a
-promoter's local checkout usually has `HEAD` on (round-3 George #1:
-`docs/progress_tracker.md:102,118` recorded the v0.1.12 `develop -> staging`
-promotion (#202) as merge commit `afdfa6e`, not develop's pre-merge tip
-`7152289`). So the bare commands above do **not** compare against local
-`HEAD` by default: for the staging and production default origins,
-`resolveExpectedSha()` (`scripts/check-deploy.mjs`) reads the corresponding
-**remote-tracking ref** instead — `origin/staging` for `check:deploy`,
-`origin/main` for `check:deploy:prod` — falling back to local `HEAD` (and
-printing why) only when that ref can't be resolved, or the origin isn't one
-of these two defaults. **Run `git fetch origin` before either bare command**
-so that ref is up to date; without a fetch, a stale or absent remote-tracking
-ref makes the check fall back to `HEAD`, which reintroduces the original
-false-FAIL risk. Passing `--sha=<short-sha>` explicitly always overrides this
-resolution entirely.
+**Which sha is compared, and how the check keeps it fresh itself.** Cloudflare
+Workers Builds deploys the promoted branch's tip — for this repo's merge-PR
+promotion flow, that tip is a **merge commit**, not the feature/develop
+branch tip a promoter's local checkout usually has `HEAD` on (round-3
+George #1: `docs/progress_tracker.md:102,118` recorded the v0.1.12
+`develop -> staging` promotion (#202) as merge commit `afdfa6e`, not
+develop's pre-merge tip `7152289`). So the bare commands above do **not**
+compare against local `HEAD` by default: for the staging and production
+default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
+(`scripts/check-deploy.mjs`) read the corresponding **remote-tracking ref**
+instead — `origin/staging` for `check:deploy`, `origin/main` for
+`check:deploy:prod` — falling back to local `HEAD`/this checkout's
+`package.json` (and printing why) only when that ref can't be resolved, or
+the origin isn't one of these two defaults.
+
+Earlier drafts of this section said to run `git fetch origin` yourself
+before either bare command — a **documented** prerequisite the gate itself
+did nothing to enforce, and a promoter who forgot it (merging the promotion
+PR on GitHub without ever fetching locally) on a checkout where Cloudflare
+_also_ failed to deploy got a **false PASS**: the stale local ref and the
+also-stale deployed build happened to agree, and neither reflected the new
+promotion (the exact #143 failure mode this check exists to catch — found
+in this PR's takeover round of dual review, Frank P1). The check now runs
+that fetch itself, scoped to the one branch it's about to read
+(`git fetch origin staging` / `git fetch origin main`), before resolving
+either half — and **fails closed** if the fetch itself fails (no network,
+no remote), rather than silently falling back to whatever the local ref
+already had. Passing `--sha=<short-sha>` and/or `--version=<x.y.z>`
+explicitly always bypasses ref resolution (and the fetch) for that half
+entirely.
 
 `check:deploy:prod` is
 `node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`

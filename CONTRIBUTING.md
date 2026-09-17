@@ -210,9 +210,10 @@ PR is the production gate.
   interchangeable. Both fetch `/version.json` from the deployed origin and,
   for these two default origins, compare it against the **promoted branch's
   remote-tracking ref** (`origin/staging` / `origin/main`), not local `HEAD`
-  — `git fetch origin` first for that to be accurate. See AGENTS.md,
-  "Confirming a deploy and rolling one back", for the full command forms, the
-  production URL, and the rollback path.
+  — the check fetches that one branch itself first and fails closed if the
+  fetch fails, rather than trusting a promoter to have run `git fetch origin`
+  beforehand. See AGENTS.md, "Confirming a deploy and rolling one back", for
+  the full command forms, the production URL, and the rollback path.
 
 ## Working with an AI coding agent
 

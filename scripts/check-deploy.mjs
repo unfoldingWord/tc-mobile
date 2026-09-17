@@ -89,6 +89,51 @@ export function remoteRefForOrigin(origin) {
 }
 
 /**
+ * Freshens the remote-tracking ref `resolveExpectedSha`/`resolveExpectedVersion`
+ * are about to read, by running `git fetch origin <branch>` for it. Without
+ * this, the "run `git fetch origin` first" instruction in AGENTS.md is a
+ * documented prerequisite the gate itself does nothing to enforce — a
+ * promoter who merges a promotion on GitHub but never fetches locally, on a
+ * checkout where Cloudflare *also* failed to deploy (the exact #143 failure
+ * mode this whole check exists to catch), gets a **false PASS**: the stale
+ * local `origin/staging`/`origin/main` still points at the previous commit,
+ * the also-stale deployed `version.json` matches it, and nothing detects
+ * that neither reflects the new promotion (Frank, this PR's takeover round).
+ *
+ * Fails **closed**, not open: if the fetch itself fails (no network, no
+ * remote configured, wrong permissions), this throws rather than silently
+ * falling back to whatever the local ref already has — a check that cannot
+ * confirm freshness must refuse to compare, not guess. An explicit
+ * `--sha=`/`--version=` bypasses this entirely (see `resolveExpected`),
+ * since there is then nothing to freshen.
+ *
+ * No-ops for any origin without a known remote-tracking ref (a hand-typed
+ * preview-Worker URL) — there is nothing to fetch there; the resolvers fall
+ * back to local `HEAD` for that case regardless. `runGit`/`warn` are
+ * injected exactly as in `resolveExpectedSha`, so a test can fake git
+ * without a real repository or network. Exported for tests.
+ */
+export function ensureRemoteRefFresh(
+  origin,
+  { runGit = runGitSync, warn = () => {} } = {}
+) {
+  const ref = remoteRefForOrigin(origin);
+  if (!ref) return;
+  const branch = ref.slice("origin/".length);
+  try {
+    runGit(`git fetch origin ${branch} --quiet`);
+    warn(
+      `fetched origin/${branch} so the expected sha/version reflect the current promoted tip, not a stale local ref`
+    );
+  } catch (err) {
+    throw new Error(
+      `could not fetch origin/${branch} (${err.message}) — refusing to compare against a possibly-stale local ref. ` +
+        "Check network access and the git remote, or pass --sha=/--version= explicitly to bypass ref resolution."
+    );
+  }
+}
+
+/**
  * Resolves the sha to expect for a promotion check. For a known
  * staging/prod default origin this reads the *promoted branch's*
  * remote-tracking ref (see `remoteRefForOrigin`) rather than local `HEAD`,
@@ -185,9 +230,20 @@ export function resolveExpectedVersion(
  * branch's ref. Both halves must come from the *same* place — resolving one
  * from the ref and the other from the working tree is the G-F1 false FAIL —
  * and this is the single seam where that pairing lives, so a test can pin it
- * without `main()`'s network call. Exported for tests.
+ * without `main()`'s network call.
+ *
+ * When either half needs ref resolution (i.e. wasn't given explicitly),
+ * freshens that ref first via `ensureRemoteRefFresh` — otherwise a promoter
+ * who forgot `git fetch origin` gets whatever the local ref happened to
+ * have, which can coincide with an also-stale deployed build and produce a
+ * false PASS (this round's Frank P1). Skipped entirely when both `version`
+ * and `sha` are given explicitly: there is then no ref to read, so nothing
+ * to freshen. Exported for tests.
  */
 export function resolveExpected(origin, { version, sha } = {}, deps = {}) {
+  if (version === undefined || sha === undefined) {
+    ensureRemoteRefFresh(origin, deps);
+  }
   return {
     version: version ?? resolveExpectedVersion(origin, deps),
     sha: sha ?? resolveExpectedSha(origin, deps),
@@ -328,13 +384,19 @@ const USAGE =
  * the default resolution produced; and a second origin used to overwrite the
  * first, so the highest-stakes gate in the repo could check an origin the
  * promoter had not meant (round-5 Frank F-P2, the same defect class as
- * round-1 George G2).
+ * round-1 George G2). This takeover round's Frank P2 found the same gap for
+ * `--sha`/`--version`: a duplicate silently kept the last value, so
+ * `--sha=<new> --sha=<old>` (an easy mistake when editing or copying a
+ * command) checked the promoter's *first* value against nothing — the run
+ * proceeded against `<old>` with no indication `<new>` was ever discarded.
  */
 export function parseArgs(argv) {
   let origin;
   let originGiven = false;
   let version;
+  let versionGiven = false;
   let sha;
+  let shaGiven = false;
   let requireOrigin = false;
   const setOrigin = (value) => {
     if (originGiven) {
@@ -346,11 +408,31 @@ export function parseArgs(argv) {
     origin = value;
     originGiven = true;
   };
+  const setVersion = (value) => {
+    if (versionGiven) {
+      throw new Error(
+        `--version was given more than once ("${version}" then "${value}") — ` +
+          `pass it exactly once. ${USAGE}`
+      );
+    }
+    version = value;
+    versionGiven = true;
+  };
+  const setSha = (value) => {
+    if (shaGiven) {
+      throw new Error(
+        `--sha was given more than once ("${sha}" then "${value}") — ` +
+          `pass it exactly once. ${USAGE}`
+      );
+    }
+    sha = value;
+    shaGiven = true;
+  };
   for (const arg of argv) {
     if (arg.startsWith("--version=")) {
-      version = arg.slice("--version=".length);
+      setVersion(arg.slice("--version=".length));
     } else if (arg.startsWith("--sha=")) {
-      sha = arg.slice("--sha=".length);
+      setSha(arg.slice("--sha=".length));
     } else if (arg.startsWith("--origin=")) {
       setOrigin(arg.slice("--origin=".length));
     } else if (arg === "--require-origin") {
@@ -391,11 +473,22 @@ async function main() {
     return;
   }
   const { origin, version, sha } = parsed;
-  const expected = resolveExpected(
-    origin,
-    { version, sha },
-    { warn: (msg) => console.log(`  ${msg}`) }
-  );
+  let expected;
+  try {
+    expected = resolveExpected(
+      origin,
+      { version, sha },
+      { warn: (msg) => console.log(`  ${msg}`) }
+    );
+  } catch (err) {
+    // `ensureRemoteRefFresh` throws when it cannot confirm the local
+    // remote-tracking ref is current (no network, no remote) — a check that
+    // cannot establish freshness must refuse to compare, not fall back to a
+    // possibly-stale ref (this round's Frank P1).
+    console.error(`FAIL: ${err.message}`);
+    process.exitCode = 1;
+    return;
+  }
 
   console.log(
     `Checking ${origin} against version=${expected.version} sha=${expected.sha}`

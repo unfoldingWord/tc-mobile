@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   compareDeployed,
   describeFetchFailure,
+  ensureRemoteRefFresh,
   isJsonContentType,
   isMainEntry,
   normalizeSha,
@@ -232,6 +233,64 @@ describe("remoteRefForOrigin", () => {
   });
 });
 
+describe("ensureRemoteRefFresh", () => {
+  // Frank P1 (this takeover round): resolveExpectedSha/resolveExpectedVersion
+  // read whatever the local remote-tracking ref already has — accurate only
+  // if a promoter ran `git fetch origin` first. AGENTS.md said so, but
+  // nothing enforced it, so a promoter who merged on GitHub without
+  // fetching locally, on a checkout where Cloudflare *also* failed to
+  // deploy (the #143 failure mode), got a false PASS: stale local ref,
+  // stale deployed build, coincidentally equal. This fetches the specific
+  // branch before either resolver reads it.
+  const STAGING = "https://tc-mobile-staging.unfoldingword.workers.dev";
+  const PROD = "https://tc-mobile.unfoldingword.workers.dev";
+
+  it("fetches origin/staging's branch for the staging default origin", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      return "";
+    };
+    const warnings: string[] = [];
+    ensureRemoteRefFresh(STAGING, { runGit, warn: (m) => warnings.push(m) });
+    expect(calls).toEqual(["git fetch origin staging --quiet"]);
+    expect(warnings.join(" ")).toContain("fetched origin/staging");
+  });
+
+  it("fetches origin/main's branch for the production origin", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      return "";
+    };
+    ensureRemoteRefFresh(PROD, { runGit });
+    expect(calls).toEqual(["git fetch origin main --quiet"]);
+  });
+
+  it("does nothing for an origin with no known remote ref", () => {
+    const runGit = () => {
+      throw new Error("must not shell out for an unknown origin");
+    };
+    expect(() =>
+      ensureRemoteRefFresh("https://some-preview.unfoldingword.workers.dev", {
+        runGit,
+      })
+    ).not.toThrow();
+  });
+
+  it("throws (fails closed) when the fetch itself fails, rather than leaving a stale ref unnoticed", () => {
+    const runGit = () => {
+      throw new Error("could not resolve host: github.com");
+    };
+    expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
+      /could not fetch origin\/staging/
+    );
+    expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
+      /could not resolve host/
+    );
+  });
+});
+
 describe("resolveExpectedSha", () => {
   // round-3 George #1: the fix itself. `runGit` is faked so these run
   // without a real git repo; `warn` is captured so the tests can assert on
@@ -402,9 +461,13 @@ describe("resolveExpected", () => {
   // The pairing itself, not either resolver on its own: G-F1 was not a broken
   // resolver, it was `main()` calling one resolver for the sha and reading the
   // working tree for the version. This is the seam that pins both halves to
-  // the same commit, and the seam `main()` uses.
+  // the same commit, and the seam `main()` uses. It also now freshens the
+  // ref first (Frank P1, this round) — `refGit` here handles the
+  // `git fetch origin main --quiet` call `ensureRemoteRefFresh` makes before
+  // either resolver reads the ref.
   const PROD = "https://tc-mobile.unfoldingword.workers.dev";
   const refGit = (cmd: string) => {
+    if (cmd === "git fetch origin main --quiet") return "";
     if (cmd === "git show origin/main:package.json")
       return JSON.stringify({ version: "0.2.0" });
     if (cmd === "git rev-parse --short=7 origin/main") return "merge01";
@@ -416,6 +479,16 @@ describe("resolveExpected", () => {
       version: "0.2.0",
       sha: "merge01",
     });
+  });
+
+  it("fetches the ref before resolving either half", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      return refGit(cmd);
+    };
+    resolveExpected(PROD, {}, { runGit });
+    expect(calls[0]).toBe("git fetch origin main --quiet");
   });
 
   it("lets an explicit --version override the ref resolution", () => {
@@ -438,13 +511,25 @@ describe("resolveExpected", () => {
     expect(expected.version).toBe("0.2.0");
   });
 
-  it("shells out to git for neither half when both are given explicitly", () => {
+  it("shells out to git for neither half when both are given explicitly (no fetch either)", () => {
     const runGit = () => {
       throw new Error("git must not be consulted when both are explicit");
     };
     expect(
       resolveExpected(PROD, { version: "0.2.0", sha: "abc1234" }, { runGit })
     ).toEqual({ version: "0.2.0", sha: "abc1234" });
+  });
+
+  it("propagates ensureRemoteRefFresh's failure — refuses to compare against a possibly-stale ref rather than falling back silently (Frank P1)", () => {
+    const runGit = (cmd: string) => {
+      if (cmd === "git fetch origin main --quiet") {
+        throw new Error("could not resolve host: github.com");
+      }
+      throw new Error(`unexpected git command: ${cmd}`);
+    };
+    expect(() => resolveExpected(PROD, {}, { runGit })).toThrow(
+      /could not fetch origin\/main/
+    );
   });
 });
 
@@ -546,5 +631,34 @@ describe("parseArgs", () => {
     expect(() =>
       parseArgs(["https://example.test", "--origin=https://example.test"])
     ).toThrow(/more than once/);
+  });
+
+  // This takeover round's Frank P2: --sha and --version silently kept the
+  // last value on a duplicate, unlike --origin — the same fail-open shape
+  // round-5 Frank F-P2 already fixed for --origin. A promoter who edits or
+  // copies a command with two --sha= flags gets the *second* one checked
+  // with no sign the first was ever discarded.
+  it("throws when --sha is given twice, even with the same value — one sha, stated once", () => {
+    expect(() => parseArgs(["--sha=abc1234", "--sha=abc1234"])).toThrow(
+      /--sha was given more than once/
+    );
+  });
+
+  it("throws when --sha is given twice with different values", () => {
+    expect(() => parseArgs(["--sha=abc1234", "--sha=def5678"])).toThrow(
+      /--sha was given more than once/
+    );
+  });
+
+  it("throws when --version is given twice, even with the same value", () => {
+    expect(() => parseArgs(["--version=0.2.0", "--version=0.2.0"])).toThrow(
+      /--version was given more than once/
+    );
+  });
+
+  it("throws when --version is given twice with different values", () => {
+    expect(() => parseArgs(["--version=0.2.0", "--version=0.3.0"])).toThrow(
+      /--version was given more than once/
+    );
   });
 });
