@@ -39,12 +39,18 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * caught here, in CI, rather than only in a reviewer's head — and (2) that
  * the specific bail-out shape is characterised, so a plugin fix that starts
  * reporting it again is noticed (the assertion flips) instead of the blind
- * spot silently narrowing further unremarked. The actual hazardous instance
- * (`use-save-take.ts`) is fixed separately by #213, and a tree sweep (see the
- * third commit's message) found no other hook in `src/` with this shape as of
- * that commit — closing the concrete risk is out-of-band from this gate, by
- * design; AGENTS.md and eslint.config.mjs both carry the same caveat beside
- * the rule so a reviewer sees it without needing to find this file.
+ * spot silently narrowing further unremarked. Closing every LIVE instance of
+ * the shape is explicitly out-of-band from what this file checks — it lints
+ * only synthetic probes under `.react-hooks-refs-probe/`, never `src/` — so
+ * that depends on review, not CI, and has needed it twice, not once: the
+ * tree sweep in the third commit below found the shape in `use-save-take.ts`
+ * (closed separately by #213); a fourth commit found the SAME shape still
+ * live in a second hook, `useBooks`'s load effect (George round 3 on #433),
+ * closed there by the same hoist. **Do not read a green run of this file as
+ * `src/` having been swept clean — it has not been, and nothing here
+ * re-sweeps it.** AGENTS.md and eslint.config.mjs both carry the same
+ * trigger description beside the rule so a reviewer sees it without needing
+ * to find this file.
  *
  *   - a plain render-time ref write, which MUST fire. This is the guarding
  *     assertion, proven non-vacuous by mutation (see the eslint.config.mjs

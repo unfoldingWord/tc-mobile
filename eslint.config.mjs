@@ -150,15 +150,20 @@ export default tseslint.config(
     rules: {
       // #212: eslint-plugin-react-hooks 7.1.1's static analysis (which
       // `refs` and every other rule here depend on) bails out on a hook body
-      // where a `catch (cause) { ... }` block passes a `setState` updater a
-      // closure that captures `cause` — ANYWHERE in that hook's body,
-      // silencing e.g. an unrelated render-time `ref.current = x` write
-      // earlier in the same function. Scoped to that one hook function, not
-      // the whole file. This is exactly the shape `commit` had in
-      // src/hooks/use-save-take.ts before #180 simplified it, which is how a
-      // real `react-hooks/refs` violation passed `npm run lint` there for as
-      // long as that shape stood. tests/react-hooks-refs-gate.test.ts pins
-      // both halves: a plain ref write fires, and this shape stays silent.
+      // where a `catch (cause) { ... }` block contains ANY nested function
+      // that references `cause` — a `setState` updater is the shape found
+      // twice so far (use-save-take.ts, use-books.ts), but nothing about
+      // `setState` specifically is required — silencing e.g. an unrelated
+      // render-time `ref.current = x` write earlier in the same function.
+      // Scoped to that one hook function, not the whole file. This is
+      // exactly the shape `commit` had in src/hooks/use-save-take.ts before
+      // #180 simplified it, which is how a real `react-hooks/refs` violation
+      // passed `npm run lint` there for as long as that shape stood.
+      // tests/react-hooks-refs-gate.test.ts pins both halves: a plain ref
+      // write fires, and this shape stays silent — but it lints only
+      // synthetic probes, never `src/`, so it does not by itself find a live
+      // occurrence; that is still on review (a second one, use-books.ts, was
+      // found by George round 3 on #433, not by this gate).
       ...pluginReactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": [
         "warn",

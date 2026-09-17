@@ -406,13 +406,17 @@ export function useBooks() {
         // store string AND get no Retry, because `loaded` has already latched
         // so `loadFailed` is false. The book is still on disk in that state, so
         // the delete's copy is the one that has to survive (George R4 P2-1).
+        //
+        // `message` is extracted BEFORE the updater, not inside it (the same
+        // extraction #180/#213 used in use-save-take.ts) — a nested function
+        // inside a `catch (cause)` block that references `cause` silences
+        // eslint-plugin-react-hooks 7.1.1's analysis for this WHOLE hook,
+        // including any unrelated render-time ref write elsewhere in
+        // `useBooks` (#212, tests/react-hooks-refs-gate.test.ts). George round
+        // 3 on #433 found this exact shape still live here.
+        const message = cause instanceof Error ? cause.message : String(cause);
         setFailure((prev) =>
-          prev?.fromDelete
-            ? prev
-            : {
-                message: cause instanceof Error ? cause.message : String(cause),
-                fromDelete: false,
-              }
+          prev?.fromDelete ? prev : { message, fromDelete: false }
         );
       } finally {
         if (!stale()) setLoading(false);
