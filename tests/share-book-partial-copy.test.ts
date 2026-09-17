@@ -18,8 +18,19 @@ import { strings } from "@/components/strings";
  * chapter — the same defect the fix existed to remove. The chapter reference
  * is dropped entirely: nothing here actually knows how many distinct chapters
  * the missing segments came from, so no wording may imply a count.
+ *
+ * George round 2 (#423) then flagged that a second, standalone function
+ * duplicating `shareMissing`'s wording byte-for-byte can drift on the next
+ * copy edit (only one of the two would get pinned and updated). Fixed by
+ * making `shareBookPartial` an alias of `shareMissing` so both grains stay
+ * one wording, pinned by equality rather than by a duplicated literal.
  */
 describe("strings.shareBookPartial", () => {
+  it("is the same wording as shareMissing — one wording, not a duplicate", () => {
+    expect(strings.shareBookPartial(1)).toBe(strings.shareMissing(1));
+    expect(strings.shareBookPartial(2)).toBe(strings.shareMissing(2));
+  });
+
   it("never mentions a chapter count — only segment(s) varies with n", () => {
     expect(strings.shareBookPartial(1)).toBe(
       "1 segment could not be included."
@@ -40,34 +51,51 @@ describe("strings.shareBookPartial", () => {
 
 /**
  * George (#423 round 1 P3) — once `shareBookPartial` became the `shareMissing`
- * twin (the #400 fix above), the combined composer's plain concatenation lost
- * the export invariant that a chapter counts toward at most one of `missing`
- * and `partialSegments` (`src/lib/export/book.ts`). "1 chapter could not be
- * included. 1 segment could not be included." reads as either double-counting
- * the omitted chapter's own gap, or as an unrelated, under-counted hole.
+ * twin, the combined composer's plain concatenation lost the export invariant
+ * that a chapter counts toward at most one of `missing` and `partialSegments`
+ * (`src/lib/export/book.ts`). "1 chapter could not be included. 1 segment
+ * could not be included." reads as either double-counting the omitted
+ * chapter's own gap, or as an unrelated, under-counted hole.
  *
- * One segment is always exactly one chapter, so the `segments === 1` case can
- * safely name that chapter's scope ("a chapter that shipped") without
- * misstating a count. `segments > 1` cannot: `partialSegments` sums across an
- * unknown number of shipped chapters, and naming "a chapter" (singular) or
- * pluralizing "chapters" off it would reintroduce the #400/#423 bug — so it
- * keeps `shareBookPartial`'s chapter-free wording verbatim, same as the
- * standalone Notice. Pinned here so a later edit cannot make the two
- * sentences indistinguishable by accident.
+ * George round 2 then found the round-1 fix's `segments === 1` clause used
+ * maintainer vocabulary that collides with unchanged contracts: "shipped"
+ * reads as past-tense send on a menu that is only `ready` and still shows
+ * "Share now" (`shareSend`), and "was left out" implies a deliberate omit,
+ * against `shareMissing`'s cause-neutrality comment (the counts also include
+ * dangling takes and half-missing clips, never a translator's choice to
+ * omit). Fixed by keeping the chapter-scope disambiguation (one missing
+ * segment is always exactly one included chapter) but switching to the
+ * table's own verbs — "could not be included" — rather than "shipped" /
+ * "was left out".
+ *
+ * George round 2 also found the `segments > 1` clause still concatenates two
+ * identically-shaped "could not be included" sentences — the exact ambiguity
+ * the n===1 clause exists to prevent. Fixed with "additional", a word that
+ * disambiguates without counting chapters `partialSegments` cannot count.
  */
 describe("strings.shareBookMissingAndPartial", () => {
-  it("scopes the n===1 partial segment to a chapter that shipped", () => {
+  it("scopes the n===1 partial segment to an included chapter, in cause-neutral wording", () => {
     expect(strings.shareBookMissingAndPartial(1, 1)).toBe(
-      "1 chapter could not be included. 1 segment was left out of a chapter that shipped."
+      "1 chapter could not be included. 1 segment of an included chapter could not be included."
     );
   });
 
-  it("keeps the n>1 partial clause chapter-free, matching shareBookPartial", () => {
+  it("does not use maintainer vocabulary ('shipped', 'left out') anywhere in the combined string", () => {
+    // "shipped" reads as past-tense send while the share menu is only `ready`
+    // (Share now hasn't been tapped); "left out" implies a deliberate omit,
+    // against `shareMissing`'s cause-neutrality contract (George R2 P2).
+    expect(strings.shareBookMissingAndPartial(1, 1)).not.toMatch(/shipped/i);
+    expect(strings.shareBookMissingAndPartial(1, 1)).not.toMatch(/left out/i);
+    expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(/shipped/i);
+    expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(/left out/i);
+  });
+
+  it("disambiguates the n>1 partial clause with 'additional', not a chapter count (George R2 P3)", () => {
     expect(strings.shareBookMissingAndPartial(1, 2)).toBe(
-      `1 chapter could not be included. ${strings.shareBookPartial(2)}`
+      "1 chapter could not be included. 2 additional segments could not be included."
     );
     expect(strings.shareBookMissingAndPartial(2, 3)).toBe(
-      `2 chapters could not be included. ${strings.shareBookPartial(3)}`
+      "2 chapters could not be included. 3 additional segments could not be included."
     );
   });
 });
