@@ -189,23 +189,31 @@ export function useFailureLogShare(): UseFailureLogShare {
 
   const prepare = useCallback(async (): Promise<void> => {
     if (armed.current !== null) return;
-    // Fail before the read, not after: a platform that cannot share this in any
-    // shape should not pay for an IndexedDB open first. `native` needs no Web
-    // Share of its own, so the probe at this gate is the ROUTE, not
-    // `navigator.share` (Frank, this round) — inside the shell there is nothing
-    // here to fail on.
-    const env = readShareEnvironment();
-    if (!env.native && !env.webShare) {
-      setError("failed");
-      return;
-    }
     const id = (runId.current += 1);
     const current = () => id === runId.current;
     const controller = new AbortController();
     aborter.current = controller;
     setError(null);
-    setStatus("preparing");
     try {
+      // INSIDE the try, probe included (Frank, takeover round 3). This function
+      // promises never to reject — the panel and the crash screen both call it
+      // as `void share.prepare()`, so a rejection is an unhandled one, and the
+      // control it came from would sit there looking idle with no Notice under
+      // it. The probe reads `navigator.share` and `navigator.canShare` off a
+      // WebView, and a property read is not a safe operation on the class of
+      // WebView this route exists for: a throwing getter is exactly the shape
+      // that produced #336. Nothing between the tap and the catch is assumed
+      // safe.
+      const env = readShareEnvironment();
+      // Fail before the read, not after: a platform that cannot share this in
+      // any shape should not pay for an IndexedDB open first. The gate is the
+      // ROUTE, not `navigator.share` — inside the shell there is nothing here to
+      // fail on.
+      if (!env.native && !env.webShare) {
+        setError("failed");
+        return;
+      }
+      setStatus("preparing");
       const entries = await readFailures();
       if (!current()) return;
       // The panel only renders Send while the log is non-empty, so an empty
