@@ -116,10 +116,12 @@ follow-up work, not something this build does. <!-- source: src/hooks/report-fai
    buttons. Like everything else in this app they are **pictures, not words**:
    the **share** icon and the **bin** icon. <!-- source: src/components/failure-log-panel.tsx (icon-only Controls; the two Notices carry the only text) -->
 3. Tap the **share** icon once — it prepares the report — then tap it again
-   when it turns into the highlighted share button. The phone's normal share
-   sheet opens: mail, a messaging app, or save to a file. Send it to your
-   maintainer contact. Two taps is deliberate, and it is the same two taps as
-   sharing a recording. <!-- source: src/hooks/use-failure-log-share.ts (two-gesture share, file or text) -->
+   when it turns into the highlighted share button. The report goes out as a
+   small **text file**, through the phone's normal share sheet. Which apps that
+   sheet offers has not been checked on a real phone yet, so try whatever is
+   there — saving the file and attaching it to an email is the safest route,
+   and it always works. Send it to your maintainer contact. Two taps is
+   deliberate, and it is the same two taps as sharing a recording. <!-- source: src/hooks/use-failure-log-share.ts (two-gesture share); on the installed app the share goes through src/hooks/share-target.ts:338 `Share.share({ files })` — a file, never plain text; which apps the sheet then lists is device behaviour and is not device-verified (gh PR #440, George round 6 P2-2) -->
 4. Tap the **bin** icon afterwards if you want the mark to go quiet again. It
    empties only this problem record — nothing anyone recorded is touched. <!-- source: src/lib/storage/failures.ts clearFailures (clears only the `failures` store) -->
 

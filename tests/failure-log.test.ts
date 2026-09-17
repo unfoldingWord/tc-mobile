@@ -622,6 +622,54 @@ describe("the count a remount inherits", () => {
 
     expect(firstPaint()).toBe("<span>0</span>");
   });
+
+  it("advances the count when the post-write re-read fails", async () => {
+    // George R5 P2-1. The append and the count that follows it are two separate
+    // trips through `getDb()`, so a connection terminated between them — a phone
+    // under storage pressure, which is the condition this whole feature exists
+    // to report on — lands the row and loses the number.
+    //
+    // Keeping the old number is not a small inaccuracy on the FIRST failure of a
+    // page: `useSyncExternalStore` bails out on an unchanged snapshot, so Books
+    // never re-renders, the ≡ mark never appears, and the runbook's §5 step 1
+    // ("look at the ≡ button") points a facilitator at a mark that is not there.
+    // Only a foreground event corrects it — the hook's retry ladder is armed by
+    // its OWN read failing and never learns about this one.
+    const spy = vi
+      .spyOn(failuresStore, "countFailures")
+      .mockRejectedValueOnce(new Error("connection terminated"));
+
+    reportFailure(new Error("the first thing to go wrong"), "uncaught-error");
+    await flushFailureLog();
+    spy.mockRestore();
+
+    // The row really is on disk — the append is not what failed.
+    expect(await countFailures()).toBe(1);
+    // And the snapshot moved, which is the half that makes the mark appear.
+    expect(firstPaint()).toBe("<span>1</span>");
+  });
+
+  it("does not push the count past the ring's limit when the re-read fails", async () => {
+    for (let i = 0; i < FAILURE_LOG_LIMIT; i++) {
+      reportFailure(new Error(`filler ${i}`), "unhandled-rejection");
+    }
+    await flushFailureLog();
+    expect(firstPaint()).toBe(`<span>${FAILURE_LOG_LIMIT}</span>`);
+
+    const spy = vi
+      .spyOn(failuresStore, "countFailures")
+      .mockRejectedValueOnce(new Error("connection terminated"));
+
+    reportFailure(new Error("one past the cap"), "unhandled-rejection");
+    await flushFailureLog();
+    spy.mockRestore();
+
+    // At the cap an append also prunes, so the truth on disk is still 50. An
+    // unclamped increment would show 51 — a number the store never held, and one
+    // nothing brings back down until the app is foregrounded.
+    expect(await countFailures()).toBe(FAILURE_LOG_LIMIT);
+    expect(firstPaint()).toBe(`<span>${FAILURE_LOG_LIMIT}</span>`);
+  });
 });
 
 /**

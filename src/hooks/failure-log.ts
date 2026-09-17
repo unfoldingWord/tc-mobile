@@ -8,7 +8,7 @@ import {
   readFailures,
 } from "@/lib/storage/failures";
 import { reportFailure, subscribeToFailures } from "./report-failure";
-import type { StoredFailure } from "@/types/failure";
+import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
 
 /**
  * The durable end of the failure funnel (#205), and the seam the UI reads it
@@ -175,25 +175,35 @@ function notifyLog(): void {
  * it describes — and because a failure reported during a chapter visit has no
  * mounted reader to do it.
  *
- * A failed re-read is swallowed and the old number kept: the generation still
- * has to move, because the rows moved. Reporting it would be a lie about the
- * write (which succeeded) and `writeEntry`'s own swallow is the terminal for
- * anything that goes wrong on this path.
+ * A failed re-read is never reported — the write it followed SUCCEEDED, and
+ * `writeEntry`'s own swallow is the terminal for anything that goes wrong on
+ * this path — but it must not leave the number behind either (George R6 P2-1).
+ * The append and the count are two separate trips through `getDb()`, so a
+ * connection terminated between them is enough to lose the read; and on the
+ * FIRST failure of a page, keeping the old number means `useSyncExternalStore`
+ * compares 0 to 0, bails out, and the ≡ mark never appears over a row that is
+ * durably on disk. Nothing recovers that until the app is foregrounded: the
+ * hook's retry ladder is armed by ITS OWN read failing and never learns about
+ * this one. So the count advances by the one write known to have landed,
+ * clamped to the ring — a floor, not a reconciliation. If the number was
+ * already stale-low it stays low, but it is non-zero, which is all the mark
+ * needs; `readCountIntoStore` on the next foreground is still the reconciler.
  *
  * One notification carrying both facts, so a Books re-render is decided once.
- * Books reads only `count`, so `useSyncExternalStore` compares the same number
- * and bails out — which is what keeps the marker from re-rendering on every
- * append once the ring is at its limit. It is React's bail-out doing that now,
- * not an equality guard here, and the difference matters: a guard here would
- * also have suppressed the generation the panel needs.
+ * Books reads only `count`, so once the ring is at its limit
+ * `useSyncExternalStore` compares the same number and bails out — which is what
+ * keeps the marker from re-rendering on every append. It is React's bail-out
+ * doing that, not an equality guard here, and the difference matters: a guard
+ * here would also have suppressed the generation the panel needs.
  */
 async function markLogWritten(): Promise<void> {
   try {
     logCount = await countFailures();
   } catch {
-    // Quiet by design: the count is stale by one write, the hook's ladder and
-    // the foreground listeners will correct it, and nothing on screen can act
-    // on a failed count read.
+    // The append landed, so the store holds one more than it did — up to the
+    // ring's limit, past which the same append also pruned. Not routed through
+    // `refreshCount()`: that enqueues, and this already runs inside a lane op.
+    logCount = Math.min(logCount + 1, FAILURE_LOG_LIMIT);
   }
   logGeneration += 1;
   notifyLog();
@@ -565,11 +575,12 @@ export function useFailureCount(recoveryToken = 0): number {
     let attempt = 0;
 
     // One pending retry at a time (George R1 P3-4). `refresh` is reached from
-    // three places — the ladder, a write landing, and the foreground listeners
-    // — so two of them arriving while a retry is pending used to leave an orphan
-    // timer that only the LAST handle's `clearTimeout` could reach. Extra reads
-    // rather than a stuck marker, but the cleanup then lied about what it
-    // cancelled.
+    // three places — this effect's own mount, the ladder, and the foreground
+    // listeners — so two of them arriving while a retry is pending used to leave
+    // an orphan timer that only the LAST handle's `clearTimeout` could reach.
+    // Extra reads rather than a stuck marker, but the cleanup then lied about
+    // what it cancelled. (A write landing was a fourth caller until round 2 moved
+    // the count into the module store; it no longer reaches this effect at all.)
     const armRetry = (delayMs: number) => {
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(refresh, delayMs);
@@ -613,9 +624,11 @@ export function useFailureCount(recoveryToken = 0): number {
     };
 
     // No watcher registration here any more: a write updates the store itself
-    // (`writeEntry` → `refreshCount`), which is what makes a failure reported
-    // while Books is unmounted — during a chapter visit — visible the moment
-    // Books comes back. This effect owns only the READ and its recovery.
+    // (`writeEntry` → `markLogWritten`, which re-reads the count on the lane and
+    // advances it by one if that read fails), which is what makes a failure
+    // reported while Books is unmounted — during a chapter visit — visible the
+    // moment Books comes back. This effect owns only the READ and its recovery,
+    // and its recovery covers its own reads only.
     document.addEventListener("visibilitychange", onForeground);
     window.addEventListener("focus", onForeground);
     refresh();

@@ -15,9 +15,15 @@
  * like the app never started. Importing this file first makes its body the
  * first code that runs, so every module imported after it is covered.
  *
- * What is still NOT covered, and is not claimed to be: this module's own import
- * (`@/hooks/report-failure`, which registers nothing and only declares), and
- * anything the browser evaluates before the entry module.
+ * What is still NOT covered, and is not claimed to be: this module's own two
+ * imports, which by the same rule finish evaluating before any of the
+ * statements below run. That is no longer a single declaration-only module —
+ * `@/hooks/failure-log` pulls in the storage layer and `@/lib/failure-text`
+ * with it — so a throw raised while THAT graph evaluates has no listener and no
+ * sink. It is a narrow window (module bodies that only declare and open no
+ * database), but it is wider than it was, and naming it honestly is the point
+ * of this paragraph. Also uncovered: anything the browser evaluates before the
+ * entry module.
  *
  * The listeners are never removed: they live as long as the page.
  *
