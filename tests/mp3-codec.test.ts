@@ -41,9 +41,11 @@ class FakeWorker {
   /**
    * How many `message` listeners are attached. One is durable (proof, attached
    * at construction); a SECOND means `awaitWorkerReady` is currently waiting on
-   * this worker. Tests about the handshake assert on it rather than assuming
-   * a job got that far — three tests in this file once passed because the job
-   * was still queued on the encoder lane and never reached the code they named.
+   * this worker. Tests about the handshake assert on it rather than assuming a
+   * job got that far: "the abort landed while the handshake was open" is a claim
+   * about WHERE the job is, and a job still queued on the encoder lane would
+   * satisfy every other assertion in such a test without ever running the line
+   * it names.
    */
   get waitingForReady(): boolean {
     return this.messageListeners.length > 1;
@@ -644,7 +646,7 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     expect(FakeWorker.instances).toHaveLength(2);
   });
 
-  it("discards a blob that never says ready and runs THIS job on the chunk worker", async () => {
+  it("steps around a blob that never says ready, and runs THIS job on the chunk worker", async () => {
     const blobWorker = await rebuildFromSnapshot();
 
     const p = encode(Int16Array.of(2));
