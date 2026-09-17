@@ -23,8 +23,8 @@ import {
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterDragMove,
   panAfterRematerialize,
-  panOrRest,
   panGesture,
   recordDisabled,
   stageView,
@@ -1112,23 +1112,27 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // so a fixed thumb travel pans less when zoomed in.
         const dx = e.clientX - dragStartX.current;
         const delta = -(dx / width) * win.visibleSamples;
-        const next = Math.max(
-          0,
-          Math.min(panAtDragStart.current + delta, length)
-        );
-        // Through the same rule a freeze writes by (George R5 P1): a pan that
-        // lands ON the end is the F7 REST, not the number `length`. Without it
-        // the accidental touch this round is about — a finger landing during
-        // the optimistic window, jitter, no intended pan — would still convert
-        // a resting line into a stale absolute index, and the next paste or
-        // append would leave Record splicing at the OLD end instead of the new
-        // one. `draggedPanRef` below stays numeric: the lift resumes from a
-        // sample, and "the end" is where it declines to resume at all.
-        setPanState(panOrRest(next, length));
-        // The same value, where the LIFT can read it (#317): `pointerup` needs
+        // `panAfterDragMove` holds the clamp AND the rest rule (#442): a pan
+        // that lands ON the end is the F7 REST, not the number `length`.
+        // Without it the accidental touch this round is about — a finger
+        // landing during the optimistic window, jitter, no intended pan —
+        // would still convert a resting line into a stale absolute index, and
+        // the next paste or append would leave Record splicing at the OLD end
+        // instead of the new one. This handler does not re-derive the clamp;
+        // that is the one thing #442 was.
+        const { raw, pan: written } = panAfterDragMove({
+          origin: panAtDragStart.current,
+          delta,
+          length,
+        });
+        setPanState(written);
+        // The raw sample, where the LIFT can read it (#317): `pointerup` needs
         // the sample now under the line to resume there, and the render that
-        // carries this `setPanState` may not have happened yet.
-        draggedPanRef.current = next;
+        // carries this `setPanState` may not have happened yet. Deliberately
+        // NOT `written`: the lift's `resumesOnLift` compares this against
+        // `length` to tell "dragged to the end" from "dragged short of it",
+        // which a pre-rested `null` could never answer.
+        draggedPanRef.current = raw;
         // A real drag is the translator choosing this view deliberately, so the
         // pan becomes the REAL one — insertion offset included — and the zoom's
         // view-only fit is handed over rather than continuing to override it.
