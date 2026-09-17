@@ -137,6 +137,28 @@ jobs:
           '
           echo "PWA artefacts present."
 
+      - name: version.json stays out of the precache manifest
+        # tests/precache-manifest.test.ts's "never contains version.json"
+        # assertion reads dist/sw.js directly, but `npm run verify`/CI's
+        # Quality job runs tests BEFORE `npm run build` — no dist/ exists
+        # yet, so `describe.skipIf(!existsSync(SW))` skips it there (George,
+        # round 1, P3-3). This Build-job step is the only place that
+        # invariant is actually enforced end to end: version.json must stay
+        # outside `workbox.globPatterns` (vite.config.ts) so `check:deploy`'s
+        # fetch (and a browser's) always reaches the origin, never a
+        # service-worker-cached copy (see "Confirming a deploy" in
+        # AGENTS.md). `-F` (fixed string) matters here: the emitted
+        # `navigateFallbackDenylist` regex source contains the *escaped*
+        # substring `version\.json` (backslash then dot), which a literal
+        # search for `version.json` does not match — only an actual
+        # `url:"version.json"` precache-manifest entry would.
+        run: |
+          if grep -qF "version.json" dist/sw.js; then
+            echo "::error::dist/sw.js's precache manifest contains version.json — it must stay outside workbox.globPatterns in vite.config.ts so a deploy check (and a browser) always fetches it from the origin, never a cached copy. See tests/precache-manifest.test.ts and AGENTS.md, 'Confirming a deploy and rolling one back'."
+            exit 1
+          fi
+          echo "version.json absent from dist/sw.js's precache manifest."
+
       - name: OBS thumbnails stay out of the precache manifest
         # tests/precache-manifest.test.ts pins `workbox.globPatterns` in
         # vite.config.ts, but a re-add via vite-plugin-pwa's `includeAssets`

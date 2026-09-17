@@ -100,18 +100,34 @@ export function remoteRefForOrigin(origin) {
  * the also-stale deployed `version.json` matches it, and nothing detects
  * that neither reflects the new promotion (Frank, this PR's takeover round).
  *
- * Fails **closed**, not open: if the fetch itself fails (no network, no
- * remote configured, wrong permissions), this throws rather than silently
- * falling back to whatever the local ref already has — a check that cannot
- * confirm freshness must refuse to compare, not guess. An explicit
- * `--sha=`/`--version=` bypasses this entirely (see `resolveExpected`),
- * since there is then nothing to freshen.
+ * The fetch uses an **explicit destination refspec**
+ * (`+refs/heads/<branch>:refs/remotes/origin/<branch>`), not a bare
+ * `git fetch origin <branch>`. A bare form only updates `FETCH_HEAD` unless
+ * the branch is already covered by `remote.origin.fetch` — on a
+ * `--single-branch` clone (fetchspec limited to e.g. `develop`), it exits 0
+ * having fetched the objects but leaves `origin/staging`/`origin/main`
+ * exactly as stale as before, which is precisely the condition this
+ * function exists to close (George, round 1: a false FAIL on a correct
+ * staging deploy, or a false PASS in the #143 shape, on that clone type).
+ * The explicit refspec updates the named remote-tracking branch regardless
+ * of the configured fetch mapping.
+ *
+ * Fails **closed**, not open, in two ways: if the fetch itself fails (no
+ * network, no remote configured, wrong permissions), or if — even after a
+ * successful fetch — `origin/<branch>` still cannot be resolved (the branch
+ * was deleted/renamed on the remote, or some other edge case), this throws
+ * rather than silently falling back to whatever the local ref or working
+ * tree has. A check that cannot confirm freshness must refuse to compare,
+ * never guess and never fall back to `HEAD` for a *known* staging/prod
+ * origin. An explicit `--sha=`/`--version=` bypasses this entirely (see
+ * `resolveExpected`), since there is then nothing to freshen.
  *
  * No-ops for any origin without a known remote-tracking ref (a hand-typed
  * preview-Worker URL) — there is nothing to fetch there; the resolvers fall
- * back to local `HEAD` for that case regardless. `runGit`/`warn` are
- * injected exactly as in `resolveExpectedSha`, so a test can fake git
- * without a real repository or network. Exported for tests.
+ * back to local `HEAD` for that case regardless, which is legitimate (no
+ * known branch exists to be stale). `runGit`/`warn` are injected exactly as
+ * in `resolveExpectedSha`, so a test can fake git without a real repository
+ * or network. Exported for tests.
  */
 export function ensureRemoteRefFresh(
   origin,
@@ -121,9 +137,8 @@ export function ensureRemoteRefFresh(
   if (!ref) return;
   const branch = ref.slice("origin/".length);
   try {
-    runGit(`git fetch origin ${branch} --quiet`);
-    warn(
-      `fetched origin/${branch} so the expected sha/version reflect the current promoted tip, not a stale local ref`
+    runGit(
+      `git fetch origin +refs/heads/${branch}:refs/remotes/origin/${branch} --quiet`
     );
   } catch (err) {
     throw new Error(
@@ -131,6 +146,17 @@ export function ensureRemoteRefFresh(
         "Check network access and the git remote, or pass --sha=/--version= explicitly to bypass ref resolution."
     );
   }
+  try {
+    runGit(`git rev-parse --verify --quiet ${ref}`);
+  } catch (err) {
+    throw new Error(
+      `fetched origin, but ${ref} still could not be resolved (${err.message}) — refusing to fall back to local HEAD/package.json for a known staging/prod origin. ` +
+        "Confirm the branch still exists on the remote, or pass --sha=/--version= explicitly to bypass ref resolution."
+    );
+  }
+  warn(
+    `fetched origin/${branch} (explicit refspec) so the expected sha/version reflect the current promoted tip, not a stale local ref`
+  );
 }
 
 /**
@@ -157,7 +183,7 @@ export function resolveExpectedSha(
     try {
       const sha = runGit(`git rev-parse --short=${SHA_LENGTH} ${ref}`);
       warn(
-        `expected sha resolved from ${ref} (the promoted branch tip Cloudflare deploys), not local HEAD — run "git fetch origin" first if this looks stale`
+        `expected sha resolved from ${ref} (the promoted branch tip Cloudflare deploys), not local HEAD`
       );
       return sha;
     } catch (err) {
@@ -209,7 +235,7 @@ export function resolveExpectedVersion(
     const version = JSON.parse(runGit(`git show ${ref}:package.json`)).version;
     if (typeof version === "string" && version.length > 0) {
       warn(
-        `expected version resolved from ${ref}:package.json (the promoted branch tip Cloudflare deploys), not this checkout — run "git fetch origin" first if this looks stale`
+        `expected version resolved from ${ref}:package.json (the promoted branch tip Cloudflare deploys), not this checkout`
       );
       return version;
     }

@@ -245,7 +245,14 @@ describe("ensureRemoteRefFresh", () => {
   const STAGING = "https://tc-mobile-staging.unfoldingword.workers.dev";
   const PROD = "https://tc-mobile.unfoldingword.workers.dev";
 
-  it("fetches origin/staging's branch for the staging default origin", () => {
+  // George round 1, P3-1: a bare `git fetch origin <branch>` only updates
+  // `origin/<branch>` when that branch is already covered by
+  // `remote.origin.fetch` — on a `--single-branch` clone it exits 0 without
+  // touching the remote-tracking ref at all, so the "fetched" state is
+  // indistinguishable from "never fetched" and the promoter gets exactly
+  // the staleness this function exists to prevent. The fetch must target an
+  // explicit destination refspec, and the ref must be verified afterward.
+  it("fetches with an explicit destination refspec for the staging default origin, not a bare branch name", () => {
     const calls: string[] = [];
     const runGit = (cmd: string) => {
       calls.push(cmd);
@@ -253,18 +260,24 @@ describe("ensureRemoteRefFresh", () => {
     };
     const warnings: string[] = [];
     ensureRemoteRefFresh(STAGING, { runGit, warn: (m) => warnings.push(m) });
-    expect(calls).toEqual(["git fetch origin staging --quiet"]);
+    expect(calls).toEqual([
+      "git fetch origin +refs/heads/staging:refs/remotes/origin/staging --quiet",
+      "git rev-parse --verify --quiet origin/staging",
+    ]);
     expect(warnings.join(" ")).toContain("fetched origin/staging");
   });
 
-  it("fetches origin/main's branch for the production origin", () => {
+  it("fetches with an explicit destination refspec for the production origin", () => {
     const calls: string[] = [];
     const runGit = (cmd: string) => {
       calls.push(cmd);
       return "";
     };
     ensureRemoteRefFresh(PROD, { runGit });
-    expect(calls).toEqual(["git fetch origin main --quiet"]);
+    expect(calls).toEqual([
+      "git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet",
+      "git rev-parse --verify --quiet origin/main",
+    ]);
   });
 
   it("does nothing for an origin with no known remote ref", () => {
@@ -287,6 +300,24 @@ describe("ensureRemoteRefFresh", () => {
     );
     expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
       /could not resolve host/
+    );
+  });
+
+  // Red-first (George round 1, P3-1): the fetch itself "succeeds" (exit 0 —
+  // this is exactly the `--single-branch` clone shape, objects fetched but
+  // the remote-tracking ref never updated) yet the branch still cannot be
+  // resolved afterward. Must throw, never fall back to HEAD/package.json
+  // for a known staging/prod origin.
+  it("throws (fails closed) when the fetch reports success but the ref still cannot be resolved afterward — the --single-branch shape", () => {
+    const runGit = (cmd: string) => {
+      if (cmd.startsWith("git fetch origin")) return ""; // "succeeds"
+      if (cmd.startsWith("git rev-parse --verify")) {
+        throw new Error("unknown revision or path not in the working tree");
+      }
+      throw new Error(`unexpected git command: ${cmd}`);
+    };
+    expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
+      /origin\/staging still could not be resolved/
     );
   });
 });
@@ -463,11 +494,16 @@ describe("resolveExpected", () => {
   // working tree for the version. This is the seam that pins both halves to
   // the same commit, and the seam `main()` uses. It also now freshens the
   // ref first (Frank P1, this round) — `refGit` here handles the
-  // `git fetch origin main --quiet` call `ensureRemoteRefFresh` makes before
-  // either resolver reads the ref.
+  // fetch-then-verify pair `ensureRemoteRefFresh` makes before either
+  // resolver reads the ref.
   const PROD = "https://tc-mobile.unfoldingword.workers.dev";
   const refGit = (cmd: string) => {
-    if (cmd === "git fetch origin main --quiet") return "";
+    if (
+      cmd ===
+      "git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet"
+    )
+      return "";
+    if (cmd === "git rev-parse --verify --quiet origin/main") return "merge01";
     if (cmd === "git show origin/main:package.json")
       return JSON.stringify({ version: "0.2.0" });
     if (cmd === "git rev-parse --short=7 origin/main") return "merge01";
@@ -481,14 +517,17 @@ describe("resolveExpected", () => {
     });
   });
 
-  it("fetches the ref before resolving either half", () => {
+  it("fetches the ref (with an explicit destination refspec) and verifies it before resolving either half", () => {
     const calls: string[] = [];
     const runGit = (cmd: string) => {
       calls.push(cmd);
       return refGit(cmd);
     };
     resolveExpected(PROD, {}, { runGit });
-    expect(calls[0]).toBe("git fetch origin main --quiet");
+    expect(calls[0]).toBe(
+      "git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet"
+    );
+    expect(calls[1]).toBe("git rev-parse --verify --quiet origin/main");
   });
 
   it("lets an explicit --version override the ref resolution", () => {
@@ -522,7 +561,7 @@ describe("resolveExpected", () => {
 
   it("propagates ensureRemoteRefFresh's failure — refuses to compare against a possibly-stale ref rather than falling back silently (Frank P1)", () => {
     const runGit = (cmd: string) => {
-      if (cmd === "git fetch origin main --quiet") {
+      if (cmd.startsWith("git fetch origin")) {
         throw new Error("could not resolve host: github.com");
       }
       throw new Error(`unexpected git command: ${cmd}`);

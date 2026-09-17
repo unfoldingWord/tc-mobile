@@ -70,6 +70,8 @@ npm run format         # prettier --write
 npm run verify         # everything above, in one command
 npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
+npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
+npm run check:deploy:prod # confirm a staging -> main deploy; requires the production origin explicitly
 ```
 
 ## Architecture — onion layers
@@ -392,12 +394,15 @@ also-stale deployed build happened to agree, and neither reflected the new
 promotion (the exact #143 failure mode this check exists to catch — found
 in this PR's takeover round of dual review, Frank P1). The check now runs
 that fetch itself, scoped to the one branch it's about to read
-(`git fetch origin staging` / `git fetch origin main`), before resolving
-either half — and **fails closed** if the fetch itself fails (no network,
-no remote), rather than silently falling back to whatever the local ref
-already had. Passing `--sha=<short-sha>` and/or `--version=<x.y.z>`
-explicitly always bypasses ref resolution (and the fetch) for that half
-entirely.
+(`git fetch origin staging` / `git fetch origin main`, with an explicit
+destination refspec so it updates the remote-tracking ref even on a
+`--single-branch` clone), before resolving either half — and **fails
+closed** if the fetch itself fails, or if the ref still can't be resolved
+after a successful fetch, rather than silently falling back to whatever the
+local ref or working tree already had. The fetch is skipped only when
+**both** `--sha=<short-sha>` and `--version=<x.y.z>` are given explicitly —
+there is then nothing left to resolve from the ref. Giving only one of the
+two still triggers the fetch, to resolve the other half.
 
 `check:deploy:prod` is
 `node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
