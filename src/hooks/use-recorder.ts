@@ -5,7 +5,10 @@ import {
   type CaptureScope,
   createCapturePeaks,
 } from "@/lib/audio/capture-peaks";
-import { decideInterruptFinalize } from "@/lib/audio/interrupt-flush";
+import {
+  decideInterruptFinalize,
+  planStopFlush,
+} from "@/lib/audio/interrupt-flush";
 import {
   classifyMicRefusal,
   type MicPermissionState,
@@ -177,6 +180,40 @@ export interface RetryDecodeResult {
  * translator concluding the app is dead.
  */
 const STOP_FLUSH_TIMEOUT_MS = 5_000;
+
+/**
+ * A flush the interruption handler drove, and everything needed to finish it.
+ *
+ * One record, one owner. When an interruption arrives while the recorder is
+ * still active, the capture stream and the VU tap are taken OUT of
+ * `streamRef`/`tapRef` so a later take cannot close them by ref — which means
+ * this record becomes the only handle to a live microphone. Everything that
+ * has to be able to release it (`cancel()`, the recorder's `stop` event, the
+ * bounded timer) reaches it through here.
+ *
+ * Not exported: it is an implementation detail of `useRecorder`, and it holds
+ * DOM types, so it cannot live in `lib/` beside the pure decisions.
+ */
+interface PendingFlush {
+  /** The recorder this flush was driven on; the identity `stop()` matches. */
+  readonly recorder: MediaRecorder;
+  /** The capture stream, stolen from `streamRef`. */
+  readonly stream: MediaStream | null;
+  /** The VU tap, stolen from `tapRef`. Its tracks are an independent clone. */
+  readonly tap: LevelTap | null;
+  /** Resolves when the flush has completed or its bound has expired. */
+  readonly flushed: Promise<void>;
+  /** Resolves {@link flushed}. Called exactly once, by the finalizer. */
+  readonly settle: () => void;
+  /**
+   * The bound. Assigned immediately after the record is built — `0` until
+   * then, which `clearTimeout` ignores, so the record is safe to finalize from
+   * the moment it exists.
+   */
+  timer: number;
+  /** Set by the finalizer so the other callers become no-ops. */
+  done: boolean;
+}
 
 /**
  * How long `start()` waits for `resumeAudioContext()` before proceeding
@@ -448,11 +485,51 @@ export function useRecorder(): UseRecorder {
    * its recorder already inactive, then Back (Frank R1 P2). The stale promise
    * still settles on its own and still releases A's microphone; it is simply no
    * longer anything B waits for.
+   *
+   * It carries the STREAM AND TAP as well, because a promise alone is not a
+   * handle anything else can tear down (George R1 P1). While this record is
+   * non-null it is the ONLY reference to those tracks — `streamRef`/`tapRef`
+   * have been nulled — so `cancel()` must finalize it synchronously or a
+   * pagehide would strand a live microphone on a page that is going away, and
+   * `start()` must read it as "capture is still live" or the #60 second-mic
+   * guard is defeated for the whole flush window.
+   *
+   * THE INVARIANT THIS WHOLE CHANGE RESTS ON: while this is `null`, every line
+   * that mentions it is inert, and `start()`, `stop()` and `cancel()` behave
+   * byte-for-byte as they did before #59's residual fix. It is written in
+   * exactly one place — `onInterrupted`'s `"drive-flush"` arm — which no device
+   * has ever been observed reaching.
    */
-  const pendingFlushRef = useRef<{
-    readonly recorder: MediaRecorder;
-    readonly flushed: Promise<void>;
-  } | null>(null);
+  const pendingFlushRef = useRef<PendingFlush | null>(null);
+
+  /**
+   * Release everything a driven flush owns, exactly once.
+   *
+   * THE single place those tracks are stopped and that tap is closed. All four
+   * callers — the recorder's own `stop` event, the bounded timer, `cancel()`
+   * (and so `leave()`/pagehide/unmount), and nothing else — come through here,
+   * so "who releases the microphone" has one answer rather than four racing
+   * ones. Idempotent via `done`, because at least two of those callers can fire
+   * for the same record.
+   *
+   * Settles the promise FIRST and unconditionally: a `stop()` may already be
+   * awaiting it, and leaving it pending would hang the sheet on a screen whose
+   * Back is hidden — the #59 deadlock itself. Deliberately not
+   * generation-guarded, for the same reason: nothing but this record can reach
+   * these tracks, so a superseded take skipping the teardown would leave the
+   * microphone hot for the life of the page.
+   */
+  const finalizePendingFlush = useCallback((pending: PendingFlush) => {
+    if (pending.done) return;
+    pending.done = true;
+    clearTimeout(pending.timer);
+    pending.settle();
+    pending.stream?.getTracks().forEach((track) => track.stop());
+    pending.tap?.close();
+    // Only if this record is still the current one: a newer take's flush must
+    // not be cleared by an older one finishing late.
+    if (pendingFlushRef.current === pending) pendingFlushRef.current = null;
+  }, []);
 
   const supported = isRecordingSupported();
 
@@ -603,6 +680,15 @@ export function useRecorder(): UseRecorder {
     // live microphone — the exact invariant the session refuses to gate on which
     // buttons happen to be rendered. Capture is already happening, so the honest
     // answer is "yes, the mic is live"; the caller keeps the floor it holds.
+    //
+    // A driven interruption flush counts as live capture even though its
+    // recorder reports `"inactive"`: `MediaRecorder.stop()` flips the state
+    // synchronously while the tracks keep running until the flush finalizes, so
+    // the state test alone would wave a second `getUserMedia` through for that
+    // whole window and orphan the interrupted take's chunk array (George R1 P2).
+    // Inert while no flush is pending, which is every path but the one #59's
+    // residual added.
+    if (pendingFlushRef.current !== null) return true;
     const live = recorderRef.current;
     if (live && live.state !== "inactive") return true;
     setError(null);
@@ -751,66 +837,55 @@ export function useRecorder(): UseRecorder {
           track.onended = null;
         });
 
-        // Capture the stream and tap into LOCALS and null the refs now, before
-        // any async gap — exactly as `stop()` does with its own, and for the same
-        // reason: once teardown is deferred past an event or a timer, a
-        // ref-based close reads whatever is in the ref AT FIRE TIME, which a
-        // newer take could by then own. `start()`'s re-entry guard does not
-        // prevent that — it only refuses while the OLD recorder is non-inactive,
-        // and our driven `stop()` clears exactly that condition synchronously.
-        const localStream = stream;
-        const localTap = tapRef.current;
+        // Move the stream and tap OUT of the shared refs and onto one owner
+        // record, before any async gap. Two reasons, and the second is why the
+        // record exists rather than a pair of closure locals:
+        //
+        //  - a ref-based close, once teardown is deferred past an event or a
+        //    timer, reads whatever is in the ref AT FIRE TIME, which a newer
+        //    take could by then own — `stop()` steals its own for the same
+        //    reason;
+        //  - but locals alone are reachable only from the callbacks that close
+        //    over them, and a pagehide must be able to release this microphone
+        //    in its own task (George R1 P1). On the record, `cancel()` can.
+        //
+        // From here until `finalizePendingFlush` runs, this record is the ONLY
+        // handle to a live microphone.
+        let settle = () => {};
+        const flushed = new Promise<void>((resolve) => {
+          settle = resolve;
+        });
+        const pending: PendingFlush = {
+          recorder,
+          stream,
+          tap: tapRef.current,
+          flushed,
+          settle,
+          timer: 0,
+          done: false,
+        };
         tapRef.current = null;
         streamRef.current = null;
-
-        let finalized = false;
-        // Reassigned synchronously inside the executor below, before anything
-        // can call `finalize`; the no-op initialiser is only so the binding
-        // needs no definite-assignment assertion.
-        let settle = () => {};
-        pendingFlushRef.current = {
-          recorder,
-          flushed: new Promise<void>((resolve) => {
-            settle = resolve;
-          }),
-        };
-
-        const finalize = () => {
-          if (finalized) return;
-          finalized = true;
-          // Settle FIRST and unconditionally. A `stop()` may already be awaiting
-          // this promise; leaving it pending on any path would hang the sheet on
-          // a screen whose Back is hidden — the #59 deadlock itself.
-          settle();
-          // Deliberately NOT generation-guarded. This stream and this tap were
-          // taken out of the shared refs above, so nothing else can reach them:
-          // a `cancel()` (navigation, pagehide, unmount) runs `releaseStream()`,
-          // which reads those now-null refs and releases NOTHING. Skipping the
-          // teardown here on a stale generation would leave the microphone hot
-          // for the life of the page — the very defect this branch exists to
-          // close, on a far more reachable path. `stop()` makes the same call
-          // for the same reason: the audio belongs to this invocation, only the
-          // UI state belongs to the current generation, and this writes no UI
-          // state at all.
-          localStream?.getTracks().forEach((track) => track.stop());
-          localTap?.close();
-        };
+        pendingFlushRef.current = pending;
 
         // ORDER IS LOAD-BEARING: arm the bound BEFORE driving the stop. If the
         // call below throws, the microphone must still be released — that is the
         // whole point of the bound. Arming it afterwards would let a throw skip
         // the arm and regress to the unbounded hot mic this branch is fixing.
-        const timer = window.setTimeout(finalize, STOP_FLUSH_TIMEOUT_MS);
-        recorder.onstop = () => {
-          clearTimeout(timer);
-          finalize();
-        };
+        pending.timer = window.setTimeout(
+          () => finalizePendingFlush(pending),
+          STOP_FLUSH_TIMEOUT_MS
+        );
+        // The flush owns this handler until it finalizes. `stop()` checks the
+        // record before touching `onstop` so it cannot take it back (George R1
+        // P2, the second one).
+        recorder.onstop = () => finalizePendingFlush(pending);
         try {
           recorder.stop();
         } catch (cause) {
           // Never silent, and never rethrown: the surrounding teardown still
-          // works and must not be blocked by a native call that does not.
-          // `finalize` still runs from the timer above.
+          // works and must not be blocked by a native call that does not. The
+          // record is already armed, so the timer still releases the mic.
           console.error("Could not flush the interrupted recorder", cause);
         }
       };
@@ -870,7 +945,15 @@ export function useRecorder(): UseRecorder {
       }
       return false;
     }
-  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
+  }, [
+    abandonStream,
+    clearTick,
+    closeTap,
+    finalizePendingFlush,
+    releaseStream,
+    startTick,
+    supported,
+  ]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
@@ -963,8 +1046,45 @@ export function useRecorder(): UseRecorder {
     recordingRef.current = false;
     setState("processing");
 
+    // Which of the three flushes this stop is: the interruption handler's, if
+    // one is outstanding on THIS recorder, or one of the two arms `stop()` has
+    // always had. Pure and table-tested, so the property that matters can be
+    // checked rather than traced — with no driven flush outstanding the answer
+    // is `recorder.state === "inactive"` and nothing else, exactly as before.
+    // A superseded take's flush is not this stop's business, hence identity.
+    const pendingFlush = pendingFlushRef.current;
+    const ownedFlush =
+      pendingFlush?.recorder === recorder ? pendingFlush : null;
+    const plan = planStopFlush({
+      recorderState: recorder.state,
+      drivenFlushOwnsRecorder: ownedFlush !== null,
+    });
+    // `plan === "await-driven-flush"` is by construction the same fact as
+    // `ownedFlush !== null`; the branches below test `ownedFlush` directly so
+    // TypeScript narrows it, and use `plan` for the choice the pure table
+    // exists to pin — which of the two PRE-EXISTING arms runs when no driven
+    // flush is outstanding.
+
     let blob: Blob;
-    if (recorder.state === "inactive") {
+    if (ownedFlush) {
+      // The interruption handler already drove THIS recorder to a stop and owns
+      // its `onstop`, its bounded timer and its capture tracks. So: issue no
+      // second stop, and do not replace `onstop` — the flush is waiting on it,
+      // and taking it would drop mic release onto the 5 s timer (George R1 P2).
+      //
+      // Waiting is what keeps the take whole. `MediaRecorder.stop()` flips
+      // `state` synchronously while the final `dataavailable` is delivered
+      // later, so a Back tap landing in that window would otherwise seal the
+      // blob WITHOUT the last slice — which for a take under one timeslice is
+      // the entire recording. Bounded, never open-ended: the record settles
+      // this from the same timer that releases its microphone, so the sheet
+      // cannot hang. A `cancel()` finalizing the record mid-wait settles it too,
+      // and this stop then resolves through its own superseded-generation path
+      // below, exactly as any other cancelled stop does.
+      await ownedFlush.flushed;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      blob = new Blob(chunks, { type: recorder.mimeType });
+    } else if (plan === "seal-inactive") {
       // The recorder ended on its OWN — an interruption took the mic (#59), not
       // a stop we drove. There is no `stop()` flush to await, but the recorder
       // flips inactive before its final queued `dataavailable` is delivered — so
@@ -973,22 +1093,6 @@ export function useRecorder(): UseRecorder {
       // the take. The capture track is already dead; release the stream for the
       // ref bookkeeping.
       if (stream) abandonStream(stream);
-      // If the interruption handler drove this flush itself (#59), its final
-      // `dataavailable` may still be in flight: `MediaRecorder.stop()` flips
-      // `state` to `"inactive"` synchronously, so we can arrive here microseconds
-      // after the stop was issued and the macrotask below would seal the blob
-      // WITHOUT the last slice. Wait for that flush to complete first — but only
-      // THIS recorder's. A promise left by an earlier, superseded take is
-      // nothing this stop has reason to wait for, and waiting for it would hold
-      // the processing screen for the rest of its bound (Frank R1 P2). Cleared
-      // either way: nothing else ever reads it. Null on every path but the
-      // driven one, where this whole await is skipped and the behaviour is
-      // exactly as before. Bounded, not open-ended — the driven flush settles it
-      // from the same `STOP_FLUSH_TIMEOUT_MS` timer that releases its
-      // microphone, so this can never hang the sheet.
-      const pendingFlush = pendingFlushRef.current;
-      pendingFlushRef.current = null;
-      if (pendingFlush?.recorder === recorder) await pendingFlush.flushed;
       await new Promise((resolve) => setTimeout(resolve, 0));
       blob = new Blob(chunks, { type: recorder.mimeType });
     } else {
@@ -1213,6 +1317,26 @@ export function useRecorder(): UseRecorder {
         console.error("Could not stop the recorder during cancel", cause);
       }
     }
+    // Release a driven interruption flush's microphone HERE, in this task.
+    //
+    // `leave()`'s contract is "synchronous and total … the microphone has to be
+    // released in the same task as the tap" (use-audio-session.ts), and pagehide
+    // reaches it through here. A driven flush holds its stream and its VU clone
+    // on the record, NOT in `streamRef`/`tapRef`, so `releaseStream()` below
+    // cannot see them; and a document being discarded never runs the queued
+    // `stop` event or the timer that would otherwise finalize it. Leaving it to
+    // "finalize runs later" would strand a live microphone for the life of the
+    // process — a regression this branch introduced and this line closes
+    // (George R1 P1).
+    //
+    // Placed after the native `recorder.stop()` above and before
+    // `releaseStream()` below so the two teardowns read as one step: this
+    // releases what the flush stole, `releaseStream()` releases what the refs
+    // still hold. Order between them is not load-bearing — they touch disjoint
+    // objects, and the finalizer is idempotent, so a `stop` event or timer that
+    // still fires afterwards is a no-op. Inert while no flush is pending.
+    const pending = pendingFlushRef.current;
+    if (pending) finalizePendingFlush(pending);
     releaseStream();
     chunksRef.current = [];
     setElapsedMs(0);
@@ -1221,7 +1345,7 @@ export function useRecorder(): UseRecorder {
     // failure must not follow the translator to the next screen and read as a
     // fresh one. Nothing else clears it that `start()` does not already clear.
     setError(null);
-  }, [clearTick, releaseStream]);
+  }, [clearTick, finalizePendingFlush, releaseStream]);
 
   // Re-arm Web Audio when the app returns to the foreground mid-take (#76).
   // Extracted to `armForegroundResume` so its two guards (recording, visible) and

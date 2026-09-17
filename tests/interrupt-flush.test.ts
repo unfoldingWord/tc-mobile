@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   decideInterruptFinalize,
   type InterruptFinalizeDecision,
+  planStopFlush,
   type RecorderLifecycleState,
+  type StopFlushPlan,
 } from "@/lib/audio/interrupt-flush";
 
 /**
@@ -93,6 +95,60 @@ describe("decideInterruptFinalize", () => {
       expect(
         decideInterruptFinalize({ recorderState, isCurrentGeneration: false })
       ).toBe("skip-stale");
+    }
+  });
+});
+
+/**
+ * `stop()`'s side of the same handshake. The reason this is a separate pure
+ * decision rather than an `if` in the hook: it is the only place a reviewer can
+ * CHECK the invariant the whole change rests on — that with no driven flush
+ * outstanding, `stop()` takes exactly the branch it took before this change.
+ */
+describe("planStopFlush", () => {
+  // The invariant, as a table over the entire input space. The `satisfies
+  // Record<...>` makes the lifecycle half exhaustive at compile time: adding a
+  // state to `RecorderLifecycleState` without adding a row fails
+  // `npm run typecheck` rather than silently skipping the new state.
+  const table = {
+    inactive: { owned: "await-driven-flush", free: "seal-inactive" },
+    recording: { owned: "await-driven-flush", free: "drive-stop" },
+    paused: { owned: "await-driven-flush", free: "drive-stop" },
+  } satisfies Record<
+    RecorderLifecycleState,
+    { readonly owned: StopFlushPlan; readonly free: StopFlushPlan }
+  >;
+
+  it("leaves stop() on exactly its pre-existing branch when no driven flush owns the recorder", () => {
+    // THE LOAD-BEARING CASE. `"seal-inactive"` and `"drive-stop"` are the two
+    // arms `stop()` has always had, and this pins that the choice between them
+    // still turns on `recorderState === "inactive"` and nothing else. If this
+    // test ever needs changing, the iOS-verified interruption path has moved.
+    for (const recorderState of ["inactive", "recording", "paused"] as const) {
+      expect(
+        planStopFlush({ recorderState, drivenFlushOwnsRecorder: false })
+      ).toBe(table[recorderState].free);
+    }
+  });
+
+  it("hands teardown to the driven flush from every state, including a recorder its stop() left live", () => {
+    // Includes `"recording"`/`"paused"`: if the driven `recorder.stop()` threw,
+    // the recorder never went inactive, but the flush still owns its tracks,
+    // its timer and its `onstop`. Falling through to `"drive-stop"` there would
+    // issue a second stop and overwrite the handler the flush is waiting on
+    // (George R1 P2, use-recorder.ts:914).
+    for (const recorderState of ["inactive", "recording", "paused"] as const) {
+      expect(
+        planStopFlush({ recorderState, drivenFlushOwnsRecorder: true })
+      ).toBe(table[recorderState].owned);
+    }
+  });
+
+  it("never plans a second stop while a driven flush is outstanding", () => {
+    for (const recorderState of ["inactive", "recording", "paused"] as const) {
+      expect(
+        planStopFlush({ recorderState, drivenFlushOwnsRecorder: true })
+      ).not.toBe("drive-stop");
     }
   });
 });

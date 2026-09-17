@@ -54,3 +54,42 @@ export function decideInterruptFinalize(input: {
   if (input.recorderState === "inactive") return "already-flushed";
   return "drive-flush";
 }
+
+/**
+ * What `stop()` should do about the flush, once an interruption may already
+ * have driven one.
+ *
+ * - `"await-driven-flush"` — the interruption handler already stopped THIS
+ *   recorder and owns its `onstop`, its bounded timer and its capture tracks.
+ *   Wait for that flush and seal; issue no second stop, and do not replace the
+ *   handler the flush is waiting on.
+ * - `"seal-inactive"` — the recorder ended on its own with no flush of ours
+ *   outstanding: today's "already inactive" path, unchanged.
+ * - `"drive-stop"` — an ordinary Stop on a live recorder: today's path,
+ *   unchanged.
+ *
+ * The property that makes this reviewable, and the one the tests pin: when no
+ * driven flush owns this recorder, the answer depends on `recorderState`
+ * ALONE, and it is exactly the `state === "inactive"` test `stop()` has always
+ * made. Every new behaviour sits behind `drivenFlushOwnsRecorder`.
+ */
+export type StopFlushPlan =
+  "await-driven-flush" | "seal-inactive" | "drive-stop";
+
+export function planStopFlush(input: {
+  readonly recorderState: RecorderLifecycleState;
+  /**
+   * A flush this hook drove is outstanding AND is tagged with the very
+   * recorder this `stop()` holds. Identity, not merely "some flush is
+   * pending": a superseded take's flush is none of this stop's business.
+   */
+  readonly drivenFlushOwnsRecorder: boolean;
+}): StopFlushPlan {
+  // First, and regardless of state. A driven flush leaves the recorder
+  // "inactive" when its stop succeeded and non-inactive when it threw; both
+  // are the same situation — someone else owns the teardown — so neither may
+  // fall through to a path that stops the recorder again.
+  if (input.drivenFlushOwnsRecorder) return "await-driven-flush";
+  if (input.recorderState === "inactive") return "seal-inactive";
+  return "drive-stop";
+}
