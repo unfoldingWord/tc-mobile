@@ -18,11 +18,11 @@ import { recorderStatusKind } from "./processing-status";
 import {
   frozenPan,
   heldByDrag,
+  liftOutcome,
   liveScopeShown,
   panAfterRematerialize,
   panGesture,
   recordDisabled,
-  resumesOnLift,
   stageView,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
@@ -1013,55 +1013,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * either way, and leaving playback stopped after a cancelled gesture would
      * be a sound the translator can no longer explain.
      *
-     * It answers only the OWNER's lift, and only with the stage clear (George
-     * R3 P1-2). A non-owner's lift used to run this whole handler — resuming
-     * from the owner's pan while the owner was still holding the waveform, or
-     * consuming the owed resume so the real lift did nothing.
+     * The three answers a lift owes — the lock, the sound and the debt — come
+     * apart once the stage can outlive the pointer that owned it, so they are
+     * decided in the pure, enumerated `liftOutcome` rather than here (George R3
+     * P1-2 and Frank R3 P2, both of which were this handler reading its own
+     * pointer as if it were the whole hand). `takeActive` is the mic
+     * outranking the gesture (George R1 P2 #3): a Record tapped in the same
+     * frame as the pointer-down is ahead of the render that disables it, and a
+     * resume into a live or paused mic either fails silently at the floor or
+     * sounds over a capture.
      */
     const onPointerUp = useCallback(
       (e: React.PointerEvent) => {
         contactsRef.current.delete(e.pointerId);
         const wasOwner = e.pointerId === ownerRef.current;
-        if (wasOwner) {
-          ownerRef.current = null;
-          setDragging(false);
-        }
-        // A NON-owner's lift reaches the rest of this handler for one reason
-        // only: it may be the moment the stage finally goes clear, when the
-        // owner has already lifted and left the resume owed (Frank R3 P2). It
-        // never resumes while the owner is still dragging.
-        if (!wasOwner && ownerRef.current !== null) return;
-        const interrupted = resumeAfterDragRef.current;
-        if (!interrupted) return;
-        // The rule is about FINGERS, not about the pointer this gesture
-        // tracked: a second contact the stage ignored is still a finger on the
-        // waveform, and sounding under it is what #317 forbids.
-        const othersDown = contactsRef.current.size > 0;
+        if (wasOwner) ownerRef.current = null;
         const from = Math.max(0, Math.min(draggedPanRef.current, length));
-        // `takeActive` is the mic outranking the gesture (George R1 P2 #3): a
-        // Record tapped in the same frame as the pointer-down is ahead of the
-        // render that disables it, and a resume into a live or paused mic is
-        // either refused by the floor — failing silently — or sounds over a
-        // capture. `resumesOnLift` carries the rest of the rule.
-        if (
-          !resumesOnLift({
-            interrupted,
-            pan: from,
-            length,
-            takeActive,
-            othersDown,
-          })
-        ) {
-          // The debt SURVIVES a lift that only left another finger behind, and
-          // is collected when that one goes (Frank R3 P2 again: consuming it
-          // here left the translator with silence and no way to explain it).
-          // Every other refusal — the line at the end, a take in the way — is
-          // final, and any stop in between voids it (`stopPlayback`).
-          if (!othersDown) resumeAfterDragRef.current = false;
-          return;
-        }
-        resumeAfterDragRef.current = false;
-        soundRange(from, length);
+        const outcome = liftOutcome({
+          wasOwner,
+          ownerActive: ownerRef.current !== null,
+          contactsRemaining: contactsRef.current.size,
+          interrupted: resumeAfterDragRef.current,
+          pan: from,
+          length,
+          takeActive,
+        });
+        setDragging(outcome.dragging);
+        resumeAfterDragRef.current = outcome.keepOwed;
+        if (outcome.resume) soundRange(from, length);
       },
       [length, soundRange, takeActive]
     );

@@ -445,6 +445,61 @@ export function resumesOnLift(input: {
 }
 
 /**
+ * What a lift leaves behind — the lock, the sound, and the debt (Frank R3 P2).
+ *
+ * A gesture on the stage can outlive the pointer that owned it, and the three
+ * answers come apart there. `resumesOnLift` says whether sound starts;
+ * `dragging` says whether the transport stays locked, and it is about FINGERS,
+ * not about the pointer that happened to own the drag — an owner lifting while
+ * a second contact is still on the waveform used to re-enable Play, Record,
+ * Undo, Zoom and Select, so a third finger could start a sound under the one
+ * still down. And a resume that cannot happen yet must be OWED rather than
+ * consumed: silence after every finger has gone is #317 broken from the other
+ * side, so the lift that finally clears the stage collects it.
+ *
+ * A refusal for any reason other than a finger — the line at the very end, a
+ * take that started mid-gesture — is final, and the debt is dropped: leaving
+ * the flag set would fire a resume on some later, unrelated lift.
+ */
+export function liftOutcome(input: {
+  /** This pointer owned the drag. */
+  readonly wasOwner: boolean;
+  /** An owner is still dragging AFTER this lift. */
+  readonly ownerActive: boolean;
+  /** Contacts still on the stage after this one is removed. */
+  readonly contactsRemaining: number;
+  /** A resume is owed — some gesture paused playback and has not paid it. */
+  readonly interrupted: boolean;
+  /** The sample now under the centerline. */
+  readonly pan: number;
+  readonly length: number;
+  /** A take is live, paused, or being committed. */
+  readonly takeActive: boolean;
+}): {
+  readonly dragging: boolean;
+  readonly resume: boolean;
+  readonly keepOwed: boolean;
+} {
+  const held = input.ownerActive || input.contactsRemaining > 0;
+  // A non-owner's lift matters for one reason only: it may be the moment the
+  // stage goes clear. While the owner is still dragging it changes nothing.
+  if (!input.wasOwner && input.ownerActive)
+    return { dragging: true, resume: false, keepOwed: input.interrupted };
+  const resume = resumesOnLift({
+    interrupted: input.interrupted,
+    pan: input.pan,
+    length: input.length,
+    takeActive: input.takeActive,
+    othersDown: input.contactsRemaining > 0,
+  });
+  return {
+    dragging: held,
+    resume,
+    keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
+  };
+}
+
+/**
  * Where the centerline goes when the edit log REPLACES the working buffer —
  * Undo and Redo (George R3 P1-1).
  *

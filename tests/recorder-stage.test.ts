@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   frozenPan,
   heldByDrag,
+  liftOutcome,
   liveScopeShown,
   panAfterRematerialize,
   panGesture,
@@ -471,6 +472,95 @@ describe("resumesOnLift", () => {
     // the resume is owed until the stage is clear, and a later Play is how it
     // is collected.
     expect(resumesOnLift({ ...lift, othersDown: true })).toBe(false);
+  });
+});
+
+/**
+ * What a lift leaves behind (Frank R3 P2, twice).
+ *
+ * `resumesOnLift` answers one question — does sound start? — and a lift asks
+ * three, because the stage can outlive the pointer that owned it. The lock has
+ * to hold while ANY finger is on the waveform (otherwise the owner lifting
+ * first re-enables Play, Record, Undo, Zoom and Select with a finger still
+ * down), and a resume the lift cannot perform has to survive as a debt rather
+ * than be consumed into silence. Those are state transitions, not a predicate,
+ * and there is no renderer in this suite — so they are enumerated here, where
+ * the owner-up-before-non-owner-up order is a test rather than a phone.
+ */
+describe("liftOutcome", () => {
+  const LEN = 1000;
+  const base = {
+    wasOwner: true,
+    ownerActive: false,
+    contactsRemaining: 0,
+    interrupted: true,
+    pan: 500,
+    length: LEN,
+    takeActive: false,
+  };
+
+  it("resumes and unlocks when the last finger leaves", () => {
+    expect(liftOutcome(base)).toEqual({
+      dragging: false,
+      resume: true,
+      keepOwed: false,
+    });
+  });
+
+  it("keeps the lock AND the debt when the owner lifts first", () => {
+    // The exact order Frank named: finger A owns the drag, finger B lands, A
+    // lifts. B is still on the waveform, so nothing may sound and no control
+    // may come back to life — a third finger tapping Play here is the
+    // requirement broken with the app's own help.
+    expect(liftOutcome({ ...base, contactsRemaining: 1 })).toEqual({
+      dragging: true,
+      resume: false,
+      keepOwed: true,
+    });
+  });
+
+  it("collects the debt on the lift that finally clears the stage", () => {
+    // B's own lift, after A is gone: not the owner, but the moment the stage
+    // goes clear, which is when the owed resume is finally due.
+    expect(
+      liftOutcome({ ...base, wasOwner: false, contactsRemaining: 0 })
+    ).toEqual({ dragging: false, resume: true, keepOwed: false });
+  });
+
+  it("ignores a non-owner's lift while the owner is still dragging", () => {
+    // The debt is untouched and the lock stands: the owner has not lifted.
+    expect(
+      liftOutcome({
+        ...base,
+        wasOwner: false,
+        ownerActive: true,
+        contactsRemaining: 1,
+      })
+    ).toEqual({ dragging: true, resume: false, keepOwed: true });
+  });
+
+  it("drops a debt it refuses for any reason other than a finger", () => {
+    // The line at the very end, and a take that started mid-gesture: both are
+    // final answers, not deferrals. Leaving the flag set would fire the resume
+    // on some later, unrelated lift.
+    expect(liftOutcome({ ...base, pan: LEN })).toEqual({
+      dragging: false,
+      resume: false,
+      keepOwed: false,
+    });
+    expect(liftOutcome({ ...base, takeActive: true })).toEqual({
+      dragging: false,
+      resume: false,
+      keepOwed: false,
+    });
+  });
+
+  it("owes nothing on a plain pan that never interrupted anything", () => {
+    expect(liftOutcome({ ...base, interrupted: false })).toEqual({
+      dragging: false,
+      resume: false,
+      keepOwed: false,
+    });
   });
 });
 
