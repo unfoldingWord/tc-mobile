@@ -77,8 +77,26 @@ export function App() {
     navIndex.current = index;
   }, []);
 
+  // Frank round 1 P2 (#393): `window.history.back()` is asynchronous — its
+  // `popstate` lands on a LATER task, not synchronously. If an overlay closes
+  // (scheduling a consume below) and is reopened before that `popstate`
+  // arrives, an unguarded push here would land while `suppressPop` is still
+  // armed for the pending consume, and the traversal the browser eventually
+  // runs is no longer guaranteed to target the entry it was issued for. Held
+  // as a ref, not fired immediately, whenever a consume is still outstanding;
+  // the suppressed-popstate branch below drains it once that traversal lands,
+  // so a push and a pending consume never overlap.
+  const pendingOverlayOpen = useRef(false);
+  const pushOverlayEntry = useCallback(() => {
+    if (suppressPop.current) {
+      pendingOverlayOpen.current = true;
+      return;
+    }
+    pushHistoryEntry();
+  }, [pushHistoryEntry]);
+
   // The programmatic half of #393/#374's overlay-entry bookkeeping: consume the
-  // entry `pushHistoryEntry` pushed for an open Books/Segments overlay, once it
+  // entry `pushOverlayEntry` pushed for an open Books/Segments overlay, once it
   // closes by a NON-popstate path (a tap on Close/scrim, a successful rename).
   // `suppressPop` marks the resulting popstate as ours, same as `closeRecorder`
   // below already does for its own programmatic close.
@@ -228,6 +246,14 @@ export function App() {
       if (suppressPop.current) {
         suppressPop.current = false;
         navIndex.current = toIndex;
+        // A reopen arrived while THIS consume was still in flight
+        // (`pushOverlayEntry`, Frank round 1 P2) — the traversal that just
+        // landed is now accounted for, so it is safe to push the deferred
+        // entry for real.
+        if (pendingOverlayOpen.current) {
+          pendingOverlayOpen.current = false;
+          pushHistoryEntry();
+        }
         return;
       }
       const direction = navDirection(navIndex.current, toIndex);
@@ -374,7 +400,7 @@ export function App() {
           <BooksScreen
             ref={booksRef}
             onOpenChapter={openChapter}
-            onOverlayOpen={pushHistoryEntry}
+            onOverlayOpen={pushOverlayEntry}
             onOverlayClose={consumeOverlayEntry}
           />
         ) : (
@@ -384,7 +410,7 @@ export function App() {
             audio={audio}
             onBack={goBack}
             onOpenRecorder={openRecorder}
-            onOverlayOpen={pushHistoryEntry}
+            onOverlayOpen={pushOverlayEntry}
             onOverlayClose={consumeOverlayEntry}
           />
         )}
