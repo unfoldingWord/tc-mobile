@@ -319,6 +319,16 @@ export function App() {
     if (recovering) leave();
   }, [recovering, leave]);
 
+  // The database panel below takes the screen over the same way, and for the
+  // same reason needs the same call: the Segments list can be playing a segment
+  // back when the panel replaces it, and `useAudioSession` lives up here, so the
+  // sound would carry on under a screen with no stop on it. Nothing held is
+  // dropped by this — the panel is only ever reached when `holdsUnsavedWork()`
+  // answered false, so there is no take and no open recorder to cancel.
+  useEffect(() => {
+    if (databaseStatus !== "ok") leave();
+  }, [databaseStatus, leave]);
+
   if (recovery) {
     return (
       <main className="app-shell grid h-full place-items-center">

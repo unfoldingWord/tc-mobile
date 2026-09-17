@@ -159,6 +159,38 @@ function requestSettled(request: IDBOpenDBRequest): Promise<void> {
   });
 }
 
+/**
+ * Run `body` with this process's `uncaughtException` handlers replaced by one
+ * that collects, and return what it collected.
+ *
+ * One case here asserts that a throw is NOT swallowed — it escapes the
+ * `versionchange` handler, which is what a browser turns into the window `error`
+ * the failure sink listens for. fake-indexeddb dispatches that event from a
+ * `setImmediate`, so the throw lands as an uncaught exception in Node with no
+ * `try` anywhere above it; without this the run would be red on the very
+ * behaviour the case exists to prove.
+ *
+ * The swap is total, and restored in a `finally`: leaving the runner's own
+ * handler installed alongside would still fail the run, and leaving this one
+ * installed afterwards would hide a genuine uncaught error in a later case.
+ */
+async function collectUncaught(body: () => Promise<void>): Promise<unknown[]> {
+  const collected: unknown[] = [];
+  const installed = process.listeners("uncaughtException");
+  installed.forEach((listener) => process.off("uncaughtException", listener));
+  const collect = (cause: unknown): void => {
+    collected.push(cause);
+  };
+  process.on("uncaughtException", collect);
+  try {
+    await body();
+  } finally {
+    process.off("uncaughtException", collect);
+    installed.forEach((listener) => process.on("uncaughtException", listener));
+  }
+  return collected;
+}
+
 /** The most recent open request the spy saw. */
 function lastRequest(requests: IDBOpenDBRequest[]): IDBOpenDBRequest {
   const request = requests.at(-1);
@@ -551,6 +583,47 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     try {
       expect(await raceOpen(newer)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("keeps the connection when the app's guard throws, and lets the throw escape", async () => {
+    // The guard is the app answering a question about its own state from inside
+    // an IndexedDB event handler. If that answer throws, the two readings are
+    // opposite: "nothing was reported held, so yield" loses a take; "the app
+    // could not say, so keep it" costs the other copy a wait. `blocking()`
+    // deliberately does not catch, which makes the second one structural — the
+    // close is simply never reached — rather than a policy a later edit inverts.
+    //
+    // The throw is then left to escape the handler, which is the only channel
+    // `lib/storage` has: it may not import the failure sink (`hooks/`, the onion
+    // rule), and a browser turns an exception thrown from an event listener into
+    // a window `error` — which `src/app/install-failure-listeners.ts` reports.
+    // Swallowing it here would be the silent catch AGENTS.md bans. What this
+    // asserts is that it leaves `blocking()`; that `window` listener is covered
+    // by its own tests, and the join between the two is review surface.
+    const app = registerCoordinator(() => {
+      throw new Error("the app could not answer");
+    });
+    await getDb();
+
+    const newer = openNewerCopy();
+    const escaped = await collectUncaught(async () => {
+      expect(await raceOpen(newer)).toBe("waiting");
+    });
+
+    try {
+      expect(app.holdsUnsavedWork).toHaveBeenCalled();
+      expect(app.onYielded).not.toHaveBeenCalled();
+      expect(newer.wasBlocked()).toBe(true);
+      // Not swallowed: exactly one failure left the handler, and it is the one
+      // the app threw. fake-indexeddb runs every listener and then rethrows what
+      // they threw as an `AggregateError`, so unwrap one level.
+      expect(escaped).toHaveLength(1);
+      const errors = (escaped[0] as AggregateError).errors;
+      expect(errors).toHaveLength(1);
+      expect((errors[0] as Error).message).toBe("the app could not answer");
     } finally {
       await release(newer);
     }

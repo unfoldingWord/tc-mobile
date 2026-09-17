@@ -347,8 +347,15 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // Refusing leaves the other copy waiting on its blocked screen, which
         // costs a person time; yielding closes the only connection that could
         // ever store the take this copy is holding, which costs a translator
-        // work they cannot record again. If the guard throws, the close below
-        // is never reached — the safe way round, and deliberately not caught.
+        // work they cannot record again.
+        //
+        // If the guard throws, the close below is never reached — the safe way
+        // round, and deliberately not caught. The throw is left to escape the
+        // handler rather than swallowed: this layer may not import the failure
+        // sink (it lives in `hooks/`, and the onion rule forbids the upward
+        // import), and a browser turns an exception thrown from an event
+        // listener into a window `error`, which `app/install-failure-listeners`
+        // reports. Escaping IS the channel here.
         if (coordinator?.holdsUnsavedWork() === true) return;
 
         invalidate();
@@ -435,6 +442,14 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
  * open already in flight, both snapshotted before that wait. A `getDb()` during
  * the wait installs a connection of its own, and closing THAT would hand the app
  * a dead handle it has no reason to expect.
+ *
+ * **Nothing in `src/` calls this: the only callers are tests.** Keep it that
+ * way until the wait above is bounded. Wiring it to a product control — the
+ * "delete all data" this function was written for — puts an unbounded wait
+ * behind a button: another copy of the app holding the upgrade blocked would
+ * leave the person on a control that never returns, with no way to say why.
+ * Bounding it (timeout, then abandon the connection and report) is follow-up
+ * work on #221, not something to add here unasked (jag3773, QA on #236).
  */
 export async function closeDb(): Promise<void> {
   closeGeneration += 1;
