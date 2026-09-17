@@ -92,5 +92,14 @@ export default defineConfig({
       testMatch: /(service-worker-precache|theme-toggle)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
+    {
+      // The durable failure log (#205). Drives the real UI and touches no
+      // harness, so it runs against `dist/` for the same reason the
+      // service-worker spec does — the bundle that ships is the one whose
+      // reload behaviour matters.
+      name: "chromium-failure-log",
+      testMatch: /failure-log\.spec\.ts$/,
+      use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
+    },
   ],
 });

@@ -275,10 +275,11 @@ jobs:
   # mp3.worker.ts round-trip, decodeAudioData of the worker's in-memory MP3
   # output (not the IndexedDB clipData round-trip, which the Node/fake-indexeddb
   # suite already covers), the service worker's atomic precache install, and a
-  # real two-tab IndexedDB blocked/versionchange — none of which the Node/vitest
-  # suite above can see by construction (lib/ is DOM-free on purpose). Gated to
-  # pull_request only, and only when the browser-boundary code it exercises
-  # actually changed, so a docs-only or components-only PR pays nothing for it.
+  # real two-tab IndexedDB blocked/versionchange — and, since #205, the durable
+  # failure log driven through the real UI of the shipped `dist/` build. None of
+  # which the Node/vitest suite above can see by construction (lib/ is DOM-free
+  # on purpose). Gated to pull_request only, and only when the code it exercises
+  # actually changed, so a docs-only PR pays nothing for it.
   browser-smoke:
     name: Headless-Chromium Smoke
     if: github.event_name == 'pull_request'
@@ -306,51 +307,56 @@ jobs:
       # and under the round-1 gate (`src/hooks/` or `vite.config.ts` only)
       # they would not have run it (round-1 Frank C2).
       #
-      # `src/app/main.tsx` is in the gate for the same reason and is easy to
+      # `src/app/main.tsx` was in the gate for the same reason and is easy to
       # miss: it is the ONLY production loader of the harness (the
       # `import.meta.env.MODE === "e2e"` dynamic `import()` at its foot). A PR
       # that deletes or breaks just that branch changes no other gated path, so
-      # without this entry the gate reads `smoke=false`, Playwright never runs,
+      # without that entry the gate reads `smoke=false`, Playwright never runs,
       # and CI goes green while `window.__e2e` has silently stopped loading —
       # every spec here would fail on the next PR that did trip the gate
       # (round-2 Frank F2 / George G-3).
       #
-      # `theme-toggle.spec.ts` (#171) drives the REAL SHIPPED UI, which is why
-      # the source half of this filter is now simply `src/`.
+      # THE SOURCE HALF OF THIS FILTER IS A PLAIN `src/`, and two independent
+      # lanes arrived there within a day of each other — which is the strongest
+      # thing that can be said for it.
       #
-      # An enumerated list was tried first and was wrong within one review
-      # round. It named `src/lib/theme.ts`, `books-screen.tsx`, `strings.ts`,
-      # `src/app/styles/` and `index.html` — each genuinely a dependency — and
-      # still returned `smoke=false` for `src/app/globals.css` (where the
-      # `@theme` colour bridge and the `@import` of the whole style layer
-      # live), `src/app/App.tsx` (which decides whether `BooksScreen` is
-      # mounted at all), `menu.tsx` (which renders the toggle's children) and
-      # `control.tsx` (which IS the toggle). Dropping the styles import in
-      # globals.css, or failing to render `Menu` children, breaks the
-      # user-visible theme while skipping this gate entirely. That is the QA
-      # finding on #457, and it is the second time enumerating transitive deps
-      # of this suite has missed one (round-1 Frank C2 was the first).
+      # #205's `e2e/failure-log.spec.ts` and #171's `e2e/theme-toggle.spec.ts`
+      # both load `/` from the shipped `dist/` build and assert the real UI, so
+      # neither has a dependency set smaller than the whole app graph reachable
+      # from `main.tsx`. The per-directory list was derivable only while every
+      # spec drove either the harness or the service worker.
       #
-      # The lesson is that a spec which drives the shipped app depends on the
-      # shipped app. Enumerating the transitive UI and CSS closure of that is
-      # not maintainable and the failure mode is silent — a skipped browser
-      # gate looks exactly like a passing one. `src/` is coarser and costs a
-      # ~90s job on source PRs that could not have affected it; a missed run
-      # costs a green CI over a broken light theme, which is the #171 defect
-      # returning undetected. AGENTS.md's rule is to derive the filter from
-      # what the suite depends on, and what it depends on is `src/`.
+      # Each lane also has its own worked example of the list failing:
+      #
+      #   - #205: a components-only PR that removed the ≡ marker (or the
+      #     panel's mount, which is one `count > 0` away) would, under the old
+      #     list, have skipped all thirteen of its cases and merged green.
+      #   - #171: an enumerated list was tried and was wrong within one review
+      #     round. It named `src/lib/theme.ts`, `books-screen.tsx`,
+      #     `strings.ts`, `src/app/styles/` and `index.html` — each genuinely a
+      #     dependency — and still returned `smoke=false` for
+      #     `src/app/globals.css` (where the `@theme` colour bridge and the
+      #     `@import` of the whole style layer live), `src/app/App.tsx` (which
+      #     decides whether `BooksScreen` is mounted at all), `menu.tsx` (which
+      #     renders the toggle's children) and `control.tsx` (which IS the
+      #     toggle). That was the second such miss; round-1 Frank C2 was the
+      #     first.
+      #
+      # Both are the "a gate is tested in both states" failure AGENTS.md names,
+      # in the shape where the gate is simply never reached — and the failure
+      # mode is silent, because a skipped browser gate looks exactly like a
+      # passing one. Over-running this suite costs a few minutes; under-running
+      # it is the defect. `docs/**` and `*.md` still pay nothing.
       #
       # Still enumerated, because these are NOT under `src/` and each is a real
-      # dependency: `index.html` (the `meta[name="theme-color"]` the spec reads
-      # and the viewport policy `tests/touch-policy.test.ts` gates), `e2e/` and
-      # `playwright.config.ts` (the suite and its projects), `vite.config.ts`
-      # (which decides what `dist/` and `dist-e2e/` contain at all) and the two
-      # lockfile/manifest paths.
+      # dependency: `index.html` (the `meta[name="theme-color"]` the theme spec
+      # reads, and the viewport policy `tests/touch-policy.test.ts` gates),
+      # `e2e/` and `playwright.config.ts` (the suites and their projects),
+      # `vite.config.ts` (which decides what `dist/` and `dist-e2e/` contain at
+      # all) and the two lockfile/manifest paths.
       #
       # `tests/smoke-path-filter.test.ts` reads this exact regex out of this
-      # file and pins BOTH gate states — every path the suite depends on
-      # matches, and docs/markdown still do not, so a documentation commit
-      # cannot burn a browser run.
+      # file and pins BOTH gate states.
       #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken

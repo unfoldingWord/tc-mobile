@@ -41,10 +41,12 @@ interface MenuProps {
    */
   closeLabel?: string;
   /**
-   * The menu's contents. Empty on the global menu this lane: Template Library is
-   * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
-   * opens, traps focus, and closes — not a stub, because the mechanism is exactly
-   * what that batch mounts into.
+   * The menu's contents.
+   *
+   * No longer empty on the global menu: Books mounts `FailureLogPanel` here
+   * while the failure log has rows (#205), and the panel is deliberately absent
+   * on a phone that has never failed, so the empty case is still the normal one.
+   * Template Library (B7, #33) is the other consumer still to come.
    */
   children?: React.ReactNode;
 }
@@ -52,10 +54,16 @@ interface MenuProps {
 /**
  * The global menu, opened from the hamburger.
  *
- * This lane ships the surface, not entries: a scrim, a focus trap, close on
- * Escape or a scrim tap, and a heading a screen reader announces. That is the
- * reusable mechanism B6 and B7 both fill, so it earns its place now even while
- * it holds nothing.
+ * The surface, not the entries: a scrim, a focus trap, close on Escape or a
+ * scrim tap, and a heading a screen reader announces. Every entry arrives as
+ * `children` — the row menus' actions, and on the global menu the failure log's
+ * Send and Clear (#205) whenever there is something to send.
+ *
+ * One consequence of holding real children now: a child may portal a dialog of
+ * its own OVER this panel rather than closing it first (`FailureLogPanel`'s
+ * Clear confirm does). `EraseConfirm` captures Escape and marks it handled for
+ * that reason, and the `defaultPrevented` check below is what honours it — the
+ * same contract the rename field already relied on.
  */
 export function Menu({
   open,

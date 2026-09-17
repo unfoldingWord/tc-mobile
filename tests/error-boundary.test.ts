@@ -73,7 +73,7 @@ describe("ErrorBoundary", () => {
     expect(seen[0]).not.toHaveProperty("componentStack");
   });
 
-  it("shows a glyph and one control, and never the cause", () => {
+  it("shows a glyph and two controls, and never the cause", () => {
     const boundary = new ErrorBoundary({ children: null });
     boundary.state = ErrorBoundary.getDerivedStateFromError();
 
@@ -97,18 +97,48 @@ describe("ErrorBoundary", () => {
     // The 56px alert mark — what a translator who does not read actually sees,
     // and the size the other recovery screen uses.
     expect(html).toContain('width="56"');
-    // One control, labelled for what it does — not the Books shelf's
-    // `tryAgain` — and large: `--primary` is 68px, over the 44px touch floor.
+    // Restart, labelled for what it does — not the Books shelf's `tryAgain` —
+    // and large: `--primary` is 68px, over the 44px touch floor.
     expect(html).toContain(`aria-label="${strings.appReload}"`);
     expect(html).toContain("control--primary");
     // `size={30}` — the same retry mark `SaveFailed` draws inside its 68px
     // button, not the 22px default.
     expect(html).toContain('width="30"');
     expect(html).not.toContain(`aria-label="${strings.tryAgain}"`);
+
+    // The log's second door (#205, George round 2). The boundary REPLACES the
+    // tree, so the ≡ marker and the menu that normally sends the log are
+    // unmounted with `BooksScreen` — and a deterministic home-path render throw
+    // returns here after every Restart. Without this control the one failure the
+    // durable log most exists to carry is the one that could never leave the
+    // phone, so its presence is asserted rather than left to a reading.
+    expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
+    // Restart FIRST. Order is the whole accommodation for a non-reader: the
+    // primary, recognisable action is under the thumb, and the facilitator's
+    // control is the one after it.
+    expect(html.indexOf(`aria-label="${strings.appReload}"`)).toBeLessThan(
+      html.indexOf(`aria-label="${strings.shareFailureLog}"`)
+    );
+    // And it is quiet in this state, so it cannot be mistaken for the action to
+    // take first. (Its ARMED paint — `default`, after tap 1 — needs a renderer
+    // this suite does not have: `renderToStaticMarkup` runs the hook once, in
+    // `idle`, and never runs the effect. That half is verified by reading, and
+    // said so rather than implied.)
+    expect(html).toContain("control--quiet");
     // Focus goes to the labelled heading, so the icon-only button carries no
     // autofocus of its own.
     expect(html).not.toContain("autofocus");
     expect(html).toContain('tabindex="-1"');
+    // Restart is NOT busy in this state, and carries its idle label. That is
+    // the legitimate-state half of the gate, and it fails if anyone wires
+    // `busy` on unconditionally. The BUSY half — the relabel, `aria-busy`, and
+    // the busy Notice under it (George R4 P2-3) — needs a click and a pending
+    // flush, which needs a renderer this suite does not have AND a render throw
+    // the e2e harness cannot produce without adding product surface to force
+    // one. Verified by reading, and said so rather than implied.
+    expect(html).not.toContain("aria-busy");
+    expect(html).not.toContain(strings.appReloading);
+
     // The property this screen exists to keep: no cause, ever.
     expect(html).not.toContain("Error");
     expect(html).not.toContain("stack");

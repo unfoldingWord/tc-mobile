@@ -64,6 +64,38 @@ let requestedDuringRun = false;
 let lastStalledSegmentId: SegmentId | null = null;
 
 /**
+ * Stop sweeping, for the life of this page. One-way (George R5 P2-3).
+ *
+ * The crash screen sets this. `ErrorBoundary` replaces `App`, but this module's
+ * state is module-scoped on purpose — the callers are hooks on different screens
+ * — so `App`'s unmount does not cancel a sweep, and a run started at launch
+ * keeps encoding clips and reporting one `transcode-segment` row per failure
+ * into the log the crash screen is about to send. With a backlog of finished-
+ * but-PCM segments (the case `App`'s launch sweep exists for) and an encoder
+ * that FAILS rather than stalls — a stall ends the pass, an ordinary failure
+ * does not — that is an unbounded producer against a 50-row ring, and it can
+ * prune the `[render]` row before a two-gesture Send completes. The facilitator
+ * then sends fifty transcode lines and no crash.
+ *
+ * Stopping the producer rather than protecting the row: an un-prunable row class
+ * inside the store's prune would be a slow leak in a ring whose whole job is to
+ * be bounded, and the policy does not belong in T1 storage.
+ *
+ * This costs nothing the sweep does not already promise. Its contract is that a
+ * segment left untranscoded keeps its PCM and is picked up by the next launch or
+ * the next Finished transition — dying half-way is already documented as safe.
+ * And the only exit from the crash screen is a reload, which is a new page with
+ * a fresh launch sweep, so there is nothing to resume: no `resume` exists,
+ * because a one-way flag with no reader for its other half would be a stub.
+ */
+let quiesced = false;
+
+/** Called from the error boundary. See {@link quiesced}. */
+export function quiesceTranscodeSweep(): void {
+  quiesced = true;
+}
+
+/**
  * Ask for every finished-but-PCM segment to be transcoded. Returns the promise
  * of the sweep that will cover the request — the one in flight or a fresh one.
  * Never rejects: per-segment failures are reported to the failure sink and
@@ -78,6 +110,11 @@ let lastStalledSegmentId: SegmentId | null = null;
  * otherwise re-break #290 (George R1 P3-6).
  */
 export function requestTranscodeSweep(): Promise<void> {
+  // The page is on the crash screen and the log is about to be sent; nothing
+  // here may add rows to it. Resolved rather than rejected: every call site
+  // `void`s this, and a rejection would reach the funnel and append the very
+  // kind of row this is here to stop.
+  if (quiesced) return Promise.resolve();
   if (running) {
     requestedDuringRun = true;
     return running;
@@ -126,6 +163,7 @@ async function runSweeps(): Promise<void> {
     let poison: SegmentId | null = null;
     do {
       requestedDuringRun = false;
+      if (quiesced) break;
       const stalled = await sweepOnce(poison);
       if (stalled !== null) {
         // Second stall in this run: the encoder has stopped. End the run.
@@ -165,6 +203,7 @@ export function afterStalledSegment<
  * `skip` leaves one segment out entirely — the drain pass's poison clip.
  */
 async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
+  if (quiesced) return null;
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
@@ -179,6 +218,11 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
     owed,
     lastStalledSegmentId
   )) {
+    // Checked per segment, so a pass already in flight when the boundary catches
+    // stops at the next clip rather than running the backlog to the end. One
+    // segment already inside `withEncoder` finishes — it holds the lane and its
+    // commit is a transaction — so at most one further row can land.
+    if (quiesced) return null;
     if (segmentId === skip) continue;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the

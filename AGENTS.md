@@ -188,10 +188,37 @@ counter-example currently in the tree.
 
 **Errors have a channel before they have copy.** An unhandled rejection must
 reach an error boundary and a single sink — `console.error` is not a channel on
-a phone in a village. The _presentation_ is a separate question and is
-deliberately deferred: this UI is for people who may not read, so a text toast
-is close to useless. Prefer state-in-place — the control itself shows the
-condition — over a message bubble.
+a phone in a village. The channel itself is now built end to end: the boundary
+and the funnel (`hooks/report-failure.ts`, #188), and the funnel's durable
+destination (#205) — a bounded log in the same IndexedDB the recordings live
+in, marked state-in-place on the Books `≡` control and carried off the phone
+through the OS share sheet. `console.error` is kept beside it, not replaced by
+it: it is still the fastest read on a maintainer's desk, and the only one left
+if the durable write is what failed.
+
+**The channel being built is not the same as the app being wired into it, and
+this file will not blur the two.** What reaches the funnel today is: uncaught
+errors and unhandled rejections (`app/install-failure-listeners.ts`), render
+throws (`components/error-boundary.tsx`), encoder health and recovery
+(`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
+share _prepare_ (`hooks/share-flow.ts`), and the log's own share and clear
+paths. What still ends at `console.error` and is therefore **never written
+down** is most of what a translator actually hits: a failed save
+(`hooks/use-save-take.ts`), a failed book delete (`hooks/use-books.ts`), a
+failed erase (`hooks/use-erase-segment.ts`), mic/playback/record-start
+(`hooks/use-audio-session.ts`), the recorder's commit and preview paths, and
+share _send_ (`hooks/share-flow.ts`). Routing those is follow-up work — and it
+is not a one-line change, because `SaveFailed` replaces the tree the way the
+crash screen does, so that screen needs the Send control the boundary grew.
+Until it lands, do not describe the log as holding "anything that went wrong":
+`docs/training/facilitator-runbook.md` §5 names both halves for facilitators
+and this paragraph is the engineering copy of the same list.
+
+The _presentation_ stays deliberately thin, and that is the standing rule, not
+a gap: this UI is for people who may not read, so a text toast is close to
+useless and raw browser exception text on screen is a defect (#172). Prefer
+state-in-place — the control itself shows the condition — over a message
+bubble, and let a log's entries LEAVE the phone rather than be rendered on it.
 
 **No sprawl, no duplicates, no stubs.** Nothing shipped that nothing uses;
 nothing stubbed "for later."
