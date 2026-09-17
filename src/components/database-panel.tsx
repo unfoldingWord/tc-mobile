@@ -79,7 +79,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
       aria-describedby={TEACH_ID}
       className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name={mark} size={56} />
       </span>
 
@@ -87,17 +87,12 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
         id={TITLE_ID}
         ref={focusOnMount}
         tabIndex={-1}
-        className="t-title"
-        style={{ color: "var(--s-ink)" }}
+        className="t-title text-ink"
       >
         {blocked ? strings.dbBlocked : strings.dbOutOfDate}
       </p>
 
-      <p
-        id={TEACH_ID}
-        className="text-[13px]"
-        style={{ color: "var(--s-ink-muted)" }}
-      >
+      <p id={TEACH_ID} className="text-ink-muted text-[13px]">
         {blocked ? strings.dbBlockedTeach : strings.dbOutOfDateTeach}
       </p>
 
@@ -108,7 +103,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
         }
         variant="primary"
         size={30}
-        className={restartArmed ? "text-[var(--s-live)]" : undefined}
+        className={restartArmed ? "text-live" : undefined}
         onClick={() => {
           if (!holdsCutAudio || restartArmed) {
             reload();
@@ -119,7 +114,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
       />
 
       {restartArmed && (
-        <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+        <p className="text-live text-[12px]">
           {restartConsequence("cutAudio")}
         </p>
       )}

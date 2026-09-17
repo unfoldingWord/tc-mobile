@@ -228,6 +228,60 @@
     pointer-events: none;
   }
 
+  /* --- the notice line (#164 L-14) ---------------------------------------- */
+
+  /* `Notice` painted itself with four inline `style` declarations — background,
+     border, ink, and the glyph's colour. That is not a stylistic preference:
+     an inline `style` beats every `@layer`, so while it was there this
+     component could not HAVE a rule in layer 3 at all. Anything written here
+     would have lost to the element. #164 (L-14) asked for one bridge, and this
+     is the component that could not cross either.
+
+     The tone is a `data-tone` attribute rather than three classes, so the
+     three variants read as one vocabulary with one axis — which is what
+     `notice-tone.ts` says they are.
+
+     THE GLYPH COLOUR IS THE SAME TOKEN `notice-tone.ts` NAMES. It is stated in
+     both places on purpose: the table's value is the reviewed semantic claim,
+     pinned by `tests/notice-tone.test.ts` because for a translator who cannot
+     read the colour is the second half of what tells the three marks apart
+     (George G3). Two statements of one fact can drift, so
+     `tests/notice-bridge.test.ts` reads this file and the table and fails if
+     they ever disagree. */
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-3);
+    padding: var(--p-space-4);
+    border-radius: var(--p-radius-md);
+    font-size: var(--p-text-md);
+    background: var(--s-surface);
+    border: 1px solid var(--s-edge);
+    color: var(--s-ink);
+  }
+  /* A failure wears the live edge. The other two keep the neutral one. */
+  .notice[data-tone="alert"] {
+    border-color: var(--s-live);
+  }
+  /* A wait is muted ink — it is not news, and it must not read as loudly as
+     the thing the translator is waiting for. */
+  .notice[data-tone="busy"] {
+    color: var(--s-ink-muted);
+  }
+  .notice-glyph {
+    flex-shrink: 0;
+    display: inline-flex;
+  }
+  .notice[data-tone="alert"] .notice-glyph {
+    color: var(--s-live);
+  }
+  .notice[data-tone="busy"] .notice-glyph {
+    color: var(--s-ink-muted);
+  }
+  .notice[data-tone="info"] .notice-glyph {
+    color: var(--s-warn);
+  }
+
   /* --- the screen breadcrumb (#164 R-10) ---------------------------------- */
 
   /* The Segments header's "Book > Chapter n" line is a BUTTON whose action is

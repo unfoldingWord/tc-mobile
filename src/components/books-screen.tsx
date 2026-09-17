@@ -920,10 +920,7 @@ function BookItem({
   const listId = `chapters-${book.bookId}`;
   return (
     <li ref={(el) => setNode(book.bookId, el)}>
-      <div
-        className="flex items-center gap-[8px] px-[4px]"
-        style={{ borderBottom: "1px solid var(--s-edge)" }}
-      >
+      <div className="border-edge flex items-center gap-[8px] border-b px-[4px]">
         <button
           type="button"
           onClick={onToggle}
@@ -936,18 +933,13 @@ function BookItem({
           )}
           className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left"
         >
-          <span className="flex-none" style={{ color: "var(--s-ink-muted)" }}>
+          <span className="text-ink-muted flex-none">
             <Icon
               name={expanded ? "chevron-down" : "chevron-right"}
               size={20}
             />
           </span>
-          <span
-            className="t-title min-w-0 truncate"
-            style={{ color: "var(--s-ink)" }}
-          >
-            {book.name}
-          </span>
+          <span className="t-title text-ink min-w-0 truncate">{book.name}</span>
         </button>
         <Control
           icon="plus"
@@ -1005,16 +997,13 @@ function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
         aria-label={strings.openChapter(heading)}
         className="flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left"
       >
-        <span className="min-w-0 truncate" style={{ color: "var(--s-ink)" }}>
-          {heading}
-        </span>
+        <span className="text-ink min-w-0 truncate">{heading}</span>
         {hasCounter && (
           <span
-            className={cn("t-count", "flex-none")}
             // All finished glows green (--s-done) — the wordless "chapter
             // complete" read, matching the green finished rows. Amber is now
             // "audio exists", not "finished" (George R3 P2).
-            style={allDone ? { color: "var(--s-done)" } : undefined}
+            className={cn("t-count", "flex-none", allDone && "text-done")}
           >
             {finishedCount}/{totalCount}
           </span>

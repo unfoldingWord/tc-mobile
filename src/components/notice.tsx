@@ -31,20 +31,20 @@ interface NoticeProps {
  * that this is a failure and not a state, and the colour plus the mark carry
  * that when the sentence cannot. The wording itself is a UX question that has
  * not been answered yet, so it is kept short and literal rather than invented.
+ *
+ * The presentation lives in `.notice` (layer 3), keyed on `data-tone`, and not
+ * in an inline `style` as it did before #164's L-14. That was never only a
+ * tidiness question: an inline `style` outranks every `@layer`, so while this
+ * component painted itself it could not HAVE a component rule — anything
+ * written in layer 3 for it would have lost to the element. `tone` is the only
+ * thing this file decides now; `notice-tone.ts` maps it to the role and the
+ * glyph, and the stylesheet maps it to colour.
  */
 export function Notice({ tone = "alert", children }: NoticeProps) {
-  const { role, icon, failure, muted, glyph } = noticePresentation(tone);
+  const { role, icon } = noticePresentation(tone);
   return (
-    <div
-      role={role}
-      className="flex items-center gap-[10px] rounded-[10px] p-[12px] text-[13px]"
-      style={{
-        background: "var(--s-surface)",
-        border: `1px solid ${failure ? "var(--s-live)" : "var(--s-edge)"}`,
-        color: muted ? "var(--s-ink-muted)" : "var(--s-ink)",
-      }}
-    >
-      <span className="shrink-0" style={{ color: glyph }}>
+    <div role={role} data-tone={tone} className="notice">
+      <span className="notice-glyph">
         <Icon name={icon} size={20} />
       </span>
       {children}

@@ -160,10 +160,9 @@ export function PlayheadOverlay({
       // whatever is mounted next to it; the line is `pointer-events-none`, so
       // lifting it does not take the handles' drags.
       className={cn(
-        "pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px] opacity-0",
+        "bg-ink pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px] opacity-0",
         className
       )}
-      style={{ background: "var(--s-ink)" }}
     />
   );
 }

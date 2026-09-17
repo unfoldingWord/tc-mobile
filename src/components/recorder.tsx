@@ -79,7 +79,7 @@ import {
   type CaptureOutcome,
   type TailPlan,
 } from "@/lib/takes/close-plan";
-import { formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import type { Peaks, SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
@@ -2870,10 +2870,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               disabled={heldTake !== null}
               onClick={onRequestBack}
             />
-            <span
-              className="min-w-0 flex-1 truncate"
-              style={{ color: "var(--s-ink)" }}
-            >
+            <span className="text-ink min-w-0 flex-1 truncate">
               {view
                 ? strings.recorderBreadcrumb(
                     view.bookName,
@@ -3254,11 +3251,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // per #316.
                     <div
                       aria-hidden="true"
-                      className="pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
+                      className="bg-live pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
+                      // `left` stays inline: it is computed from
+                      // `CENTER_FRACTION`, a module constant the stage's own
+                      // arithmetic reads, so it is data rather than a colour
+                      // bypassing the component layer (#164 L-14).
                       style={{
                         left: `${CENTER_FRACTION * 100}%`,
                         transform: "translateX(-1px)",
-                        background: "var(--s-live)",
                       }}
                     />
                   )}
@@ -3329,10 +3329,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     className="recorder-status flex items-center gap-[8px]"
                     role="status"
                   >
-                    <span
-                      className={recording ? "rec-dot" : undefined}
-                      style={{ color: "var(--s-live)" }}
-                    >
+                    <span className={cn("text-live", recording && "rec-dot")}>
                       <Icon name="record" size={14} />
                     </span>
                     <span className="t-timer">
@@ -3785,12 +3782,10 @@ function PermissionPanel({
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {message ?? strings.micNeededTitle}
-      </p>
+      <p className="t-title text-ink">{message ?? strings.micNeededTitle}</p>
       <Control
         icon="retry"
         label={strings.micRetry}
@@ -3848,13 +3843,11 @@ function LoadErrorPanel({
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.loadFailedTitle}
-      </p>
-      <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
+      <p className="t-title text-ink">{strings.loadFailedTitle}</p>
+      <p className="text-ink-muted">{strings.loadFailedBody}</p>
       <Control
         icon="retry"
         label={retrying ? strings.loadRetrying : strings.loadRetry}
@@ -3931,13 +3924,11 @@ function SaveDecodeFailedPanel({
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.takeRecoverTitle}
-      </p>
-      <p style={{ color: "var(--s-ink-muted)" }}>{strings.takeRecoverBody}</p>
+      <p className="t-title text-ink">{strings.takeRecoverTitle}</p>
+      <p className="text-ink-muted">{strings.takeRecoverBody}</p>
       <Control
         icon="retry"
         label={
@@ -4015,12 +4006,12 @@ function SaveDecodeFailedPanel({
               : strings.takeRecoverDiscard
           }
           variant="quiet"
-          className={showArmed ? "text-[var(--s-live)]" : undefined}
+          className={showArmed ? "text-live" : undefined}
           disabled={busy}
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (
-          <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+          <p className="text-live text-[12px]">
             {strings.takeRecoverDiscardHint}
           </p>
         ) : null}
