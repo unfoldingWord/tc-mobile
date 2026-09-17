@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -644,7 +645,16 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
     // the effect below can tell "just opened" from "just closed" on each
     // transition rather than re-pushing on every render the condition holds.
     const overlayEntryPushed = useRef(false);
-    useEffect(() => {
+    // `useLayoutEffect`, not `useEffect` (Frank round 1 P2): a passive effect
+    // runs after paint, leaving a window where an overlay is on screen but the
+    // protective entry it needs is not pushed yet — a Back landing in that
+    // window would exit the app rather than dismiss it, since Books otherwise
+    // pushes no entry at all. A layout effect runs synchronously at the end of
+    // the SAME commit that renders the overlay, before the browser can act on
+    // it — the same reason `openChapter`/`openRecorder` push their own entry
+    // synchronously in the handler rather than an effect; this is the
+    // multi-open-site version of that same guarantee.
+    useLayoutEffect(() => {
       if (hasBooksOverlay && !overlayEntryPushed.current) {
         overlayEntryPushed.current = true;
         onOverlayOpen();

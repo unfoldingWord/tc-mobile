@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -282,7 +283,16 @@ export const SegmentsScreen = forwardRef<
   // below can tell "just opened" from "just closed" on each transition rather
   // than re-pushing on every render the condition happens to be true.
   const overlayEntryPushed = useRef(false);
-  useEffect(() => {
+  // `useLayoutEffect`, not `useEffect` (Frank round 1 P2): a passive effect
+  // runs after paint, leaving a window where the overlay is on screen but the
+  // protective entry it needs is not pushed yet — a Back landing in that
+  // window would exit rather than dismiss. A layout effect runs synchronously
+  // at the end of the SAME commit that renders the overlay, before the
+  // browser can act on it, closing that window — the same reason
+  // `openChapter`/`openRecorder` push their own entry synchronously in the
+  // handler rather than an effect; this is the multi-open-site version of
+  // that same guarantee.
+  useLayoutEffect(() => {
     if (hasScreenOverlay && !overlayEntryPushed.current) {
       overlayEntryPushed.current = true;
       onOverlayOpen();
