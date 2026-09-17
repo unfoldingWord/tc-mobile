@@ -657,6 +657,69 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     }
   });
 
+  it("says this copy is out of date when the browser kills a connection that was refusing an upgrade", async () => {
+    // The refusal is overruled from underneath: the connection protecting the
+    // held take is gone, so the other copy upgrades and the disk version moves
+    // past this build. The deferred closure cannot report that — `invalidate()`
+    // has just made its own `dbPromise !== handle` check true, so it would
+    // return silently — and if nothing else does, this copy believes it is fine
+    // while every later save fails `VersionError` for good (George R1 P2-1).
+    const app = registerCoordinator(() => true);
+    const db = await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.onYielded).not.toHaveBeenCalled();
+
+      forceCloseDatabase(unwrap(db) as never);
+      await delay(0);
+
+      expect(app.onYielded).toHaveBeenCalledTimes(1);
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("says it again to a copy that meets the newer data on an open, not on a yield", async () => {
+    // The same condition reached the other way round: this copy never held the
+    // connection that was in the way — it was started after the newer copy had
+    // written, or its own was terminated. Every unchanged caller meets this as a
+    // rejection it can only turn into its own local failure; none of them can
+    // say the one true thing, which is that nothing from this copy will ever
+    // read or write again.
+    const app = registerCoordinator(() => false);
+    const newer = await openNewerThanApp();
+    newer.close();
+
+    await expect(getDb()).rejects.toBeInstanceOf(Error);
+
+    expect(app.onYielded).toHaveBeenCalledTimes(1);
+  });
+
+  it("honours a refused upgrade when the app unregisters, so the other copy is not stranded", async () => {
+    // `ErrorBoundary` unmounts `App` on a render throw, taking the held take
+    // with it (#167). The reason for the refusal is gone, but without this the
+    // refusal is not: unregistering alone leaves the deferred close with nothing
+    // left to run it, and the other copy waits on its blocked screen until this
+    // page is actually discarded (George R1 P2-2).
+    registerCoordinator(() => true);
+    await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("waiting");
+
+      // What the hook's effect cleanup does, in the order it does it.
+      yieldDeferredUpgrade();
+      setUpgradeCoordinator(null);
+
+      expect(await raceOpen(newer)).toBe("opened");
+    } finally {
+      await release(newer);
+    }
+  });
+
   it("has nothing to give up when no upgrade was refused", async () => {
     // The other state of that gate. Work is held and released all the time with
     // no other copy anywhere near; a release that yielded anyway would close a

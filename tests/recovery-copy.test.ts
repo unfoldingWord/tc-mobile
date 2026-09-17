@@ -20,6 +20,24 @@ describe("recoveryTitle", () => {
     expect(recoveryTitle("quota", true)).toBe("No room left on this phone.");
   });
 
+  it("names what is NEEDED for a downgrade, not what went wrong", () => {
+    // The one failure a Retry can never clear: a newer copy has moved the data
+    // past this build. "could not be saved" reads as a blip that might go the
+    // other way next time, which is the implication this line exists to avoid
+    // (George R1 P2-1).
+    expect(recoveryTitle("downgrade", false)).toBe(
+      "This recording needs the new version of the app."
+    );
+    expect(recoveryTitle("downgrade", true)).toBe(
+      "Your changes need the new version of the app."
+    );
+    for (const editOnly of [false, true]) {
+      expect(recoveryTitle("downgrade", editOnly)).not.toMatch(
+        /try again|could not be saved/i
+      );
+    }
+  });
+
   it("names what could not be saved for an unknown failure", () => {
     expect(recoveryTitle("unknown", false)).toBe(
       "This recording could not be saved."
@@ -70,5 +88,13 @@ describe("recoveryAttempts", () => {
   it("never shows a count for a quota failure — the title already names the cause", () => {
     expect(recoveryAttempts("quota", 2)).toBeNull();
     expect(recoveryAttempts("quota", 5)).toBeNull();
+  });
+
+  it("never shows a count for a downgrade — the count would be a nudge to retry", () => {
+    // Stronger than the quota case: there the next attempt might land once space
+    // is freed, here it cannot land at all, so a rising count is an invitation
+    // to keep trying something that is already decided.
+    expect(recoveryAttempts("downgrade", 2)).toBeNull();
+    expect(recoveryAttempts("downgrade", 9)).toBeNull();
   });
 });

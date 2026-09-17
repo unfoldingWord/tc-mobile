@@ -99,7 +99,21 @@ export function useDatabaseStatus(
         setStatus((current) => (current === "blocked" ? "ok" : current)),
     };
     setUpgradeCoordinator(coordinator);
-    return () => setUpgradeCoordinator(null);
+    return () => {
+      // An upgrade refused to protect work this app was holding must not
+      // outlive the app that asked for the refusal. `ErrorBoundary` unmounts
+      // `App` on a render throw, and the take it was protecting goes with it
+      // (#167 records that loss) — so the reason to refuse is gone, but the
+      // refusal would not be: `setUpgradeCoordinator(null)` alone leaves the
+      // deferred close with nothing left to run it, and the other copy waits on
+      // its blocked screen until this page is actually discarded (George R1
+      // P2-2).
+      //
+      // Before the unregister, not after, so `onYielded` still has a coordinator
+      // to reach if anything is listening.
+      yieldDeferredUpgrade();
+      setUpgradeCoordinator(null);
+    };
   }, []);
 
   return status;

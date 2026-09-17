@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { isQuotaExceeded, saveFailureKind } from "@/hooks/save-failure";
+import {
+  isDatabaseDowngrade,
+  isQuotaExceeded,
+  saveFailureKind,
+} from "@/hooks/save-failure";
 
 /**
  * The classifier, and only the classifier: which of two words the recovery
@@ -26,7 +30,26 @@ describe("saveFailureKind", () => {
     expect(saveFailureKind({ code: 22 })).toBe("quota");
   });
 
+  it("recognises the newer-data failure, which no retry can clear", () => {
+    // `getDb()` throws this for a stored version above `DB_VERSION`. It is the
+    // one failure the recovery screen must not offer as a blip: it fails the
+    // version check before any transaction, so every further Retry fails the
+    // same way (George R1 P2-1).
+    expect(isDatabaseDowngrade({ name: "DatabaseDowngradeError" })).toBe(true);
+    expect(saveFailureKind({ name: "DatabaseDowngradeError" })).toBe(
+      "downgrade"
+    );
+  });
+
+  it("keeps quota ahead of it, and neither swallows the other", () => {
+    // Both are matched by name off the same object shape; a full phone is still
+    // a full phone, and is the one the translator can act on.
+    expect(isDatabaseDowngrade({ name: "QuotaExceededError" })).toBe(false);
+    expect(isQuotaExceeded({ name: "DatabaseDowngradeError" })).toBe(false);
+  });
+
   it("treats anything else as unknown", () => {
+    expect(saveFailureKind({ name: "VersionError" })).toBe("unknown");
     expect(saveFailureKind(new Error("boom"))).toBe("unknown");
     expect(saveFailureKind({ name: "AbortError" })).toBe("unknown");
     expect(saveFailureKind({ code: 21 })).toBe("unknown");

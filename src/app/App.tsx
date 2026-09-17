@@ -150,6 +150,15 @@ export function App() {
   // committed, and none of that is visible from here; refusing while it is open
   // costs the other copy a wait, and the tighter answer would cost a recording
   // the one time it was wrong.
+  //
+  // And deliberately narrow on what counts at all: ONLY unsaved audio. A name
+  // being typed in `NameEdit` and an armed share are lost when the panel takes
+  // the screen, and that is the rule, not an oversight (George R1 P3, accepted).
+  // Both are re-doable in seconds from what is still on disk; a recording is the
+  // one thing on this device that cannot be made again. Widening the predicate
+  // to cover them would hold the other copy's upgrade for work that costs a
+  // retype, which is the trade this guard exists to refuse in the other
+  // direction.
   const holdsUnsavedWork = useCallback(
     () => pendingTake !== null || recorder !== null,
     [pendingTake, recorder]

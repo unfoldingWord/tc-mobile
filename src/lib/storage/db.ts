@@ -444,6 +444,22 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // recoverable without a page reload. Identity-checked: a `terminated`
         // from a superseded connection must not drop the live one.
         invalidate();
+
+        // If an upgrade was being refused on THIS connection, the refusal has
+        // just been overruled by the browser: the connection is gone, so the
+        // other copy is free to upgrade and will. Nothing is left to close, but
+        // the app still has to be told, and the deferred closure cannot do it —
+        // it checks `dbPromise !== handle`, which `invalidate()` has just made
+        // true, and would return silently (George R1 P2-1).
+        //
+        // Saying nothing here is not neutral. This copy goes on believing it is
+        // fine while the disk version moves past its `DB_VERSION`, and the next
+        // save of a held take fails `VersionError` → `DatabaseDowngradeError`
+        // forever, with the panel never raised because the status is still "ok".
+        if (deferredUpgrade !== null) {
+          deferredUpgrade = null;
+          coordinator?.onYielded();
+        }
       },
     });
 
@@ -500,7 +516,22 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
     // that already installed a live connection keeps it — so the next call, a
     // Notice's Try again or the next storage read, reopens from scratch.
     invalidate();
-    throw isVersionError(cause) ? new DatabaseDowngradeError() : cause;
+    if (!isVersionError(cause)) throw cause;
+
+    // The stored data is newer than this build asks for, which is the same
+    // condition the "this copy is out of date" panel exists for — reached the
+    // other way round. `blocking()` gets there when this copy gives its
+    // connection up; this is what happens when the upgrade went through without
+    // it, because the connection had already gone (`terminated`, a discarded
+    // tab) or because this copy was started after the newer one had written.
+    //
+    // Told to the app as a whole, not just to whoever called `getDb()`: every
+    // unchanged caller — `saveTake`, `use-books`, `use-chapter-segments` — meets
+    // this as a rejection it can only turn into its own local failure, and none
+    // of them can say the one true thing, which is that no read or write from
+    // this copy will ever succeed again (George R1 P2-1).
+    coordinator?.onYielded();
+    throw new DatabaseDowngradeError();
   });
   return handle;
 }

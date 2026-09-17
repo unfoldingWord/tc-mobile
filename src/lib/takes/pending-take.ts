@@ -34,8 +34,14 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * the state below, and `lib/` may not import from `hooks/`. The classifier that
  * produces it stays in `hooks/save-failure.ts` and re-exports this type, so
  * there is still only one definition.
+ *
+ * `downgrade` is the one that is NOT retryable: a newer copy of the app has
+ * upgraded the database past this build, so `getDb()` fails the version check
+ * before any transaction is reached and will do so on every attempt. The other
+ * two are blips — a full phone, or anything else — where the next Retry can
+ * genuinely land.
  */
-export type SaveFailureKind = "quota" | "unknown";
+export type SaveFailureKind = "quota" | "downgrade" | "unknown";
 
 /**
  * A finished recording that is not on disk yet.

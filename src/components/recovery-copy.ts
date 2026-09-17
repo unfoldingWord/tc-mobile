@@ -29,6 +29,16 @@ export function recoveryTitle(
   editOnly: boolean
 ): string {
   if (kind === "quota") return "No room left on this phone.";
+  // Named as the condition it is, not as a failure that might go the other way
+  // next time: another copy of the app has moved the data past this build, so
+  // every further attempt from here fails the same way. The line says what is
+  // needed rather than what went wrong, because that is the only thing left
+  // that is true (George R1 P2-1).
+  if (kind === "downgrade") {
+    return editOnly
+      ? "Your changes need the new version of the app."
+      : "This recording needs the new version of the app.";
+  }
   return editOnly
     ? "Your changes could not be saved."
     : "This recording could not be saved.";
@@ -62,10 +72,15 @@ export function recoverySafetyLine(editOnly: boolean): string {
  * more than once: a quota failure's cause is already named by the title, and a
  * single blip needs no count. Never stands in for the safety line above — it is
  * an extra line beside it.
+ *
+ * Suppressed for `downgrade` for a stronger reason than for `quota`. A count is
+ * a nudge to try once more, and here once more cannot work however many times it
+ * is tried — the title already says what is actually needed.
  */
 export function recoveryAttempts(
   kind: SaveFailureKind | null,
   attempts: number
 ): string | null {
-  return kind !== "quota" && attempts > 1 ? `Attempts: ${attempts}` : null;
+  if (kind === "quota" || kind === "downgrade") return null;
+  return attempts > 1 ? `Attempts: ${attempts}` : null;
 }
