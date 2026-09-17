@@ -211,5 +211,15 @@ exact stack** — Vite + PWA + IndexedDB — on low-end Android inside uW.
 ## Licence
 
 MIT — see [`LICENSE`](LICENSE). One LGPL-3.0 dependency, lamejs: **settled
-2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md). The
-notice and attribution obligations that come with keeping it are #36.
+2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md).
+
+Every bundled open-source component is disclosed **inside the app**, reachable
+on the phone under **Menu → About & licenses** (#36): each web-bundle dependency
+and Workbox with its licence and copyright, and the verbatim licence texts (MIT,
+the collected third-party notices, GNU LGPL v3, GNU GPL v3) read in-drawer. Those
+texts also ship and precache for offline under
+[`public/licenses/`](public/licenses/), so a translator in the field is not sent
+to `node_modules` to find them. The Corresponding Source under LGPL §4(d)(0) is
+this repository, available from unfoldingWord (ADR 0003). The in-app notice
+covers the web bundle; the Capacitor native shell's own attribution is tracked
+separately (#477).

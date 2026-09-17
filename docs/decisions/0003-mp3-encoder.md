@@ -62,7 +62,31 @@ obligations are actually met, so they are listed here rather than assumed.
    that the project is MIT with an LGPL-3.0 encoder, rather than leaving a
    reader to discover it from a lockfile.
 
-Items 3 and 5 are not done yet — tracked in #36.
+Items 3 and 5 are done (#36): the MIT / LGPL-3.0 / GPL-3.0 licence texts and the
+attribution of every bundled web-bundle component ship under `public/licenses/`
+(precached for offline) and are reachable in-app at **Menu → About & licenses**
+(`src/components/about-panel.tsx`, data in `src/components/licenses.ts`).
+`package.json` declares `"license": "MIT"` and `README.md` states the
+MIT-with-an-LGPL-3.0-encoder position in prose. The in-app surface has not yet
+been eyeballed on a device.
+
+**LGPL §4(d) — decided 2026-09-03 by the DRI: §4(d)(0), the Corresponding Source
+is the repository.** The boundary (items 1–2) is clean; §4(d)(0) also asks that
+a recipient be _able_ to relink, which it satisfies by providing the
+Corresponding Application Code in a form that permits recombination with a
+modified library. tC Mobile relies on **§4(d)(0)**: the Corresponding Source is
+`unfoldingWord/tc-mobile` itself, made public before the v0.2.0 `staging → main`
+promotion (org-transfer plan D2, pending the requirements owner's confirmation
+and the pre-publication review). **Until the repository is public, §4(d)(0) is
+met by supplying the source on request from unfoldingWord.** Constraints on the
+**shipped copy** (the in-app note and the README, not this ADR): they may state
+that the corresponding source is available from unfoldingWord, but must not
+claim the repository is public until it is, and carry no exercisable-relink
+language.
+
+The in-app notice describes the **web bundle**. The Capacitor native shell's own
+open-source attribution (#262) — the Gradle / CocoaPods / native-Capacitor tree
+— is separate, larger work, tracked in #477.
 
 ### What this closes
 

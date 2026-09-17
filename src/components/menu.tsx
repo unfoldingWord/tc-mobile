@@ -41,6 +41,14 @@ interface MenuProps {
    */
   closeLabel?: string;
   /**
+   * When this changes, the open-edge focus lands again. The About panel (#36)
+   * swaps the drawer body between its list and an in-drawer licence text, and
+   * each swap must re-place focus inside the still-open dialog rather than leave
+   * it orphaned on a control that just unmounted. Defaults undefined, so a menu
+   * that never swaps its body focuses once on open as before.
+   */
+  focusKey?: string | number;
+  /**
    * The menu's contents. Empty on the global menu this lane: Template Library is
    * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
    * opens, traps focus, and closes — not a stub, because the mechanism is exactly
@@ -62,6 +70,7 @@ export function Menu({
   onClose,
   title = strings.menuTitle,
   closeLabel = strings.menuClose,
+  focusKey,
   children,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -109,7 +118,9 @@ export function Menu({
       focusables.find((el) => !headerRef.current?.contains(el)) ??
       focusables[0];
     target?.focus();
-  }, [open]);
+    // `focusKey` re-lands focus when the caller swaps the body under a still-open
+    // menu (#36): the previous target may have unmounted, so re-run the landing.
+  }, [open, focusKey]);
 
   // The focus trap + Escape, bound once per open; reads `onClose` via the ref.
   useEffect(() => {

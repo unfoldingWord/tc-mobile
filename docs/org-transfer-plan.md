@@ -108,8 +108,11 @@ None of these block the move; siblings mostly lack them too.
 - **D5c — Name the technical lead** in `AGENTS.md` (feeds D1).
 - CODEOWNERS / PR / issue templates: **above** org norm (no sibling has them).
   Skip unless wanted.
-- **lamejs LGPL attribution (#36)** — the one open licensing item; unrelated to
-  the org move but should close before a public release.
+- **lamejs LGPL attribution (#36)** — the in-app notice and licence texts ship
+  (**Menu → About & licenses**, precached under `public/licenses/`). What still
+  ties to the org move: LGPL §4(d)(0) makes this repository the Corresponding
+  Source, to go public before the v0.2.0 `staging → main` promotion (D2). The
+  native-shell (Capacitor) attribution is separate, #477.
 
 ## Already done (don't redo)
 
