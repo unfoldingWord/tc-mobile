@@ -1003,8 +1003,14 @@ describe("panOrRest", () => {
       pan: 10_000,
       length: 10_000,
     });
-    const afterZeroDeltaMove = Math.max(0, Math.min(origin + 0, 10_000));
-    const written = panOrRest(afterZeroDeltaMove, 10_000);
+    // Through `panAfterDragMove` (George round-2 P3-1) — the one function
+    // `onPointerMove` actually calls — rather than re-deriving its clamp
+    // inline. A zero-delta move is the jitter this case is about.
+    const { pan: written } = panAfterDragMove({
+      origin,
+      delta: 0,
+      length: 10_000,
+    });
     expect(written).toBeNull();
     expect(
       effectivePan({
