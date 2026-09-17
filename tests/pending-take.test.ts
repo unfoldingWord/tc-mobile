@@ -185,7 +185,12 @@ describe("retrySave", () => {
 });
 
 describe("holdsUnsavedAudio", () => {
-  const empty = { pendingTake: null, recorderOpen: false, clipboard: null };
+  const empty = {
+    pendingTake: null,
+    recorderOpen: false,
+    clipboard: null,
+    clipboardPasted: false,
+  };
 
   it("holds nothing when nothing is in hand", () => {
     expect(holdsUnsavedAudio(empty)).toBe(false);
@@ -218,12 +223,32 @@ describe("holdsUnsavedAudio", () => {
     );
   });
 
-  it("releases once the clipboard is pasted or cleared", () => {
-    // Pasting clears the slot, and so does changing chapter. Either way the
-    // refused upgrade is free to go through.
+  it("releases once the clip has been PASTED, though the slot stays full", () => {
+    // The case that was a lie until George R3 P2-1. `paste()` does not empty the
+    // slot — G3 lets one cut go into several segments across the chapter — so
+    // before the flag existed a cut-then-pasted-then-saved phrase went on
+    // holding another copy's upgrade until the translator changed chapter or
+    // killed the tab. The samples are in a segment's edit history by then; this
+    // slot is a convenience for pasting again, not the last copy of anything.
     const holding = { ...empty, clipboard: pcm() };
     expect(holdsUnsavedAudio(holding)).toBe(true);
+    expect(holdsUnsavedAudio({ ...holding, clipboardPasted: true })).toBe(
+      false
+    );
+  });
+
+  it("releases when the chapter changes and the slot is emptied", () => {
+    const holding = { ...empty, clipboard: pcm() };
     expect(holdsUnsavedAudio({ ...holding, clipboard: null })).toBe(false);
+  });
+
+  it("holds a FRESH cut made after an earlier one was pasted", () => {
+    // `pasted` belongs to the samples in the slot, not to the slot: a new cut
+    // replaces both. Were the flag sticky, every cut after the first paste
+    // would be unprotected for the rest of the chapter — the defect inverted.
+    expect(
+      holdsUnsavedAudio({ ...empty, clipboard: pcm(), clipboardPasted: false })
+    ).toBe(true);
   });
 });
 

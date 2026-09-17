@@ -217,6 +217,38 @@ let coordinator: UpgradeCoordinator | null = null;
 let deferredUpgrade: (() => void) | null = null;
 
 /**
+ * This copy has GIVEN UP its connection for another copy's upgrade, so it must
+ * never open one again.
+ *
+ * Closing the connection is only half of yielding. Nothing about `dbPromise`
+ * being null stops the next `getDb()` from opening a fresh connection at this
+ * build's older `DB_VERSION` — and if the other copy's upgrade has not committed
+ * yet, that open SUCCEEDS and stands in its way all over again, from a
+ * connection it never saw (George R3 P2-2).
+ *
+ * The caller that does this is not a screen the panel can unmount: the
+ * transcode sweep is module-scoped, survives the tree being replaced, and calls
+ * `getDb()` again in `commitTranscode` after an encode that takes seconds — a
+ * live open on the far side of a yield.
+ *
+ * Set only where this copy actually gave something up. NOT set when it merely
+ * MEETS newer data on an open: that open holds no connection and blocks nobody,
+ * and latching there would break the recovery `getDb` is documented and tested
+ * to have — "once the newer data is gone, getDb reopens" — for no gain.
+ */
+let yielded = false;
+
+/**
+ * Give up, and remember it. The latch and the notification always move together;
+ * every path that tells the app it is out of date because THIS copy let go goes
+ * through here.
+ */
+function markYielded(): void {
+  yielded = true;
+  coordinator?.onYielded();
+}
+
+/**
  * Honour a `versionchange` this copy refused earlier, now that the work it was
  * refused to protect has been let go.
  *
@@ -414,8 +446,9 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           held.close();
           // Said last, and only after the close: this build asks for a version
           // the database no longer has, so it cannot reopen. The app's only
-          // honest exit from here is a restart.
-          coordinator?.onYielded();
+          // honest exit from here is a restart — and the latch is what makes
+          // "cannot reopen" true rather than merely intended.
+          markYielded();
         };
 
         if (coordinator?.holdsUnsavedWork() === true) {
@@ -458,7 +491,10 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // forever, with the panel never raised because the status is still "ok".
         if (deferredUpgrade !== null) {
           deferredUpgrade = null;
-          coordinator?.onYielded();
+          // Latched like any other yield: the connection is gone and the other
+          // copy will upgrade, so a reopen here would block it exactly as one
+          // after a deliberate yield would.
+          markYielded();
         }
       },
     });
@@ -537,6 +573,13 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
 }
 
 export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
+  // Refused BEFORE `indexedDB.open` — the point is not to fail, it is not to
+  // hold a connection. A caller that reaches here after this copy yielded is
+  // one the panel could not stop (the module-scoped transcode sweep finishing
+  // an encode), and an open at this build's version would stand in the way of
+  // the upgrade this copy just stepped aside for. A fresh rejection each time,
+  // never a cached one, so nothing is poisoned for a build that reloads.
+  if (yielded) return Promise.reject(new DatabaseDowngradeError());
   dbPromise ??= openDatabase();
   return dbPromise;
 }
@@ -569,6 +612,11 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
  */
 export async function closeDb(): Promise<void> {
   closeGeneration += 1;
+  // Back to a build that has not given anything up. There is no product caller
+  // (see above), and a test that tore the connection down only to find every
+  // later `getDb()` refused by a latch from a previous case would be debugging
+  // the harness rather than the code.
+  yielded = false;
 
   // Snapshot both before awaiting anything, and free the cache slot now: what
   // arrives during the wait belongs to whoever asked for it, not to this call.

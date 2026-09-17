@@ -90,7 +90,15 @@ export function useDatabaseStatus(
       // discarded (`performDiscardTake` returns without touching the database
       // when there is no orphan clip), so the app would go on showing an
       // ordinary screen over a database it cannot reach (Frank R1 P2).
-      onBlocked: () => setStatus("blocked"),
+      onBlocked: (): void =>
+        // Never over `reloadNeeded`, the same way `onUnblocked` refuses to
+        // (George R3 P2-2). Once this copy has given its connection up it is
+        // out of date for good; a later blocked open would flip the panel to
+        // "close the other copy" — and the other copy is the newer build the
+        // person has just been told to restart into.
+        setStatus((current) =>
+          current === "reloadNeeded" ? current : "blocked"
+        ),
       // And taken back down when the block ends on its own — the other copy
       // closed and the queued open came through. Never over `reloadNeeded`:
       // that one is this copy having given its connection away, which no

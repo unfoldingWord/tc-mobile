@@ -130,6 +130,12 @@ interface RecorderProps {
   clipboard: Int16Array | null;
   onClipboardChange: (clip: Int16Array | null) => void;
   /**
+   * The clip has been pasted, so it is no longer the only copy of that phrase.
+   * The slot itself stays full (G3 multi-paste); this is what tells App it may
+   * stop holding another copy's database upgrade for it (#221).
+   */
+  onClipboardPasted: () => void;
+  /**
    * Close the sheet. `dirty` ⇒ the segment changed (a take committed, an edit
    * persisted, or the finished flag toggled), so App reloads the Segments screen
    * behind it.
@@ -198,6 +204,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       saveEditedSegment,
       clipboard,
       onClipboardChange,
+      onClipboardPasted,
       onExit,
       onRequestBack,
     },
@@ -219,6 +226,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const editor = useSegmentEditor(view?.samples ?? null, {
       clip: clipboard,
       set: onClipboardChange,
+      markPasted: onClipboardPasted,
     });
     const [menuOpen, setMenuOpen] = useState(false);
     // The sheet is two modes over one segment (#89): a record mode (the hero

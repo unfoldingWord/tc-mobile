@@ -215,10 +215,16 @@ export function discardSave(current: PendingTake | null): {
  *                  capture, because capture state is not visible from `App` and
  *                  the coarse answer is wrong only in the direction that costs
  *                  the other copy a wait
- *   clipboard      audio CUT from a segment and not yet pasted. The hole is
- *                  already committed to disk, so these samples are the only
- *                  copy left of that phrase — the same unrecoverable loss the
- *                  close plan already treats it as
+ *   clipboard      audio CUT from a segment and NOT YET PASTED. The hole is
+ *                  already committed to disk, so until it lands somewhere these
+ *                  samples are the only copy left of that phrase — the same
+ *                  unrecoverable loss the close plan already treats it as.
+ *                  `clipboardPasted` is what makes "not yet pasted" real: the
+ *                  slot is deliberately not emptied on paste (G3 lets one cut
+ *                  go into several segments), so a full clipboard says nothing
+ *                  on its own about whether the phrase exists anywhere else,
+ *                  and holding an upgrade on it would wait out the rest of the
+ *                  chapter (George R3 P2-1)
  *
  * What is deliberately NOT held work: a name being typed, and an armed share.
  * Both are re-doable in seconds from what is still on disk, and holding another
@@ -229,9 +235,14 @@ export function holdsUnsavedAudio(held: {
   readonly pendingTake: PendingTake | null;
   readonly recorderOpen: boolean;
   readonly clipboard: Int16Array | null;
+  /** Whether the clip in that slot has since been pasted somewhere. */
+  readonly clipboardPasted: boolean;
 }): boolean {
   if (held.pendingTake !== null) return true;
   if (held.recorderOpen) return true;
+  // Pasted: the phrase is in a segment's edit history now, so this slot is a
+  // convenience for pasting it again, not the last copy of anything.
+  if (held.clipboardPasted) return false;
   // An emptied clipboard is not held audio. `length === 0` is reachable — the
   // slot is set from a cut whose selection can be empty — and treating it as
   // held would block an upgrade over nothing.

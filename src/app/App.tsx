@@ -107,7 +107,27 @@ export function App() {
   // remounting per segment — G3: it reaches across a chapter and is lost on
   // close. Cleared on every chapter change so it never carries audio from one
   // chapter into another; lost on page close naturally (never persisted).
-  const [clipboard, setClipboard] = useState<Int16Array | null>(null);
+  //
+  // `pasted` rides with the samples rather than beside them, so the two cannot
+  // drift: a cut always arrives unpasted, and the flag can only be read through
+  // the clip it belongs to. It exists because the slot is NOT emptied on paste
+  // (G3 multi-paste), so "still full" does not mean "still the only copy" — and
+  // the upgrade guard below must only hold another copy's upgrade for the
+  // second of those (George R3 P2-1).
+  const [clipboard, setClipboardState] = useState<{
+    clip: Int16Array | null;
+    pasted: boolean;
+  }>({ clip: null, pasted: false });
+  // A new cut replaces the samples AND resets the flag — the fresh phrase has
+  // not been pasted anywhere, whatever the last one did.
+  const setClipboard = useCallback((clip: Int16Array | null) => {
+    setClipboardState({ clip, pasted: false });
+  }, []);
+  const markClipboardPasted = useCallback(() => {
+    setClipboardState((current) =>
+      current.pasted ? current : { ...current, pasted: true }
+    );
+  }, []);
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
@@ -157,7 +177,8 @@ export function App() {
       holdsUnsavedAudio({
         pendingTake,
         recorderOpen: recorder !== null,
-        clipboard,
+        clipboard: clipboard.clip,
+        clipboardPasted: clipboard.pasted,
       }),
     [pendingTake, recorder, clipboard]
   );
@@ -181,7 +202,7 @@ export function App() {
       setRecorder(null);
       setChapterId(id);
     },
-    [leave, pushHistoryEntry]
+    [leave, pushHistoryEntry, setClipboard]
   );
 
   const backToBooks = useCallback(() => {
@@ -189,7 +210,7 @@ export function App() {
     setClipboard(null); // chapter-scoped (G3)
     setRecorder(null);
     setChapterId(null);
-  }, [leave]);
+  }, [leave, setClipboard]);
 
   const openRecorder = useCallback(
     (segmentId: SegmentId, ordinal: number) => {
@@ -261,7 +282,23 @@ export function App() {
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
       const screen = screenFor(chapterId !== null, recorder !== null);
-      switch (popAction(direction, screen, committing.current, recovering)) {
+      switch (
+        popAction(
+          direction,
+          screen,
+          committing.current,
+          recovering,
+          databasePanel !== null
+        )
+      ) {
+        case "trap-database-panel":
+          // The database panel is a modal in the same slot as `SaveFailed`, not
+          // a navigation level. Absorb the gesture the same way: a Back from the
+          // blocked panel would otherwise exit the app — the copy that was
+          // waiting for the other one to close leaves, and reopening is blocked
+          // again — and the panel's own control is the way out (George R3 P3).
+          pushHistoryEntry();
+          return;
         case "trap-recovery":
           // The `SaveFailed` recovery screen is a modal, not a navigation level
           // (George R2 G2), and the only in-memory copy of the held take lives in
@@ -327,7 +364,14 @@ export function App() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [chapterId, recorder, recovering, backToBooks, pushHistoryEntry]);
+  }, [
+    chapterId,
+    recorder,
+    recovering,
+    databasePanel,
+    backToBooks,
+    pushHistoryEntry,
+  ]);
 
   // Ahead of everything: a held take whose save has failed keeps the microphone
   // and any sound off under the modal with no control to reach them. (`recovery`
@@ -411,8 +455,9 @@ export function App() {
           audio={audio}
           saveRecording={saveRecording}
           saveEditedSegment={saveEditedSegment}
-          clipboard={clipboard}
+          clipboard={clipboard.clip}
           onClipboardChange={setClipboard}
+          onClipboardPasted={markClipboardPasted}
           onExit={closeRecorder}
           onRequestBack={goBack}
         />

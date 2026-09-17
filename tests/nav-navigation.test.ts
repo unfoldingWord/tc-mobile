@@ -120,6 +120,47 @@ describe("popAction", () => {
     expect(popAction("same", "segments", false, true)).toBe("trap-recovery");
     expect(popAction("back", "recorder", true, true)).toBe("trap-recovery");
   });
+
+  it("traps every gesture under the database panel (George R3 P3)", () => {
+    // The panel is a full-screen alertdialog in the same slot as `SaveFailed`,
+    // not a navigation level. Untrapped, a Back from the BLOCKED panel on Books
+    // runs `exit-app`: the copy that was waiting for the other one to close is
+    // the one that leaves, and reopening is blocked all over again. From
+    // Segments it runs `backToBooks()` underneath a panel that stays up.
+    for (const screen of ["books", "segments", "recorder"] as const) {
+      expect(popAction("back", screen, false, false, true)).toBe(
+        "trap-database-panel"
+      );
+    }
+    // Outranks direction and a commit in flight, like the recovery row above.
+    expect(popAction("forward", "books", false, false, true)).toBe(
+      "trap-database-panel"
+    );
+    expect(popAction("same", "books", false, false, true)).toBe(
+      "trap-database-panel"
+    );
+    expect(popAction("back", "recorder", true, false, true)).toBe(
+      "trap-database-panel"
+    );
+  });
+
+  it("ranks a held take above the database panel", () => {
+    // Both are modals in the same slot; the recovery screen holds the only copy
+    // of a recording, so it wins. In the product the two cannot be up together
+    // — `databasePanel` is null while anything is held — but the ordering is
+    // what makes that true rather than incidental.
+    expect(popAction("back", "segments", false, true, true)).toBe(
+      "trap-recovery"
+    );
+  });
+
+  it("changes nothing when no panel is up — the flag defaults to absent", () => {
+    // Every existing caller and every row above this one passes four arguments.
+    expect(popAction("back", "books", false, false)).toBe(
+      popAction("back", "books", false, false, false)
+    );
+    expect(popAction("back", "segments", false, false, false)).toBe("to-books");
+  });
 });
 
 describe("overlayBlocksClose", () => {

@@ -28,6 +28,18 @@ const EMPTY = new Int16Array(0);
 export interface Clipboard {
   readonly clip: Int16Array | null;
   readonly set: (clip: Int16Array | null) => void;
+  /**
+   * The clip has been pasted somewhere, so these samples are no longer the only
+   * copy of that phrase.
+   *
+   * The slot is deliberately NOT emptied on paste — G3 is that one cut can be
+   * pasted into several segments across the chapter — so "still full" cannot
+   * mean "still unpasted". Somebody has to say which, and only `paste()` knows.
+   * The multi-tab upgrade guard is what reads it: it holds another copy's
+   * upgrade while cut audio exists nowhere else, and must stop holding it the
+   * moment that stops being true (George R3 P2-1).
+   */
+  readonly markPasted: () => void;
 }
 
 export interface SegmentEditor {
@@ -227,8 +239,14 @@ export function useSegmentEditor(
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
       applyLog(pushOp(log, { kind: "paste", at, clip }));
+      // The slot stays full on purpose (G3, multi-paste across the chapter), so
+      // this is the only signal that these samples now exist somewhere other
+      // than the clipboard. Said after the op is applied, and unconditionally
+      // once it is: an undo puts the hole back but the phrase is still in the
+      // undo log, not only in this slot.
+      clipboard.markPasted();
     },
-    [clipboard.clip, working.length, log, applyLog]
+    [clipboard, working.length, log, applyLog]
   );
 
   // Undo/redo re-materialise from base and clear any open selection, whose

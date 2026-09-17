@@ -721,7 +721,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     }
   });
 
-  it("waits on cut audio that has not been pasted, and goes through once it is", async () => {
+  it("waits on cut audio that has not been pasted, and goes through once it has been", async () => {
     // The clipboard arm of `holdsUnsavedAudio`, end to end through the storage
     // layer: a phrase cut from a segment whose hole is already on disk is the
     // only copy of that phrase, so the upgrade waits for it exactly as it waits
@@ -732,9 +732,14 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     // The predicate here is the real one from `lib/takes/pending-take.ts`, fed
     // the state `App` feeds it; what is NOT covered is App's wiring of its own
     // `clipboard` state into it, which needs a renderer this repo does not have.
-    let clipboard: Int16Array | null = new Int16Array([1, 2, 3]);
+    const cut = new Int16Array([1, 2, 3]);
     const app = registerCoordinator(() =>
-      holdsUnsavedAudio({ pendingTake: null, recorderOpen: false, clipboard })
+      holdsUnsavedAudio({
+        pendingTake: null,
+        recorderOpen: false,
+        clipboard: cut,
+        clipboardPasted: false,
+      })
     );
     await getDb();
 
@@ -743,12 +748,156 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       expect(await raceOpen(newer)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
 
-      // Pasted, or the chapter changed — either way the slot is empty.
-      clipboard = null;
+      // Released the way the app releases it: the samples are let go of, and the
+      // hook hands the refused upgrade on.
       yieldDeferredUpgrade();
-
       expect(await raceOpen(newer)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("does not wait on a clip that has already been pasted, though the slot is still full", async () => {
+    // The same cut, after it has landed in another segment. `paste()` does NOT
+    // empty the slot — G3 lets one cut go into several segments across the
+    // chapter — so before the flag existed this held the other copy's upgrade
+    // until the translator changed chapter or killed the tab, for samples that
+    // were already on disk (George R3 P2-1).
+    //
+    // Asserted through `blocking()` rather than through a deferred release,
+    // because that is where the predicate is actually consulted: a release-based
+    // case yields unconditionally and would pass with the arm removed.
+    const cut = new Int16Array([1, 2, 3]);
+    const app = registerCoordinator(() =>
+      holdsUnsavedAudio({
+        pendingTake: null,
+        recorderOpen: false,
+        clipboard: cut,
+        clipboardPasted: true,
+      })
+    );
+    await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("opened");
+      expect(newer.wasBlocked()).toBe(false);
+      expect(app.onYielded).toHaveBeenCalledTimes(1);
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("never opens again once it has yielded, so a late caller cannot re-block the upgrade", async () => {
+    // Closing the connection is only half of yielding. Nothing about the cache
+    // being empty stops the next `getDb()` from opening a FRESH connection at
+    // this build's older version — and if the other copy's upgrade has not
+    // committed yet, that open succeeds and stands in its way again, from a
+    // connection it never saw.
+    //
+    // The caller that does this is not one the panel can unmount: the transcode
+    // sweep is module-scoped and calls `getDb()` in `commitTranscode` after an
+    // encode that takes seconds (George R3 P2-2).
+    const opens = trackOpens();
+    try {
+      const app = registerCoordinator(() => false);
+      await getDb();
+
+      const newer = openNewerCopy();
+      try {
+        expect(await raceOpen(newer)).toBe("opened");
+        expect(app.onYielded).toHaveBeenCalledTimes(1);
+
+        // What the sweep does when its encode finishes, after all that.
+        const before = opens.requests.length;
+        const cause = await getDb().then(
+          () => null,
+          (e: unknown) => e
+        );
+        expect((cause as Error).name).toBe("DatabaseDowngradeError");
+        // The assertion that matters is the COUNT: refused before
+        // `indexedDB.open`, because the point is not to fail, it is not to hold
+        // a connection.
+        expect(opens.requests.length).toBe(before);
+
+        // And it stays refused, rather than the rejection being cached once and
+        // the next caller getting a poisoned promise.
+        await expect(getDb()).rejects.toBeInstanceOf(Error);
+        expect(opens.requests.length).toBe(before);
+      } finally {
+        (await newer.db).close();
+      }
+    } finally {
+      opens.restore();
+      await closeDb();
+    }
+  });
+
+  it("still reopens after meeting newer data, which is not the same as giving up", async () => {
+    // The latch is deliberately NOT set when this copy merely MEETS newer data
+    // on an open: that open holds no connection and blocks nobody. `getDb` is
+    // documented and tested to recover if the newer data goes away, and latching
+    // here would take that away for no gain.
+    const opens = trackOpens();
+    try {
+      const newer = await openNewerThanApp();
+      newer.close();
+      await expect(getDb()).rejects.toBeInstanceOf(Error);
+
+      const before = opens.requests.length;
+      await deleteDb();
+      const db = await getDb();
+      expect(opens.requests.length).toBeGreaterThan(before);
+      expect(db.version).toBe(APP_VERSION);
+      await closeDb();
+    } finally {
+      opens.restore();
+    }
+  });
+
+  it("keeps saying out-of-date, never flipping back to 'close the other copy'", async () => {
+    // The status this copy ends on has to be the one that is still true. Once
+    // it has given its connection up it is out of date for good, and a later
+    // blocked open must not flip the panel to "close the other one" — the other
+    // one being the newer build the person has just been told to restart into
+    // (George R3 P2-2).
+    //
+    // The order the two events arrive in is the product's, not this test's:
+    // `onUnblocked` already refuses to clobber `reloadNeeded`, and this pins the
+    // same rule for `onBlocked`, which is the one that did not.
+    const seen: string[] = [];
+    let status = "ok";
+    setUpgradeCoordinator({
+      holdsUnsavedWork: () => false,
+      onYielded: () => {
+        status = "reloadNeeded";
+        seen.push(status);
+      },
+      // What `use-database-status.ts` does, modelled here because this repo has
+      // no renderer to drive the hook itself.
+      onBlocked: () => {
+        status = status === "reloadNeeded" ? status : "blocked";
+        seen.push(status);
+      },
+      onUnblocked: () => {
+        status = status === "blocked" ? "ok" : status;
+        seen.push(status);
+      },
+    });
+
+    await getDb();
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("opened");
+      expect(status).toBe("reloadNeeded");
+
+      // A late caller the panel could not stop asks for the database. It is
+      // refused by the latch without opening, so no `blocked` can even arise —
+      // and were one to, the guard above is what keeps the answer honest.
+      await expect(getDb()).rejects.toBeInstanceOf(Error);
+      expect(status).toBe("reloadNeeded");
+      expect(seen).toEqual(["reloadNeeded"]);
     } finally {
       await release(newer);
     }
