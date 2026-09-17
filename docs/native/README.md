@@ -135,7 +135,10 @@ the JS toolchain never formats or lints generated native files. **No root
 Generated project facts (evidence, from the scaffolded projects):
 
 - **Android:** `minSdk 24`, `compile/targetSdk 36`, Gradle `8.14.3`,
-  `applicationId org.unfoldingword.tcmobile`, `versionCode 1`, `versionName "1.0"`.
+  `applicationId org.unfoldingword.tcmobile`, `versionCode 1` (default; a
+  build passes `-PversionCode`), `versionName` read from `package.json`'s
+  `version` at build time (`0.2.3` as of this writing — was the Capacitor
+  template default `"1.0"` until #410).
 - **iOS:** deployment target `15.0`, bundle id `org.unfoldingword.tcmobile`,
   `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
@@ -531,6 +534,12 @@ native builds carry their **own** version fields:
   timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` must
   pass the same, because the committed default is `1`, and once any CI APK is
   on a phone a `1` is a downgrade that Android refuses (§5 step 3).
+  `versionName` is **not** independent of the PWA version the way iOS's
+  `MARKETING_VERSION` is: `android/app/build.gradle` reads it straight from
+  `package.json`'s `version` at configuration time (no `-PversionName`
+  property, nothing to pass in CI), so Settings → Apps on the phone always
+  shows the same build identifier the facilitator runbook (#248) asks a
+  tester to report (#410).
 
 ---
 
