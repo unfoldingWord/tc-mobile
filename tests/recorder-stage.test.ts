@@ -605,6 +605,7 @@ describe("frozenPan", () => {
         end: END,
         stopRequested: true,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: 4321 });
@@ -621,6 +622,7 @@ describe("frozenPan", () => {
         end: END,
         stopRequested: false,
         ranOut: true,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: END });
@@ -636,6 +638,7 @@ describe("frozenPan", () => {
         end: END,
         stopRequested: false,
         ranOut: true,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: END });
@@ -659,6 +662,7 @@ describe("frozenPan", () => {
         end: LEN,
         stopRequested: false,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "keep" });
@@ -668,6 +672,7 @@ describe("frozenPan", () => {
         end: END,
         stopRequested: false,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "keep" });
@@ -684,6 +689,7 @@ describe("frozenPan", () => {
         end: LEN,
         stopRequested: true,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: 0 });
@@ -693,6 +699,7 @@ describe("frozenPan", () => {
         end: 500,
         stopRequested: false,
         ranOut: true,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: 500 });
@@ -711,6 +718,7 @@ describe("frozenPan", () => {
         end: LEN,
         stopRequested: false,
         ranOut: true,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: null });
@@ -722,6 +730,7 @@ describe("frozenPan", () => {
         end: LEN,
         stopRequested: true,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: null });
@@ -731,6 +740,7 @@ describe("frozenPan", () => {
         end: LEN * 3,
         stopRequested: true,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: null });
@@ -741,6 +751,7 @@ describe("frozenPan", () => {
         end: 0,
         stopRequested: true,
         ranOut: false,
+        measured: true,
         length: 0,
       })
     ).toEqual({ kind: "pan", pan: null });
@@ -751,6 +762,7 @@ describe("frozenPan", () => {
         end: LEN,
         stopRequested: true,
         ranOut: false,
+        measured: true,
         length: LEN,
       })
     ).toEqual({ kind: "pan", pan: LEN - 1 });
@@ -766,6 +778,7 @@ describe("frozenPan", () => {
       end: 10_000,
       stopRequested: false,
       ranOut: true,
+      measured: true,
       length: 10_000,
     });
     const pan = effectivePan({
@@ -795,8 +808,68 @@ describe("frozenPan", () => {
         stopRequested: true,
         ranOut: true,
         length: 10_000,
+        measured: true,
       })
     ).toEqual({ kind: "pan", pan: null });
+  });
+
+  it("writes NOTHING for a stop before any real position existed", () => {
+    // George R4 P1, and the class-level half of this round's fix. `playBuffer`
+    // flips `playingBuffer` true optimistically and the handle only settles
+    // after an `await`, a whole-clip AudioBuffer fill and a yielded task — a
+    // window that scales with the clip and that `audio-io.ts` deliberately
+    // makes tap-reachable. A Pause or a #317 finger landing in it asks for a
+    // stop, so `stopRequested` is true and the round-2 `"keep"` arm does not
+    // apply, but the only position anything ever saw was the optimistic one:
+    // the range's START. Freezing it turns the default Play from the F7 rest
+    // into `panState = 0`, and the next Record punches into the first sample
+    // instead of appending.
+    //
+    // `measured` is the honest answer from the audio boundary — "a real handle
+    // produced this position" — and without it there is nothing to freeze.
+    expect(
+      frozenPan({
+        observed: 0,
+        end: 10_000,
+        stopRequested: true,
+        ranOut: false,
+        length: 10_000,
+        measured: false,
+      })
+    ).toEqual({ kind: "keep" });
+  });
+
+  it("still freezes a stop that DID have a position, at that position", () => {
+    // The other state of the same gate: `measured` must not become a blanket
+    // refusal to freeze, or #416's whole promise ("the waveform stays exactly
+    // where playback had reached") goes with it.
+    expect(
+      frozenPan({
+        observed: 4321,
+        end: 9000,
+        stopRequested: true,
+        ranOut: false,
+        length: 10_000,
+        measured: true,
+      })
+    ).toEqual({ kind: "pan", pan: 4321 });
+  });
+
+  it("does not need a measured position for a clip that ran out", () => {
+    // A run-out is reported by the boundary, not observed by a frame, and the
+    // handle is already gone when the freeze runs — so requiring `measured`
+    // here would silently reintroduce the round-2/round-3 defect of parking a
+    // finished clip short of its end.
+    expect(
+      frozenPan({
+        observed: 8800,
+        end: 9000,
+        stopRequested: false,
+        ranOut: true,
+        length: 10_000,
+        measured: false,
+      })
+    ).toEqual({ kind: "pan", pan: 9000 });
   });
 });
 

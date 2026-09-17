@@ -619,11 +619,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // samples being heard, and keeps the overlay itself free of any notion of a
     // selection. `null` — the hide sentinel, distinct from 0 — passes through
     // untouched.
-    const readPlaybackElapsed = audio.readPlaybackElapsed;
+    // The DRAWN position takes the optimistic pre-start answer as-is: before the
+    // handle settles the play has not moved off its start, so the line belongs
+    // at the range start and the overlay stays up. Only a REMEMBERED position
+    // needs `measured` — see `stopPlayback` — which is the whole point of
+    // `readPlaybackPosition` returning both halves (George R4 P1).
+    const readPlaybackPosition = audio.readPlaybackPosition;
     const readSoundingElapsed = useCallback(() => {
-      const ms = readPlaybackElapsed();
-      return ms === null ? null : soundingOffsetRef.current + ms;
-    }, [readPlaybackElapsed]);
+      const pos = readPlaybackPosition();
+      return pos === null ? null : soundingOffsetRef.current + pos.ms;
+    }, [readPlaybackPosition]);
 
     // The same position in SAMPLES, which is the unit the strip, the pan and
     // the record insertion offset all speak (#415). Pulled on the scroller's
@@ -668,6 +673,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * frame ends before any rAF reads a handle (Frank R2 P2).
      */
     const ranOutRef = useRef(false);
+    /**
+     * The stop that is being frozen had a REAL position to freeze (George R4
+     * P1). Written by `stopPlayback` from the audio boundary's own answer, not
+     * accumulated over the play: at the moment of a stop, "is there a handle"
+     * is exactly "was this position ever more than an assumption".
+     *
+     * False is the tap that lands in `playBuffer`'s optimistic window — before
+     * `playSamples` has resumed the context, filled a whole-clip AudioBuffer
+     * and yielded — where the only position anything has seen is the range's
+     * start. Freezing that made the default Play from the F7 rest a punch-in at
+     * sample 0.
+     */
+    const measuredRef = useRef(false);
 
     const notePlaybackSample = useCallback((sample: number) => {
       playbackSampleRef.current = sample;
@@ -706,12 +724,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         stopRequested: stopRequestedRef.current,
         ranOut: ranOutRef.current,
         length,
+        measured: measuredRef.current,
       });
-      // `"keep"` writes NOTHING (George R2 P2 #3): a play that neither was
-      // stopped nor ran out never really started, and the only position the
-      // frame loop saw for it was `playBuffer`'s optimistic one — the range's
-      // start. Writing that turned the default Play from the rest into a
-      // punch-in at sample 0 when `playSamples` threw.
+      // `"keep"` writes NOTHING, and it now covers BOTH ways a play can have no
+      // position worth keeping (George R2 P2 #3, then R4 P1): a `playSamples`
+      // that threw after the optimistic `playingBuffer = true`, and a stop that
+      // landed before the handle ever settled. In each the only position
+      // anything saw was the range's start, and writing it turned the default
+      // Play from the F7 rest into a punch-in at sample 0.
       if (frozen.kind === "pan") setPanState(frozen.pan);
     }, [length]);
 
@@ -755,15 +775,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      */
     const stopBuffer = audio.stopBuffer;
     const stopPlayback = useCallback(() => {
-      const sample = readPlaybackSample();
-      if (sample !== null) playbackSampleRef.current = sample;
+      // Both halves of the boundary's answer, read once, before `stopBuffer`
+      // takes the handle away. `ms` still updates `playbackSampleRef` even when
+      // it is the optimistic pre-start value, because that IS where the line is
+      // drawn and a #317 drag has to start from what the translator can see;
+      // `measured` is what decides whether the freeze may keep it.
+      const pos = readPlaybackPosition();
+      if (pos !== null) {
+        playbackSampleRef.current = msToFrames(
+          soundingOffsetRef.current + pos.ms
+        );
+      }
+      measuredRef.current = pos !== null && pos.measured;
       stopRequestedRef.current = true;
       // Any stop VOIDS an owed #317 resume (George R2 P1). See the docblock.
       resumeAfterDragRef.current = false;
       stopBuffer();
       freezePlaybackPan();
       return playbackSampleRef.current;
-    }, [stopBuffer, readPlaybackSample, freezePlaybackPan]);
+    }, [stopBuffer, readPlaybackPosition, freezePlaybackPan]);
 
     /**
      * Stop playback and forget where it had reached — for a caller about to
@@ -821,9 +851,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * thinks is sounding" cannot be set from two places and disagree. The range
      * is a `subarray`: a VIEW, not a copy, so no allocation beyond what
      * `playBuffer`'s own Int16→Float32 conversion already makes.
+     *
+     * It never lets `playBuffer`'s own toggle be the thing that stops a sound
+     * (George R4 P2). That branch is `stopBuffer(); return;` — it sets no
+     * `stopRequested`, samples no position and freezes nothing — so reaching it
+     * from here would clear this play's ending flags, stop the previous sound,
+     * start nothing, and leave the armed one-shot to answer `"keep"`: the stage
+     * snapping back to the pre-play pan, which is the #416 defect. The guard
+     * below is the same "one stop path" rule the rest of the sheet follows, and
+     * it reads the AUDIO's own answer rather than React's `playingBuffer`,
+     * which is a commit behind in exactly the window this is about.
      */
     const soundRange = useCallback(
       (start: number, end: number) => {
+        if (readPlaybackPosition() !== null) stopPlayback();
         // Pinned BEFORE the play, so the playhead is offset by the range that
         // is actually sounding rather than by whatever the line becomes next.
         soundingOffsetRef.current = framesToMs(start);
@@ -836,6 +877,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // anything can report an ending.
         stopRequestedRef.current = false;
         ranOutRef.current = false;
+        // ...and this play has no measured position yet either: the handle is
+        // still several awaits away (George R4 P1). Any stop that lands before
+        // it settles must freeze nothing.
+        measuredRef.current = false;
         audio.playBuffer(editor.working.subarray(start, end), 0, {
           // The boundary reports the one ending nothing here could reconstruct:
           // the clip ran out. It fires only for a source that was not stopped
@@ -846,7 +891,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           },
         });
       },
-      [audio, editor.working]
+      [audio, editor.working, readPlaybackPosition, stopPlayback]
     );
 
     const onPointerDown = useCallback(
@@ -2935,7 +2980,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     />
                   )}
                   {/* The playback playhead, a pull-model DOM overlay (#102): it
-                    polls `readPlaybackElapsed` on its own rAF and moves a line,
+                    polls `readPlaybackPosition` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
                     inert list behind it. Mounted always; it hides itself when
                     nothing is sounding. Its fractions read `waveView`, which
@@ -3250,13 +3295,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // both, and the first external tester read it the other way
                     // round and asked whether the icons were reversed.
                     //
-                    // Both read `displayedZoom`, not `zoom` (#284, George R7):
-                    // while `wholeView` swaps the canvas to the whole clip, that
-                    // IS the "whole" state on screen even though `zoom` still
-                    // holds the real value the window returns to once the buffer
-                    // stops sounding. The control is disabled either way, but a
-                    // disabled control still tells a non-reader which state it is
-                    // in, and it must name the window that is actually drawn.
+                    // Both read `displayedZoom`, not `zoom` (#284, George R7),
+                    // and what that buys has NARROWED since #417 (George R4
+                    // P3). `wholeView` is `render === "whole"`, which
+                    // `stageView` now answers for a prepared preview only — a
+                    // sounding buffer scrolls at the real zoom, which is #417's
+                    // whole point, so during playback `displayedZoom` IS
+                    // `zoom`. A preview never reaches this toolbar (it requires
+                    // `idleEditable`), so here the two are always equal today.
+                    // Kept because a disabled control still tells a non-reader
+                    // which state it is in, and it must name the window that is
+                    // actually drawn — not because the canvas is swapped out
+                    // from under this control any more.
                     icon={displayedZoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
                       displayedZoom === ZOOM_WHOLE
@@ -3281,13 +3331,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
                     // A window control, and the one this class was found through
-                    // (George R4 P2-1): it seeds its span from the centerline —
-                    // which is hidden while a buffer sounds — so mid-audition it
-                    // would highlight the insert point rather than the audio being
-                    // heard, at the F7 rest the END of the take. Inert in BOTH
-                    // directions: closing an open frame mid-audition would also
-                    // flip the view out from under the sound, since a picked span
-                    // is what keeps the pan window.
+                    // (George R4 P2-1). The reason has CHANGED shape since #415
+                    // and #316, and the old wording — "the centerline is hidden
+                    // while a buffer sounds" — is now false in a way that
+                    // invites someone to delete this gate (George R4 P3): the
+                    // line is never hidden any more. What is true is that
+                    // `openSelection` seeds from `win.centerlineSample`, which
+                    // is `panState` — and while the stage SCROLLS the drawn
+                    // line is the sounding sample while `panState` is still the
+                    // pre-play value, stale until the freeze. Seeding from it
+                    // would put the span where the take was parked (at the F7
+                    // rest, the END) while the translator is hearing the middle.
+                    // Inert in BOTH directions: closing an open frame
+                    // mid-audition would also flip the view out from under the
+                    // sound, since a picked span is what keeps the pan window.
                     disabled={
                       !idleEditable || !hasAudio || stage.windowControlsInert
                     }

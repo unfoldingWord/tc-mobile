@@ -327,6 +327,19 @@ interface FrozenPanInput {
   readonly ranOut: boolean;
   /** The working buffer's length, for the clamp. */
   readonly length: number;
+  /**
+   * `observed` came from a REAL playback handle, not from the optimistic
+   * pre-start position (George R4 P1).
+   *
+   * `playBuffer` flips `playingBuffer` true before it starts anything, and the
+   * handle settles only after an `await`, a whole-clip AudioBuffer fill and a
+   * yielded task — a window that scales with the clip and that `audio-io.ts`
+   * yields *in order to make* tap-reachable. Everything that reads a position
+   * in that window gets the range's start, because that is the honest visual
+   * answer; freezing it is what is not. Read only on the `stopRequested` arm: a
+   * run-out is reported by the boundary rather than observed by a frame.
+   */
+  readonly measured: boolean;
 }
 
 /**
@@ -391,6 +404,13 @@ export function frozenPan(
   input: FrozenPanInput
 ): { kind: "keep" } | { kind: "pan"; pan: number | null } {
   if (!input.stopRequested && !input.ranOut) return { kind: "keep" };
+  // A stop before any real position existed is the SAME answer as a failed
+  // start, and for the same reason (George R4 P1): the only position anything
+  // saw was `playBuffer`'s optimistic one, the range's start. The round-2
+  // `"keep"` arm above missed this because it keyed on the two ending flags —
+  // here a stop genuinely WAS asked for — rather than on whether the audio
+  // layer had ever produced a position to freeze.
+  if (!input.ranOut && !input.measured) return { kind: "keep" };
   // Running OUT outranks being stopped when both land in the same turn (George
   // R3's adjacent risk). `onEnded` is a fact about the audio — the clip is over
   // — and a stop arriving after it (a Pause tapped on the last syllable, a
