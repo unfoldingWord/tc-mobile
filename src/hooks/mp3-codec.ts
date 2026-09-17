@@ -138,18 +138,19 @@ export class EncoderFailedError extends Error {
 export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
 
 /**
- * How long an UNPROVEN snapshot-built worker may take to say `ready` before this
- * job gives up on that HANDLE and builds another (#192).
+ * How long an UNPROVEN snapshot-built worker may go without saying `ready`
+ * before that silence counts as one strike against the snapshot (#192).
  *
  * Nothing else waits on this, and a chunk-built worker never waits at all. The
  * budget a caller should assume is `SNAPSHOT_MUTE_STRIKES` windows, not one
- * (George R3 P3): the first silent window costs a rebuild from the same snapshot
- * and a second window on the same `encodeMp3` call, and only the strike that
- * reaches the limit throws the snapshot away and sends the rebuild to the chunk
- * URL. After that nothing waits again, because the wait exists to judge a blob
- * and there is no blob left. Nor does it recur while the blob is good: proof
- * latches on the snapshot at its first message of any kind, so a page pays these
- * windows once between them, not once per worker.
+ * (George R3 P3), and all of them are spent on the SAME worker (George R4 P2):
+ * a silent window re-arms rather than rebuilds, so a blob that is merely slow
+ * keeps whatever evaluation it has done. Only the strike that reaches the limit
+ * throws the snapshot away, and only then is a worker built from the chunk URL.
+ * After that nothing waits again, because the wait exists to judge a blob and
+ * there is no blob left. Nor does it recur while the blob is good: proof latches
+ * on the snapshot at its first message of any kind, so a page pays these windows
+ * once between all its encodes, not once per worker.
  *
  * Short on purpose, and deliberately NOT `ENCODER_SILENCE_TIMEOUT_MS`: waiting
  * fifteen seconds before falling back is exactly the hole in storage relief
@@ -593,10 +594,15 @@ let snapshotMuteStrikes = 0;
  * that, on a page which has lived across a deploy, is exactly the URL that is
  * gone. #192, re-opened by its own guard.
  *
- * So one timeout costs this job a fallback and nothing else; the snapshot stays
- * and the next construction tries it again. Two says the blob really is mute,
- * and the cost of being wrong twice — two more handshake windows per page — is
- * not worth defending against.
+ * So one timeout costs this job another window and nothing else; the snapshot
+ * stays, and so does the worker — the strikes are about the BYTES, and they can
+ * only add up if the handle they are counted against keeps running (George R4
+ * P2). Terminating between them made two windows into two first windows: the
+ * replacement evaluates from zero and dies at the same mark, so the throttled
+ * WebView above was never actually given the extra time this constant is here to
+ * give it. Two silent windows on one live worker says the blob really is mute,
+ * and the cost of being wrong twice — `SNAPSHOT_MUTE_STRIKES` windows per page,
+ * once, across every encode it makes — is not worth defending against.
  */
 const SNAPSHOT_MUTE_STRIKES = 2;
 
@@ -744,10 +750,23 @@ export function warmEncoder(): void {
  * timer is not judged while `document.hidden`, and a resume grants a fresh window.
  *
  * An encode on an UNPROVEN blob-built worker waits for its `ready` first, and a
- * blob that does not answer is thrown away and the job re-run on a chunk-built
- * worker — in THIS turn, with the PCM still in hand (George R1 P1). A caller
- * never sees that happen; it costs at most `ENCODER_READY_TIMEOUT_MS`, once per
- * snapshot.
+ * blob that never answers is stepped around and the job re-run — in THIS turn,
+ * with the PCM still in hand (George R1 P1). A caller never sees that happen.
+ *
+ * WHAT IT COSTS, for the callers that hold the lane across it —
+ * `finish-transcode.ts`'s sweep waits with a clip loaded, and Share Book holds
+ * it across every chapter (George R4 P3-4). The bound is
+ * `SNAPSHOT_MUTE_STRIKES × ENCODER_READY_TIMEOUT_MS`, six seconds today, and it
+ * is per PAGE rather than per call: strikes never reset, so the page that finds
+ * a mute blob pays those windows once between all its encodes. One `encodeMp3`
+ * can pay all of them, if it is the call that finds it. A proven blob, a
+ * chunk-built worker, and every encode after the snapshot is written off wait
+ * for nothing at all.
+ *
+ * And a silent window is not a verdict: the handle is kept and re-armed while
+ * the strikes last, because a blob may be slow rather than mute, and the
+ * fallback after them is the chunk URL only because by then there is no
+ * snapshot left to prefer.
  */
 async function encodeInWorker(
   samples: Int16Array,
@@ -775,29 +794,46 @@ async function encodeInWorker(
   // a sweep segment recorded as failed — and the fallback only arrived for
   // whoever came next (George R1 P1).
   //
-  // THE FALLBACK IS ANOTHER BLOB, NOT THE CHUNK URL (George R3 P2). The chunk
-  // URL is the one this whole PR exists because a translator's phone may no
-  // longer be able to fetch: `cleanupOutdatedCaches` deletes the hashed chunk
-  // when a new service worker activates, and the page that has lived across that
-  // deploy is exactly the page holding the snapshot. Falling back there on a
-  // TIMEOUT put the discovering job back on the dead URL — with its PCM already
-  // transferred — which is #192 re-opened, in the only environment the snapshot
-  // is for. So while the snapshot is still held we rebuild from the snapshot and
-  // spend a second window on it; only once the strikes have thrown it away, or
-  // an `error`/synchronous construction throw has (both of which say this
-  // platform CANNOT run these bytes, and neither of which says anything about
-  // whether the chunk is still cached), do we build from the chunk.
+  // A TIMEOUT KEEPS THE HANDLE; ONLY THE LAST STRIKE THROWS IT AWAY
+  // (George R3 P2, then George R4 P2 — the same lesson twice, one level apart).
   //
-  // Bounded by `SNAPSHOT_MUTE_STRIKES` by construction: every timeout counts a
-  // strike, and the strike that reaches the limit clears `snapshotUrl`, so the
-  // next `obtainWorker` is chunk-built and the loop's condition is false.
+  // The chunk URL is the one this whole PR exists because a translator's phone
+  // may no longer be able to fetch: `cleanupOutdatedCaches` deletes the hashed
+  // chunk when a new service worker activates, and the page that has lived
+  // across that deploy is exactly the page holding the snapshot. Falling back
+  // there on a timeout put the discovering job on the dead URL with its PCM
+  // already transferred — #192 re-opened, in the only environment the snapshot
+  // is for (R3). So a timeout must not reach for the chunk.
+  //
+  // But rebuilding from the snapshot instead was still wrong, for a reason that
+  // only shows up one level down (R4). `SNAPSHOT_MUTE_STRIKES` exists for the
+  // blob that is SLOW rather than mute — a WebView throttling the worker without
+  // setting `document.hidden`, a phone spending the window evaluating ~170 kB of
+  // lamejs — and `dropEncoderWorker` TERMINATES. Two windows spent on two fresh
+  // handles are two first windows, not a doubled budget: the replacement starts
+  // evaluating from zero and is killed at the same mark, so the constant bought
+  // nothing it claimed to. Strikes are about the BYTES, and the only way for
+  // them to add up is to leave the handle running and grant it another window.
+  //
+  // So: a timeout keeps the worker and re-arms. `error` and the synchronous
+  // `new Worker(blob)` throw still drop and rebuild immediately — those say this
+  // platform CANNOT run these bytes, which is a verdict silence never is. And
+  // the strike that reaches the limit is what clears `snapshotUrl`, so the
+  // rebuild after it is chunk-built and the loop ends.
+  //
+  // Bounded by construction, and bounded per PAGE rather than per call: strikes
+  // never reset, so a page pays at most `SNAPSHOT_MUTE_STRIKES` windows in total
+  // — up to two of them on one `encodeMp3` if that call is the one that finds a
+  // mute blob.
   while (workerFromSnapshot && !snapshotProven && !workerReady) {
     const outcome = await awaitWorkerReady(worker, signal);
     if (workerReady) break;
-    // A TIMEOUT is not a verdict on the blob — see `noteHandshakeTimeout`.
-    // An `error` already was one, and the durable listener has discarded the
-    // snapshot and dropped the handle by the time we get here.
-    if (outcome === "timeout") noteHandshakeTimeout();
+    if (outcome === "timeout") {
+      noteHandshakeTimeout();
+      // Still a snapshot? Then the strikes have not run out, and they are about
+      // this worker's bytes: let it keep evaluating and give it another window.
+      if (snapshotUrl) continue;
+    }
     dropEncoderWorker();
     // No argument, and that is the point: `workerScriptUrl` returns the snapshot
     // while there is one and the chunk URL only once there is not.
@@ -873,6 +909,16 @@ function awaitWorkerReady(
   signal: AbortSignal | undefined
 ): Promise<HandshakeOutcome> {
   return new Promise((resolve, reject) => {
+    // ASK, do not only listen (George R4 P3-3, the same class as R2 P3 one
+    // function up). An abort that has already fired is never delivered again,
+    // and the loop above re-enters this function after a timeout — by which
+    // point `detach` has removed the previous window's abort listener. A signal
+    // that fired in that gap has nothing left listening for it, and the job
+    // would wait out another whole window for a share whose menu is closed.
+    if (signal?.aborted) {
+      reject(abortReason(signal));
+      return;
+    }
     if (workerReady) {
       resolve("ready");
       return;

@@ -646,61 +646,61 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     expect(FakeWorker.instances).toHaveLength(2);
   });
 
-  it("steps a mute blob handle onto a FRESH blob, never onto the chunk URL", async () => {
+  it("spends both silent windows on the SAME handle, never restarting its clock", async () => {
     const blobWorker = await rebuildFromSnapshot();
 
     const p = encode(Int16Array.of(2));
     await microtasks();
-    // It loaded, and then said nothing at all — the truncated-fetch case, which
-    // errors never. Or it is merely SLOW: lamejs still evaluating, or a WebView
-    // throttling the worker without ever setting `document.hidden`.
+    expect(blobWorker.waitingForReady).toBe(true);
+
+    // Strike one. The handle may be merely SLOW rather than dead — evaluating
+    // ~170 kB of lamejs on a throttled WebView, which is the case
+    // `SNAPSHOT_MUTE_STRIKES` is written for. Terminating it here and building a
+    // fresh blob would throw away exactly the progress the second window exists
+    // to wait for, and the replacement would start from zero: two windows that
+    // cannot add up (George R4 P2). So the handle LIVES, and the next window is
+    // its second, not another worker's first.
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
-
-    // The handle is gone, and it was never given any PCM.
-    expect(blobWorker.terminated).toBe(true);
+    expect(blobWorker.terminated).toBe(false);
+    expect(blobWorker.waitingForReady).toBe(true);
+    expect(FakeWorker.instances).toHaveLength(2);
+    // Still no PCM, and still no verdict on the blob.
     expect(blobWorker.posted).toEqual([]);
-
-    // The replacement is ANOTHER BLOB (George R3 P2). The chunk URL is not a
-    // safe harbour to step aside into: on a page that has lived across a deploy
-    // — the only page this snapshot exists for — it is precisely the URL
-    // `cleanupOutdatedCaches` deleted. Falling back there put the discovering
-    // job on a dead URL with a chapter's PCM already transferred, which is #192
-    // re-opened by the guard that closes it.
-    expect(nth(2).url).toBe(BLOB_URL);
-    // And the snapshot survives a single silent window (George R2 P2): one
-    // timeout is not evidence that the bytes cannot run, only that they have not
-    // answered yet.
     expect(revoked).toEqual([]);
 
-    // The caller never sees any of it: the encode it asked for RESOLVES, on the
-    // second window of the same call.
-    nth(2).emitReady();
+    // It answers inside the second window, on the budget it accumulated.
+    blobWorker.emitReady();
     await microtasks();
-    nth(2).emitDone(new Uint8Array([2]).buffer);
+    expect(blobWorker.posted).toHaveLength(1);
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
     await expect(p).resolves.toBeInstanceOf(Uint8Array);
+    // And no worker was ever built to replace it.
+    expect(FakeWorker.instances).toHaveLength(2);
   });
 
   it("a SLOW blob costs the job nothing, even once the chunk URL is gone", async () => {
-    // George R3 P2's scenario, end to end and in the environment it is about.
-    // The page has lived across a deploy, so `cleanupOutdatedCaches` has already
-    // deleted the hashed chunk; here that is a construction the stub refuses.
-    // (A real purged URL fails asynchronously instead — either way the job that
-    // lands there has already transferred its PCM and is lost.) The blob is not
-    // dead, only slow, and nothing about this job should depend on the dead URL.
+    // George R3 P2's scenario, end to end and in the environment it is about,
+    // with George R4 P2's timing. The page has lived across a deploy, so
+    // `cleanupOutdatedCaches` has already deleted the hashed chunk; here that is
+    // a construction the stub refuses. (A real purged URL fails asynchronously
+    // instead — either way the job that lands there has already transferred its
+    // PCM and is lost.) The blob is not dead, only slower than one window.
     const blobWorker = await rebuildFromSnapshot();
-    const chunkUrl = String(nth(0).url);
-    FakeWorker.throwOnUrl.add(chunkUrl);
+    FakeWorker.throwOnUrl.add(String(nth(0).url));
 
     const p = encode(Int16Array.of(2));
     await microtasks();
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
 
-    expect(blobWorker.terminated).toBe(true);
-    nth(2).emitReady();
+    // Halfway through its second window the worker finishes evaluating and
+    // answers — which it could not have done if the first window had killed it.
+    expect(blobWorker.terminated).toBe(false);
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT / 2);
+    blobWorker.emitReady();
     await microtasks();
-    nth(2).emitDone(new Uint8Array([2]).buffer);
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
     await expect(p).resolves.toBeInstanceOf(Uint8Array);
 
     // Nothing was ever built from the purged URL after the warm worker that
@@ -708,33 +708,34 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     // Books shelf was never told this phone cannot make recordings smaller.
     expect(FakeWorker.instances.slice(1).map((w) => String(w.url))).toEqual([
       BLOB_URL,
-      BLOB_URL,
     ]);
     expect(revoked).toEqual([]);
     expect(encoderHealth()).toBe("ok");
   });
 
   it("throws the snapshot away only after a SECOND visible silent window", async () => {
-    await rebuildFromSnapshot();
+    const blobWorker = await rebuildFromSnapshot();
 
     const p = encode(Int16Array.of(2));
     await microtasks();
 
-    // Strike one: a fresh blob, snapshot kept.
+    // Strike one: the handle is kept, and so is the snapshot.
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
-    expect(nth(2).url).toBe(BLOB_URL);
+    expect(blobWorker.terminated).toBe(false);
     expect(revoked).toEqual([]);
 
-    // Strike two, on the SAME `encodeMp3` call — the second window this job pays
-    // rather than gamble a chapter's PCM on a URL that may be purged. Only now
-    // is the blob written off, and only now does a construction go to the chunk.
+    // Strike two, on the SAME handle and the same `encodeMp3` call. Two full
+    // visible windows of silence is the evidence, and only now is the blob
+    // written off — which is also the only thing that lets a construction go to
+    // the chunk URL a deploy may have purged (George R3 P2).
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
+    expect(blobWorker.terminated).toBe(true);
     expect(revoked).toEqual([BLOB_URL]);
-    expect(isChunkUrl(nth(3).url)).toBe(true);
+    expect(isChunkUrl(nth(2).url)).toBe(true);
 
-    nth(3).emitDone(new Uint8Array([2]).buffer);
+    nth(2).emitDone(new Uint8Array([2]).buffer);
     await expect(p).resolves.toBeInstanceOf(Uint8Array);
   });
 
@@ -787,7 +788,19 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     expect(revoked).toEqual([]);
     expect(blobWorker.terminated).toBe(false);
 
+    // And it must not have counted a STRIKE for it either, which is the half of
+    // this claim the round-5 loop made invisible: a strike now also re-arms on
+    // the same handle, so "still alive, snapshot still here" is true whether the
+    // freeze was forgiven or charged. The difference is how much budget is left.
+    // One more full VISIBLE window is therefore strike one, and strike one never
+    // discards — if the freeze had been charged, this would be strike two and
+    // the blob would be gone.
     dispatchVisibility();
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+    expect(revoked).toEqual([]);
+    expect(blobWorker.terminated).toBe(false);
+
     blobWorker.emitReady();
     await microtasks();
     blobWorker.emitDone(new Uint8Array([2]).buffer);
@@ -818,14 +831,42 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     expect(blobWorker.posted).toEqual([]);
   });
 
+  it("stops waiting when an abort lands BETWEEN two handshake windows", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    const controller = new AbortController();
+    const p = encode(Int16Array.of(2), controller.signal);
+    await microtasks();
+    expect(blobWorker.waitingForReady).toBe(true);
+
+    // Run the first window's timer SYNCHRONOUSLY, so the handshake detaches —
+    // and takes its abort listener with it — before the loop's continuation has
+    // run. `waitingForReady` going false is what says we are standing in that
+    // gap rather than before or after it.
+    vi.advanceTimersByTime(READY_TIMEOUT);
+    expect(blobWorker.waitingForReady).toBe(false);
+
+    // The abort lands there, with nothing listening for it. Only the next
+    // `awaitWorkerReady` ASKING can catch it (George R4 P3-3); without that the
+    // job waits out a second full window, and then encodes, for a share whose
+    // menu is already closed.
+    controller.abort();
+    await microtasks();
+
+    await expect(p).rejects.toBeInstanceOf(DOMException);
+    expect(blobWorker.posted).toEqual([]);
+    // And an abort still judges nothing about the blob.
+    expect(revoked).toEqual([]);
+  });
+
   it("never latches encoder health for a mute blob", async () => {
     await rebuildFromSnapshot();
     expect(encoderHealth()).toBe("ok");
 
     const p = encode(Int16Array.of(2));
     await microtasks();
-    // Both windows: neither the fresh blob nor the eventual chunk fallback is a
-    // health event.
+    // Both windows on the one handle, then the fall-through to the chunk:
+    // none of it is a health event.
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
@@ -837,7 +878,7 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     // while the chunk worker that replaced it is healthy (George R1 P2-4).
     expect(encoderHealth()).toBe("ok");
 
-    nth(3).emitDone(new Uint8Array([2]).buffer);
+    nth(2).emitDone(new Uint8Array([2]).buffer);
     await expect(p).resolves.toBeInstanceOf(Uint8Array);
     expect(encoderHealth()).toBe("ok");
   });
@@ -922,7 +963,8 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
 
     const p = encode(Int16Array.of(2));
     await microtasks();
-    // Two silent windows are what it takes to give up on the blob at all.
+    // Two silent windows on the one handle are what it takes to give up on the
+    // blob at all.
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
@@ -931,9 +973,9 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     // The chunk URL is gone too — the purge this whole mechanism is about. The
     // job fails, but as an ordinary encode failure the sweep can step past, not
     // as the wedged-encoder verdict that ends its run.
-    expect(isChunkUrl(nth(3).url)).toBe(true);
+    expect(isChunkUrl(nth(2).url)).toBe(true);
     const rejection = expect(p).rejects.toBeInstanceOf(EncoderFailedError);
-    nth(3).emitError(new Error("chunk failed to load"));
+    nth(2).emitError(new Error("chunk failed to load"));
     await rejection;
     await expect(p).rejects.not.toBeInstanceOf(EncoderStalledError);
   });
