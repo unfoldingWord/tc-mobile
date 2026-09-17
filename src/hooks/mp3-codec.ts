@@ -571,9 +571,11 @@ function discardWorkerSnapshot(): void {
  * `snapshotUrl` is assigned, and which cannot see a non-ok response at all. This
  * is the state itself rather than a proxy for it.
  *
- * Tree-shaken out of a production build: `src/app/e2e-harness.ts` is its only
- * importer and `vite.config.ts` marks that file external for every mode but
- * `"e2e"`.
+ * UNREACHABLE in a production build, which is the property that matters:
+ * `src/app/e2e-harness.ts` is its only importer, `vite.config.ts` marks that
+ * file external for every mode but `"e2e"`, and CI asserts no trace of the
+ * harness reaches `dist/`. Whether Rollup also drops these three lines is not
+ * something this comment claims — it has not been measured.
  */
 export function encoderSnapshotTaken(): boolean {
   return snapshotUrl !== null;
