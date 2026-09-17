@@ -1,12 +1,15 @@
 import "fake-indexeddb/auto";
 
 import { unwrap } from "idb";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearFailureLog,
   flushFailureLog,
   installFailureLog,
+  useFailureCount,
 } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
 import { getDb } from "@/lib/storage/db";
@@ -315,14 +318,24 @@ describe("the durable sink", () => {
       .mockImplementationOnce(() => first)
       .mockImplementation(() => Promise.resolve());
 
+    // Real turns, not only microtasks. A landed append now also re-reads the
+    // count into the module store before the lane advances (George R2 P2-1),
+    // and an IndexedDB read does not settle on the microtask queue. Draining
+    // timers gives the second report MORE chance to jump the queue, not less —
+    // and a version that drained only microtasks left the second append in
+    // flight past `restoreAllMocks`, so it stored a row into the NEXT case.
+    const drain = async () => {
+      for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+
     reportFailure(new Error("one"), "a");
     reportFailure(new Error("two"), "b");
     // Give the second report every chance to jump the queue.
-    for (let i = 0; i < 50; i++) await Promise.resolve();
+    await drain();
     expect(spy).toHaveBeenCalledTimes(1);
 
     release?.();
-    for (let i = 0; i < 50; i++) await Promise.resolve();
+    await drain();
     expect(spy).toHaveBeenCalledTimes(2);
     expect(spy.mock.calls[1]?.[0]?.context).toBe("b");
   });
@@ -505,5 +518,70 @@ describe("the durable sink", () => {
 
     reportFailure(new Error("after a failed clear"), "later");
     await settle(1);
+  });
+});
+
+/**
+ * The count the ≡ marker reads, across the unmount `App` does on every chapter.
+ *
+ * There is no renderer in this suite, so "first paint" is `renderToStaticMarkup`
+ * — which runs the component body once, with no effects, and reads
+ * `useSyncExternalStore` through its server snapshot. That is exactly the paint
+ * George R2 P2-1 is about: the one Books does the instant it remounts, before
+ * any `countFailures()` this hook starts could possibly have landed. A hook that
+ * begins each mount at `useState(0)` renders "0" here; a hook reading the module
+ * store renders the number that is actually on disk.
+ */
+describe("the count a remount inherits", () => {
+  let uninstall: (() => void) | null = null;
+
+  beforeEach(async () => {
+    await clearAllStores();
+    // Puts the module store at a known 0 as well as the database, so a case
+    // cannot pass on a number an earlier case left behind.
+    await clearFailureLog();
+    uninstall = installFailureLog();
+  });
+
+  afterEach(() => {
+    uninstall?.();
+    uninstall = null;
+  });
+
+  /** One mount, one paint, no effects — what Books does coming Back. */
+  const firstPaint = () =>
+    renderToStaticMarkup(
+      createElement(function CountProbe() {
+        return createElement("span", null, String(useFailureCount()));
+      })
+    );
+
+  it("first-paints failures reported while nothing was mounted", async () => {
+    // Nothing has rendered yet: this is the chapter visit, with Books gone.
+    reportFailure(new Error("during a chapter"), "unhandled-rejection");
+    reportFailure(new Error("and another"), "uncaught-error");
+    await flushFailureLog();
+
+    // Back to Books. The mark has to be there on the FIRST paint, because a
+    // facilitator who taps ≡ in the window before an async read lands gets the
+    // menu a quiet phone gets.
+    expect(firstPaint()).toBe("<span>2</span>");
+  });
+
+  it("carries the count across an unmount and back", async () => {
+    reportFailure(new Error("before the chapter"), "unhandled-rejection");
+    await flushFailureLog();
+    expect(firstPaint()).toBe("<span>1</span>");
+
+    // Unmount (open a chapter), remount (Back). Same number, first paint.
+    expect(firstPaint()).toBe("<span>1</span>");
+  });
+
+  it("drops to 0 on a clear, with nothing mounted to notice", async () => {
+    reportFailure(new Error("to be discarded"), "unhandled-rejection");
+    await flushFailureLog();
+    await clearFailureLog();
+
+    expect(firstPaint()).toBe("<span>0</span>");
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { boundText, describeCause } from "@/lib/failure-text";
 import {
@@ -77,23 +77,88 @@ function enqueue<T>(op: () => Promise<T>): Promise<T> {
 }
 
 /**
- * UI subscribers, notified after a write lands so a screen showing the log (or
- * a count of it) can re-read. Separate from `subscribeToFailures`: that fires
- * when a failure is REPORTED, this fires when one is STORED, and a marker that
- * lit before the row existed would send a facilitator to an empty log.
+ * How many rows the log held the last time anything looked — module scope, so
+ * it outlives the screen that reads it (George R2 P2-1).
+ *
+ * **The remount is the whole reason this is not `useState(0)`.** `App` unmounts
+ * `BooksScreen` for the length of a chapter visit, so a facilitator who sees the
+ * red mark, opens a chapter to check that the recording survived, and comes Back
+ * would land on a Books that first-paints with no mark, no `FailureLogPanel` and
+ * a plain "Open menu" — until an async `countFailures()` put it back. The one
+ * state-in-place signal this feature has would blink out exactly when someone
+ * went to look at it, and a tap in that window opens the menu a quiet phone
+ * gets. The screen's other two standing markers already treat this remount as
+ * load-bearing: `useStoragePersistence` caches its settled answer at module
+ * scope, and encoder health is a `useSyncExternalStore`. This is the third.
+ *
+ * A cold first launch still starts at 0 and that is inherent — nothing has read
+ * the database yet. A remount is a different thing, and must not.
  */
-const watchers = new Set<() => void>();
+let lastCount = 0;
 
-function notifyWatchers(): void {
-  for (const watcher of Array.from(watchers)) {
+/**
+ * Subscribers to {@link lastCount}, in the `useSyncExternalStore` shape.
+ *
+ * Fires when a row is STORED or cleared, not when a failure is REPORTED: those
+ * are different moments, and a marker that lit before the row existed would send
+ * a facilitator to an empty log.
+ */
+const countWatchers = new Set<() => void>();
+
+/** Subscribe to the count. The store half of `useSyncExternalStore`. */
+function subscribeToFailureCount(onChange: () => void): () => void {
+  countWatchers.add(onChange);
+  return () => {
+    countWatchers.delete(onChange);
+  };
+}
+
+/**
+ * The snapshot half. Returns the cached number, never a fresh read: React may
+ * call this many times per render and it must be stable and synchronous.
+ */
+function getFailureCount(): number {
+  return lastCount;
+}
+
+/**
+ * Record a newly known count and tell the subscribers, if it moved.
+ *
+ * The equality check is not an optimisation: `useSyncExternalStore` re-renders
+ * on every notification, and the count is re-read after every write, so
+ * notifying on an unchanged number would re-render Books on each append once
+ * the ring is at its limit and the number stops moving.
+ */
+function setLastCount(next: number): void {
+  if (next === lastCount) return;
+  lastCount = next;
+  for (const watcher of Array.from(countWatchers)) {
     try {
       watcher();
     } catch (watcherFailure) {
-      // Direct, not through `reportFailure`: a watcher is only ever a React
-      // state setter, and routing its throw back into the funnel would append a
-      // row, notify the watchers, and arrive here again.
+      // Direct, not through `reportFailure`: a watcher here is only ever
+      // React's own store subscription, and routing its throw back into the
+      // funnel would append a row, notify the watchers, and arrive here again.
       console.error("[failure-log] a log watcher threw", watcherFailure);
     }
+  }
+}
+
+/**
+ * Re-read the count into the cache. Resolves to `true` when the read landed.
+ *
+ * Called after every successful write and clear — NOT only from the hook's
+ * effect — because a failure reported while a chapter is open has no mounted
+ * reader at all, and the count must still be right when Books comes back.
+ */
+async function refreshCount(): Promise<boolean> {
+  try {
+    setLastCount(await countFailures());
+    return true;
+  } catch {
+    // Quiet by design; the hook's retry ladder owns recovery while a screen is
+    // mounted, and a read that fails with nothing on screen has nobody to tell.
+    return false;
   }
 }
 
@@ -143,7 +208,17 @@ export function installFailureLog(): () => void {
 async function writeEntry(entry: StoredFailure): Promise<void> {
   try {
     await appendFailure(entry);
-    notifyWatchers();
+    // The count is re-read HERE rather than incremented: at the ring's limit an
+    // append also prunes, so the number does not always move, and a guess would
+    // drift from the store it is supposed to describe. It also updates the cache
+    // when no screen is mounted to do it — a failure during a chapter visit.
+    //
+    // AWAITED, so the read stays on the lane with the write it describes. A
+    // floating read could still be in flight when `clearFailureLog` sets 0 and
+    // would then land afterwards with the pre-clear number, leaving the marker
+    // lit over an empty log. The cost is one cheap count between two appends of
+    // a cascade; the benefit is that `flushFailureLog` covers the count too.
+    await refreshCount();
   } catch (writeFailure) {
     console.error("[failure-log] could not store a failure", writeFailure);
   }
@@ -186,7 +261,9 @@ export function clearFailureLog(): Promise<void> {
       reportFailure(clearFailure, "failure-log-clear");
       throw clearFailure;
     }
-    notifyWatchers();
+    // Known exactly, so it is set rather than re-read: the transaction that just
+    // committed emptied the store.
+    setLastCount(0);
   });
 }
 
@@ -235,13 +312,28 @@ export function flushFailureLog(): Promise<void> {
  * screen actually offers.
  *
  * It is a dependency of the whole effect rather than a second effect: a bump
- * should re-arm everything this hook holds — the ladder, the watcher
- * subscription and the foreground listeners — from the state a fresh mount would
- * have. `count` is React state and survives the re-run, so the number on screen
- * does not flash to 0 on the way past.
+ * should re-arm everything this hook holds — the ladder and the foreground
+ * listeners — from the state a fresh mount would have. The number itself lives
+ * in the module-level store, so it does not flash to 0 on the way past.
+ *
+ * **The value comes from {@link getFailureCount}, not from `useState(0)`**
+ * (George R2 P2-1). Books is unmounted for the whole of a chapter visit, so a
+ * hook that starts each mount at 0 loses the mark exactly when a facilitator
+ * goes to check whether the recording survived and comes back. The effect below
+ * still owns READING — the ladder, the recovery token, the foreground listeners
+ * — but what it reads into is the store, and every write updates that store
+ * whether or not this screen is mounted.
  */
 export function useFailureCount(recoveryToken = 0): number {
-  const [count, setCount] = useState(0);
+  const count = useSyncExternalStore(
+    subscribeToFailureCount,
+    getFailureCount,
+    // Server snapshot: this app never server-renders, but `renderToStaticMarkup`
+    // is how `tests/error-boundary.test.ts` reaches the crash screen's markup,
+    // and that tree now contains a share control that mounts this hook's
+    // neighbours. Same value, so the two can never disagree.
+    getFailureCount
+  );
 
   useEffect(() => {
     let live = true;
@@ -249,40 +341,36 @@ export function useFailureCount(recoveryToken = 0): number {
     let attempt = 0;
 
     // One pending retry at a time (George R1 P3-4). `refresh` is reached from
-    // three places — the ladder, the watchers after a write, and the foreground
-    // listeners — so two of them arriving while a retry is pending used to leave
-    // an orphan timer that only the LAST handle's `clearTimeout` could reach.
-    // Extra reads rather than a stuck marker, but the cleanup then lied about
-    // what it cancelled.
+    // three places — the ladder, a write landing, and the foreground listeners
+    // — so two of them arriving while a retry is pending used to leave an orphan
+    // timer that only the LAST handle's `clearTimeout` could reach. Extra reads
+    // rather than a stuck marker, but the cleanup then lied about what it
+    // cancelled.
     const armRetry = (delayMs: number) => {
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(refresh, delayMs);
     };
 
     const refresh = () => {
-      void countFailures().then(
-        (n) => {
-          if (!live) return;
+      void refreshCount().then((landed) => {
+        if (!live) return;
+        if (landed) {
           attempt = 0;
-          setCount(n);
-        },
-        () => {
-          if (!live) return;
-          // Quiet, but NOT final (George, round 2). Staying quiet is right —
-          // a failed `getDb` is already on the shelf's own Notice with a Try
-          // again, and a second voice for the same cause, somewhere a
-          // translator cannot act, is noise. Giving up is not: the read fails
-          // on a TRANSIENT open (a second tab holding an upgrade,
-          // `DatabaseBlockedError`, #221), the shelf's Try again does not
-          // re-run this effect, and the count then sat at 0 forever — so a log
-          // that was on disk and had survived a reload stayed invisible, and
-          // the panel that sends it never mounted, because it is gated on the
-          // count.
-          attempt += 1;
-          if (attempt > MAX_COUNT_RETRIES) return;
-          armRetry(RETRY_BACKOFF_MS * 2 ** (attempt - 1));
+          return;
         }
-      );
+        // Quiet, but NOT final (George, round 2). Staying quiet is right — a
+        // failed `getDb` is already on the shelf's own Notice with a Try again,
+        // and a second voice for the same cause, somewhere a translator cannot
+        // act, is noise. Giving up is not: the read fails on a TRANSIENT open (a
+        // second tab holding an upgrade, `DatabaseBlockedError`, #221), the
+        // shelf's Try again does not re-run this effect on its own, and the
+        // count then sat at 0 forever — so a log that was on disk and had
+        // survived a reload stayed invisible, and the panel that sends it never
+        // mounted, because it is gated on the count.
+        attempt += 1;
+        if (attempt > MAX_COUNT_RETRIES) return;
+        armRetry(RETRY_BACKOFF_MS * 2 ** (attempt - 1));
+      });
     };
 
     // Coming back to the app is the moment the blocking copy is most likely to
@@ -300,14 +388,16 @@ export function useFailureCount(recoveryToken = 0): number {
       refresh();
     };
 
-    watchers.add(refresh);
+    // No watcher registration here any more: a write updates the store itself
+    // (`writeEntry` → `refreshCount`), which is what makes a failure reported
+    // while Books is unmounted — during a chapter visit — visible the moment
+    // Books comes back. This effect owns only the READ and its recovery.
     document.addEventListener("visibilitychange", onForeground);
     window.addEventListener("focus", onForeground);
     refresh();
     return () => {
       live = false;
       if (timer !== undefined) clearTimeout(timer);
-      watchers.delete(refresh);
       document.removeEventListener("visibilitychange", onForeground);
       window.removeEventListener("focus", onForeground);
     };
