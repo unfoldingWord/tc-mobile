@@ -219,3 +219,58 @@ export function overlayDismissal(
     closeConfirm: confirmOpen && !erasing,
   };
 }
+
+/**
+ * The arithmetic `App.tsx`'s `onPopState` needs to tell "a popstate we caused
+ * ourselves" from "a genuine navigation" — extracted here, pure, because
+ * George's round 2 AND round 3 reviews both found a real bug in it while it
+ * lived only as refs in `App.tsx` (P2-1/P2-2 both rounds): a single boolean
+ * (`suppressPop`) can mark "ignore exactly the next popstate", but this app
+ * can have MORE than one of its own `history.back()` calls outstanding at
+ * once (an overlay consume, `closeRecorder`'s programmatic close, and the
+ * on-screen Back can all fire in overlapping windows), and the browser is
+ * free to deliver those as separate, sequential popstates OR coalesce them
+ * into ONE popstate whose destination index jumps by more than one level
+ * (this file already documents that coalescing as fact — see `goBack`'s own
+ * comment in `App.tsx`). A single bit cannot represent "two are outstanding,
+ * only one landed" or "one was outstanding, but the actual jump was two
+ * levels, so one level of this belongs to something else."
+ *
+ * `outstandingBacks` is that count — how many of THIS app's own `back()`
+ * calls have not yet landed as a popstate. `delta` is `fromIndex - toIndex`:
+ * the REAL number of index levels a landed popstate actually traversed
+ * backward, read from the entries' own monotonic index rather than counted
+ * per-event. Comparing the two (not counting popstates 1-for-1 against
+ * `back()` calls) is what makes this correct under EITHER delivery: as many
+ * of `delta`'s levels as `outstandingBacks` allows are attributed to this
+ * app's own bookkeeping (returned as the new, decremented count); anything
+ * beyond that is `remaining` — a genuine navigation that happened to land
+ * coalesced into the same popstate as our own consume, and must still be
+ * routed exactly as if it had arrived as its own separate popstate.
+ *
+ * Returns `null` when nothing of this app's own is outstanding (or the
+ * popstate did not move backward at all — forward/same are `navDirection`'s
+ * concern, not this function's) — the ordinary case, meaning: route this
+ * popstate normally, nothing to reconcile first.
+ */
+export interface PopStateReconciliation {
+  /** `outstandingBacks`, after this popstate's displacement is attributed
+   *  against it. Zero once every `back()` this app had in flight has landed. */
+  outstandingBacks: number;
+  /** Displacement beyond what this app had outstanding — 0 in the common
+   *  case; a genuine extra navigation, coalesced into the same popstate,
+   *  that still needs routing when greater than 0. */
+  remaining: number;
+}
+
+export function reconcilePopState(
+  outstandingBacks: number,
+  delta: number
+): PopStateReconciliation | null {
+  if (outstandingBacks <= 0 || delta <= 0) return null;
+  const consumed = Math.min(delta, outstandingBacks);
+  return {
+    outstandingBacks: outstandingBacks - consumed,
+    remaining: delta - consumed,
+  };
+}

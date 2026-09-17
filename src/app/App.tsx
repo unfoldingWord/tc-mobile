@@ -12,7 +12,12 @@ import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useSaveTake } from "@/hooks/use-save-take";
-import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
+import {
+  navDirection,
+  popAction,
+  reconcilePopState,
+  screenFor,
+} from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
@@ -66,16 +71,40 @@ export function App() {
   // site below rather than given `popAction` a new parameter: the effect
   // (re-arm, absorb) is identical to an in-flight recorder commit, and the
   // existing `"rearm-during-commit"` row already covers it once this is true.
-  // Cleared where `pendingPush`/`suppressPop` are (the consume's own popstate).
+  // Cleared once `outstandingBacks` (below) fully drains to 0 — NOT on every
+  // popstate (George round 3): the gap between this being set and the
+  // eventual consume actually being ISSUED (a later, state-dependent event —
+  // the screen's own effect noticing `hasOpenOverlay()` went false) can see
+  // an unrelated popstate land while `outstandingBacks` is still 0, and
+  // clearing this then would let `popAction` stop absorbing before the real
+  // consume has even been issued, let alone landed.
   const dismissingOverlay = useRef(false);
-  // Ignore exactly one popstate: the one our own `history.back()` fires to
-  // consume an entry (a programmatic close, or the forward-trap re-assertion).
-  const suppressPop = useRef(false);
+  // George round 3 (#393): how many of THIS app's own `history.back()` calls
+  // are outstanding — not yet resolved by a landed popstate. Replaces round
+  // 1/2's `suppressPop` (a single bit: "ignore exactly the next popstate"),
+  // which both George's round 2 AND round 3 review found broken the same way:
+  // an overlay consume, `closeRecorder`'s programmatic close, and the
+  // on-screen Back can all have a `back()` outstanding at once, and the
+  // browser is free to deliver those as SEPARATE popstates or COALESCE them
+  // into one popstate whose destination index jumps by more than one level
+  // (`goBack`'s own comment, below, already documents that coalescing as
+  // fact) — a single bit cannot represent "two are outstanding, one landed"
+  // or "the jump was bigger than what was outstanding." `reconcilePopState`
+  // (`lib/nav/navigation.ts`) is the pure arithmetic that reconciles this
+  // count against a landed popstate's actual displacement; this ref is its
+  // one piece of App-side state.
+  const outstandingBacks = useRef(0);
   // An in-app Back is in flight (its `history.back()` has not yet come back as a
   // popstate). A synchronous latch so a rapid double-tap on the on-screen Back
   // issues only ONE traversal — the tap-level guard `onClick={close}` used to get
   // from `closing.current` before Back was rerouted through history (George R2
-  // G3). Cleared as each popstate lands.
+  // G3). Cleared as each popstate lands — NARROWER than it once was (George
+  // round 3): with `outstandingBacks` now the general "a programmatic back()
+  // is outstanding" guard `goBack` itself checks below, this flag's only
+  // remaining job is deduping a double-tap on `goBack` specifically, so
+  // clearing it on every popstate (rather than only once `outstandingBacks`
+  // drains) is still correct — a repeated on-screen Back tap is a narrower
+  // problem than the coalescing class the count above exists to solve.
   const backRequested = useRef(false);
   // A monotonic id stamped on every entry, so the handler can tell Back from
   // Forward by comparing the destination index to where we were (F2). Only ever
@@ -94,25 +123,29 @@ export function App() {
 
   // George round 1 P2-2 (#393, widened from Frank round 1's overlay-only
   // version): `window.history.back()` is asynchronous — its `popstate` lands
-  // on a LATER task, not synchronously. ANY push while a consume's `back()` is
-  // still outstanding (`suppressPop`) lands while the browser's still-pending
+  // on a LATER task, not synchronously. ANY push while a `back()` is still
+  // outstanding (`outstandingBacks`) lands while the browser's still-pending
   // traversal is no longer guaranteed to target the entry it was issued for —
   // not only an overlay reopening (Frank's original finding), but also
   // `openChapter`/`openRecorder`: closing a Books/Segments overlay and
   // immediately tapping a chapter/Edit, before that close's `back()` lands,
   // used to push the new screen's entry unguarded, leaving the UI on a screen
   // history did not agree it had reached. EVERY push now goes through this ONE
-  // guard — held as a ref, not fired immediately, whenever a consume is still
-  // outstanding; the suppressed-popstate branch below drains it once that
-  // traversal lands, so a push and a pending consume never overlap. The
-  // internal re-arm pushes in the popstate switch below (trap-recovery,
-  // rearm-during-commit, commit-close-recorder, dismiss-screen-overlay) all
-  // run AFTER the `suppressPop` early-return, so `suppressPop.current` is
-  // always false there and this guard is a proven no-op for them.
-  const pendingPush = useRef(false);
+  // guard — a COUNT (George round 3 P3-2, widened from round 1/2's single
+  // `pendingPush` bit: two real pushes can be requested in the same
+  // outstanding window, and a bit can only remember one), incremented rather
+  // than fired immediately whenever a back() is still outstanding; the
+  // reconciliation branch below drains all of it, in order, once every
+  // outstanding back() has resolved, so a push and a pending consume never
+  // overlap. The internal re-arm pushes in the popstate switch below
+  // (trap-recovery, rearm-during-commit, commit-close-recorder,
+  // dismiss-screen-overlay) all run AFTER that reconciliation, at which point
+  // `outstandingBacks.current` is proven 0 (see the handler's own comment),
+  // so this guard is a proven no-op for them.
+  const queuedPushes = useRef(0);
   const pushHistoryEntry = useCallback(() => {
-    if (suppressPop.current) {
-      pendingPush.current = true;
+    if (outstandingBacks.current > 0) {
+      queuedPushes.current += 1;
       return;
     }
     pushRawHistoryEntry();
@@ -120,43 +153,45 @@ export function App() {
 
   // The programmatic half of #393/#374's overlay-entry bookkeeping: consume the
   // entry `pushHistoryEntry` pushed for an open Books/Segments overlay OR (George
-  // round 2 P2-2) the recorder's own entry, once either closes by a NON-popstate
-  // path (a tap on Close/scrim, a successful rename, an erase-on-open, a failed
-  // save's `onExit`) — `closeRecorder` below now calls this too, rather than
-  // issuing its own unguarded `history.back()`, since George found it had
-  // drifted from this guard in a different way than the finding below.
-  // `suppressPop` marks the resulting popstate as ours.
+  // round 2 P2-2, round 3 P2-1) the recorder's own entry, once either closes by
+  // a NON-popstate path (a tap on Close/scrim, a successful rename, an
+  // erase-on-open, a failed save's `onExit`, an idle commit's own exit) —
+  // `closeRecorder` and `commit-close-recorder`'s async exit below both call
+  // this now, rather than each issuing its own unguarded `history.back()`,
+  // since George found first one, then the other, had drifted from this guard
+  // in a different way across two rounds. Also shared by `trap-forward`'s
+  // cancel below: mechanically identical (issue a `back()`, track it as
+  // outstanding), even though it is not "giving back an entry" in the same
+  // sense — reusing this one function is what keeps every raw
+  // `history.back()` call site in this file behind the SAME counted guard
+  // (George round 3: "fold it in... [so it] cannot race").
   const consumeHistoryEntry = useCallback(() => {
     // Frank round 1 P2 (#393, second pass): a reopen (or any other deferred
-    // push) already deferred ITS push (`pendingPush`, above) because the
-    // previous close's `back()` was still in flight — so THIS close has
+    // push) already deferred ITS push (`queuedPushes`, above) because a
+    // `back()` was still outstanding when it tried to run — so THIS close has
     // nothing real to consume; the entry it would be undoing was never
-    // pushed. Cancel the deferred push and stop: issuing a second `back()`
-    // here would race the still-pending first one, and the drain below would
-    // then push an entry for an overlay that is already closed again. Chains
-    // of further rapid toggles collapse the same way, one cancellation at a
-    // time, until an actual push or consume runs.
-    if (pendingPush.current) {
-      pendingPush.current = false;
+    // pushed. Cancel one deferred push and stop: issuing a `back()` here
+    // would race whatever back() is still outstanding, and the drain below
+    // would then push an entry for an overlay that is already closed again.
+    // Chains of further rapid toggles collapse the same way, one
+    // cancellation at a time, until an actual push or consume runs. Net-zero
+    // stack depth either way — cancelling a push someone else queued has the
+    // identical effect on the eventual stack as pushing then immediately
+    // consuming would, just without the wasted round trip, which is what
+    // makes sharing this one counter across every caller (an overlay's own
+    // consume, the recorder's) sound rather than coincidental.
+    if (queuedPushes.current > 0) {
+      queuedPushes.current -= 1;
       return;
     }
-    // George round 2 P2-2 (#393): a DIFFERENT traversal can already be
-    // outstanding here (this call's own earlier scenario, from the OTHER
-    // side — `closeRecorder` firing while an overlay consume's `back()`
-    // has not yet landed). `suppressPop` already true means exactly that;
-    // issuing a second `back()` would race it, the defect this round's P2-2
-    // named. Leave it alone — the outstanding traversal's own popstate lands
-    // and does its own bookkeeping; there is nothing else to do here.
-    if (suppressPop.current) return;
-    // George round 2 P2-1 (#393): `backRequested` is `goBack`'s own latch
-    // (George R2 G3) against a redundant on-screen Back — set here too, not
-    // only there, so a header Back tapped in the window between THIS
-    // `back()` and its popstate landing no-ops instead of firing a SECOND,
-    // uncoordinated traversal that this file already documents (`goBack`,
-    // above) as coalescing into a stack-mis-shaping jump. Cleared with
-    // `suppressPop` where this call's own popstate lands, below.
-    backRequested.current = true;
-    suppressPop.current = true;
+    // George round 3 (#393): no longer refuses when another `back()` is
+    // already outstanding (round 2's fix did, as the safest option available
+    // to a single-bit model) — `reconcilePopState`'s count-based reconciliation
+    // now correctly attributes however many popstates land, in whatever
+    // order the browser delivers them, against however many are outstanding,
+    // so a second (or third) concurrently outstanding `back()` is handled
+    // rather than avoided.
+    outstandingBacks.current += 1;
     window.history.back();
   }, []);
 
@@ -178,7 +213,17 @@ export function App() {
     // Latch so a same-frame double-tap issues one traversal, not two — the second
     // `history.back()` would otherwise be coalesced into a single 2→0 jump that
     // mis-shapes the stack (George R2 G3). The latch clears as the popstate lands.
-    if (backRequested.current) return;
+    //
+    // George round 3 P2-1 (#393): ALSO refuse while a programmatic `back()` is
+    // outstanding (`outstandingBacks`, e.g. an overlay-close consume or the
+    // recorder's own exit) — a header/on-screen Back tapped in the async gap
+    // before that consume's `popstate` lands is the exact coalescing pair
+    // this file already documents above, just from a source `backRequested`
+    // alone never covered (only a repeated tap on THIS Back guarded against
+    // ITSELF). Refusing here is simplest: the overlay/recorder close already
+    // has its own outcome in flight, and this tap's intent (leave the
+    // screen) is served once that settles and a later, real Back is tried.
+    if (backRequested.current || outstandingBacks.current > 0) return;
     backRequested.current = true;
     window.history.back();
   }, []);
@@ -295,35 +340,61 @@ export function App() {
   // that commit re-arms rather than escaping (Frank R1 F1).
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
-      // A Back gesture landed, so the in-flight in-app Back (if any) is done —
-      // release the double-tap latch (G3).
+      // A Back gesture landed, so an in-flight on-screen Back (if any) is
+      // done — release `goBack`'s own double-tap latch (G3). See its own
+      // comment for why this narrower flag still clears unconditionally,
+      // unlike `dismissingOverlay` below.
       backRequested.current = false;
       const state = event.state as { index?: number } | null;
       const toIndex = state?.index ?? 0;
-      // Our own `history.back()` (a programmatic close, or the forward trap)
-      // fired this; the move is already accounted for. Keep the index truthful.
-      if (suppressPop.current) {
-        suppressPop.current = false;
-        navIndex.current = toIndex;
-        // George round 1 P2-1: whatever popped just now is the overlay
-        // dismiss's own expected consume — the window `dismissingOverlay`
-        // exists to absorb further popstates through is over.
-        dismissingOverlay.current = false;
-        // A reopen (or any other deferred push, George round 1 P2-2) arrived
-        // while THIS consume was still in flight (`pushHistoryEntry`, Frank
-        // round 1 P2) — the traversal that just landed is now accounted for,
-        // so it is safe to push the deferred entry for real. `suppressPop` is
-        // already false here, so the guard inside `pushHistoryEntry` is a
-        // pass-through; called through it (not `pushRawHistoryEntry`
-        // directly) so this stays the one place a push happens.
-        if (pendingPush.current) {
-          pendingPush.current = false;
-          pushHistoryEntry();
+      // Captured BEFORE any mutation below — `direction` (used only once we
+      // decide to ROUTE this popstate, further down) must always be computed
+      // against where we were the instant this event arrived, never against
+      // an already-updated `navIndex.current` (George round 3: an earlier
+      // draft of this fix mutated `navIndex` first and read `navDirection`
+      // from the same ref, which made every reconciled-but-still-routed
+      // popstate read as "same" instead of "back").
+      const fromIndex = navIndex.current;
+      const delta = fromIndex - toIndex;
+      navIndex.current = toIndex; // ground truth, always, regardless of branch
+      // George round 3 (#393, P3-3): the pure reconciliation — see
+      // `reconcilePopState`'s own doc for why comparing `delta` (the REAL
+      // index displacement) against `outstandingBacks` (a COUNT, not the
+      // round 1/2 `suppressPop` bit) is what correctly handles a landed
+      // popstate regardless of whether the browser coalesced multiple
+      // outstanding `back()`s into one jump or delivered them separately.
+      const reconciled = reconcilePopState(outstandingBacks.current, delta);
+      if (reconciled) {
+        outstandingBacks.current = reconciled.outstandingBacks;
+        if (reconciled.outstandingBacks === 0) {
+          // Every `back()` this app had outstanding has now landed — ONLY
+          // now, not on every popstate the old single-bit `suppressPop`
+          // branch ran for, is it safe to: (1) consider the overlay-dismiss
+          // window over (`dismissingOverlay` — see its own comment for why
+          // this must wait for the count, not merely "a popstate landed",
+          // since the window it guards can still be open even while
+          // `outstandingBacks` reads 0: `dismiss-screen-overlay` sets it
+          // BEFORE the eventual consume is even issued), and (2) drain every
+          // push that was deferred while a back() was in flight, in order —
+          // `queuedPushes` is a COUNT (George round 3 P3-2), not the round
+          // 1/2 single bit, so more than one deferred push drains correctly
+          // instead of collapsing to one.
+          dismissingOverlay.current = false;
+          if (queuedPushes.current > 0) {
+            const drain = queuedPushes.current;
+            queuedPushes.current = 0;
+            for (let i = 0; i < drain; i += 1) pushRawHistoryEntry();
+          }
         }
-        return;
+        if (reconciled.remaining <= 0) return; // fully absorbed; nothing to route
+        // Else: `remaining` genuine backward step(s) coalesced into this SAME
+        // popstate as our own outstanding debt (George R3 P2-1's exact
+        // scenario) — fall through and route below exactly as if this had
+        // landed as its own separate popstate; `navIndex`/`fromIndex` above
+        // already reflect the true before/after, so no further adjustment is
+        // needed for `direction` or the screen read below.
       }
-      const direction = navDirection(navIndex.current, toIndex);
-      navIndex.current = toIndex;
+      const direction = navDirection(fromIndex, toIndex);
       const screen = screenFor(chapterId !== null, recorder !== null);
       // Read the CURRENT screen's own overlay state (#393/#374) — Books' and
       // Segments' own React state, still whatever it was the instant BEFORE
@@ -369,9 +440,16 @@ export function App() {
           return;
         case "trap-forward":
           // Forward is not a navigation this app redoes; cancel it so the UI
-          // stays put and history does not desync (F2).
-          suppressPop.current = true;
-          window.history.back();
+          // stays put and history does not desync (F2). Routed through
+          // `consumeHistoryEntry` (George round 3): `outstandingBacks` is
+          // proven 0 here (the reconciliation branch above already returned
+          // if it were not), so its "cancel a deferred push" branch is
+          // structurally dead for this call site — but going through the
+          // ONE counted issuer, rather than a bespoke `back()`, is what keeps
+          // every raw `history.back()` in this file behind the same guard
+          // (the exact audit George asked for after finding two OTHER raw
+          // sites drift from it across rounds 2 and 3).
+          consumeHistoryEntry();
           return;
         case "ignore":
           return;
@@ -388,10 +466,17 @@ export function App() {
           void handle
             .requestClose()
             .then((exited) => {
-              if (exited) {
-                suppressPop.current = true;
-                window.history.back();
-              }
+              // George round 3 P2-1 (#393): this used to be its own
+              // unguarded `suppressPop.current = true; window.history.back()`,
+              // outside `consumeHistoryEntry`'s guard entirely. `close()`
+              // calls `onExit` (which paints Segments, header live) BEFORE
+              // this promise resolves, so a header/system Back tapped in
+              // this exact async gap raced this call's own `back()` — the
+              // identical coalescing class round 2's fix closed for the
+              // overlay consume, just reached through the recorder's OWN
+              // exit instead. Sharing `consumeHistoryEntry` here closes it
+              // the same way.
+              if (exited) consumeHistoryEntry();
             })
             .catch((cause: unknown) => {
               // `close()` never rejects by contract (its own `.catch` still calls
@@ -423,16 +508,19 @@ export function App() {
           // entry (`onOverlayClose` → `consumeHistoryEntry`), landing the
           // stack back where it was before the overlay opened.
           //
-          // `suppressPop.current` is guaranteed false here (the early-return
-          // above already caught it if true), so `pushHistoryEntry` always
-          // pushes for real. `dismissingOverlay` (George round 1 P2-1) latches
-          // on `dismissOverlay()`'s OWN return value, not unconditionally, so
-          // ANY popstate landing before the resulting consume's own — the
-          // consume's traversal itself, or a genuinely new system Back
-          // arriving in that window — is absorbed as `rearm-during-commit`
-          // above rather than routed against an overlay that may already read
-          // as closed in React state ahead of history catching up. Cleared
-          // where `suppressPop` is, once that consume's own popstate lands.
+          // `outstandingBacks.current` is proven 0 here (the reconciliation
+          // branch above already returned if it were not), so `pushHistoryEntry`
+          // always pushes for real. `dismissingOverlay` (George round 1 P2-1)
+          // latches on `dismissOverlay()`'s OWN return value, not
+          // unconditionally, so ANY popstate landing before the resulting
+          // consume's own — the consume's traversal itself, or a genuinely
+          // new system Back arriving in that window — is absorbed as
+          // `rearm-during-commit` above rather than routed against an overlay
+          // that may already read as closed in React state ahead of history
+          // catching up. Cleared once `outstandingBacks` fully drains to 0
+          // (George round 3 — see that ref's own comment for why NOT on every
+          // popstate), once that consume's own `back()` has actually been
+          // issued and landed.
           //
           // The return value matters because a screen's own closer can refuse
           // (Books' `onCancelNewBook`, mid-create) — nothing then closes, so
@@ -456,7 +544,15 @@ export function App() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [chapterId, recorder, recovering, backToBooks, pushHistoryEntry]);
+  }, [
+    chapterId,
+    recorder,
+    recovering,
+    backToBooks,
+    pushHistoryEntry,
+    pushRawHistoryEntry,
+    consumeHistoryEntry,
+  ]);
 
   // Ahead of everything: a held take whose save has failed keeps the microphone
   // and any sound off under the modal with no control to reach them. (`recovery`

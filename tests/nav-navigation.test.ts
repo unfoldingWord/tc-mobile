@@ -6,6 +6,7 @@ import {
   overlayBlocksClose,
   overlayDismissal,
   popAction,
+  reconcilePopState,
   screenFor,
 } from "@/lib/nav/navigation";
 
@@ -270,5 +271,91 @@ describe("overlayDismissal", () => {
       closeMenu: true,
       closeConfirm: false,
     });
+  });
+});
+
+/**
+ * George round 3 P3-3 (#393): the App History wiring (`suppressPop`,
+ * `pendingPush`, `backRequested`) had no Node table of its own — only
+ * `popAction`/`overlayDismissal` were pinned — and George's rounds 2 AND 3
+ * both found a real defect in exactly this arithmetic while it lived only as
+ * refs. `reconcilePopState` is the extracted decision: given how many of
+ * THIS app's own `history.back()` calls are outstanding, and how many index
+ * levels a landed popstate actually traversed backward, how much of that
+ * traversal is ours to absorb versus a genuine navigation still needing
+ * routing. This table is what would have failed both George R3 P2s before
+ * their fix: round-2's model (`suppressPop.current` as a boolean, one
+ * popstate always fully "ours") could not represent row 3 below (a coalesced
+ * jump bigger than what was outstanding) or row 4 (more outstanding than one
+ * popstate resolves).
+ */
+describe("reconcilePopState (#393, George round 3 P3-3)", () => {
+  it("is null (route normally) when nothing of ours is outstanding", () => {
+    // The ordinary case: a genuine system/on-screen Back with no programmatic
+    // back() in flight. Every popstate before this PR's overlay/recorder
+    // consumes existed took this path.
+    expect(reconcilePopState(0, 1)).toBeNull();
+  });
+
+  it("is null for a forward or same-index move regardless of outstanding count", () => {
+    // `delta <= 0` is `navDirection`'s concern (forward/same), never this
+    // function's — even with something outstanding, a non-backward delta is
+    // not this app's own back() resolving.
+    expect(reconcilePopState(1, 0)).toBeNull();
+    expect(reconcilePopState(2, -1)).toBeNull();
+  });
+
+  it("fully absorbs a single outstanding back() against a single-step popstate", () => {
+    // The common consume case (an overlay close, a programmatic recorder
+    // close): one `back()` issued, one popstate, exactly accounted for.
+    expect(reconcilePopState(1, 1)).toEqual({
+      outstandingBacks: 0,
+      remaining: 0,
+    });
+  });
+
+  it("splits a coalesced jump bigger than what was outstanding (George R3 P2-1)", () => {
+    // The load-bearing row for P2-1: one outstanding consume `back()`, but the
+    // browser coalesced it with a SECOND, genuine Back (a header Back tapped
+    // in the async gap before the consume's own popstate landed) into ONE
+    // popstate whose index jumped by 2. Round 2's single-bit `suppressPop`
+    // treated any popstate in that window as fully "ours" and silently ate
+    // the extra step — exactly the bug George's round 3 P2-1 found. This
+    // model attributes only what was outstanding (1) and reports the other
+    // level as `remaining`, so the caller still routes it.
+    expect(reconcilePopState(1, 2)).toEqual({
+      outstandingBacks: 0,
+      remaining: 1,
+    });
+  });
+
+  it("absorbs only part of a multi-step popstate when MORE was outstanding (George R3 P2-2)", () => {
+    // The mirror row for P2-2: two outstanding back()s (an overlay consume,
+    // then a recorder close chained through it), delivered as one popstate
+    // that only travelled one level so far (sequential delivery, not fully
+    // coalesced yet) — one is accounted for, one is still owed, and NOTHING
+    // should be routed as a genuine navigation from this popstate alone.
+    expect(reconcilePopState(2, 1)).toEqual({
+      outstandingBacks: 1,
+      remaining: 0,
+    });
+  });
+
+  it("fully absorbs two outstanding back()s coalesced into one two-step popstate", () => {
+    expect(reconcilePopState(2, 2)).toEqual({
+      outstandingBacks: 0,
+      remaining: 0,
+    });
+  });
+
+  it("absorbs two outstanding back()s delivered as two separate one-step popstates", () => {
+    // Same starting count as the row above, but the OTHER legal delivery
+    // shape (sequential, not coalesced) — this model does not need to know
+    // in advance which one the browser will choose; each popstate is
+    // reconciled independently against whatever is still outstanding.
+    const first = reconcilePopState(2, 1);
+    expect(first).toEqual({ outstandingBacks: 1, remaining: 0 });
+    const second = reconcilePopState(first!.outstandingBacks, 1);
+    expect(second).toEqual({ outstandingBacks: 0, remaining: 0 });
   });
 });
