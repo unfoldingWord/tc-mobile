@@ -451,6 +451,22 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+  // In place of `appReload` while Restart waits for the crash row to finish
+  // being written, and as the busy Notice under it — the same in-place relabel
+  // `loadRetrying` and `takeRecoverRetrying` use (#137 G2). The wait is real on
+  // a device whose first open is also the v6 upgrade, and an unlabelled wait on
+  // the only recovery control this screen has is a button that looks dead.
+  appReloading: "Restarting…",
+  // Restart declined to reload, because the record of this crash was refused by
+  // storage and a reload would destroy it (George R5 P2-2). It has to SAY so:
+  // a control that goes back to idle having done nothing is the "tap did
+  // nothing, said nothing" shape this round is removing elsewhere. It names the
+  // action that still works — Send is on this screen and reads the same
+  // database, so it will usually fail too, but the facilitator is the person
+  // who can act on "this phone cannot write right now" and the runbook's paper
+  // sheet is the fallback. No cause text: a stack-shaped string in a language
+  // the reader may not speak is worse than nothing (#172).
+  appReloadHeld: "This problem could not be saved yet. Send it, or try again.",
 
   // ── The encoder has stopped working (#166) ───────────────────────────────
   // Shown once on the shelf when `encoderHealth()` reads `failing` — one stall,
@@ -532,4 +548,37 @@ export const strings = {
   // show terse visible text (a package name, a licence short-name).
   aboutVisitSource: (name: string): string => `Open the ${name} project page`,
   aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
+
+  // ── Failure log (#205) ───────────────────────────────────────────────────
+  // The durable destination for reported failures, reachable from the global
+  // menu on Books. None of this is copy a non-reader depends on — the marker on
+  // the ≡ control and the alert glyph carry the state — but the accessible name
+  // is the whole text layer for AT, so it says what happened and how many.
+  //
+  // "Problem report" throughout, never "error log": the person tapping this is
+  // a facilitator sending something to a maintainer, and the noun has to name
+  // the thing they are sending, not the file format it happens to be.
+  failuresMarker: (n: number): string =>
+    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+  // Replaces the plain "Open menu" name while the log is non-empty, so the one
+  // control that leads to the report announces that it does.
+  menuOpenWithFailures: (n: number): string =>
+    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+  // Said in the menu, above the two actions. Deliberately not "the app
+  // crashed": most entries are a single failed write the translator never saw,
+  // and alarming a person about work that is still on the phone is its own harm.
+  failuresTeach: "Send this to your helper if something is not working.",
+  shareFailureLog: "Send problem report",
+  shareFailureLogPreparing: "Preparing the problem report.",
+  // The log emptied between the render that offered Share and the tap.
+  shareFailureLogNothing: "There is nothing to send now.",
+  shareFailureLogFailed: "Could not send the problem report. Try again.",
+  clearFailureLog: "Clear problem report",
+  // Behind the bin: the same two-tap confirm the segment Erase and the book
+  // Delete use, not a second dialog (George R2 P3-3). Clearing is the one
+  // irreversible write in this panel — the report is the only copy of what went
+  // wrong that ever leaves the phone, and the bin sits directly under Share,
+  // which is where the thumb already is.
+  clearFailureLogConfirmTitle: "Clear the problem report?",
+  clearFailureLogConfirm: "Clear",
 } as const;

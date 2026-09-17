@@ -6,6 +6,7 @@ import {
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterDragMove,
   panAfterRematerialize,
   panOrRest,
   panGesture,
@@ -14,7 +15,7 @@ import {
   stageView,
   type StageState,
 } from "@/components/recorder-stage";
-import { effectivePan } from "@/lib/audio/viewport";
+import { effectivePan, viewportWindow } from "@/lib/audio/viewport";
 
 /**
  * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
@@ -1002,8 +1003,14 @@ describe("panOrRest", () => {
       pan: 10_000,
       length: 10_000,
     });
-    const afterZeroDeltaMove = Math.max(0, Math.min(origin + 0, 10_000));
-    const written = panOrRest(afterZeroDeltaMove, 10_000);
+    // Through `panAfterDragMove` (George round-2 P3-1) — the one function
+    // `onPointerMove` actually calls — rather than re-deriving its clamp
+    // inline. A zero-delta move is the jitter this case is about.
+    const { pan: written } = panAfterDragMove({
+      origin,
+      delta: 0,
+      length: 10_000,
+    });
     expect(written).toBeNull();
     expect(
       effectivePan({
@@ -1014,6 +1021,99 @@ describe("panOrRest", () => {
         length: 12_000,
       })
     ).toBe(12_000);
+  });
+});
+
+/**
+ * `onPointerMove`'s one write, both halves (#442 round 2).
+ *
+ * This is the same function `recorder.tsx:1122` calls — the test and the
+ * handler now share one implementation instead of the test re-deriving the
+ * handler's clamp. `raw` and `pan` are asserted separately because they feed
+ * two different consumers with two different rules: `draggedPanRef` (the
+ * #317 lift decision) needs the raw numeric sample even at the end, and
+ * `panState` needs the F7 rest instead of a stale absolute index.
+ */
+describe("panAfterDragMove", () => {
+  it("keeps an absolute sample when the drag stops short of the end", () => {
+    const { raw, pan } = panAfterDragMove({
+      origin: 4_000,
+      delta: 1_000,
+      length: 10_000,
+    });
+    expect(raw).toBe(5_000);
+    expect(pan).toBe(5_000);
+  });
+
+  it("rests when the drag overshoots the end", () => {
+    // The #442 case: a delta far larger than what is left to the end.
+    const { raw, pan } = panAfterDragMove({
+      origin: 8_000,
+      delta: 5_000,
+      length: 10_000,
+    });
+    expect(raw).toBe(10_000); // clamped — `draggedPanRef` needs this, not null
+    expect(pan).toBeNull(); // panState needs the rest, not the number 10 000
+  });
+
+  it("un-rests when a later move pulls back from the end", () => {
+    // `draggedPanRef` holds the raw sample even while resting (this
+    // function's own docblock explains why), so a drag already parked at the
+    // end resumes its next move from a NUMBER, not from `null`. A leftward
+    // move (positive delta pulls the pan down) brings it back inside.
+    const { raw, pan } = panAfterDragMove({
+      origin: 10_000,
+      delta: -3_000,
+      length: 10_000,
+    });
+    expect(raw).toBe(7_000);
+    expect(pan).toBe(7_000);
+  });
+});
+
+/**
+ * #442, literally: an ORDINARY idle drag (no playback, no interrupt) that
+ * parks the line at the very end, followed by a Paste that grows the buffer.
+ *
+ * This is the plain-drag sibling of the "unmeasured interrupt" composition
+ * above — same `panOrRest` rule, reached through `panAfterDragMove`, the
+ * function `onPointerMove`'s everyday clamp now calls, rather than through
+ * `dragOriginAfterInterrupt`. The issue described `onPointerMove` as writing
+ * the absolute sample `length` instead of the `null` rest; round 5 of #432
+ * (`33aee7a`) fixed that inline, and round 2 of this PR lifted the whole
+ * clamp-and-rest computation into `panAfterDragMove` so the handler has
+ * nowhere left to re-derive it by hand. This test pins the composition at
+ * the `viewportWindow` layer too, since that is what `recorder.tsx` actually
+ * reads at the Record tap (`insertionOffset.current = win.centerlineSample`).
+ */
+describe("#442 — drag to the end, then Paste grows the buffer", () => {
+  it("keeps Record appending after a paste, once the drag write goes through panAfterDragMove", () => {
+    // The everyday onPointerMove clamp, with a delta large enough to run the
+    // finger well past the end.
+    const { raw, pan: written } = panAfterDragMove({
+      origin: 0,
+      delta: 50_000,
+      length: 10_000,
+    });
+    expect(raw).toBe(10_000); // the finger parked exactly on the last sample
+    expect(written).toBeNull();
+
+    // Paste grows the working buffer; panState is untouched by onPaste
+    // (recorder.tsx:1802-1805) — only `effectivePan`/`viewportWindow`, read
+    // fresh next render, can still find the true end.
+    const grownLength = 16_000;
+    const pan = effectivePan({
+      mode: "record",
+      selectionActive: false,
+      zoomPan: null,
+      panState: written,
+      length: grownLength,
+    });
+    expect(pan).toBe(grownLength);
+
+    // What `onRecordButton` actually locks into `insertionOffset.current`.
+    const win = viewportWindow(grownLength, pan, 1, 0.5);
+    expect(win.centerlineSample).toBe(grownLength);
   });
 });
 

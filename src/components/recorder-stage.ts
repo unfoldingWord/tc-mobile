@@ -446,6 +446,36 @@ export function panOrRest(sample: number, length: number): number | null {
 }
 
 /**
+ * What a drag move on the bare stage writes, and what it hands back for the
+ * #317 lift to read (#442).
+ *
+ * `onPointerMove` used to inline this clamp and forget the rest rule below
+ * it — that IS #442: a drag that lands ON the end stored the number `length`
+ * instead of the F7 rest, so a later Paste left Record splicing at the OLD
+ * end. Lifting the whole computation out means `onPointerMove` has nowhere
+ * left to re-derive the clamp by hand and silently drop the `panOrRest` step
+ * the way it once did; there is exactly one place this arithmetic lives.
+ *
+ * Two callers need two different answers from the SAME clamped position, so
+ * both come back explicitly rather than computing the clamp twice: `raw` is
+ * the numeric sample, unconditionally — `draggedPanRef` stays raw on purpose
+ * (the #317 lift's `resumesOnLift` needs to compare it against `length`, and
+ * a pre-rested `null` there could never say "the drag reached the end").
+ * `pan` is the same position through `panOrRest` — what `onPointerMove`
+ * actually persists into `panState`, the record insertion offset.
+ */
+export function panAfterDragMove(input: {
+  /** The pan the drag started from (`onPointerDown`'s `from`, held in `panAtDragStart`). */
+  readonly origin: number;
+  /** Samples moved since the drag started; negative for a rightward drag. */
+  readonly delta: number;
+  readonly length: number;
+}): { readonly raw: number; readonly pan: number | null } {
+  const raw = Math.max(0, Math.min(input.origin + input.delta, input.length));
+  return { raw, pan: panOrRest(raw, input.length) };
+}
+
+/**
  * Where a #317 drag starts when the touch interrupted playback (George R5 P1).
  *
  * The touch pauses playback and the drag continues from where the audio had
