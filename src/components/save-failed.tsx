@@ -7,7 +7,17 @@ import {
   recoverySafetyLine,
   recoveryTitle,
 } from "./recovery-copy";
+import { strings } from "./strings";
 import type { SaveFailureKind } from "@/hooks/save-failure";
+
+/**
+ * Restart the app from disk — the same exit `DatabasePanel` and `ErrorBoundary`
+ * offer, and for the same reason: everything already saved is in IndexedDB, and
+ * a reload is what picks up the newer build the service worker has activated.
+ */
+function reload(): void {
+  window.location.reload();
+}
 
 interface SaveFailedProps {
   state: "saving" | "failed";
@@ -59,8 +69,18 @@ export function SaveFailed({
   // save is RAM-only (the commit is one transaction, #38) whatever the cause, so
   // sending the translator off to free space would risk the OS discarding the
   // only copy. The attempt count is a fainter extra line beside it, not instead.
-  const safetyLine = saving ? null : recoverySafetyLine(editOnly);
+  const safetyLine = saving ? null : recoverySafetyLine(editOnly, kind);
   const attemptsLine = saving ? null : recoveryAttempts(kind, attempts);
+
+  // The one failure this screen cannot offer a retry for: a newer copy of the
+  // app has moved the database past this build, so `getDb()` fails the version
+  // check before any transaction and will do so on every attempt. Offering "Try
+  // saving again" here teaches retry-and-stay for a condition that is already
+  // decided, and leaves the honest exit reachable only through Discard — which
+  // deletes the only copy (George R2 P2-1). The control becomes the same
+  // restart `DatabasePanel` and `ErrorBoundary` offer, which is what picks up
+  // the newer build. Discard stays, unchanged and still two taps.
+  const terminal = kind === "downgrade";
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
@@ -103,11 +123,11 @@ export function SaveFailed({
         <>
           <Control
             icon="retry"
-            label="Try saving again"
+            label={terminal ? strings.appReload : "Try saving again"}
             variant="primary"
             size={30}
             autoFocus
-            onClick={onRetry}
+            onClick={terminal ? reload : onRetry}
           />
 
           {safetyLine && (

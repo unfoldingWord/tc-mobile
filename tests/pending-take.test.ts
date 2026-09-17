@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   discardSave,
   failSave,
+  holdsUnsavedAudio,
   retrySave,
   startSave,
   succeedSave,
@@ -163,6 +164,66 @@ describe("retrySave", () => {
 
   it("has nothing to do with an empty slot", () => {
     expect(retrySave(null)).toBeNull();
+  });
+
+  it("refuses a downgrade, which no attempt can clear", () => {
+    // A newer copy of the app has moved the database past this build, so
+    // `getDb()` fails the version check before any transaction — identically,
+    // every time. Arming a save here spins the recovery screen through "Saving"
+    // and back for as long as someone keeps tapping. Refused by returning the
+    // slot UNCHANGED, which is the same "refused" every caller already reads
+    // (George R2 P2-1).
+    const { take } = held();
+    const failed = failSave(take, CLIP, "downgrade");
+    expect(retrySave(failed)).toBe(failed);
+    // And the retryable kinds are untouched by the guard.
+    const blip = failSave(take, CLIP, "unknown");
+    expect(retrySave(blip)).not.toBe(blip);
+    const full = failSave(take, CLIP, "quota");
+    expect(retrySave(full)).not.toBe(full);
+  });
+});
+
+describe("holdsUnsavedAudio", () => {
+  const empty = { pendingTake: null, recorderOpen: false, clipboard: null };
+
+  it("holds nothing when nothing is in hand", () => {
+    expect(holdsUnsavedAudio(empty)).toBe(false);
+  });
+
+  it("holds a take whose save has not landed", () => {
+    const { take } = held();
+    expect(holdsUnsavedAudio({ ...empty, pendingTake: take })).toBe(true);
+  });
+
+  it("holds an open recorder, coarsely — the sheet, not a running capture", () => {
+    // Capture state is not visible from `App`, and the coarse answer is wrong
+    // only in the direction that costs the other copy a wait.
+    expect(holdsUnsavedAudio({ ...empty, recorderOpen: true })).toBe(true);
+  });
+
+  it("holds CUT audio that has not been pasted", () => {
+    // The hole it came from is already committed to disk, so these samples are
+    // the only copy left of that phrase. Yielding the connection unmounts the
+    // screen that could paste them, and a restart drops the slot — the segment
+    // keeps its hole and the phrase is gone (George R2 P2-2).
+    expect(holdsUnsavedAudio({ ...empty, clipboard: pcm() })).toBe(true);
+  });
+
+  it("does not hold an emptied clipboard", () => {
+    // Reachable — the slot is set from a cut whose selection can be empty — and
+    // holding it would block another copy's upgrade over nothing.
+    expect(holdsUnsavedAudio({ ...empty, clipboard: new Int16Array(0) })).toBe(
+      false
+    );
+  });
+
+  it("releases once the clipboard is pasted or cleared", () => {
+    // Pasting clears the slot, and so does changing chapter. Either way the
+    // refused upgrade is free to go through.
+    const holding = { ...empty, clipboard: pcm() };
+    expect(holdsUnsavedAudio(holding)).toBe(true);
+    expect(holdsUnsavedAudio({ ...holding, clipboard: null })).toBe(false);
   });
 });
 

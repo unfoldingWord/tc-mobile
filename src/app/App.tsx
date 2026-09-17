@@ -15,6 +15,7 @@ import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useSaveTake } from "@/hooks/use-save-take";
 import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
+import { holdsUnsavedAudio } from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
@@ -145,23 +146,20 @@ export function App() {
   // only in memory — asked by `lib/storage` from inside a `versionchange`
   // handler when another copy of this app wants to upgrade the database (#221).
   //
-  // Deliberately coarse on the second half: an OPEN recorder counts, not a
-  // running capture. The sheet is where a take is recorded, edited and
-  // committed, and none of that is visible from here; refusing while it is open
-  // costs the other copy a wait, and the tighter answer would cost a recording
-  // the one time it was wrong.
-  //
-  // And deliberately narrow on what counts at all: ONLY unsaved audio. A name
-  // being typed in `NameEdit` and an armed share are lost when the panel takes
-  // the screen, and that is the rule, not an oversight (George R1 P3, accepted).
-  // Both are re-doable in seconds from what is still on disk; a recording is the
-  // one thing on this device that cannot be made again. Widening the predicate
-  // to cover them would hold the other copy's upgrade for work that costs a
-  // retype, which is the trade this guard exists to refuse in the other
-  // direction.
+  // The rule itself lives in `lib/takes/pending-take.ts`, where it can be
+  // tested: which of these arms count, and which kinds of unsaved work are
+  // deliberately excluded, is stated and unit-tested there rather than inline in
+  // a component this repo has no renderer to exercise. The CLIPBOARD arm is one
+  // George found missing (R2 P2-2) — cut audio whose hole is already committed
+  // is the only copy of that phrase.
   const holdsUnsavedWork = useCallback(
-    () => pendingTake !== null || recorder !== null,
-    [pendingTake, recorder]
+    () =>
+      holdsUnsavedAudio({
+        pendingTake,
+        recorderOpen: recorder !== null,
+        clipboard,
+      }),
+    [pendingTake, recorder, clipboard]
   );
   const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
 

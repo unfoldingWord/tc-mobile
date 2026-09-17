@@ -4,6 +4,7 @@ import { forceCloseDatabase } from "fake-indexeddb";
 import { openDB, unwrap, type IDBPDatabase } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { holdsUnsavedAudio } from "@/lib/takes/pending-take";
 import {
   closeDb,
   getDb,
@@ -715,6 +716,39 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       setUpgradeCoordinator(null);
 
       expect(await raceOpen(newer)).toBe("opened");
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("waits on cut audio that has not been pasted, and goes through once it is", async () => {
+    // The clipboard arm of `holdsUnsavedAudio`, end to end through the storage
+    // layer: a phrase cut from a segment whose hole is already on disk is the
+    // only copy of that phrase, so the upgrade waits for it exactly as it waits
+    // for a held take. Before this it did not — `holdsUnsavedWork()` answered
+    // false, the connection went, the paste screen was unmounted and a restart
+    // dropped the slot (George R2 P2-2).
+    //
+    // The predicate here is the real one from `lib/takes/pending-take.ts`, fed
+    // the state `App` feeds it; what is NOT covered is App's wiring of its own
+    // `clipboard` state into it, which needs a renderer this repo does not have.
+    let clipboard: Int16Array | null = new Int16Array([1, 2, 3]);
+    const app = registerCoordinator(() =>
+      holdsUnsavedAudio({ pendingTake: null, recorderOpen: false, clipboard })
+    );
+    await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.onYielded).not.toHaveBeenCalled();
+
+      // Pasted, or the chapter changed — either way the slot is empty.
+      clipboard = null;
+      yieldDeferredUpgrade();
+
+      expect(await raceOpen(newer)).toBe("opened");
+      expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
     }

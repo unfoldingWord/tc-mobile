@@ -51,7 +51,9 @@ export function recoveryTitle(
  * NOT gated on `quota`: a failed save is RAM-only whatever the cause. A
  * `mergeTake` throw or an IndexedDB `AbortError` classifies as `unknown`, and
  * `failSave` keeps the samples in the slot exactly as a quota failure does, so
- * the don't-close warning applies to all of them — hence no `kind` parameter.
+ * the don't-close warning applies to all of them. `kind` was added only for the
+ * single case where staying in the app cannot help at all, and defaults to
+ * `null` so every other caller keeps the unconditional warning.
  *
  * Worded for what is actually RAM-only. On the record path `saveTake` rolls back
  * on failure, so the prior take (if any) survives on disk — but what does not is
@@ -61,7 +63,25 @@ export function recoveryTitle(
  * (George G5), where "what you just recorded" was silent about the cuts. The edit
  * path's subject is the edited buffer, whose prior stored take likewise survives.
  */
-export function recoverySafetyLine(editOnly: boolean): string {
+export function recoverySafetyLine(
+  editOnly: boolean,
+  kind: SaveFailureKind | null = null
+): string {
+  // The ONE exception to "never send them out of the app", and it exists because
+  // the rule's premise fails here: staying is what keeps the work unsaveable.
+  // This build cannot open the store at all — a newer copy has moved the data
+  // past it — so "Don't close the app" forbids the only thing that can help,
+  // while the title above asks for exactly that (George R2 P2-1).
+  //
+  // What this line does NOT say is what becomes of the held recording across
+  // that restart. It is RAM-only and does not survive, and whether this screen
+  // should say so — and whether anything can be done to rescue it first — is a
+  // product question tracked on #441, not one to settle in a copy string.
+  if (kind === "downgrade") {
+    return editOnly
+      ? "This copy of the app cannot save them. Restart to get the new version."
+      : "This copy of the app cannot save it. Restart to get the new version.";
+  }
   return editOnly
     ? "This screen has the only copy of your changes. Don't close the app."
     : "This screen has the only copy of your unsaved work. Don't close the app.";

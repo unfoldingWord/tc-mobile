@@ -156,6 +156,14 @@ export function failSave(
  */
 export function retrySave(current: PendingTake | null): PendingTake | null {
   if (!current || current.state === "saving") return current;
+  // A `downgrade` cannot be retried — `getDb()` fails the version check before
+  // any transaction, identically, every time. The recovery screen offers a
+  // restart instead of Retry for this kind, so nothing should reach here; this
+  // is defence in depth, and it refuses by returning the slot UNCHANGED, which
+  // every caller already reads as "refused" (`retryPendingTake` compares
+  // identity). Arming a save that cannot land would spin the screen through
+  // "Saving" and back for as long as someone kept tapping (George R2 P2-1).
+  if (current.kind === "downgrade") return current;
   return { ...current, state: "saving", kind: null };
 }
 
@@ -182,4 +190,50 @@ export function discardSave(current: PendingTake | null): {
   readonly orphan: ClipId | null;
 } {
   return { next: null, orphan: current?.clipId ?? null };
+}
+
+/**
+ * Everything this copy of the app is holding that exists ONLY in memory, and
+ * that closing the database connection would therefore destroy.
+ *
+ * This is the guard behind the multi-tab upgrade decision (#221): when another
+ * copy wants to upgrade the database, this copy refuses to give up its
+ * connection while any of these is true, and the other copy waits. The trade is
+ * deliberate and one-directional — refusing costs a person time, yielding costs
+ * a translator audio that cannot be recorded again.
+ *
+ * Here rather than inline in `App` because it is a rule about held audio, not
+ * about rendering, and because this repo has no renderer: inline in a component
+ * it could only ever be review surface, and the one arm that was missing
+ * (the clipboard) is exactly the kind of omission a test catches.
+ *
+ * The three arms:
+ *
+ *   pendingTake    a finished recording whose save has not landed
+ *   recorderOpen   the sheet where a take is recorded, edited and committed.
+ *                  Coarse on purpose: an OPEN sheet counts, not a running
+ *                  capture, because capture state is not visible from `App` and
+ *                  the coarse answer is wrong only in the direction that costs
+ *                  the other copy a wait
+ *   clipboard      audio CUT from a segment and not yet pasted. The hole is
+ *                  already committed to disk, so these samples are the only
+ *                  copy left of that phrase — the same unrecoverable loss the
+ *                  close plan already treats it as
+ *
+ * What is deliberately NOT held work: a name being typed, and an armed share.
+ * Both are re-doable in seconds from what is still on disk, and holding another
+ * copy's upgrade for work that costs a retype is the trade this rule exists to
+ * refuse in the other direction.
+ */
+export function holdsUnsavedAudio(held: {
+  readonly pendingTake: PendingTake | null;
+  readonly recorderOpen: boolean;
+  readonly clipboard: Int16Array | null;
+}): boolean {
+  if (held.pendingTake !== null) return true;
+  if (held.recorderOpen) return true;
+  // An emptied clipboard is not held audio. `length === 0` is reachable — the
+  // slot is set from a cut whose selection can be empty — and treating it as
+  // held would block an upgrade over nothing.
+  return (held.clipboard?.length ?? 0) > 0;
 }

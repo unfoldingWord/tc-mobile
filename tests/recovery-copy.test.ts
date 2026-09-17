@@ -62,6 +62,26 @@ describe("recoverySafetyLine", () => {
     }
   });
 
+  it("does NOT forbid the restart on a downgrade — the one case where staying cannot help", () => {
+    // Every other failure keeps the translator in the app because the take is
+    // RAM-only and leaving risks the OS discarding it. Here the premise fails:
+    // this build cannot open the store at all, so "Don't close the app" forbids
+    // the only thing that helps, while the title asks for exactly that
+    // (George R2 P2-1).
+    for (const editOnly of [false, true]) {
+      const line = recoverySafetyLine(editOnly, "downgrade");
+      expect(line).not.toMatch(/don't close|do not close/i);
+      expect(line.toLowerCase()).toContain("restart");
+    }
+    // The retryable kinds keep the warning, including when the kind is unknown
+    // at the call site.
+    for (const kind of ["quota", "unknown", null] as const) {
+      expect(recoverySafetyLine(false, kind).toLowerCase()).toContain(
+        "close the app"
+      );
+    }
+  });
+
   it("words the warning for everything RAM-only, not just the new fragment (George G1, G5)", () => {
     // A record-path save rolls back on failure, so the prior take survives on
     // disk — but the working buffer being saved can also carry in-session cuts

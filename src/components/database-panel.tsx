@@ -40,6 +40,13 @@ interface DatabasePanelProps {
  * meaning has to survive being unread: the mark differs between them — two
  * sheets for "there is another copy of this", a heads-up ring for "this one is
  * out of date" — and the control is the same restart in both.
+ *
+ * The control means different things in the two states, which is why only the
+ * out-of-date teach line asks for it. On `reloadNeeded` a restart is the only
+ * exit. On `blocked` it is a FALLBACK: closing the other copy is the whole
+ * action, and this panel takes itself down on its own when that happens
+ * (`onUnblocked`), so the teach line says just that and the button is there for
+ * someone who would rather start over than hunt for the other tab.
  */
 export function DatabasePanel({ status }: DatabasePanelProps) {
   const blocked = status === "blocked";

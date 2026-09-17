@@ -489,7 +489,13 @@ export const strings = {
   // Both offer the same exit, `appReload` above — restarting is what picks up
   // the newer build, and on the blocked side it is what re-tries the open.
   dbBlocked: "Another copy of this app is open.",
-  dbBlockedTeach: "Close the other one, then restart.",
+  // Closing the other copy is the WHOLE action. This panel takes itself down
+  // when that happens — the open that was blocked comes through and the storage
+  // layer says so (`onUnblocked`) — so asking for a restart as well would be
+  // asking for a step that is not needed, which a non-reader treating the two
+  // lines as one action would do anyway (George R2 P3). "Restart" belongs on
+  // `dbOutOfDateTeach` below, where it genuinely is the only exit.
+  dbBlockedTeach: "Close the other one to carry on.",
   dbOutOfDate: "This copy is out of date.",
   dbOutOfDateTeach: "Restart to use the new version.",
 } as const;
