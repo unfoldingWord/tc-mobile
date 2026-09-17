@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { DatabaseStatus } from "@/hooks/use-database-status";
 import { Control } from "./control";
 import { Icon, type IconName } from "./icon";
-import { restartLabel } from "./recovery-copy";
+import { restartConsequence, restartLabel } from "./recovery-copy";
 import { strings } from "./strings";
 
 /** The heading that names the alert, referenced by `aria-labelledby`. */
@@ -120,7 +120,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
 
       {restartArmed && (
         <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
-          Tap again and the audio you cut is gone.
+          {restartConsequence("cutAudio")}
         </p>
       )}
     </div>

@@ -4,6 +4,7 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
+  restartConsequence,
   restartLabel,
 } from "@/components/recovery-copy";
 
@@ -139,6 +140,93 @@ describe("restartLabel", () => {
     // And the three subjects do not collapse into one another.
     const armed = subjects.map((s) => restartLabel(s, true));
     expect(new Set(armed).size).toBe(subjects.length);
+  });
+
+  it("names the cut phrase the restart ALSO destroys, on the screen that outranks the panel", () => {
+    // `SaveFailed` outranks `DatabasePanel` while a take is held, so on the
+    // terminal downgrade screen the panel's cut warning cannot mount — and the
+    // reload drops the clipboard just the same. Naming only the recording makes
+    // the confirmation incomplete on the one tap that destroys both, which is
+    // the same defect as Frank R4 P1 on the other surface (George R5 P2).
+    expect(restartLabel("recording", true, true)).toBe(
+      "Tap again to restart and lose this recording and the audio you cut"
+    );
+    expect(restartLabel("changes", true, true)).toBe(
+      "Tap again to restart and lose these changes and the audio you cut"
+    );
+    // Still one tap's worth of arming, not a third state.
+    for (const subject of subjects) {
+      expect(restartLabel(subject, false, true)).toBe("Restart the app");
+    }
+    // And it does not say it twice on the panel, whose subject IS the cut audio.
+    expect(restartLabel("cutAudio", true, true)).toBe(
+      restartLabel("cutAudio", true)
+    );
+  });
+
+  it("leaves the one-loss labels exactly as they were", () => {
+    // The flag is additive. Every caller that has nothing in the clipboard must
+    // read identically to before it existed, or this fix has changed the copy on
+    // the far commoner path as a side effect.
+    for (const subject of subjects) {
+      expect(restartLabel(subject, true, false)).toBe(
+        restartLabel(subject, true)
+      );
+    }
+    expect(restartLabel("recording", true, false)).toBe(
+      "Tap again to restart and lose this recording"
+    );
+  });
+});
+
+describe("restartConsequence", () => {
+  const subjects = ["recording", "changes", "cutAudio"] as const;
+
+  it("says what the next tap costs, on each surface", () => {
+    expect(restartConsequence("recording")).toBe(
+      "Tap again and this recording is gone."
+    );
+    expect(restartConsequence("changes")).toBe(
+      "Tap again and these changes are gone."
+    );
+    // The database panel's own line, now from the same place as its label so the
+    // two cannot drift (George R4 P1, then R5 P2).
+    expect(restartConsequence("cutAudio")).toBe(
+      "Tap again and the audio you cut is gone."
+    );
+  });
+
+  it("names both losses, and agrees with itself about number", () => {
+    expect(restartConsequence("recording", true)).toBe(
+      "Tap again and this recording and the audio you cut are gone."
+    );
+    expect(restartConsequence("changes", true)).toBe(
+      "Tap again and these changes and the audio you cut are gone."
+    );
+    // Two things are gone, so "are" — a composed line is exactly where that slips.
+    for (const subject of ["recording", "changes"] as const) {
+      expect(restartConsequence(subject, true)).toMatch(/ are gone\.$/);
+      expect(restartConsequence(subject, true)).toContain("the audio you cut");
+    }
+    expect(restartConsequence("recording")).toMatch(/ is gone\.$/);
+  });
+
+  it("matches the label about what is lost, on every combination", () => {
+    // The two lines sit one above the other on the same screen. The gate is that
+    // neither can name a loss the other does not.
+    for (const subject of subjects) {
+      for (const alsoCutAudio of [false, true]) {
+        const label = restartLabel(subject, true, alsoCutAudio);
+        const line = restartConsequence(subject, alsoCutAudio);
+        for (const phrase of [
+          "this recording",
+          "these changes",
+          "the audio you cut",
+        ]) {
+          expect(line.includes(phrase)).toBe(label.includes(phrase));
+        }
+      }
+    }
   });
 });
 

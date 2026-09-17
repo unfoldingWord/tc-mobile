@@ -192,6 +192,13 @@ export function App() {
       ? null
       : databaseStatus;
 
+  // Whether a restart would take a cut phrase with it. Read by BOTH screens that
+  // offer one, because either can be the screen a translator is looking at when
+  // they tap: `SaveFailed` outranks the panel while a take is held, so the
+  // panel's own warning cannot mount then, and the take's screen has to carry it
+  // instead (George R5 P2).
+  const holdsCutAudio = (clipboard?.length ?? 0) > 0;
+
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
@@ -396,6 +403,7 @@ export function App() {
           kind={recovery.kind}
           editOnly={recovery.editOnly}
           ordinal={recordingOrdinal}
+          holdsCutAudio={holdsCutAudio}
           attempts={recovery.attempts}
           onRetry={retryPendingTake}
           onDiscard={discardPendingTake}
@@ -415,10 +423,7 @@ export function App() {
   if (databasePanel) {
     return (
       <main className="app-shell grid h-full place-items-center">
-        <DatabasePanel
-          status={databasePanel}
-          holdsCutAudio={(clipboard?.length ?? 0) > 0}
-        />
+        <DatabasePanel status={databasePanel} holdsCutAudio={holdsCutAudio} />
       </main>
     );
   }

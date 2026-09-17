@@ -100,8 +100,7 @@ export function recoverySafetyLine(
  * (George R4 P1): once the panel is allowed to show over a full clipboard, its
  * restart is the one control on screen and the cut phrase does not survive it.
  * One function rather than two so the two surfaces cannot drift into saying
- * different things about the same loss — `subject` is the only thing that
- * differs, because it is the only thing that differs.
+ * different things about the same loss.
  *
  * The armed label names the loss rather than only the action. It is the last
  * thing the translator reads before the audio is gone, so it does not say
@@ -109,20 +108,70 @@ export function recoverySafetyLine(
  * that loss BEFORE the control is armed — and whether anything could rescue the
  * audio first — is the product question on #441; this is the minimum that keeps
  * the tap honest.
+ *
+ * `alsoCutAudio` is the second thing one tap can destroy at once, and it is why
+ * this is composed rather than enumerated (George R5 P2). `SaveFailed` outranks
+ * `DatabasePanel` while a take is held, so on the terminal `downgrade` screen the
+ * restart is reached with a cut phrase in the clipboard that the reload drops
+ * too — and the panel that would have named it cannot mount. Enumerating that
+ * would have taken a three-value `subject` to six cases and made the next axis
+ * twelve; the loss phrase is built instead, so a third thing to lose costs one
+ * clause rather than doubling the table. The full strings live in
+ * `tests/recovery-copy.test.ts`, which is where to grep for them.
  */
 export function restartLabel(
-  subject: "recording" | "changes" | "cutAudio",
-  armed: boolean
+  subject: RestartSubject,
+  armed: boolean,
+  alsoCutAudio = false
 ): string {
   if (!armed) return "Restart the app";
-  switch (subject) {
-    case "changes":
-      return "Tap again to restart and lose these changes";
-    case "cutAudio":
-      return "Tap again to restart and lose the audio you cut";
-    case "recording":
-      return "Tap again to restart and lose this recording";
-  }
+  return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
+}
+
+/**
+ * The line under an ARMED restart, saying what the next tap costs.
+ *
+ * Both surfaces had this inline and identical in shape; it is here for the same
+ * reason the label is — it makes the same claim, and the two must not drift.
+ * Shorter than the label on purpose: the label is the thing being tapped, this
+ * is the confirmation beside it.
+ */
+export function restartConsequence(
+  subject: RestartSubject,
+  alsoCutAudio = false
+): string {
+  const phrase = lossPhrase(subject, alsoCutAudio);
+  const plural =
+    subject === "changes" || carriesCutAudio(subject, alsoCutAudio);
+  return `Tap again and ${phrase} ${plural ? "are" : "is"} gone.`;
+}
+
+/** What the restart destroys, named. */
+type RestartSubject = "recording" | "changes" | "cutAudio";
+
+/**
+ * Whether the cut phrase has to be named ON TOP of the subject.
+ *
+ * `cutAudio` already IS the cut phrase — `DatabasePanel` passes it with nothing
+ * else in hand — so adding the clause there would say the same thing twice.
+ */
+function carriesCutAudio(
+  subject: RestartSubject,
+  alsoCutAudio: boolean
+): boolean {
+  return alsoCutAudio && subject !== "cutAudio";
+}
+
+function lossPhrase(subject: RestartSubject, alsoCutAudio: boolean): string {
+  const base =
+    subject === "changes"
+      ? "these changes"
+      : subject === "cutAudio"
+        ? "the audio you cut"
+        : "this recording";
+  return carriesCutAudio(subject, alsoCutAudio)
+    ? `${base} and the audio you cut`
+    : base;
 }
 
 /**

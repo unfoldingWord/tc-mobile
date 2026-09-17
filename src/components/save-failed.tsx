@@ -6,6 +6,7 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
+  restartConsequence,
   restartLabel,
 } from "./recovery-copy";
 import type { SaveFailureKind } from "@/hooks/save-failure";
@@ -31,6 +32,18 @@ interface SaveFailedProps {
   editOnly: boolean;
   /** Which segment the held recording belongs to, when it is in this chapter. */
   ordinal: number | null;
+  /**
+   * The chapter clipboard also holds a cut phrase, which the terminal restart
+   * below destroys along with the recording.
+   *
+   * The same bit `DatabasePanel` takes, and it is here because this screen
+   * OUTRANKS that panel: while a take is held, `databasePanel` is null, so the
+   * panel's two-tap — the one that names the cut phrase — cannot mount, and this
+   * screen's restart is the only control the translator is offered. Naming only
+   * the recording would make the confirmation incomplete on exactly the tap that
+   * destroys both (George R5 P2).
+   */
+  holdsCutAudio: boolean;
   attempts: number;
   onRetry: () => void;
   onDiscard: () => void;
@@ -52,6 +65,7 @@ export function SaveFailed({
   kind,
   editOnly,
   ordinal,
+  holdsCutAudio,
   attempts,
   onRetry,
   onDiscard,
@@ -131,7 +145,11 @@ export function SaveFailed({
             icon="retry"
             label={
               terminal
-                ? restartLabel(editOnly ? "changes" : "recording", restartArmed)
+                ? restartLabel(
+                    editOnly ? "changes" : "recording",
+                    restartArmed,
+                    holdsCutAudio
+                  )
                 : "Try saving again"
             }
             variant="primary"
@@ -149,9 +167,10 @@ export function SaveFailed({
 
           {terminal && restartArmed && (
             <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
-              {editOnly
-                ? "Tap again and these changes are gone."
-                : "Tap again and this recording is gone."}
+              {restartConsequence(
+                editOnly ? "changes" : "recording",
+                holdsCutAudio
+              )}
             </p>
           )}
 
