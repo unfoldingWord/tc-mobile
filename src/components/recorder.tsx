@@ -56,6 +56,7 @@ import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
+import { panelRecoveryFocus } from "@/lib/a11y/panel-recovery";
 import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
@@ -2468,14 +2469,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       void executeTail(planPendingWork(pendingWork()));
     }, [executeTail, pendingWork]);
 
+    // The sheet's own landing: its first focusable, which is the header Back.
+    // Named once because TWO edges need exactly it — the open edge below, and a
+    // full-body panel resolving (#199) — and a resolved panel leaves the sheet
+    // in the same state a fresh open does, so it must be the same call and not
+    // a second policy that can drift from this one.
+    const focusSheet = useCallback(() => {
+      sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
+    }, []);
+
     // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
     // user is not stranded on the now-`inert` list behind the modal. Mount-only —
     // App keys the sheet on segmentId, so it remounts per open and per segment.
     // The permission panel autofocuses its own Retry when it later appears, which
     // is after this has run.
     useEffect(() => {
-      sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
-    }, []);
+      focusSheet();
+    }, [focusSheet]);
 
     // A mic permission/start failure, at idle (distinct from a decode failure,
     // which travels as `stopError`). Keyed on `recorderError`, NOT the merged
@@ -2678,6 +2688,39 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         })(),
       });
     }, [overlayUp, isClosing, panelOwnsFocus, focusRestore]);
+
+    // The OTHER half of `panelOwnsFocus` (#199). The effect above suppresses
+    // itself while a full-body panel is up, because each panel `autoFocus`es
+    // its own control — correct, but it leaves the SUCCESS edge unowned: a
+    // "Try again" that works unmounts `LoadErrorPanel` with focus on the
+    // control that has just gone away, and the mount effect above cannot help
+    // because it is mount-only (App keys the sheet on segmentId). The Segments
+    // list behind is `inert`, so focus fell to <body> and the next Tab reached
+    // the header Back.
+    //
+    // A LAYOUT effect, for the ordering reason `lib/a11y/focus-restore.ts`
+    // documents: React removes the unmounted panel in the mutation phase, and
+    // an element cannot take focus until its ancestors are out of an inert
+    // subtree — a passive effect would also work here (the sheet itself is
+    // never inert on this edge) but the two focus effects in this file should
+    // not run in different phases for no reason.
+    //
+    // The previous-commit value lives in a ref written INSIDE the effect, never
+    // at render time: a render-time `ref.current = x` is exactly what
+    // `react-hooks/refs` exists to catch, and AGENTS.md records that this
+    // file's own `catch (cause)` shapes can silence that rule (#212).
+    const panelOwnedFocus = useRef(false);
+    useLayoutEffect(() => {
+      if (
+        panelRecoveryFocus({
+          ownedLastCommit: panelOwnedFocus.current,
+          ownsNow: panelOwnsFocus,
+          closing: isClosing,
+        })
+      )
+        focusSheet();
+      panelOwnedFocus.current = panelOwnsFocus;
+    }, [panelOwnsFocus, isClosing, focusSheet]);
 
     const markReason = markRowReason({
       hasView: view !== null,
