@@ -346,14 +346,26 @@ interface FrozenPanInput {
  *
  * Clamped to the clip for `viewportWindow`'s reason: the pan is also the record
  * insertion offset, and there is no inserting before the start or after the end.
+ *
+ * **`null` when the freeze lands on the end, and that is the point of the
+ * return type** (George R1 P1). `null` is not "no pan": it is F7's append rest,
+ * which `effectivePan` reads as "the end, whatever the end turns out to be", and
+ * which `onCut` preserves (`p === null ? null : …`) so a resting line tracks a
+ * buffer that changed under it. Freezing the NUMBER `length` there would turn
+ * that promise into a stale absolute index — and a clip playing to its end from
+ * the rest is the DEFAULT Play, so the very next Paste or Undo would leave the
+ * line at the start of the new audio and the next Record would punch into it
+ * instead of appending. An absolute sample is kept only when it is strictly
+ * inside the clip, where it means one specific place in the audio.
  */
-export function frozenPan(input: FrozenPanInput): number {
+export function frozenPan(input: FrozenPanInput): number | null {
   const reached = input.stopRequested
     ? input.observed
     : input.ranOut
       ? input.end
       : input.observed;
-  return Math.max(0, Math.min(reached, input.length));
+  const clamped = Math.max(0, Math.min(reached, input.length));
+  return clamped >= input.length ? null : clamped;
 }
 
 /**
@@ -371,13 +383,69 @@ export function frozenPan(input: FrozenPanInput): number {
  * which reads correctly for a fresh Play ("play the segment") and wrong for a
  * resume, where dragging to the end would restart from the beginning. Called
  * out as an inference on #317 rather than left implicit.
+ *
+ * And it owes nothing at all once a TAKE exists (`takeActive`, George R1 P2
+ * #3). Record is dead while a finger owns the stage ({@link recordDisabled}),
+ * but a tap landing in the same frame as the pointer-down is ahead of that
+ * render — and a resume into a live or paused microphone would be refused by
+ * the floor, failing silently, or sound over a capture. A take supersedes the
+ * gesture; the lift just lets go.
  */
-export function resumesOnLift(
-  interrupted: boolean,
-  pan: number,
-  length: number
-): boolean {
-  return interrupted && pan < length;
+export function resumesOnLift(input: {
+  /** This gesture is the one that paused playback. */
+  readonly interrupted: boolean;
+  /** The sample now under the centerline. */
+  readonly pan: number;
+  readonly length: number;
+  /** A take is live, paused, or being committed — the mic outranks the lift. */
+  readonly takeActive: boolean;
+}): boolean {
+  return input.interrupted && !input.takeActive && input.pan < input.length;
+}
+
+/**
+ * Whether the Record control is dead.
+ *
+ * Record is the control that LOCKS the insertion offset: `insertionOffset` is
+ * captured at the tap (#61, F9) and the take splices there whatever the view
+ * does afterwards. So every state in which the drawn line and that offset could
+ * disagree must be a state in which Record cannot be tapped — which makes this
+ * a gate on the insertion offset, not a piece of button chrome, and the reason
+ * it is enumerated here rather than inlined in the JSX.
+ *
+ * - **`busy` / `isClosing` / no `view`** — nothing to record into, or a commit
+ *   already in flight.
+ * - **`playingBuffer` at idle** — under the scrolling view the line marks the
+ *   SOUNDING sample while `panState` is still the pre-play value, and under a
+ *   whole-clip preview it marks nothing in the working buffer at all. Either
+ *   way a take would splice somewhere the translator cannot see.
+ * - **`dragging`** — the #317 hole (George R1 P2 #3). That gesture stops
+ *   playback the instant the finger lands, which LIFTS the `playingBuffer`
+ *   term while the drag is still in flight; a second finger on Record would
+ *   lock the offset to a pan that then keeps moving under it. The finger owns
+ *   the stage until it lifts.
+ *
+ * The one state that stays LIVE while a buffer sounds is **paused**: this
+ * button is Resume then, its offset was locked at the original Record tap, and
+ * resuming stops the preview and continues the take (George R3 #4 on #101).
+ * `dragging` is deliberately NOT subordinate to that — a drag cannot begin
+ * during a paused take (`panGesture` refuses it), so the two never co-occur
+ * legitimately, and if they ever did the moving pan would still be the danger.
+ */
+export function recordDisabled(input: {
+  readonly busy: boolean;
+  readonly isClosing: boolean;
+  /** A segment is loaded. */
+  readonly hasView: boolean;
+  readonly playingBuffer: boolean;
+  /** A take is PAUSED — this button is Resume. */
+  readonly paused: boolean;
+  /** A pointer is mid-pan on the stage. */
+  readonly dragging: boolean;
+}): boolean {
+  if (input.busy || input.isClosing || !input.hasView) return true;
+  if (input.dragging) return true;
+  return input.playingBuffer && !input.paused;
 }
 
 export function stageView(input: StageInput): StageView {

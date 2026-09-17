@@ -40,9 +40,16 @@ interface PlayheadOverlayProps {
    * audition never swaps the view, so a position outside `[0,1]` there is real,
    * still-sounding audio that has simply outgrown the pan/zoom window, not
    * blank space; hiding the one cue that says "this is what you're hearing" is
-   * the wrong response to that. `stage.inPlaceAudition` names exactly this
-   * case and nothing else — every other caller (a preview, a record-mode play,
-   * a no-selection audition) leaves this `false` and keeps the original hide.
+   * the wrong response to that.
+   *
+   * `stageView`'s `render === "inPlace"` names exactly that case and nothing
+   * else (the flag it used to be called, `stage.inPlaceAudition`, became one
+   * value of the stage's four-way render mode in #415). The recorder's only
+   * other caller of this overlay is a paused-take preview, which leaves this
+   * `false` and keeps the original hide. **There is no third caller anymore:**
+   * a record-mode play and a no-selection audition no longer travel a line at
+   * all — the waveform scrolls under the fixed centerline instead, and this
+   * overlay is not `active` for them.
    */
   clampToEdge?: boolean;
   className?: string;

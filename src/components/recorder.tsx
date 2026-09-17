@@ -19,6 +19,7 @@ import {
   frozenPan,
   liveScopeShown,
   panGesture,
+  recordDisabled,
   resumesOnLift,
   stageView,
 } from "./recorder-stage";
@@ -633,35 +634,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }, []);
 
     /**
-     * Stop buffer playback, sampling the true position first.
-     *
-     * The ONE stop path this sheet uses, and the reason is #416's promise
-     * (Frank R1 P2): `playbackSampleRef` is written on the scroller's rAF, so
-     * it is up to a frame stale, and `stopBuffer` clears the handle that knows
-     * better. Reading `readPlaybackSample()` synchronously HERE — in whatever
-     * handler is stopping, before the handle goes — is what makes "the waveform
-     * stays exactly where playback had reached" true rather than approximately
-     * true. A frame of drift is ~700 samples, which is also a Record splicing
-     * 16 ms before the end of a take instead of appending to it.
-     *
-     * `audio.stopBuffer` is a no-op when nothing is sounding, and so is this.
-     *
-     * It RETURNS the position it sampled, because a caller that needs it must
-     * not read the ref itself: `playbackSampleRef` is the stale rAF value until
-     * the line above replaces it, so a #317 drag that captured its start before
-     * calling this began a frame behind the audio it had just paused (Frank R2
-     * P2 #1).
-     */
-    const stopBuffer = audio.stopBuffer;
-    const stopPlayback = useCallback(() => {
-      const sample = readPlaybackSample();
-      if (sample !== null) playbackSampleRef.current = sample;
-      stopRequestedRef.current = true;
-      stopBuffer();
-      return playbackSampleRef.current;
-    }, [stopBuffer, readPlaybackSample]);
-
-    /**
      * Freeze the view where playback stopped — #416's whole fix.
      *
      * "Pause only pauses. The waveform and the playhead stay exactly where
@@ -671,16 +643,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * had been sitting at the end of the take the whole time — the instant jump
      * to the end the issue reports.
      *
-     * Route-independent on purpose. It runs for the Pause tap, for playback
-     * reaching the end of the clip, for a finger landing on the waveform
-     * (#317), and for every other `stopBuffer` caller in this sheet — the ≡
-     * menu, Back, entering edit, an edit action — because it keys on the stage
-     * leaving the scroll mode rather than on any one handler remembering to
-     * call it.
+     * Route-independent on purpose: `stopPlayback` runs it for every asked-for
+     * stop, and the layout effect below catches the one ending no handler sees,
+     * a clip running out.
      *
      * WHICH sample it freezes is a decision of its own, and an exact one rather
-     * than "whatever the last frame saw": `frozenPan` carries the three endings
-     * and why they differ (Frank R1 P2).
+     * than "whatever the last frame saw" — including the `null` REST, which is
+     * not a missing answer but F7's "the end, whatever the end becomes"
+     * (`frozenPan`, and George R1 P1).
+     *
+     * `scrollPendingRef` is the one-shot: it is set while the stage scrolls and
+     * consumed by the first freeze after it, so a freeze happens exactly once
+     * per play and an idle re-render never writes the pan. A rematerialiser
+     * clears it instead of consuming it — see `stopPlaybackDroppingPan`.
      */
     const freezePlaybackPan = useCallback(() => {
       if (!scrollPendingRef.current) return;
@@ -696,12 +671,77 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       );
     }, [length]);
 
-    // A LAYOUT effect, so the frozen pan is committed before the browser paints
-    // the frame in which playback stopped — in a plain effect the stage would
-    // show one frame of the pre-play pan, which is the jump #416 is about,
-    // merely briefer. The set-state goes through a `useCallback` rather than
-    // sitting in the effect body, the same shape the paused-exit effect below
-    // uses to stay inside the hooks rules.
+    /**
+     * Stop buffer playback, sampling the true position and freezing it.
+     *
+     * The ONE stop path this sheet uses, and the reason is #416's promise
+     * (Frank R1 P2): `playbackSampleRef` is written on the scroller's rAF, so
+     * it is up to a frame stale, and `stopBuffer` clears the handle that knows
+     * better. Reading `readPlaybackSample()` synchronously HERE — in whatever
+     * handler is stopping, before the handle goes — is what makes "the waveform
+     * stays exactly where playback had reached" true rather than approximately
+     * true. A frame of drift is ~700 samples, which is also a Record splicing
+     * 16 ms before the end of a take instead of appending to it.
+     *
+     * The freeze is synchronous, not left to the layout effect (George R1 P2
+     * #2). The effect is a LATER writer of `panState` than the handler that
+     * stopped playback, so it landed after whatever that handler did next —
+     * after `onCut`'s `panAfterCut`, which it would clobber, and after an
+     * `editor.undo()` that had already replaced the buffer the position was
+     * measured in. Freezing here puts the write in the same turn as the stop,
+     * against the buffer that was actually sounding, and lets a same-turn
+     * functional `setPanState` compose ON TOP of it rather than under it.
+     *
+     * `audio.stopBuffer` is a no-op when nothing is sounding, and so is this.
+     *
+     * It RETURNS the position it sampled, because a caller that needs it must
+     * not read the ref itself: `playbackSampleRef` is the stale rAF value until
+     * the line below replaces it, so a #317 drag that captured its start before
+     * calling this began a frame behind the audio it had just paused (Frank R2
+     * P2 #1).
+     */
+    const stopBuffer = audio.stopBuffer;
+    const stopPlayback = useCallback(() => {
+      const sample = readPlaybackSample();
+      if (sample !== null) playbackSampleRef.current = sample;
+      stopRequestedRef.current = true;
+      stopBuffer();
+      freezePlaybackPan();
+      return playbackSampleRef.current;
+    }, [stopBuffer, readPlaybackSample, freezePlaybackPan]);
+
+    /**
+     * Stop playback and forget where it had reached — for a caller about to
+     * REPLACE the buffer that was sounding (George R1 P2 #2).
+     *
+     * Undo and Redo rematerialise `working` from the edit log, and they are
+     * live controls while a buffer sounds. A sample index measured in the
+     * buffer that was playing names different audio in the one that comes back:
+     * undo a cut of the first 2 000 samples and the position the line was on
+     * moves 2 000 samples deeper into the speech, where the next Record would
+     * splice. Unlike `onCut`, which repairs the index through `panAfterCut`,
+     * there is no mapping for an arbitrary history jump — so the honest answer
+     * is to keep no frozen position at all and leave the pan exactly as the
+     * translator last set it (the F7 rest, usually), which is what these
+     * controls did before playback ever wrote the pan.
+     *
+     * Clearing the one-shot is what makes it a drop rather than a deferral: the
+     * layout effect must not freeze this play either, a commit later, against
+     * the new buffer.
+     */
+    const stopPlaybackDroppingPan = useCallback(() => {
+      scrollPendingRef.current = false;
+      stopBuffer();
+    }, [stopBuffer]);
+
+    // The one ending no handler sees: the clip ran out. A LAYOUT effect, so the
+    // frozen pan is committed before the browser paints the frame in which
+    // playback stopped — in a plain effect the stage would show one frame of
+    // the pre-play pan, which is the jump #416 is about, merely briefer. The
+    // set-state goes through a `useCallback` rather than sitting in the effect
+    // body, the same shape the paused-exit effect below uses to stay inside the
+    // hooks rules. After an asked-for stop this is already a no-op: that path
+    // consumed the one-shot in its own turn.
     useLayoutEffect(() => {
       if (scrolling) {
         scrollPendingRef.current = true;
@@ -882,9 +922,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       const interrupted = resumeAfterDragRef.current;
       resumeAfterDragRef.current = false;
       const from = Math.max(0, Math.min(draggedPanRef.current, length));
-      if (!resumesOnLift(interrupted, from, length)) return;
+      // `takeActive` is the mic outranking the gesture (George R1 P2 #3): a
+      // Record tapped in the same frame as the pointer-down is ahead of the
+      // render that disables it, and a resume into a live or paused mic is
+      // either refused by the floor — failing silently — or sounds over a
+      // capture. `resumesOnLift` carries the rest of the rule.
+      if (!resumesOnLift({ interrupted, pan: from, length, takeActive }))
+        return;
       soundRange(from, length);
-    }, [length, soundRange]);
+    }, [length, soundRange, takeActive]);
 
     // Abort an in-flight decode and drop the synchronous guard, but KEEP a prepared
     // preview on the stage (#101). A first take's `LiveScope` remounts blank once it
@@ -917,20 +963,33 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // interruption freezing the take to "processing" while a preview is sounding —
     // must still stop playback and invalidate an in-flight decode, or the preview
     // plays on with Play/Record both disabled by `busy` (George R2 #4). Runs on any
-    // leave from `paused`. `stopPlayback` is a callback, not a direct set-state, so
+    // leave from `paused`. The stop is a callback, not a direct set-state, so
     // this effect stays within the hooks rules; the leftover `previewState` is inert
     // (`playDisabled` gates it only while paused) and the kept `preview` object
     // still draws on stage through `busy`/`isClosing` (`previewShown`) — the R3 #1
     // no-blank-on-interruption behaviour.
+    //
+    // The DROPPING stop, for two reasons. There is never a scroll position at
+    // stake here — what sounds while a take is paused is the whole-clip preview
+    // (#101), a different buffer, so the one-shot is not set — and this is an
+    // EFFECT: the freezing stop closes over `length`, which would re-run this on
+    // every cut, paste and undo and stop a playback nobody asked it to stop.
     useEffect(() => {
       if (paused) return;
       previewGenRef.current++;
       previewDecodeRef.current = false;
-      stopPlayback();
-    }, [paused, stopPlayback]);
+      stopPlaybackDroppingPan();
+    }, [paused, stopPlaybackDroppingPan]);
 
     const onRecordButton = useCallback(() => {
       if (closing.current || !view) return;
+      // A take supersedes a #317 drag that owes playback a resume (George R1 P2
+      // #3). The control is dead while a finger owns the stage, but a tap in
+      // the same frame as the pointer-down is ahead of that render — and the
+      // lift must not then sound over the mic this tap is starting. Cleared for
+      // pause and resume too: any transport action means the translator has
+      // moved on from the gesture.
+      resumeAfterDragRef.current = false;
       // Any transport action invalidates a prepared preview (#101): a resume may
       // append audio the preview would not include, and a new record replaces the
       // take. Re-decoded fresh on the next Play while paused. (Pausing has no
@@ -1423,15 +1482,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       [editor, stopPlayback]
     );
 
+    // Undo and Redo REMATERIALISE `working` from the edit log, so they stop
+    // playback WITHOUT freezing a position in it (George R1 P2 #2): a sample
+    // index measured in the buffer that was sounding names different audio in
+    // the one that comes back, and unlike a cut there is no mapping to repair
+    // it with. The pan is left exactly as the translator last set it — which,
+    // at the F7 rest, is what keeps the next Record appending.
     const onUndo = useCallback(() => {
-      stopPlayback();
+      stopPlaybackDroppingPan();
       editor.undo();
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlaybackDroppingPan]);
 
     const onRedo = useCallback(() => {
-      stopPlayback();
+      stopPlaybackDroppingPan();
       editor.redo();
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlaybackDroppingPan]);
 
     const onCut = useCallback(() => {
       stopPlayback();
@@ -2949,23 +3014,38 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                           : strings.record
                     }
                     variant="record"
-                    // Disabled while the buffer plays ONLY when idle: the visible
-                    // whole-clip view draws the centerline at a fixed screen
-                    // position that no longer corresponds to the stored insertion
-                    // offset (#316 keeps the line itself visible; it is the
-                    // COORDINATE that goes stale under a swapped view, not the
-                    // line's presence), so a new record would splice at a sample
-                    // the translator cannot see is different from what is drawn
-                    // (George R2). While PAUSED the button is Resume, whose offset
-                    // is already locked — resuming stops a sounding preview and
-                    // continues the take, so it must stay enabled (George R3 #4).
-                    // Stop playback (tap Play) first only in the idle case.
-                    disabled={
-                      busy ||
-                      isClosing ||
-                      !view ||
-                      (audio.playingBuffer && !paused)
-                    }
+                    // This is a gate on the INSERTION OFFSET, not button
+                    // chrome, so the rule is enumerated in `recordDisabled`
+                    // and tested in both directions rather than inlined here
+                    // (George R1 P2 #3). Two states it must catch, and the one
+                    // it must not:
+                    //
+                    // - a buffer sounding at idle — under the scrolling view
+                    //   (#415) the drawn line marks the SOUNDING sample while
+                    //   `panState` is still the pre-play value, and under a
+                    //   whole-clip preview it marks nothing in the working
+                    //   buffer at all. Either way a take would splice where the
+                    //   translator cannot see. (This used to be explained as a
+                    //   swapped whole-clip view lying about the line; since
+                    //   #415 the line is honest during playback and it is the
+                    //   stored pan that is stale. The gate is the same either
+                    //   way — do not "correct" it into an enable.)
+                    // - a finger mid-pan (#317): the touch that pauses playback
+                    //   lifts the sounding term while the drag is still moving
+                    //   the pan, so a second finger here would lock the offset
+                    //   to a position that then slides away from it.
+                    // - PAUSED is the exception: this button is Resume, its
+                    //   offset was locked at the original Record tap (F9), and
+                    //   resuming stops a sounding preview and continues the
+                    //   take, so it must stay live (George R3 #4).
+                    disabled={recordDisabled({
+                      busy,
+                      isClosing,
+                      hasView: view !== null,
+                      playingBuffer: audio.playingBuffer,
+                      paused,
+                      dragging,
+                    })}
                     onClick={onRecordButton}
                   />
                   <Control

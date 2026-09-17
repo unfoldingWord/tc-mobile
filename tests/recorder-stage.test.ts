@@ -4,10 +4,12 @@ import {
   frozenPan,
   liveScopeShown,
   panGesture,
+  recordDisabled,
   resumesOnLift,
   stageView,
   type StageState,
 } from "@/components/recorder-stage";
+import { effectivePan } from "@/lib/audio/viewport";
 
 /**
  * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
@@ -389,13 +391,23 @@ describe("panGesture", () => {
 
 describe("resumesOnLift", () => {
   const LEN = 1000;
+  const lift = { interrupted: true, pan: 500, length: LEN, takeActive: false };
 
   it("resumes only when this gesture was the one that paused playback", () => {
-    expect(resumesOnLift(true, 500, LEN)).toBe(true);
+    expect(resumesOnLift(lift)).toBe(true);
     // A pan that began at idle has nothing to resume: starting playback on a
     // lift the translator never associated with a sound would be the app
     // speaking unasked.
-    expect(resumesOnLift(false, 500, LEN)).toBe(false);
+    expect(resumesOnLift({ ...lift, interrupted: false })).toBe(false);
+  });
+
+  it("never sounds over a take that started during the drag (#61)", () => {
+    // George R1 P2 #3, the second half. Record is dead while a finger owns the
+    // stage, but a tap landing in the same frame as the pointer-down is ahead
+    // of that render — and a resume into a live or paused mic would either be
+    // refused by the floor (a silent failure the translator cannot explain) or
+    // sound over a capture. The lift simply owes nothing once a take exists.
+    expect(resumesOnLift({ ...lift, takeActive: true })).toBe(false);
   });
 
   it("does not resume with the line dragged to the very end", () => {
@@ -404,18 +416,18 @@ describe("resumesOnLift", () => {
     // gesture. Deliberately NOT `auditionPlan`'s rest fallback (at the end,
     // "from the line" sounds the WHOLE buffer): as a fresh Play that reads as
     // "play the segment", but as a resume it would restart from the beginning.
-    expect(resumesOnLift(true, LEN, LEN)).toBe(false);
+    expect(resumesOnLift({ ...lift, pan: LEN })).toBe(false);
     // Past the end (a stale pan after a cut) is the same answer.
-    expect(resumesOnLift(true, LEN + 500, LEN)).toBe(false);
+    expect(resumesOnLift({ ...lift, pan: LEN + 500 })).toBe(false);
   });
 
   it("resumes from the first sample", () => {
     // Dragged all the way back: there is a whole clip to play.
-    expect(resumesOnLift(true, 0, LEN)).toBe(true);
+    expect(resumesOnLift({ ...lift, pan: 0 })).toBe(true);
   });
 
   it("never resumes on an empty segment", () => {
-    expect(resumesOnLift(true, 0, 0)).toBe(false);
+    expect(resumesOnLift({ ...lift, pan: 0, length: 0 })).toBe(false);
   });
 });
 
@@ -514,16 +526,9 @@ describe("frozenPan", () => {
 
   it("clamps to the clip, above and below", () => {
     // The frozen pan is also the record insertion offset, so it gets
-    // `viewportWindow`'s clamp for `viewportWindow`'s reason.
-    expect(
-      frozenPan({
-        observed: LEN * 3,
-        end: LEN * 3,
-        stopRequested: true,
-        ranOut: false,
-        length: LEN,
-      })
-    ).toBe(LEN);
+    // `viewportWindow`'s clamp for `viewportWindow`'s reason. At the end the
+    // clamp lands on the REST (see the next case), so these two use a stop
+    // inside the clip and the bottom of the range.
     expect(
       frozenPan({
         observed: -50,
@@ -533,15 +538,163 @@ describe("frozenPan", () => {
         length: LEN,
       })
     ).toBe(0);
-    // A range that outlived a cut cannot park the line past the new end either.
     expect(
       frozenPan({
         observed: 500,
-        end: LEN * 2,
+        end: 500,
         stopRequested: false,
         ranOut: true,
         length: LEN,
       })
-    ).toBe(LEN);
+    ).toBe(500);
+  });
+
+  it("answers the REST (null) when the freeze lands on the end", () => {
+    // George R1 P1. `null` is not "no pan" — it is F7's append rest, "the end,
+    // whatever the end turns out to be" (`effectivePan`). Freezing the NUMBER
+    // `length` there turns that into a stale absolute index, which is the
+    // insertion-offset class `onCut`'s `p === null ? null : …` exists to avoid.
+    // A clip that runs out is the DEFAULT Play from the rest, so this is the
+    // common path, not an edge.
+    expect(
+      frozenPan({
+        observed: LEN,
+        end: LEN,
+        stopRequested: false,
+        ranOut: true,
+        length: LEN,
+      })
+    ).toBeNull();
+    // Paused exactly at the end, and a position clamped down from past it: the
+    // line is at the end either way, so both are the rest.
+    expect(
+      frozenPan({
+        observed: LEN,
+        end: LEN,
+        stopRequested: true,
+        ranOut: false,
+        length: LEN,
+      })
+    ).toBeNull();
+    expect(
+      frozenPan({
+        observed: LEN * 3,
+        end: LEN * 3,
+        stopRequested: true,
+        ranOut: false,
+        length: LEN,
+      })
+    ).toBeNull();
+    // An empty segment has nothing but its rest.
+    expect(
+      frozenPan({
+        observed: 0,
+        end: 0,
+        stopRequested: true,
+        ranOut: false,
+        length: 0,
+      })
+    ).toBeNull();
+    // ...and a stop one sample inside is still an absolute position.
+    expect(
+      frozenPan({
+        observed: LEN - 1,
+        end: LEN,
+        stopRequested: true,
+        ranOut: false,
+        length: LEN,
+      })
+    ).toBe(LEN - 1);
+  });
+
+  it("keeps a run-out at the rest following the end through a later edit", () => {
+    // The scenario George wrote out, as a composition with the contract that
+    // actually consumes this value. Play from the rest, let it run out, then
+    // paste (or undo a cut): the buffer is longer, and the line must still be
+    // at the END so Record APPENDS rather than punching into the new audio.
+    const frozen = frozenPan({
+      observed: 10_000,
+      end: 10_000,
+      stopRequested: false,
+      ranOut: true,
+      length: 10_000,
+    });
+    const pan = effectivePan({
+      mode: "record",
+      selectionActive: false,
+      zoomPan: null,
+      panState: frozen,
+      length: 12_000,
+    });
+    expect(pan).toBe(12_000);
+  });
+});
+
+/**
+ * Whether the Record control is dead (George R1 P2 #3).
+ *
+ * Record is the control that LOCKS the insertion offset (#61, F9:
+ * `insertionOffset` is captured at the tap and the take splices there whatever
+ * the view does afterwards), so every state where the drawn line and that
+ * offset could disagree has to be a state where Record cannot be tapped. This
+ * PR added one: #317 made "a finger on the waveform" the way to pause, and the
+ * pause lifts the `playingBuffer` gate while the finger is still down — so a
+ * second finger could tap Record mid-drag and lock the offset to a pan that
+ * then keeps moving under it.
+ *
+ * Enumerated here rather than inline in the JSX because a gate is a claim in
+ * two directions: it must go dead on every state it exists to catch, and stay
+ * LIVE on every state the sheet calls legitimate — including Resume, which is
+ * this same button while a take is paused and a preview may be sounding.
+ */
+describe("recordDisabled", () => {
+  const live = {
+    busy: false,
+    isClosing: false,
+    hasView: true,
+    playingBuffer: false,
+    paused: false,
+    dragging: false,
+  } as const;
+
+  it("is live at idle with a segment loaded", () => {
+    expect(recordDisabled(live)).toBe(false);
+  });
+
+  it("is dead with no segment, while busy, and through the close window", () => {
+    expect(recordDisabled({ ...live, hasView: false })).toBe(true);
+    expect(recordDisabled({ ...live, busy: true })).toBe(true);
+    expect(recordDisabled({ ...live, isClosing: true })).toBe(true);
+  });
+
+  it("is dead while a buffer sounds at idle — the drawn line is not the offset", () => {
+    // Under `"scroll"` the line marks the SOUNDING sample while `panState` is
+    // still the pre-play value, and under `"whole"` it marks nothing in the
+    // working buffer at all. Either way a take started here would splice
+    // somewhere the translator cannot see.
+    expect(recordDisabled({ ...live, playingBuffer: true })).toBe(true);
+  });
+
+  it("stays LIVE as Resume, even with a preview sounding", () => {
+    // While PAUSED this button is Resume, whose offset was locked at the
+    // original Record tap (F9) — resuming stops the preview and continues the
+    // take, so gating it would strand a paused take (George R3 #4 on #101).
+    expect(recordDisabled({ ...live, paused: true, playingBuffer: true })).toBe(
+      false
+    );
+    expect(recordDisabled({ ...live, paused: true })).toBe(false);
+  });
+
+  it("is dead while a finger owns the stage (#317)", () => {
+    // The hole this case exists to close: the #317 touch stops playback, which
+    // lifts `playingBuffer` while the drag is still in flight. Record must not
+    // be tappable by a second finger until the first one lifts, or the offset
+    // locks to a pan that is still moving.
+    expect(recordDisabled({ ...live, dragging: true })).toBe(true);
+    // And a drag cannot resurrect it while a take is paused either — that is
+    // the `dragging` term standing on its own, not riding `playingBuffer`.
+    expect(recordDisabled({ ...live, dragging: true, paused: true })).toBe(
+      true
+    );
   });
 });
