@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   setUpgradeCoordinator,
@@ -50,7 +50,16 @@ export function useDatabaseStatus(
   const predicateRef = useRef(holdsUnsavedWork);
   // In an effect, never during render: `react-hooks/refs`, and the same reason
   // behind it — nothing here is read while rendering.
-  useEffect(() => {
+  //
+  // A LAYOUT effect, not a passive one (Frank R2 P1). React flushes passive
+  // effects in a task of their own, so between the commit that makes a take
+  // held and that flush there is a window the event loop can run in — and a
+  // `versionchange` landing there would be answered by the PREVIOUS predicate,
+  // `false`, and the connection holding the only copy of that take would be
+  // given away. A layout effect is flushed synchronously in the commit itself,
+  // so no task can come between the two. The work is one assignment; the
+  // synchronous cost is why this is the only thing done here.
+  useLayoutEffect(() => {
     predicateRef.current = holdsUnsavedWork;
   }, [holdsUnsavedWork]);
 
