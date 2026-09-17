@@ -68,6 +68,11 @@ const REPO = join(import.meta.dirname, "..");
 const PROBE_DIR = join(REPO, ".react-hooks-refs-probe");
 const ESLINT = join(REPO, "node_modules", "eslint", "bin", "eslint.js");
 
+// Below each `it(...)`'s 15000ms vitest timeout (see lintProbe's docblock) —
+// execFileSync is synchronous, so vitest's own timeout cannot interrupt a
+// blocked child; this is the only thing that can (Frank, round 2).
+const ESLINT_TIMEOUT_MS = 10000;
+
 interface EslintMessage {
   ruleId: string | null;
   fatal?: boolean;
@@ -86,6 +91,14 @@ interface EslintResult {
  * parse failure with `fatal: true` on the message rather than a `ruleId`, so
  * that case is checked for and thrown on BEFORE reducing to rule ids, turning
  * a silently-vacuous pass into a loud test failure instead.
+ *
+ * `execFileSync` runs synchronously, which blocks vitest's own event loop, so
+ * the per-`it` 15000ms timeout below cannot fire while ESLint is still
+ * running — it can only be checked once this function returns (Frank, round
+ * 2). `timeout: ESLINT_TIMEOUT_MS` makes Node itself kill a hung child before
+ * that, and the `ETIMEDOUT` branch below turns that into a clear failure
+ * instead of `JSON.parse` choking on whatever partial stdout a killed process
+ * left behind.
  */
 function lintProbe(name: string, source: string): string[] {
   const file = join(PROBE_DIR, `${name}.tsx`);
@@ -100,11 +113,27 @@ function lintProbe(name: string, source: string): string[] {
     stdout = execFileSync(
       process.execPath,
       [ESLINT, "--no-ignore", "--format", "json", file],
-      { cwd: REPO, encoding: "utf8", stdio: "pipe" }
+      { cwd: REPO, encoding: "utf8", stdio: "pipe", timeout: ESLINT_TIMEOUT_MS }
     );
   } catch (err) {
+    const failure = err as {
+      stdout?: string;
+      code?: string;
+      signal?: string | null;
+    };
+    // execFileSync's OWN timeout kill does NOT set `.killed` on the thrown
+    // error (that flag belongs to the async ChildProcess API) — it sets
+    // `.code === "ETIMEDOUT"` and `.signal`, confirmed against Node's actual
+    // behaviour, not assumed from the async API's shape.
+    if (failure.code === "ETIMEDOUT") {
+      throw new Error(
+        `ESLint did not finish linting probe "${name}" within ` +
+          `${ESLINT_TIMEOUT_MS}ms and was killed (signal ${failure.signal ?? "unknown"}) — ` +
+          `treat this as a hang, not a lint result.`
+      );
+    }
     // Non-zero exit means at least one message — the JSON is still on stdout.
-    stdout = String((err as { stdout?: string }).stdout ?? "");
+    stdout = String(failure.stdout ?? "");
   }
   const [result] = JSON.parse(stdout) as EslintResult[];
   const messages = result?.messages ?? [];
