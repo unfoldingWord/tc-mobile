@@ -88,6 +88,30 @@ export function recoverySafetyLine(
 }
 
 /**
+ * The label on the restart control shown for a `downgrade`, in each of its two
+ * taps.
+ *
+ * Two taps, like Discard beside it, because it is the same kind of action: the
+ * held recording is RAM-only, and reloading the document destroys it. A
+ * one-tap, auto-focused control that throws away the only copy of a recording
+ * would be the exact loss this whole screen exists to prevent, and it would be
+ * inconsistent with the Discard directly under it (Frank R4 P1).
+ *
+ * The armed label names the loss rather than only the action. It is the last
+ * thing the translator reads before the recording is gone, so it does not say
+ * "restart" and leave them to work the rest out. What the screen should say
+ * about that loss BEFORE the control is armed — and whether anything could
+ * rescue the audio first — is the product question on #441; this is the
+ * minimum that keeps the tap honest.
+ */
+export function restartLabel(editOnly: boolean, armed: boolean): string {
+  if (!armed) return "Restart the app";
+  return editOnly
+    ? "Tap again to restart and lose these changes"
+    : "Tap again to restart and lose this recording";
+}
+
+/**
  * A faint attempt count, or `null`. Only for an `unknown` failure that has failed
  * more than once: a quota failure's cause is already named by the title, and a
  * single blip needs no count. Never stands in for the safety line above — it is

@@ -6,8 +6,8 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
+  restartLabel,
 } from "./recovery-copy";
-import { strings } from "./strings";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 
 /**
@@ -62,8 +62,14 @@ export function SaveFailed({
   // single tap would delete the only copy of the take. Deriving it means a new
   // attempt, or a retry in flight, disarms on its own. Two taps mean two taps.
   const [armedAt, setArmedAt] = useState<number | null>(null);
+  // Armed separately from Discard, and derived the same way for the same reason:
+  // restarting destroys the held recording exactly as discarding does, so it
+  // takes two taps too (Frank R4 P1). Two slots rather than one so arming one
+  // control never arms the other.
+  const [restartArmedAt, setRestartArmedAt] = useState<number | null>(null);
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
+  const restartArmed = restartArmedAt === attempts && !saving;
 
   // Shown on every failed save, never an instruction to leave the app: a failed
   // save is RAM-only (the commit is one transaction, #38) whatever the cause, so
@@ -123,12 +129,31 @@ export function SaveFailed({
         <>
           <Control
             icon="retry"
-            label={terminal ? strings.appReload : "Try saving again"}
+            label={
+              terminal
+                ? restartLabel(editOnly, restartArmed)
+                : "Try saving again"
+            }
             variant="primary"
             size={30}
+            className={
+              terminal && restartArmed ? "text-[var(--s-live)]" : undefined
+            }
             autoFocus
-            onClick={terminal ? reload : onRetry}
+            onClick={
+              terminal
+                ? () => (restartArmed ? reload() : setRestartArmedAt(attempts))
+                : onRetry
+            }
           />
+
+          {terminal && restartArmed && (
+            <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+              {editOnly
+                ? "Tap again and these changes are gone."
+                : "Tap again and this recording is gone."}
+            </p>
+          )}
 
           {safetyLine && (
             <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>

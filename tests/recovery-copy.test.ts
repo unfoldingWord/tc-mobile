@@ -4,6 +4,7 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
+  restartLabel,
 } from "@/components/recovery-copy";
 
 /**
@@ -94,6 +95,31 @@ describe("recoverySafetyLine", () => {
     expect(recoverySafetyLine(false)).not.toContain("what you just recorded");
     // The edit path's subject is the edited buffer.
     expect(recoverySafetyLine(true)).toContain("changes");
+  });
+});
+
+describe("restartLabel", () => {
+  it("does not throw the recording away on one tap", () => {
+    // Restarting destroys the held recording — it is RAM-only — exactly as
+    // Discard does, so it is armed the same way. A one-tap, auto-focused control
+    // that loses the only copy of a recording is the loss this whole screen
+    // exists to prevent (Frank R4 P1).
+    expect(restartLabel(false, false)).toBe("Restart the app");
+    expect(restartLabel(false, false)).not.toMatch(/lose|gone/i);
+  });
+
+  it("names the loss on the armed tap, not just the action", () => {
+    // The last thing read before the recording is gone. "Restart" alone leaves
+    // the translator to work out what it costs.
+    expect(restartLabel(false, true)).toBe(
+      "Tap again to restart and lose this recording"
+    );
+    expect(restartLabel(true, true)).toBe(
+      "Tap again to restart and lose these changes"
+    );
+    for (const editOnly of [false, true]) {
+      expect(restartLabel(editOnly, true)).toMatch(/lose/i);
+    }
   });
 });
 
