@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
 
+import { unwrap } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,6 +9,7 @@ import {
   installFailureLog,
 } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
+import { getDb } from "@/lib/storage/db";
 import * as failuresStore from "@/lib/storage/failures";
 import {
   appendFailure,
@@ -128,6 +130,52 @@ describe("the failure store", () => {
     expect(await readFailures()).toEqual([]);
     await clearFailures();
     expect(await countFailures()).toBe(0);
+  });
+
+  it("leaves NO unhandled rejection behind when its transaction aborts", async () => {
+    // The recursion this guards (Frank, takeover round 2). `idb` builds the
+    // transaction's `done` promise eagerly, when it wraps the transaction — so a
+    // transaction that aborts always has a rejected promise in existence. An
+    // `appendFailure` that throws from a request, before it reaches `await
+    // done`, leaves that rejection unobserved; in a browser that fires
+    // `unhandledrejection`, which `install-failure-listeners.ts` routes into
+    // `reportFailure`, which lands back HERE — under the same full disk that
+    // caused the first one, forever. `writeEntry`'s swallow cannot see it: the
+    // rejection escapes around the outside of the call it swallows.
+    //
+    // Asserted on a GENUINELY aborted transaction rather than a mocked
+    // `appendFailure`, because the promise that leaks is one `idb` created, not
+    // one this code wrote.
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const db = await getDb();
+      const raw = unwrap(db);
+      const open = raw.transaction.bind(raw);
+      vi.spyOn(raw, "transaction").mockImplementation(
+        (...args: Parameters<IDBDatabase["transaction"]>) => {
+          const tx = open(...args);
+          // Abort once the append's request is in flight: the request rejects,
+          // `appendFailure` throws out of it, and `tx.done` rejects too.
+          queueMicrotask(() => {
+            tx.abort();
+          });
+          return tx;
+        }
+      );
+
+      await expect(appendFailure(entry())).rejects.toBeDefined();
+      // Node reports an unhandled rejection at the end of the turn, so give it
+      // one: asserting synchronously would pass with the guard removed.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      vi.restoreAllMocks();
+    }
   });
 
   it("appends a repeated failure twice rather than de-duplicating it", async () => {

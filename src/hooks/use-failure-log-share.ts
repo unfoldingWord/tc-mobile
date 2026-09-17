@@ -23,14 +23,26 @@ import {
  * `canShare` that answered no. Carried as one nullable object rather than two
  * nullable booleans so the two questions cannot be answered from different
  * platforms.
+ *
+ * The two answers are THUNKS, and that is load-bearing (Frank, takeover round
+ * 2). An eagerly built capability object asks the WebView both questions before
+ * the decision is even made, which makes "native asks the WebView nothing" false
+ * in the only place it matters: a WebView whose `canShare` throws — the class of
+ * WebView this whole native route exists for (#336) — would take the native
+ * route down with it, for an answer that route never reads. Lazy, the claim is a
+ * property of the function below rather than a comment above it, and a test can
+ * hold it to it.
  */
 export interface LogShareCapabilities {
   /** Running inside the Capacitor shell (the APK / the iOS app). */
   readonly native: boolean;
   /** The browser has `navigator.share`. */
   readonly webShare: boolean;
-  /** What `navigator.canShare` said about each shape, or `null` if it has none. */
-  readonly canShare: { readonly file: boolean; readonly text: boolean } | null;
+  /** Asks `navigator.canShare` about each shape, or `null` if it has none. */
+  readonly canShare: {
+    readonly file: () => boolean;
+    readonly text: () => boolean;
+  } | null;
 }
 
 /**
@@ -67,8 +79,8 @@ export function selectLogShareShape(
   if (caps.native) return "native";
   if (!caps.webShare) return "unsupported";
   if (caps.canShare === null) return "text";
-  if (caps.canShare.file) return "file";
-  return caps.canShare.text ? "text" : "unsupported";
+  if (caps.canShare.file()) return "file";
+  return caps.canShare.text() ? "text" : "unsupported";
 }
 
 export interface UseFailureLogShare {
@@ -209,15 +221,20 @@ export function useFailureLogShare(): UseFailureLogShare {
       });
       // The whole branch matrix is {@link selectLogShareShape}, which is pure
       // and unit-tested; what is left here is carrying out its answer.
+      const canShareFiles = env.canShareFiles;
       const shape = selectLogShareShape({
         native: env.native,
         webShare: env.webShare,
+        // Neither thunk runs on the native route — that is the point of them
+        // being thunks. `readShareEnvironment` has already read whether
+        // `navigator.canShare` EXISTS, which is a property lookup and not a
+        // call into the WebView's implementation.
         canShare:
-          env.canShareFiles === null
+          canShareFiles === null
             ? null
             : {
-                file: env.canShareFiles(file),
-                text: navigator.canShare({ text }),
+                file: () => canShareFiles(file),
+                text: () => navigator.canShare({ text }),
               },
       });
       if (shape === "unsupported") {

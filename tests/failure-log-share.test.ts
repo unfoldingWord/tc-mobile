@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   type LogShareCapabilities,
@@ -28,7 +28,7 @@ import {
 const LEVEL_2 = (file: boolean, text: boolean): LogShareCapabilities => ({
   native: false,
   webShare: true,
-  canShare: { file, text },
+  canShare: { file: () => file, text: () => text },
 });
 
 describe("selectLogShareShape", () => {
@@ -44,9 +44,48 @@ describe("selectLogShareShape", () => {
       selectLogShareShape({
         native: true,
         webShare: true,
-        canShare: { file: true, text: true },
+        canShare: { file: () => true, text: () => true },
       })
     ).toBe("native");
+  });
+
+  it("asks the WebView NOTHING on the native route, even a canShare that throws", () => {
+    // The sharper half of "native wins" (Frank, takeover round 2). A WebView
+    // whose `canShare` throws is the same class of WebView this native route
+    // exists for (#336) — so a decision that evaluates the web capabilities
+    // before choosing takes the native route down for an answer it never reads.
+    // The thunks make that a property of this function rather than a claim about
+    // its caller.
+    const file = vi.fn(() => {
+      throw new Error("this WebView's canShare is broken");
+    });
+    const text = vi.fn(() => {
+      throw new Error("this WebView's canShare is broken");
+    });
+
+    expect(
+      selectLogShareShape({
+        native: true,
+        webShare: true,
+        canShare: { file, text },
+      })
+    ).toBe("native");
+    expect(file).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+  });
+
+  it("does not ask about text when the file was accepted", () => {
+    // Not an optimisation — one fewer question put to a WebView that has already
+    // answered the one that decides.
+    const text = vi.fn(() => true);
+    expect(
+      selectLogShareShape({
+        native: false,
+        webShare: true,
+        canShare: { file: () => true, text },
+      })
+    ).toBe("file");
+    expect(text).not.toHaveBeenCalled();
   });
 
   it("prefers a File when canShare explicitly says files work", () => {

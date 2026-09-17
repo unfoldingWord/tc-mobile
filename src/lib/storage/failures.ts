@@ -49,6 +49,28 @@ import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
 export async function appendFailure(entry: StoredFailure): Promise<void> {
   const db = await getDb();
   const tx = db.transaction("failures", "readwrite");
+  const done = tx.done;
+  // Observe `done` NOW, not only on the happy path (Frank, takeover round 2).
+  //
+  // `idb` builds the transaction's `done` promise eagerly, when it wraps the
+  // transaction — `cacheDonePromiseForTransaction` runs from
+  // `transformCachableValue`, not from the `done` getter. So a transaction that
+  // errors or aborts ALWAYS has a rejected promise in existence, whether or not
+  // anything is awaiting it. If a request below rejects, this function throws
+  // before reaching `await done`, and that rejection is then unhandled.
+  //
+  // Unhandled here is not a lint nit, it is a loop. An unhandled rejection in a
+  // browser fires `unhandledrejection`, which `app/install-failure-listeners.ts`
+  // feeds into `reportFailure`, which reaches THIS function again — under the
+  // same full disk or dead connection that caused the first one. Each turn adds
+  // another. `writeEntry`'s swallow, the guard that exists for exactly this
+  // recursion, never sees it: the rejection escapes around the outside of the
+  // call it swallows.
+  //
+  // One handler settles it. The `await done` below is still the real wait and
+  // still throws on failure, so nothing about the success path changes; this
+  // only says the rejection has been looked at.
+  void done.catch(() => undefined);
   const store = tx.objectStore("failures");
   await store.add(entry);
 
@@ -65,7 +87,7 @@ export async function appendFailure(entry: StoredFailure): Promise<void> {
       cursor = await cursor.continue();
     }
   }
-  await tx.done;
+  await done;
 }
 
 /**
