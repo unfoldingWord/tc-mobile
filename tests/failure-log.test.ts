@@ -13,13 +13,14 @@ import {
   flushFailureLog,
   installFailureLog,
   readFailureLog,
+  renderFailureRefusal,
   renderFailureStored,
   retryRenderFailureWrite,
   useFailureCount,
   useLogGeneration,
 } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
-import { getDb } from "@/lib/storage/db";
+import { getDb, isTerminalOpenRefusal } from "@/lib/storage/db";
 import * as failuresStore from "@/lib/storage/failures";
 import {
   appendFailure,
@@ -40,6 +41,20 @@ import { clearAllStores } from "./support";
  * What IS covered is everything they read: the ring, the order, the sink's
  * ordering guarantee, and the sink's refusal to re-enter the funnel.
  */
+
+/**
+ * An error carrying a `name`, the way the storage layer's own classes do.
+ *
+ * `db.ts` sets `this.name` to a string LITERAL in each constructor, and
+ * `isTerminalOpenRefusal` matches that literal — so a test that only put the
+ * name in the `message` would be testing a different thing than the one the
+ * crash screen reads.
+ */
+function namedError(name: string, message: string): Error {
+  const error = new Error(message);
+  error.name = name;
+  return error;
+}
 
 const entry = (over: Partial<StoredFailure> = {}): StoredFailure => ({
   at: 1_000,
@@ -902,6 +917,56 @@ describe("whether the crash's own row reached the store", () => {
 
     // The lane settled, as it is designed to. The row did not land.
     expect(renderFailureStored()).toBe(false);
+  });
+
+  /**
+   * The decision the crash screen's Restart makes, minus the one step this
+   * suite cannot reach.
+   *
+   * `reload()` in `error-boundary.tsx` ends in `window.location.reload()`, and
+   * there is no seam for that in a node suite — so what is asserted here is the
+   * PREDICATE, exactly as `reload()` composes it, and nothing about the reload
+   * itself. That half is browser-boundary code and is not claimed as covered.
+   */
+  const restartWouldReload = (): boolean =>
+    renderFailureStored() !== false ||
+    isTerminalOpenRefusal(renderFailureRefusal());
+
+  it("reloads anyway when the refusal is one no retry can clear", async () => {
+    // After this page has yielded its connection, `getDb()` rejects with
+    // `DatabaseDowngradeError` for the rest of the page's life (db.ts:672).
+    // Holding Restart then spends the person's only recovery on a condition
+    // that cannot change — and on the installed app there is no browser chrome
+    // to reload from, so the crash screen becomes a dead end whose only exit is
+    // force-quitting from the OS app switcher. The row is already lost; the
+    // reload is not.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValue(
+      namedError("DatabaseDowngradeError", "the database has moved on")
+    );
+
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+
+    expect(renderFailureStored()).toBe(false);
+    expect(renderFailureRefusal()).toBe("DatabaseDowngradeError");
+    expect(restartWouldReload()).toBe(true);
+  });
+
+  it("still holds when the refusal is one the person can clear", async () => {
+    // A blocked open is the opposite case and the reason the hold exists: another
+    // copy of the app is holding an upgrade, closing it is precisely what this
+    // screen asks for, and reloading would destroy the only record of the crash
+    // on a condition that was about to clear.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValue(
+      namedError("DatabaseBlockedError", "another copy is open")
+    );
+
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+
+    expect(renderFailureStored()).toBe(false);
+    expect(renderFailureRefusal()).toBe("DatabaseBlockedError");
+    expect(restartWouldReload()).toBe(false);
   });
 
   it("a retry lands the row once storage will take it — held is not a dead end", async () => {

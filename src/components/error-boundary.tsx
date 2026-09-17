@@ -8,10 +8,12 @@ import {
 
 import {
   flushFailureLog,
+  renderFailureRefusal,
   renderFailureStored,
   retryRenderFailureWrite,
 } from "@/hooks/failure-log";
 import { quiesceTranscodeSweep } from "@/hooks/finish-transcode";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import { reportFailure } from "@/hooks/report-failure";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 import { Control } from "./control";
@@ -66,25 +68,51 @@ const TEACH_ID = "app-failed-teach";
  * `false` means the document must not be replaced. `null` means no boundary
  * write was attempted, which is not a failure and must not block Restart.
  *
+ * **And holding is only honest for a refusal that can clear** (George R7 P2-1).
+ * Two refusals reach here and they are opposites. A blocked open ends when the
+ * other copy of the app closes, which is precisely what this screen asks for —
+ * holding there protects a row that is about to be storable. The yield latch
+ * does not end at all: once this page has given its connection up, `getDb()`
+ * rejects with `DatabaseDowngradeError` for the rest of its life (`db.ts`), so
+ * every tap refuses identically while the screen says "try again". Both controls
+ * on this screen are then dead — Send reads the same database — and on the
+ * installed app there is no browser chrome to reload from, which leaves
+ * force-quitting from the OS app switcher as the only exit and nothing on a
+ * screen built for non-readers to suggest it. The row is already lost in that
+ * state and no amount of holding retrieves it, so Restart reloads: that is the
+ * pre-#440 behaviour, and reloading is also what picks up the newer build this
+ * copy stepped aside for. **The three other surfaces that still offer a retry
+ * after a yield — this screen's Send, and the panel's Send and Clear — are #455
+ * and are deliberately not swept here.**
+ *
  * **There is still deliberately no timeout** (George R4 P2-3, decided by the DRI
  * on 2026-09-17: `busy` yes, timeout no, and unchanged by this round). The
  * preference it encodes — keep the crash row rather than recover the screen — is
- * the same one the check above now actually implements instead of merely
- * claiming.
+ * the same one the check below now actually implements instead of merely
+ * claiming, and it is bounded by the paragraph above: keeping the row is worth
+ * waiting for only while the row can still be kept.
+ *
+ * **Not covered end to end by any test, and not claimed to be.** The predicate
+ * below is pure and is asserted directly in `tests/failure-log.test.ts`; the
+ * `window.location.reload()` it guards has no seam in a node suite and is
+ * browser-boundary code. Nothing here is device-verified.
  */
 async function reload(): Promise<boolean> {
   await flushFailureLog();
   // `false` only. `null` is a boundary that caught something the sink never
   // tried to store, which is not evidence that storage refused anything.
   //
-  // And a refusal is retried HERE rather than treated as final (Frank, round 6).
-  // The state this guards is recoverable, and the person holding the phone is
-  // who recovers it: a blocked open means another copy of the app is holding an
-  // upgrade, and closing it is precisely what this screen's copy asks for. A
-  // held Restart that could never succeed would spend the one recovery they
-  // have — and the copy under it would be a promise the code does not keep.
+  // And a refusal is retried HERE rather than treated as final (Frank, round 6),
+  // because SOME of what lands here is recoverable and the person holding the
+  // phone is who recovers it: a blocked open means another copy of the app is
+  // holding an upgrade, and closing it is precisely what this screen's copy asks
+  // for. A held Restart that could never succeed would spend the one recovery
+  // they have — and the copy under it would be a promise the code does not keep.
   if (renderFailureStored() === false && !(await retryRenderFailureWrite())) {
-    return false;
+    // Which is why the hold is conditional on the refusal being clearable. A
+    // terminal one cannot become storable no matter how long this screen stays,
+    // so holding would cost the reload and save nothing.
+    if (!isTerminalOpenRefusal(renderFailureRefusal())) return false;
   }
   window.location.reload();
   return true;
@@ -134,6 +162,10 @@ function RestartControl() {
             if (reloading) return;
             // Tappable again on purpose: the blocking copy of the app may have
             // been closed since, which is the whole recovery this state has.
+            // Since George R7 P2-1 that is the ONLY way to arrive here —
+            // `reload()` no longer holds for a refusal that cannot clear — so
+            // `appReloadHeld`'s "Send it, or try again" is now an offer both
+            // halves of which can actually succeed.
             setRestarting(false);
             setHeld(true);
           });

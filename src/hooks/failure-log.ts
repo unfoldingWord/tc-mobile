@@ -330,6 +330,22 @@ let renderRowLanded: boolean | null = null;
 let pendingRenderRow: StoredFailure | null = null;
 
 /**
+ * The `name` of the error that refused the render row last, or `null`.
+ *
+ * `writeEntry` swallows the error itself and that stays right — it is the
+ * channel's terminal, and reporting its own failure would recurse. But swallowing
+ * the error is not the same as swallowing WHICH error, and the crash screen has
+ * to tell two opposite refusals apart (George R7 P2-1): a blocked open clears
+ * when the person closes the other copy, and the yield latch never clears at all.
+ * The name is the smallest thing that answers that, and it is what
+ * {@link isTerminalOpenRefusal} reads.
+ *
+ * Kept beside {@link renderRowLanded} and moved with it, so the pair cannot
+ * disagree: cleared on a landed write, set on a refused one.
+ */
+let renderRowRefusal: string | null = null;
+
+/**
  * Has the row for this page's render crash reached the store?
  *
  * `true` landed, `false` refused, `null` none attempted — and `null` must not be
@@ -340,14 +356,29 @@ export function renderFailureStored(): boolean | null {
 }
 
 /**
+ * Which error refused the render row, by name, or `null` if none did.
+ *
+ * Only meaningful while {@link renderFailureStored} is `false`. Pass it to
+ * {@link isTerminalOpenRefusal} rather than comparing here: the names belong
+ * next to the classes that carry them, in `lib/storage/db.ts`.
+ */
+export function renderFailureRefusal(): string | null {
+  return renderRowRefusal;
+}
+
+/**
  * Try the render row again, on the lane. Resolves to whether it is stored now.
  *
  * The crash screen's Restart calls this before deciding to reload. The state it
- * exists for is recoverable and the person is the one who recovers it: a
- * `DatabaseBlockedError` means another copy of the app is holding an upgrade
- * (#221), and closing that copy is exactly what the crash screen's copy asks
- * for. Without a retry, the first refusal would be permanent and that ask would
- * be a lie.
+ * exists for is SOMETIMES recoverable, and the caller is what tells the two
+ * apart: a `DatabaseBlockedError` means another copy of the app is holding an
+ * upgrade (#221), closing that copy is exactly what the crash screen's copy asks
+ * for, and without a retry the first refusal would be permanent and that ask
+ * would be a lie. A `DatabaseDowngradeError` is the other half and this function
+ * cannot help with it — the retry below will refuse again, every time, because
+ * the connection is gone for the life of the page. That is why the answer is
+ * read together with {@link renderFailureRefusal} through
+ * `isTerminalOpenRefusal`, and not on its own.
  *
  * Idempotent, and cheap when there is nothing owed: with no pending row it
  * reports the state it already has rather than writing anything. It cannot
@@ -411,6 +442,7 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
     if (entry.context === "render") {
       renderRowLanded = true;
       pendingRenderRow = null;
+      renderRowRefusal = null;
     }
     // Direct, not `refreshCount`: this function is ALREADY a lane op, and
     // re-entering `enqueue` here would wait on a lane that is waiting on this.
@@ -425,6 +457,10 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
     if (entry.context === "render") {
       renderRowLanded = false;
       pendingRenderRow = entry;
+      // The error is still swallowed; only its name is kept, and only so the
+      // crash screen can tell a refusal that clears from one that cannot.
+      renderRowRefusal =
+        (writeFailure as { name?: string } | null)?.name ?? null;
     }
     console.error("[failure-log] could not store a failure", writeFailure);
   }

@@ -177,6 +177,38 @@ function isVersionError(cause: unknown): boolean {
   return (cause as { name?: string } | null)?.name === "VersionError";
 }
 
+/**
+ * Is a refusal from this module one that NOTHING on this page can clear?
+ *
+ * The two above are opposites, and a caller that treats them alike gets one of
+ * them wrong. `DatabaseBlockedError` clears the moment the other copy closes —
+ * which is exactly what the screens showing it ask the person to do, so a retry
+ * there is a real offer. `DatabaseDowngradeError` is the yield latch
+ * ({@link getDb}, and see that class's own docblock): once this copy has given
+ * its connection away, every open for the rest of the page's life fails
+ * identically, and a retry is a promise the code cannot keep.
+ *
+ * Lives here, beside the two classes, so the strings cannot drift away from the
+ * definitions they name. Takes the `name` rather than the error so a caller that
+ * only kept the name — the failure log swallows the error itself, by design —
+ * can still ask. A `null` name is "no refusal recorded", never "terminal":
+ * nothing is more retryable than a write that was never refused.
+ *
+ * **Compared as a literal on purpose.** `DatabaseDowngradeError.name` would be
+ * the CLASS's name, which a minified production build is free to mangle; the
+ * constructors above assign `this.name` as a literal precisely so the instance's
+ * name survives that. Matching the literal is what makes this work in the build
+ * that ships, and it is the same reason `isVersionError` above matches by name.
+ *
+ * First caller: the crash screen's Restart (`components/error-boundary.tsx`),
+ * which must not hold a reload on a refusal that can never clear (George R7
+ * P2-1). The other three failure-log surfaces that still offer a retry after a
+ * yield are #455, deliberately not swept here.
+ */
+export function isTerminalOpenRefusal(name: string | null): boolean {
+  return name === "DatabaseDowngradeError";
+}
+
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
 
 /**
