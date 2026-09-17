@@ -457,6 +457,16 @@ export const strings = {
   // a device whose first open is also the v6 upgrade, and an unlabelled wait on
   // the only recovery control this screen has is a button that looks dead.
   appReloading: "Restarting…",
+  // Restart declined to reload, because the record of this crash was refused by
+  // storage and a reload would destroy it (George R5 P2-2). It has to SAY so:
+  // a control that goes back to idle having done nothing is the "tap did
+  // nothing, said nothing" shape this round is removing elsewhere. It names the
+  // action that still works — Send is on this screen and reads the same
+  // database, so it will usually fail too, but the facilitator is the person
+  // who can act on "this phone cannot write right now" and the runbook's paper
+  // sheet is the fallback. No cause text: a stack-shaped string in a language
+  // the reader may not speak is worse than nothing (#172).
+  appReloadHeld: "This problem could not be saved yet. Send it, or try again.",
 
   // ── The encoder has stopped working (#166) ───────────────────────────────
   // Shown once on the shelf when `encoderHealth()` reads `failing` — one stall,

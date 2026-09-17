@@ -174,6 +174,16 @@ export function useFailureLogShare(): UseFailureLogShare {
     | { kind: "text"; text: string }
     | null
   >(null);
+  /**
+   * Which version of the log {@link armed} was read from — `null` when nothing
+   * is armed. See the effect at the bottom of this hook.
+   *
+   * Declared with the other refs rather than beside that effect because `reset`
+   * clears it, and `reset` is defined above: a `const` referenced before its
+   * declaration is a temporal-dead-zone hazard the moment anything calls it
+   * during render, and `react-hooks/immutability` says so.
+   */
+  const armedGeneration = useRef<number | null>(null);
   /** Invalidates an in-flight prepare (panel close, unmount). */
   const runId = useRef(0);
   /** Re-entry guard for tap 2: one share in flight at a time. */
@@ -256,8 +266,14 @@ export function useFailureLogShare(): UseFailureLogShare {
       // memory; Restart would then land the row on a phone whose file has
       // already gone, and on a deterministic home-path throw Books never becomes
       // a second door.
-      const entries = await readFailureLog();
+      const { entries, generation: readAt } = await readFailureLog();
       if (!current()) return;
+      // The version of the log this payload IS, taken from inside the same lane
+      // op that produced the rows (George R5 P2-1). Stamped HERE rather than
+      // when the payload is armed a few lines down, because everything between
+      // is synchronous — and stamped from the read rather than from the render's
+      // `generation`, which is a snapshot of whatever the last paint saw.
+      armedGeneration.current = readAt;
       // The panel only renders Send while the log is non-empty, so an empty
       // read means it was cleared between the render and the tap.
       if (entries.length === 0) {
@@ -422,6 +438,10 @@ export function useFailureLogShare(): UseFailureLogShare {
 
   const reset = useCallback(() => {
     runId.current += 1;
+    // Nothing is armed after this, so nothing has a version. Cleared here rather
+    // than in the effect so every path out — a panel close, an unmount, a send —
+    // leaves the stamp in the same state a fresh mount has.
+    armedGeneration.current = null;
     aborter.current?.abort();
     aborter.current = null;
     // Released HERE, not in the bailed-out run's `finally`: that run's `current()`
@@ -462,17 +482,35 @@ export function useFailureLogShare(): UseFailureLogShare {
   // Keyed on the generation, never on the count: at the limit the count does not
   // move at all. `useLogGeneration` moves on every landed write and clear and on
   // nothing else — a routine foreground re-read leaves an armed share alone.
+  //
+  // **Only a READY payload is an armed snapshot** (George R5 P2-1). The first
+  // version of this dropped on any non-idle status, which included `"preparing"`
+  // — and `prepare` sets that BEFORE it awaits `readFailureLog()`, a read that
+  // sits on the write lane by design. So any write landing during the read
+  // reset the flow mid-prepare: `reset` bumped `runId`, `prepare` took its
+  // `if (!current()) return` arm, and the control went back to the quiet Send
+  // with no Notice at all — a tap that did nothing and said nothing, which is
+  // the worst failure shape this screen has. On the crash screen the writer is
+  // usually the transcode sweep that `App`'s unmount does not cancel, so every
+  // retry could be cancelled by the next segment's report; but any writer does
+  // it, and one is enough.
+  //
+  // Cancelling a prepare was never the point. A read still in flight is not a
+  // snapshot of anything yet — it is the thing that will BECOME one, and it is
+  // on the lane precisely so that it covers whatever is queued ahead of it. What
+  // has to be dropped is a payload already in the person's hand that no longer
+  // matches the log. That is `"ready"`, and only `"ready"`.
+  //
+  // A write that lands after the read still drops it: `armedGeneration` is
+  // stamped with the version the rows came from, so the moment the status
+  // becomes `"ready"` and the live generation disagrees, the payload goes.
   const generation = useLogGeneration();
-  const armedGeneration = useRef(generation);
   useEffect(() => {
-    if (status === "idle") {
-      armedGeneration.current = generation;
-      return;
-    }
-    if (generation !== armedGeneration.current) {
-      armedGeneration.current = generation;
-      reset();
-    }
+    if (status !== "ready") return;
+    if (armedGeneration.current === null) return;
+    if (generation === armedGeneration.current) return;
+    armedGeneration.current = null;
+    reset();
   }, [generation, status, reset]);
 
   return { status, error, prepare, send, reset };

@@ -529,6 +529,75 @@ test("a SPENT retry ladder is revived by the shelf's Try again", async ({
   await expect(marker(page)).toHaveCount(1);
 });
 
+test("a failure landing DURING tap 1 does not cancel it", async ({ page }) => {
+  // George R5 P2-1. The drop used to fire on any non-idle status, and `prepare`
+  // sets "preparing" BEFORE it awaits `readFailureLog()` — a read that sits on
+  // the write lane by design, so that it covers whatever is queued ahead of it.
+  // A write landing during that read therefore reset the flow mid-prepare:
+  // `runId` moved, `prepare` took its `if (!current()) return` arm, and the
+  // control went back to the quiet Send with no Notice — a tap that did nothing
+  // and said nothing. On the crash screen the writer is usually the transcode
+  // sweep, so every retry could be cancelled by the next segment's report.
+  //
+  // Cancelling a prepare was never the point: a read still in flight is not a
+  // snapshot of anything yet. Only a READY payload can go stale.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => true,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+  await page.reload();
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+
+  // The ordering here is the whole test, and it is deterministic rather than
+  // timed. Both statements run in ONE task:
+  //
+  //   1. A synthetic `error` event. `install-failure-listeners.ts` listens on
+  //      window, so its `reportFailure` runs SYNCHRONOUSLY and the append is on
+  //      the lane before the next line executes. (A rejected promise would not
+  //      do: `unhandledrejection` fires in a later task, which would put the
+  //      write BEHIND the read and test nothing.)
+  //   2. The tap. React's handler runs synchronously, so `prepare` reaches its
+  //      first `await` — status is already "preparing" and the read is queued
+  //      behind that append.
+  //
+  // The append then lands and moves the generation while the read is still in
+  // flight. That is the exact window, hit by lane order and not by a sleep.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new ErrorEvent("error", {
+        error: new Error("landed during prepare"),
+        message: "landed during prepare",
+      })
+    );
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Send problem report"]')
+      ?.click();
+  });
+
+  // The prepare survived and armed. Under the old predicate this is the quiet
+  // "Send problem report" again, with nothing said.
+  const send = page.getByRole("button", { name: "Share now" });
+  await expect(send).toBeVisible();
+
+  // And it armed the LATER log: the read is on the lane, so it saw the row that
+  // landed during it, and the payload's stamp is that version — so it is not
+  // dropped as stale the moment it becomes ready.
+  const menu = page.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByText("2 problems recorded")).toBeVisible();
+  await expect(send).toBeVisible();
+});
+
 test("a failure landing between the two gestures drops the armed snapshot", async ({
   page,
 }) => {

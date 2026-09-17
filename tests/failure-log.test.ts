@@ -13,6 +13,7 @@ import {
   flushFailureLog,
   installFailureLog,
   readFailureLog,
+  renderFailureStored,
   useFailureCount,
   useLogGeneration,
 } from "@/hooks/failure-log";
@@ -675,8 +676,46 @@ describe("every read of the log is on the write lane", () => {
     expect(settled).toBe(false);
 
     release?.();
-    const rows = await reading;
-    expect(rows.map((row) => row.context)).toEqual(["render"]);
+    const { entries } = await reading;
+    expect(entries.map((row) => row.context)).toEqual(["render"]);
+  });
+
+  it("hands back the generation the rows ARE, not the one they became", async () => {
+    // Why the read returns a pair rather than the caller asking afterwards
+    // (George R5 P2-1). A payload armed from these rows is stamped with this
+    // number, and a stamp that is one write too new claims the payload covers a
+    // row it does not contain — which is the armed-snapshot mismatch the drop
+    // exists to prevent, reintroduced by the fix for it.
+    //
+    // Three lane ops, in order: a held append, the read, then a second append.
+    // Releasing the first lets ALL of them drain before the read's continuation
+    // runs, so a generation sampled outside the lane op sees the SECOND append.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realAppend = failuresStore.appendFailure;
+    vi.spyOn(failuresStore, "appendFailure").mockImplementationOnce(
+      async (pending) => {
+        await held;
+        await realAppend(pending);
+      }
+    );
+
+    reportFailure(new Error("first"), "uncaught-error");
+    const reading = readFailureLog();
+    reportFailure(new Error("second"), "unhandled-rejection");
+
+    release?.();
+    const { entries, generation } = await reading;
+
+    // The read saw one row, so its generation must be the one-row version.
+    expect(entries.map((row) => row.context)).toEqual(["uncaught-error"]);
+    await flushFailureLog();
+    // Two rows on disk now, and a LATER generation. The read's stamp is the
+    // earlier one — it describes what it returned.
+    expect(await countFailures()).toBe(2);
+    expect(generation).toBeLessThan(firstPaintGeneration());
   });
 
   it("a clear cannot be overtaken by a count read that started before it", async () => {
@@ -766,6 +805,76 @@ describe("every read of the log is on the write lane", () => {
       .sort();
 
     expect(importers).toEqual(["hooks/failure-log.ts"]);
+  });
+});
+
+/**
+ * "Did MY row land" — the question the crash screen's Restart has to ask
+ * (George R5 P2-2).
+ *
+ * `flushFailureLog()` resolving is not that answer, and the gap is not
+ * theoretical: `db.ts`'s `blocked()` REJECTS rather than hanging (a second copy
+ * of the app holding an upgrade, #221), `writeEntry` swallows the rejection
+ * because it is the channel's terminal, and `enqueue` keeps the lane settled so
+ * one refused write cannot stop the next. All three are right on their own, and
+ * together they mean the lane settles cheerfully on exactly the failure where
+ * reloading the document destroys the only record of the crash.
+ */
+describe("whether the crash's own row reached the store", () => {
+  let uninstall: (() => void) | null = null;
+
+  beforeEach(async () => {
+    await clearAllStores();
+    await clearFailureLog();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    uninstall = installFailureLog();
+  });
+
+  afterEach(() => {
+    uninstall?.();
+    uninstall = null;
+    vi.restoreAllMocks();
+  });
+
+  it("says true once a render row is on disk", async () => {
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+
+    expect(renderFailureStored()).toBe(true);
+  });
+
+  it("says false when storage refused it — the case a settled lane hides", async () => {
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValueOnce(
+      new Error("DatabaseBlockedError")
+    );
+
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+
+    // The lane settled, as it is designed to. The row did not land.
+    expect(renderFailureStored()).toBe(false);
+  });
+
+  it("is not moved by any other context's write, landed or refused", async () => {
+    // The reason this is keyed on the `render` CONTEXT and is not a plain
+    // last-write flag: on the crash screen the transcode sweep and the window
+    // listeners are still reporting, so a later append queued BEHIND a refused
+    // crash write would flip a last-write flag back to true and let Restart
+    // reload over the missing row.
+    vi.spyOn(failuresStore, "appendFailure").mockRejectedValueOnce(
+      new Error("DatabaseBlockedError")
+    );
+    reportFailure(new Error("the tree threw"), "render");
+    await flushFailureLog();
+    expect(renderFailureStored()).toBe(false);
+
+    reportFailure(
+      new Error("a segment failed to transcode"),
+      "transcode-segment"
+    );
+    await flushFailureLog();
+
+    expect(renderFailureStored()).toBe(false);
   });
 });
 

@@ -6,7 +6,8 @@ import {
   type ReactNode,
 } from "react";
 
-import { flushFailureLog } from "@/hooks/failure-log";
+import { flushFailureLog, renderFailureStored } from "@/hooks/failure-log";
+import { quiesceTranscodeSweep } from "@/hooks/finish-transcode";
 import { reportFailure } from "@/hooks/report-failure";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 import { Control } from "./control";
@@ -44,24 +45,36 @@ const TEACH_ID = "app-failed-teach";
  * race rather than a theoretical one. Losing the record of a render crash to
  * the very button offered for recovering from it is the worst trade available.
  *
- * `flushFailureLog` cannot reject, so there is no failure arm to write: the
- * lane is kept settled by its own `enqueue`. If it somehow never settles the
- * reload does not happen, which is the safe side — the screen stays up with the
- * Send control on it.
+ * **Waiting is not the same as checking, and this used to confuse the two**
+ * (George R5 P2-2). An earlier version of this comment said that a lane which
+ * never settles means IndexedDB is wedged, so the reload simply would not
+ * happen. That was wrong about the unchanged code, and I wrote it: `db.ts`'s
+ * `blocked()` REJECTS with `DatabaseBlockedError` rather than hanging, `getDb`
+ * rethrows, `writeEntry` swallows it — correctly; that function is the channel's
+ * terminal — and `enqueue` keeps the lane settled so one failed write cannot
+ * stop the next. All three are right on their own, and together they meant
+ * `flushFailureLog()` resolved cheerfully on exactly the case where reloading
+ * destroys the only record of the crash and lands on the same blocked open.
  *
- * **And there is deliberately no timeout on that wait** (George R4 P2-3, put to
- * the DRI at the round cap and decided 2026-09-17: `busy` yes, timeout no).
- * George's reading was that the screen must recover even at the cost of the
- * crash row; the decision went the other way, because a lane that never settles
- * means IndexedDB is wedged — a second copy of the app holding an upgrade,
- * `DatabaseBlockedError`, #221 — and reloading into that destroys the one record
- * of the crash and lands on the same broken open. The screen staying up with a
- * working Send on it is the better of two bad states. Anyone reading this later:
- * the absence of a timeout is a decision, not an oversight.
+ * So the wait is now followed by a question. `renderFailureStored()` answers
+ * whether THIS page's `render` row reached the store — not whether some write
+ * did, which a sweep append queued behind a failed one would have satisfied.
+ * `false` means the document must not be replaced. `null` means no boundary
+ * write was attempted, which is not a failure and must not block Restart.
+ *
+ * **There is still deliberately no timeout** (George R4 P2-3, decided by the DRI
+ * on 2026-09-17: `busy` yes, timeout no, and unchanged by this round). The
+ * preference it encodes — keep the crash row rather than recover the screen — is
+ * the same one the check above now actually implements instead of merely
+ * claiming.
  */
-async function reload(): Promise<void> {
+async function reload(): Promise<boolean> {
   await flushFailureLog();
+  // `false` only. `null` is a boundary that caught something the sink never
+  // tried to store, which is not evidence that storage refused anything.
+  if (renderFailureStored() === false) return false;
   window.location.reload();
+  return true;
 }
 
 /**
@@ -89,6 +102,10 @@ async function reload(): Promise<void> {
  */
 function RestartControl() {
   const [restarting, setRestarting] = useState(false);
+  // The reload was declined because the crash row was refused by storage. The
+  // screen stays, and it says why: a control that returns to idle having done
+  // nothing is indistinguishable from a dead button.
+  const [held, setHeld] = useState(false);
   return (
     <>
       <Control
@@ -98,11 +115,19 @@ function RestartControl() {
         size={30}
         busy={restarting}
         onClick={() => {
+          setHeld(false);
           setRestarting(true);
-          void reload();
+          void reload().then((reloading) => {
+            if (reloading) return;
+            // Tappable again on purpose: the blocking copy of the app may have
+            // been closed since, which is the whole recovery this state has.
+            setRestarting(false);
+            setHeld(true);
+          });
         }}
       />
       {restarting && <Notice tone="busy">{strings.appReloading}</Notice>}
+      {held && <Notice>{strings.appReloadHeld}</Notice>}
     </>
   );
 }
@@ -241,6 +266,14 @@ export class ErrorBoundary extends Component<
     // stack is minified, and React's tree is the part that says which component
     // threw — the one log line is only diagnosable off-device with it. It is a
     // third argument to the sink, never a fourth line on the screen.
+    // BEFORE the report, so the row this queues has as few competing appends
+    // behind it as possible (George R5 P2-3). The sweep is module-scoped and
+    // `App`'s unmount does not cancel it, so without this it keeps encoding
+    // clips and appending one row per failure into the 50-row ring the screen
+    // below is about to send — and can prune this very row before the
+    // facilitator finishes the two-gesture Send. PCM is kept and the next launch
+    // retries, which is the sweep's own contract.
+    quiesceTranscodeSweep();
     reportFailure(error, "render", errorInfo.componentStack ?? undefined);
   }
 

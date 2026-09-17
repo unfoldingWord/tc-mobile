@@ -261,9 +261,56 @@ function refreshCount(): Promise<boolean> {
  * Queued, rather than `await flushFailureLog()` and then read, because a flush
  * only proves the lane WAS empty: a write can queue between the flush resolving
  * and the read opening its transaction. Being on the lane is the property.
+ *
+ * **It hands back the generation those rows are, not just the rows** (George R5
+ * P2-1). A caller that arms a payload from this read has to know which version
+ * of the log the payload IS, and it cannot ask afterwards: a write landing
+ * between this op finishing and the caller's continuation running would already
+ * have moved the number, so a later read would stamp the payload as covering a
+ * row it does not contain. Read inside the same lane op, the two cannot
+ * disagree — no write can interleave with itself.
  */
-export function readFailureLog(): Promise<StoredFailure[]> {
-  return enqueue(() => readFailures());
+export function readFailureLog(): Promise<{
+  entries: StoredFailure[];
+  generation: number;
+}> {
+  return enqueue(async () => ({
+    entries: await readFailures(),
+    generation: logGeneration,
+  }));
+}
+
+/**
+ * Whether the most recent `render` row reached the store. `null` until one has
+ * been attempted on this page.
+ *
+ * This exists for exactly one caller: the crash screen's Restart (George R5
+ * P2-2). That control reloads the document, so it must not run until the row
+ * describing the crash is actually on disk — and "the lane settled" is not that
+ * claim. `getDb` REJECTS on a blocked open (`db.ts`'s `blocked()`, #221: a
+ * second copy of the app holding an upgrade); `writeEntry` swallows the
+ * rejection, because it is the channel's terminal and reporting it would
+ * recurse; `enqueue` keeps the lane settled so one failed write cannot stop the
+ * ones behind it. Every one of those three is correct on its own, and together
+ * they mean `flushFailureLog()` resolves cheerfully on the exact failure where
+ * reloading destroys the only record of the crash and lands on the same blocked
+ * open.
+ *
+ * Keyed on the `render` CONTEXT rather than being a plain last-write flag: a
+ * transcode-sweep append queued behind a failed crash write would otherwise set
+ * a last-write flag true and let Restart reload anyway. The question the crash
+ * screen is asking is not "did some write land", it is "did MINE".
+ */
+let renderRowLanded: boolean | null = null;
+
+/**
+ * Has the row for this page's render crash reached the store?
+ *
+ * `true` landed, `false` refused, `null` none attempted — and `null` must not be
+ * read as failure: a boundary that caught nothing has nothing to wait for.
+ */
+export function renderFailureStored(): boolean | null {
+  return renderRowLanded;
 }
 
 /**
@@ -312,6 +359,7 @@ export function installFailureLog(): () => void {
 async function writeEntry(entry: StoredFailure): Promise<void> {
   try {
     await appendFailure(entry);
+    if (entry.context === "render") renderRowLanded = true;
     // Direct, not `refreshCount`: this function is ALREADY a lane op, and
     // re-entering `enqueue` here would wait on a lane that is waiting on this.
     // Awaited, so the store update stays inside the op that caused it — which
@@ -319,6 +367,10 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
     // not just the row.
     await markLogWritten();
   } catch (writeFailure) {
+    // Recorded before the swallow, so the crash screen can tell a refused write
+    // from a settled lane. The swallow itself stays: this function IS the
+    // channel's terminal and reporting its own failure would recurse.
+    if (entry.context === "render") renderRowLanded = false;
     console.error("[failure-log] could not store a failure", writeFailure);
   }
 }
