@@ -271,11 +271,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * state, because the answer is needed synchronously inside the lift that
      * would start the sound.
      *
-     * A contact that leaves the stage before lifting can be missed (it has no
-     * capture, so its `pointerup` lands elsewhere), which would leave a stale
-     * id in the set. That fails SAFE — the owed resume is skipped, the take
-     * stays parked, and Play collects it — and it is bounded to one gesture,
-     * because the lift clears the set outright.
+     * The set only works because EVERY contact is captured, not just the owner
+     * (Frank R3 P2): capture is what guarantees the matching
+     * `pointerup`/`pointercancel` comes back to this element, so a finger that
+     * slides off the stage before lifting cannot leave a stale id behind and
+     * suppress the resume for good.
      */
     const ownerRef = useRef<number | null>(null);
     const contactsRef = useRef<Set<number>>(new Set());
@@ -854,7 +854,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // Every contact is recorded, even one this handler then ignores: the
         // resume asks whether the STAGE is clear, not whether our own pointer
         // has lifted (George R3 P1-2).
+        //
+        // And every contact is CAPTURED, not just the owner (Frank R3 P2).
+        // Capture is what guarantees the matching `pointerup`/`pointercancel`
+        // comes back here: without it a second finger that slid off the stage
+        // before lifting left its id in the set forever, and a stale id there
+        // suppresses the owed resume — silence after every finger is gone,
+        // which is the #317 promise broken from the other side. Capture costs
+        // that finger nothing, because a pointer that went down on the stage
+        // could not have reached another control anyway.
         contactsRef.current.add(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
         // One owner at a time. A second finger landing mid-drag used to be a
         // fresh `"pan"` — after the interrupt's stop, `playingBuffer` is false,
         // so `panGesture` answered "pan" — and it overwrote the drag origin
@@ -916,7 +926,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         dragStartX.current = e.clientX;
         panAtDragStart.current = from;
         draggedPanRef.current = from;
-        e.currentTarget.setPointerCapture(e.pointerId);
       },
       [
         hasAudio,
@@ -1012,20 +1021,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onPointerUp = useCallback(
       (e: React.PointerEvent) => {
         contactsRef.current.delete(e.pointerId);
-        if (e.pointerId !== ownerRef.current) return;
-        ownerRef.current = null;
-        // Whether any OTHER finger is still on the stage, asked before the set
-        // is cleared. The rule is about fingers: a second contact the stage
-        // ignored is still a finger on the waveform, and sounding under it is
-        // the thing #317 forbids.
-        const othersDown = contactsRef.current.size > 0;
-        // Bounded to this gesture: a contact that left the stage before lifting
-        // never sends its `pointerup` here, and a stale id must not suppress
-        // every future resume.
-        contactsRef.current.clear();
-        setDragging(false);
+        const wasOwner = e.pointerId === ownerRef.current;
+        if (wasOwner) {
+          ownerRef.current = null;
+          setDragging(false);
+        }
+        // A NON-owner's lift reaches the rest of this handler for one reason
+        // only: it may be the moment the stage finally goes clear, when the
+        // owner has already lifted and left the resume owed (Frank R3 P2). It
+        // never resumes while the owner is still dragging.
+        if (!wasOwner && ownerRef.current !== null) return;
         const interrupted = resumeAfterDragRef.current;
-        resumeAfterDragRef.current = false;
+        if (!interrupted) return;
+        // The rule is about FINGERS, not about the pointer this gesture
+        // tracked: a second contact the stage ignored is still a finger on the
+        // waveform, and sounding under it is what #317 forbids.
+        const othersDown = contactsRef.current.size > 0;
         const from = Math.max(0, Math.min(draggedPanRef.current, length));
         // `takeActive` is the mic outranking the gesture (George R1 P2 #3): a
         // Record tapped in the same frame as the pointer-down is ahead of the
@@ -1040,8 +1051,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             takeActive,
             othersDown,
           })
-        )
+        ) {
+          // The debt SURVIVES a lift that only left another finger behind, and
+          // is collected when that one goes (Frank R3 P2 again: consuming it
+          // here left the translator with silence and no way to explain it).
+          // Every other refusal — the line at the end, a take in the way — is
+          // final, and any stop in between voids it (`stopPlayback`).
+          if (!othersDown) resumeAfterDragRef.current = false;
           return;
+        }
+        resumeAfterDragRef.current = false;
         soundRange(from, length);
       },
       [length, soundRange, takeActive]
