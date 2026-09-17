@@ -295,11 +295,17 @@ export function panGesture(input: PanGestureInput): PanGesture {
 interface FrozenPanInput {
   /** The last position the frame loop saw, in samples. */
   readonly observed: number;
-  /** The range that was sounding — `soundRange`'s arguments. */
-  readonly start: number;
+  /** The end of the range that was sounding (`soundRange`'s second argument). */
   readonly end: number;
   /** A stop was ASKED for (Pause, a #317 touch, the menu, Back, an edit). */
   readonly stopRequested: boolean;
+  /**
+   * The clip RAN OUT — reported by the playback boundary itself
+   * (`playBuffer`'s `onEnded`), never inferred here. Inferring it is what
+   * Frank's round-2 P2 killed: "did the position advance?" cannot see a range
+   * shorter than one frame, which ends before any rAF reads a handle.
+   */
+  readonly ranOut: boolean;
   /** The working buffer's length, for the clamp. */
   readonly length: number;
 }
@@ -325,12 +331,18 @@ interface FrozenPanInput {
  * - **Ran out** — no sampling can help (the handle is gone by the time anything
  *   observes it) and none is needed: playback that nobody stopped ended where
  *   the range ends.
- * - **Never sounded** — a `playBuffer` that fails flips `playingBuffer` true
- *   optimistically and then false again, so the loop only ever read the range's
- *   START. Parking the line at the end of a range that was never heard would
- *   move the record insertion offset on the strength of a failure, so this case
- *   leaves the line where it was. `observed > start` is what separates it from
- *   the one above, exactly rather than by a tolerance.
+ * - **Anything else** — a `playBuffer` that failed to start, or a claim
+ *   superseded by something else taking the floor. Neither played to the end,
+ *   so the line stays where the loop last saw it rather than travelling to the
+ *   end of a range that was never heard.
+ *
+ * Each ending is TOLD to this function. An earlier draft inferred "it ran out"
+ * from "did the position advance past the range's start", and Frank's round-2
+ * P2 killed that with a range shorter than one frame: a 200-sample remainder
+ * ends before any rAF reads a handle, so the heuristic called a completed play
+ * a failed one and parked the line at the start of audio that had just been
+ * heard in full. `playBuffer`'s `onEnded` is the boundary that knows, and it
+ * fires for this ending and no other.
  *
  * Clamped to the clip for `viewportWindow`'s reason: the pan is also the record
  * insertion offset, and there is no inserting before the start or after the end.
@@ -338,7 +350,7 @@ interface FrozenPanInput {
 export function frozenPan(input: FrozenPanInput): number {
   const reached = input.stopRequested
     ? input.observed
-    : input.observed > input.start
+    : input.ranOut
       ? input.end
       : input.observed;
   return Math.max(0, Math.min(reached, input.length));

@@ -610,19 +610,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     /** The pan the last drag move wrote, read on lift before React catches up. */
     const draggedPanRef = useRef(0);
     /**
-     * The range the scrolling playback was asked to sound (`soundRange`'s
-     * arguments). `frozenPan` needs both ends: the START tells a play that never
-     * sounded from one that did, and the END is the exact resting place of a
-     * clip that ran out — which no sampling could recover, since the handle is
-     * gone before anything can observe it.
+     * The end of the range the scrolling playback was asked to sound — the
+     * exact resting place of a clip that runs out, which no sampling could
+     * recover (the handle is gone before anything can observe it).
      */
-    const soundingRangeRef = useRef({ start: 0, end: 0 });
+    const soundingEndRef = useRef(0);
     /**
      * This playback was ASKED to stop, as opposed to running out. Written by
-     * `stopPlayback` — the one stop path in this sheet — and reset when the
-     * stage enters the scroll mode, so every play decides afresh.
+     * `stopPlayback` — the one stop path in this sheet.
      */
     const stopRequestedRef = useRef(false);
+    /**
+     * This playback RAN OUT, as reported by the playback boundary itself
+     * (`playBuffer`'s `onEnded`, which fires for that ending and no other).
+     * Not inferred from how far the frame loop got: a range shorter than one
+     * frame ends before any rAF reads a handle (Frank R2 P2).
+     */
+    const ranOutRef = useRef(false);
 
     const notePlaybackSample = useCallback((sample: number) => {
       playbackSampleRef.current = sample;
@@ -641,6 +645,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * 16 ms before the end of a take instead of appending to it.
      *
      * `audio.stopBuffer` is a no-op when nothing is sounding, and so is this.
+     *
+     * It RETURNS the position it sampled, because a caller that needs it must
+     * not read the ref itself: `playbackSampleRef` is the stale rAF value until
+     * the line above replaces it, so a #317 drag that captured its start before
+     * calling this began a frame behind the audio it had just paused (Frank R2
+     * P2 #1).
      */
     const stopBuffer = audio.stopBuffer;
     const stopPlayback = useCallback(() => {
@@ -648,6 +658,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (sample !== null) playbackSampleRef.current = sample;
       stopRequestedRef.current = true;
       stopBuffer();
+      return playbackSampleRef.current;
     }, [stopBuffer, readPlaybackSample]);
 
     /**
@@ -677,9 +688,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setPanState(
         frozenPan({
           observed: playbackSampleRef.current,
-          start: soundingRangeRef.current.start,
-          end: soundingRangeRef.current.end,
+          end: soundingEndRef.current,
           stopRequested: stopRequestedRef.current,
+          ranOut: ranOutRef.current,
           length,
         })
       );
@@ -694,10 +705,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     useLayoutEffect(() => {
       if (scrolling) {
         scrollPendingRef.current = true;
-        // A fresh play decides its own ending. Reset here rather than in
-        // `soundRange` so a scroll that somehow began by another door cannot
-        // inherit the previous play's verdict.
-        stopRequestedRef.current = false;
         return;
       }
       freezePlaybackPan();
@@ -718,11 +725,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // Pinned BEFORE the play, so the playhead is offset by the range that
         // is actually sounding rather than by whatever the line becomes next.
         soundingOffsetRef.current = framesToMs(start);
-        // The same range, for `frozenPan`: its END is where a clip that runs
-        // out comes to rest, which no frame loop can observe (the handle is
-        // cleared before the next tick).
-        soundingRangeRef.current = { start, end };
-        audio.playBuffer(editor.working.subarray(start, end));
+        // Where a clip that runs out comes to rest, which no frame loop can
+        // observe (the handle is cleared before the next tick).
+        soundingEndRef.current = end;
+        // This play's ending is undecided until it happens. Reset HERE, the one
+        // door into a scrolling playback — the paused-take preview sounds a
+        // different buffer and never scrolls — and synchronously, before
+        // anything can report an ending.
+        stopRequestedRef.current = false;
+        ranOutRef.current = false;
+        audio.playBuffer(editor.working.subarray(start, end), 0, {
+          // The boundary reports the one ending nothing here could reconstruct:
+          // the clip ran out. It fires only for a source that was not stopped
+          // by hand and whose claim still owns the floor, so a `stopBuffer`, a
+          // superseded claim and a failed start all leave this false.
+          onEnded: () => {
+            ranOutRef.current = true;
+          },
+        });
       },
       [audio, editor.working]
     );
@@ -760,15 +780,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         if (gesture === "ignore") return;
         // Start from where playback had REACHED, not from `panState`, which is
         // still the pre-play value for one more commit (the freeze runs in a
-        // layout effect after `stopBuffer` lands). Taking it from the ref is
-        // what keeps the waveform from jumping under the finger on touch-down.
+        // layout effect after the stop lands).
         let from = pan;
         if (gesture === "interrupt") {
-          from = Math.max(0, Math.min(playbackSampleRef.current, length));
-          resumeAfterDragRef.current = true;
           // "Playback never runs while the finger is down" — synchronously, in
-          // the gesture's own handler, before anything moves.
-          stopPlayback();
+          // the gesture's own handler, before anything moves. The drag starts
+          // from the position `stopPlayback` RETURNS, not from the ref it is
+          // about to overwrite: the ref is the last rAF value, up to a frame
+          // behind, and a drag begun there would rewind the waveform under the
+          // finger and resume early on lift (Frank R2 P2 #1).
+          from = Math.max(0, Math.min(stopPlayback(), length));
+          resumeAfterDragRef.current = true;
         }
         setDragging(true);
         dragStartX.current = e.clientX;

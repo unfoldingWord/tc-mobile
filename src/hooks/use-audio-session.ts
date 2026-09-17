@@ -72,11 +72,18 @@ export interface UseAudioSession {
    * first (the recorder stays paused-alive — no capturing mic is abandoned), so
    * the preview can sound; `resumeRecording` reclaims the mic. Never preempts a
    * LIVE recording — the recorder-state guard makes that a no-op.
+   *
+   * `onEnded` fires when the clip RAN OUT, and only then: not on a hand-stop
+   * (`stopBuffer`, or a Play that stops what is sounding), not for a superseded
+   * claim, and not when playback failed to start. It is the one fact about an
+   * ending that cannot be reconstructed from outside — the position goes with
+   * the handle, and a clip shorter than a frame can end before any rAF observes
+   * it — and the recorder's frozen pan (#416) turns on it.
    */
   playBuffer: (
     samples: Int16Array,
     offsetSeconds?: number,
-    opts?: { preemptPausedMic?: boolean }
+    opts?: { preemptPausedMic?: boolean; onEnded?: () => void }
   ) => void;
   /** Stop buffer playback if it is the one sounding. A no-op otherwise. */
   stopBuffer: () => void;
@@ -422,7 +429,7 @@ export function useAudioSession(): UseAudioSession {
     (
       samples: Int16Array,
       offsetSeconds = 0,
-      opts?: { preemptPausedMic?: boolean }
+      opts?: { preemptPausedMic?: boolean; onEnded?: () => void }
     ) => {
       if (playingBufferRef.current) {
         stopBuffer();
@@ -479,6 +486,15 @@ export function useAudioSession(): UseAudioSession {
             isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
               if (!session.isCurrent(token)) return;
+              // The clip RAN OUT — this fires only from a source that was not
+              // stopped by hand (`audio-io.ts` guards it with its `stopped`
+              // flag) and only while this claim still owns the floor. The
+              // recorder needs that distinction and cannot infer it: the
+              // position is gone the moment the handle is cleared below, and a
+              // playback that never started looks identical from outside
+              // (Frank R2 P2, #416). Called BEFORE the state update, so a
+              // caller's flag is set by the time the re-render reads it.
+              opts?.onEnded?.();
               session.release(token);
               setPlayingBuffer(false);
               // A preview of a PAUSED take borrowed the mic's floor (approach

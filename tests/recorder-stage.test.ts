@@ -432,13 +432,22 @@ describe("resumesOnLift", () => {
  * park the line ~16 ms SHORT of the end, where the next Record inserts instead
  * of appending.
  *
- * So the two endings are told apart rather than averaged. An explicit stop
- * samples the true position synchronously, before the handle goes; running out
- * has an exact answer that needs no sampling at all — the end of the range that
- * was sounding.
+ * So the three endings are told apart rather than averaged, and each is TOLD to
+ * this function rather than inferred from how far the frame loop got. An
+ * explicit stop samples the true position synchronously, before the handle
+ * goes. Running out is reported by the playback boundary itself (`playBuffer`'s
+ * `onEnded`, which fires only for a clip that was not stopped by hand) and has
+ * an exact answer that needs no sampling at all: the end of the range. Anything
+ * else — a play that never started, a superseded claim — leaves the line alone.
+ *
+ * An earlier draft inferred "it ran out" from `observed > start`. Frank's round
+ * 2 P2 killed it with a range shorter than one frame: a 200-sample remainder
+ * ends before any rAF sees a handle, so `observed === start` and the line
+ * parked at the START of a range that had played in full — the
+ * append-becomes-an-insert defect, in the one case the heuristic could not see.
  */
 describe("frozenPan", () => {
-  const RANGE = { start: 1000, end: 9000 };
+  const END = 9000;
   const LEN = 10_000;
 
   it("freezes an explicit stop at the position it sampled", () => {
@@ -448,8 +457,9 @@ describe("frozenPan", () => {
     expect(
       frozenPan({
         observed: 4321,
-        ...RANGE,
+        end: END,
         stopRequested: true,
+        ranOut: false,
         length: LEN,
       })
     ).toBe(4321);
@@ -457,32 +467,49 @@ describe("frozenPan", () => {
 
   it("freezes a clip that ran out at the END of the range, exactly", () => {
     // The rAF's last reading is up to a frame short of the end and the handle
-    // is already gone, but no sampling is needed: playback that was not stopped
-    // ended where the range ends. Mutation: use `observed` here and the line
-    // parks short of the end, which is the append-becomes-an-insert defect.
+    // is already gone, but no sampling is needed. Mutation: use `observed` here
+    // and the line parks short of the end, where Record inserts rather than
+    // appends.
     expect(
       frozenPan({
         observed: 8992,
-        ...RANGE,
+        end: END,
         stopRequested: false,
+        ranOut: true,
         length: LEN,
       })
-    ).toBe(RANGE.end);
+    ).toBe(END);
+  });
+
+  it("freezes at the end even when no frame ever saw the clip move", () => {
+    // Frank R2 P2: a range shorter than one frame (a 200-sample remainder) can
+    // end before the loop reads a handle, so `observed` is still the range's
+    // start. The boundary said it ran out; that is what decides.
+    expect(
+      frozenPan({
+        observed: 8800,
+        end: END,
+        stopRequested: false,
+        ranOut: true,
+        length: LEN,
+      })
+    ).toBe(END);
   });
 
   it("leaves the line alone when the buffer never sounded", () => {
     // A `playBuffer` that fails flips `playingBuffer` true optimistically and
-    // then false again; the frame loop only ever read the range's start, so
-    // nothing played and the line must not travel to the end of a range that
-    // was never heard.
+    // then false again, and a superseded claim ends the same way: no `onEnded`,
+    // so nothing ran out and the line must not travel to the end of a range
+    // that was never heard.
     expect(
       frozenPan({
-        observed: RANGE.start,
-        ...RANGE,
+        observed: 1000,
+        end: END,
         stopRequested: false,
+        ranOut: false,
         length: LEN,
       })
-    ).toBe(RANGE.start);
+    ).toBe(1000);
   });
 
   it("clamps to the clip, above and below", () => {
@@ -491,18 +518,18 @@ describe("frozenPan", () => {
     expect(
       frozenPan({
         observed: LEN * 3,
-        start: 0,
         end: LEN * 3,
         stopRequested: true,
+        ranOut: false,
         length: LEN,
       })
     ).toBe(LEN);
     expect(
       frozenPan({
         observed: -50,
-        start: -100,
         end: LEN,
         stopRequested: true,
+        ranOut: false,
         length: LEN,
       })
     ).toBe(0);
@@ -510,9 +537,9 @@ describe("frozenPan", () => {
     expect(
       frozenPan({
         observed: 500,
-        start: 0,
         end: LEN * 2,
         stopRequested: false,
+        ranOut: true,
         length: LEN,
       })
     ).toBe(LEN);
