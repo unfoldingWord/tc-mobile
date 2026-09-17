@@ -21,7 +21,9 @@ import { strings } from "./strings";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { useStorageEstimate } from "@/hooks/use-storage-estimate";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
+import { storagePressure } from "@/lib/storage/pressure";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -83,6 +85,20 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
   // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
+  // Storage pressure (#247, the deferred half of #12's audit). A SEPARATE
+  // standing condition from the one above — "the browser has not promised to
+  // keep this" vs. "this device is genuinely close to full" — read from
+  // `navigator.storage.estimate()` once per Books mount (see
+  // `use-storage-estimate.ts`'s docblock for why "after each recorder close"
+  // is scoped down to that for v1) and classified by the pure
+  // `storagePressure`. Not gated on `hasContent`/`loaded` the way the
+  // persistence marker is: an origin can be near its quota regardless of
+  // whether THIS book has anything in it yet, so there is no shelf-emptied
+  // staleness question here the way George R1 P2-1 found for `not-persisted`.
+  // `storagePressure` itself already reads an absent/unresolved estimate as
+  // `"ok"`, so no extra null check is needed here.
+  const estimate = useStorageEstimate();
+  const pressure = storagePressure(estimate?.usage, estimate?.quota);
   const [menuOpen, setMenuOpen] = useState(false);
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
   // value the name field is seeded with — the "Book NNN" placeholder the hook
@@ -662,31 +678,53 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
       )}
 
-      {/* Two standing background conditions can be true at once — the browser
-          has not promised to keep this storage (#12), AND the encoder has
-          stopped working (#166) — and they are about different subsystems, so
-          #279's precedent (encoderLine's own line, not folded into the
+      {/* Several standing background conditions can be true at once — the
+          browser has not promised to keep this storage (#12), the device
+          itself is running low on room (#247), AND the encoder has stopped
+          working (#166) — and they are about different subsystems, so #279's
+          precedent (encoderLine's own line, not folded into the
           load/delete/loading slot above, which stays exclusive and acute-first)
-          extends to both rather than making one dominant CSS-flag over the
-          other: each is `&&`-rendered on its own, and BOTH may show stacked.
-          Neither collides with the slot above — both need a completed,
-          non-loading read, which is exactly when `noticeText` is falsy and
-          `loading` is false; there is no gate keying on that here because
-          `storage` and `encoderLine` are themselves already `null` until then
-          (`useStoragePersistence` requires `hasContent`, i.e. a loaded shelf;
+          extends to all three rather than making one dominant CSS-flag over
+          the others: each is `&&`-rendered on its own, and ANY subset may show
+          stacked. Neither collides with the slot above — all three need a
+          completed, non-loading read, which is exactly when `noticeText` is
+          falsy and `loading` is false; there is no gate keying on that here
+          because `storage`, `pressure` and `encoderLine` are themselves
+          already inert until then (`useStoragePersistence` requires
+          `hasContent`, i.e. a loaded shelf; `storagePressure` reads an
+          unresolved/absent estimate as `"ok"`, which renders nothing;
           `encoderHealth()` has nothing to report before a book exists to
           encode from).
 
-          Order: storage first, encoder second. Storage's risk is total and
-          unrecoverable (browser eviction, no restore path) where encoder's
-          copy explicitly promises nothing is lost — the more severe standing
-          risk reads first, same principle the load-failure/loading slot above
-          already applies by being exclusive and ordered acute-first.
-          `notice-tone.ts`'s `info` docblock names this exact case (a standing
-          condition, not only a completed-event caveat) after George round 1
-          P3-3 flagged the original wording as covering only the latter. */}
+          Order: storage durability first, storage pressure second, encoder
+          third. Durability's risk is total and unrecoverable (browser
+          eviction, no restore path); pressure is the same underlying risk
+          (loss to eviction/out-of-space) but only once headroom is actually
+          low, so it reads right after; encoder's copy explicitly promises
+          nothing is lost, the least severe of the three — same principle the
+          load-failure/loading slot above already applies by being exclusive
+          and ordered acute-first. `notice-tone.ts`'s `info` docblock names
+          this exact case (a standing condition, not only a completed-event
+          caveat) after George round 1 P3-3 flagged the original wording as
+          covering only the latter. */}
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
+      )}
+      {pressure !== "ok" && (
+        // `info` at "low", `alert` at "critical" — the same two tones
+        // `not-persisted` and the encoder line already draw from
+        // `notice-tone.ts`; nothing new to pin there. The glyph + colour ARE
+        // the primary signal (`noticePresentation`'s per-tone icon), same as
+        // every other Notice in this file — this one is no more sentence-led
+        // than `storageNotPersisted` already is, so it does not invent a
+        // sr-only text convention this file has never used (#247 asked for
+        // one; there is no existing Notice here that hides its sentence, so
+        // this follows the nearest existing pattern instead of a one-off).
+        <Notice tone={pressure === "critical" ? "alert" : "info"}>
+          {pressure === "critical"
+            ? strings.storageCritical
+            : strings.storageLow}
+        </Notice>
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
