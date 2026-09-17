@@ -137,6 +137,41 @@ describe("reportFailure", () => {
     expect(seen).toHaveLength(1);
   });
 
+  it("one subscription's removal does not cancel another's", () => {
+    // Delivery is per LISTENER; lifetime is per SUBSCRIPTION. Collapsing the two
+    // is the single slot's displacement bug at one remove: the first caller's
+    // unsubscribe emptied the only entry and took the second caller's live
+    // subscription with it, silently, leaving the funnel with a subscriber it
+    // believed it still had (Frank, takeover round 6).
+    const seen: FailureReport[] = [];
+    const listener = (report: FailureReport) => seen.push(report);
+    const offFirst = subscribe(listener);
+    subscribe(listener);
+
+    offFirst();
+    reportFailure(new Error("the second subscription is still live"), "render");
+    expect(seen).toHaveLength(1);
+
+    // And idempotent: a caller that releases in both a cleanup and an unmount
+    // must not spend the other subscription's count doing it.
+    offFirst();
+    reportFailure(new Error("still live after a repeated removal"), "render");
+    expect(seen).toHaveLength(2);
+  });
+
+  it("stops delivering once the LAST subscription holding a listener goes", () => {
+    const seen: FailureReport[] = [];
+    const listener = (report: FailureReport) => seen.push(report);
+    const offFirst = subscribe(listener);
+    const offSecond = subscribe(listener);
+
+    offFirst();
+    offSecond();
+    reportFailure(new Error("nobody is listening"), "render");
+
+    expect(seen).toEqual([]);
+  });
+
   it("a throwing subscriber does not cost the others their report", () => {
     // Caught per listener, not around the loop: the durable log must still get
     // the row when a UI subscriber throws, which is the whole reason the funnel

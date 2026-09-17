@@ -79,8 +79,14 @@ type FailureListener = (report: FailureReport) => void;
  *
  * Iterated over a copy on dispatch, so a listener that unsubscribes (or
  * subscribes) while being called cannot mutate the collection mid-walk.
+ *
+ * A Map rather than a Set, and the number is how many live SUBSCRIPTIONS hold
+ * that listener (Frank, takeover round 6). Keys are still unique, so a listener
+ * subscribed twice is called once; the count is what gives each subscription its
+ * own lifetime, instead of letting the first unsubscribe evict a second
+ * subscriber's entry. Same defect as the single slot's, at one remove.
  */
-const sinks = new Set<FailureListener>();
+const sinks = new Map<FailureListener, number>();
 
 /**
  * The last object-identity cause reported, and the context it was reported
@@ -104,13 +110,28 @@ let lastContext: string | null = null;
  * is where a failed-save recording is held in RAM (#38). So the answer stays
  * report it, record it, mark the control, tear nothing down. Tracked on #167.
  *
- * Subscribing the same listener twice is a no-op (it is a set), and the
- * returned removal is safe to call more than once.
+ * Each SUBSCRIPTION owns its own removal, even when two of them pass the same
+ * function (Frank, takeover round 6). The same reference subscribed twice is
+ * still delivered to once — a durable sink installed twice must not write two
+ * rows per failure — but the first unsubscribe used to empty the only entry and
+ * take the second subscription down with it, silently, which is the round-3
+ * displacement bug in a different costume. A count, so the listener leaves when
+ * the LAST subscription holding it does.
+ *
+ * The returned removal is idempotent: calling it twice releases one count, not
+ * two, so a caller that unsubscribes in both a cleanup and an unmount cannot
+ * take somebody else's subscription with it.
  */
 export function subscribeToFailures(listener: FailureListener): () => void {
-  sinks.add(listener);
+  sinks.set(listener, (sinks.get(listener) ?? 0) + 1);
+  let released = false;
   return () => {
-    sinks.delete(listener);
+    if (released) return;
+    released = true;
+    const held = sinks.get(listener);
+    if (held === undefined) return;
+    if (held <= 1) sinks.delete(listener);
+    else sinks.set(listener, held - 1);
   };
 }
 
@@ -192,8 +213,10 @@ export function reportFailure(
       ? { context, cause }
       : { context, cause, componentStack };
   // A copy, so a listener that subscribes or unsubscribes from inside its own
-  // call cannot mutate the set being walked.
-  for (const listener of Array.from(sinks)) {
+  // call cannot mutate the collection being walked. Keys only: the counts are a
+  // lifetime bookkeeping detail and say nothing about delivery, which is once
+  // per listener however many subscriptions hold it.
+  for (const listener of Array.from(sinks.keys())) {
     try {
       listener(report);
     } catch (sinkFailure) {
