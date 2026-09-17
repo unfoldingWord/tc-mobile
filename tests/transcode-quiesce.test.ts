@@ -23,7 +23,8 @@ import type { SegmentId } from "@/types/domain";
  * one-way module state on purpose: there is no resume, since the only exit from
  * the crash screen is a reload and a reload is a new page with a fresh launch
  * sweep. A case that set it would poison every case after it in the same file,
- * and Vitest gives each FILE its own module graph.
+ * and Vitest gives each FILE its own module graph. The mid-pass case lives in
+ * `transcode-quiesce-midpass.test.ts` for exactly that reason.
  *
  * What this is protecting. `ErrorBoundary` replaces `App`, but the sweep's state
  * is module-scoped — the callers are hooks on different screens — so `App`'s
