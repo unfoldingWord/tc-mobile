@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-e2e
 dev-dist
 package-lock.json
 *.min.js
@@ -9,3 +10,15 @@ package-lock.json
 .vscode
 .env*
 !.env.example
+
+# Capacitor native projects (#262). Generated and managed by the `cap` CLI —
+# Java/Kotlin/Swift/Gradle plus generated JSON and the copied web bundle. Not
+# this repo's JS to format; `cap sync` regenerates the copied assets.
+android
+ios
+
+# Fastlane config is Ruby (#262); prettier has no parser for it, and its
+# generated report/README should not be formatted either.
+fastlane
+Gemfile
+Gemfile.lock

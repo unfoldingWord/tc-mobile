@@ -67,11 +67,12 @@ export interface SegmentRef {
  *
  * This is the smallest additive slice of #174's fuller provenance plan
  * (licence, attribution, `updatedAt`/`deletedAt` on every store) that #253
- * needs on its own: #174 has not landed as of this field's v5 bump, and #253
- * blocking on it would trade "nobody can start from OBS at the training" for
- * a schema bump this repo's own discipline treats as free. #174's remaining
- * pieces (pendingTakes, timestamps/tombstones) are still that issue's to add,
- * additively, whenever it lands.
+ * needs on its own: #174 has not landed as of this field's v6 bump (originally
+ * drafted as v5, renumbered when #264 claimed v5 first — see `lib/storage/
+ * db.ts`), and #253 blocking on it would trade "nobody can start from OBS at
+ * the training" for a schema bump this repo's own discipline treats as free.
+ * #174's remaining pieces (pendingTakes, timestamps/tombstones) are still that
+ * issue's to add, additively, whenever it lands.
  */
 export type BookProvenance =
   | { readonly kind: "obs"; readonly catalogVersion: string }
@@ -80,7 +81,11 @@ export type BookProvenance =
 
 export interface Book {
   readonly id: BookId;
-  /** User-facing; auto-named "Book NNN" in B2 (Q1: rename deferred). */
+  /**
+   * User-facing. Auto-named "Book NNN" on create (B2), renamed in place by the
+   * facilitator for the passage being translated — "Mark" (#264). Always
+   * non-empty: a rename to blank keeps the current name.
+   */
   readonly name: string;
   /** BCP-47 tag of the language being recorded, when known. */
   readonly languageCode: string | null;
@@ -96,6 +101,13 @@ export interface Chapter {
   readonly bookId: BookId;
   /** 1-based, unique within its book (max existing + 1 on create). */
   readonly number: number;
+  /**
+   * Optional passage label the facilitator sets in place — "Mark 6" (#264).
+   * `null` is the default: the UI then shows "Chapter {number}". Clearing the
+   * name reverts to `null`. Every row carries the field (the v5 backfill stamps
+   * pre-#264 chapters `null`), so a reader never meets `undefined`.
+   */
+  readonly name: string | null;
   /**
    * Ordered — segments hang off the chapter directly (no Section). This array
    * is the source of truth for export concatenation order.

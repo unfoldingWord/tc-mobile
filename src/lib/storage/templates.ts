@@ -11,7 +11,7 @@
  *
  * `createBookFromTemplate` below is the one writer this lane adds: the first
  * writer of `Segment.reference` (`SegmentRef`, `src/types/domain.ts`) and of
- * `Book.provenance` (v5, `lib/storage/db.ts`). Nothing in `src/` calls it yet
+ * `Book.provenance` (v6, `lib/storage/db.ts`). Nothing in `src/` calls it yet
  * — the picker UI is #246 — so it is exported for that lane to consume.
  */
 
@@ -153,6 +153,7 @@ export async function createBookFromTemplate(
       id: chapterId,
       bookId,
       number: templateChapter.number,
+      name: null,
       segmentIds,
     };
     chapterIds.push(chapterId);

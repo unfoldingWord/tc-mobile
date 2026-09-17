@@ -8,8 +8,29 @@
  * worker, kept alive for reuse (#182) and serialised by `withEncoder`; an abort
  * terminates it — a real stop, the encode ends mid-loop and its memory goes with
  * the worker — then re-warms a fresh one, and a worker that dies is dropped by a
- * durable `error` listener and rebuilt on the next encode. Decoding is
- * `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio boundary.
+ * durable `error` listener and rebuilt on the next encode. Every encode is also
+ * bounded by a SILENCE deadline (#166): the worker posts a throttled progress
+ * heartbeat as it encodes, and a worker that goes quiet — no progress, no done,
+ * no error — past `ENCODER_SILENCE_TIMEOUT_MS` is judged stalled (killed under
+ * memory pressure, a chunk that never loads), then terminated and re-warmed the
+ * same way an abort is, so the encode rejects with an `EncoderStalledError` and
+ * the lane is released instead of held for the life of the page. It measures
+ * silence, NOT elapsed wall-clock, so an iOS lock/background freeze — which
+ * suspends page and worker together — cannot false-kill a suspended encode.
+ * Decoding is `decodeAudioData` behind `hooks/audio-io.ts`, the single Web Audio
+ * boundary.
+ *
+ * EVERY worker, warm or rebuilt, is constructed from a blob SNAPSHOT of the
+ * worker chunk taken at warmup, so no rebuild depends on a URL a service-worker
+ * update has purged (#192). That matters precisely because the three recoveries
+ * above — abort, stall and crash — all `terminate()` and rebuild, and a rebuild
+ * can come hours after the update.
+ *
+ * AND IT SAYS SO. #166's other half: every encode's outcome moves an
+ * {@link EncoderHealth} store this module owns, which the Books shelf draws one
+ * line from. It lives here rather than in a caller because this is the one place
+ * every encode passes — see the store's own note for the three ways a
+ * caller-side count was wrong.
  *
  * ONE lane. A Finished transcode and a Share are each "one chapter or segment
  * of PCM at a time" on their own, but nothing stopped them running together —
@@ -33,6 +54,15 @@
  */
 
 import { decodeMp3ToCanonical } from "./audio-io";
+import { reportFailure } from "./report-failure";
+// The BUILT worker chunk's URL. `?worker&url` is the only form that yields it
+// outside a `new Worker(new URL(...))` literal: a bare
+// `new URL("./mp3.worker.ts", import.meta.url)` makes Vite inline the raw `.ts`
+// SOURCE as a `data:video/mp2t;base64,…` URI, which is un-runnable (#192,
+// observed in `dist/` on PR #187). This is now the module's ONLY reference to
+// the worker file, so exactly one chunk is emitted and lamejs is not duplicated
+// (round-1 George G2).
+import encoderChunkUrl from "./mp3.worker.ts?worker&url";
 import type { AudioCodec } from "@/types/audio";
 
 /** The one message the client posts: a view onto canonical PCM, transferred. */
@@ -42,10 +72,241 @@ export interface EncodeRequest {
   readonly length: number;
 }
 
-/** The one message the worker answers with. */
+/**
+ * The messages the worker sends back.
+ *
+ * `ready` is posted once, when the worker script has run (#192): it settles
+ * nothing and belongs to no job, and it is the only evidence that a blob built
+ * from the snapshot actually EXECUTES, short of giving it a chapter's PCM.
+ * `progress` is a liveness HEARTBEAT (#166), throttled by the worker
+ * (`mp3.worker.ts`): it carries no result and the encode keeps waiting, but each
+ * one tells the client the worker is still alive so a long encode is not judged
+ * stalled. `done`/`error` settle the encode.
+ */
 export type EncodeResponse =
+  | { readonly kind: "ready" }
+  | { readonly kind: "progress"; readonly fraction: number }
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The encoder stopped working: a worker that neither answered nor errored within
+ * its deadline, so the lane was released and a fresh worker warmed (#166). A
+ * DISTINCT type — killed under memory pressure, or a chunk that never loaded — so
+ * a caller can tell a wedged encoder from a one-off encode error and surface "the
+ * encoder has stopped working" rather than treat it as a transient failure.
+ */
+export class EncoderStalledError extends Error {
+  constructor(timeoutMs: number) {
+    super(
+      `The MP3 encoder did not respond within ${timeoutMs} ms; it was restarted`
+    );
+    this.name = "EncoderStalledError";
+  }
+}
+
+/**
+ * The encoder itself failed an encode, in the ordinary way: the worker reported
+ * an error, died, would not start, or does not exist on this browser (#166).
+ *
+ * Carries PROVENANCE, which is the whole point (Frank R4 P2). A caller that sees
+ * a failure while `encoderHealth()` reads `failing` must still be able to tell
+ * "the encoder failed again" from "a storage read failed while the encoder
+ * happened to be unhealthy" — only the first earns a "restart the app" line.
+ * The worker's own words are kept in the message, and the original thrown
+ * value, when there was one, in `cause`.
+ */
+export class EncoderFailedError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "EncoderFailedError";
+  }
+}
+
+/**
+ * How long the worker may stay SILENT — no progress heartbeat, no done, no error
+ * — before the encode is judged stalled (#166).
+ *
+ * A heartbeat, not a wall-clock budget: `mp3.worker.ts` posts throttled progress
+ * as it encodes and each one resets this window, so a long or a slow-but-
+ * progressing encode never trips — only a worker that has stopped answering
+ * entirely does (which never returns, so any finite window catches it). Fixed,
+ * not proportional to the audio's length: once silence is what's measured, length
+ * no longer matters. Generous enough to absorb a slow device's scheduling and the
+ * worker's own progress-throttle interval.
+ */
+export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
+
+/**
+ * How long an UNPROVEN snapshot-built worker may go without saying `ready`
+ * before that silence counts as one strike against the snapshot (#192).
+ *
+ * Nothing else waits on this, and a chunk-built worker never waits at all. The
+ * budget a caller should assume is `SNAPSHOT_MUTE_STRIKES` windows, not one
+ * (George R3 P3), and all of them are spent on the SAME worker (George R4 P2):
+ * a silent window re-arms rather than rebuilds, so a blob that is merely slow
+ * keeps whatever evaluation it has done. Only the strike that reaches the limit
+ * throws the snapshot away, and only then is a worker built from the chunk URL.
+ * After that nothing waits again, because the wait exists to judge a blob and
+ * there is no blob left. Nor does it recur while the blob is good: proof latches
+ * on the snapshot at its first message of any kind, so a page pays these windows
+ * once between all its encodes, not once per worker.
+ *
+ * Short on purpose, and deliberately NOT `ENCODER_SILENCE_TIMEOUT_MS`: waiting
+ * fifteen seconds before falling back is exactly the hole in storage relief
+ * (#12) that George R1 P2-4 is about.
+ *
+ * What it has to cover is evaluation of the whole ~170 KB worker chunk, lamejs
+ * included, because `ready` is posted at the FOOT of `mp3.worker.ts` — not the
+ * "script load" an earlier version of this comment claimed (George R2 P2). The
+ * #251 smoke measures that evaluation on Chromium and logs the number; it is
+ * single-digit milliseconds there, which is the only engine anyone has measured.
+ * Three seconds is a guess about phones, so the window is made SAFE rather than
+ * merely long: it is not counted while the page is hidden, and one expiry costs
+ * this job a fallback rather than the snapshot (`SNAPSHOT_MUTE_STRIKES`).
+ */
+export const ENCODER_READY_TIMEOUT_MS = 3_000;
+
+/**
+ * Is the page currently hidden (locked, backgrounded)? Guarded so the encoder
+ * also runs under Node tests and inside a Worker, where `document` is absent.
+ * DOM, which is why the deadline lives in `hooks/` and never in `lib/`.
+ */
+function pageHidden(): boolean {
+  return typeof document !== "undefined" && document.hidden;
+}
+
+/**
+ * Call `onChange` on every visibility transition (both directions). Returns an
+ * unsubscribe. A no-op where `document` is absent (Node, Worker).
+ */
+function subscribeVisibility(onChange: () => void): () => void {
+  if (typeof document === "undefined") return () => {};
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+/**
+ * Whether this phone's encoder is working — #166's other half, "surface an
+ * encoder that has stopped working".
+ *
+ * `failing` never means audio was lost. It means the one thing that turns PCM
+ * into MP3 is not doing it, so the storage relief D3/#12 exists for has quietly
+ * stopped and Share will fail too — invisible from where a translator stands
+ * unless something says so.
+ */
+export type EncoderHealth = "ok" | "failing";
+
+/**
+ * How many consecutive ordinary encode failures it takes to say so.
+ *
+ * Not 1: one encode can fail for reasons that are not the encoder's — a device
+ * momentarily out of memory, one malformed buffer — and a screen that reports
+ * each one is a screen nobody reads. A STALL does not go through this count at
+ * all; see `noteEncoderStalled`.
+ *
+ * Exported so the tests drive the threshold rather than re-state it.
+ */
+export const ENCODER_FAILURE_THRESHOLD = 3;
+
+/**
+ * The health lives HERE, in the encoder, and not in any caller.
+ *
+ * The first cut counted failures inside the Finished sweep, and both reviewers
+ * took that apart from opposite ends in one round. A stall ends the sweep run
+ * (#290), so a wedged worker yields one failure per run and a page gets one
+ * launch sweep — three-in-a-row could never accumulate, and the indicator could
+ * not reach the exact failure the deadline exists for (George P1). Share is the
+ * app's other encode-bearing job, so a stall there moved nothing and a Share
+ * that encoded fine never cleared a line the sweep had put up (George P2-3). And
+ * a `loadSegmentClip` or `commitTranscode` throw was counted as "this phone
+ * cannot encode", which is a false diagnosis with a useless recovery attached
+ * (Frank P2 and George P2-4, independently — the round's one convergence).
+ *
+ * Deciding it at `encodeInWorker`'s own outcomes makes all three structural
+ * rather than remembered: every encode in the app is on this lane, nothing that
+ * is not an encode can move the state, and no caller has to report anything.
+ */
+let consecutiveFailures = 0;
+let health: EncoderHealth = "ok";
+/**
+ * A SET, unlike `report-failure.ts`'s single slot: that module has one slot on
+ * purpose (a second consumer of the same failures is a second place to keep in
+ * sync), whereas this is a plain store any screen may read, and React's
+ * `useSyncExternalStore` subscribes and unsubscribes freely — twice over on a
+ * StrictMode mount.
+ */
+const healthListeners = new Set<(health: EncoderHealth) => void>();
+
+/** The encoder's current health. The `getSnapshot` half of the store. */
+export function encoderHealth(): EncoderHealth {
+  return health;
+}
+
+/**
+ * Watch the encoder's health. Returns the unsubscribe.
+ *
+ * Called on CHANGE only, so a screen draws one line for the condition rather
+ * than re-announcing it per failed encode — which matters because the `Notice`
+ * it drives is announced to a screen reader.
+ */
+export function subscribeToEncoderHealth(
+  listener: (health: EncoderHealth) => void
+): () => void {
+  healthListeners.add(listener);
+  return () => {
+    healthListeners.delete(listener);
+  };
+}
+
+function publishHealth(next: EncoderHealth): void {
+  if (next === health) return;
+  health = next;
+  // A copy, so a listener that unsubscribes from inside its own callback does
+  // not mutate the set being iterated.
+  for (const listener of [...healthListeners]) {
+    try {
+      listener(next);
+    } catch (cause) {
+      // Never swallowed: this store's entire purpose is that a silent failure
+      // stops being silent.
+      reportFailure(cause, "encoder-health");
+    }
+  }
+}
+
+/**
+ * An encode produced bytes. The encoder demonstrably works, so the count goes to
+ * zero and the condition is over — whoever asked for the encode. A Share that
+ * succeeds clears a line the Finished sweep put up, because the claim on screen
+ * is about the phone, not about the job (George P2-3).
+ */
+function noteEncodeSucceeded(): void {
+  consecutiveFailures = 0;
+  publishHealth("ok");
+}
+
+/** One ordinary encode failure: the worker threw, or died. */
+function noteEncodeFailed(): void {
+  consecutiveFailures += 1;
+  if (consecutiveFailures >= ENCODER_FAILURE_THRESHOLD)
+    publishHealth("failing");
+}
+
+/**
+ * A stall is the CONDITION, not evidence towards it.
+ *
+ * Fifteen seconds of a worker answering neither a heartbeat, a result nor an
+ * error is already the finding the threshold would be accumulating towards, and
+ * waiting for two more of them is waiting for runs that do not come: the sweep
+ * ends its run on a stall (#290) and a page gets one launch sweep (George P1).
+ * The count is taken to the threshold rather than the flag set alone, so a later
+ * success has one thing to clear.
+ */
+function noteEncoderStalled(): void {
+  consecutiveFailures = ENCODER_FAILURE_THRESHOLD;
+  publishHealth("failing");
+}
 
 /** The tail of the lane: resolves when the job currently holding it is done. */
 let lane: Promise<void> = Promise.resolve();
@@ -127,43 +388,315 @@ function untilSettled(
  * life of the page (round-1 R1). An abort must stop the in-flight encode NOW,
  * which only `terminate()` can do, so it drops the worker and immediately
  * re-warms a fresh one (round-1 R2). The common reuse path fetches nothing. A
- * drop-and-rebuild — after an abort, or a crash — DOES re-fetch the hashed URL,
- * so it restores the warm worker only while that chunk is still fetchable; a
- * rebuild after a service-worker update has purged the chunk fails to the
- * durable listener and surfaces on the next encode. Closing that post-purge
- * window fully needs the worker snapshotted to a purge-immune source (#192).
+ * drop-and-rebuild — after an abort, or a crash — used to re-fetch the hashed
+ * chunk URL, which is exactly the URL a service-worker update purges. An abort
+ * can come hours after the update (the translator opens Share and cancels), so
+ * the rebuild could not race the purge, and the encoder was dead for the rest of
+ * the page's life (#192). Every worker is now built from `workerScriptUrl()`: a
+ * BLOB snapshot of the chunk, taken at warmup while the chunk is still
+ * fetchable, which no cache eviction can reach. The direct chunk URL remains the
+ * fallback for as long as the snapshot has not been taken, or could not be.
  */
 let sharedWorker: Worker | null = null;
 
+/**
+ * Whether the live `sharedWorker` came from the blob snapshot, and whether it
+ * has said `ready` yet.
+ *
+ * BOTH belong to the handle and are cleared when it is dropped. Proof that the
+ * blob itself runs does NOT — see `snapshotProven`.
+ */
+let workerFromSnapshot = false;
+let workerReady = false;
+
+/**
+ * The blob snapshot of the worker chunk, the one attempt to take it, and
+ * whether a worker built from it has ever answered anything.
+ *
+ * The blob worker has never run on a phone, so it ships with a self-healing
+ * guard rather than on faith: a snapshot-built worker that FAILS WITHOUT EVER
+ * HAVING ANSWERED is treated as a bad snapshot and thrown away, so the next
+ * rebuild falls back to the chunk URL and the encoder degrades to the #182
+ * behaviour instead of bricking. Once a worker built from this blob has answered
+ * anything, the blob is PROVEN to run on this browser, and a later failure is
+ * the device's, not the snapshot's.
+ *
+ * Proof lives on the SNAPSHOT, not on the handle (George R1 P2-2). It was on the
+ * handle first, and `dropEncoderWorker` cleared it — so a proven blob worker
+ * that OOMed mid-encode came back unproven, and if the device was still under
+ * memory pressure the replacement's failure revoked a blob that had already been
+ * observed running. The next construction then went to `encoderChunkUrl`, which
+ * on a page that has lived across a deploy is exactly the URL that is gone:
+ * #192 re-opened by the guard that exists to close it. The blob either runs on
+ * this browser or it does not, and one success settles that for the page.
+ *
+ * "Fails" is BOTH ways a worker can fail, because #166's silence deadline added
+ * a second one after #192's shape was written. An `error` event is the snapshot
+ * that will not parse or load — a wrong format, a CSP that forbids blob workers.
+ * The other is the snapshot that loads and then answers NOTHING: a truncated
+ * fetch ending on a statement boundary is valid JS with no `message` listener,
+ * and it errors never and goes silent forever. `ready` is what catches that one,
+ * and catches it before a chapter's PCM has been handed over — see
+ * `awaitWorkerReady`.
+ */
+let snapshotUrl: string | null = null;
+let snapshotStarted = false;
+let snapshotProven = false;
+
+/**
+ * The script the next worker is built from: the snapshot if we have one.
+ *
+ * There is no "prefer the chunk this once" argument, and round 3 removed the one
+ * there was (George R3 P2). The chunk URL is not a safe harbour to step aside
+ * into — on the page this module exists to protect, a page that has lived across
+ * a deploy, it is the URL `cleanupOutdatedCaches` has already deleted. So the
+ * only thing that sends a construction to the chunk is the snapshot being GONE,
+ * and the rules for throwing it away live in `discardWorkerSnapshot`'s two
+ * callers.
+ */
+function workerScriptUrl(): string {
+  return snapshotUrl ?? encoderChunkUrl;
+}
+
+/**
+ * `new Worker`, with the right module-ness for the URL (George R1 P1).
+ *
+ * The CHUNK URL keeps `{ type: "module" }`: in dev Vite serves `mp3.worker.ts`
+ * as a real ES module with live imports, and only a module worker can run it.
+ *
+ * The BLOB is classic. The snapshot is production-only and the production chunk
+ * is a zero-import IIFE — verified against `dist/`, `(function(){"use strict";…`
+ * — so there is nothing for module semantics to do, while declaring `module`
+ * asks the platform to parse a blob as an ES module and to honour whatever
+ * module-worker restrictions it applies to `blob:`. Classic is the weaker claim
+ * and the one that matches the bytes.
+ */
+function constructWorker(url: string, fromSnapshot: boolean): Worker {
+  return fromSnapshot ? new Worker(url) : new Worker(url, { type: "module" });
+}
+
 function encoderWorker(): Worker {
   if (!sharedWorker) {
-    // Vite resolves this to the worker's own chunk (lamejs inside it) and the
-    // PWA precache picks that chunk up with the rest of `dist/assets`.
-    const worker = new Worker(new URL("./mp3.worker.ts", import.meta.url), {
-      type: "module",
-    });
+    const url = workerScriptUrl();
+    let fromSnapshot = url === snapshotUrl;
+    let worker: Worker;
+    try {
+      worker = constructWorker(url, fromSnapshot);
+    } catch (cause) {
+      // A SYNCHRONOUS throw is the platform refusing this URL outright — a CSP
+      // with `worker-src 'self'`, a WebView that throws on `blob:` (George R1
+      // P2-3). The error-event arm never sees it, so without this the snapshot
+      // stayed set and every later construction threw on the same blob while the
+      // chunk URL — possibly still cached — was never tried.
+      if (!fromSnapshot) throw cause;
+      discardWorkerSnapshot();
+      fromSnapshot = false;
+      worker = constructWorker(encoderChunkUrl, false);
+    }
     // Durable, for the worker's whole life: a load failure or a between-encodes
     // crash arrives here even when no per-job `onerror` is attached, so the dead
     // handle is dropped instead of reused (R1). `addEventListener` survives a
     // job's `onerror =` assignment; the guard stops an old worker's late error
     // from dropping a newer one.
     worker.addEventListener("error", () => {
-      if (sharedWorker === worker) dropEncoderWorker();
+      if (sharedWorker !== worker) return;
+      discardUnprovenSnapshot();
+      dropEncoderWorker();
+    });
+    // Also durable, and the ONE place proof is recorded. Any message will do —
+    // `ready`, a heartbeat, a result, even the worker reporting an encode error
+    // — because all four are this script executing. Keeping it here rather than
+    // in the per-job `onmessage` means a `ready` that lands while the worker is
+    // idle counts, which is the common case for a warm worker.
+    worker.addEventListener("message", () => {
+      if (sharedWorker !== worker) return;
+      workerReady = true;
+      if (workerFromSnapshot) snapshotProven = true;
     });
     sharedWorker = worker;
+    workerFromSnapshot = fromSnapshot;
+    workerReady = false;
   }
   return sharedWorker;
 }
 
-/** Terminate and forget the shared worker; the next encode recreates it. */
+/**
+ * Forget and terminate the shared worker; the next encode recreates it.
+ *
+ * FORGET FIRST (#291, George R3 P3-3). With terminate-then-null, a `terminate()`
+ * that threw left the handle in place: the recovery never reached its re-warm,
+ * and the next encode posted into a worker that could no longer answer and
+ * stalled for another full window. `terminate()` is specified not to throw, so
+ * this is defensive — but a throw here is still reported rather than swallowed,
+ * and never lets the dead handle survive.
+ */
 function dropEncoderWorker(): void {
-  sharedWorker?.terminate();
+  const worker = sharedWorker;
   sharedWorker = null;
+  workerFromSnapshot = false;
+  workerReady = false;
+  // `snapshotProven` is deliberately NOT cleared: it is a fact about the blob,
+  // which outlives every handle built from it (George R1 P2-2).
+  try {
+    worker?.terminate();
+  } catch (cause) {
+    reportFailure(cause, "encoder-recover");
+  }
+}
+
+/**
+ * Terminate a wedged/aborted worker and re-establish a warm one — the recovery an
+ * abort and a stall SHARE (`encodeInWorker`). `terminate()` is the only thing
+ * that stops an in-flight encode NOW, and re-warming restores the reusable handle
+ * so the next encode does not depend on a chunk URL a service-worker update may
+ * have purged (R2). A stalled worker is recovered exactly as an abort is (#166).
+ *
+ * It does NOT judge the snapshot. An abort is US killing a healthy worker, and
+ * the re-warm is meant to come from the snapshot; the durable `error` listener
+ * is the one path that calls `discardUnprovenSnapshot` first.
+ */
+function recoverEncoderWorker(): void {
+  dropEncoderWorker();
+  warmEncoder();
+}
+
+/**
+ * The self-healing half of #192: a snapshot-built worker that failed without the
+ * blob ever having answered is a snapshot this browser cannot run, so throw it
+ * away.
+ *
+ * Call it BEFORE `dropEncoderWorker`, which clears `workerFromSnapshot`. A no-op
+ * for a chunk-built worker — there is no snapshot to blame — and for a proven
+ * blob, where discarding on an ordinary later crash would re-expose #192 after a
+ * single OOM.
+ */
+function discardUnprovenSnapshot(): void {
+  if (workerFromSnapshot && !snapshotProven) discardWorkerSnapshot();
+}
+
+/**
+ * How many VISIBLE handshake windows a blob worker has let pass in silence.
+ * Reset nowhere: the question is about the blob, and the blob does not change.
+ */
+let snapshotMuteStrikes = 0;
+
+/**
+ * How many of those it takes to throw the snapshot away.
+ *
+ * ONE was the round-2 behaviour and was wrong (George R2 P2). A timeout is not a
+ * verdict on the bytes the way an `error` or a synchronous construction throw
+ * is: those say this platform CANNOT run the blob, while silence says only that
+ * it has not answered yet, and the visible-window rule below can still be beaten
+ * by a WebView that throttles a worker without ever setting `document.hidden`,
+ * or by a phone slow enough to spend the window evaluating lamejs. Getting that
+ * wrong is not a slow encode — it revokes the one purge-immune copy of the
+ * worker for the life of the page and sends every later encode to a chunk URL
+ * that, on a page which has lived across a deploy, is exactly the URL that is
+ * gone. #192, re-opened by its own guard.
+ *
+ * So one timeout costs this job another window and nothing else; the snapshot
+ * stays, and so does the worker — the strikes are about the BYTES, and they can
+ * only add up if the handle they are counted against keeps running (George R4
+ * P2). Terminating between them made two windows into two first windows: the
+ * replacement evaluates from zero and dies at the same mark, so the throttled
+ * WebView above was never actually given the extra time this constant is here to
+ * give it. Two silent windows on one live worker says the blob really is mute,
+ * and the cost of being wrong twice — `SNAPSHOT_MUTE_STRIKES` windows per page,
+ * once, across every encode it makes — is not worth defending against.
+ */
+const SNAPSHOT_MUTE_STRIKES = 2;
+
+/**
+ * A blob-built worker stayed silent for a full VISIBLE handshake window.
+ *
+ * Deliberately NOT `discardUnprovenSnapshot` on the first one; see
+ * `SNAPSHOT_MUTE_STRIKES`. A proven blob never reaches here — the handshake is
+ * skipped for it entirely.
+ */
+function noteHandshakeTimeout(): void {
+  snapshotMuteStrikes += 1;
+  if (snapshotMuteStrikes >= SNAPSHOT_MUTE_STRIKES) discardWorkerSnapshot();
+}
+
+/** Throw away a snapshot that cannot run, and stop trying to take another. */
+function discardWorkerSnapshot(): void {
+  if (snapshotUrl) URL.revokeObjectURL(snapshotUrl);
+  snapshotUrl = null;
+  // The only place proof is cleared, because it is the only place the thing it
+  // is about stops existing.
+  snapshotProven = false;
+  // `snapshotStarted` stays true: re-fetching the same chunk would produce the
+  // same unusable blob.
+}
+
+/**
+ * Has the blob snapshot been taken? For the #251 smoke's readiness probe only
+ * (George R1 P3-5).
+ *
+ * The spec must not simulate the purge until the snapshot EXISTS, and it used to
+ * wait on a resource-timing entry for the chunk fetch — which fires when the
+ * response arrives, one `response.text()` and one `createObjectURL` before
+ * `snapshotUrl` is assigned, and which cannot see a non-ok response at all. This
+ * is the state itself rather than a proxy for it.
+ *
+ * UNREACHABLE in a production build, which is the property that matters:
+ * `src/app/e2e-harness.ts` is its only importer, `vite.config.ts` marks that
+ * file external for every mode but `"e2e"`, and CI asserts no trace of the
+ * harness reaches `dist/`. Whether Rollup also drops these three lines is not
+ * something this comment claims — it has not been measured.
+ */
+export function encoderSnapshotTaken(): boolean {
+  return snapshotUrl !== null;
+}
+
+/**
+ * Take the blob snapshot of the worker chunk, once, at warmup (#192).
+ *
+ * Production only. In dev the chunk is served as an unbundled module with its
+ * own imports, so a blob copy of it would resolve nothing — and dev has no
+ * service worker purging assets out from under the page, which is the whole
+ * problem this solves.
+ *
+ * Best-effort and asynchronous: the fetch happens in the background while the
+ * warm worker (built from the direct URL) is already running, so nothing waits
+ * on it. A failure leaves `snapshotUrl` null and the codec on the #182
+ * behaviour. The snapshot is kept for the page's lifetime — that is the point —
+ * and revoked only when `discardWorkerSnapshot` rejects it.
+ */
+function captureWorkerSnapshot(): void {
+  if (snapshotStarted) return;
+  snapshotStarted = true;
+  if (!import.meta.env.PROD) return;
+  if (
+    typeof fetch !== "function" ||
+    typeof Blob === "undefined" ||
+    typeof URL === "undefined" ||
+    typeof URL.createObjectURL !== "function"
+  )
+    return;
+  void fetch(encoderChunkUrl)
+    .then((response) => {
+      if (!response.ok)
+        throw new Error(`worker chunk fetch failed: ${response.status}`);
+      return response.text();
+    })
+    .then((source) => {
+      snapshotUrl = URL.createObjectURL(
+        new Blob([source], { type: "text/javascript" })
+      );
+    })
+    .catch(() => {
+      // Best-effort by design: the direct chunk URL stays in use. Nothing is
+      // logged — a snapshot that could not be taken is not itself a failure the
+      // translator or the sweep can act on, and the encoder still works until an
+      // update purges the chunk.
+    });
 }
 
 /**
  * Warm the encoder worker so a later encode does not depend on a chunk URL a
- * service-worker update may have purged (#182).
+ * service-worker update may have purged (#182), and snapshot that chunk so a
+ * REBUILD does not either (#192).
  *
  * Best-effort: a no-op where `Worker` is absent, and a rare synchronous
  * construction throw is swallowed here. An asynchronous load failure is NOT
@@ -172,8 +705,13 @@ function dropEncoderWorker(): void {
  * `onerror`. Call it once from the app shell at startup, while the running
  * build's precache still holds the worker chunk; it is also called after an
  * abort to re-establish the warm worker.
+ *
+ * The snapshot is taken on every call but acts only once, and it is taken even
+ * when the construction below throws — a browser that refuses `new Worker` here
+ * may still fetch, and the snapshot is what a later attempt will need.
  */
 export function warmEncoder(): void {
+  captureWorkerSnapshot();
   if (typeof Worker === "undefined") return;
   try {
     encoderWorker();
@@ -197,81 +735,532 @@ export function warmEncoder(): void {
  * the worker is terminated, dropped and re-warmed, and the promise rejects with
  * the signal's reason (an `AbortError` by default). Rejects with the encoder's own
  * error if it throws inside the worker, with the load error if the worker script
- * cannot start (e.g. its chunk is not in the offline cache), and with a plain
- * error where `Worker` does not exist at all (see the header: no inline fallback,
- * on purpose).
+ * cannot start (neither the blob snapshot nor the chunk could be run), and with
+ * a plain error where `Worker` does not exist at all (see the header: no inline
+ * fallback, on purpose).
+ *
+ * Every encode is bounded by a SILENCE deadline (#166). The worker posts a
+ * throttled progress heartbeat while it encodes; each message — progress, done or
+ * error — resets the window. A worker silent past `ENCODER_SILENCE_TIMEOUT_MS`
+ * while the page is VISIBLE is judged stalled and torn down through the SAME
+ * teardown an abort uses (terminate + re-warm), rejecting with an
+ * {@link EncoderStalledError} so the lane is released rather than held for the life
+ * of the page. Silence rather than elapsed time is what makes an iOS lock/
+ * background freeze safe: the freeze suspends page and worker together, so the
+ * timer is not judged while `document.hidden`, and a resume grants a fresh window.
+ *
+ * An encode on an UNPROVEN blob-built worker waits for its `ready` first, and a
+ * blob that never answers is stepped around and the job re-run — in THIS turn,
+ * with the PCM still in hand (George R1 P1). A caller never sees that happen.
+ *
+ * WHAT IT COSTS, for the callers that hold the lane across it —
+ * `finish-transcode.ts`'s sweep waits with a clip loaded, and Share Book holds
+ * it across every chapter (George R4 P3-4). The bound is
+ * `SNAPSHOT_MUTE_STRIKES × ENCODER_READY_TIMEOUT_MS`, six seconds today, and it
+ * is per PAGE rather than per call: strikes never reset, so the page that finds
+ * a mute blob pays those windows once between all its encodes. One `encodeMp3`
+ * can pay all of them, if it is the call that finds it. A proven blob, a
+ * chunk-built worker, and every encode after the snapshot is written off wait
+ * for nothing at all.
+ *
+ * And a silent window is not a verdict: the handle is kept and re-armed while
+ * the strikes last, because a blob may be slow rather than mute, and the
+ * fallback after them is the chunk URL only because by then there is no
+ * snapshot left to prefer.
  */
-function encodeInWorker(
+async function encodeInWorker(
   samples: Int16Array,
   signal?: AbortSignal
 ): Promise<Uint8Array<ArrayBuffer>> {
+  if (signal?.aborted) throw abortReason(signal);
+  if (typeof Worker === "undefined") {
+    // A phone with no `Worker` cannot encode, ever. Counted like any other
+    // encode failure rather than special-cased: three attempts and the shelf
+    // says the phone cannot make recordings smaller, which is exactly true.
+    noteEncodeFailed();
+    throw new EncoderFailedError(
+      "This browser cannot encode MP3: no Web Worker support"
+    );
+  }
+
+  let worker = obtainWorker();
+  // #192's HANDSHAKE, and the reason a bad snapshot costs nobody an encode.
+  //
+  // Only an unproven blob waits, so a chunk-built worker never pays this. What
+  // it buys is the ORDER: the blob is judged before `postMessage` transfers a
+  // chapter's PCM into it, so a snapshot that turns out not to run is stepped
+  // around and THIS job simply runs on the next worker. Before the handshake the
+  // first encode on a bad blob was the job that died for it — a failed Share, or
+  // a sweep segment recorded as failed — and the fallback only arrived for
+  // whoever came next (George R1 P1).
+  //
+  // A TIMEOUT KEEPS THE HANDLE; ONLY THE LAST STRIKE THROWS IT AWAY
+  // (George R3 P2, then George R4 P2 — the same lesson twice, one level apart).
+  //
+  // The chunk URL is the one this whole PR exists because a translator's phone
+  // may no longer be able to fetch: `cleanupOutdatedCaches` deletes the hashed
+  // chunk when a new service worker activates, and the page that has lived
+  // across that deploy is exactly the page holding the snapshot. Falling back
+  // there on a timeout put the discovering job on the dead URL with its PCM
+  // already transferred — #192 re-opened, in the only environment the snapshot
+  // is for (R3). So a timeout must not reach for the chunk.
+  //
+  // But rebuilding from the snapshot instead was still wrong, for a reason that
+  // only shows up one level down (R4). `SNAPSHOT_MUTE_STRIKES` exists for the
+  // blob that is SLOW rather than mute — a WebView throttling the worker without
+  // setting `document.hidden`, a phone spending the window evaluating ~170 kB of
+  // lamejs — and `dropEncoderWorker` TERMINATES. Two windows spent on two fresh
+  // handles are two first windows, not a doubled budget: the replacement starts
+  // evaluating from zero and is killed at the same mark, so the constant bought
+  // nothing it claimed to. Strikes are about the BYTES, and the only way for
+  // them to add up is to leave the handle running and grant it another window.
+  //
+  // So: a timeout keeps the worker and re-arms. `error` and the synchronous
+  // `new Worker(blob)` throw still drop and rebuild immediately — those say this
+  // platform CANNOT run these bytes, which is a verdict silence never is. And
+  // the strike that reaches the limit is what clears `snapshotUrl`, so the
+  // rebuild after it is chunk-built and the loop ends.
+  //
+  // Bounded by construction, and bounded per PAGE rather than per call: strikes
+  // never reset, so a page pays at most `SNAPSHOT_MUTE_STRIKES` windows in total
+  // — up to two of them on one `encodeMp3` if that call is the one that finds a
+  // mute blob.
+  while (workerFromSnapshot && !snapshotProven && !workerReady) {
+    const outcome = await awaitWorkerReady(worker, signal);
+    if (workerReady) break;
+    if (outcome === "timeout") {
+      noteHandshakeTimeout();
+      // Still a snapshot? Then the strikes have not run out, and they are about
+      // this worker's bytes: let it keep evaluating and give it another window.
+      if (snapshotUrl) continue;
+    }
+    dropEncoderWorker();
+    // No argument, and that is the point: `workerScriptUrl` returns the snapshot
+    // while there is one and the chunk URL only once there is not.
+    worker = obtainWorker();
+  }
+  // The abort may have landed while we waited, and `ready` may have won the race
+  // to settle the handshake — in which case nothing rejected this job and the
+  // listener that would have is already detached (George R2 P3). Unchecked, the
+  // continuation posts a chapter's PCM and holds the single encoder lane until
+  // it finishes, long after the share menu closed.
+  //
+  // The check is deliberately NOT written here as well. It is the first
+  // statement of `runEncodeOnWorker`, and nothing but a synchronous call
+  // separates the two places — so a second copy is the same check written twice,
+  // shadowing the first and making neither one killable by mutation. It lives
+  // next to the `postMessage` it protects, where it also covers the path that
+  // never handshakes at all.
+  return runEncodeOnWorker(worker, samples, signal);
+}
+
+/**
+ * The shared worker, or an {@link EncoderFailedError} — the preamble every
+ * encode shares.
+ *
+ * `new Worker` rarely throws synchronously (a SecurityError, say), and
+ * `encoderWorker` already retries such a throw once on the chunk URL when the
+ * first attempt was the blob's. Reaching the `catch` means BOTH failed. An async
+ * load failure is NOT this path — it arrives as an `error` event, handled by the
+ * durable listener (which drops the handle) and the job's `onerror` (which
+ * rejects it).
+ */
+function obtainWorker(): Worker {
+  try {
+    return encoderWorker();
+  } catch (cause) {
+    dropEncoderWorker();
+    noteEncodeFailed();
+    throw new EncoderFailedError(
+      `The MP3 encoder worker could not be created: ${messageOf(cause)}`,
+      { cause }
+    );
+  }
+}
+
+/** How `awaitWorkerReady` ended. `ready` covers any message, not just `ready`. */
+type HandshakeOutcome = "ready" | "error" | "timeout";
+
+/**
+ * Wait until `worker` has answered ANYTHING, errored, or stayed silent for a
+ * VISIBLE `ENCODER_READY_TIMEOUT_MS` (#192). Rejects only on abort.
+ *
+ * The caller also reads `workerReady`, which the durable message listener owns,
+ * so a message landing in the gap between this resolving and the caller looking
+ * is still counted. A worker that errors has already been discarded and dropped
+ * by the durable `error` listener before this returns.
+ *
+ * VISIBLE is the whole of George R2 P2. The first cut was a bare
+ * `setTimeout(ENCODER_READY_TIMEOUT_MS)`, in a module that contains `onStall`
+ * precisely because a bare timeout cannot tell a dead worker from a frozen one.
+ * `ready` is posted at the FOOT of `mp3.worker.ts`, so in a production build the
+ * whole lamejs IIFE has to evaluate first — and the moment this window is most
+ * likely to be open is the worst possible one: the launch sweep starts an encode
+ * on the blob worker that a cancelled Share just re-warmed, which is exactly
+ * when a translator puts the phone down. An iOS freeze there would have been
+ * read as a mute blob.
+ *
+ * So the three guards are `onStall`'s, for the same reasons: never judge while
+ * hidden, grant one fresh window after a possible freeze, and re-arm for the
+ * remainder rather than trip early.
+ */
+function awaitWorkerReady(
+  worker: Worker,
+  signal: AbortSignal | undefined
+): Promise<HandshakeOutcome> {
   return new Promise((resolve, reject) => {
+    // ASK, do not only listen (George R4 P3-3, the same class as R2 P3 one
+    // function up). An abort that has already fired is never delivered again,
+    // and the loop above re-enters this function after a timeout — by which
+    // point `detach` has removed the previous window's abort listener. A signal
+    // that fired in that gap has nothing left listening for it, and the job
+    // would wait out another whole window for a share whose menu is closed.
     if (signal?.aborted) {
       reject(abortReason(signal));
       return;
     }
-    if (typeof Worker === "undefined") {
-      reject(
-        new Error("This browser cannot encode MP3: no Web Worker support")
-      );
+    if (workerReady) {
+      resolve("ready");
       return;
     }
-    let worker: Worker;
-    try {
-      worker = encoderWorker();
-    } catch (cause) {
-      // `new Worker` rarely throws synchronously (a SecurityError, say). An async
-      // load failure is NOT this path — it arrives as an `error` event, handled
-      // by the durable listener (which drops the handle) and this job's `onerror`
-      // below (which rejects it).
-      dropEncoderWorker();
-      reject(cause);
+    let done = false;
+    // When this window began. Reset whenever a fresh one is granted.
+    let waitingSince = Date.now();
+    // Seeded from the CURRENT state, like the stall timer's: a handshake that
+    // begins while the page is already hidden gets no hide transition, so
+    // without the seed the latch would stay false and a resume could trip it.
+    let mightHaveFrozen = pageHidden();
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (ms: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(onDeadline, ms);
+    };
+    const stopVisibility = subscribeVisibility(() => {
+      if (pageHidden()) {
+        mightHaveFrozen = true;
+      } else {
+        mightHaveFrozen = false;
+        waitingSince = Date.now();
+      }
+    });
+    const detach = (outcome: HandshakeOutcome) => {
+      done = true;
+      clearTimeout(timer);
+      stopVisibility();
+      worker.removeEventListener("message", onAnswered);
+      worker.removeEventListener("error", onErrored);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(outcome);
+    };
+    function onAnswered(): void {
+      if (done) return;
+      detach("ready");
+    }
+    function onErrored(): void {
+      if (done) return;
+      detach("error");
+    }
+    function onDeadline(): void {
+      if (done) return;
+      // A hidden page cannot be judged — its worker is frozen or throttled with
+      // it — so never trip while hidden; re-arm and wait for the resume.
+      if (pageHidden()) {
+        arm(ENCODER_READY_TIMEOUT_MS);
+        return;
+      }
+      // Resumed after a possible freeze: the elapsed silence spans a suspension
+      // we cannot measure, so grant a fresh window rather than trust it — even
+      // when this overdue timer beat the `visibilitychange` handler to the
+      // resume. One fresh window per freeze.
+      if (mightHaveFrozen) {
+        mightHaveFrozen = false;
+        waitingSince = Date.now();
+        arm(ENCODER_READY_TIMEOUT_MS);
+        return;
+      }
+      const waited = Date.now() - waitingSince;
+      if (waited < ENCODER_READY_TIMEOUT_MS) {
+        arm(ENCODER_READY_TIMEOUT_MS - waited);
+        return;
+      }
+      detach("timeout");
+    }
+    function onAbort(): void {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      stopVisibility();
+      worker.removeEventListener("message", onAnswered);
+      worker.removeEventListener("error", onErrored);
+      reject(abortReason(signal!));
+    }
+    worker.addEventListener("message", onAnswered);
+    worker.addEventListener("error", onErrored);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    arm(ENCODER_READY_TIMEOUT_MS);
+  });
+}
+
+/** Run one encode on `worker`, with the silence deadline armed (#166). */
+function runEncodeOnWorker(
+  worker: Worker,
+  samples: Int16Array,
+  signal?: AbortSignal
+): Promise<Uint8Array<ArrayBuffer>> {
+  return new Promise((resolve, reject) => {
+    // An abort that ALREADY fired is not delivered again, and everything below
+    // listens rather than asks (George R2 P3). This function is reached a
+    // handshake later than the caller's own entry check, so the state can have
+    // changed underneath it — and the cost of not asking is a chapter's PCM
+    // posted into a worker for a share whose menu is already closed, holding the
+    // app's single encoder lane for the length of that encode.
+    if (signal?.aborted) {
+      reject(abortReason(signal));
       return;
     }
-    // Detach THIS job's handlers on settle, leaving the worker warm for reuse.
-    // Dropping a dead worker is the durable `error` listener's job (see
-    // `encoderWorker`); an abort drops and re-warms it (below).
+    // The silence heartbeat (#166). `lastMessageAt` is the last sign of life from
+    // the worker; the timer measures how long it has been quiet, NOT how long the
+    // encode has run — so a page freeze, which stops the worker too, cannot make
+    // a suspended encode look stalled.
+    let lastMessageAt = Date.now();
+    // Set the instant the page HIDES — before any freeze can suspend JS — and
+    // cleared only when a fresh window is granted (a resume, or a heartbeat). It
+    // makes the resume safe against event ORDERING (Frank R2 P2): an overdue timer
+    // that runs on restoration BEFORE the `visibilitychange` handler would see
+    // `document.hidden` already false and a stale `lastMessageAt`, and wrongly
+    // trip. Because this latch was set at hide time, `onStall` grants a fresh
+    // window instead of trusting the un-measurable elapsed silence, whichever of
+    // the two runs first. SEEDED from the current state: an encode that begins
+    // while the page is ALREADY hidden gets no hide transition, so the latch would
+    // otherwise stay false and the same resume race would trip it (Frank R2 P2 #2).
+    let mightHaveFrozen = pageHidden();
+    let stallTimer: ReturnType<typeof setTimeout>;
+    /**
+     * This job is over — resolved, rejected, aborted or torn down.
+     *
+     * `clearTimeout` cannot un-queue a callback the platform has ALREADY
+     * dispatched, so a stall timer that came due in the same turn as `done`
+     * still runs after `release()`. Without this flag it read a stale
+     * `lastMessageAt`, judged the finished encode stalled, and tore down the
+     * shared worker that the NEXT encode was by then using — losing a whole
+     * Share Book, which runs every chapter through one `withEncoder` turn
+     * (George R3 P2). Every callback below is a no-op once it is set, and
+     * `armStall` refuses to arm, so a settled job owns nothing.
+     */
+    let settled = false;
+    const armStall = (ms: number) => {
+      if (settled) return;
+      // Clear first: every arm REPLACES the pending window rather than adding
+      // a second timer, which is what lets a heartbeat reset the deadline.
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(onStall, ms);
+    };
+    // Both directions: hiding arms the freeze latch (before suspension), showing
+    // grants a fresh window. (visibilitychange is DOM — hooks/.)
+    const stopVisibility = subscribeVisibility(() => {
+      if (pageHidden()) {
+        mightHaveFrozen = true;
+      } else {
+        mightHaveFrozen = false;
+        lastMessageAt = Date.now();
+      }
+    });
+
+    // Detach THIS job's handlers and stop its heartbeat on settle, leaving the
+    // worker warm for reuse. Dropping a dead worker is the durable `error`
+    // listener's job (see `encoderWorker`); an abort and a stall drop + re-warm.
     const release = () => {
+      settled = true;
+      clearTimeout(stallTimer);
+      stopVisibility();
       signal?.removeEventListener("abort", onAbort);
       worker.onmessage = null;
       worker.onerror = null;
     };
-    const onAbort = () => {
-      // Stop the in-flight encode NOW — only terminate can — then re-warm, so a
-      // cancelled share does not leave the next encode depending on a chunk URL a
-      // service-worker update may have purged (R2).
+    // An abort and a stall are the SAME recovery: stop the in-flight encode NOW
+    // (only terminate can) and re-warm. Only the rejection reason differs.
+    const teardownAndRecover = () => {
       release();
-      dropEncoderWorker();
-      warmEncoder();
+      recoverEncoderWorker();
+    };
+    const onAbort = () => {
+      // Already finished: an abort that lands after the result is not this
+      // job's to act on, and tearing down here would hit a later job's worker.
+      if (settled) return;
+      teardownAndRecover();
       reject(abortReason(signal!));
     };
+    function onStall(): void {
+      // Dispatched before this job settled, running after it. Nothing to judge
+      // and, above all, nothing to terminate (George R3 P2).
+      if (settled) return;
+      // A hidden page cannot be judged — its worker is frozen too — so never trip
+      // while hidden; re-arm and wait for the resume (which resets the window).
+      if (pageHidden()) {
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // Resumed after a possible freeze: the elapsed silence spans a suspension
+      // we cannot measure, so grant a fresh window rather than trust it — even
+      // when this overdue timer beat the `visibilitychange` handler to the resume
+      // (Frank R2 P2). One fresh window per freeze; a worker still silent after it
+      // trips on the next pass.
+      if (mightHaveFrozen) {
+        mightHaveFrozen = false;
+        lastMessageAt = Date.now();
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // Late but not yet silent enough (a heartbeat landed just before): re-arm
+      // for the remainder rather than trip.
+      const silence = Date.now() - lastMessageAt;
+      if (silence < ENCODER_SILENCE_TIMEOUT_MS) {
+        armStall(ENCODER_SILENCE_TIMEOUT_MS - silence);
+        return;
+      }
+      // Silent past the window while visible: the worker has stopped. Recover it
+      // the same way an abort does, then reject. The recovery is GUARDED so a
+      // terminate that itself throws still lets us reject and release the lane —
+      // never a hung lane (P3b) — with the failure logged to a channel rather than
+      // swallowed.
+      // A stall here is treated as a real one, with no branch for "the blob
+      // snapshot is bad" — and that is a narrower claim than it looks, so it is
+      // worth writing down exactly (George R1 P2-4, corrected by George R3 P3).
+      //
+      // What the handshake removed is the UNPROVEN blob's first job. An unproven
+      // blob could be handed a chapter's PCM, go silent, and reject as
+      // `EncoderStalledError` fifteen seconds later — which the Finished sweep
+      // reads as a wedged worker: it names the clip poison
+      // (`finish-transcode.ts`), spends its one drain pass and ends the run, and
+      // the health store latches `failing` past the three-strike threshold. A
+      // false "this phone cannot make recordings smaller", while a working
+      // worker was one construction away. `encodeInWorker` now judges the blob
+      // before any PCM is transferred, so that job cannot exist.
+      //
+      // What it does NOT remove is a mute worker built from a PROVEN snapshot.
+      // Proof is about the bytes, not about this handle: once the blob has
+      // answered once, every later construction skips the handshake, so an OOM
+      // that drops the handle under memory pressure can be replaced by one that
+      // never answers either — and this function will see that as a stall,
+      // because on the evidence available here it IS one, indistinguishable from
+      // the same worker dying mid-encode. The sweep will treat it the same way.
+      // `tests/mp3-codec.test.ts`'s "still reports a real stall on a PROVEN blob
+      // as a stall" pins exactly that, and it is a residual of the #166 design,
+      // not something the snapshot introduced: a chunk-built worker in the same
+      // state gets the same verdict.
+      try {
+        teardownAndRecover();
+      } catch (recoverError) {
+        // To the app's ONE sink, not the console (George R1 P3-5): sweep
+        // failures were moved there for #167/#188, and this would otherwise be
+        // the last encoder-adjacent failure that never reaches the #205 funnel.
+        reportFailure(recoverError, "encoder-recover");
+      }
+      noteEncoderStalled();
+      reject(new EncoderStalledError(ENCODER_SILENCE_TIMEOUT_MS));
+    }
     signal?.addEventListener("abort", onAbort, { once: true });
 
     worker.onmessage = (event: MessageEvent<EncodeResponse>) => {
-      release();
+      if (settled) return;
+      // Proof that the script runs is NOT recorded here — the durable `message`
+      // listener in `encoderWorker` owns it, so a `ready` that lands while the
+      // worker is idle counts too.
       const response = event.data;
-      if (response.kind === "done") resolve(new Uint8Array(response.mp3));
-      else reject(new Error(`MP3 encoding failed: ${response.message}`));
+      // `ready` belongs to the worker, not to this job: it says the script ran
+      // and nothing about the encode. Treated exactly like a heartbeat — reset
+      // the window and keep waiting — because a `ready` from a worker rebuilt
+      // inside this very job can arrive after the handlers below are attached.
+      if (response.kind === "ready") {
+        lastMessageAt = Date.now();
+        if (!pageHidden()) mightHaveFrozen = false;
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      // A progress heartbeat is a sign of life, not a result: reset the silence
+      // window and keep waiting for done/error. The freeze latch is cleared
+      // only while the page is VISIBLE — a beat then means the worker is running
+      // now. A beat delivered while HIDDEN (queued just before an iOS freeze;
+      // Android keeping the worker briefly alive) says nothing about the
+      // suspension that may still follow it, and clearing the latch there would
+      // let the overdue timer trip on the resume-order race the latch exists to
+      // close (George R1 F1). The hide handler set it; only a visible resume,
+      // or `onStall` granting its one fresh window, may drop it.
+      if (response.kind === "progress") {
+        lastMessageAt = Date.now();
+        if (!pageHidden()) mightHaveFrozen = false;
+        // RESET the window rather than leave the old timer running. Without
+        // this the deadline fired on a fixed ~15 s grid for the whole encode
+        // and re-armed for the remainder — the right verdict, but a live timer
+        // racing `done` over and over. Re-arming means a progressing encode
+        // never reaches `onStall`, so only the final window can race at all.
+        armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        return;
+      }
+      release();
+      if (response.kind === "done") {
+        noteEncodeSucceeded();
+        resolve(new Uint8Array(response.mp3));
+      } else {
+        noteEncodeFailed();
+        reject(
+          new EncoderFailedError(`MP3 encoding failed: ${response.message}`)
+        );
+      }
     };
     worker.onerror = (event) => {
+      // A worker error after this job settled belongs to whoever owns the
+      // worker now; the durable listener drops a dead handle either way.
+      if (settled) return;
       // Reject this in-flight job; the durable listener drops the dead worker.
       release();
+      // A worker that dies IS the encoder failing — a script that will not load,
+      // a crash mid-encode — so it counts like an encode that threw.
+      noteEncodeFailed();
       // `ErrorEvent.error` is the thrown value when the script threw; a script
-      // that failed to load has only a message (often empty), so say so.
+      // that failed to load has only a message (often empty), so say so. Either
+      // way the rejection is TYPED as the encoder's, with the original kept as
+      // `cause` and its words kept in the message (Frank R4 P2).
+      const thrown: unknown = event.error;
       reject(
-        event.error instanceof Error
-          ? event.error
-          : new Error(event.message || "The MP3 encoder worker failed to start")
+        new EncoderFailedError(
+          thrown instanceof Error
+            ? thrown.message
+            : event.message || "The MP3 encoder worker failed to start",
+          thrown instanceof Error ? { cause: thrown } : undefined
+        )
       );
     };
+
+    armStall(ENCODER_SILENCE_TIMEOUT_MS);
 
     const request: EncodeRequest = {
       buffer: samples.buffer as ArrayBuffer,
       byteOffset: samples.byteOffset,
       length: samples.length,
     };
-    worker.postMessage(request, [request.buffer]);
+    try {
+      worker.postMessage(request, [request.buffer]);
+    } catch (cause) {
+      // A synchronous `postMessage` failure (a detached buffer, an
+      // InvalidStateError) rejects this promise — but the executor throw would
+      // NOT unwind the timer and listeners armed just above. Left armed, the
+      // stall timer fires ~15 s later and terminates whatever worker is current
+      // by THEN — an unrelated encode's (Frank R2 P2). Release this job first,
+      // then reject. The worker itself is left warm: the message failed, not the
+      // worker.
+      //
+      // Deliberately NOT counted against the encoder's health: a detached buffer
+      // or an `InvalidStateError` posting the request is this caller handing over
+      // something it should not have, and the encoder never saw it.
+      release();
+      reject(cause);
+    }
   });
+}
+
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function abortReason(signal: AbortSignal): unknown {

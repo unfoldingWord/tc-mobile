@@ -4,6 +4,7 @@ import {
   METER_FLOOR_DBFS,
   METER_GREEN_MAX,
   METER_YELLOW_MAX,
+  meterReadable,
   meterZone,
   rmsLevel,
   toDisplayLevel,
@@ -117,6 +118,30 @@ describe("meterZone", () => {
     expect(meterZone(0.5)).toBe("green");
     expect(meterZone(0.8)).toBe("yellow");
     expect(meterZone(0.95)).toBe("red");
+  });
+});
+
+describe("meterReadable", () => {
+  it("trusts a running context", () => {
+    expect(meterReadable("running")).toBe(true);
+  });
+
+  it("does NOT trust a suspended context — reads zeros, not a dead mic (#76)", () => {
+    // The regression this guards: a mid-take iOS backgrounding leaves the shared
+    // context "suspended", the analyser reads zeros, and an empty strip is read
+    // as a dead microphone. The meter must show unavailable instead.
+    expect(meterReadable("suspended")).toBe(false);
+  });
+
+  it("does NOT trust an interrupted context — WebKit's fourth state (#76)", () => {
+    expect(meterReadable("interrupted")).toBe(false);
+  });
+
+  it("does NOT trust a closed context — stricter than contextNeedsResume", () => {
+    // contextNeedsResume("closed") is false (resume() would reject), but a closed
+    // context is certainly not a readable meter source. The two predicates
+    // deliberately diverge here.
+    expect(meterReadable("closed")).toBe(false);
   });
 });
 

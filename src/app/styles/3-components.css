@@ -19,11 +19,25 @@
     --c-gap-blocks: var(--p-space-6);
     --c-gap-sections: var(--p-space-8);
 
-    /* Touch targets never go below 44px. */
+    /* Touch targets never go below 44px — with one standing exception, named
+       here rather than left as a claim the tokens contradict (George R5 P3):
+       `--c-control-sm` is 40px and is what `.control--quiet` uses, which is
+       every control in the recorder's edit toolbar. That predates the audition
+       Play (#284), which inherited it as a sixth 40px control and wrote the
+       40px arithmetic into the toolbar budget below. Whether that row should be
+       44px — and what then gives at 320px — is a design call, tracked in #362. */
     --c-control-sm: 40px;
     --c-control-md: 44px;
     --c-control-lg: 52px;
     --c-control-xl: 68px;
+
+    /* The vertical cost of the recorder's reserved `.recorder-paste` row
+       (#414 R3 P3) — the one place this is computed, so `.recorder-paste`'s
+       own `min-height` below and the edit-mode canvas shrink
+       (`recorder.tsx`, read via `getComputedStyle`) cannot drift apart if
+       `--c-control-md` or `--p-space-2` ever changes (the #362 40→44
+       question already open in this file is exactly that kind of change). */
+    --c-recorder-paste-row: calc(var(--c-control-md) + var(--p-space-2));
 
     --c-row-radius: var(--p-radius-lg);
     /* The disabled-row hint badge (#135). The badge's geometry is named once,
@@ -102,6 +116,15 @@
     /* No hover punch on an inert control: the base .control:hover brightness
        would otherwise still brighten a disabled button (George R1 P2). */
     filter: none;
+    /* The BASE dim, so the plain `default` variant (#315's bottom-bar Edit
+       control — the first `disabled` use of it; `name-edit.tsx`'s only
+       carries `busy`) reads as inert rather than keeping its enabled
+       background and ink with only a cursor change a touchscreen cannot
+       show (Frank, #403). Equal specificity to the variant-specific rules
+       below, so a later, more specific opacity for `--quiet`/`--record`/
+       `--play`/`--primary` still wins by source order — this is only ever
+       the value a variant does not override. */
+    opacity: 0.4;
   }
   /* Monochrome quiet glyphs (select/undo/cut): saturate() barely moves an
      already-grey glyph, so dim to read as inactive. Precedent: the row
@@ -131,6 +154,28 @@
   .control--primary[aria-disabled="true"] {
     filter: saturate(0.12);
     opacity: 0.55;
+  }
+  /* A `busy` control (#137) never goes natively `disabled` and never picks up
+     the `aria-disabled` rules above — it must stay focusable and keep reading
+     as live, not inert (an AT/switch user mid-retry is not "blocked", they are
+     "waiting"). Until now `aria-busy` painted NOTHING, so it read as idle for
+     the whole write (#383). The spin is scoped to the glyph itself, not the
+     button, so the control's box size never moves (#164, #351) — the caller's
+     icon swap (`control-affordance.ts`, e.g. the retry glyph) does the shape
+     half, this does the motion half. The second `@keyframes` animation in the
+     app, alongside `rec-pulse` below — both reduced-motion-guarded. */
+  .control[aria-busy="true"] svg {
+    animation: control-spin 900ms linear infinite;
+  }
+  @keyframes control-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .control[aria-busy="true"] svg {
+      animation: none;
+    }
   }
 
   .control--record {
@@ -232,6 +277,7 @@
 @layer components {
   @media (prefers-reduced-motion: reduce) {
     .control,
+    .paste-marker,
     .row {
       transition: none;
     }
@@ -309,11 +355,58 @@
     height: 100%;
     background: var(--s-surface);
     border-left: 1px solid var(--s-edge);
-    padding: var(--p-space-5) var(--p-space-4);
+    /* A full-height fixed overlay (`.menu-scrim` is `position: fixed; inset: 0`)
+       escapes the body's `env(safe-area-inset-*)` padding, so this drawer paints
+       under the status-bar clock and over the home indicator. Restore all four
+       insets — the same four-sided contract `body` carries — not just top/bottom:
+       the drawer docks flush right (`.menu-scrim` justify-flex-end) with Close in
+       the top-right, so in landscape with the notch on the right the right inset
+       (~47-59px) would otherwise bury the Close target. Portrait left/right insets
+       are 0, so this is a no-op on the reported clock overlap. */
+    padding: calc(var(--p-space-5) + env(safe-area-inset-top))
+      calc(var(--p-space-4) + env(safe-area-inset-right))
+      calc(var(--p-space-5) + env(safe-area-inset-bottom))
+      calc(var(--p-space-4) + env(safe-area-inset-left));
     display: flex;
     flex-direction: column;
     gap: var(--c-gap-items);
     overflow-y: auto;
+  }
+
+  /* --- inline name edit (#264) ------------------------------------------- */
+  /* The rename field + its commit control, shown inside a ≡ menu. The input
+     sits on the raised surface with an edged outline so it reads as a fillable
+     field against the menu panel, and gains the focus ring every control uses. */
+  .name-edit {
+    display: flex;
+    align-items: center;
+    gap: var(--c-gap-parts);
+  }
+  .name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    background: var(--s-raised);
+    color: var(--s-ink);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-md);
+    font-family: inherit;
+    /* 16px, not --p-text-md (13px): iOS Safari auto-zooms a focused <input>
+       under 16px and ignores index.html's user-scalable=no for it, so a smaller
+       field zooms the sheet on focus and does not reset cleanly (G5). This is the
+       app's first text field, so the viewport policy never had to coexist with
+       one. No token is exactly 16px (--p-text-lg is 21px, too large for a field),
+       so the floor is set here on the input itself. */
+    font-size: 16px;
+  }
+  .name-input::placeholder {
+    color: var(--s-ink-faint);
+  }
+  .name-input:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+    border-color: var(--s-focus);
   }
 
   /* --- the erase confirm dialog (B6) ------------------------------------- */
@@ -373,11 +466,21 @@
     display: flex;
     flex-direction: column;
     gap: var(--c-gap-items);
-    padding: var(--p-space-4) var(--p-space-3);
+    /* `.recorder-scrim` is `position: fixed; inset: 0`, so it covers the whole
+       viewport and does not inherit the body's `env(safe-area-inset-*)` padding.
+       Without re-adding the top inset here the header (Back, ≡) lands under the
+       status-bar clock and cannot be tapped; the bottom inset clears the home
+       indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
+    padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
+      calc(var(--p-space-4) + env(safe-area-inset-bottom));
   }
-  /* The waveform stage. `position: relative` anchors the recording indicator;
-     the centerline itself is drawn on the canvas so it stays pixel-aligned
-     with the bars at any zoom. */
+  /* The waveform stage. `position: relative` anchors the recording indicator
+     and every overlay the recorder lays over the canvas — the centerline
+     included: since #415 the line is a DOM element in `recorder.tsx`, not a bar
+     painted on the canvas, because during playback the canvas is a strip that
+     TRANSLATES under it and a painted line would travel with it. `overflow:
+     hidden` here is what clips that strip, which is up to five stage widths
+     wide. */
   .recorder-stage {
     position: relative;
     display: flex;
@@ -387,15 +490,89 @@
        CENTER_FRACTION=0.5 line off the stage's true centre. */
     flex-direction: column;
     align-items: center;
+    /* `safe center` (George R3 P2): plain `center` overflows toward BOTH
+       edges equally when the column is taller than the stage, so on a short
+       stage `overflow: hidden` clips the same amount off the top as the
+       bottom — and the reserved paste row, first in DOM order, is what sits
+       in that top slice. `safe` falls back to `start` alignment only once
+       the group no longer fits, which keeps the paste row (and its sole
+       `onPaste` entry point) inside the visible box and pushes the overflow
+       onto Cut instead, which readable/hittable is nice-to-have but not the
+       only way to finish an edit. A fitting group (the overwhelming case)
+       centers exactly as before — `safe` only changes behaviour once the
+       column already does not fit.
+
+       That last clause used to be false (George R7 P2-1, round 8, measured
+       with a real browser layout, not argued): `.recorder-canvas` carries
+       the `overflow-hidden` UTILITY class, and CSS Flexbox §4.5 gives a
+       flex item with `overflow` other than `visible` an AUTOMATIC MINIMUM
+       SIZE of 0 — not its content size. `.recorder-paste` and
+       `.recorder-cut` cannot shrink below their own content, but nothing
+       stopped `.recorder-canvas` shrinking all the way to 0 with default
+       `flex-shrink: 1`, so ordinary flex-shrink absorbed the ENTIRE deficit
+       into the canvas alone, silently, long before this column was ever
+       tall enough to overflow its container and make `safe center` do
+       anything. Measured: a 151px stage shrank the canvas wrapper to 55px
+       (its own `<canvas>` stayed a fixed 150px box, so it was CLIPPED, not
+       redrawn — the amplitude midline ended up 20px below the visible box)
+       while the group and the stage summed to exactly 151px each — no
+       overflow, so `safe center` above was a complete no-op. The activation
+       boundary this used to leave was the sum of `.recorder-paste`'s and
+       `.recorder-cut`'s own floors (96px in this file's current button
+       sizes) rather than the group's full ~246px intrinsic height — nearly
+       the entire intended range did nothing. `flex-shrink: 0` below, on all
+       three stage children, is what makes "the column already does not
+       fit" a real, reachable state instead of one flex-shrink quietly
+       prevented: with it, a short stage genuinely overflows and THIS rule's
+       `safe center` clips Cut, as this comment has claimed since round 3.
+
+       The base rule below is plain `center`, NOT `center` then `safe
+       center` in the same declaration block (George R4 P2-1's original fix,
+       then George R5's `dist/` finding on THAT fix, round 6): two
+       declarations of the same property in one rule is exactly the
+       redundancy Vite's default CSS minifier (esbuild) collapses, keeping
+       only the last — so the shipped build had `safe center` alone, with no
+       fallback at all for an engine that rejects it, silently reintroducing
+       the un-centered-fitting-stage regression P2-1 exists to prevent. A
+       minifier can drop a whole declaration it judges redundant; it does
+       not reach into a DIFFERENT rule to do the same collapse. The
+       `@supports` block below is what carries `safe center`, in its own
+       block, so this rule's plain `center` survives the build regardless of
+       what that block does. `tests/dist-css.test.ts` pins the shipped
+       output so this cannot regress silently again. */
     justify-content: center;
     min-height: 0;
     background: var(--s-surface);
     border-radius: var(--c-row-radius);
     overflow: hidden;
   }
+  /* Progressive enhancement for `.recorder-stage`'s `justify-content`
+     (George R4 P2-1, round 6): only an engine that understands flex
+     `<overflow-position>` (`safe`/`unsafe`) applies this block at all, so
+     there is no cross-engine ambiguity to resolve in the cascade — the base
+     rule's plain `center` above is this property's ONLY declaration for
+     every other engine, and can't be minified away since it isn't a
+     redundant repeat of anything in ITS OWN rule. */
+  @supports (justify-content: safe center) {
+    .recorder-stage {
+      justify-content: safe center;
+    }
+  }
   .recorder-canvas {
     position: relative;
     width: 100%;
+    /* `flex-shrink: 0` (George R7 P2-1, round 8): without this, `overflow:
+       hidden` above gives this item CSS Flexbox §4.5's automatic minimum
+       size of 0, so ordinary flex-shrink absorbed a short stage's ENTIRE
+       height deficit into this element alone — silently clipping the fixed-
+       height `<canvas>` inside it — before `.recorder-stage`'s `safe
+       center` (above) ever saw an actual overflow to react to. Pinning this
+       to 0 makes the column's height genuinely fixed, so a short stage
+       overflows for real and `safe center` does what its own comment
+       claims instead of nothing. `tests/dist-css.test.ts` pins this
+       surviving the build, the same way it already pins `safe center`
+       itself. */
+    flex-shrink: 0;
     /* A horizontal drag pans the waveform; let a vertical gesture do nothing
        here rather than fighting the pan. */
     touch-action: none;
@@ -438,23 +615,94 @@
     outline: 2px solid var(--s-focus);
     outline-offset: -2px;
   }
-  /* The paste marker rides the centerline when the clipboard is full. */
+  /* The paste row sits above the canvas — a normal flex item, not an overlay —
+     so the circular drop icon never covers the waveform band it used to hide
+     the target sample under (#414). `padding-bottom` mirrors `.recorder-cut`'s
+     `padding-top` below the canvas: same gap, opposite side.
+
+     `min-height` reserves the button's box even while the button itself is
+     unmounted (George R1 P2): `.recorder-stage` is a centered, clipping
+     column, so an in-flow row that comes and goes — rather than one that
+     stays the same size — recenters the group under it. Without this, the
+     canvas would visibly jump every time the clipboard toggles `canPaste`,
+     every Select toggle, and every no-selection audition once a cut has
+     filled the clipboard, which is exactly the "the stage moved under the
+     sound / under the band" failure `recorder-stage.ts` exists to prevent.
+     The value matches the button-present box exactly (border-box, via
+     Tailwind Preflight): `--c-control-md` content + this rule's own
+     `padding-bottom`, so reserving the row costs no extra height over what
+     mounting the button already costs — both now read from
+     `--c-recorder-paste-row` above (George R3 P3), the same token
+     `recorder.tsx`'s edit-mode canvas shrink reads via `getComputedStyle`,
+     so the two cannot drift apart if `--c-control-md` or `--p-space-2`
+     changes.
+
+     `flex-shrink: 0` (George R7 P2-1, round 8): `min-height` alone already
+     stops THIS item shrinking below it, but `.recorder-canvas` below has no
+     such floor — its `overflow: hidden` gives it an automatic minimum size
+     of 0 (CSS Flexbox §4.5), so it was the one absorbing a short stage's
+     entire deficit while this row's own reserved space stood still. Adding
+     `flex-shrink: 0` here too is belt-and-suspenders with that fix: it
+     keeps this row's behaviour explicit rather than relying on `min-height`
+     alone to imply it, and matches the same declaration on the other two
+     stage children so the three read as one deliberate policy, not one
+     real fix plus an accident. */
+  .recorder-paste {
+    min-height: var(--c-recorder-paste-row);
+    padding-bottom: var(--p-space-2);
+    flex-shrink: 0;
+  }
+  /* Sized to the 44px touch floor explicitly (#164/#362) rather than relying
+     on padding around the 26px glyph, which alone falls short of it.
+
+     States copied from `.control` rather than rendered through it (George
+     R3 P3): as an in-canvas overlay `.paste-marker` never needed hover/
+     active/focus states of its own — it is now a first-class sibling of Cut
+     in the stage column, and the file's own header says every interactive
+     part styles all of its states. `:focus-visible` uses an INWARD offset
+     like `.selection-handle` above, not `.control`'s outward one — this
+     button can sit at the very top edge of `.recorder-stage`'s
+     `overflow: hidden` box, and an outward ring would be the first thing
+     clipped. */
   .paste-marker {
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
     display: grid;
     place-items: center;
-    padding: var(--p-space-2);
+    width: var(--c-control-md);
+    height: var(--c-control-md);
     color: var(--s-voice);
     background: var(--s-raised);
     border: 1px solid var(--s-voice);
     border-radius: 999px;
+    cursor: pointer;
     pointer-events: auto;
+    transition:
+      filter var(--p-dur-base) var(--p-ease),
+      transform var(--p-dur-fast) var(--p-ease);
+  }
+  .paste-marker:hover {
+    filter: brightness(1.12);
+  }
+  .paste-marker:active {
+    transform: translateY(1px);
+  }
+  .paste-marker:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: -2px;
   }
   .recorder-cut {
     padding-top: var(--p-space-2);
     color: var(--s-voice);
+    /* `flex-shrink: 0` (George R7 P2-1, round 8): this row's `min-height:
+       auto` (unset, and it is not `overflow: hidden`) already gives it an
+       automatic minimum size equal to its own content, so it could not
+       shrink below that anyway — but `.recorder-canvas` above COULD shrink
+       to 0, and did, absorbing the entire deficit invisibly on a short
+       stage instead of the whole column overflowing as `.recorder-stage`'s
+       `safe center` assumes. Explicit here for the same reason as
+       `.recorder-paste`'s: one deliberate policy across all three stage
+       children, not an accident of two different defaults happening to
+       agree. */
+    flex-shrink: 0;
   }
   .recorder-status {
     position: absolute;
@@ -466,7 +714,15 @@
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
   }
-  /* Record mode: the centered hero pair (Record + Play). */
+  /* Record mode: the centered hero trio (Record + Play + Edit/select, #315).
+     Still named "pair" — the class predates the third control and nothing
+     else keys off the name; renaming is a pure churn diff. At 320px: 68 + 52
+     + 44 = 164px of controls plus 2 * 28px gaps = 220px, inside the row's
+     272px budget (320 less the sheet's two 8px flanks and the toolbar's own
+     16px each side — the SAME 272px the edit toolbar's own comment below
+     derives; an earlier draft of this comment said ~288px, which was simply
+     wrong arithmetic, George #403 R1 P3) — arithmetic, not observation; not
+     rendered at 320px. */
   .recorder-toolbar.pair {
     justify-content: center;
     gap: var(--c-gap-blocks);
@@ -484,9 +740,31 @@
     width: var(--c-control-lg);
     height: var(--c-control-lg);
   }
-  /* Edit mode: the spread editing toolbar. */
+  /* Edit mode: the spread editing toolbar.
+
+     Six controls now (#284 added the audition Play), and the row has to survive
+     a 320px phone — a width this sheet's own `.menu-panel` and `.confirm-panel`
+     already treat as real. The budget at 320px is 272px: 320 less the sheet's
+     two 8px flanks and the toolbar's two 16px. Six 40px quiet controls plus five
+     14px `--c-gap-items` came to 310px, so the row overflowed and, `nowrap`
+     being the default, the last control — the ≡ that is edit mode's ONLY path to
+     Erase — hung off the right edge (George R4 P2-2).
+
+     Two changes, both at this layer:
+     - `--c-gap-parts` (6px) instead of `--c-gap-items` (14px). Six controls and
+       five gaps is 270px, inside the 272px budget. `space-between` still does
+       the spreading at any comfortable width, so the token only sets the floor.
+     - `wrap`, so the failure mode can never again be a control off-screen. It
+       still bites in one case this PR did not create: an OPEN selection frame
+       makes Select `--c-control-xl` (68px), for 298px, which overflowed at 320px
+       with five controls too. That case now takes a second line instead of
+       hiding the ≡.
+
+     Arithmetic, not observation: this has NOT been rendered at 320px. */
   .recorder-toolbar.edit {
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--c-gap-parts);
   }
 
   /* The edit-mode marker + Done affordance (D2, #89), in the header-right slot.
@@ -571,10 +849,12 @@
   .vu-meter__fill[data-zone="red"] {
     background: var(--s-live);
   }
-  /* Meter unavailable: the level tap could not be wired on this device. A
-     hatched, dimmed track reads as "not working" rather than "no sound" — so a
-     permanently-empty strip is not mistaken for a dead microphone (Frank R-B6).
-     The fill stays empty. */
+  /* Meter unavailable: either the level tap could not be wired at open time (the
+     static "tap never wired" failure), or — per frame, mid-take — the shared
+     audio context went `suspended`/`interrupted` so the analyser reads zeros
+     (#76). A hatched, dimmed track reads as "not working" rather than "no sound"
+     — so an empty strip is not mistaken for a dead microphone (Frank R-B6). The
+     fill stays empty. */
   .vu-meter[data-state="unavailable"] {
     opacity: 0.55;
   }
@@ -646,10 +926,47 @@
     height: var(--c-control-md);
   }
 
-  /* The menu's Finished entry shows green while already finished. A standalone
-     class, not a `.row--finished` descendant: the menu is portalled to <body>,
-     outside the row, so inheritance cannot reach it. */
-  .control.is-done {
+  /* The "yes, this is so" mark, in one weight for both of the things that wear
+     it. A standalone class rather than a `.row--finished` descendant: the menu
+     is portalled to <body>, outside the row, so inheritance cannot reach it.
+
+     `.is-done` — the menu's Finished entry, green while already finished.
+     `.is-on`   — a two-state TOGGLE that is on: the edit toolbar's zoom (#91).
+                  The first external tester asked for exactly this consistency
+                  ("make the edit icon green for edit mode, just like the check
+                  icon turns green"). The recorder menu's level-meter toggle
+                  wore this mark too until #286 item 3 removed the control (the
+                  bars themselves stay, unconditional, in the record toolbar).
+
+     INK ONLY, and identical for both. An earlier draft gave `.is-on` a
+     `--s-done-quiet` wash as well, to survive on the toolbar — but the
+     since-removed level-meter toggle was ON BY DEFAULT, so every open of the
+     record menu painted a filled green chip next to the ink-only Finished
+     check, making the meaningful green the weaker of two in one dialog (George
+     R1 P3). A wash is also not available as a neutral alternative: `--s-raised`
+     and `--s-surface` are the same colour in the light theme, so a non-colour
+     "filled" mark is invisible there. Equal weight it is; Finished is told
+     apart by its check glyph, not by loudness.
+
+     Paints only — the box does NOT change size. A toggle that grows on tap
+     reflows the toolbar around it, and the control next to this one is already
+     the one the tester was unsure about. Applied on `aria-pressed="true"`, which
+     is `Control`'s `pressed` prop and nothing else.
+
+     Both sit after `.control--quiet:hover`, so at equal specificity they win the
+     colour back from it — including the sticky :hover an iOS Safari tap leaves
+     behind, right after the tap that turned the toggle on. */
+  .control.is-done,
+  .control.is-on {
+    color: var(--s-done);
+  }
+
+  /* Share's ready-to-send mark (#354): the SAME ink `is-done`/`is-on` wear,
+     on the check glyph `control-affordance.ts` already swaps in for `ready` —
+     not `pressed`/`is-on` itself, because a ready-to-send Control is not a
+     two-state toggle (there is nothing to press back off). A plain class, not
+     a variant, so it layers onto `.control--primary` without touching size. */
+  .control-ready {
     color: var(--s-done);
   }
 

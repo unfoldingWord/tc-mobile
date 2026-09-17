@@ -119,11 +119,139 @@ jobs:
       - name: Confirm the PWA artefacts were emitted
         # A build that silently stops producing a service worker or manifest
         # would leave the app installable-looking but not actually offline —
-        # the one property this project cannot lose.
+        # the one property this project cannot lose. `version.json` is checked
+        # here too (round-1 George G1): `scripts/check-deploy.mjs` and the
+        # whole "Confirming a deploy" runbook (AGENTS.md) depend on every real
+        # build emitting it, and nothing else was asserting that.
         run: |
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          test -f dist/version.json || { echo "::error::dist/version.json missing"; exit 1; }
+          node -e '
+            const fs = require("fs");
+            const v = JSON.parse(fs.readFileSync("dist/version.json", "utf8"));
+            if (typeof v.version !== "string" || typeof v.sha !== "string") {
+              console.error("::error::dist/version.json is missing a string version/sha field:", JSON.stringify(v));
+              process.exit(1);
+            }
+          '
           echo "PWA artefacts present."
+
+      - name: version.json stays out of the precache manifest
+        # tests/precache-manifest.test.ts's "never contains version.json"
+        # assertion reads dist/sw.js directly, but `npm run verify`/CI's
+        # Quality job runs tests BEFORE `npm run build` — no dist/ exists
+        # yet, so `describe.skipIf(!existsSync(SW))` skips it there (George,
+        # round 1, P3-3). This Build-job step is the only place that
+        # invariant is actually enforced end to end: version.json must stay
+        # outside `workbox.globPatterns` (vite.config.ts) so `check:deploy`'s
+        # fetch (and a browser's) always reaches the origin, never a
+        # service-worker-cached copy (see "Confirming a deploy" in
+        # AGENTS.md). `-F` (fixed string) matters here: the emitted
+        # `navigateFallbackDenylist` regex source contains the *escaped*
+        # substring `version\.json` (backslash then dot), which a literal
+        # search for `version.json` does not match — only an actual
+        # `url:"version.json"` precache-manifest entry would.
+        run: |
+          if grep -qF "version.json" dist/sw.js; then
+            echo "::error::dist/sw.js's precache manifest contains version.json — it must stay outside workbox.globPatterns in vite.config.ts so a deploy check (and a browser) always fetches it from the origin, never a cached copy. See tests/precache-manifest.test.ts and AGENTS.md, 'Confirming a deploy and rolling one back'."
+            exit 1
+          fi
+          echo "version.json absent from dist/sw.js's precache manifest."
+
+      - name: OBS thumbnails stay out of the precache manifest
+        # tests/precache-manifest.test.ts pins `workbox.globPatterns` in
+        # vite.config.ts, but a re-add via vite-plugin-pwa's `includeAssets`
+        # or `additionalManifestEntries` reaches the generated manifest
+        # without touching globPatterns at all, so that test would not see it
+        # (#219). This greps the actual build output instead: the source of
+        # truth for what a field install fetches. See ADR 0006 / #177 for why
+        # the thumbnails are reader-gated out of the precache today.
+        #
+        # This check is an UNCONDITIONAL ban on the substring, not a two-state
+        # reader-gated check like tests/precache-manifest.test.ts — bash has
+        # no cheap equivalent of that test's source scan for a reader. That is
+        # deliberate, not an oversight (#232 round-1 review, finding C2): it
+        # is a hard stop that WILL fail once a real reader lands (Template
+        # Library, #33) and `jpg` is legitimately restored to the precache.
+        # At that point this step itself is the third place to update or
+        # remove — alongside `tests/precache-manifest.test.ts`'s `INTENDED`
+        # and `vite.config.ts`'s `globPatterns` — not a bug to silently work
+        # around by loosening or deleting the grep without also updating the
+        # other two.
+        run: |
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — the thumbnails are reader-gated out of the precache (ADR 0006 / #177) until a screen reads them. If a reader has legitimately landed (e.g. the Template Library, #33), this is expected: update INTENDED in tests/precache-manifest.test.ts, globPatterns in vite.config.ts, AND this grep step in ci.yml together — this step is an unconditional ban and must change too, or every build after the restore fails here."
+            exit 1
+          fi
+          echo "obs/thumbs absent from dist/sw.js."
+
+      # tests/dist-css.test.ts and tests/precache-manifest.test.ts's
+      # `dist/sw.js`-reading block both read the actual build output, but the
+      # Quality job (above) runs `npm test` BEFORE this job's `npm run build`
+      # even exists, so their `describe.skipIf(build artifact missing)`
+      # guards skip both there, every run (Frank, round 6 on #414/#420, for
+      # dist-css; the same gap has applied to precache-manifest's `dist/sw.js`
+      # block since #436). This job produces the build but, until now, ran no
+      # tests against it at all — so a regression either test exists to catch
+      # could ship through a fully green CI with neither job ever evaluating
+      # either assertion.
+      #
+      # `REQUIRE_DIST_BUILD=1` turns each file's added "fails, not skips,
+      # when required to find a build and does not" case from a no-op into a
+      # real assertion — proving this step is a gate and not just another
+      # place these tests quietly skip: with a real `dist/` (the normal case,
+      # right after the build above) every test runs and passes; strip
+      # `dist/` first and this same invocation goes red instead of green,
+      # which is what makes it catch a Build job that silently stopped
+      # producing output, not just a Build job that never asked at all. Scoped
+      # to this one step — Quality and local `npm test`/`npm run verify` never
+      # set this var, so their existing skip-when-unbuilt behavior is
+      # unchanged.
+      - name: Build-artifact tests actually run here, not just skip
+        run: REQUIRE_DIST_BUILD=1 npm test -- tests/dist-css.test.ts tests/precache-manifest.test.ts
+
+      # The e2e smoke harness (#251) must never reach a shipped build. What
+      # keeps it out is `vite.config.ts`'s `build.rollupOptions.external`, not
+      # `main.tsx`'s `import.meta.env.MODE` guard — a runtime guard alone does
+      # not stop Rollup discovering a dynamic `import()` target. Both are one
+      # edit away from being loosened by someone who has not read either
+      # comment, and until now the exclusion was asserted only in prose
+      # (round-1 George G4). `grep -r` matching is the failure: found = leak.
+      #
+      # TWO tokens, because either one alone has a bypass (round-2 George G-2):
+      #
+      #   `e2e-harness` is the module id, and it survives a leak only as a
+      #   CHUNK FILENAME (`assets/e2e-harness-*.js`) — that is, only while the
+      #   dynamic `import()` keeps the harness in a chunk of its own. It is not
+      #   a runtime string inside `src/app/e2e-harness.ts`. Drop
+      #   `vite.config.ts`'s `external` marker AND make `main.tsx`'s import
+      #   static, and Rollup inlines the harness into the entry chunk: no such
+      #   filename anywhere, and this check alone reports "no leak" on a build
+      #   that shipped the harness.
+      #
+      #   `__e2e` is the property the harness assigns on `window`. A minifier
+      #   renames locals; it cannot rename a property accessed by name, so this
+      #   token follows the CODE rather than the chunk-splitting artefact, and
+      #   catches the inlined case the first token misses.
+      #
+      # Both are checked, and either match fails the step.
+      - name: Confirm the e2e harness did not leak into the build
+        run: |
+          set -euo pipefail
+          leaked=0
+          if grep -rl "e2e-harness" dist/; then
+            echo "::error::e2e harness chunk leaked into production dist/"
+            leaked=1
+          fi
+          if grep -rl "__e2e" dist/; then
+            echo "::error::e2e harness code (window.__e2e) leaked into production dist/"
+            leaked=1
+          fi
+          if [ "$leaked" -ne 0 ]; then
+            exit 1
+          fi
+          echo "No e2e harness in dist/."
 
       - name: Report bundle size
         run: |
@@ -142,3 +270,104 @@ jobs:
           name: build
           path: dist
           retention-days: 1
+
+  # Headless-Chromium smoke for the browser-only paths (#251): the real
+  # mp3.worker.ts round-trip, decodeAudioData of the worker's in-memory MP3
+  # output (not the IndexedDB clipData round-trip, which the Node/fake-indexeddb
+  # suite already covers), the service worker's atomic precache install, and a
+  # real two-tab IndexedDB blocked/versionchange — none of which the Node/vitest
+  # suite above can see by construction (lib/ is DOM-free on purpose). Gated to
+  # pull_request only, and only when the browser-boundary code it exercises
+  # actually changed, so a docs-only or components-only PR pays nothing for it.
+  browser-smoke:
+    name: Headless-Chromium Smoke
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: the paths check below diffs against the PR's merge
+      # base, which a shallow (default depth-1) checkout does not have.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # A plain `git diff`, not a third-party Action: every other action in
+      # this workflow is `actions/*`, pinned by SHA, and this repo has no
+      # third-party action to date. A two-line diff does the same job without
+      # adding one.
+      # The gate must cover everything the suite actually exercises, not just
+      # the hooks layer: the harness drives `src/lib/audio/` (mp3-align's
+      # `fitMp3Decode`, edit's `fitToFrames`, the lamejs encoder body) and
+      # `src/lib/storage/db.ts` (the real IndexedDB open the two-tab assertion
+      # depends on), and the suite's own files decide what it asserts at all.
+      # #236/#240 are the live example: they change `db.ts`'s blocked/
+      # versionchange behaviour — which flips this suite's expected outcome —
+      # and under the round-1 gate (`src/hooks/` or `vite.config.ts` only)
+      # they would not have run it (round-1 Frank C2).
+      #
+      # `src/app/main.tsx` is in the gate for the same reason and is easy to
+      # miss: it is the ONLY production loader of the harness (the
+      # `import.meta.env.MODE === "e2e"` dynamic `import()` at its foot). A PR
+      # that deletes or breaks just that branch changes no other gated path, so
+      # without this entry the gate reads `smoke=false`, Playwright never runs,
+      # and CI goes green while `window.__e2e` has silently stopped loading —
+      # every spec here would fail on the next PR that did trip the gate
+      # (round-2 Frank F2 / George G-3).
+      #
+      # `git diff` failing — a missing base SHA on a shallow checkout, say —
+      # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
+      # diff and a genuinely empty one both read as "no match", so the suite
+      # would silently skip and the run would look like a clean negative.
+      - name: Changed paths
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then
+            echo "::error::pull_request base SHA is empty; cannot compute changed paths"
+            exit 1
+          fi
+          # A separate assignment, so a non-zero `git diff` exits here under
+          # `set -e` instead of being swallowed by the `if` below. The `grep`
+          # then reads a here-string, not a pipe: no pipeline whose exit status
+          # could be confused with the match result.
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+            echo "smoke=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "smoke=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changed.outputs.smoke == 'true'
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        if: steps.changed.outputs.smoke == 'true'
+        run: npm ci
+
+      # A version-matched Chromium download — the standard approach on a
+      # fresh Actions runner. This is NOT how the smoke suite launches
+      # Chromium in the maintainers' sandboxed dev containers, which
+      # pre-install a Chromium outside npm's browser cache and pin
+      # `playwright.config.ts`'s `executablePath` to it instead; a runner has
+      # neither that path nor a pinned-version mismatch to work around.
+      - name: Install Playwright's Chromium
+        if: steps.changed.outputs.smoke == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Build (e2e) and run the smoke suite
+        if: steps.changed.outputs.smoke == 'true'
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.changed.outputs.smoke == 'true' && failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 5

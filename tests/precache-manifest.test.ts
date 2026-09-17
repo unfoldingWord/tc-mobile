@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -15,11 +15,16 @@ import { describe, expect, it } from "vitest";
 // pictures nothing draws, and Workbox's atomic install restarts on any one
 // failed fetch. This is a temporary, reader-gated exception (ADR 0006,
 // 2026-09-04 amendment), NOT a permanent ban and NOT a switch to
-// runtime-caching. When a screen reads `thumbUrl` (the Template Library, #33),
-// `jpg` must be RESTORED to `globPatterns` (and INTENDED below updated in the
-// same change, on purpose) — otherwise the tiles are precached nowhere, there
-// is no runtimeCaching, and a field install strands on broken images. The
-// reader-gated test below fails exactly that omission.
+// runtime-caching. When a screen reads OBS frame imagery — via `thumbUrl` or
+// a hand-built /obs/thumbs/ path (the Template Library, #33, is the expected
+// case) — `jpg` must be RESTORED to `globPatterns` (and INTENDED below
+// updated in the same change, on purpose) — otherwise the tiles are
+// precached nowhere, there is no runtimeCaching, and a field install strands
+// on broken images. The reader-gated test below fails exactly that omission.
+// #219 widened what counts as "reads" beyond the `thumbUrl` identifier — see
+// `OBS_IMAGERY_PATTERNS` below. (A `frame.image` CDN read is deliberately
+// NOT one of the matched patterns — see the comment there, #232 round-1
+// review, finding C1.)
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG = path.join(ROOT, "vite.config.ts");
 const SRC = path.join(ROOT, "src");
@@ -40,6 +45,35 @@ function globPatterns(): string[] {
   return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
 }
 
+// The `navigateFallbackDenylist` entry, lifted out of vite.config.ts as a live
+// RegExp rather than retyped here — a copy would pass while the config's own
+// pattern regressed, which is exactly the class of bug this pins.
+function navigateFallbackDenylist(): RegExp {
+  const source = readFileSync(CONFIG, "utf8");
+  const match = source.match(
+    /navigateFallbackDenylist:\s*\[\s*\/(.*?)\/[gimsuy]*\s*\]/
+  );
+  const body = match?.[1];
+  if (body === undefined)
+    throw new Error(
+      "could not find a single-entry navigateFallbackDenylist in vite.config.ts"
+    );
+  return new RegExp(body);
+}
+
+// The emitted service worker's precache manifest, when a build exists.
+// generateSW inlines it as `precacheAndRoute([{url:"...",revision:...},...])`.
+const SW = path.join(ROOT, "dist", "sw.js");
+
+function precachedUrls(): string[] {
+  const source = readFileSync(SW, "utf8");
+  const match = source.match(/precacheAndRoute\(\[(.*?)\],/s);
+  const body = match?.[1];
+  if (body === undefined)
+    throw new Error("could not find precacheAndRoute([...]) in dist/sw.js");
+  return [...body.matchAll(/url:"([^"]+)"/g)].map((m) => m[1] ?? "");
+}
+
 function tsFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -50,17 +84,48 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
-// A shipped module "reads" a thumbnail when it imports or calls `thumbUrl`.
-// A bare doc-comment mention (e.g. src/types/obs.ts) is not a reader, so match
-// an import of the symbol or a call `thumbUrl(` — not the identifier alone.
-function thumbUrlReaders(): string[] {
+// A shipped module "reads" OBS frame imagery — the thing the precache
+// decision actually turns on — two ways, neither of which requires going
+// through the `thumbUrl` symbol (#219):
+//
+// 1. Imports or calls `thumbUrl`. A bare doc-comment mention (e.g.
+//    src/types/obs.ts) is not a reader, so this matches an import of the
+//    symbol or a call `thumbUrl(` — not the identifier alone.
+// 2. Hand-builds the `/obs/thumbs/…` path itself instead of calling
+//    `thumbUrl` — the same bundled file, reached without the symbol the old
+//    check tracked.
+//
+// Deliberately NOT matched:
+//
+// - `frame.image` (matched, then dropped again — #232 round-1 review,
+//   finding C1). `ObsFrame.image` (src/types/obs.ts) is an *absolute*
+//   `cdn.door43.org` URL, a different URL space from the same-origin
+//   `/obs/thumbs/…` this guard actually controls. Workbox never intercepts a
+//   cross-origin CDN request, so restoring `jpg` to `globPatterns` would not
+//   serve a `frame.image` reader at all — it would just add ~2.5 MB / 598
+//   dead precache entries. A screen that reads `frame.image` needs a
+//   different remedy (use `thumbUrl` instead of the CDN URL), not this gate.
+//   The comment that previously justified matching it cited the pre-pivot
+//   recording view as precedent for that CDN path being real; that view is
+//   gone (removed in B2–B4, see README.md), so the precedent no longer
+//   exists in the tree.
+// - The door43.org CDN host as a bare string (dropped in an earlier QA
+//   round, `4c3ef0f`). That pattern is too wide — it fires on any comment,
+//   doc link, or unrelated fetch that happens to name the host, and a false
+//   positive here fails CI with "jpg must be restored" until 2.5 MB of
+//   thumbnails are added back.
+const OBS_IMAGERY_PATTERNS = [
+  /import[^;]*\bthumbUrl\b/,
+  /\bthumbUrl\s*\(/,
+  /\/obs\/thumbs\//,
+];
+
+function obsThumbnailReaders(): string[] {
   return tsFiles(SRC)
     .filter((file) => file !== CATALOG)
     .filter((file) => {
       const source = readFileSync(file, "utf8");
-      return (
-        /import[^;]*\bthumbUrl\b/.test(source) || /\bthumbUrl\s*\(/.test(source)
-      );
+      return OBS_IMAGERY_PATTERNS.some((pattern) => pattern.test(source));
     })
     .map((file) => path.relative(ROOT, file));
 }
@@ -75,29 +140,123 @@ describe("workbox precache globPatterns", () => {
   });
 });
 
+describe("navigateFallbackDenylist keeps /version.json off the SPA shell", () => {
+  // round-5 George G-F2: round 3 added the denylist entry but anchored it
+  // `/^\/version\.json$/`. Workbox tests `navigateFallbackDenylist` against
+  // the request URL's `pathname + search`, so the `$` meant the entry did NOT
+  // match `/version.json?t=<timestamp>` — precisely the cache-busting URL form
+  // `scripts/check-deploy.mjs` builds — and a browser navigation to that URL
+  // on an installed PWA was still served the cached index.html shell. The
+  // round-3 comment in vite.config.ts claimed otherwise.
+  const denylist = navigateFallbackDenylist();
+
+  it("matches the bare path", () => {
+    expect(denylist.test("/version.json")).toBe(true);
+  });
+
+  it("matches the cache-busting query form check-deploy.mjs actually fetches", () => {
+    expect(denylist.test("/version.json?t=1757520000000")).toBe(true);
+  });
+
+  it("does not match a different file that merely starts the same way", () => {
+    expect(denylist.test("/version.jsonfoo")).toBe(false);
+    expect(denylist.test("/version.json.bak")).toBe(false);
+  });
+
+  it("does not match an unrelated route", () => {
+    expect(denylist.test("/other.json")).toBe(false);
+    expect(denylist.test("/books/1")).toBe(false);
+  });
+});
+
+// round-5 George G-F3: "version.json is never precached" was protected only
+// indirectly, by `.json` sitting outside globPatterns — nothing read the
+// manifest workbox actually emitted. This does, and it catches the routes the
+// glob check cannot see (an `additionalManifestEntries`, a workbox option or
+// plugin change that injects an entry directly).
+//
+// TWO limitations, stated rather than glossed, because a reader must not take
+// a green run here for more than it is:
+//
+//   1. It needs a build. `npm run verify` runs the suite BEFORE `npm run
+//      build`, and CI builds in a separate job that runs no tests — so on a
+//      tree that has never been built there is nothing to read and this is
+//      skipped rather than failing a fresh clone or CI's quality job.
+//   2. What it reads is the LAST build's output, which within a single
+//      `verify` is the build from before the current source change. A green
+//      result is therefore a statement about that build, not a proof about
+//      uncommitted source. Two consecutive verifies converge.
+//
+// The always-on half of the invariant is the exact-allowlist assertion above:
+// `json` cannot enter globPatterns without failing that, unskippably and with
+// no build required.
+describe.skipIf(!existsSync(SW))(
+  "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
+  () => {
+    it("never contains version.json", () => {
+      const urls = precachedUrls();
+      // Non-empty, or an empty parse would vacuously satisfy the assertion.
+      expect(urls.length).toBeGreaterThan(0);
+      const offenders = urls.filter(
+        (url) => url === "version.json" || url.endsWith("/version.json")
+      );
+      expect(
+        offenders,
+        "version.json must never be precached: a post-promotion check fetching it has to reach the origin, not a service-worker cache (AGENTS.md, 'Confirming a deploy and rolling one back')"
+      ).toEqual([]);
+    });
+  }
+);
+
+// `describe.skipIf(!existsSync(SW))` above is a convenience for a developer
+// running the suite on an unbuilt tree — a missing `dist/sw.js` skips rather
+// than fails, so `npm run verify`'s pre-build test pass and a fresh clone's
+// `npm test` both exit 0 with nothing built yet. Unguarded, that is also how
+// this file behaves inside CI: the Quality job runs `npm test` before any
+// build exists, so this describe block has been skipping there on every run
+// since it landed (#436) — and the Build job that actually produces
+// `dist/sw.js` never re-asks the question at all. Round 7 (#414/#420, same
+// gap Frank found for tests/dist-css.test.ts) closes that with a dedicated
+// CI step (`.github/workflows/ci.yml`, Build job, after `npm run build`)
+// that re-runs this file with `REQUIRE_DIST_BUILD=1` set — a purpose-built
+// env var, not GitHub Actions' ambient `CI` (`true` in every job, including
+// Quality, where skipping is still correct). Only that one step sets it, so
+// local dev, Quality, and `npm run verify`'s pre-build pass are unaffected.
+it("fails, rather than silently skips, when required to find a build and does not", () => {
+  if (process.env.REQUIRE_DIST_BUILD && !existsSync(SW)) {
+    throw new Error(
+      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — this step " +
+        "must run in ci.yml's Build job, after `npm run build`, not before " +
+        "it and not in the Quality job."
+    );
+  }
+});
+
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
-  const readers = thumbUrlReaders();
+  const readers = obsThumbnailReaders();
   const jpgPrecached = globPatterns().some((p) => /\bjpe?g\b/i.test(p));
 
   if (readers.length === 0) {
-    it("keeps jpg out of the precache while no screen reads thumbUrl", () => {
-      // Today: no src module reads thumbUrl, so the thumbnails must not be
+    it("keeps jpg out of the precache while no screen reads OBS frame imagery", () => {
+      // Today: no src module reads a thumbnail (via `thumbUrl` or a
+      // hand-built /obs/thumbs/ path), so the thumbnails must not be
       // precached (#177). Restoring jpg here without a reader would be dead
       // precache weight.
       expect(
         jpgPrecached,
-        "no src module reads thumbUrl, so jpg must stay out of globPatterns (#177)"
+        "no src module reads OBS frame imagery, so jpg must stay out of globPatterns (#177)"
       ).toBe(false);
     });
   } else {
-    it("restores jpg to the precache once a screen reads thumbUrl", () => {
-      // A reader landed (e.g. B7 Template Library, #33). The thumbnails now
-      // render on screen, so they must be precached again — otherwise a field
-      // install strands on broken tiles, the exact case ADR 0006 rejected
-      // runtime-caching to avoid.
+    it("restores jpg to the precache once a screen reads OBS frame imagery", () => {
+      // A reader landed (e.g. B7 Template Library, #33) — whether through
+      // `thumbUrl` or a hand-built /obs/thumbs/ path. The thumbnails now
+      // render on screen, so they must be precached again — otherwise a
+      // field install strands on broken tiles, the exact case ADR 0006
+      // rejected runtime-caching to avoid.
       expect(
         jpgPrecached,
-        `these modules read thumbUrl, so jpg must be restored to globPatterns (and INTENDED) or field installs strand on broken tiles (ADR 0006): ${readers.join(", ")}`
+        `these modules read OBS frame imagery, so jpg must be restored to globPatterns (and INTENDED) or field installs strand on broken tiles (ADR 0006): ${readers.join(", ")}`
       ).toBe(true);
     });
   }

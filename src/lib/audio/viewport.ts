@@ -113,6 +113,57 @@ export function sampleToViewportX(
   return ((sample - win.start) / win.visibleSamples) * width;
 }
 
+/** The recorder's two surfaces. Kept as a literal union rather than imported:
+ *  `lib/` never reaches upward, and a third mode would fail to compile at the
+ *  call site, so the two cannot drift apart silently. */
+type RecorderMode = "record" | "edit";
+
+export interface EffectivePanInputs {
+  readonly mode: RecorderMode;
+  /** The B5 selection frame is open. */
+  readonly selectionActive: boolean;
+  /** Where the zoom moved the VIEW to keep that selection on screen (#91). */
+  readonly zoomPan: number | null;
+  /** The real pan — also the record insertion offset. `null` is the append rest. */
+  readonly panState: number | null;
+  /** The working buffer's length. */
+  readonly length: number;
+}
+
+/**
+ * Which pan the recorder draws through — and, in record mode, splices at.
+ *
+ * **This is the round-1 P1's guarantee, made readable.** `panState` is not only
+ * a view value: `null` is the append rest, and the sample under the centerline
+ * is what `onRecordButton` locks in as a take's insertion offset. The zoom's
+ * view fit (`zoomPan`) therefore must never become it, or a zoom taken with a
+ * selection open would move where the next recording splices — silently, since
+ * the centerline does not travel.
+ *
+ * So the view pan is consulted **only** in edit mode with a selection open, and
+ * both terms are independent guards rather than one restated twice: the mode
+ * term holds even if a future path leaves a selection open on the way back to
+ * record, and the selection term holds even if the mode is wrong. In record mode
+ * `zoomPan` is not read at all, whatever it holds.
+ *
+ * Lifted out of the component so that separation can be tested: it is a pure
+ * function of five values, and inside `recorder.tsx` nothing could reach it. It
+ * pins the READER half only — that the record path ignores the view pan. The
+ * WRITER half (that the zoom writes `zoomPan` and not `panState`) is still
+ * structural and untested: a node-only suite with no renderer cannot observe
+ * which setter a handler called. See the round-3 triage on #346.
+ *
+ * The fallback chain is deliberately nullish, not falsy: a pan of exactly 0 is
+ * the start of the clip and must survive, where `||` would replace it with the
+ * end. Only the UPPER bound is clamped, matching what this replaced — a cut can
+ * shorten the buffer past a pan set before it, while no writer produces a
+ * negative (the drag clamps at 0, and so does `panForZoom`).
+ */
+export function effectivePan(i: EffectivePanInputs): number {
+  const viewPan = i.mode === "edit" && i.selectionActive ? i.zoomPan : null;
+  return Math.min(viewPan ?? i.panState ?? i.length, i.length);
+}
+
 /**
  * Where an absolute pan sits after `range` is cut from the buffer.
  *
@@ -120,15 +171,112 @@ export function sampleToViewportX(
  * shifts that sample left, or the line would silently come to mark a later point
  * in the speech and a record would splice there (George R5). Subtract only the
  * removed samples that lay before the pan: a cut entirely after the line leaves
- * it, and a cut straddling it lands the line at the cut's start. A paste needs no
- * companion because it always inserts AT the centerline (`at === pan`), which
- * pushes only the audio to the line's right.
+ * it, and a cut straddling it lands the line at the cut's start.
+ *
+ * A paste needs no companion — but the reason is now CONDITIONAL, and the
+ * condition is not local to this file (George stand-in P3). It holds because
+ * paste inserts at the centerline (`at === pan`), pushing only the audio to the
+ * line's right — and the centerline is the pan only while `effectivePan` is
+ * returning `panState`, i.e. while no selection is open. The recorder's paste
+ * marker renders on exactly that condition, so today `at === pan` is always
+ * true. A paste reachable WITH a selection open would paste at the view pan
+ * instead, shifting samples under a `panState` this function would never be told
+ * about; such a path must pass `panState`, not the drawn centerline, and would
+ * need a companion here.
  */
 export function panAfterCut(pan: number, range: SampleRange): number {
   const lo = Math.min(range.start, range.end);
   const hi = Math.max(range.start, range.end);
   const removedBeforePan = Math.min(hi, pan) - Math.min(lo, pan);
   return pan - removedBeforePan;
+}
+
+/**
+ * Where the pan must sit, at `zoom`, for `selection` to stay on screen (#91).
+ *
+ * The zoom toggle used to change only the zoom, leaving the pan untouched. The
+ * window then shrank around a pan that had nothing to do with the span being
+ * edited, and the selection walked off the viewport — the first external tester
+ * reported it as the control "extending the selection off screen" and could not
+ * tell whether the button acted on the view or on the selection. Re-centring the
+ * pan is what makes the answer "on the view, and the selection stays put".
+ *
+ * Three cases:
+ *
+ * 1. **No selection** — nothing to keep in view; the pan is returned clamped and
+ *    otherwise untouched, so a plain zoom still behaves as it always has.
+ * 2. **Wider than the window** — it cannot all fit, so the START edge is pinned
+ *    to the left of the viewport. The start is where a translator reaches first,
+ *    and the end is one pan away; showing neither edge is the failure mode.
+ * 3. **Otherwise** — the span fits, so every pan in `[panAtEndEdge,
+ *    panAtStartEdge]` shows all of it, and the current pan is clamped into that
+ *    interval. That single clamp covers both of the cases the UI cares about: a
+ *    span already on screen is inside the interval and comes back **unchanged**
+ *    (moving a pan that did not need to move is its own lie about what the
+ *    control did), and a span off one edge travels the MINIMUM distance that
+ *    brings it in, landing against the edge it came in over rather than jerking
+ *    to the centre.
+ *
+ * Both selection edges are clamped to `[0, length]` before anything is
+ * computed. That is **defensive, not load-bearing for today's caller**:
+ * `SegmentEditor`'s `openSelection` and `setSelection` already clamp each
+ * endpoint to the working buffer, so the recorder cannot hand this an out-of-
+ * range span (an earlier draft of this comment claimed the opposite — George R1
+ * P3). It stays because the clamp is what makes the function total, and because
+ * the span's REAL extent is what decides the wider-than-the-window branch: a
+ * caller that measured raw handles would pin the viewport into blank space.
+ *
+ * The result is always within `[0, length]`: the pan is also the record
+ * insertion offset, and there is no such thing as inserting before the start or
+ * after the end.
+ *
+ * Note that `zoom` 1 means the viewport SPANS the clip's length — not that the
+ * whole clip is on screen. With the pan at the end (the append rest) the window
+ * is `[0.5L, 1.5L]`. Keeping a selection in view is all this promises, and it is
+ * why the zoom control's label names the magnification rather than the extent.
+ *
+ * Clamping the admissible interval to the clip cannot invert it — clamping is
+ * monotone and the raw interval is non-empty whenever the span fits — so the
+ * final `min`/`max` always names a pan that really does show the span. At
+ * `zoom` 1 the window spans the whole clip, so the span ALWAYS fits and nothing
+ * can be left off screen on the way back out.
+ */
+export function panForZoom(
+  length: number,
+  pan: number,
+  zoom: number,
+  centerFraction: number,
+  selection: SampleRange | null
+): number {
+  // The same clamp `viewportWindow` applies to `centerlineSample`, for the same
+  // reason: this value is the record insertion offset as well as the pan.
+  const clampPan = (p: number) => Math.max(0, Math.min(p, length));
+  // Nothing picked: a plain zoom, and the pan is only clamped (a `panState` set
+  // before a cut can be stale past the new end — the same reason the recorder
+  // clamps it before drawing).
+  if (selection === null) return clampPan(pan);
+
+  const lo = clampPan(Math.min(selection.start, selection.end));
+  const hi = clampPan(Math.max(selection.start, selection.end));
+  const visible = length / zoom;
+
+  // The pan that puts the span's START on the left edge of the viewport
+  // (`start = pan - centerFraction * visible`), and the one that puts its END on
+  // the right edge (`end = pan + (1 - centerFraction) * visible`).
+  const panAtStartEdge = lo + centerFraction * visible;
+  const panAtEndEdge = hi - (1 - centerFraction) * visible;
+
+  // ONE clamp, on every path. The intermediates above are deliberately left
+  // raw: with `lo`/`hi` already inside the clip, clamping each of them would add
+  // branches no input can reach — which mutation testing shows to be untestable
+  // rather than safe. There is no empty-segment guard either, for the same
+  // reason: at `length` 0 every term above is already 0 and this returns 0,
+  // matching `viewportWindow`, which likewise carries no divide-by-zero guard.
+  return clampPan(
+    hi - lo >= visible
+      ? panAtStartEdge
+      : Math.max(panAtEndEdge, Math.min(pan, panAtStartEdge))
+  );
 }
 
 /**
@@ -170,6 +318,96 @@ export function captureWindow(headFraction: number): WaveformWindow {
       ? Math.max(Number.EPSILON, Math.min(1, headFraction))
       : Number.EPSILON;
   return { startFraction: 0, endFraction: 1 / head, centerFraction: head };
+}
+
+/**
+ * The strip the waveform is drawn on while a buffer sounds (#415/#417).
+ *
+ * Playback does not move a line across a still waveform; it moves the WAVEFORM
+ * under a line that never leaves the centre (#415, the requirements owner:
+ * "there is ONE playhead: the red line, always at the horizontal center").
+ * Sliding a pan/zoom window one sample at a time would mean a new `view` — and
+ * so a full canvas repaint plus a React render — every frame, which is #102's
+ * finding at 60 Hz. So the clip is drawn ONCE, on a strip wider than the stage,
+ * and the frame loop moves that strip with a single transform
+ * ({@link playbackStripOffset}).
+ *
+ * The strip is the clip plus exactly ONE viewport of blank, split at the
+ * centerline: `centerFraction` of a viewport ahead of the first sample, the rest
+ * past the last. That is the blank #415 describes at both ends ("left of the
+ * centerline there is no audio yet... at the end... the same grayed-out
+ * horizontal line running to the right edge"), and it is the least padding that
+ * lets both extremes of the position — 0 and `length` — sit under the line with
+ * no gap at the stage edge.
+ */
+export interface PlaybackStrip {
+  /** Clip fraction at the strip's left edge (always < 0 — the blank head). */
+  readonly startFraction: number;
+  /** Clip fraction at the strip's right edge (always > 1 — the blank tail). */
+  readonly endFraction: number;
+  /**
+   * The strip's width as a multiple of the STAGE width: `(length + visible) /
+   * visible`, i.e. `zoom + 1`. The component sets `width: widthFactor * 100%`,
+   * so the strip needs no pixel measurement and survives a rotation.
+   */
+  readonly widthFactor: number;
+}
+
+/**
+ * The strip to draw for a playback at this zoom. See {@link PlaybackStrip}.
+ *
+ * `visibleSamples` is what the STAGE spans at the current zoom (`length /
+ * zoom`) — the same quantity {@link viewportWindow} computes, passed in rather
+ * than recomputed so the scrolling view and the static one cannot drift to
+ * different scales. Bar width works out identical to the static window's at the
+ * same zoom, which is why starting playback does not rescale the waveform.
+ *
+ * `length > 0` is the precondition, as it is for `viewportWindow`: there is no
+ * playback without audio, and the recorder never mounts the strip without it.
+ */
+export function playbackStrip(
+  length: number,
+  visibleSamples: number,
+  centerFraction: number
+): PlaybackStrip {
+  const start = -centerFraction * visibleSamples;
+  const end = length + (1 - centerFraction) * visibleSamples;
+  return {
+    startFraction: start / length,
+    endFraction: end / length,
+    widthFactor: (length + visibleSamples) / visibleSamples,
+  };
+}
+
+/**
+ * Where to put the strip so that `position` sits under the centerline, as a
+ * fraction of the STRIP's own width (what a percentage `translateX` resolves
+ * against). Runs from 0 at the clip's first sample to `-length / (length +
+ * visibleSamples)` at its last.
+ *
+ * **`centerFraction` is deliberately absent, and that is not an omission.** The
+ * strip already carries the line's position in its blank head (`-c * visible`
+ * of it), so aligning the strip's left edge with the stage's left edge is
+ * exactly what puts sample 0 under the line. What is left to do per frame is
+ * only "how far has the clip travelled", which is the position over the strip's
+ * span. The two must be built from the same `centerFraction` for that to hold —
+ * they are, at the one call site — and `tests/audio-viewport.test.ts` asserts
+ * the composition rather than either half.
+ *
+ * The clamp is the REQUIREMENT, not a defensive guard (#416: "The playhead must
+ * not scroll past the end of the recorded waveform. The end sample is the
+ * clamp... Symmetrically, it cannot scroll before the first sample."). A
+ * sounding position cannot exceed the buffer today — `PlaybackHandle.elapsed`
+ * clamps to the clip duration — but the same offset places a FROZEN position on
+ * pause and a dragged one on lift (#317), and those have no such promise.
+ */
+export function playbackStripOffset(
+  position: number,
+  length: number,
+  visibleSamples: number
+): number {
+  const clamped = Math.max(0, Math.min(position, length));
+  return -clamped / (length + visibleSamples);
 }
 
 /**

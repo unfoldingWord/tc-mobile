@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  effectivePan,
   panAfterCut,
+  panForZoom,
+  playbackStrip,
+  playbackStripOffset,
   sampleToViewportX,
   viewportWindow,
   viewportXToSample,
@@ -130,5 +134,443 @@ describe("panAfterCut", () => {
 
   it("is a no-op for a cut touching the pan from the right", () => {
     expect(panAfterCut(1000, { start: 1000, end: 1200 })).toBe(1000);
+  });
+});
+
+/**
+ * Keeping the selection in view across a zoom (#91).
+ *
+ * The first external tester zoomed with a span picked and reported that it
+ * "seemed to extend the selection off screen": the pan stayed put while the
+ * window shrank around it, so the thing being edited left the viewport and the
+ * control read as if it had acted on the selection rather than on the view.
+ * These are the four cases that fix has to satisfy, plus the clamps at both
+ * ends.
+ *
+ * Expectations are stated as properties of the RESULTING window wherever they
+ * can be, not as magic numbers, so the test survives a change of centre
+ * fraction.
+ */
+/**
+ * Which pan the recorder actually draws and splices through (#91, round-1 P1).
+ *
+ * The round-1 P1 was that the zoom's view fit reached `panState`, which is also
+ * the record insertion offset — so a zoom with a selection open moved where the
+ * next take spliced. The fix is a second, view-only value that the record path
+ * must never see, and until now that separation lived only in a JSX-adjacent
+ * expression inside a 2000-line component, where nothing could test it. The
+ * George stand-in demonstrated the cost: mutating the WRITER (`setZoomPan` →
+ * `setPanState`) reintroduced the P1 verbatim and all 512 tests stayed green.
+ *
+ * This table pins the READER half of that guarantee — above all the first case,
+ * which is the invariant itself: in record mode the view pan is not consulted,
+ * whatever it holds. See the note in the round-3 triage for what this does and
+ * does not catch; the writer half is still structural.
+ */
+describe("effectivePan", () => {
+  const LENGTH = 1000;
+
+  it("IGNORES the view pan in record mode, whatever it holds", () => {
+    // The P1 invariant. `zoomPan` is deliberately a value that would be obvious
+    // if it leaked: nothing else in these cases is 123.
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: 123,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+    // Even with a selection somehow still open — the two terms are independent,
+    // so neither alone is load-bearing.
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: true,
+        zoomPan: 123,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+    // ...and with no pan of its own, record mode rests at the end (append).
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: true,
+        zoomPan: 123,
+        panState: null,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+  });
+
+  it("uses the view pan only in edit mode WITH a selection open", () => {
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: 475,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(475);
+  });
+
+  it("ignores the view pan in edit mode with NO selection open", () => {
+    // A stale `zoomPan` from an earlier selection must not reach the view; the
+    // recorder clears it, but the gate must not depend on that having happened.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: false,
+        zoomPan: 475,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+  });
+
+  it("falls back through the view pan, then the real pan, then the end", () => {
+    // Selection open but never zoomed: the real pan shows.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: null,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(600);
+    // Neither set: the append rest, at the end of the buffer.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: null,
+        panState: null,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+  });
+
+  it("honours a pan of exactly 0 (nullish fallback, not falsy)", () => {
+    // `||` here would silently replace the start of the clip with its end —
+    // the whole buffer's width of error, and in record mode that is the splice
+    // point, not just the view.
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: 0,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(0);
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: null,
+        panState: 0,
+        length: LENGTH,
+      })
+    ).toBe(0);
+  });
+
+  it("clamps to the current length", () => {
+    // A cut can shorten the buffer past a pan set before it; a stale pan beyond
+    // the end would sit the record offset past the last sample.
+    expect(
+      effectivePan({
+        mode: "record",
+        selectionActive: false,
+        zoomPan: null,
+        panState: 4000,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+    expect(
+      effectivePan({
+        mode: "edit",
+        selectionActive: true,
+        zoomPan: 4000,
+        panState: 600,
+        length: LENGTH,
+      })
+    ).toBe(LENGTH);
+  });
+});
+
+describe("panForZoom", () => {
+  const LENGTH = 1000;
+  const CF = 0.5;
+  const win = (pan: number, zoom: number) =>
+    viewportWindow(LENGTH, pan, zoom, CF);
+
+  it("leaves the pan alone when the selection already fits the new window", () => {
+    // Quarter view around 500 spans [375, 625]; the span sits inside it.
+    expect(panForZoom(LENGTH, 500, 4, CF, { start: 400, end: 600 })).toBe(500);
+  });
+
+  it("brings a selection off the RIGHT edge back into view", () => {
+    // Pan 300 at quarter view spans [175, 425] — the span is entirely past it.
+    const next = panForZoom(LENGTH, 300, 4, CF, { start: 700, end: 800 });
+    const v = win(next, 4);
+    expect(v.start).toBeLessThanOrEqual(700);
+    expect(v.end).toBeGreaterThanOrEqual(800);
+    // Minimal travel: the pan moves only as far as it must, so the span lands
+    // against the edge it came in over rather than jumping to the centre.
+    expect(next).toBeCloseTo(800 - (1 - CF) * v.visibleSamples);
+  });
+
+  it("brings a selection off the LEFT edge back into view", () => {
+    // Pan 900 at quarter view spans [775, 1025].
+    const next = panForZoom(LENGTH, 900, 4, CF, { start: 100, end: 200 });
+    const v = win(next, 4);
+    expect(v.start).toBeLessThanOrEqual(100);
+    expect(v.end).toBeGreaterThanOrEqual(200);
+    expect(next).toBeCloseTo(100 + CF * v.visibleSamples);
+  });
+
+  it("shows the START of a selection wider than the window", () => {
+    // 500 samples of span into a 250-sample window: it cannot all fit, so the
+    // start edge is the one that must be on screen — that is the handle the
+    // translator reaches for first, and the end is a pan away.
+    const next = panForZoom(LENGTH, 900, 4, CF, { start: 100, end: 600 });
+    const v = win(next, 4);
+    expect(v.start).toBeCloseTo(100);
+    expect(v.end).toBeLessThan(600);
+  });
+
+  it("clamps at the START of the clip", () => {
+    // The unclamped answer for a span at sample 0 would pan before the clip.
+    const next = panForZoom(LENGTH, 1000, 4, CF, { start: 0, end: 50 });
+    expect(next).toBeGreaterThanOrEqual(0);
+    const v = win(next, 4);
+    expect(v.start).toBeLessThanOrEqual(0);
+    expect(v.end).toBeGreaterThanOrEqual(50);
+  });
+
+  it("clamps at the END of the clip", () => {
+    // Unclamped this wants pan 1075 — past the last sample, which would put the
+    // record insertion offset beyond the buffer.
+    const next = panForZoom(LENGTH, 0, 4, CF, { start: 950, end: 1000 });
+    expect(next).toBeLessThanOrEqual(LENGTH);
+    const v = win(next, 4);
+    expect(v.start).toBeLessThanOrEqual(950);
+    expect(v.end).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("fits any selection when zooming back out to the whole-segment zoom", () => {
+    // At zoom 1 the window SPANS the clip, so any selection fits and the pan can
+    // always be found that shows all of it — including a span covering the whole
+    // buffer. Note this is not the same as "the whole clip is on screen": the
+    // window can still sit over the blank head or tail, which is the append view
+    // `viewportWindow`'s own case above pins.
+    for (const span of [
+      { start: 100, end: 900 },
+      { start: 0, end: LENGTH },
+      { start: 0, end: 1 },
+      { start: LENGTH - 1, end: LENGTH },
+    ]) {
+      const next = panForZoom(LENGTH, LENGTH, 1, CF, span);
+      const v = win(next, 1);
+      expect(v.start).toBeLessThanOrEqual(span.start);
+      expect(v.end).toBeGreaterThanOrEqual(span.end);
+    }
+  });
+
+  it("honours an off-centre centerline on BOTH edges", () => {
+    // At centerFraction 0.5 the two edge formulas are indistinguishable —
+    // `centerFraction` and `1 - centerFraction` are the same number — so a
+    // swapped one passes every case above. The centerline is a UI constant this
+    // module must honour whatever it is, so pin it off centre (the same reason
+    // `viewportWindow`'s own cases use 0.66).
+    const off = 0.75; // 3/4 of the viewport lies LEFT of the line
+    const visible = LENGTH / 4; // 250
+
+    // Off the right edge: the end lands on the right edge, a quarter-window
+    // ahead of the line.
+    const right = panForZoom(LENGTH, 300, 4, off, { start: 700, end: 800 });
+    expect(right).toBeCloseTo(800 - (1 - off) * visible); // 737.5, not 612.5
+    const rightWin = viewportWindow(LENGTH, right, 4, off);
+    expect(rightWin.start).toBeLessThanOrEqual(700);
+    expect(rightWin.end).toBeGreaterThanOrEqual(800);
+
+    // Off the left edge: the start lands on the left edge, three quarters of a
+    // window behind the line.
+    const left = panForZoom(LENGTH, 900, 4, off, { start: 100, end: 200 });
+    expect(left).toBeCloseTo(100 + off * visible); // 287.5, not 162.5
+    expect(viewportWindow(LENGTH, left, 4, off).start).toBeCloseTo(100);
+
+    // Wider than the window: still the start edge, under the same off-centre
+    // line.
+    const wide = panForZoom(LENGTH, 900, 4, off, { start: 100, end: 600 });
+    expect(viewportWindow(LENGTH, wide, 4, off).start).toBeCloseTo(100);
+  });
+
+  it("leaves the pan where it is when nothing is selected", () => {
+    expect(panForZoom(LENGTH, 400, 4, CF, null)).toBe(400);
+    // Still clamped to the clip — the caller's pan may be stale past a cut.
+    expect(panForZoom(LENGTH, 1200, 4, CF, null)).toBe(LENGTH);
+    expect(panForZoom(LENGTH, -50, 4, CF, null)).toBe(0);
+  });
+
+  it("ignores order (a reversed selection is normalised)", () => {
+    const forward = panForZoom(LENGTH, 300, 4, CF, { start: 700, end: 800 });
+    const reversed = panForZoom(LENGTH, 300, 4, CF, { start: 800, end: 700 });
+    expect(reversed).toBe(forward);
+  });
+
+  it("clamps a pan that starts outside the clip", () => {
+    // The final clamp is the one guard on every path. A span at sample 0 and a
+    // pan below the clip would otherwise return a negative pan — and the pan is
+    // also the record insertion offset, so that is not merely a drawing bug.
+    expect(panForZoom(LENGTH, -50, 4, CF, { start: 0, end: 50 })).toBe(0);
+  });
+
+  it("measures a selection by its real extent, not its raw handles", () => {
+    // Measured raw, both of these read as "wider than the window" and pin the
+    // viewport into blank space — when the audio each one actually covers (100
+    // samples) fits the 250-sample window easily. `SegmentEditor` clamps its own
+    // endpoints, so the recorder cannot produce these spans today; this pins the
+    // function as total, which is what lets the branch above be trusted by the
+    // next caller rather than re-derived.
+    const tail = panForZoom(LENGTH, 0, 4, CF, { start: 900, end: 4000 });
+    const tailWin = win(tail, 4);
+    expect(tailWin.start).toBeLessThanOrEqual(900);
+    // No blank tail wasted: the window ends at the clip, not past it.
+    expect(tailWin.end).toBeLessThanOrEqual(LENGTH);
+
+    const head = panForZoom(LENGTH, 900, 4, CF, { start: -4000, end: 100 });
+    const headWin = win(head, 4);
+    expect(headWin.end).toBeGreaterThanOrEqual(100);
+    // ...and no blank head wasted.
+    expect(headWin.start).toBeGreaterThanOrEqual(0);
+  });
+
+  it("is safe on an empty segment", () => {
+    expect(panForZoom(0, 0, 4, CF, { start: 0, end: 0 })).toBe(0);
+    expect(panForZoom(0, 50, 1, CF, null)).toBe(0);
+  });
+});
+
+/**
+ * The playback strip (#415/#416/#417): during playback the waveform scrolls
+ * under a centerline that never moves, so the drawn geometry stops being "a
+ * window that follows the pan" and becomes "one strip, translated".
+ *
+ * The strip is drawn ONCE per play — the clip plus a viewport's worth of blank
+ * split across its two ends — and each frame moves it by a single transform.
+ * That is why both halves are here as arithmetic: `playbackStrip` says what to
+ * draw and how wide it is, `playbackStripOffset` says where to put it, and the
+ * property that matters (the sounding sample sits under the line, always) is a
+ * composition of the two rather than something either can promise alone.
+ */
+describe("playbackStrip / playbackStripOffset", () => {
+  const CENTER = 0.5;
+  const LEN = 1000;
+
+  /**
+   * Where a sample lands across the STAGE, as a fraction of the stage width —
+   * 0 the left edge, 1 the right, `CENTER` the centerline. This is the
+   * composition the component performs in CSS (`width: widthFactor * 100%`
+   * plus `translateX(offset * 100%)` of the strip's own width), written out
+   * here so the invariant is asserted end to end rather than one function at a
+   * time. It calls the production functions; it does not restate their math.
+   */
+  function stageX(sample: number, position: number, zoom: number): number {
+    const visible = LEN / zoom;
+    const strip = playbackStrip(LEN, visible, CENTER);
+    const offset = playbackStripOffset(position, LEN, visible);
+    const withinStrip =
+      (sample / LEN - strip.startFraction) /
+      (strip.endFraction - strip.startFraction);
+    return (withinStrip + offset) * strip.widthFactor;
+  }
+
+  it("pads the clip with a viewport of blank, split at the centerline", () => {
+    // Whole zoom: half a viewport (= half the clip) of blank at each end.
+    const whole = playbackStrip(LEN, LEN, CENTER);
+    expect(whole.startFraction).toBeCloseTo(-0.5);
+    expect(whole.endFraction).toBeCloseTo(1.5);
+    expect(whole.widthFactor).toBeCloseTo(2);
+
+    // Quarter zoom: the blank is half a VIEWPORT, not half a clip, so the strip
+    // is five viewports wide and the overhang is an eighth of the clip.
+    const quarter = playbackStrip(LEN, LEN / 4, CENTER);
+    expect(quarter.startFraction).toBeCloseTo(-0.125);
+    expect(quarter.endFraction).toBeCloseTo(1.125);
+    expect(quarter.widthFactor).toBeCloseTo(5);
+  });
+
+  it("splits the blank by centerFraction, keeping the width the same", () => {
+    // A line at a quarter of the width needs only a quarter viewport of blank
+    // ahead of the clip's start, and three quarters after its end. The total
+    // padding — and so the strip's width — is one viewport either way.
+    const strip = playbackStrip(LEN, LEN, 0.25);
+    expect(strip.startFraction).toBeCloseTo(-0.25);
+    expect(strip.endFraction).toBeCloseTo(1.75);
+    expect(strip.widthFactor).toBeCloseTo(2);
+  });
+
+  it("puts the sounding sample under the centerline, at every position and zoom", () => {
+    for (const zoom of [1, 4]) {
+      for (const position of [0, 1, 250, 500, 999, LEN]) {
+        expect(stageX(position, position, zoom)).toBeCloseTo(CENTER);
+      }
+    }
+  });
+
+  it("clamps the position to the clip — the line never runs past either end", () => {
+    // #416: "The playhead must not scroll past the end of the recorded
+    // waveform. The end sample is the clamp... Symmetrically, it cannot scroll
+    // before the first sample."
+    expect(playbackStripOffset(LEN * 3, LEN, LEN)).toBeCloseTo(
+      playbackStripOffset(LEN, LEN, LEN)
+    );
+    expect(playbackStripOffset(-LEN, LEN, LEN)).toBeCloseTo(
+      playbackStripOffset(0, LEN, LEN)
+    );
+    // And the clamp is what keeps the clip's own edge on the line rather than
+    // letting blank space drift under it.
+    expect(stageX(LEN, LEN * 3, 1)).toBeCloseTo(CENTER);
+    expect(stageX(0, -LEN, 1)).toBeCloseTo(CENTER);
+  });
+
+  it("starts with the clip's first sample on the line and blank to its left", () => {
+    // #415, "at the start": the waveform begins under the red line, there is no
+    // audio to the left of it, and the clip runs off the right edge.
+    expect(stageX(0, 0, 1)).toBeCloseTo(0.5);
+    expect(stageX(LEN, 0, 1)).toBeCloseTo(1.5);
+  });
+
+  it("shows the whole clip exactly once, at the midpoint (whole zoom)", () => {
+    // #415, "at the exact midpoint: the whole waveform is on screen (half left
+    // of centre, half right). This is the ONLY moment the entire segment is
+    // visible in the editor." Both edges land on the stage edges.
+    expect(stageX(0, LEN / 2, 1)).toBeCloseTo(0);
+    expect(stageX(LEN, LEN / 2, 1)).toBeCloseTo(1);
+    // A hair either side and one edge has left the screen, which is what makes
+    // the midpoint the only such moment.
+    expect(stageX(0, LEN / 2 + 10, 1)).toBeLessThan(0);
+    expect(stageX(LEN, LEN / 2 - 10, 1)).toBeGreaterThan(1);
+  });
+
+  it("ends with the clip's last sample on the line and blank to its right", () => {
+    // #415, "at the end": the waveform has scrolled off the left, and the blank
+    // runs from the line to the right edge.
+    expect(stageX(LEN, LEN, 1)).toBeCloseTo(0.5);
+    expect(stageX(0, LEN, 1)).toBeCloseTo(-0.5);
+  });
+
+  it("scrolls the waveform leftward as playback advances, never rightward", () => {
+    let previous = Infinity;
+    for (const position of [0, 100, 200, 500, 800, LEN]) {
+      const offset = playbackStripOffset(position, LEN, LEN);
+      expect(offset).toBeLessThan(previous);
+      previous = offset;
+    }
   });
 });

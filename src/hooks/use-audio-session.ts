@@ -10,6 +10,7 @@ import {
 import {
   useRecorder,
   type RecorderState,
+  type RetryDecodeResult,
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -19,6 +20,10 @@ import {
   reclaimAfterPreview,
   reclaimMic,
 } from "@/lib/audio/floor-transitions";
+import {
+  playbackPosition,
+  type PlaybackPosition,
+} from "@/lib/audio/playback-position";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
@@ -38,7 +43,7 @@ export interface UseAudioSession {
    * Milliseconds into the sounding take, for the Segments-row scrub dot. PUSHED
    * on a ~60 ms interval that runs ONLY while a list take plays (`playingId !==
    * null`), because the moving dot earns the re-render. It does NOT advance for
-   * recorder buffer playback — that reads `readPlaybackElapsed` on its own rAF
+   * recorder buffer playback — that reads `readPlaybackPosition` on its own rAF
    * (#102) — so read it only on the `playingId` path; it stays at its last reset
    * (0) throughout a buffer preview.
    */
@@ -71,27 +76,34 @@ export interface UseAudioSession {
    * first (the recorder stays paused-alive — no capturing mic is abandoned), so
    * the preview can sound; `resumeRecording` reclaims the mic. Never preempts a
    * LIVE recording — the recorder-state guard makes that a no-op.
+   *
+   * `onEnded` fires when the clip RAN OUT, and only then: not on a hand-stop
+   * (`stopBuffer`, or a Play that stops what is sounding), not for a superseded
+   * claim, and not when playback failed to start. It is the one fact about an
+   * ending that cannot be reconstructed from outside — the position goes with
+   * the handle, and a clip shorter than a frame can end before any rAF observes
+   * it — and the recorder's frozen pan (#416) turns on it.
    */
   playBuffer: (
     samples: Int16Array,
     offsetSeconds?: number,
-    opts?: { preemptPausedMic?: boolean }
+    opts?: { preemptPausedMic?: boolean; onEnded?: () => void }
   ) => void;
   /** Stop buffer playback if it is the one sounding. A no-op otherwise. */
   stopBuffer: () => void;
   /**
-   * The sounding position in milliseconds, PULLED (D-LEVEL-PULL, like
-   * `readLevel`). The recorder's playhead overlay polls this on its own rAF so
-   * buffer playback never lifts into App state — `playbackElapsedMs` is pushed
-   * only for the Segments-row scrub dot (a `playingId` take), whose moving dot
-   * earns the re-render; the recorder's inert-list neighbour did not (#102).
+   * The sounding position, PULLED (D-LEVEL-PULL, like `readLevel`). The
+   * recorder polls this on its own rAF so buffer playback never lifts into App
+   * state — `playbackElapsedMs` is pushed only for the Segments-row scrub dot
+   * (a `playingId` take), whose moving dot earns the re-render; the recorder's
+   * inert-list neighbour did not (#102).
    *
-   * `null` means nothing is sounding — a HIDE sentinel distinct from 0 (the clip
-   * start), so the overlay hides instead of snapping to the left edge for a frame
-   * when playback ends or is stopped (the handle is cleared a React commit before
-   * `playingBuffer` does). 0 only in the brief window before the handle settles.
+   * `null` means nothing is sounding — a HIDE sentinel distinct from position
+   * 0, so the overlay hides instead of snapping to the left edge for a frame
+   * when playback ends or is stopped (the handle is cleared a React commit
+   * before `playingBuffer` does).
    */
-  readPlaybackElapsed: () => number | null;
+  readPlaybackPosition: () => PlaybackPosition | null;
   /**
    * Whether the shared audio context needs a user gesture to be audible now. The
    * recorder gates its auto-play of a decoded preview on this (#101): the decode
@@ -111,6 +123,13 @@ export interface UseAudioSession {
    */
   stopRecording: () => Promise<StopResult>;
   /**
+   * Re-decode a held take's container bytes after a decode failed on Stop
+   * (#165). Resumes the context first; call it synchronously in a tap. See
+   * `UseRecorder.retryDecode`. Passed straight through — it touches neither the
+   * floor nor the session, only the shared decode context.
+   */
+  retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
+  /**
    * Decode the paused take's captured audio to canonical PCM for an in-sheet
    * preview (#101), or null when it cannot be produced on this device. Pass the
    * result through `mergeTake`/`playBuffer(..., { preemptPausedMic: true })` to
@@ -120,11 +139,32 @@ export interface UseAudioSession {
   /** End every sound this screen owns, synchronously. Call on every navigation. */
   leave: () => void;
   /**
+   * Resume the shared audio context inside the gesture that opens the recorder
+   * sheet (#184), before the async segment load one commit later. Fire-and-
+   * forget, like the retry and playback resume paths; call it synchronously in
+   * the open tap so an iOS `"interrupted"` context is running by the time the
+   * first `decodeAudioData` runs, sparing the common transient case a failed
+   * open and an extra "Try again" tap. A no-op when the context is already
+   * running.
+   */
+  primeAudioContext: () => void;
+  /**
    * The live capture level for the VU meter, in the raw amplitude domain. A PULL
    * read (D-LEVEL-PULL): the meter polls it on its own frame clock, so nothing
    * above this layer re-renders per frame. 0 whenever nothing is capturing.
    */
   readLevel: () => number;
+  /**
+   * Whether `readLevel` can be trusted this frame (#76). A PULL like `readLevel`:
+   * `true` when NOT in a live take (the meter rests empty via `active`, so "not
+   * recording" reads as "not broken"); `false` ONLY while recording and either
+   * the tap is missing or the shared context is not `"running"` (iOS
+   * `"suspended"`/`"interrupted"` after backgrounding or an interruption), where
+   * the analyser reads zeros a translator would misread as a dead mic. The VU
+   * meter hatches "unavailable" on a false. Distinct from `meterFailed`, the
+   * OPEN-time "tap never wired" state.
+   */
+  readMeterAvailable: () => boolean;
   /**
    * The live-waveform scope for the current take (#120), or `null` when nothing
    * is capturing OR the tap could not be wired (a `meterFailed` take records but
@@ -169,6 +209,7 @@ export function useAudioSession(): UseAudioSession {
     pause: pauseCapture,
     resume: resumeCapture,
     stop: endRecording,
+    retryDecode,
     previewCapture,
     cancel: cancelRecording,
     state: recorderState,
@@ -176,6 +217,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
@@ -391,7 +433,7 @@ export function useAudioSession(): UseAudioSession {
     (
       samples: Int16Array,
       offsetSeconds = 0,
-      opts?: { preemptPausedMic?: boolean }
+      opts?: { preemptPausedMic?: boolean; onEnded?: () => void }
     ) => {
       if (playingBufferRef.current) {
         stopBuffer();
@@ -437,7 +479,7 @@ export function useAudioSession(): UseAudioSession {
 
       // Optimistic, so the control responds to the tap rather than to the graph.
       // No `playbackElapsedMs` seed on the buffer path: the recorder's playhead
-      // PULLS `readPlaybackElapsed` on its own rAF (#102), so pushing here would
+      // PULLS `readPlaybackPosition` on its own rAF (#102), so pushing here would
       // only re-render App and the inert list for a value nothing reads.
       setPlayingBuffer(true);
 
@@ -448,6 +490,15 @@ export function useAudioSession(): UseAudioSession {
             isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
               if (!session.isCurrent(token)) return;
+              // The clip RAN OUT — this fires only from a source that was not
+              // stopped by hand (`audio-io.ts` guards it with its `stopped`
+              // flag) and only while this claim still owns the floor. The
+              // recorder needs that distinction and cannot infer it: the
+              // position is gone the moment the handle is cleared below, and a
+              // playback that never started looks identical from outside
+              // (Frank R2 P2, #416). Called BEFORE the state update, so a
+              // caller's flag is set by the time the re-render reads it.
+              opts?.onEnded?.();
               session.release(token);
               setPlayingBuffer(false);
               // A preview of a PAUSED take borrowed the mic's floor (approach
@@ -496,22 +547,29 @@ export function useAudioSession(): UseAudioSession {
   // The buffer-playback position, PULLED on the caller's own clock. The handle's
   // `elapsed()` is the source of truth (it clamps to the clip duration), so a
   // pause or an end reads a settled value rather than a drifting integration.
-  // Returns null when nothing is sounding — a HIDE sentinel distinct from 0 (the
-  // clip start): the handle is nulled a React commit BEFORE the overlay's `active`
-  // prop goes false, so a plain 0 would snap the line to the left edge for a frame
-  // on every end/stop (George #102 R2). 0 only in the brief optimistic window
-  // before the handle settles, where the buffer is notionally sounding at the
-  // start. A stopped handle is never read: its `elapsed()` keeps tracking
-  // ctx.currentTime and would race the line to the end. Stable identity ([] deps):
-  // the overlay depends on it, so it must not churn per render (#102).
-  const readPlaybackElapsed = useCallback((): number | null => {
+  // Returns null when nothing is sounding — a HIDE sentinel distinct from
+  // position 0 (the clip start): the handle is nulled a React commit BEFORE the
+  // overlay's `active` prop goes false, so a plain 0 would snap the line to the
+  // left edge for a frame on every end/stop (George #102 R2). A stopped handle
+  // is never read: its `elapsed()` keeps tracking ctx.currentTime and would race
+  // the line to the end. Stable identity ([] deps): the overlay depends on it,
+  // so it must not churn per render (#102).
+  //
+  // The optimistic window — sounding, no handle yet — answers the range start
+  // WITH its provenance (`measured: false`) rather than a bare 0, which is the
+  // George R4 P1 class: see `lib/audio/playback-position` for the rule, the
+  // defect and the tests. This layer contributes only what `lib/` may not
+  // touch — the handle and the ref.
+  const readPlaybackPosition = useCallback((): PlaybackPosition | null => {
     const handle = playbackHandleRef.current;
-    if (handle) return handle.elapsed() * 1000;
-    return playingBufferRef.current ? 0 : null;
+    return playbackPosition(
+      handle ? handle.elapsed() * 1000 : null,
+      playingBufferRef.current
+    );
   }, []);
 
   // Advance the Segments-row scrub dot while a LIST take is sounding. Gated on
-  // `playingId` only — buffer playback (the recorder) reads `readPlaybackElapsed`
+  // `playingId` only — buffer playback (the recorder) reads `readPlaybackPosition`
   // on its own clock, so a preview no longer pushes App state ~16×/s and
   // re-renders the inert Segments list behind the sheet (#102). The handle's own
   // `elapsed()` is the source of truth, polled rather than integrated so a pause
@@ -590,7 +648,11 @@ export function useAudioSession(): UseAudioSession {
       // Notice), rather than `playbackError`, which would bleed onto the
       // Segments screen after the sheet is gone.
       console.error("Stopping the recorder failed", cause);
-      return { samples: null, error: "Could not finish this recording." };
+      return {
+        samples: null,
+        error: "Could not finish this recording.",
+        blob: null,
+      };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the
@@ -620,6 +682,20 @@ export function useAudioSession(): UseAudioSession {
     setPlayingBuffer(false);
     setPlaybackError(null);
   }, [cancelRecording, session, setPlaying, setPlayingBuffer]);
+
+  const primeAudioContext = useCallback(() => {
+    // Un-interrupt the shared context inside the tap that opens the sheet, so
+    // the FIRST decode of a finished segment runs on a running context rather
+    // than an interrupted one (#184). The load itself runs one commit later from
+    // `useRecorderSegment`'s effect — after this gesture's activation is spent —
+    // so resuming there would be too late on iOS, exactly the shape #155's retry
+    // fixed for the SECOND attempt. Fire-and-forget with the same failure sink
+    // as the sibling resume call sites; it touches neither the floor nor the
+    // session, only the shared decode/playback context.
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
+  }, []);
 
   useEffect(() => {
     // Backstop only. `startRecording` releases a refused claim on the completion
@@ -653,15 +729,18 @@ export function useAudioSession(): UseAudioSession {
     playTake,
     playBuffer,
     stopBuffer,
-    readPlaybackElapsed,
+    readPlaybackPosition,
     audioNeedsGesture: audioContextNeedsResume,
     startRecording,
     pauseRecording,
     resumeRecording,
     stopRecording,
+    retryDecode,
     previewCapture,
     leave,
+    primeAudioContext,
     readLevel,
+    readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,

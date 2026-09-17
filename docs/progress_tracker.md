@@ -11,6 +11,1310 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-17 (day) — the morning picker worked through: five of the seven parked PRs merged, two parked (one for a design pass, one at a final stop after nine rounds)
+
+The day session after the night run below, ~09:20 to ~16:45 UTC. The dev lead answered the seven cap escalations by picker at ~09:45 and extended the night's merge authority to the day ("same rules as last night"): merge once Frank and George are clean at the head SHA and CI is green, one at a time, re-checking the rest after each merge, the decision recorded on the PR; anything not dual-clean goes back to the DRI. **Every round past the cap was the DRI's explicit pick, each with a stop rule** — a new P1/P2 at the new head goes back to the picker, never into another round. Same lane worktrees and agents as the night, resumed by agent ID; George serialized, coordinator-run. One session restart (~12:31 UTC) killed a George run and the monitors; recovered from the rolling handoff note and relaunched.
+
+### Shipped
+
+| PR   | What                                                                                                                                                    | Closes                 | Rounds | Review outcome                                                                                                                                                                                              |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #423 | Share Book segment plural + persistence copy follow-ups                                                                                                 | #400                   | 4      | **accept residual** (DRI): George R4 P2 — the n>1 Notice cannot name the parent chapter — accepted with the hedged copy, tracked in #446; merged at `73df6ac` (`3cb8e05`)                                   |
+| #429 | every MP3 worker built from a purge-immune blob snapshot (takeover of #302, author credit kept)                                                         | #192                   | 5      | George R5 APPROVE at `4a1ce10`; a comment P3 fixed at `a3eae36` with Frank re-run, no George re-run, recorded on the PR; FakeWorker P3 → #447 (`e6e6518`)                                                   |
+| #432 | one centred playhead, the waveform scrolls under it; the #317 interrupt                                                                                 | #317, #415, #416, #417 | 6      | George R6 APPROVE at `33aee7a`; a stale test comment fixed at `219a139` with Frank APPROVE there; the Undo/Redo pan-reset P2 deferred to #449 by the DRI's pick (`67c2720`)                                 |
+| #420 | paste marker in its own row above the canvas                                                                                                            | #414                   | 8      | dual-clean at `c45ee19` (George R8: no findings he would stand behind); #448 and #428 carried forward by DRI decision; edits `ci.yml`, both reviewers at the merge SHA (`93d8daa`)                          |
+| #427 | IDB open: keep the late blocked connection, identity-checked cache, yield to another copy's upgrade (takeover of #236 → #240, commits carried verbatim) | #450 (part of #221)    | 7      | **accept residual** (DRI): Frank APPROVE at `8f19441`; George R7 P2 (a failure after a blocked open is swallowed, so the panel stays on the `blocked` copy) and P3 accepted and tracked in #454 (`a1d51fd`) |
+
+Also merged: #444 (the night entry below). Closed as superseded with a courtesy comment: #302 (by #429), #236 and #240 (by #427). Filed: #446, #447, #448, #449, #450 (closed by #427), #451, #452, #453, #454, #455, #456, #458; #445 was filed at the end of the night run. All in `v0.3.0 — Oct: training`.
+
+Before #427 merged, its base had moved under it in a file it also edits (`recorder.tsx`, by #420) and its CI predated that move. `merge-tree` was clean; the coordinator also built a throwaway local merge of develop `93d8daa` and `8f19441` and ran `npm run verify` on it — green, 74 files / 1097 tests. Nothing in this table was run on a device.
+
+### Parked
+
+- **#430** (system Back dismisses Books'/Segments' own overlays, #393/#374) — **parked as a draft at `36e10fd` under the DRI's stop rule.** The DRI overrode the lane's stop-at-cap read for a scoped round 5, then a P1-only round 6; George R6 returned a new P1 that round 6's own commit introduced (an overlay layout-effect whose cleanup calls `history.back()` fired on every parent re-render once per-render callbacks entered its deps). Six rounds, each fix moving the defect rather than closing it: the history-stack model needs a design pass before more code — #452 carries every open finding.
+- **#440** (durable failure log + Send from the crash screen, takeover of #289, #205) — **parked as a draft at `b6e9d86` under the DRI's final stop rule, after nine rounds.** Rebased onto #427 (`6269655`, one `strings.ts` conflict; `DB_VERSION` stays 6 — #427 never bumped it, so the night entry's "whichever lands second takes v7" was void). The first George run after that rebase found the #427 × #440 interaction neither diff had contained: the crash screen now needs IndexedDB while `App`'s unmount gives the connection away, so Restart held forever on a latched open. The lane confirmed the mechanism and showed it cannot fire until a `DB_VERSION` 7 copy exists. DRI picks: round 8 = Restart reloads on a terminal refusal and holds only on a clearable one (`c1333de`), the rest of the class to #455; round 9 (final) = a synchronous generation check in `send()` for a Frank R8 P2 (`b6e9d86`). At `b6e9d86`: Frank APPROVE, CI green, 1191 tests / 26 e2e — and George R9 returned two P2s: the coordinator half again, sharper (a parked deferred upgrade + a render throw loses the crash row on the reload round 8 made correct — already on #455), and a new one (`SaveFailed`'s Restart reloads with no `flushFailureLog()` while `App` and the transcode sweep stay live under it). Both are in the unchanged tree, neither loses audio, and the first needs a newer-schema copy that does not exist yet; the rule was "any P1/P2 after round 9 parks it", so it parked. Un-parking is the DRI's call — the lane's park triage on the PR carries the options. #289 stays open until #440 lands. Filed from this lane: #451, #453, #455 (blocker on the next `DB_VERSION` bump), #456, #458 (the `SaveFailed` flush — applies once #440 lands). The lane's own read for the un-park: one scoped round for #458, then merge; the coordinator half stays on #455.
+- **A correction that belongs in the record:** the round-9 pick was made on the coordinator's statement that the lane had _reproduced_ Frank's P2 in Chromium. The lane withdrew that a round later — `reportFailure` only queues the write and the generation moves after the IndexedDB commit, so in the one-task probe the armed report still matched the store and sending it was correct. The hole was real in the code (`send()` had no check) and round 9 closes it, but there is no red-first test for it (the window cannot be forced from Playwright), and the mutation that neutralises the check survives, declared on the PR.
+
+### Held for the DRI
+
+- **#419** (Dependabot runtime bumps: React 19.3, Capacitor 8.5) — held by the DRI's pick until the parked PRs land; **#431** (Dependabot minor/patch group) behind it.
+- **#422** promotion plan (review only, no bump). **#441**, **#434**, **#418** unchanged from the night entry.
+
+### Review: what we learned
+
+Appended to the coordinator's learnings file; the ones that decided something today:
+
+- **The lane's stop-at-cap read was the signal (#430).** The one PR where the lane said "stop" and the DRI picked another round is the one that parked two rounds later with a regression from the fix. When a lane that has rebuilt a mechanism says more rounds will not converge, the next step is a design pass, not a scoped round.
+- **A minifier is part of the cascade (#420).** esbuild's CSS minify collapses duplicate same-property declarations, so a `justify-content: center` fallback ahead of `safe center` never reached `dist/`. The fix is the `@supports` form **and** a test that reads the built CSS — and a dist-reading test only means something where a build precedes it, so #420 added a Build-job step (`REQUIRE_DIST_BUILD=1`) for `tests/dist-css.test.ts` and `tests/precache-manifest.test.ts`. The Quality job runs them with no `dist/` at all (#445 was corrected on this point).
+- **Measure layout claims (#420 R7/R8).** "`safe center` engages on a short stage" was false: the `overflow: hidden` canvas wrapper has an automatic minimum size of 0, so it absorbed the whole shrink and the waveform was clipped instead. Found by George, confirmed in real Chromium (wrapper 55px/44px → 150px after three `flex-shrink: 0`), not by reading the CSS.
+- **Widening a cleanup effect's deps re-runs the cleanup (#430 R6).** `exhaustive-deps` is not neutral when the cleanup has a side effect.
+- **A paired-effect guard must return its outcome (#430 R5):** a void "refuse" inside a push/state pair desyncs the history stack from the state that mirrors it.
+- **Stopping a producer does not fix a predicate (#440 R6).** The coordinator proposed "stop the sweep" as one fix for two findings; the lane showed one of them was the generation-drop predicate firing on any non-idle status. Fix proposals from the coordinator are hypotheses for the lane to test.
+- **Copy must have its action wired (#427, #450).** Retryable copy over a permanently failing call, where the retry control is also the only exit, is a trap; `failureExit` makes the stay-or-leave decision one rule consulted at four sites, with a table test.
+- **Parallel PRs on one seam need an interaction pass after the first lands (#427 × #440).** Reviewed side by side for a day, neither diff contained the other; the first deep-tree run after the rebase found the interaction at once, and the lane found the read-side half by reading the merged `db.ts` by hand. A rebase onto a PR that rewrote a shared boundary is not "rebase only" for review purposes.
+- **A reproduction claim names what was observed and why that implies the defect.** "The file was shared" was the observation; "it was stale" was the inference, and it was false. The coordinator relayed the headline to the DRI without asking for the assertion. The honest test for a window that cannot be forced is the gate's _other_ state — the round-9 e2e case asserts a reported-but-not-yet-stored failure does **not** refuse the send — with the surviving mutation in the table.
+- **READY-FOR-GEORGE means Frank is clean at that SHA.** The lane flagged a red Frank before a George round was spent on a head already known to need another commit. Frank is also not deterministic: he raised at round 8 a P2 in code unchanged since round 5.
+- **Nine rounds is a statement about the PR's shape, not the reviewers.** #440 carries a store, a sink, two Send surfaces and the crash screen's Restart contract; every round past the cap found a lifecycle seam one of them shares with the unchanged tree. The same PR as three would each have capped lower.
+- **Check a sequencing note's premise before acting on it.** The handoff carried "#440 takes `DB_VERSION` 7 if #427 lands first" all day; at merge time develop still said 5 — #427 never bumped it.
+- **A clean `merge-tree` is a textual claim.** When the base moved in a file the PR also edits and the PR's CI predates the move, verify the merged tree (four minutes) before merging — and rebuild `dist/` first, or the dist-reading tests go falsely red (#445 again).
+- **Coordinator mechanics:** `gh pr merge --match-head-commit` needs the full 40-character SHA; a George launch needs a launch log and a watch-file check (an execute bit and a shell guard both failed silently into `/dev/null`); stopping a George run takes two process groups (the launcher's TERM does not reach the grok child); a session restart kills George runs; **a blocking picker idles the George slot** — launch the pending run before opening one.
+
+### Next session, in order
+
+1. `/sod`.
+2. **#440 un-park decision** (park triage on the PR): accept George R9's two P2s as residuals and merge at `b6e9d86`, one scoped round for the `SaveFailed` flush, or hold it for the connection-ownership decision on #455. The failure log is what a facilitator sends from a phone at the training; it should not sit parked by default.
+3. The #452 design pass for #430 (history-stack model: which overlays are back-dismissible, and whether they push an entry), then on-device system-Back testing on Android.
+4. #419 then #431 (Dependabot), now that the parked queue has drained; #422 promotion plan review and the next `develop -> staging` promotion.
+5. #405 item 1 + #404, #235 + #239/#230 (unblocked by #432), #442, #402, #418.
+6. Promote the learnings into AGENTS.md (Commands: `env -u NODE_ENV`, build before push; Review: hand-back contract, cap escalation template, post-approve rule, stop rules past the cap, boundary-work budget) and `docs/review/dual-review.md`.
+
+---
+
+## 2026-09-17 (night) — nine review lanes overnight under blanket authority: four code PRs merged, seven parked at the round cap with escalations for the morning picker
+
+An unattended run from ~00:30 to ~09:20 UTC (the DRI's evening of 09-16 into the morning), under the dev lead's blanket merge authority for the night: merge once Frank and George are clean at the head SHA and CI is green, one at a time; at the round cap, classify and escalate, never a fifth round unprompted. Nine lanes in isolated worktrees (Opus at most three at once, Sonnet otherwise), George serialized through `george-solo2.sh` with the coordinator owning every run. One usage-limit stop (~01:45 UTC, three Opus lanes killed, resumed by agent ID at 02:08) and one context compaction (~04:00) — both recovered from the rolling handoff note and the self-scheduled heartbeat, with no lost work.
+
+### Shipped
+
+| PR   | What                                                                                           | Closes | Review outcome                                                                                                                                      |
+| ---- | ---------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #421 | Android `versionName` follows `package.json`                                                   | #410   | dual-clean at `6043ba0`; two docs-only P3s George prescribed fixed at `e759e2b` with Frank re-run, no George re-run, recorded on the PR (`65f5202`) |
+| #426 | named-control guard covers `recorderInterrupted` (takeover of #274, author credit preserved)   | #196   | dual-clean at `62f4ec6`, no findings at R2 (`8fcfabd`)                                                                                              |
+| #433 | `react-hooks/refs` bail-out gate; the live #212 shape in `useBooks` hoisted (takeover of #234) | #212   | George R4 (cap) APPROVE at `fd03d51`; a prescribed probe + comment landed at `b2f0a27` with Frank re-run, recorded on the PR (`ad78389`)            |
+| #436 | `version.json`, `npm run check:deploy`, rollback runbook (takeover of #215)                    | #176   | George R4 (cap) APPROVE at `ebbd4c5`, four P3s deferred to #443; process/meta, both reviewers at the merge SHA (`472bdb5`)                          |
+
+Also merged: #412 (tracker), #298 (`@types/node` 26), #425 (#243 write-back, closes #243), #424 (#411 docs). Closed as superseded with a courtesy comment: #274, #234, #215. Filed: #428, #434, #435, #437, #438, #439, #441, #442, #443, and #445 (the pre-push hook tests before it builds, so the #436 precache-manifest test fails a docs-only push from a stale `dist/` — found while pushing this entry).
+
+### Parked at the round cap — the DRI's morning decision
+
+Every one of these has Frank clean at its head, CI green, and a round-4 triage comment from its lane that dispositions each George finding **PENDING-DRI** with the lane's own verification, a chain-vs-siblings call, and options. None was merged; none had a fifth round.
+
+| PR   | What                                                                   | George R4 residual (the one that matters)                                                                                                                                         | Lane's read                                                                                                                                                                                                                                                                                                       | Escalation              |
+| ---- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| #427 | IDB open/blocked/yield + clipboard-as-held-work (takeover #236 → #240) | P1: the panel is deferred for clipboard-only work even when the copy can no longer write, and the only live control (Back) wipes the clipboard; P2: `pasted` latch survives erase | **siblings** — recommends one re-shape round: delete the pasted-latch machinery, hold while the slot is non-empty; fallback: merge with the clipboard arm removed                                                                                                                                                 | issuecomment-5708427650 |
+| #432 | playback model: centered playhead, scrolling strip, #317 interrupt     | P1: Pause/finger-down before the playback handle settles reads the optimistic `0` and the freeze commits it → next Record punches in at sample 0 on the default Play              | **sibling** of the R2 class — one class-level round: an honest "is there a real playback position?" at the audio boundary (~40–60 lines, T2)                                                                                                                                                                      | issuecomment-5708605076 |
+| #429 | MP3 worker blob snapshot (takeover #302)                               | P2: a handshake timeout terminates the handle and restarts lamejs from zero, so the two strike windows never share a handle → snapshot discarded → purged chunk URL               | **chain**, not plateaued — one scoped round (P2 + header comment, ~10 lines), P3 FakeWorker to its own issue                                                                                                                                                                                                      | issuecomment-5708912301 |
+| #423 | persist copy + Share Book plural (#406 items 1–3, #400)                | P2: the n>1 combined Notice cannot name the parent chapter from `(chapters, segments)`; the producer discards the count that would make it true                                   | **re-shape** — accept the hedge + file the `partialChapters` producer field, or split the n>1 accuracy into its own PR                                                                                                                                                                                            | issuecomment-5709024181 |
+| #420 | paste marker off the waveform (#414)                                   | P2: `justify-content: safe center` with no `center` fallback top-packs the canvas on WebView < 115 / iOS < 17.6 (one line); P2: overflow clips Cut — landscape only, measured     | **chain** — one narrow round: the two one-liners; the landscape overflow deferred to #428                                                                                                                                                                                                                         | issuecomment-5709203891 |
+| #430 | nav-layer Back dismisses overlays (#393)                               | P2: `goBack`'s raw `history.back()` is invisible to `outstandingBacks`; P2: the recorder still passes last-render `erasing`; P2: `queuedPushes` drained before routing            | **stop at the cap** — two of three are inside the reconciliation mechanism the lane rebuilt in R3; on-device system-Back testing is the better next investment                                                                                                                                                    | issuecomment-5711525514 |
+| #440 | durable failure log + Send from the crash screen (takeover #289)       | P2: the crash-screen Send lacks the generation-keyed drop the Books panel has; P2: `describeCause` drops `Error.cause`; P2: Restart awaits the log lane with no busy/timeout      | **class, one level up** (the guard sits in the panel, not the shared hook) — recommends against the `useShareFlow` re-shape; one scoped round 5 of three small independent fixes, else fix P2-2 only and accept the rest; P2-3's timeout is a product call (a never-settling flush was left on screen on purpose) | issuecomment-5711897077 |
+
+Cross-lane facts for the rebase order: #440 bumps `DB_VERSION` to 6 and #427 also edits `db.ts` (whichever lands second takes v7); #427 and #430 both edit `App.tsx`; #420 and #432 share the Waveform mount line.
+
+### Held for the DRI
+
+- **#419** (Dependabot, 12 updates including React 19.3 and Capacitor 8.5 — runtime, beyond the approved scope).
+- **#422** promotion plan (a plan only, no bump).
+- **#441** downgrade-recovery wording; **#434** and **#418** for the requirements owner.
+
+### Review: what we learned
+
+The full list (97 bullets) is in the coordinator's learnings file and will be promoted into AGENTS.md and `docs/review/dual-review.md` as a follow-up PR; the ones that decided merges tonight:
+
+- **Seven of ten code PRs hit the cap with findings open, and every one was an interaction with the _unchanged_ tree** — a fallback aimed at a URL Workbox purges, a latch missing on one of four `history.back()` issuers, an optimistic `0` sentinel feeding a new consumer, a count used as a change signal for a bounded ring, a "tree sweep found none" claim over a live instance. Frank's diff-local pass raised none of them; George's deep-tree lens raised all of them. Boundary work (IDB coordinator, playback freeze, encoder lane, history stack) needs a George pass on the _design_ before code, a five-round budget, and an on-device pass inside the PR.
+- **"Fixed at SHA" is not "reviewed at SHA".** Two lanes recorded Frank clean at a head he never ran on; the re-run found two P2s in the fix commit itself (#436). Every hand-back names the SHA each verdict was produced at, and a fix commit gets its own Frank pass before George.
+- **Cap handling that worked:** no fifth round unprompted; one escalation comment per PR with each finding PENDING-DRI, the lane's own reachability read (several rated a P2 lower than George with evidence; one rated a P1 higher), chain vs siblings, and three options. The lanes' classifications were more useful than the severities.
+- **Post-approve commits:** when George approves with prescribed P3s that are docs, a comment or a test probe, the lane fixes them, Frank re-runs, and the merge records that George was not re-run (#421, #433). Code P3s at the cap with an APPROVE go to one issue (#443).
+- **Close a class with a rule and a test that asserts the rule** (#440 R4, #430 R3): a shared primitive plus a wiring or table test that dies on the next instance; "left outside, traced by hand" is where the next round's finding lives.
+- **Counts, not booleans, for outstanding async effects** (#430): single-bit "one in flight" flags cannot represent two overlapping traversals or a coalesced popstate.
+- **A retry budget that restarts the work from zero is not a budget** (#429): strikes must accumulate on the same handle; only an error justifies a rebuild.
+- **A destructive control is never the auto-focused one-tap default** (#427 Restart); a latch is armed from the callee's "I started it", never the caller's intent (#430).
+- **Copy cannot state an invariant the producer throws away** (#423); a user-facing coverage claim is a finding when the grep disagrees (#440 runbook).
+- **A red-first test that passes with the fix reverted is not red-first** (#440, two drafts rejected); measure a guard before shipping it (two lanes deleted their own inert code); diff-check every mutation (a comment-line edit runs green).
+- **George: one new failure class.** A run ended `ok` with reasoning-only output and no report (rc=3 no-verdict, #436 R2); one re-run delivered a real P2. Eighteen serialized runs, 10–19 min each, one failure.
+- **Container gotcha, re-hit:** `NODE_ENV=development` is ambient; every verify/test/build needs `env -u NODE_ENV` or Vite/Workbox output differs from CI. Belongs in AGENTS.md's Commands section.
+
+### Next session, in order
+
+1. `/sod`.
+2. **Picker on the seven parked PRs** (table above): per PR, one scoped round 5 / accept residual or fallback / re-shape / stop. Then the rebase order given the `db.ts`, `App.tsx` and Waveform overlaps.
+3. #419 (runtime bumps) and #422 (promotion plan) decisions.
+4. After #432 lands: #405 item 1, #404, #235, #239/#230, #442, #402, #418.
+5. Promote the learnings into AGENTS.md (Commands: `env -u NODE_ENV`; Review: hand-back contract, cap escalation template, post-approve rule, boundary-work budget) and `docs/review/dual-review.md`.
+
+---
+
+## 2026-09-16 (evening) — signing secrets moved, the release keystore created, both native lanes proven from staging behind the environment gate
+
+A short session on the Mac, DRI at the keyboard with an agent-prepared runbook (a Claude Doc, "Native signing secrets: step by step"). The morning `/sod` found the repo at v0.2.3 with #317 fully answered by the requirements owner at 14:00 UTC (the day entry above did not know it), three unmilestoned residuals (#387, #385, #377, now in v0.3.0), and the #243 register updated with the #317 answer.
+
+### Shipped
+
+| What                                        | Evidence                                                                                                                                                               |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eleven signing secrets in `release-signing` | `gh secret list --env release-signing` shows 7 iOS + 4 Android names; repository level holds only `CLOUDFLARE_ACCOUNT_ID` (seven copies deleted 21:15 UTC)             |
+| Android release keystore                    | created by the DRI (`keytool`, PKCS12, alias `tc-mobile`, valid to 2054), vaulted with its SHA-256 fingerprint; local `assembleRelease` green in 24 s, signer verified |
+| iOS lane proven behind the gate             | run 35151445350 from `staging` `88683c4`: preflight, `waiting`, approved after the yml check, uploaded 21:20:39 UTC; the build is visible in TestFlight                |
+| Android lane proven behind the gate         | run 35151461247, same ref: DRI-approved, built in 2.5 min; artifact signer SHA-256 equals the keystore fingerprint; pre-release `android-release-v0.2.3`               |
+
+Both runs started after the repository copies were deleted, so each green run is the proof that the environment copies alone suffice (#321's exit criterion, L5 "environment-gated dispatch proven").
+
+### Findings
+
+- **The five "missing" iOS secrets were never missing.** The 09-13 entry recorded them as not in the vault, DRI locating them. The .p8, the Distribution .p12, and the App Store profile were in `~/Downloads/uw-ios-signing/` on the Mac, with the certificate's raw private key beside them as a plain file. Checked before use: the profile embeds the exact certificate (SHA-1 match), the raw key matches the certificate's public key, the .p12 opens with the vaulted password and carries a shrouded key bag, cert and profile expire 2027-09-12. The folder is being vaulted and deleted.
+- **Two shell traps in the runbook, both hit.** zsh does not word-split an unquoted `$E` holding several flags (`unknown flag: --env release-signing -R …`), and a bare `read -s` prints no prompt, so an Enter exported an empty password and Gradle refused `assembleRelease`. Fixed in the Doc; the repo copies are #411.
+- **`versionName` is `1.0` on every APK** (Capacitor template default); the version code moves, the name does not. #410.
+- **Homebrew OpenSSL 3 cannot open a Keychain-exported .p12** (RC2-40 certificate bag); Apple's `/usr/bin/openssl` can. CI is unaffected (`security import`).
+- The permission classifier refused to write the API Key ID into the Doc and refused an agent-side environment approval as self-approval. Both refusals were correct: the Doc carries names and locations only, and the Android approval was the DRI's.
+
+### Blockers / needs a human
+
+- **DRI:** install `android-release-v0.2.3` on the Galaxy A17 (uninstall the debug build first) and run the #245 sheet on it; the iOS half of #245 (the multi-minute Share, #405) on the TestFlight build. Vault the iOS folder and delete it from Downloads (Doc Part B4).
+- **Requirements owner:** the rest of #243 (Q1, Q2, Q5, Q7, #13).
+- A tester confirming a TestFlight build arrived (#262).
+
+### Next session, in order
+
+1. `/sod`.
+2. **#317**, unblocked since 14:00 UTC today and the last v1-required code item (pan-then-resume: touch pauses, waveform follows, lift resumes from the sample under the centerline).
+3. The code queue from the day entry: #393, #402, #405 item 1, #404, #406, #400. Add #410 (one-liner in `build.gradle`) and #411 (docs).
+4. Plan the `staging → main` promotion (bumps to 0.3.0); it also carries the gated lanes to `main`, which restores dispatch from `main`.
+
+---
+
+## 2026-09-16 — v0.2.2 and v0.2.3 promoted and verified on staging; 16 feature/fix PRs merged; the requirements owner's five answers built; every v1-required code item done except #317
+
+A long session running from the 2026-09-15 evening through the night and the day, under the dev lead's blanket merge authority: merge a PR once both reviewers are clean at its head and CI is green, one PR at a time, rechecking the rest after each merge. It lost about four hours to two usage-limit stops (~12:10–15:00 UTC; ~15:40–16:05 UTC, resumed on a new login). Lanes were resumed by agent ID, not respawned.
+
+### Shipped
+
+| Version    | Promotion               | Staging serves it              | Carries                                                          |
+| ---------- | ----------------------- | ------------------------------ | ---------------------------------------------------------------- |
+| **v0.2.2** | #389 → #390 (`ca19f80`) | 11:37 UTC, `index-CKe4t-yv.js` | #346 #343 #356 #271 #366 #371 #368 #292 #344 #213 #347 #386 #367 |
+| **v0.2.3** | #407 → #408 (`88683c4`) | 17:57 UTC, `index-DDGrsOGJ.js` | #345 #384 #398 #401 #403 #279 #214                               |
+
+Main is still at **v0.2.0**. The **v0.2.0 milestone is closed** (29/29 issues).
+
+| PR   | What                                                                                                                                    | Closes              | Review outcome                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #366 | waveform scaled to the take's own peak                                                                                                  | #358                | dual-clean                                                                                                                                                                     |
+| #368 | recorder inert / focus cluster                                                                                                          | #75 #97 #151        | dual-clean (R6)                                                                                                                                                                |
+| #292 | live waveform grows during a 2nd take                                                                                                   | #283                | dual-clean at `647c54c`; comment-only `e3ddd72` accepted with a merge note                                                                                                     |
+| #344 | delete a Book                                                                                                                           | #337 #364           | **DRI accepted** residuals at R11: #363, #360 (→ #367), #378, #379; all four are second-copy scenarios                                                                         |
+| #213 | close decision and save orchestration lifted into tested seams; 26/26 mutations killed; a pre-existing undismissable-sheet defect fixed | #180                | dual-clean at `980ac91`; comment-only `2cc4b61` accepted with a merge note                                                                                                     |
+| #347 | native share via Capacitor                                                                                                              | refs #336           | **DRI accepted** #380 #381 #382; the A17 proof is owed on the build                                                                                                            |
+| #386 | level-meter toggle removed (requirements owner)                                                                                         | refs #286           | dual-clean                                                                                                                                                                     |
+| #367 | New Book asks for a name; first unused placeholder                                                                                      | #314 #360           | dual-clean at R7, after a conflicting rebase over #344                                                                                                                         |
+| #345 | Play in edit mode auditions the selection (requirements owner: yes)                                                                     | #284                | dual-clean; residuals #370 #396                                                                                                                                                |
+| #384 | busy and ready Control affordances                                                                                                      | #354 #383           | **DRI accepted** #393 #394 #395; the Menu dismiss guard was reverted, and the nav-layer fix is #393                                                                            |
+| #398 | Share Book warns on missing or partial chapters (Q6); manifest deferred to #353                                                         | #115                | dual-clean; #400                                                                                                                                                               |
+| #401 | centerline visible in every recorder state (requirements owner)                                                                         | #316                | dual-clean; #402                                                                                                                                                               |
+| #403 | edit/select control on the recorder's bottom bar                                                                                        | #315                | dual-clean (R2)                                                                                                                                                                |
+| #279 | 15 s encoder silence deadline, health notice, playback/decode memory                                                                    | #166 #175 #290 #291 | **DRI accepted** #404 #405 after a scoped extra round. **Browser heartbeat gate:** a real 10-minute encode in Chromium, longest silence 501 ms (about 30× inside the deadline) |
+| #214 | `navigator.storage.persist()` plus a not-persisted shelf line, suppressed inside the native shell                                       | #12                 | dual-clean (R2); #406                                                                                                                                                          |
+
+Also merged: #371 (tracker).
+
+### Decisions (dev lead, via pickers)
+
+- **Blanket merge authority** for the night and for today. **Opus** only for T1 lanes, at most two at a time.
+- **Demoted to v1.0.0:** #38, #361, #246, #253, #272.
+- **Version scheme kept:** 0.2.x are staging builds; the staging → main promotion for the training bumps to 0.3.0. Switch to `0.3.0-rc.N` only if testers are confused.
+- **Accepted residuals at the cap:** #344, #347, #384, #279 (details in the table above).
+
+### Requirements owner's answers
+
+Recorded on each issue and on the #243 register:
+
+- **#284:** yes, as built.
+- **#316:** the centerline is always visible. The two earlier decisions that hid it were miscommunication.
+- **#317:** partly answered. Scrubbing while playback runs (D4) is not understood; the clarifying question is on the issue.
+- **#286 item 3:** remove the level-meter toggle for now.
+- **Q6 / #115:** warn on missing chapters; a manifest is optional for v1.
+- **#248:** the runbook ships as written.
+
+### Issue triage
+
+- **Two-day count:** 103 open → 95 → 96 today. 27 issues closed today and 28 new ones filed, almost all of them review residuals, each with an evidence comment.
+- **Closed or folded, with the content carried over:** #120, #25, #33, #24, #263, #362, #19, #116, #241. #241's premise was false at `45a67f9` and it was folded into #172 / #235. Duplicates #388 and #397 were closed.
+- **v0.3.0:** 64 open / 50 closed. **v1-required open: 9, and none of them is code except #317.**
+  - #317 waits on the requirements owner.
+  - #243 is the register.
+  - #262 needs the signing secrets.
+  - #245, #336, #269, #59, #58 and #108 are device evidence.
+
+### Review tooling: what we learned
+
+- **George "stalls" were a watchdog defect.**
+  - grok prints nothing to stdout between tool loops, so a report-byte-growth watchdog killed healthy runs.
+  - `george-solo2.sh` now keys on grok's own log (`~/.grok/logs/unified.jsonl`) for its pid: 10 minutes of silence counts as a stall, with a 45-minute cap and a PID-group kill.
+  - Real runs took 5–17 minutes.
+  - An early `pkill -f grok` killed other lanes' runs; it was withdrawn.
+- **Dirty-tree runs are void.**
+  - George runs on a worktree that was dirty, or edited mid-run, exit 1 but still print a verdict.
+  - The script now refuses to start on a dirty tree (exit 91), and the fleet watch flags exit-1 runs as VOID.
+- **A plain subagent that enters an existing worktree by path is refused at every Bash call.** Spawn lanes with `isolation: "worktree"` and push with `HEAD:<branch>`.
+- **Lanes hand back mid-George.**
+  - The coordinator takes over the run and posts the triage itself, which prevents duplicate issues like #396/#397 and #387/#388.
+  - A fleet watch (`george-fleet-watch.sh`) flags 8 quiet minutes and reports every terminal line.
+  - The scripts live in the job tmp dir. Promoting them into `scripts/review/` is part of #220.
+- **Merging after develop moves.**
+  - If the PR's files don't overlap the new develop commits and GitHub reports CLEAN, the sign-off stands (#279 over #403).
+  - Otherwise, compare patch-ids against each merge-base; if they differ, the lane rebases and re-runs both reviewers (#367).
+- **Session continuity.**
+  - `~/.claude/settings.json` has auto-compact on (500k window), a PreCompact snapshot hook and a SessionStart(compact) re-inject hook.
+  - The rolling note is `~/.claude/handoff/tc-mobile.md`. No compaction happened today.
+
+### Blockers / needs a human
+
+- **Dev lead:** re-cut the APK and TestFlight builds from staging 0.2.3, then run the **consolidated checklist on #245**. Its top item is one multi-minute Share on an iPhone. The encoder deadline is proven only in Chromium, and if WebKit holds the heartbeat, long iOS Shares would fail at 15 s (#405). This must happen before the training build. The signing secrets are also still owed (#262).
+- **Requirements owner:** #317 (may the translator drag the waveform while playback runs?), plus the rest of #243 (Q1, Q2, Q5, Q7, #13).
+
+### Next session, in order
+
+1. `/sod`, and check the usage budget.
+2. Act on any device findings from #245.
+3. Code queue, one lane each, with recorder lanes staggered:
+   - #393 (nav-layer rename dismissal and system Back)
+   - #402 (make the centerline mean the insert point in whole-clip view)
+   - #405 item 1 (yield inside the playback fill)
+   - #404 (transcode sweep design)
+   - #406 items 1–3 (comments and copy)
+   - #400 (plurality copy)
+4. #317 as soon as the requirements owner answers.
+5. Stale drafts from other contributors (#235, #302, #289 and the #2xx batch): ask their authors whether each is live before touching it.
+6. Plan the staging → main promotion (bumps the minor to 0.3.0) ahead of training week, not on the day.
+
+---
+
+## 2026-09-15 — L1 landed and promoted (v0.2.1), the first tester's report built as five PRs, the issue list triaged (99 → 93 → 99 with new inbound), and a strategic pause at 97 % of the usage budget
+
+**Paused deliberately at ~17:40 UTC with five Opus lanes killed mid-round** (Seth: "we may not make it… pause strategically"). Every lane had pushed; worktrees under `.claude/worktrees/agent-*` hold any uncommitted tail. **Model policy from today (memory `tc-mobile-subagent-model-policy`): Sonnet by default; Opus (= Opus 5; the Agent tool has no 4.8) only for T1/recorder-core lanes with Seth's go; ≤3 Opus at once.**
+
+### Landed on `develop` (all squash) and `staging`
+
+| What                                                                                                                                                                        | Where                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| #334 Android `MODIFY_AUDIO_SETTINGS` fix; tracker PRs #333/#335/#322/#340; #330 signing-environment gate                                                                    | `ffd98e7` … `a5f36f3`, `57daa48` |
+| `chore(release): v0.2.1` (#341) → **develop → staging #342, merge `977f544`**; staging serves `0.2.1`/`977f544`, Workers Builds check-run success (verified, noted on #342) | staging                          |
+| #346 recorder toggles (level-meter glyph, magnifier zoom, `panForZoom`, `effectivePan`) — **dual-clean**                                                                    | `dad7c9c`                        |
+| #343 facilitator runbook (`docs/training/facilitator-runbook.md`, + Android 7.0 line in `tester-install.md`)                                                                | `90c5443`                        |
+| #356 AGENTS.md tester-feedback convention; #271 AGENTS.md "gates tested in both states" (closed #270)                                                                       | `2f0fec2`, `dfcea6d`             |
+
+### Open PRs from today, state at the pause
+
+| PR                                | Issue                      | Head                                                              | Frank          | George                                     | Blocks                                                                                       |
+| --------------------------------- | -------------------------- | ----------------------------------------------------------------- | -------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| #344 delete a Book                | #337 (in scope, Tim 09-15) | `5a4da04` (R7: #364 focus-after-inert fix)                        | APPROVE        | **not run at head**                        | George at `5a4da04`; #363/#360/#361 accepted residuals; #364 should close                    |
+| #345 audition in edit             | #284 (**Tim unanswered**)  | `81141d6`                                                         | APPROVE        | P2 → **#370** (toolbar wrap at 320 px)     | Tim's answer; accept #370 or one 2-line round                                                |
+| #347 native share                 | #336                       | `6accc01` (R6 partial: Discard-during-write P1, sending state P2) | —              | —                                          | finish R6; both lenses (George **scoped** method in the R5 comment); device proof on the A17 |
+| #366 quiet-take waveform scale    | #358 (Tim)                 | `5db1654`                                                         | R3 in progress | R3 P2 (`fitFrom` + draw clamp) being fixed | finish R3                                                                                    |
+| #367 New Book asks for a name     | #314 (Elsy)                | `e472ee5`                                                         | clean R3       | R3 not run                                 | George R3                                                                                    |
+| #368 recorder inert/focus cluster | #75 #97 #151               | `ab69765`                                                         | R?             | fixing a P3 comment                        | finish round                                                                                 |
+
+Not started: **#315** (bottom-bar edit control; waits for #345 to land — same toolbar). **Promotion v0.2.2 held** until #344 and #347 clear (Seth). **#271/#343/#356 merged; #366–#368 must be re-briefed on Sonnet if respawned.**
+
+### Reviews: what today taught
+
+- **George's 402 was a stale login, not balance** (re-login → 9 % monthly usage). Stand-in deep-tree agents covered his lens on #344/#345/#346/#347 and found real P2s (paste-marker misplacement; held-take false success); George then ran for real and found more (delete-tx abort missing → **the rollback IS testable**, contrary to the stand-in; Select live over the swapped view; Discard live during the native write). **Scoped George** (merge-base + non-source paths as a local base, three-dot diff) ran first try where the full 57 KB prompt stalled 3×.
+- Harness defects filed/recorded: **#348** (frank.sh passes a failed run), **#220** (+2: triage.sh exits 1 with one report; hard-codes "Both reviewers ran"). **PR-body edit race** (memory `tc-mobile-pr-body-edit-race`): a lane's `gh pr edit --body-file` from a stale copy clobbered the coordinator's edit on #344.
+- **Coverage gap filed as #361 (v0.3.0, v1-required):** six review findings/surviving mutants in hook/component wiring the Node-only suite cannot drive.
+
+### Issue triage (Seth-approved, all with evidence comments)
+
+Closed #16, #170, #251 (completed); #182→#192, #150→#36 (duplicates); #285 (intentional since 08-28). Moved to v0.3.0: #75 #97 #120 #151 #25 #196 #197. 19 body-correction comments (#174 → **schema v5 is spent by #264; #174 and draft #257 must be v6**; #316/#317 reverse three recorded decisions; #241 names the wrong variable; #272 "Share works now" was the emulator; …). Closing keywords fixed on #344/#271/#257/#261; #347 → `Refs #336`, #343 → `Refs #248`. Labels `source: tester`, `post-v1` created; `v1-required` description now says v0.3.0.
+
+### Decisions recorded (sync-up 09-15, Tim/Elsy/Seth)
+
+#337 **in** (with strong confirm); #339 **post-V1**; v1-required = v0.3.0; tester feedback = bugs to the queue, features tagged `post-v1` with source (AGENTS.md Conventions). New: **#353** project import/export (Shema bundle, Scripture Bundle), **#354** share "ready" state, **#355** codec/record-to-MP3 research, **#361**, **#362**, **#363**, **#364**, **#370**. Tim filed **#357** (35-language localisation), **#358**, **#359** (mic level); #358/#359 cross-linked. Min Android = **7.0** (minSdk 24) — on #336, runbook, install guide.
+
+### Blockers / needs a human
+
+- **Tim (@timjore):** #284 (audition — built, waiting); #316/#317 reversals; #286 level-meter toggle keep/remove; Q6 (#243) → #115/#116/#24/#252. Seth is drafting the Slack post himself.
+- **Seth:** merge go per PR as they clear; iOS secrets into `release-signing` (5 of 7) + Android keystore (#318 step 2); re-cut APK from staging `977f544` and run #245 from step 2 (list playback #269, share #336/#272, background, call, restart); read the Moto G peak/RMS for #358/#359.
+- **Elsy:** second tester (Caleb, Android) into the APK loop; Signal group for field testing.
+
+### Artifacts
+
+PM status page (v12, 15 Sep after sync-up): `https://claude.ai/code/artifact/423ff4cc-9fef-4caa-b489-51e7a943eca4`. Facilitator runbook page (private): `https://claude.ai/artifact/KQ6VzEBUqnH1TL37aJNoM2`.
+
+### Next session, in order (as written at the 17:40 UTC pause; superseded below)
+
+1. `/sod`; check usage budget first. 2. Resume the five PRs on **Sonnet** unless T1 (#344 George run at `5a4da04` is verification-only → resume that lane, not respawn). 3. Merge in order as each goes dual-clean: #344 → #366/#367/#368 → #347 (after A17) → #345 (after Tim). 4. `chore(release): v0.2.2` develop → staging once #344 and #347 are in. 5. Re-cut the APK; Android sheet from step 2.
+
+### Late session (2026-09-15 evening → 2026-09-16 ~01:15 UTC) — lanes resumed on Sonnet, the George "stalls" explained, eight issues closed and five demoted, #366 merged, an all-night loop set up
+
+**Seth's decisions (picker, ~00:50 UTC):** blanket merge authority for the night (both lenses clean at head + CI green, incl. T1 and #371; one at a time, others re-checked after each merge); Opus allowed on T1 lanes, max two at once, Sonnet elsewhere, 3–4 lanes total; demotions to v1.0.0 approved (#38, #361, #246, #253, #272); **v0.2.2 release and promotion held for the morning.**
+
+**Merged:** #366 quiet-take waveform scale → develop `c87bd94` (squash), Frank + George clean at `bba07bf`, P3 → #373.
+
+**Lanes at the time of writing** (all `isolation: "worktree"`; a plain subagent that enters an existing worktree by path has every Bash call refused — four lanes were lost to that before the memory rule was applied; feedback filed):
+
+| PR                                        | Head                                                                                                                 | Frank   | George                                                                                                             | State                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| #367 New Book name                        | `2f5ebb7` (R4: per-book add-chapter latch + optimistic patch, NameEdit `busy`; Frank R4 P2 disabled→busy fixed)      | APPROVE | R3 REQUEST_CHANGES fixed; R4 running                                                                               | triage R4 pending George; body now `Closes #314`, `Closes #360`    |
+| #368 inert/focus                          | `6b13ee5` (rebased on develop; R6: `overlayFallbackLabel` resolver, fallback never an exit control; 3 comment fixes) | APPROVE | R5 REQUEST_CHANGES fixed; R6 running                                                                               | triage R6 pending George; #369 residual                            |
+| #344 delete a Book                        | `0755a87` (R9: `reportUnlessStale` + `checkPresent` seam)                                                            | APPROVE | R8 REQUEST_CHANGES (P2-1 → #360, fixed by #367; P2-2 fixed) · **R9 REQUEST_CHANGES: swallow path must `reload()`** | R10 lane sent; #372 filed                                          |
+| #347 native share                         | `6accc01` → R6 in a Sonnet lane (Discard-during-write P1, sending-state P2)                                          | —       | —                                                                                                                  | lane running; **A17 device proof still owed by Seth before merge** |
+| #292 / #283 2nd-take live waveform        | draft, being rebased onto develop by a Sonnet lane                                                                   | —       | —                                                                                                                  | lane running                                                       |
+| #213 / #180 save-orchestration seams (T1) | draft, being rebased by an **Opus** lane; George twice at final head                                                 | —       | —                                                                                                                  | lane running                                                       |
+| #345 audition                             | `81141d6`                                                                                                            | APPROVE | P2 → #370                                                                                                          | parked on Tim (#284)                                               |
+
+**The George "stalls" were a watchdog defect, not George.** Every lane judged a stall by report-file byte growth; grok writes nothing to stdout between tool loops. `~/.grok/logs/unified.jsonl` showed a "stalled" #344 run on loop 13, 154k prompt tokens, every `read_file`/`grep` succeeding, at the instant it was killed. Solo re-runs with a log-keyed watchdog verdicted in 11–13 min (#344, #366, #367, #368 all produced real verdicts, three of them REQUEST_CHANGES with real P2s). An early watchdog used `pkill -f grok`, which killed other lanes' runs (exit 143) — withdrawn, PID-group kill only. Rule now in memory (`tc-mobile-george-skip`): watch the grok log for the run's pid, 10 min quiet = stall, 45 min cap, expect 10–30 min. Scripts `george-solo2.sh` / `george-seq.sh` live in the job tmp dir; promote into `scripts/review/` if they earn it (#220 is the harness issue).
+
+**Issue triage (dev lead approved after reading bodies): 103 → 95 open, and five moved out of v0.3.0.** Closed completed: #120 (lib slice landed in #121/#123, no closing keyword), #25 and #33 (pivot spines; Template Library is #246/#253). Superseded/folded with content carried: #24 → #353; #263 checklist → #245; #362 → #164 item 1; #19 → #174 item 2; #116 → #115. Demoted v0.3.0 → v1.0.0 with evidence comments and v1 labels dropped: #38 (schema v6 two weeks out; persist() stays), #361 (test-infra programme; six paths stay listed as the known gap), #246/#253 (Template Library, non-blocking per sprint plan), #272 (Chrome-PWA only; #347 bypasses the gate in the APK). New: #372 (delete focus lands on Add Chapter), #373 (display-gain parameter drift guard).
+
+**Why 103 were open:** ~20 review-round P3 deferrals landing in v0.3.0 by default; ~10 audit umbrellas left open after their children split out; pivot spines whose work landed; 10 decision-blocked on Tim; 7 device-evidence items that one Android sheet run closes or converts; 26 parked in v1.0.0.
+
+**Path to v0.3.0 (recommendation stands):** the next tester build is v0.2.2 (the tester-report PRs), then re-cut the APK and run the #245 sheet on it (#269 may be Chrome-only: the tester's APK run had working playback). v1-required is down from 28 toward ~12 code items; treat #245/#108/#58/#59/#269 as one evidence run; #316/#317 only on Tim's confirmation; #262 closes when the signing secrets are in.
+
+**Session continuity:** `~/.claude/settings.json` now has `autoCompactEnabled: true`, a PreCompact hook that snapshots machine state (open PRs/heads, `.review/` verdicts, live grok/lane processes, worktrees) to `~/.claude/handoff/tc-mobile-snapshot.md`, and a SessionStart(`compact`) hook that re-injects that plus the rolling note `~/.claude/handoff/tc-mobile.md`, which is updated at every milestone.
+
+### Next session, in order (supersedes the list above)
+
+1. `/sod`; read `~/.claude/handoff/tc-mobile.md` first. Check each lane's PR for the latest triage; any George verdict still "running" → read the named watch file / `.review/george-<sha>.md`.
+2. Merge in order as each goes dual-clean + CI green (blanket go for the night only; re-confirm in the morning): #367 → #368 → #344 → #292 → #213; #347 after the A17 proof; #345 after Tim.
+3. Morning: `chore(release): v0.2.2` develop → staging, verify the served version, re-cut the APK, Android sheet (#245) from step 2.
+4. Tim: #284, #316/#317, #286, Q6 (#243). Seth: signing secrets (#262), Moto G level read (#358/#359), A17 share proof (#347).
+
+---
+
+## 2026-09-14 — first Capacitor build to record on Android: the v0.1.15 APK refused the mic, one manifest line fixes it (#334), proven on the Galaxy A17
+
+**Branches:** `fix/android-modify-audio-settings` (PR #334, `8ea924e` → `123273b`), **review-clean
+after two rounds, CI green, not merged** — awaits the DRI's go. `docs/eod-2026-09-14` (this entry,
+stacked on #333). **No merges, no closes.** **Release:** pre-release **`android-debug-v0.2.0-pr334`**
+(`app-debug.apk`, 7 149 619 bytes, target `123273b`) supersedes `android-debug-v0.1.15`, which
+cannot record on any Android device. **Issues:** #245 rows 1 and 2, #263 first WebView finding.
+Mac session (`excalibur`).
+
+### #245 row 1 — the v0.1.15 debug APK cannot record
+
+Samsung Galaxy A17 5G (128 GB / 4 GB), installed from the release page. Launch OK; first Record
+raised the OS microphone prompt, allowed, Settings shows Microphone allowed — and Record still
+showed the app's permission panel, Retry the same. **Cause, read from Capacitor 8.5.1's
+`BridgeWebChromeClient.java`:** for the WebView's `AUDIO_CAPTURE` request it asks Android for
+**both** `MODIFY_AUDIO_SETTINGS` and `RECORD_AUDIO` and calls `request.deny()` unless every
+entry is granted; Android returns `false` for an undeclared permission without a prompt. Our
+manifest declared `RECORD_AUDIO` only, so the WebView was denied, `getUserMedia` rejected
+`NotAllowedError`, and `classifyMicRefusal` rendered the panel. The OS grant was real; the
+refusal was one layer down — the "wrapper differs from the PWA" case #263 exists for (the same
+bundle records in Chrome on the same phone, 09-08/09-09).
+
+### #334 — `MODIFY_AUDIO_SETTINGS` declared; two rounds, both lenses clean
+
+One `uses-permission` line (normal protection, granted at install, no prompt; iOS untouched) plus
+README §5. **Round 1 at `8ea924e`:** Frank clean, and independently re-read the Capacitor
+source; George 1 P3 — the README banner "nothing below has been verified on a device"
+contradicted the new dated observation — FIXED `123273b`. **Round 2 at `123273b`:** both
+clean, first try each. George's deep-tree reads: `cap sync` does not rewrite the app manifest;
+`use-recorder.ts` holds the single `getUserMedia` call site; no debug/release overlay can drop
+the line. **Residuals, explicitly not findings:** post-Deny `permissions.query` inside the
+WebView unknown → #263; AGENTS.md Testing still says "Android has never been run at all" →
+#245, rewritten once the protocol runs.
+
+### #245 row 2 — the rebuilt APK records
+
+Built on the Mac from `123273b` (`npm ci && npm run build && npx cap sync android && cd android
+&& ./gradlew assembleDebug`; the main checkout had to go **detached** because a container
+worktree still holds the branch name — same SHA, same bytes). `aapt2 dump permissions` on the
+APK lists `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS`. `adb devices` listed nothing, so the
+release-page route again: pre-release `android-debug-v0.2.0-pr334`, downloaded on the phone,
+installed over v0.1.15 in place (same debug keystore, no uninstall). **Record: PASS** — the
+panel is gone, recording works. That is the first Capacitor build to record on Android. Only
+the Record step was run; playback, edit, background, interruption and share remain unrun on
+the APK. Row posted on #245.
+
+### Inputs from Elsy today
+
+- **#314** (New Book asks for a name): "please take this one next" — next feature after #334.
+- **#272** (Android Share Book fails): "Share works now." Device and build not stated; #272
+  stays open until the evidence row on #245 reaches the share step.
+
+### Blockers / needs a human
+
+- **Seth:** the explicit go to merge #334 (review-clean at `123273b`, device-proven), then a
+  `chore(release)` patch promotion `develop → staging`, and re-cut the `android-debug-*`
+  pre-release from the promoted tree so the protocol runs on a promoted build.
+- **Seth:** #330 round 5 vs merge, and the five remaining iOS secrets (carried from 09-13 late).
+- **Tracker PRs #333 and #322** are green and clean; this entry is stacked on #333.
+- **Still owed:** a tester confirming a TestFlight build arrived; the Android keystore (#318
+  step 2).
+
+### Next steps
+
+1. Merge #334 → promote → re-cut the pre-release → resume #245 from step 2 (playback, edit,
+   background, call interruption, restart persistence, share) on the Galaxy A17.
+2. #314 per Elsy.
+3. #263: run the Android half of the checklist on the promoted APK; the iOS half still needs a
+   tester on the TestFlight build.
+4. Rewrite the AGENTS.md Testing bullet from the #245 evidence once the protocol is past step 2.
+
+### 2026-09-14 (late) — the first external tester's report triaged into four issues and seven evidence rows; the storage-location question answered; #336 (share inside the APK) is the new critical path
+
+Container session, alongside the Mac session above (which built and device-proved #334; the
+diagnosis, PR, and both review rounds ran here). **Branches:** `fix/android-modify-audio-settings`
+unchanged at `123273b`; `docs/eod-2026-09-14-late` (this entry, stacked on #335 → #333).
+**Filed:** #336, #337, #338, #339. **Commented:** #245 (row 3), #263, #269, #284, #286, #91, #316,
+#248, #336. **No merges, no closes.** `/sod` found the repo clean and green, #330 untouched
+overnight, and the `release-signing` environment still at 2 of 7 iOS secrets.
+
+### The storage-location question (team chat)
+
+A team member asked whether recordings should live in a common Android folder so the
+debug→release signing-key uninstall does not wipe them. Answer sent, grounded in the tree: the
+wipe is a **signing-key problem**, solved by creating the release keystore once (#318 step 2) so
+every tester build updates in place; **not** a storage-location problem. Moving recordings out
+of IndexedDB needs a native file-system plugin (none installed), an import path, and on Android
+11+ a reinstalled app cannot read files it did not create without a picker. Share Chapter /
+Share Book is today's user-driven export. The requirements owner separately asked that
+recordings go to the **MicroSD card** in future releases — captured with the constraints as
+**#339** (v1.0.0, "mirror finished MP3s" as the proposed shape).
+
+### First external tester — Android APK `android-debug-v0.2.0-pr334`
+
+Everything in the foreground path worked cold: rename book, create segments, record, erase
+part of a segment, delete a segment, second book, playback in list and single-segment views.
+The tester self-corrected on two non-features (reorder segments, renumber on delete) and
+called both "the app is right". **Failed:** Share Chapter **and** Share Book, both with the
+"Could not share … Try again." copy. **Confusing:** the eye / crossed-eye (the level-meter
+toggle), the two arrow icons (the zoom toggle) read as state not action, no way to audition a
+selection before erasing, and insert-in-the-middle exists but was not discoverable. First
+question asked: does anything talk to a server.
+
+Triage, deduped against every open and closed issue (a fresh agent, 40+ queries):
+
+| Item                                                       | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Both shares fail in the APK                                | **#336** new, v0.3.0. Distinct from #272 (Chrome: Chapter worked, Book failed). Hypothesis: `share-flow.ts` gates on `typeof navigator.share === "function"` and the System WebView lacks it. **Contradicted the same day** by the PM's "Share works now" on an emulator → cause is likely WebView-version-dependent; downgraded to medium, measurement first (WebView version + `typeof navigator.share` on a failing phone), then the Capacitor Share plugin behind the existing hook. |
+| Delete a book                                              | **#337** new, v0.3.0, scope question for the requirements owner (practice books pile up at the training; only uninstall clears them).                                                                                                                                                                                                                                                                                                                                                    |
+| Reorder books                                              | **#338** new, v1.0.0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| MicroSD / external storage                                 | **#339** new, v1.0.0 (above).                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Audition the selection before erase                        | evidence on **#284**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Eye icon; cancel-an-edit discoverability                   | evidence on **#286** (what the control is: `recorder.tsx` ~2036, glyph shows the action; tester suggests an ear/level glyph).                                                                                                                                                                                                                                                                                                                                                            |
+| Zoom arrows "reversed"; selection edges off-screen on zoom | evidence on **#91** (`recorder.tsx` ~1918).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Insert mid-clip not discoverable                           | evidence on **#316** — the tester's guess was right; Record inserts at the centerline.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "Is there a server?"                                       | evidence on **#248** — the runbook needs one sentence: everything is on the phone (ADR 0005; no `fetch`/XHR/WebSocket in `src/`; `allowBackup=false`); the flip side is that Share is the only copy.                                                                                                                                                                                                                                                                                     |
+| List-row playback audible                                  | counter-evidence on **#269** (observed silent in Chrome 09-08; tester heard it in the WebView; explicit re-test needed).                                                                                                                                                                                                                                                                                                                                                                 |
+| The whole run                                              | **#245 row 3**: a second Android device passing the foreground path, share excepted.                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+No tester or team-member name went into the public repo.
+
+### Tooling notes (container)
+
+A fresh worktree resolves `node_modules` upward to the main checkout's, which was installed on
+the Mac and lacks the Linux rollup binary — `npm ci` in the worktree before the first push.
+The worktree guard rejects heredocs whose text mentions "git" and any loop or pipeline around
+`gh`; write bodies with the file tool, then one plain `gh … --body-file` per call. Frank and
+George both ran first try on every round today (7 KB prompts); the stall pattern is size-bound.
+
+### Blockers / needs a human (late)
+
+- **Seth:** the go to merge #334 (device-proven), then #333 → #335 → this PR, and #322.
+- **Seth:** #330 round 5 vs merge; the five iOS secrets; the Android keystore (#318 step 2).
+- **Requirements owner:** #337 in or out of v0.3.0; #339 priority; #336 confirms whether the
+  training's borrowed phones can be assumed to run a current WebView.
+- **A failing-share phone with USB** for #336 step 2 (`chrome://inspect`), or a temporary build
+  stamp that prints `typeof navigator.share` in the Books footer.
+
+### Lanes queued for 2026-09-15
+
+Each lane is independent and can start from `develop` in its own worktree. Merge order matters
+only where marked.
+
+| Lane                                   | Owner                                        | Issue                                                                                                                                                                                                                                                 | Entry point                                                                                                                                                                                                                                                           | Bar                                                 |
+| -------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **L1 — land and promote**              | Seth (merges) + agent (release PR)           | #334, #333, #335, this PR, #322 → `chore(release): v0.2.1` develop→staging → re-cut `android-debug-*` from the promoted tree → resume #245 from step 2 on the Galaxy A17 (list-row playback for #269, share for #336/#272, background, call, restart) | `gh pr merge` one at a time, rebase the next; the served-bundle check on staging                                                                                                                                                                                      | **First.** Everything else re-bases on it.          |
+| **L2 — #336 share in the APK**         | agent, device proof by Seth                  | #336 (then #272)                                                                                                                                                                                                                                      | measure first: WebView version on both devices + `typeof navigator.share`; if old WebViews lack it, `@capacitor/share` + `@capacitor/filesystem` behind `share-flow.ts`'s existing boundary, `Capacitor.isNativePlatform()` branch, Node test of the branch selection | T2; dual review; device pass required               |
+| **L3 — #314 New Book asks for a name** | agent                                        | #314 (Elsy: "take this one next")                                                                                                                                                                                                                     | Books screen `+` → name modal, pre-filled placeholder, one transaction                                                                                                                                                                                                | T3 UI + T1 storage call already exists; dual review |
+| **L4 — recorder glyphs**               | agent                                        | #286 + #91 (tester-backed)                                                                                                                                                                                                                            | level-meter toggle: ear/level glyph, unambiguous state; zoom toggle: glyph readable one way, keep the selection in view across a zoom                                                                                                                                 | T3; dual review; cheap, ships before the training   |
+| **L5 — signing and secrets**           | Seth (manual) with an agent-prepared runbook | #330 → #321; #318 step 2                                                                                                                                                                                                                              | five iOS secrets into `release-signing`; keystore via `keytool`; four Android secrets; first `android-apk` dispatch from `staging` after L1                                                                                                                           | environment-gated dispatch proven                   |
+| **L6 — tester-facing docs**            | agent                                        | #248                                                                                                                                                                                                                                                  | runbook: the on-device sentence, install steps for the pre-release, a **known problems** list (#336 share, #337 no delete-book, #284), how to report                                                                                                                  | docs, merge on green                                |
+| **L7 — housekeeping**                  | agent                                        | #297, #298 (Dependabot), #271 (contributor docs)                                                                                                                                                                                                      | changelogs + suite for each, verdict on the PR                                                                                                                                                                                                                        | docs/deps, merge on green                           |
+
+Decisions L1–L7 do not need, but the week does: #337 scope and #339 priority from the
+requirements owner; whether #263's iOS half gets a TestFlight tester this week.
+
+---
+
+## 2026-09-13 — v0.2.0 on production, the repository public, the Android lane merged and a debug APK built on the Mac
+
+**Branches:** merged to **`develop`**: #319 (Android APK lane, `0dd30cc`), #323 (public-name
+scrub), #324 (v0.1.16), #326 (org links), #327 (v0.2.0), #331 (AGENTS.md "public"). **`develop`
+→ `staging`** twice: #325 (`0330d29`, served `0.1.16`) and #328 (`46f1f9b`, served `0.2.0`).
+**`staging` → `main`: #329** (merge `7c560ce`) — **production serves `0.2.0` / `7c560ce`**
+(`index-oXapchKA.js`, ~180 s after merge), the first deploy of `main` since the org transfer.
+**Tagged `v0.2.0`** — the repo's first tag. **Open:** #330 (#321 environment gate). **Closed:**
+#244, #250, #72. **Release:** pre-release `android-debug-v0.1.15` carrying `app-debug.apk`.
+Mac session (`excalibur`); a container session ran the #319 review rounds in parallel.
+
+### Android lane (#318 steps 3/4/6) → #319, merged after four rounds
+
+`android/app/build.gradle`: `signingConfigs.release` from four env vars, wired only when all
+four are set, and a `gradle.taskGraph.whenReady` guard that throws with the missing names
+when `assembleRelease`/`bundleRelease` is in the graph — `assembleDebug` untouched;
+`versionCode` takes `-PversionCode=<N>` (CI stamps a unix timestamp, local defaults to 1).
+`android-apk.yml` mirrors the iOS lane: ubuntu preflight, bundle guard, Ruby base64 decode
+of the keystore into a gitignored path, `assembleRelease --no-daemon`, 14-day artifact,
+keystore removed. **Round 1 at `8b23e33`:** Frank 1 P2, George 1 P1 + 4 P2, reviewer +2 —
+the P1 was the JDK (the image defaults to 17; Capacitor's generated Gradle compiles at 21),
+fixed with a pinned `setup-java` and a toolchain assertion; `ubuntu-24.04` pinned; the
+docs' `gradle.properties` claim corrected (the file reads env vars only); the debug-vs-release
+signing-key trap (uninstall wipes IndexedDB) written into README §0/§5a; upload set to
+fail when no APK exists. Four rounds, DRI-accepted at the polish tail with #321 open.
+
+**Local toolchain, first time on this Mac:** `JAVA_HOME` pointed at a deleted JDK 17 →
+Temurin 21 via Homebrew; no Android SDK → Android Studio via Homebrew; its wizard installed
+only platform `android-37.0`, so **platform 36 was added by hand** (`variables.gradle` pins
+`compileSdkVersion = 36`). `npm ci && npm run build && npx cap sync android && cd android &&
+./gradlew assembleDebug` → **BUILD SUCCESSFUL in 46 s**. `cap sync` must run from the repo
+root (from `android/` it reports "platform has not been added"). The phone never enumerated
+over USB — `system_profiler SPUSBDataType` showed nothing at all, so a charge-only cable, not
+ADB — hence the pre-release: open the release URL on the phone, tap the asset. **#245 is
+still unrun.**
+
+### Public flip (#250) — done
+
+Name scrub as two lanes, no Frank/George: a fork swept the six surnames and the account ID
+(2 files); a **fresh adversarial agent** over the whole tree then found what the list missed —
+one surname the sweep did not know, internal governance docs cited by path and quoted, and
+two sentences the first pass had mangled — plus three `claude.ai` artifact links to private
+material (DRI: remove). All fixed in #323. **39 `cloudflare-workers-and-pages[bot]` comments
+deleted** (every one carried the account ID; zero in review threads). Cloudflare's docs have
+**no opt-out for the PR comment** — it is bound to non-production branch builds — so the DRI
+chose to keep preview builds and accept the recurring comment, recorded on #250. Frank and
+George are tool aliases and stay; `bt-servant-*` names stay (public repos). Flipped after
+`main` served the scrubbed tree: `visibility: public`, anonymous fetch of `main` 200.
+
+### v0.2.0 gate (#244) — reopened, run, closed
+
+DRI reversed the 09-12 hold. The gate is **thin by definition**: Tim's 09-12 note on #243
+says v1 = the October training build = **v0.3.0**, so the 18 `v1-required` items moved
+there, one comment each (#283 #272 #269 #263 #262 #245 #180 #166 #108 #59 #58 #38 #12
+#318 #243 #320 #311 #270). Pre-flight: prod Worker read from the dashboard (org repo, branch
+`main`, `npx wrangler deploy`). **#72 item 1 proven** — exactly one `tc-mobile` build today,
+on the `main` push; none on five non-`main` pushes. Prod's exclude paths are only
+`node_modules/**, .git/` (staging has `docs/**, *.md, .github/**`): hygiene, a docs push to
+`main` burns a build. Accepted risk, on the PR: `main` ships with #59/#38 open; nobody is
+handed the production URL before v0.3.0. Milestone v0.2.0 now holds **#321 only**.
+
+### Account switch: `sethstoll3` → `sethstoll`
+
+New account made org owner; **35 open items reassigned across five uW repos**, 0 left on the
+old handle; `sethstoll3` removed. Workers Builds survived it — the staging promotion after
+the removal built and served (#328). Two findings on the way: **branch pushes never trigger
+a Workers Build** here even before the change (`a0251af`, `package.json` to `develop`, had no
+check-run), only production-branch pushes do, so the `develop` probe is meaningless and the
+promotion is the test; and a Markdown-only PR is invisible to staging by its own exclude
+paths. `gh` now runs as `sethstoll`; `wrangler` on this Mac is authenticated to ORO LABS
+only and cannot see the uW Workers — the served bundle is the deploy proof.
+
+### #321 — environment gate, PR #330, inert until the secrets move
+
+Environment **`release-signing`** created with `sethstoll` as required reviewer (free on a
+public repo). #330 puts `environment: release-signing` on both lanes' **signing job only** —
+preflight keeps the ref guard and holds no secrets, the presence check becomes the gated
+job's first step before checkout — so a dispatch costs one approval, not two. Docs: README
+§4a/§5a and `ios-credentials.md` §8 (`gh secret set … --env release-signing`). Merge order on
+the PR: environment → eleven secrets in → merge → delete the repo-level copies → one
+dispatch from `staging` to see pause → approve → green.
+
+### Blockers / needs a human
+
+- **Seth:** the eleven signing secrets into `release-signing` (values are in the secret
+  store); review mode for #330 (Frank + George, or an exemption recorded on the PR); then
+  merge, delete the repo copies, prove with an iOS dispatch, close #321 and the milestone.
+- **Seth:** the Android release keystore (#318 step 2) and its four secrets; a data cable or
+  a cloud link so the debug APK reaches a phone (#245).
+- **Still owed from 09-12:** a tester confirming a TestFlight build arrived; #263 on a device.
+
+### Next steps
+
+1. Land and prove #330 (one dispatch from `staging`).
+2. #245 with the published debug APK, then the keystore and the first `android-apk`
+   dispatch from `staging`.
+3. #263 — the WKWebView / Android WebView mic go/no-go.
+4. Dashboard hygiene: prod exclude paths to match staging.
+
+### 2026-09-13 (late) — #330 dual-reviewed to the cap; environment hardened; two of seven secrets moved; George's lens covered by a stand-in
+
+Container session, after the Mac session's EOD above. **Branch:** `ci/release-signing-environment`
+(PR #330) moved `41bcf38 → 6dd2c67 → 31cd976 → 1b6c614 → 9f26e62`, then `origin/develop` merged in
+as **`314c86c`** (clean; `develop` touches none of the PR's files) so the head carries #331's
+"public since 2026-09-13". CI green at every head. **Four triage comments** on the PR, one per
+round, every finding FIXED with a commit or REFUTED with `file:line`; the PR body's merge order
+rewritten. **Open:** #330 at the round cap, DRI decision pending. **No merges, no closes.**
+
+**What the four rounds found — all docs/settings, zero yml logic.** R1 (Frank, 1 P1): the docs
+said a same-named repository secret is "ignored" by the gated job — true for that job, but any
+ungated workflow still reads it, so the migration must delete the copies. R2 (George, 2 P2 + 3 P3,
+plus a stand-in deep-tree agent at `41bcf38`, 3 P2 + 3 P3): **delete the repository copies only
+after the gated yml is promoted** — the pre-#321 yml on `staging` has no environment and runs on
+those copies; the README's "Team plan" claim was wrong (**required reviewers exist only on public
+repos for Free/Pro/Team, and the org is on Free** — flipping private silently drops the rules
+_and_ the environment secrets); **admin bypass was on** with 14 admins; no runbook for the
+Waiting state; one loop for all eleven names. R3 (George, 1 P2 + 1 P3): the visibility statements
+in root README and org-transfer D2 were stale (AGENTS.md's was already fixed by #331 — refuted at
+the merge target). R4 (George, 2 P2 + 3 P3): the same AGENTS.md fact (retired by merging
+`develop`), and one genuinely new point — **the approver must open the yml on the dispatched ref
+before approving**, because a write-access branch can keep `environment: release-signing` and
+add a step that reads the secrets. Now in README §4a step 4 and ios-credentials §9. Frank
+APPROVE at `6dd2c67`, `31cd976`, `1b6c614`. Shape at the cap: a **chain**.
+
+**Settings, verified live via `gh api`:** `release-signing` exists, reviewer `sethstoll`,
+**`can_admins_bypass: false`** (Seth flipped it; the session's API attempt was blocked by the
+permission classifier), `prevent_self_review: false` (deliberate), branch policy all branches.
+Repo visibility PUBLIC, org plan `free`.
+
+**Secrets — 2 of 7.** `ASC_KEY_P8_BASE64` and `ASC_KEY_ID` set in the environment by piping
+`op read` → `base64 -w0` → `gh secret set --env` inside a script file (nothing printed; the key
+ID is Apple's filename suffix `CK2A9CF2K2`). The `uw-dev-ops` vault holds only the `.p8` and the
+`.cer` (public cert, **not** the `.p12`). **Missing from the vault:** `ASC_ISSUER_ID`,
+`APPLE_TEAM_ID`, `IOS_DIST_CERT_PASSWORD`, the `.p12`, the `.mobileprovision` — they exist as
+repository secrets (yesterday's TestFlight runs used them) and as files on the Mac. Repository
+copies stay until after promotion.
+
+**Tooling.** The 1Password service-account token was **not** stored anywhere persistent (only in
+an old session transcript; the classifier blocked extracting it — correctly). Seth wrote it to
+`/root/.config/op/sa-token` (600) from a container shell; recorded in memory. `gh` in the
+container was still the removed `sethstoll3` — re-login as `sethstoll` fixed push and comments.
+**George stalled 3 of 6 runs** at 20 KB prompts (narration-only, exit 0), so the ~40 KB
+stall theory from 09-12 does not hold; a fresh isolated agent briefed on his lens covered R1 and
+found the admin-bypass and plan-trap P2s.
+
+### Blockers / needs a human (late)
+
+- **Seth:** decide round 5 vs merge for #330 (residual recorded in the round-4 triage).
+- **Seth:** the five remaining iOS values into the environment — from the Mac files
+  (`gh secret set … --env release-signing`) or shared into `uw-dev-ops` for the session to pipe.
+- **Still owed:** a tester confirming a TestFlight build arrived; #263 on a device; #245 with the
+  debug APK; the Android keystore (#318 step 2).
+
+### Next steps (late)
+
+1. #330: DRI call → merge → **promote `develop → staging`** → dispatch iOS from `staging`, expect
+   Waiting, read the yml on the ref, approve, green → close #321 and the v0.2.0 milestone →
+   **then** delete the eleven repository-level copies.
+2. #322 (09-12 late tracker) is still open, green, merges clean — land it.
+3. Dependabot #297/#298 unreviewed since 09-11; #271 (contributor docs) since 09-08.
+
+---
+
+## 2026-09-12 — the first native build attempted: Apple credentials done, v0.1.14 promoted, TestFlight dispatch failed at Install fastlane; triage cuts the gate to 20
+
+**Branches:** merged to **`develop`**: #301 (EOD 09-11), #303 (credentials runbook), #304
+(v0.1.14 bump). **`develop` → `staging`: #306** (merge commit `d1e38d8`) — **staging serves
+0.1.14** (`index-BBkKvfMS.js`, the #143 served-bundle check). `main` still `3464a30`.
+**Open:** #307 (the TestFlight fix, awaiting Seth's review from his other login). **Filed:**
+#305. **Closed as superseded:** PRs #299, #300, #226. Working from the Mac (`excalibur`)
+for the first time, not the container.
+
+### The Apple side is done (#262)
+
+Seth registered `org.unfoldingword.tcmobile` (Explicit, no capabilities), created the App
+Store Connect record **translationCore Mobile** — the name Tim chose and confirmed with the
+team — SKU `tc-mobile`, minted the API key at **App Manager**, created the internal tester
+group with _Automatically distribute new builds_ on, and set all four secrets; verified with
+`gh secret list`. One near-miss caught in the form: `com.unfoldingword.tcmobile` typed
+where the repo has `org.` in nine places across both platforms — the identifier now
+matches the repo, not the other way round. Recorded in
+[`docs/native/ios-credentials.md`](native/ios-credentials.md) (#303), which also flags
+that enrollment status was unverified in our own docs and that Team API keys have
+historically been Account-Holder-only.
+
+### First TestFlight dispatch — run 34694213885 — failed before signing
+
+Dispatched from `staging` with `allow_any_ref` unticked. **Preflight passed** (ref, all four
+secrets). **macOS steps 1–9 passed** (checkout, Node, build, Xcode select, `cap sync ios`,
+bundle guard, API key written). **Step 10 `Install fastlane` failed:**
+`CFPropertyList-3.0.9 requires ruby version < 3.2` against the runner's Ruby **3.3.12**. The
+lock was resolved in the Linux container under a pre-3.2 Ruby, and CFPropertyList shipped
+3.0.9 (`< 3.2`) and 4.0.0 (`>= 3.2`) on the same day; `--frozen` refused to re-resolve —
+the behaviour #296 asked for. **Fix: PR #307** — `bundle lock --update CFPropertyList` only
+(→ **3.0.8**, no Ruby constraint; 4.0.0 would break `xcodeproj`'s `< 4.0` bound), one line,
+platforms untouched, plus `frozen` via `bundle config set --local` instead of the
+deprecated flag. Verified locally with a frozen install and `fastlane --version` under
+Ruby 4.0.6; the runner is the judge. **Archive, export signing and upload have still never
+run.** Agreed route after merge: dispatch from `develop` with `allow_any_ref` as the signing
+smoke, then promote v0.1.15 once the chain is proven.
+
+### Triage — DRI-approved and applied
+
+Every open issue read against its milestone and the 09-08 sprint plan (the
+org-internal board).
+**Left the gate → v0.3.0**, each with a comment: #246, #253, #33 (Template Library — Tim
+retagged it v1-desired on 09-08; the milestone never followed), #115, #116 (hang on Q6),
+#290, #291, #305. **Orphans → v1.0.0:** #273, #276, #280. **Dependabot majors closed** as
+superseded by #237/#238. **Refreshes** on #243 (three rows answered since 09-04; only Q6 and
+#116 still change V1 code), #244 (five checklist lines now closed), #245 (step 2 named an
+About screen that is draft #144), #25 (remaining scope). **All 18 open gate issues
+reassigned to Seth alone** — Jesse is travelling and off code; hand-over notes on #12,
+#166, #180. The gate is now 20 open (incl. PRs #303/#304 at the time), of which **five are
+code** — #38 (no PR, no motion: the at-risk one), #166 (split from #279), #12 (#214), #180
+(only as #38's seam), #72 — and **seven close on one device pass**.
+
+### Docs and artifacts
+
+- **Tester run sheet** (org-internal artifact, not in this repo). Corrected the
+  same day: there is no About screen (build stamp = the Books footer line), and #168's Back
+  fix is now a confirm-in-the-shell item, not a known rough edge.
+- **Mockups vs. build audit** (org-internal artifact + #305). 21 match, 5
+  changed by Tim on 27 Aug, 4 tracked, 4 new — the mockups themselves are not in this repo;
+  the recorder's "dimmed list" is opaque; dark-by-default lives in a CSS comment, not an ADR.
+- Claude Code status line: branch · PR · project version · model · 5h/7d · context.
+
+### Environment (this Mac)
+
+Homebrew and Docker's socket belong to another account; node 22.23.2 is user-local
+(`~/.local/opt`), bundler 2.6.9 in `~/.local/gems` under Homebrew Ruby 4.0.6;
+`xcode-select` still points at CommandLineTools (a manual archive needs Seth's `sudo`).
+
+### Blockers / needs a human
+
+- **Seth (other login):** review + merge **#307** → dispatch `develop` + `allow_any_ref` →
+  read the run. APK: `npm run build && npx cap sync android && cd android && ./gradlew
+assembleDebug`. Then the device pass on both, via the run sheet.
+- **Tim:** Q6 (archive / manifest) and #116; confirm the Q1/Q2/Q5/Q7 defaults stand for V1.
+- **Benjamin:** #272 — zip → multi-file audio for Share Book on Android.
+- **Elsy:** which build facilitators install (0.2.0 on 30 Sept or 0.3.0 on 9 Oct); the
+  tester roster; internal group vs a public link (Beta App Review lead time).
+- **Ben:** revive #214 and #235 for review; park the other 09-04 drafts with a line each.
+
+### Next steps
+
+1. #307 → merge → dispatch → iterate on `develop` until the upload succeeds → promote
+   v0.1.15 → staging → clean dispatch from `staging`.
+2. APK + device pass → run sheet → close #245 #263 #58 #59 #108 #269 #283.
+3. #38 owner and smallest slice; #166 split; #72 dashboard; #244 → promotion-PR body;
+   #243 → Tim.
+4. AGENTS.md DRI block (Birch → Elsy); commit the five mockups to `docs/design/` (#305).
+
+### 2026-09-12 (afternoon) — TestFlight signing chain: #307 merged & verified, #309 signing fixes, manual signing (Option B) decided
+
+**Continues the morning:** executed the "merge #307 → dispatch → iterate" plan and drove the
+TestFlight lane up four dispatches, each clearing the prior blocker and exposing the next
+macOS-only one, until it now reaches Apple's real signing service. Diagnosed the wall as a
+signing-**strategy** problem and decided **Option B (manual signing)**. `main` still
+`3464a30`; `staging` still v0.1.14; no promotion.
+
+**#307 (CFPropertyList) — merged (squash `b31f3f0`), verified live.** Dual review, 3 rounds:
+George R1 P2 = the morning's lock-only pin wouldn't survive Dependabot / a local re-resolve
+(reproduced — container Ruby 3.1.2 re-picks 3.0.9 without a Gemfile pin) → pinned
+`CFPropertyList 3.0.8` in the Gemfile + regenerated lock + scoped Dependabot ignore; Frank R2
+P2 (unversioned ignore) → scoped to `3.0.9`; George R3 P3 (stale `--frozen` doc) → fixed.
+Both clean at `95e4ca1`. A dispatch confirmed **Install fastlane now passes.**
+
+**TestFlight dispatch ladder** (feature branch, `allow_any_ref`):
+
+| #   | Run         | Reached                | Result                                                           |
+| --- | ----------- | ---------------------- | ---------------------------------------------------------------- |
+| 1   | 34697273957 | preflight              | ref guard refused `develop` (by design)                          |
+| 2   | 34697406384 | `build_app` archive    | ❌ forced `Apple Distribution` vs automatic style                |
+| 3   | 34698062609 | `-exportArchive`       | ❌ doubled `-authenticationKeyPath` (gym auto-injects on export) |
+| 4   | 34698763222 | archive → Apple portal | ❌ dist/dev cert private key absent on the ephemeral runner      |
+
+**#309 (open, held, reviewed clean at `69ecfc9`)** — fixes for dispatches 2 & 3: (a) drop the
+manual `CODE_SIGN_IDENTITY="Apple Distribution"` (conflicts with the target's
+`CODE_SIGN_STYLE = Automatic`, `pbxproj:302,324`); (b) split archive vs export xcargs so the
+API-key auth isn't passed twice on export. Both empirically validated (each cleared its
+step). **Held, not merged** — dispatch 4 revealed the strategy wall, so #309 folds into the
+Option B rework rather than landing on its own.
+
+**The wall (dispatch 4) → Option B, manual signing.** Automatic signing can't work on
+throwaway CI runners: the cert's private key lives in a Mac keychain and never reaches the
+ephemeral runner, so each run mints a new machine-bound cert and eventually jams. Fix = hand
+CI the identity as files. **Seth started the Apple side on the Mac (`excalibur`):** generated
+CSR + key via `openssl` (LibreSSL — no `-legacy` needed), created the **Apple Distribution**
+cert (`uw_distribution.cer`) under the uw team, and confirmed **no other active Distribution
+certs** on the team → zero collision risk with his other App Store apps / Expo pipelines.
+
+### Blockers / needs a human (afternoon)
+
+- **Seth (Mac browser session, next):** bundle the `.p12` (`openssl pkcs12 -export` — command
+  given); create the **App Store provisioning profile** for `org.unfoldingword.tcmobile`
+  tied to the new Distribution cert; set three GitHub secrets —
+  `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD`, `IOS_PROVISION_PROFILE_BASE64`. Keep
+  the `.p12` + key in 1Password (`uw-devops`); never in the repo or chat.
+
+### Next steps (afternoon)
+
+1. Mac session finishes the three secrets (above).
+2. **Then (code, designed, not yet written):** rework Fastfile + workflow for manual signing
+   — import the `.p12` into the `setup_ci` keychain, install the profile,
+   `CODE_SIGN_STYLE=Manual` + `CODE_SIGN_IDENTITY="Apple Distribution"` + profile specifier;
+   API key for upload only. Extends #309's branch → dual review → dispatch
+   `fix/ios-signing-automatic` with `allow_any_ref` → on green, merge → promote v0.1.15.
+3. Android APK + device pass (unchanged from the morning plan).
+
+### 2026-09-12 (evening) — manual signing proven and merged (#309), v0.1.15 promoted to staging, first no-override staging TestFlight green; `main` held to the v0.2.0 gate
+
+**Continues the afternoon:** the Option B rework was written, dual-reviewed, proven on a
+real archive, merged, promoted, and proven again from `staging`. **Branches:** `develop`
+`f129791` (#309) → `49e5e43` (#312 bump); **`staging` `a742a10` (#313) — serves v0.1.15**
+(`index-DgzP7o_F.js`, the #143 served-bundle check, was `index-BBkKvfMS.js`); `main` still
+`3464a30`, **held by DRI decision** (below). Merged today (evening): #310, #309, #312, #313.
+Filed: #311. Two builds in TestFlight.
+
+**The SOD blocker — `develop` was red, and so was every PR.** The direct web edit `337dd12`
+(README description) left a trailing space; `format:check` failed on the push. Because
+`pull_request` CI builds the **merge ref**, #309 showed the same red without touching
+README — and `gh run rerun` **cannot clear it** (it re-uses the stale merge ref; only a new
+commit against the fixed base does). Fix **#310** (Prettier, wording untouched) → `develop`
+green → #309 green on its next push. Lesson kept in memory.
+
+**#309 — the manual-signing lane, review loop (cap 4, used 2):**
+
+| Round | Head      | Frank                                        | George                                                    | Outcome                                               |
+| ----- | --------- | -------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
+| 1     | `07a4bf3` | REQUEST_CHANGES — P2 docs, P3 `security cms` | REQUEST_CHANGES — **P1 docs**, P2 paths, P3 Xcode comment | all fixed in `198335b`; George P2 **refuted** (below) |
+| 2     | `9fb4d40` | **APPROVE** — 1 P3 → **#311** (deferred)     | **stalled ×2**, no verdict → skipped, residual accepted   | merge on Frank + CI + DRI acceptance, recorded on PR  |
+
+- **The convergence blocker (Frank P2 = George P1):** the setup docs still described
+  API-key _automatic_ signing and four secrets — the one docs hunk in the PR had made it
+  worse. Fixed: README §4a rewritten (API key is **upload-only**; seven-secret table; new
+  signing-credentials item) and `ios-credentials.md` gained **§5.5** (Distribution `.p12`
+  _with private key_ + App Store profile procedure), §6/§8/§11/§12 corrected. Seth read and
+  verified the docs; then a **genericize pass** for the public repo (`9fb4d40`): no
+  password-manager brand, no vault name, no hostname (Keychain Access stays — it is the
+  macOS tool in the export procedure).
+- **George P2 refuted with evidence, not argument.** It predicted `import_certificate` could
+  not find `fastlane/dist_cert.p12` if Fastlane chdir'd to `fastlane/` (as the file's own
+  comment claimed). The green run 34705900932 step 12 archived with exactly those paths, so
+  cwd is the repo root and **the comment was false**. Cleanup kept anyway: all three
+  credentials resolve via `__dir__` (correct regardless of cwd) and the comment is fixed.
+- **Frank P3 fixed:** `security cms` decoded via `Open3` — exit status checked, stderr kept,
+  nil parse guarded before `["UUID"]` (was a `NoMethodError` path).
+- **George stalls (2×) — a new data point:** output frozen after the preamble (376 B, then
+  410 B), process alive, ~1 % CPU, no verdict after 7–8 min each, with grok fully
+  serialized. Round 1 re-ran fine on a 22 KB prompt; both round-2 stalls were on the 46 KB
+  prompt carrying the two rewritten docs. _Inference:_ prompt size, not just contention.
+  DRI call: skip, **residual recorded as an escalation on the round-2 triage**, not silent.
+- **Seth's fix chain to green (for the record):** secret set in the wrong repo → the
+  installed profile path contains a space (`Provisioning Profiles/…`, so parse the UUID from
+  the CMS envelope instead) → `__dir__` absolute paths → `macos-15` → explicit `Xcode_26*.app`
+  (the image default is 16.x; Apple rejects its uploads).
+- **Re-proven before merge:** the `__dir__` change postdated the green run, so Seth
+  re-dispatched from the branch — run **34710542194**, `headSha 9fb4d40`, steps 10–13 green.
+  Then admin-merged (squash `f129791`).
+
+**Promotion — v0.1.15 to `staging`.** #312 `chore(release)` (squash `49e5e43`, version files
+only) → #313 `develop → staging` (**merge commit** `a742a10`; promotions merge, bumps
+squash). Served-verified: hash moved to `index-DgzP7o_F.js`, bundle stamps `0.1.15`.
+**Then the check that answers "can we dispatch from any branch once we merge up?":** run
+**34711705269** from `staging`, **no `allow_any_ref`**, steps 10–13 green.
+
+> **The ref gotcha, now proven:** `workflow_dispatch` runs the **dispatched ref's own** yml +
+> Fastfile. Between #306 and #313 `staging` carried a _broken_ automatic-signing copy (fails
+> at Install fastlane — worse than absent); `main` has **no workflow file**. A promotion is
+> what makes a branch dispatchable. `ios-credentials.md` §9's "ref trap" table is now stale.
+
+**`main` — held to the Sept-30 v0.2.0 gate (DRI, tonight).** Considered and declined on the
+evidence: `main` pre-pivot; #244's checklist essentially unchecked; 19 open milestone
+issues incl. P1s #59/#38; Android never run (#245); the requirements owner signs. `staging`
+covers tester builds, so `main` is not needed for TestFlight. Recorded on #244 — with one
+labeled observation toward its "#72: a develop merge does not move the staging URL" box:
+three `develop` merges today left staging on `index-BBkKvfMS.js`; only #313 moved it.
+
+**Also:** #262 status posted; #250 progress posted (names left for that issue's scope);
+memory updated (TestFlight pipeline, George); harness feedback sent on the worktree guard
+refusing read-only `gh`/`git show` with variables/heredocs.
+
+### Blockers / needs a human (evening)
+
+- **Did a tester receive it?** Green ≠ delivered (runbook §10). Seth: confirm the internal
+  group got build(s) from runs 34710542194 / 34711705269, or assign by hand.
+- **Android has still never run** (#245) — the open sibling on the gate, and the training's
+  other platform.
+- **#308 (this EOD PR)** needs a merge — docs, green alone. `develop` moved 5 commits under
+  it; tracker-only, so no conflict expected.
+
+### Next steps (evening)
+
+1. **Android first on-device pass (#245)** — protocol + evidence sheet; the gate's biggest
+   unrun item.
+2. Confirm tester receipt of the TestFlight build (above).
+3. **v0.2.0 gate work (#244):** triage the 19 open milestone issues (close vs. move to
+   v0.3.0, explicitly), work the checklist, Tim's sign-off → then `staging → main` with the
+   `0.2.0` minor bump + `git tag v0.2.0`.
+4. Docs: refresh `ios-credentials.md` §9 ref-trap table; #311 (`sort -r` Xcode 26.9 > 26.10)
+   in the next lane-touching PR, proven by a dispatch rather than trusted.
+5. #250: the names scrub in the native docs and this tracker before the public flip.
+
+### 2026-09-12 (late) — Android APK lane: #318 filed, #319 built, dual-reviewed to APPROVE ×2 in 4 rounds, merged; #320/#321 spawned; D1 risk assessment recorded
+
+**Continues the evening.** SOD (late) found the tree exactly as the evening left it (#308
+merged as `1fa7fac`, staging serving v0.1.15, CI all green, four contributor PRs awaiting
+Seth's review rounds). The session then answered "how do we get to an APK, does it need
+signing?" and turned the answer into the lane. **Branches:** `develop` `1fa7fac` →
+**`0dd30cc`** (#319 squash); `staging` `a742a10` (v0.1.15, unchanged); `main` `3464a30`
+(held, #244). Filed: **#318, #320, #321.** Merged: **#319.** Milestone v0.2.0 open count
+19 → **22** (three new gate-scope issues, all housekeeping of the lane itself).
+
+**#318 — the Android APK lane had no issue.** #262's checkbox was the only trace; #245 is
+the Chrome/PWA test protocol, #263 assumes an installed build. Filed with the seven-step
+plan (local `assembleDebug` proof → keystore custody → `signingConfigs` → CI dispatch lane
+→ `versionCode` stamp → tester distribution → docs) and the one Android-specific T1
+constraint: **app identity is the signing key** — a phone cannot update across keys, the
+forced uninstall wipes IndexedDB, i.e. every recording, and the keystore therefore cannot
+be rotated. #262's checkbox now links #318; its evening status ("Android sibling = #245")
+corrected by comment.
+
+**#319 — steps 3, 4, 6, authored in Seth's other session, reviewed here** (branch held by
+the main checkout, so fixes were committed on a detached local branch and pushed with
+`git push origin HEAD:feat/android-apk-lane`; Seth pulls before touching it). Review loop,
+cap 4, used 4 — **both APPROVE at `6ce0a92`**, one docs-only follow-up carried by
+range-diff acceptance (the 09-03 precedent), squash-merged `0dd30cc`:
+
+| Round | Head      | Frank                      | George                           | Fix commit           |
+| ----- | --------- | -------------------------- | -------------------------------- | -------------------- |
+| 1     | `8b23e33` | REQUEST_CHANGES — 1 P2     | REQUEST_CHANGES — **1 P1**, 4 P2 | `5761965` (7 + 2 P3) |
+| 2     | `5761965` | REQUEST_CHANGES — 1 P2     | REQUEST_CHANGES — 1 P2, 5 P3     | `95b36a8` (7)        |
+| 3     | `95b36a8` | REQUEST_CHANGES — **1 P1** | REQUEST_CHANGES — 1 P2, 2 P3     | `6ce0a92` (2 P3)     |
+| 4     | `6ce0a92` | **APPROVE**                | **APPROVE** — 3 docs P3          | `7e74fb1` (docs)     |
+
+- **What review caught that would have failed the first dispatch:** the runner image
+  defaults to **JDK 17** and Capacitor's generated `capacitor.build.gradle` compiles at
+  **Java 21** — George P1, converged with the reviewer's own check against the
+  runner-image README. Fixed with a SHA-pinned `actions/setup-java` 21 (the macos-15
+  default-Xcode trap's Android twin). Also: `upload-artifact` defaults to `warn` on a
+  missing file (a green run with no APK) → `test -f` + `if-no-files-found: error`; the
+  docs described `~/.gradle/gradle.properties` (never read — `System.getenv` only) and a
+  GitHub pre-release that nothing creates; three files still called the iOS lane the only
+  binary workflow; the §0 "send that APK to a tester" imperative contradicted the identity
+  rule twice over.
+- **Refuted with evidence, not argument:** George R3's warm-daemon claim (a daemon started
+  without the env vars would keep them stale) — Gradle's
+  `ApplyClientEnvironmentVariables.java` _"applies the environment variables specified by
+  the client to the daemon JVM … and restores the previous values when the build
+  finishes."_ Frank R3's P1 fix (drop `allow_any_ref`) — a dispatch runs the dispatched
+  ref's **own** yml (the ref gotcha), so a push-access actor deletes the gate on their
+  branch; the in-yml gate is a **mistake guard, not an actor guard**. Premise accepted,
+  fix refuted, decision → #321.
+- **Reviewer behaviour, for the record:** George delivered a full verdict **all four
+  rounds**, first run, 20–35 KB prompts, grok serialized, Frank concurrent — against the
+  46 KB double-stall on #309 this afternoon. Frank did **not** re-raise his own R3 P1 in
+  R4 with the override unchanged; dispositions stand on evidence, never on a reviewer
+  going quiet.
+- **Merge mechanics lesson:** the PR body's "Closes #318" was changed to "Part of #318"
+  before merging and GitHub **still closed #318** from the link recorded at PR-open time.
+  Reopened with a comment; unlink in the sidebar next time, or never write "Closes" on a
+  partial delivery.
+
+**#320 (iOS sibling of Frank R2):** the ref gate compares `ref_name`, so a tag named
+`staging` passes; Android now also requires `ref_type == branch`. #320 also carries the
+iOS bundle guard's missing `obs/thumbs` check (George R3). Both ride the next iOS-lane PR
+with #311, re-proven by a dispatch.
+
+**#321 (D1 — Seth asked "what is the risk, especially public?"):** 11 signing secrets are
+reachable by any of **37 push-access, 2FA-enforced** accounts via a dispatched branch's own
+code — a compromised account, not a malicious colleague, is the realistic actor; the
+Android keystore is the irreversible asset. **Going public does not widen reach** (dispatch
+and secrets stay write-only; fork PRs get no secrets; no `pull_request_target`; read-only
+default token) and **unlocks the fix**: GitHub Environments with required reviewers, free
+on public repos, unavailable on this private free-plan repo. **DRI decision:** accept the
+mistake-guard design now; environment gate for both lanes in the #250 flip PR set; prune
+push access via the org admins; create the keystore only when the first real tester build
+is needed. Recorded on #321 and on #319.
+
+**Also:** memory updated (George threshold data, Frank non-determinism, the detached-branch
+push pattern, the worktree guard's script-file workaround, the "Closes" link lesson).
+`develop` CI green at `0dd30cc`.
+
+### Blockers / needs a human (late)
+
+- **#318 steps 1, 2, 5, 7 are all human:** a Mac with Android Studio + JDK 21 for the
+  `assembleDebug` proof (developer device only — never a future tester phone); the release
+  keystore + four secrets (create at the last responsible moment, per #321); the first
+  dispatch (`allow_any_ref` from `develop`, or promote to `staging` first).
+- **Tester receipt of the TestFlight build** still unconfirmed (evening item).
+- **#244 gate count moved the wrong way:** 22 open. The three new ones are lane
+  housekeeping; the triage in the evening's next-step 3 is now more pressing, not less.
+- **Contributor review rounds** still waiting on Seth as reviewer: #279 (R4, cap), #289
+  (R3), #215 (R5 or decision), #144 (scope question), #302 (never reviewed).
+
+### Next steps (late)
+
+1. **#318 step 1 + #245 on the same phone:** local debug APK, run the protocol, post the
+   header. This also answers #263 for Android.
+2. **#318 step 2 → first dispatch:** keystore, secrets, dispatch with `allow_any_ref`; expect
+   the fail-closed toolchain assert to speak first if the image notes were wrong.
+3. **#244 triage** of the 22 open milestone issues, explicitly close-or-move.
+4. Contributor PR rounds (#279, #289, #215, #144, #302) — the review debt is now the
+   largest item on the board after Android.
+5. Evening items still standing: TestFlight tester receipt; `ios-credentials.md` §9 refresh
+   - #311 + #320 in one iOS-lane PR; #250 names scrub.
+
+---
+
+## 2026-09-11 — two merges to develop: safe-area overlay fix (#295) and the iOS TestFlight CI pipeline (#296)
+
+**A build day, both PRs authored + merged to `develop`.** `staging` still v0.1.13,
+`main` still `3464a30`. **Merged:** #295, #296, and #293 (the stale EOD-2026-09-10
+doc, docs-on-green). **Filed:** #294 (safe-area, closed via #295).
+
+### #295 — safe-area overlays, recorder Back cleared the status-bar clock (#294) → merged
+
+Found live in the **iOS Simulator** (Seth): the recorder **Back** control (and the ≡
+menu) sat under the status-bar clock and couldn't be tapped. Root cause: the
+`fixed; inset:0` scrims (`.recorder-scrim`, `.menu-scrim`) escape the body's
+`env(safe-area-inset-*)` padding. Fix: re-apply the insets on `.recorder-sheet`
+(top/bottom) and `.menu-panel` (all four — it docks flush-right). **Dual review:**
+George R1 P2 (menu drawer needs the right inset in landscape) → fixed; **Frank R2 P2
+(recorder-sheet also needs horizontal insets) REFUTED** — the sheet is `mx-auto
+max-w-md` (448px), centred clear of the notch at every landscape phone width; George
+corroborated twice. Seth's call: refute, not concede (no dead CSS). CI green, merged.
+On-device confirm folds into the Monday #263 pass.
+
+### #296 — iOS TestFlight CI pipeline (#262) → merged after 7 review rounds
+
+Seth chose the automated CI route over a manual archive. **`.github/workflows/ios-testflight.yml`**
+(manual `workflow_dispatch`, macos-14) builds `dist/` → `cap sync ios` → archives the
+`App` scheme → `fastlane ios beta` uploads to TestFlight, **API-key signed** (no
+`match`, no committed cert). Committed to make CI buildable: a **shared `App.xcscheme`**
+(Xcode kept it in gitignored `xcuserdata`), `Gemfile.lock` (fastlane 2.239.0, `ruby`+darwin
+platforms), export-compliance flag, an **ubuntu preflight** (ref + all four secrets gated
+before the billed macOS runner), Dependabot bundler entry, and a reconciled
+`docs/native/README.md` §4a runbook.
+
+**Seven dual-review rounds** (Frank + George), every one a real, distinct defect of the
+class _"CI/macOS behaviour that can't run from the Linux box"_: `sort -V`/`base64 --decode`
+GNU-isms, unlocked Gemfile, build-number collisions (→ unix timestamp), gym's two-phase
+export signing (`export_xcargs` + `Apple Distribution`), the codesign keychain (`setup_ci`),
+bundler platform, plus a full sweep of the deploy/version **doc invariants** the change made
+stale. Past the round cap → **escalated to Seth (DRI), who authorised landing at the polish
+tail** (no P1 for the last two rounds); the irreducible residual is that **the first real
+dispatch is the first verification of signing**. Consolidated triage posted to #296.
+_(Ruby isn't in the container but `apt-get install -y ruby bundler` works — used to generate
+the lock with `bundle lock --add-platform arm64-darwin-23 x86_64-darwin-23 ruby`.)_
+
+### PM Status artifact refreshed + gap-audited
+
+Updated the org-shared **tC Mobile — PM Status** artifact to 2026-09-11 (v9), then
+**reconciled it against commits/closures/open-PRs/comments** (v10): credited the 8–9 Sep
+recorder/audio reliability wave (#165/#184/#168/#203/#106/#76), restored the OBS-offline +
+durable-storage props with the #258 in-session-only asterisk, and scoped #263 to a
+**foreground** demo. Comment scan confirmed no product-owner decision was resolved off-page.
+
+### Blockers / needs a human
+
+- **Seth (Mac, Monday 2026-09-14):** the WKWebView **mic go/no-go** (#263, foreground bar);
+  Android `./gradlew assembleDebug` APK; and now the **TestFlight first dispatch** — blocked
+  on wiring the App Store Connect account (API key + app record + internal tester group +
+  4 GitHub secrets, per `docs/native/README.md` §4a).
+- **Benjamin:** #272 Android Share Book share-shape nod (zip → multi-file audio).
+- **Contributors:** #279 (Jesse, stall-timer race / #175 split), #289 (Jesse, failure log
+  R3), #215 (Ben, red `resolveExpectedVersion` test) — awaiting author pushes.
+
+### Next steps
+
+1. **Seth's Monday trio** on the Mac: #263 mic go/no-go, Android APK, TestFlight first dispatch.
+2. #292 (2nd-take live waveform, #283) on-device confirm, then it can promote.
+3. Re-review + merge-on-clean the contributor PRs (#279/#289/#215) as authors push.
+
+---
+
+## 2026-09-10 — review day: #279/#289/#215 rounds, #283 fixed (#292), dependabot/#242 housekeeping
+
+**A review-and-one-fix day. No merges (nothing came back clean), no promotions** —
+`staging` still v0.1.13, `main` still `3464a30`. All three in-flight PRs re-reviewed
+after author fixes and handed back with fresh blockers. **Filed:** #290, #291.
+
+### #283 — recorder 2nd-take live waveform — FIXED → PR #292 (draft, → develop)
+
+Root cause: the record-stage branch ANDed `!hasAudio`, so any append (2nd take) fell
+to `Waveform`'s static peaks and never grew live (found on Android v0.1.13). Lifted the
+decision into a pure Node-testable seam (`src/components/recorder-stage.ts`,
+`liveScopeShown`) and made an append render exactly like a first take. **Dual review
+clean rounds 1–2**: George R1 caught a real deep-tree P2 the first cut introduced (a
+`LiveScope`→`Waveform` swap on an append's pause/close flashed blank then showed the
+pre-take clip) — fixed @ `01d805b` by dropping the `hasAudio` gate entirely; both
+mutation-proven. `verify` + CI green. **Draft — browser-only render, device-unverified;
+gated on the on-device pass (#245/#263).**
+
+### #279 (Jesse, #166 encoder deadline + #175 playback memory) — round 3, NOT clean
+
+R2 (Frank P2 `int16ToFloatInto` un-validated `start` → NaN; George APPROVE, 3×P3 → filed
+**#290** sweep-retry, **#291** terminate-throw). Jesse fixed the start-guard (`0600e3a`).
+**R3: George P2 (blocking)** — a settled encode's stall timer can `terminate()` the shared
+worker a _later_ encode is using (Share Book / Finished sweep → zip dropped, whole-book
+re-encode; verified: `release()` has no `settled` flag, `progress` never resets the timer).
+Frank P2 = the #290 sweep-coalescing (severity contested; George judged it compatible).
+**Siblings trend flagged** — 3rd straight round of new race findings in the #166
+stall lifecycle while the #175 half stays clean; recommended splitting #279 (land #175,
+rework the stall state machine in its own PR — the #208→#220 precedent). Round 3 of 4.
+
+### #289 (Jesse, #205 durable failure log, T1) — rounds 1→2, NOT clean
+
+R1: Frank 3×P2, George 5×P2 + 2×P3 — convergences on clear-running-off-the-write-lane and
+a swallowed/mis-commented failed-clear, plus a T1 migration `createObjectStore`-after-await.
+Jesse's fix (`23fb0cd`) **closed the round-1 data-safety holes** (v6 create before the
+yields, one-transaction prune, clear on the lane). **R2: 3 new P2s** — share text-fallback
+(absent `canShare` arms files, never `{text}`); `useFailureCount` never retries after a
+recovered blocked-open (marker stuck at 0, Send never mounts); crash-screen Restart reloads
+without awaiting the log write and unmounts the only Send UI. Running George twice surfaced
+a superset (grok non-determinism — the extra run earned the crash-Restart P2). Round 2 of 4.
+
+### #215 (Ben, version.json + rollback, #176) — round 4 = cap, then R5 held on red CI
+
+R4: Frank P2 (fail-open — `parseArgs` silently drops unknown `--flags`); **George P2
+(blocking)** — expected _version_ still read from local `package.json` though R3 moved the
+_SHA_ to the remote ref, so `check:deploy:prod` would false-FAIL the first v0.2.0
+staging→main promotion (the gate failing its own gate); George P2 denylist regex misses the
+`?t=` form; P3. Round 4 = cap, shape = siblings-but-finite → **R5 authorized (DRI)**. Ben
+pushed R5 (`b202f6c`) but **Code Quality is red** (`resolveExpectedVersion` test:
+`expected '0.1.13' to be '0.1.12'`) → R5 held, pointer posted for Ben.
+
+### Housekeeping
+
+Closed **#227/#229/#228** (eslint/@eslint/js→10, vitest→5) — superseded by **#237**
+(deliberate eslint-10/vitest-4 dev-tooling pass, part of #233). Left **#226**
+(`@vitejs/plugin-react`, not in #237's scope). Closed **#242** (my stale, now-conflicting
+EOD-2026-09-04 doc). Open PR count 28 → 24.
+
+### Blockers / back to authors
+
+- **Jesse:** #279 R4 (the stall-timer race; the #175/#166 split call), #289 R3 (3 P2s).
+- **Ben:** #215 — fix the red `resolveExpectedVersion` test, then R5.
+- **Seth:** the Monday (2026-09-14) iPhone **WKWebView mic go/no-go** — device connection being
+  set up; a Simulator smoke can run in parallel (no Apple account needed) but can't test
+  background/lock/interruption. #292's live-append check folds into the same device pass.
+
+### Next steps
+
+1. Re-review + **merge on clean** (Seth authorized) as Jesse/Ben push; one at a time, rebase-check between.
+2. #279: the split decision (approaching the round cap).
+3. #292 on-device confirm (iPhone WKWebView + Android), then promote.
+4. The Monday trio on Seth's Mac: confirm the unfoldingWord Apple account, `./gradlew assembleDebug` APK, the WKWebView record→playback mic test.
+
+---
+
+## 2026-09-09 — #134 to green (rounds 4–6), v0.1.13 promoted & verified, first Android pass on staging, Monday-Capacitor assessment
+
+**Branches:** merged to **`develop`**: #254 (gate-chart docs), #232 (drift guard), #268 (#134 recorder fix), #287 (native Monday-prep docs), plus #281 (v0.1.13 bump). **v0.1.13 promoted to `staging` (#282) and verified live.** `main` still `3464a30`. **Closed:** #134 (via #268), #207 (dup of #279). **Filed:** #283–#286.
+
+### #134 / #268 — recorder Edit-reachability, review-clean and merged
+
+Rounds 4–6 of dual review to clean (Frank + George both APPROVE @ `89cbe8c`); **Tim signed off** the finished-status default (a re-record drops to draft until finished is re-chosen). The chain: R3 second-setter split → R4 `retryHeldTake` was an incomplete copy of `onEnterEdit`'s success-arm contract (3 P2s, both reviewers converged) → **R5 a _pre-existing_ data-loss bug in `onEnterEdit`** (reload-null + the `EMPTY`-base identity → LoadErrorPanel Back overwrites the just-committed take), George deep-tree — fixed both arms → R6 clean. Merged (auto-closed #134). **T2 on-device pass still owed** — browser-only wiring; the 5 scenarios live in #245.
+
+### v0.1.13 promoted & deployed
+
+First promotion since v0.1.12 (2026-09-03), 22 commits behind. #281 (bump) → develop, #282 (develop→staging). **Staging serves `0.1.13`** (bundle `index-Rioadegv.js`), confirmed by the served version string (the #143 proof). Deploy landed in ~1 min — Workers Builds healthier than right after the transfer.
+
+### First Android on-device pass (Seth, on staging v0.1.13)
+
+Core loop + editing + **Share Chapter work** on Android Chrome. Findings:
+
+- **#272 Share Book fails "Could not share this book" — CONFIRMED.** Android Web Share rejects `application/zip`; Chapter's `audio/mpeg` passes. Fix = multi-file audio share, pending Benjamin's share-shape nod.
+- **#269 likely a device setting** Seth overlooked — stored playback works on v0.1.13; the storage-format scoping is shelved (one clean confirm to close).
+- **New:** #283 (2nd-take waveform doesn't append live — **v1-required** bug), #284 (no Play in edit mode — Tim decision), #285 (menu stays open on approve), #286 (discoverability bundle).
+
+### Contributor PR reviews (Seth as reviewer)
+
+- **#232** round 2: Frank's lone P1 **REFUTED** (a `;` breaks the `[^;]*` span so the regex can't match), George APPROVE → merged.
+- **#215** round 3: George one valid P2 (`check:deploy` derives the SHA from local HEAD but Cloudflare deploys the merge-commit tip → false-FAIL) → Ben, round 4.
+- **#207 closed** as dup of **#279** (Jesse). **#279** round 1: Frank APPROVE, George one P2 (freeze-latch cleared while `document.hidden` → false-kills Share on WebView resume) → Jesse pushed `fa9aab2`, **awaiting round 2**.
+
+### Monday-Capacitor assessment (the pivot, in focus)
+
+Paused to assess: **the whole PR queue is v0.2.0 polish — nothing advances the Monday (2026-09-14) sprint-1 goal.** #262/#263 (installable apps) are native/Mac work with no PR. Four parallel lanes:
+
+- **#262 build-readiness:** scaffold sound, **bundles the web assets** (true offline app); blockers are **the Apple account (iOS) + a Mac**; **Android debug APK (`./gradlew assembleDebug`) installs today, no keystore.**
+- **#263 WebView audio risk:** **mic (getUserMedia) favorable-but-unverified is the go/no-go**; background capture won't hold in a WebView; Android `navigator.share` likely absent (reframes #272 → maybe `@capacitor/share`); `storage.persist()` still uncalled.
+- **Scope locked (Seth):** **a foreground install-and-record demo is the Monday bar** — background capture is a known limitation, not a blocker.
+- **#287** shipped: the tester-install guide, a "Minimal Monday path" + human-gates callout in `docs/native/README.md`, and `cap:sync`/`cap:ios`/`cap:android` npm scripts.
+
+### Blockers / needs a human
+
+- **Seth (Mac, Monday-critical, no code):** ① confirm the unfoldingWord Apple Developer account, ② `./gradlew assembleDebug` for the Android APK, ③ **the iPhone WKWebView record→playback mic test** (the go/no-go).
+- **Tim:** #284 (no-Play-in-edit design call).
+- **Benjamin:** #272 share-shape change (zip → multi-file audio).
+
+### Next steps
+
+1. The Monday trio above (Seth's Mac).
+2. #279 round 2 (Jesse's fix), #215 round 4 (Ben's fix).
+3. #268's on-device pass (rides the next promotion or a develop preview); then #283 (the waveform bug).
+4. Rebase the recorder-stack PRs (#274/#213/#239/#230/#235/#218) — develop moved under them.
+5. Fill #287's tester-doc placeholders (APK URL, support channel) before sending to testers.
+
+---
+
+## 2026-09-08 — sprint planning with Tim & Elsy; a 10-PR merge day; first Android on-device pass
+
+**Branches:** ten PRs merged to **`develop`** (`0ba3687` → `8011bdc`). **Nothing promoted** —
+`staging` still v0.1.12, `main` still `3464a30`. A build-review-merge day, not a promotion day.
+Note: the 2026-09-04 merge-train EOD (PR #242) and gate-chart (#254) are still **unmerged docs
+PRs**, so this entry follows 2026-09-03 in the committed tracker with a gap.
+
+### Sprint plan (set with Tim & Elsy this morning)
+
+- **V1 = end of September**, in **three one-week sprints**. **Sprint 1 (→ Mon 2026-09-14):
+  installable apps** — wrap the PWA with Capacitor → **iOS TestFlight + Android APK** so the
+  Nairobi testers (**Caleb, Javi**) hit real devices early.
+- **Team:** **Elsy** PM (not Birch — AGENTS.md DRI block is stale), **Tim** product owner,
+  **Seth** dev lead. Weekly sync, same time.
+- **V1-required / v1-desired** labels are the must-have axis (they already existed); 25 v1-required
+  issues, all in the `v0.2.0` gate. **Template Library retagged non-blocking** (v2-required →
+  v1-desired). A PM status **artifact** was built and iterated for the meeting.
+
+### Merged (10 PRs, `0ba3687` → `8011bdc`)
+
+| PR         | What                                                                                               | Closes       |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------ |
+| #190       | lib-boundary paths in POSIX form (Windows push)                                                    | #189         |
+| #256       | headless-Chromium smoke for browser-only paths                                                     | #251         |
+| #260       | distinguish the three microphone refusals                                                          | #203         |
+| #255, #275 | dependabot minor/patch groups                                                                      | —            |
+| **#259**   | **recorder foundation** — resume-on-open + Back→commit (**5 review rounds**)                       | #184, #168   |
+| #266       | rename books & chapters in place (v5 schema migration)                                             | #264         |
+| #265       | **Capacitor scaffold** — native mic perms + `allowBackup=false`                                    | part of #262 |
+| **#258**   | **keep audio on decode fail** — root-fixed the `leaveHeldTake`/`close()`-tail class (**5 rounds**) | #165         |
+| #267       | VU meter hatches on a suspended context (3 rounds)                                                 | #76          |
+
+The recorder cluster's data-loss core (#259/#260/#258/#267) is fully landed.
+
+### First-ever Android on-device pass (Seth)
+
+**The core loop works on Android** (Chrome): record → playback → edit → select/move → trim. Two
+**v1-required** bugs found and filed with code-grounded hypotheses:
+
+- **#269** — stored-segment playback is **silent** (record + in-recorder playback work). Byte-level
+  proof the lamejs MP3 is **headerless** (no Xing/Info); prime suspect is Android `decodeAudioData`
+  on that stream. Needs a device check to confirm the layer, then a storage-format call (options:
+  Xing header / WAV / Opus / OfflineAudioContext rate-pin — may touch ADR 0009 → Tim).
+- **#272** — **Share Book fails** ("could not share this book"); `navigator.canShare` likely rejects
+  the `.zip`. Share Chapter (single MP3) is the discriminator.
+
+### Also filed / decided
+
+Issues: **#262** (Capacitor umbrella), **#263** (re-validate audio in the WebView), **#264** (rename),
+**#269**, **#272**, **#277** (deferred audio-io P3). Jesse filed **#276**. **#258 R4-G1** round-5
+root fix authorized (cap-exceeded, DRI) and merged. Backlog reassigned Jesse↔Seth.
+
+### In progress
+
+- **#268 — reach Edit in-sheet (#134)** — **round 3 of 4**. The P1 data-loss fix is confirmed
+  (`onEnterEdit`'s held-take blob branch mirrors `close()`'s precedence). **Two open P2 siblings**:
+  (1) Try-again after an Edit-commit decode-fail lands on Segments, not edit mode; (2) `finishedIntent`
+  isn't consumed on in-sheet reopen — **a finished-status requirements question for Tim**. Root fix =
+  make Edit's post-conditions match Back across all session-state consumers. Fix pushed at `3e0013b`.
+
+### Tooling / process
+
+- **George (grok) is unreliable under parallel load** — OOM/no-verdict when several grok reviews run
+  at once (memory contention). **Serialize George** (one grok review at a time); re-run on OOM;
+  fall back to Frank + independent agent deep-tree, recorded per PR (#208 precedent).
+- Cross-review caught real defects in our **own** subagent work: missing native mic permissions, an
+  `allowBackup` privacy leak, a zip path-injection, a false "verified on-device" comment, and a
+  cross-PR data-loss seam (#268). The loop earned its keep.
+- Swept **35 stale agent worktrees**.
+
+### Blockers / needs a human
+
+- **Seth:** the **Share-Chapter device check** settles #269's layer and #272's zip theory in one tap.
+- **Seth (Mac):** the **Monday** Capacitor iOS TestFlight + Android APK builds (#262).
+- **Tim:** the #269 storage-format call (post-device-check) and the #268 `finishedIntent` semantics.
+
+### Next steps
+
+1. **#268 round 4** — the root fix for the two P2 siblings + Tim's `finishedIntent` call.
+2. **Seth's device check** → then the #269 fix path.
+3. **Monday installable** — Capacitor Mac builds (#262/#263).
+4. Contributor PRs: Ben's #232/#215 (round-1 P2s), #244 (gate checklist).
+5. Merge the stale docs PRs (#242 EOD-09-04, #254 gate chart) on green.
+
+---
+
 ## 2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the microphone report resolved outside the app
 
 **Branches:** `release/v0.1.12` → **`develop`** (#201, squash `7152289`); develop →

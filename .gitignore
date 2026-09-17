@@ -5,8 +5,13 @@ node_modules
 
 # Build output
 dist/
+dist-e2e/
 dev-dist/
 *.tsbuildinfo
+
+# Playwright (#251)
+/test-results/
+/playwright-report/
 
 # Cloudflare
 .wrangler/
@@ -35,3 +40,19 @@ npm-debug.log*
 # Review reports — transient, regenerated per commit.
 .review/
 .lib-boundary-probe/
+.react-hooks-refs-probe/
+
+# Fastlane / iOS TestFlight pipeline (#262). The App Store Connect API key is
+# decoded from a secret at build time and must never be committed; the rest is
+# fastlane/gym output.
+fastlane/AuthKey.p8
+fastlane/dist_cert.p12
+fastlane/dist_profile.mobileprovision
+fastlane/report.xml
+fastlane/README.md
+fastlane/test_output/
+/build/
+/vendor/
+.bundle/
+*.ipa
+*.app.dSYM.zip

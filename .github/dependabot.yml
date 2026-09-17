@@ -30,3 +30,31 @@ updates:
         update-types:
           - minor
           - patch
+
+  # The fastlane TestFlight pipeline's gems (#262). `npm audit` in ci.yml does
+  # not cover Ruby, so without this a fastlane advisory would open no PR.
+  - package-ecosystem: bundler
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      bundler:
+        patterns:
+          - "*"
+        # Majors can break fastlane on a billed macOS run (the only place these
+        # gems execute), so keep them out of the weekly digest like the actions
+        # group above; they get their own review.
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # CFPropertyList 3.0.9 declares required_ruby_version < 3.2 and breaks the
+      # frozen install on the macos-14 runner (Ruby 3.3.12). Pinned to 3.0.8 in
+      # the Gemfile; a weekly patch bump to 3.0.9 would silently re-break the
+      # TestFlight lane, since ci.yml never runs bundle install (#262). Ignore
+      # ONLY the known-bad release, so a later 3.0.x with the ceiling lifted (or
+      # a security fix) is still offered.
+      - dependency-name: CFPropertyList
+        versions:
+          - "3.0.9"

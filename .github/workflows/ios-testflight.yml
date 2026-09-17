@@ -1,0 +1,223 @@
+name: iOS TestFlight
+
+# Manual only. This is a NATIVE build (Capacitor → TestFlight), not a web
+# deploy: it produces an .ipa on a macOS runner and uploads it to App Store
+# Connect. It never runs on push/PR, so it does not collide with Cloudflare
+# Workers Builds (which owns the PWA deploy — AGENTS.md) and adds no required
+# check to normal PRs. Run it from the Actions tab when a build is wanted;
+# `workflow_dispatch` builds whatever ref you pick there.
+#
+# macOS runners bill at a premium, so the trigger is deliberate and the lane
+# does not wait for Apple's server-side processing (see the Fastfile).
+#
+# One-time setup lives in docs/native/README.md §4a: the seven secrets below
+# (in the `release-signing` environment, required reviewers — #321),
+# the App Store Connect app record, and the API key's role.
+on:
+  workflow_dispatch:
+    inputs:
+      allow_any_ref:
+        description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  # One upload at a time; never cancel an in-flight archive/upload.
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  # A cheap ubuntu gate BEFORE the environment approval and the billed macOS
+  # runner. Refuse a non-staging/main ref here (the dispatch picker defaults
+  # to develop, and this is the first path that puts a build on a tester's
+  # phone). This job holds NO secrets and no environment on purpose: the
+  # signing secrets live in the `release-signing` environment (#321), which
+  # only the macOS job references, so a dispatch costs exactly one approval.
+  # The presence check moved there, as its first step.
+  preflight:
+    name: Preflight (ref)
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      REF: ${{ github.ref_name }}
+      ALLOW_ANY: ${{ inputs.allow_any_ref }}
+    steps:
+      - name: Require staging/main (or an explicit override)
+        run: |
+          set -euo pipefail
+          if [ "$ALLOW_ANY" = "true" ]; then
+            echo "allow_any_ref set — building '$REF'."
+          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
+            echo "::error::Refusing to build a tester IPA from '$REF'. Dispatch from staging or main, or set allow_any_ref."
+            exit 1
+          fi
+
+  testflight:
+    name: Build and upload to TestFlight
+    needs: preflight
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
+    # the environment has required reviewers. A dispatch pauses here until an
+    # approver okays this run — the actor guard the in-yml ref check above
+    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
+    # itself). The approval UI shows the ref being built.
+    environment: release-signing
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # The Fastfile reads IOS_DIST_CERT_PASSWORD directly from ENV to unlock
+      # the imported .p12; the p12 and profile themselves are decoded in the
+      # "Write signing credentials" step and not needed as env vars here.
+      IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+    steps:
+      # First step, before checkout: an unset environment secret expands to "",
+      # which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
+      # missing and fail in seconds rather than ~10 minutes into the archive.
+      # Step-scoped env so the base64 blobs are not job-wide.
+      - name: Require all seven secrets
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
+                      IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::environment secret $name is unset or empty (environment: release-signing)"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All seven signing secrets present."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build
+
+      # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
+      # Swift package through xcodebuild, so it must use the same toolchain gym
+      # archives with, or SPM resolves against one Xcode and the archive runs on
+      # another. App Store Connect requires the iOS 26 SDK, so this pins Xcode 26
+      # explicitly rather than the image default: /Applications/Xcode.app is 16.x
+      # on macos-15 and Apple rejects its uploads. The step below globs the
+      # versioned Xcode_26*.app and fails closed if none is present (BSD `sort`
+      # has no `-V`, so it sorts lexicographically — fine within the 26.x range).
+      # No third-party action, keeping the "actions/* pinned by SHA only"
+      # property this repo's workflows hold (see ci.yml).
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          # App Store Connect requires the iOS 26 SDK (Xcode 26+). The image's
+          # default /Applications/Xcode.app symlink points to 16.x on macos-15,
+          # which Apple rejects at upload. Prefer any versioned Xcode_26*.app;
+          # BSD sort has no -V so sort lexicographically descending — fine for
+          # the 26.x range. If none is found, print what IS installed and exit
+          # so the error lands here rather than after ~10 min of billed archive.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -r | head -1 || true)
+          if [ -z "$XCODE" ]; then
+            echo "::error::Xcode 26 not found on this runner. Available versions:"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          sudo xcode-select -s "${XCODE}/Contents/Developer"
+          xcodebuild -version
+
+      - name: Sync dist/ into the iOS project
+        run: npx cap sync ios
+
+      # This is the first path that puts dist/ on testers' phones, and
+      # workflow_dispatch can build a ref that never passed ci.yml's build job.
+      # Re-assert its cheap ship-blockers here — a missing service worker or
+      # manifest, or a leaked e2e harness — plus that cap sync actually copied
+      # the bundle (ios/App/App/public is gitignored; a sync that exits 0 without
+      # it would archive a blank WebView).
+      - name: Guard the synced bundle
+        run: |
+          set -euo pipefail
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          for tok in "e2e-harness" "__e2e"; do
+            if grep -rq "$tok" dist/; then
+              echo "::error::e2e harness ($tok) leaked into dist/"
+              exit 1
+            fi
+          done
+          test -f ios/App/App/public/index.html || { echo "::error::cap sync did not copy the web bundle into ios/"; exit 1; }
+          echo "Bundle built, clean, and synced into ios/."
+
+      # The .p8 never touches the repo. It is decoded from a secret into the
+      # gitignored fastlane/AuthKey.p8 that the Fastfile reads.
+      - name: Write the App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        # Decode with Ruby (preinstalled on the macOS runner), not `base64`: the
+        # decode flag differs by platform (`--decode`/`-d` is GNU, `-D` is the
+        # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
+        # wrapped secret. Reading the secret from ENV keeps it out of the process
+        # arguments and the shell history.
+        # The first step of this job already failed the run if this secret is unset/empty.
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'
+
+      # The signing credentials never touch the repo. Decoded here from secrets
+      # into gitignored paths that the Fastfile reads. Same Ruby decode technique
+      # as the API key step above: cross-platform, tolerates wrapped secrets,
+      # keeps the secrets out of process arguments and shell history.
+      - name: Write the signing credentials
+        env:
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("fastlane/dist_cert.p12", Base64.decode64(ENV.fetch("IOS_DIST_CERT_P12_BASE64")))'
+          ruby -rbase64 -e 'File.binwrite("fastlane/dist_profile.mobileprovision", Base64.decode64(ENV.fetch("IOS_PROVISION_PROFILE_BASE64")))'
+
+      - name: Install fastlane
+        # `frozen` fails the run if Gemfile.lock does not satisfy the Gemfile
+        # instead of silently re-resolving, so every run installs exactly the
+        # locked gem set. It is set through `bundle config` rather than the
+        # `--frozen` flag: bundler 2.6 deprecates the flag because it "relies on
+        # being remembered across bundler invocations", which a future runner
+        # image could stop doing without any change here — the config form is
+        # explicit per checkout. The first real dispatch (run 34694213885,
+        # 2026-09-12) proved the guard works: it refused a lock resolved under a
+        # pre-3.2 Ruby (CFPropertyList 3.0.9, `ruby < 3.2`) on the runner's
+        # 3.3.12 instead of quietly re-resolving. Bundler is pinned to the lock's
+        # `BUNDLED WITH` so it never rewrites the lock underneath us. Install
+        # into vendor/bundle (not the system gem dir, which is often not
+        # writable on the runner).
+        run: |
+          set -euo pipefail
+          gem install bundler -v 2.6.9 --no-document
+          bundle _2.6.9_ config set --local path vendor/bundle
+          bundle _2.6.9_ config set --local frozen true
+          bundle _2.6.9_ install --jobs 4 --retry 3
+
+      - name: Archive and upload to TestFlight
+        # Same pinned bundler as the install step, so both invocations agree.
+        run: bundle _2.6.9_ exec fastlane ios beta
+
+      - name: Remove decoded credentials
+        # Runner state is ephemeral, but do not leave decoded secrets on disk
+        # between steps once the lane is done.
+        if: always()
+        run: rm -f fastlane/AuthKey.p8 fastlane/dist_cert.p12 fastlane/dist_profile.mobileprovision

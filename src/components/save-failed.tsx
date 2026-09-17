@@ -6,8 +6,19 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
+  restartConsequence,
+  restartLabel,
 } from "./recovery-copy";
 import type { SaveFailureKind } from "@/hooks/save-failure";
+
+/**
+ * Restart the app from disk — the same exit `DatabasePanel` and `ErrorBoundary`
+ * offer, and for the same reason: everything already saved is in IndexedDB, and
+ * a reload is what picks up the newer build the service worker has activated.
+ */
+function reload(): void {
+  window.location.reload();
+}
 
 interface SaveFailedProps {
   state: "saving" | "failed";
@@ -21,6 +32,18 @@ interface SaveFailedProps {
   editOnly: boolean;
   /** Which segment the held recording belongs to, when it is in this chapter. */
   ordinal: number | null;
+  /**
+   * The chapter clipboard also holds a cut phrase, which the terminal restart
+   * below destroys along with the recording.
+   *
+   * The same bit `DatabasePanel` takes, and it is here because this screen
+   * OUTRANKS that panel: while a take is held, `databasePanel` is null, so the
+   * panel's two-tap — the one that names the cut phrase — cannot mount, and this
+   * screen's restart is the only control the translator is offered. Naming only
+   * the recording would make the confirmation incomplete on exactly the tap that
+   * destroys both (George R5 P2).
+   */
+  holdsCutAudio: boolean;
   attempts: number;
   onRetry: () => void;
   onDiscard: () => void;
@@ -42,6 +65,7 @@ export function SaveFailed({
   kind,
   editOnly,
   ordinal,
+  holdsCutAudio,
   attempts,
   onRetry,
   onDiscard,
@@ -52,15 +76,31 @@ export function SaveFailed({
   // single tap would delete the only copy of the take. Deriving it means a new
   // attempt, or a retry in flight, disarms on its own. Two taps mean two taps.
   const [armedAt, setArmedAt] = useState<number | null>(null);
+  // Armed separately from Discard, and derived the same way for the same reason:
+  // restarting destroys the held recording exactly as discarding does, so it
+  // takes two taps too (Frank R4 P1). Two slots rather than one so arming one
+  // control never arms the other.
+  const [restartArmedAt, setRestartArmedAt] = useState<number | null>(null);
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
+  const restartArmed = restartArmedAt === attempts && !saving;
 
   // Shown on every failed save, never an instruction to leave the app: a failed
   // save is RAM-only (the commit is one transaction, #38) whatever the cause, so
   // sending the translator off to free space would risk the OS discarding the
   // only copy. The attempt count is a fainter extra line beside it, not instead.
-  const safetyLine = saving ? null : recoverySafetyLine(editOnly);
+  const safetyLine = saving ? null : recoverySafetyLine(editOnly, kind);
   const attemptsLine = saving ? null : recoveryAttempts(kind, attempts);
+
+  // The one failure this screen cannot offer a retry for: a newer copy of the
+  // app has moved the database past this build, so `getDb()` fails the version
+  // check before any transaction and will do so on every attempt. Offering "Try
+  // saving again" here teaches retry-and-stay for a condition that is already
+  // decided, and leaves the honest exit reachable only through Discard — which
+  // deletes the only copy (George R2 P2-1). The control becomes the same
+  // restart `DatabasePanel` and `ErrorBoundary` offer, which is what picks up
+  // the newer build. Discard stays, unchanged and still two taps.
+  const terminal = kind === "downgrade";
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
@@ -103,12 +143,36 @@ export function SaveFailed({
         <>
           <Control
             icon="retry"
-            label="Try saving again"
+            label={
+              terminal
+                ? restartLabel(
+                    editOnly ? "changes" : "recording",
+                    restartArmed,
+                    holdsCutAudio
+                  )
+                : "Try saving again"
+            }
             variant="primary"
             size={30}
+            className={
+              terminal && restartArmed ? "text-[var(--s-live)]" : undefined
+            }
             autoFocus
-            onClick={onRetry}
+            onClick={
+              terminal
+                ? () => (restartArmed ? reload() : setRestartArmedAt(attempts))
+                : onRetry
+            }
           />
+
+          {terminal && restartArmed && (
+            <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+              {restartConsequence(
+                editOnly ? "changes" : "recording",
+                holdsCutAudio
+              )}
+            </p>
+          )}
 
           {safetyLine && (
             <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>

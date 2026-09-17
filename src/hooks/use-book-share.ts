@@ -20,6 +20,13 @@ export interface UseBookShare {
    */
   readonly missing: number;
   /**
+   * Segments missing INSIDE chapters that DID make it into the zip — the
+   * roll-up of each included chapter's own gap (#116). Zero until a prepare
+   * succeeds. Distinct from `missing` above, which counts whole chapters left
+   * out entirely; a book can carry both at once.
+   */
+  readonly partialSegments: number;
+  /**
    * Tap 1: encode the book's chapters and archive them into one zip, stashing the
    * File for the send gesture. `zipFilename` names the archive; `nameChapter`
    * names each MP3 inside it (both are translator-facing copy from the screen).
@@ -39,13 +46,23 @@ export interface UseBookShare {
 /**
  * Share a book as one zip of per-chapter MP3s to the OS share sheet (B7, A4). A
  * thin wrapper over {@link useShareFlow}: tap 1 builds the zip into a File, and
- * the shared flow owns the two-gesture state machine and the `navigator.share`
- * handoff. The whole build holds the app's single encoder lane (`withEncoder`,
+ * the shared flow owns the two-gesture state machine and the OS share handoff —
+ * `navigator.share` in a browser, Capacitor's Share plugin inside the native
+ * shell, where the WebView may expose no Web Share at all (#336, George R6 P3).
+ * The whole build holds the app's single encoder lane (`withEncoder`,
  * B8) so its chapter-at-a-time peak is never joined by a Finished transcode's
  * PCM; each chapter encodes in the worker and the flow's abort signal reaches it.
  */
 export function useBookShare(): UseBookShare {
-  const { status, error, missing, prepare: run, send, reset } = useShareFlow();
+  const {
+    status,
+    error,
+    missing,
+    partial: partialSegments,
+    prepare: run,
+    send,
+    reset,
+  } = useShareFlow();
 
   const prepare = useCallback(
     (
@@ -72,11 +89,15 @@ export function useBookShare(): UseBookShare {
           const file = new File([...result.chunks], zipFilename, {
             type: "application/zip",
           });
-          return { file, missing: result.missing };
+          return {
+            file,
+            missing: result.missing,
+            partial: result.partialSegments,
+          };
         })
       ),
     [run]
   );
 
-  return { status, error, missing, prepare, send, reset };
+  return { status, error, missing, partialSegments, prepare, send, reset };
 }

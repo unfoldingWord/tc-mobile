@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   discardSave,
   failSave,
+  holdsUnsavedAudio,
+  panelWouldLoseAudio,
   retrySave,
   startSave,
   succeedSave,
@@ -29,13 +31,18 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * orphan, the `useState` slot surviving a re-render, and the recovery screen
  * taking over are all outside this module. `discardSave` reports which clip is orphaned; it does not
  * delete it, and nothing here asserts that a delete happened. The storage calls
- * themselves are covered by `tests/storage.test.ts`. The wiring between them
- * has no automated coverage and needs a specific on-device check that has not
- * been run: fill the device, record, and confirm the recovery screen appears
- * and that Retry reuses the same clip. Record and playback were verified on a
- * device on 2026-08-22 and work — but a *successful* save exercises none of
- * this. The failure path only opens when the write actually rejects, which on
- * a phone with room to spare it never does.
+ * themselves are covered by `tests/storage.test.ts`. The wiring between them —
+ * `performSaveTake` and `performDiscardTake`, the orchestration minus React —
+ * is covered in Node by `tests/use-save-take.test.ts` since #180; what has NO
+ * automated coverage is the React state around it (the `useState` slot, the
+ * `savingRef` guard), and the specific on-device check that has still not been
+ * run: fill the device, record, and confirm the recovery screen appears and
+ * that Retry reuses the same clip. Record → playback has been run on a phone
+ * (2026-08-24 and 2026-08-25, one iPhone on iOS Safari, as recorded in
+ * AGENTS.md and `docs/progress_tracker.md`; never on Android) — but a
+ * *successful* save exercises none of this. The failure path only opens when
+ * the write actually rejects, which on a phone with room to spare it never
+ * does.
  */
 
 const SEGMENT = "seg-1" as SegmentId;
@@ -158,6 +165,134 @@ describe("retrySave", () => {
 
   it("has nothing to do with an empty slot", () => {
     expect(retrySave(null)).toBeNull();
+  });
+
+  it("refuses a downgrade, which no attempt can clear", () => {
+    // A newer copy of the app has moved the database past this build, so
+    // `getDb()` fails the version check before any transaction — identically,
+    // every time. Arming a save here spins the recovery screen through "Saving"
+    // and back for as long as someone keeps tapping. Refused by returning the
+    // slot UNCHANGED, which is the same "refused" every caller already reads
+    // (George R2 P2-1).
+    const { take } = held();
+    const failed = failSave(take, CLIP, "downgrade");
+    expect(retrySave(failed)).toBe(failed);
+    // And the retryable kinds are untouched by the guard.
+    const blip = failSave(take, CLIP, "unknown");
+    expect(retrySave(blip)).not.toBe(blip);
+    const full = failSave(take, CLIP, "quota");
+    expect(retrySave(full)).not.toBe(full);
+  });
+});
+
+describe("holdsUnsavedAudio", () => {
+  const empty = {
+    pendingTake: null,
+    recorderOpen: false,
+    clipboard: null,
+  };
+
+  it("holds nothing when nothing is in hand", () => {
+    expect(holdsUnsavedAudio(empty)).toBe(false);
+  });
+
+  it("holds a take whose save has not landed", () => {
+    const { take } = held();
+    expect(holdsUnsavedAudio({ ...empty, pendingTake: take })).toBe(true);
+  });
+
+  it("holds an open recorder, coarsely — the sheet, not a running capture", () => {
+    // Capture state is not visible from `App`, and the coarse answer is wrong
+    // only in the direction that costs the other copy a wait.
+    expect(holdsUnsavedAudio({ ...empty, recorderOpen: true })).toBe(true);
+  });
+
+  it("holds CUT audio", () => {
+    // The hole it came from is already committed to disk, so these samples may
+    // be the only copy left of that phrase. Yielding the connection unmounts the
+    // screen that could paste them, and a restart drops the slot — the segment
+    // keeps its hole and the phrase is gone (George R2 P2-2).
+    expect(holdsUnsavedAudio({ ...empty, clipboard: pcm() })).toBe(true);
+  });
+
+  it("does not hold an emptied clipboard", () => {
+    // Reachable — the slot is set from a cut whose selection can be empty — and
+    // holding it would block another copy's upgrade over nothing.
+    expect(holdsUnsavedAudio({ ...empty, clipboard: new Int16Array(0) })).toBe(
+      false
+    );
+  });
+
+  it("holds a full slot on the SAMPLES alone — nothing about a paste releases it", () => {
+    // The re-shape (George R4 P2, DRI 2026-09-17). A "has been pasted" arm lived
+    // here for two rounds and was wrong in the losing direction both times: set
+    // at the paste it survived an undo that wrote nothing (Frank R5 P1); set at
+    // the write it survived an erase of the segment written to (George R4 P2).
+    // There is nothing left to go stale — the only input is what the slot holds.
+    //
+    // Stated as a property rather than a case, because the defect was always a
+    // second input that disagreed with the first: no field of `held` other than
+    // these three can exist, so no caller can hand over a reason to release.
+    const holding = { ...empty, clipboard: pcm() };
+    expect(holdsUnsavedAudio(holding)).toBe(true);
+    expect(Object.keys(holding).sort()).toEqual([
+      "clipboard",
+      "pendingTake",
+      "recorderOpen",
+    ]);
+  });
+
+  it("releases when the chapter changes and the slot is emptied", () => {
+    // The bound on the wait, and the reason a full slot needs no release of its
+    // own: leaving the chapter clears the clipboard (G3, chapter-scoped), so the
+    // longest another copy can wait on a cut is the rest of one chapter.
+    const holding = { ...empty, clipboard: pcm() };
+    expect(holdsUnsavedAudio({ ...holding, clipboard: null })).toBe(false);
+  });
+});
+
+describe("panelWouldLoseAudio", () => {
+  const empty = { pendingTake: null, recorderOpen: false };
+
+  it("does not wait on the clipboard — the panel does not destroy it", () => {
+    // The whole of George R4 P1. `holdsUnsavedAudio` holds a cut phrase because
+    // YIELDING loses it; the panel does not, because the slot is App state and
+    // outlives the screen. Withholding the panel is what loses it: no panel
+    // means no `trap-database-panel`, so the Back that `SegmentsScreen` offers
+    // as its documented recovery for a failed load runs `backToBooks`, which
+    // clears the slot — and then the panel appears, over an empty one.
+    //
+    // Handed a full slot through a variable rather than an object literal on
+    // purpose: the parameter type does not mention the clipboard, and this must
+    // still read false if some later hand adds it back.
+    const holding = { ...empty, clipboard: pcm() };
+    expect(panelWouldLoseAudio(empty)).toBe(false);
+    expect(panelWouldLoseAudio(holding)).toBe(false);
+  });
+
+  it("waits on the two things the panel really does destroy", () => {
+    const { take } = held();
+    expect(panelWouldLoseAudio({ ...empty, recorderOpen: true })).toBe(true);
+    expect(panelWouldLoseAudio({ ...empty, pendingTake: take })).toBe(true);
+  });
+
+  it("disagrees with holdsUnsavedAudio on the clipboard, and ONLY there", () => {
+    // Both states of the split, in one case: the two predicates must differ for
+    // a held clip and agree on everything else. Collapsing them back into one —
+    // in either direction — kills this.
+    const { take } = held();
+    const clip = { pendingTake: null, recorderOpen: false, clipboard: pcm() };
+    expect(holdsUnsavedAudio(clip)).toBe(true);
+    expect(panelWouldLoseAudio(clip)).toBe(false);
+
+    for (const both of [
+      { pendingTake: null, recorderOpen: false, clipboard: null },
+      { pendingTake: null, recorderOpen: true, clipboard: null },
+      { pendingTake: take, recorderOpen: false, clipboard: null },
+      { pendingTake: take, recorderOpen: true, clipboard: pcm() },
+    ]) {
+      expect(panelWouldLoseAudio(both)).toBe(holdsUnsavedAudio(both));
+    }
   });
 });
 

@@ -5,8 +5,14 @@ import { cn } from "@/lib/utils";
 
 interface PlayheadOverlayProps {
   /**
-   * The sounding position in milliseconds, or `null` when nothing is sounding (a
-   * HIDE sentinel distinct from 0, the clip start). A PULL (D-LEVEL-PULL, like
+   * The sounding position in milliseconds **within the drawn buffer**, or `null`
+   * when nothing is sounding (a HIDE sentinel distinct from 0, the clip start).
+   * Usually the two are the same thing; they part company for an edit-mode
+   * audition (#284), which sounds a view of the middle of the buffer that stays
+   * drawn, and the recorder adds that view's offset before this is read. The line
+   * belongs over the audio the eye can see, so this overlay is deliberately given
+   * one coordinate system — the drawn one — and knows nothing of selections. A
+   * PULL (D-LEVEL-PULL, like
    * `VuMeter`'s `readLevel` and `LiveScope`'s `readScope`): this overlay polls it
    * on its own `requestAnimationFrame` clock and moves the line by DOM, so buffer
    * playback never lifts into React state and nothing re-renders per frame — the
@@ -19,7 +25,7 @@ interface PlayheadOverlayProps {
    * paused or idle waveform.
    */
   active: boolean;
-  /** Duration of the sounding buffer, for the position fraction. */
+  /** Duration of the DRAWN buffer, for the position fraction. */
   durationMs: number;
   /**
    * The recorder viewport the bars are drawn through (`Waveform`'s `view`), so
@@ -27,6 +33,25 @@ interface PlayheadOverlayProps {
    */
   startFraction: number;
   endFraction: number;
+  /**
+   * Clamp an off-window position to the nearest edge instead of hiding it
+   * (#284, George R7). The hide branch below exists for the blank head/tail of
+   * a SWAPPED view — real screen space with no audio under it. An in-place
+   * audition never swaps the view, so a position outside `[0,1]` there is real,
+   * still-sounding audio that has simply outgrown the pan/zoom window, not
+   * blank space; hiding the one cue that says "this is what you're hearing" is
+   * the wrong response to that.
+   *
+   * `stageView`'s `render === "inPlace"` names exactly that case and nothing
+   * else (the flag it used to be called, `stage.inPlaceAudition`, became one
+   * value of the stage's four-way render mode in #415). The recorder's only
+   * other caller of this overlay is a paused-take preview, which leaves this
+   * `false` and keeps the original hide. **There is no third caller anymore:**
+   * a record-mode play and a no-selection audition no longer travel a line at
+   * all — the waveform scrolls under the fixed centerline instead, and this
+   * overlay is not `active` for them.
+   */
+  clampToEdge?: boolean;
   className?: string;
 }
 
@@ -51,6 +76,7 @@ export function PlayheadOverlay({
   durationMs,
   startFraction,
   endFraction,
+  clampToEdge = false,
   className,
 }: PlayheadOverlayProps) {
   const lineRef = useRef<HTMLDivElement | null>(null);
@@ -76,33 +102,44 @@ export function PlayheadOverlay({
       const ms = readRef.current();
       // `null` is the hide sentinel: playback ended or was stopped and the handle
       // is gone, but this loop is still running until `active` (React state) goes
-      // false a commit later. Hide rather than treat a 0 as "draw at clip start",
-      // which would teleport the line to the left edge for that frame (George R2).
-      const px =
-        ms === null || span <= 0
-          ? -1
-          : playheadViewportX(
-              Math.min(1, Math.max(0, ms / durationMs)),
-              startFraction,
-              endFraction
-            );
-      // Off-screen in the blank head/tail of the pan/zoom window ⇒ hide, rather
-      // than pin to an edge — the same skip the canvas playhead made.
-      if (px < 0 || px > 1) {
+      // false a commit later. UNCONDITIONAL — `clampToEdge` governs an off-window
+      // POSITION, not a missing one, and must never override this: clamping it
+      // would put the line at the left edge for the one frame between the stop
+      // and `active` going false, reinstating exactly the flash this sentinel
+      // exists to prevent (Frank R7). Hide rather than treat a 0 as "draw at
+      // clip start" too, which would teleport the line for that frame (George R2).
+      if (ms === null || span <= 0) {
+        line.style.opacity = "0";
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const px = playheadViewportX(
+        Math.min(1, Math.max(0, ms / durationMs)),
+        startFraction,
+        endFraction
+      );
+      // Off-screen in the blank head/tail of a SWAPPED pan/zoom window ⇒ hide,
+      // rather than pin to an edge — the same skip the canvas playhead made.
+      // `clampToEdge` (#284, George R7) is the one exception: an in-place
+      // audition never swaps the view, so off-screen there is real, still-
+      // sounding audio the pan/zoom window is simply too narrow to show, and
+      // the cue this feature exists to add must stay up rather than vanish.
+      if ((px < 0 || px > 1) && !clampToEdge) {
         line.style.opacity = "0";
       } else {
+        const clamped = Math.min(1, Math.max(0, px));
         // Clamp the CSS position so the whole 2px line stays inside the stage's
         // `overflow: hidden` box, the way the canvas clamped to `w - 2` — at
         // fraction 1 a bare `left: 100%` put the entire line past the edge, so
         // the last sample showed no playhead at all (George R2).
-        line.style.left = `min(${px * 100}%, calc(100% - 2px))`;
+        line.style.left = `min(${clamped * 100}%, calc(100% - 2px))`;
         line.style.opacity = "1";
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [active, durationMs, startFraction, endFraction]);
+  }, [active, durationMs, startFraction, endFraction, clampToEdge]);
 
   return (
     <div
@@ -113,8 +150,17 @@ export function PlayheadOverlay({
       // declared in `style` would be reset by React on any parent re-render
       // during a preview (VuMeter keeps its live `transform` out of JSX for the
       // same reason). `background` is static, so it stays in `style` safely.
+      // `z-[1]` so the line is painted ABOVE the selection overlay (#284 /
+      // George R5). Neither node set a z-index, so document order decided it and
+      // this one is mounted first: on the flow this PR exists for — tighten the
+      // frame to a word, then audition it — the band is a couple of pixels wide
+      // and its two 24px handles cover the line completely, so the one cue that
+      // says "this highlight is what you are hearing" never appeared. Stated
+      // here rather than fixed by reordering the JSX, so the invariant survives
+      // whatever is mounted next to it; the line is `pointer-events-none`, so
+      // lifting it does not take the handles' drags.
       className={cn(
-        "pointer-events-none absolute top-0 bottom-0 w-[2px] opacity-0",
+        "pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px] opacity-0",
         className
       )}
       style={{ background: "var(--s-ink)" }}

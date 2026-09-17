@@ -1,0 +1,233 @@
+name: Android APK
+
+# Manual only. This is a NATIVE build (Capacitor → APK), not a web deploy:
+# it produces a signed release APK on an ubuntu runner and uploads it as a
+# workflow artifact. It never runs on push/PR, so it does not collide with
+# Cloudflare Workers Builds (which owns the PWA deploy — AGENTS.md).
+#
+# Run it from the Actions tab when a tester build is wanted; `workflow_dispatch`
+# builds whatever ref you pick there.
+#
+# One-time setup: create the release keystore (docs/native/README.md §5 step 1)
+# and set the four secrets below in the `release-signing` environment
+# (required reviewers; #321). The Android SDK (Platform 36,
+# Build-tools 36.0.0, ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner
+# image (verified against actions/runner-images, 2026-09-12). The JDK is NOT
+# left to the image: its default is Java 17, and Capacitor's generated
+# android/app/capacitor.build.gradle compiles at Java 21, so the lane pins
+# JDK 21 below — the same class of trap as the macos-15 default Xcode in the
+# iOS lane. No dispatch has run yet; the first one is the end-to-end check.
+on:
+  workflow_dispatch:
+    inputs:
+      allow_any_ref:
+        description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  # One APK build at a time; never cancel an in-flight signing step.
+  group: android-apk
+  cancel-in-progress: false
+
+jobs:
+  # A cheap gate BEFORE the environment approval and any real work. Refuse a
+  # non-staging/main ref here (the dispatch picker defaults to develop). This
+  # job holds NO secrets and no environment on purpose: the signing secrets
+  # live in the `release-signing` environment (#321), which only the build job
+  # references, so a dispatch costs exactly one approval. The presence check
+  # moved there, as its first step.
+  preflight:
+    name: Preflight (ref)
+    # Pinned to the image whose contents this lane was checked against (see the
+    # header); `ubuntu-latest` retargets silently. Same reason the iOS lane pins
+    # macos-15.
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      REF: ${{ github.ref_name }}
+      # ref_name drops the branch-or-tag distinction: a TAG named `staging`
+      # would read as "staging". Require the ref to be a branch as well (#320
+      # tracks the same gap in the iOS lane).
+      REF_TYPE: ${{ github.ref_type }}
+      ALLOW_ANY: ${{ inputs.allow_any_ref }}
+    steps:
+      - name: Require staging/main (or an explicit override)
+        run: |
+          set -euo pipefail
+          if [ "$ALLOW_ANY" = "true" ]; then
+            echo "allow_any_ref set — building '$REF' ($REF_TYPE)."
+          elif [ "$REF_TYPE" != "branch" ]; then
+            echo "::error::Refusing to build a tester APK from $REF_TYPE '$REF'. Tester builds come from the staging or main BRANCH; set allow_any_ref for anything else."
+            exit 1
+          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
+            echo "::error::Refusing to build a tester APK from '$REF'. Dispatch from staging or main, or set allow_any_ref."
+            exit 1
+          fi
+
+  build:
+    name: Build release APK
+    needs: preflight
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
+    # the environment has required reviewers. A dispatch pauses here until an
+    # approver okays this run — the actor guard the in-yml ref check above
+    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
+    # itself). The Android keystore is permanent app identity, so this gate is
+    # the only real control on it. The approval UI shows the ref being built.
+    environment: release-signing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # First step, before checkout: an unset environment secret expands to "",
+      # so treat empty as missing and fail in seconds, not after npm ci and the
+      # web build. Step-scoped env so the keystore blob is not job-wide.
+      - name: Require all four secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD \
+                      ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::environment secret $name is unset or empty (environment: release-signing)"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All four signing secrets present."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # Pin the JDK BEFORE `cap sync` and Gradle. android/app/capacitor.build.gradle
+      # (generated by Capacitor, regenerated on every sync) sets source/target
+      # compatibility to Java 21, and so does @capacitor/android itself. The
+      # ubuntu-24.04 image defaults JAVA_HOME to 17, under which javac rejects
+      # `-source 21` at :app:compileReleaseJavaWithJavac — after npm ci, the web
+      # build, cap sync and the keystore decode have all spent runner minutes.
+      # actions/* pinned by SHA only, matching ci.yml.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Fail closed on every runner fact the lane relies on, before npm ci spends
+      # minutes — the Android counterpart of the iOS lane's Xcode 26 check.
+      # compileSdk 36 comes from android/variables.gradle; AGP resolves
+      # Build-tools 36.0.0 for it; Ruby does the keystore decode below.
+      - name: Assert the toolchain this project compiles against
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME is unset on this runner image}"
+          test -d "$ANDROID_HOME/platforms/android-36" \
+            || { echo "::error::Android SDK Platform 36 not found under $ANDROID_HOME/platforms. Installed:"; ls "$ANDROID_HOME/platforms" || true; exit 1; }
+          test -d "$ANDROID_HOME/build-tools/36.0.0" \
+            || { echo "::error::Android Build-tools 36.0.0 not found under $ANDROID_HOME/build-tools. Installed:"; ls "$ANDROID_HOME/build-tools" || true; exit 1; }
+          command -v ruby >/dev/null \
+            || { echo "::error::ruby not on PATH; the keystore decode step needs it"; exit 1; }
+          java -version 2>&1 | head -1
+          echo "ANDROID_HOME=$ANDROID_HOME; platform android-36, build-tools 36.0.0 and ruby present."
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build
+
+      - name: Sync dist/ into the Android project
+        run: npx cap sync android
+
+      # Mirrors the iOS lane's bundle guard. This is the first path that puts
+      # dist/ on testers' devices, and workflow_dispatch can build a ref that
+      # never passed ci.yml's build job. Re-assert the cheap ship-blockers here —
+      # a missing service worker or manifest, a leaked e2e harness — plus that
+      # cap sync actually copied the bundle (android/app/src/main/assets/public
+      # is gitignored; a sync that exits 0 without it would install a blank view).
+      - name: Guard the synced bundle
+        run: |
+          set -euo pipefail
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          for tok in "e2e-harness" "__e2e"; do
+            if grep -rq "$tok" dist/; then
+              echo "::error::e2e harness ($tok) leaked into dist/"
+              exit 1
+            fi
+          done
+          # ci.yml's fourth ship-blocker: the OBS thumbnails must not be in the
+          # service-worker precache (ADR 0006 / #177) — ~598 files stalling the
+          # first native launch. The iOS guard omits this one; #320 carries it.
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
+            exit 1
+          fi
+          test -f android/app/src/main/assets/public/index.html \
+            || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
+          echo "Bundle built, clean, and synced into android/."
+
+      # The keystore never touches the repo. Decoded here from a secret into a
+      # gitignored path (android/*.jks). Same Ruby decode technique as the iOS
+      # lane: cross-platform, tolerates wrapped secrets, keeps the secret out of
+      # process arguments and shell history.
+      - name: Write the signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("android/tc-mobile-release.jks", Base64.decode64(ENV.fetch("ANDROID_KEYSTORE_BASE64")))'
+
+      # versionCode is a unix timestamp — unique and strictly increasing with no
+      # round-trip to any external service. Android refuses a downgrade, so every
+      # build that reaches a tester needs a higher code than the last. Range
+      # note: the timestamp passes Play's 2,100,000,000 cap on 2036-07-18 and
+      # signed int32 on 2038-01-19. Sideload only cares about int32; a future
+      # Play submission must not inherit this scheme silently.
+      # The signing env vars are read by android/app/build.gradle's signingConfigs
+      # block, which fails loudly via gradle.taskGraph.whenReady if any are unset.
+      - name: Build the release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/tc-mobile-release.jks
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew assembleRelease -PversionCode="$(date +%s)" --no-daemon
+          # A green Gradle exit is not an APK. Assert the exact path the upload
+          # step publishes, so a moved output dir fails HERE, not as an empty run.
+          test -f app/build/outputs/apk/release/app-release.apk \
+            || { echo "::error::assembleRelease exited 0 but app-release.apk is missing"; exit 1; }
+
+      - name: Remove the decoded keystore
+        # Runner state is ephemeral, but do not leave decoded secrets on disk
+        # between steps once the build is done.
+        if: always()
+        run: rm -f android/tc-mobile-release.jks
+
+      # Attach the APK to this run. GitHub requires a login to download workflow
+      # artifacts, and nothing creates a GitHub release or pre-release today, so
+      # tester distribution is: a person with repo access downloads the artifact
+      # and shares the .apk through the team drive (docs/native/README.md §5a).
+      # `if-no-files-found` defaults to `warn`, which would let a run go green with
+      # nothing attached — the "a green run is not a delivered build" point
+      # docs/native/README.md §4a makes for TestFlight. Fail instead (second
+      # layer; the test -f above is the first).
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

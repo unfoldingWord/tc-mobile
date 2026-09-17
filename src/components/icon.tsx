@@ -19,6 +19,7 @@ export type IconName =
   | "trash"
   | "alert"
   | "info"
+  | "copies"
   | "retry"
   | "menu"
   | "edit"
@@ -32,8 +33,6 @@ export type IconName =
   | "paste"
   | "undo"
   | "redo"
-  | "eye"
-  | "eye-off"
   | "share";
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -141,6 +140,32 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="11" cy="7.4" r="1.05" fill="currentColor" />
     </>
   ),
+  // Two sheets, one behind the other (#221): "there is another copy of this app
+  // open." Neither the alert triangle nor the info ring — a translator who
+  // cannot read has to tell "close the other one" from "this failed" by shape.
+  // The one behind is drawn as its two visible edges rather than a whole
+  // rectangle, so the overlap stays legible at the 56px panel size.
+  copies: (
+    <>
+      <path
+        d="M7.4 3.4h9.4a1.8 1.8 0 0 1 1.8 1.8v9.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <rect
+        x="3.4"
+        y="7.4"
+        width="11.2"
+        height="11.2"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+    </>
+  ),
   retry: (
     <>
       <path
@@ -215,28 +240,68 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinejoin="round"
     />
   ),
-  // Zoom toggle, two glyphs for two states (recorder §4.4). Arrows spread
-  // apart = the whole segment fits the viewport (100%); arrows drawn toward
-  // the centre = a quarter of it fills the viewport (25%), the finer view.
-  "zoom-out": (
-    <path
-      d="M10 11H4m0 0 3-3M4 11l3 3M12 11h6m0 0-3-3m3 3-3 3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  ),
+  // Zoom toggle: a magnifier carrying the sign of what a tap DOES (#91).
+  //
+  // These were two facing-arrow glyphs (`-><-` and `<-->`), and the first
+  // external tester read them as the state rather than the action and asked
+  // whether they were reversed. Arrows drawn apart or together describe a
+  // GEOMETRY, and a geometry reads equally well as "this is how the view is" and
+  // as "this is what tapping will do" — the ambiguity was in the metaphor, not
+  // in which way round it was wired. A magnifier with a plus is a verb: nothing
+  // about the current view is shaped like a lens, so there is no state reading
+  // left to take. The state is carried separately, by `aria-pressed` and the
+  // `is-on` mark on the button.
   "zoom-in": (
-    <path
-      d="M4 11h6m0 0-3-3m3 3-3 3M18 11h-6m0 0 3-3m-3 3 3 3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
+    <>
+      <circle
+        cx="9.5"
+        cy="9.5"
+        r="5.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M13.6 13.6 18.4 18.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+      <path
+        d="M9.5 6.8v5.4M6.8 9.5h5.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  "zoom-out": (
+    <>
+      <circle
+        cx="9.5"
+        cy="9.5"
+        r="5.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M13.6 13.6 18.4 18.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+      <path
+        d="M6.8 9.5h5.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </>
   ),
   // Selection-frame toggle: the two brackets that frame the picked span (mockup
   // 4). Drawn as a facing pair so the button reads as "enclose a region".
@@ -312,49 +377,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-  ),
-  // VU-meter "show": an open eye (an almond with a pupil). The menu toggle pairs
-  // it with `eye-off` to read as visible/hidden.
-  eye: (
-    <>
-      <path
-        d="M2.5 11S6 5.5 11 5.5 19.5 11 19.5 11 16 16.5 11 16.5 2.5 11 2.5 11z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle
-        cx="11"
-        cy="11"
-        r="2.4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-      />
-    </>
-  ),
-  // VU-meter "hide": the same eye, struck through — the level strip is off.
-  "eye-off": (
-    <>
-      <path
-        d="M2.5 11S6 5.5 11 5.5 19.5 11 19.5 11 16 16.5 11 16.5 2.5 11 2.5 11z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.55"
-      />
-      <path
-        d="M4.5 4.5 17.5 17.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </>
   ),
   // Share: a tray with an up-arrow leaving it — the OS share-sheet glyph.
   share: (

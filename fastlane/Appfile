@@ -1,0 +1,4 @@
+# The app identifier for the iOS build (#262). Authentication is handled by the
+# App Store Connect API key in the Fastfile, not by an Apple ID here, so this
+# file carries only the bundle id — overridable by env for a fork/test build.
+app_identifier(ENV.fetch("APP_IDENTIFIER", "org.unfoldingword.tcmobile"))

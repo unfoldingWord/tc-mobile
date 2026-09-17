@@ -91,3 +91,28 @@ export function meterZone(displayLevel: number): MeterZone {
   if (displayLevel >= METER_GREEN_MAX) return "yellow";
   return "green";
 }
+
+/**
+ * Whether a LIVE capture tap's reading can be trusted this frame, given the
+ * audio context's state string.
+ *
+ * A tap whose shared `AudioContext` is not `"running"` reads all-zeros with no
+ * error and no rejection — WebKit's `"suspended"`/`"interrupted"` after iOS
+ * backgrounding or an OS audio interruption (a call, Siri, a route change). Zeros
+ * are indistinguishable from a dead microphone, so the meter must show
+ * *unavailable* (a hatch), not an empty strip a translator reads as a broken mic
+ * and re-records over a take that was in fact recording (#76). Only `"running"`
+ * is trustworthy: `"suspended"` and `"interrupted"` read zeros, and `"closed"`
+ * is torn down — so this is stricter than `contextNeedsResume`, which leaves a
+ * `"closed"` context alone (resuming it would reject) but which is emphatically
+ * still not readable.
+ *
+ * Pure and DOM-free (a plain string, never the Web Audio `AudioContextState`
+ * union, which does not include `"interrupted"`): the browser boundary in
+ * `hooks/audio-io.ts` composes it with the tap's own disconnected flag, so the
+ * one decision that turns a suspended context into "meter unavailable" is unit-
+ * tested in Node without a Web Audio mock.
+ */
+export function meterReadable(contextState: string): boolean {
+  return contextState === "running";
+}

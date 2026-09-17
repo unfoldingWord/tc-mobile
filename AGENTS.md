@@ -26,7 +26,7 @@ A segment is the unit of work: one recording per segment, edited in place. The
 pre-pivot UI is **replaced, not evolved**.
 
 [`docs/design/pivot-plan.md`](docs/design/pivot-plan.md) is the plan of record.
-[#25](https://github.com/sethstoll3/tc-mobile/issues/25) is the umbrella issue,
+[#25](https://github.com/unfoldingWord/tc-mobile/issues/25) is the umbrella issue,
 and the work is nine batches, B0–B8 (#26–#34).
 
 **B0–B6 and B8 have landed, and B7's Share half; B7's Template Library has
@@ -70,6 +70,8 @@ npm run format         # prettier --write
 npm run verify         # everything above, in one command
 npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
+npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
+npm run check:deploy:prod # confirm a staging -> main deploy; requires the production origin explicitly
 ```
 
 ## Architecture — onion layers
@@ -151,6 +153,26 @@ added to `settle()` that left the winning clip permanently unstoppable (issue
 #2's exact symptom) while all eleven tests still passed. Line coverage would
 have read 100%.
 
+**A gate is tested in both states.** A CI step, a guard script or a smoke
+assertion makes two claims: it goes red on the state it exists to catch, and
+it stays green on every state the surrounding docs call legitimate, including
+the documented _next_ one. Proving only the first half is not a gate. Three
+tooling PRs in one week (#215, #232, #256; #270 has the details) each shipped
+the first half only: a deploy check whose default origin is staging, so a
+production promotion can PASS without production being fetched, and whose
+entry guard exits 0 with no output on a path containing a space; a CI grep that
+bans `obs/thumbs` in `dist/sw.js` unconditionally while the same PR's test says
+jpg must be restored once a reader lands; a smoke assertion comparing
+`fitToFrames(...).length` to the count `fitToFrames` guarantees by
+construction. Every PR body had a red-first section. The rigor landed on the
+pure core and skipped the boundary. So, for any gate: enumerate the legitimate
+states and run the gate on each; mutate the thing the assertion claims to catch,
+not a helper, and watch the gate itself die; test a gate script's entry path
+and defaults, not just its exported function; derive a CI path filter from what
+the suite imports, never from issue prose. And a review posted from the
+author's own session is an author self-check — never "independent", never
+"clean" (#215 carried one that missed all three P2s).
+
 **Never claim verification you did not perform.** No docblock, comment or PR
 body may state that something is tested, verified, or checked on-device unless
 it was. This has been the single most recurrent defect class in this repo's
@@ -229,6 +251,24 @@ the DOM-free pass is `verify` and CI. `scripts/**/*.mjs`
 are linted too — they matched no config block and ran with zero rules while
 fetching over the network and writing 598 files into `public/`.
 
+**`react-hooks/refs` has a named blind spot too (#212).** ANY nested function
+defined inside a `catch (cause) { ... }` block that references `cause` —
+a `setState` updater is the shape found so far, but nothing about `setState`
+specifically is required — anywhere in a hook's body makes
+eslint-plugin-react-hooks 7.1.1's analysis bail out on that hook, silencing
+every rule that depends on it, `refs` included, for that hook only (a second
+hook in the same file is unaffected). This is how `src/hooks/use-save-take.ts`
+carried a real render-time `ref.current = x` write clean through
+`npm run lint` until PR #180 simplified `commit` and the write started
+failing. `tests/react-hooks-refs-gate.test.ts` pins both halves: a plain ref
+write fires, and the bail-out shape stays silent — so a plugin upgrade that
+fixes it fails that test instead of the gate quietly narrowing again. **That
+test lints only synthetic probes, never `src/`** — it does not sweep the tree
+for a live occurrence. It has needed a manual sweep twice, not once:
+`use-save-take.ts` (closed by #213) and `src/hooks/use-books.ts`'s load
+effect (found by George round 3 on #433, closed there by the same hoist). Do
+not treat a green `npm run verify` as proof the tree is clean of this shape.
+
 **Do not ramp up before it is needed.** Every rule above pays for itself now.
 A rule that will pay off after October can wait until after October.
 
@@ -279,10 +319,15 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 
 ### Cloudflare Workers Builds owns deployment
 
-There are no deploy workflows in `.github/`. Deleting them removed a real
-collision: Cloudflare and Actions would otherwise both deploy on the same
-triggers, to different targets — two preview deploys per PR and two
-deployments per merge.
+No Actions workflow deploys the **PWA**. The four web-deploy workflows were
+deleted to remove a real collision: Cloudflare and Actions would otherwise both
+deploy on the same triggers, to different targets — two preview deploys per PR
+and two deployments per merge. The only deploy workflows in `.github/` are the
+two **manual** native lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
+native build to App Store Connect, `docs/native/README.md` §4a) and the Android
+APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
+§5a). Both are `workflow_dispatch`-only, so they never fire on push/PR and are
+not Workers Builds triggers (#262, #318). Do not add a push/PR deploy job.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -298,10 +343,135 @@ push to `develop` triggers two preview builds of the same commit.
 Add `docs/**` and `*.md` to Cloudflare's **Exclude paths** on both, or every
 documentation commit burns a build.
 
-Cloudflare account **unfoldingWord** (`5a3ffd86280d3ed086be76d955829242`). The
+Cloudflare account **unfoldingWord**. The
 API token lives in Cloudflare's build settings, **not** in a GitHub secret —
-Actions no longer deploys anything, so it needs no Cloudflare credentials. Only
-`ci.yml` remains there.
+Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
+TestFlight lane authenticates to App Store Connect with its own secrets, and
+the Android lane signs with its own keystore secrets — neither is Cloudflare's).
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
+native lanes, `ios-testflight.yml` and `android-apk.yml`.
+
+### Confirming a deploy and rolling one back
+
+A merged promotion PR is not a deployed build (#143 was exactly that: green on
+GitHub, never deployed). This is the machine-checkable version signal and the
+runbook for undoing a bad one.
+
+**The version signal.** Every build emits `dist/version.json` (a small Vite
+plugin in `vite.config.ts`, `generateBundle`, reusing the same `pkg.version`
+and `buildSha` the footer build stamp uses) —
+`{ "version": "0.1.x", "sha": "<short sha>", "builtAt": "<ISO timestamp>" }`.
+It is deliberately not a build asset the PWA precaches (`.json` is outside
+`workbox.globPatterns` in `vite.config.ts`), so fetching it always reaches the
+origin, never a cached copy. `navigateFallbackDenylist` in the same Workbox
+config (round-3 George #2) keeps that true for a browser _navigation_ to
+`/version.json` too, not just `check:deploy`'s script-side fetch — without it,
+Workbox's SPA-shell fallback would intercept a navigation there on an
+installed PWA even though `.json` was never precached.
+
+Each promotion type has its own explicit command — **the two are not
+interchangeable**, and the production one is deliberately not just "the same
+command with a different URL pasted in" (round-1 George G2: a bare
+`check:deploy` run from a checkout still pointed at staging silently PASSed
+for what should have been checking production, because the default origin is
+always staging and nothing forced a promoter to say otherwise):
+
+```bash
+# develop -> staging: bare command, defaults to the staging Worker.
+npm run check:deploy                        # expected sha from origin/staging
+node scripts/check-deploy.mjs <origin> --sha=<short-sha> --version=<x.y.z>
+
+# staging -> main (production, the highest-stakes gate in the repo):
+# --require-origin makes the script itself refuse to run without an explicit
+# origin, so this can never silently fall back to checking staging instead.
+npm run check:deploy:prod                   # expected sha from origin/main
+node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> --version=<x.y.z>
+```
+
+**Which sha is compared, and how the check keeps it fresh itself.** Cloudflare
+Workers Builds deploys the promoted branch's tip — for this repo's merge-PR
+promotion flow, that tip is a **merge commit**, not the feature/develop
+branch tip a promoter's local checkout usually has `HEAD` on (round-3
+George #1: `docs/progress_tracker.md:102,118` recorded the v0.1.12
+`develop -> staging` promotion (#202) as merge commit `afdfa6e`, not
+develop's pre-merge tip `7152289`). So the bare commands above do **not**
+compare against local `HEAD` by default: for the staging and production
+default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
+(`scripts/check-deploy.mjs`) read the corresponding **remote-tracking ref**
+instead — `origin/staging` for `check:deploy`, `origin/main` for
+`check:deploy:prod`. Falling back to local `HEAD`/this checkout's
+`package.json` (and printing why) only ever happens for an origin that
+**isn't** one of these two known defaults (a hand-typed preview-Worker
+URL) — there is no promoted branch to be stale there. For a known origin,
+see the fail-closed behavior below: nothing falls back.
+
+Earlier drafts of this section said to run `git fetch origin` yourself
+before either bare command — a **documented** prerequisite the gate itself
+did nothing to enforce, and a promoter who forgot it (merging the promotion
+PR on GitHub without ever fetching locally) on a checkout where Cloudflare
+_also_ failed to deploy got a **false PASS**: the stale local ref and the
+also-stale deployed build happened to agree, and neither reflected the new
+promotion (the exact #143 failure mode this check exists to catch — found
+in this PR's takeover round of dual review, Frank P1). The check now runs
+that fetch itself, scoped to the one branch it's about to read
+(`git fetch origin staging` / `git fetch origin main`, with an explicit
+destination refspec so it updates the remote-tracking ref even on a
+`--single-branch` clone), before resolving either half — and **fails
+closed** if the fetch itself fails, if the ref still can't be resolved
+after a successful fetch, or if the ref's `package.json` can't be read,
+rather than silently falling back to whatever the local ref or working
+tree already had. The fetch is skipped only when **both**
+`--sha=<short-sha>` and `--version=<x.y.z>` are given explicitly — there is
+then nothing left to resolve from the ref. Giving only one of the two still
+triggers the fetch, to resolve the other half.
+
+**The fetch also refuses to trust a non-canonical `origin`** (round-2
+George P2). A fork's `origin` copies `staging`/`main` at fork time, and an
+unrepointed pre-transfer clone's `origin` may not track this repo at all
+(see "The transfer broke Cloudflare Workers Builds" below) — either way,
+the fetch above would otherwise succeed against that stale branch and let
+a stale deployed build coincidentally match it, the exact #143 false PASS
+this check exists to close, just moved one level up the trust chain.
+Before fetching, the check runs `git remote get-url origin` and fails
+closed unless it resolves to `https://github.com/unfoldingWord/tc-mobile`
+(https or ssh, with or without `.git`). Repoint `origin` (see the transfer
+section) if this check fails on a clone that should be trusted.
+
+`check:deploy:prod` is
+`node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
+(`package.json`) — the `tc-mobile` Worker's URL, written down here because
+nowhere else in the tree was. `check:deploy`'s (staging's) is
+`https://tc-mobile-staging.unfoldingword.workers.dev`, also used in "Device
+testing" below.
+
+Either command fetches `<origin>/version.json?t=<timestamp>` (the query
+string busts any intermediate cache), compares `sha` and `version` against
+what was expected, prints a pass/fail line, and exits non-zero on a mismatch
+or a fetch failure — so it can gate a promoter's next step without anyone
+reading a diff by eye.
+
+**Rolling back.** Two ways to move the deployed Worker back to a prior build,
+independent of the version check above:
+
+- **Cloudflare dashboard** — the Worker's **Deployments** tab offers rolling
+  back to a previous deployment; see the Cloudflare Workers docs for the
+  current steps, which are not reproduced here to avoid drifting from what the
+  dashboard actually shows.
+- **`npx wrangler rollback`** — run against the `tc-mobile` Worker for
+  production, or `npx wrangler rollback --env staging` for
+  `tc-mobile-staging`. This targets the Worker directly, without going through
+  a build.
+
+**What rollback does not do.** Either path moves the deployed Worker only — it
+does not touch `staging` or `main`. The branch still points at the bad commit,
+so a rollback must be followed by a revert PR against the affected branch, or
+the next promotion will simply redeploy the same regression. And a PWA client
+already installed keeps running its current service worker until it next
+checks for an update (`registerType: "autoUpdate"` in `vite.config.ts` checks
+on its own schedule, not instantly) — so a rollback is not immediately visible
+on a phone that already has the app open or installed, and `check:deploy`
+confirming the origin has rolled back is not the same claim as confirming a
+given device has.
 
 ## Device testing — the HTTPS caveat
 
@@ -329,6 +499,15 @@ easy to regress.
   without asking first.
 - **Never** swallow an error silently. If a `catch` is genuinely empty, the
   comment must say why.
+- **Tester feedback is tagged by kind and source** (decided 2026-09-15).
+  Field testers and facilitators are asked for _bug reports_; those go into
+  the queue as `bug` with `source: tester`, and the body records who (by
+  role, never by name), when, and on which build. _Feature requests_ from
+  testers are documented, never dropped, and tagged `post-v1` with the source
+  and the rationale in the body; they are not scheduled until they are
+  reviewed against the plan after the training. Where a tester ask matches an
+  issue already open, it lands as an evidence comment on that issue, not as a
+  new one. `v1-required` means V1 = the v0.3.0 training build.
 
 ## Review — every PR, both reviewers
 
@@ -385,7 +564,13 @@ Full process, and the traps that make a failed run look like a clean pass, in
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,
    warmed at launch and reused across encodes (#182, ADR 0009 amended),
    terminated on abort or a worker error — re-warmed on abort, rebuilt on the
-   next encode after an error. What remains from ADR
+   next encode after an error. Every worker is built from a blob **snapshot** of
+   the worker chunk taken at warmup, so no rebuild depends on a URL a
+   service-worker update has purged (#192, ADR 0009 amended again). The blob
+   worker is exercised in real Chromium by the #251 smoke, which simulates the
+   purge and fails without the fix; the real purge chain, and any non-Chromium
+   engine, are still unverified, so it carries a fallback to the direct chunk
+   URL. What remains from ADR
    0003 is the notice and attribution work, #36. Not yet run on a phone.
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
@@ -401,10 +586,10 @@ Full process, and the traps that make a failed run look like a clean pass, in
    A4 settled the share shape instead: Share Chapter is one concatenated MP3 to
    the OS share sheet, Share Book is a zip of chapter MP3s. B7 (#33) builds
    both. Burrito comes back only if a later phase asks for it, so the "talk to
-   Benjamin Wright first" next action is retired; the background is still
+   Benjamin first" next action is retired; the background is still
    `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
-   public repo. Someone needs to ask Han Chung.
+   public repo. Someone needs to ask Han.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
    Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
    and the narration path and superseded ADR 0007 — both are gone from `src/`.
@@ -418,17 +603,17 @@ Full process, and the traps that make a failed run look like a clean pass, in
 
 ## DRI
 
-**Seth Stoll** is building this. **Tim Jore** owns the requirements.
-**Birch Champeon** is the project manager — and demoed translationCore4, so the
+**Seth Stoll** is building this. **Tim** owns the requirements.
+**Birch** is the project manager — and demoed translationCore4, so the
 tC Mobile / tC4 convergence question runs through the same person.
 
 Route questions accordingly: requirements to Tim, scheduling and tC4 to Birch,
-Scripture Burrito and the event journal to **Benjamin Wright**, OBS content and
-audio to **Rich Mahn**, Shema Studio to **Han Chung** (via Birch, who is already
+Scripture Burrito and the event journal to **Benjamin**, OBS content and
+audio to **Rich**, Shema Studio to **Han** (via Birch, who is already
 helping him add OBS support).
 
-**The repository lives at `unfoldingWord/tc-mobile`, private,** since Seth
-transferred it from `sethstoll3/tc-mobile` on 2026-09-02. GitHub redirects the
+**The repository lives at `unfoldingWord/tc-mobile`, public since 2026-09-13,**
+transferred there by Seth from `sethstoll3/tc-mobile` on 2026-09-02. GitHub redirects the
 old name, so existing clones keep working — but repoint them
 (`git remote set-url origin https://github.com/unfoldingWord/tc-mobile.git`)
 and use `--repo unfoldingWord/tc-mobile` with `gh` rather than relying on the
@@ -438,10 +623,12 @@ redirect. Issue and PR numbers carried over unchanged.
 bound to the repo under its old owner, and the first promotion after the move
 (#142, staging v0.1.11) merged green on GitHub without ever deploying. Until
 both Workers are re-linked to the org repo, **a merged promotion PR is not a
-deployed build** — confirm the served bundle's version string on the staging
-URL, not the merge. The AGENTS.md rule that the Cloudflare account is
-unfoldingWord was already true; only the GitHub side moved.
+deployed build** — confirm the served bundle's version string with
+`npm run check:deploy` / `npm run check:deploy:prod` (see "Confirming a
+deploy and rolling one back" above), not the merge. The AGENTS.md rule that
+the Cloudflare account is unfoldingWord was already true; only the GitHub
+side moved.
 
-Other contributors now push here (Jesse Griffin, `jag3773`, from 2026-09-02),
+Other contributors now push here (Jesse, `jag3773`, from 2026-09-02),
 which is what the version/milestone scheme above and the reviewer/author split
 in the review section exist for.

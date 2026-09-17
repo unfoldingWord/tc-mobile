@@ -199,9 +199,21 @@ PR is the production gate.
   body lists the PRs it carries.
 - **The milestone's `staging` → `main` promotion bumps the minor and tags
   `main`.** The minor is the milestone.
-- **Cloudflare Workers Builds deploys on merge** — there are no deploy
-  workflows in `.github/`; only `ci.yml` lives there.
+- **Cloudflare Workers Builds deploys the PWA on merge** — no Actions workflow
+  deploys it. `.github/` holds `ci.yml`, `dependabot.yml`, and the two
+  **manual** native lanes (`ios-testflight.yml`, `android-apk.yml`), which are
+  `workflow_dispatch`-only and never fire on push/PR.
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
+  `npm run check:deploy` checks the `develop -> staging` promotion (staging is
+  the default origin); `npm run check:deploy:prod` checks `staging -> main`
+  and requires its production origin explicitly — the two are not
+  interchangeable. Both fetch `/version.json` from the deployed origin and,
+  for these two default origins, compare it against the **promoted branch's
+  remote-tracking ref** (`origin/staging` / `origin/main`), not local `HEAD`
+  — the check fetches that one branch itself first and fails closed if the
+  fetch fails, rather than trusting a promoter to have run `git fetch origin`
+  beforehand. See AGENTS.md, "Confirming a deploy and rolling one back", for
+  the full command forms, the production URL, and the rollback path.
 
 ## Working with an AI coding agent
 

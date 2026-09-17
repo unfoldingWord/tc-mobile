@@ -1,8 +1,8 @@
 # tC Mobile
 
 **translationCore Mobile** — an offline-first PWA that aims to be the
-"world's simplest mobile audio notebook and editor" for oral communities doing
-Bible translation.
+"world's simplest mobile audio notebook and pencil" editor for oral communities doing
+translation.
 
 ## Why this exists
 
@@ -70,10 +70,12 @@ Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
-**Cloudflare Workers Builds deploys** straight from the repo — there are no
-deploy workflows in `.github/`. It is configured per Worker, so the repo is
-connected twice: `tc-mobile` builds from `main`, `tc-mobile-staging` builds
-from `staging` with `--env staging`.
+**Cloudflare Workers Builds deploys** the PWA straight from the repo — no
+Actions workflow deploys the web app. (The one deploy workflow in `.github/` is
+the manual iOS TestFlight lane, run by hand — a native build, not a web deploy.)
+Workers Builds is configured per Worker, so the repo is connected twice:
+`tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
+`--env staging`.
 
 ### Testing on a phone
 
@@ -87,12 +89,18 @@ share-sheet export path yet — see #18.
 
 ### CI
 
-`ci.yml` only: full-history secret scan, format, lint, knip, typecheck, test, build,
-and a check that the PWA service worker and manifest were emitted. It deploys
-nothing.
+`ci.yml`: full-history secret scan, format, lint, knip, typecheck, test, build,
+and a check that the PWA service worker, manifest, and `version.json` were
+emitted. It deploys nothing. (`.github/` also holds the two manual native
+lanes, run by hand and never on push/PR: `ios-testflight.yml`, a TestFlight
+upload, and `android-apk.yml`, a signed release APK attached to the run as an
+artifact. They are the only workflows that ship a binary, and never to
+Cloudflare.)
 
-The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org. It is being
-prepared to be made public.
+The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org, **public since
+2026-09-13**. Keep it public: the native lanes' signing gate (a GitHub
+environment with required reviewers, #321) exists only on public repositories
+for this org's plan — `docs/native/README.md` §4a step 4 has the detail.
 
 ## Architecture
 
@@ -150,7 +158,8 @@ thumbnails — 598 of them for 2.5 MB. They ship in the build but are **excluded
 from the service-worker precache until a screen reads them** (#177): no shipped
 screen draws them yet, so precaching 2.5 MB of unused pictures only delayed
 offline-readiness. `jpg` is restored to the precache when the Template Library
-(#33) wires a reader — the bundle-and-precache decision itself stands (ADR 0006,
+(#33) wires a reader — imports/calls `thumbUrl`, or otherwise references the
+`/obs/thumbs/` path — the bundle-and-precache decision itself stands (ADR 0006,
 2026-09-04 amendment).
 **The 360px frames are not bundled**, and after B0 (#26) they are **not cached
 either**: the on-demand IndexedDB fetch for full-size artwork is gone. The

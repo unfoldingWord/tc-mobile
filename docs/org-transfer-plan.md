@@ -1,7 +1,8 @@
 # Moving tC Mobile into the unfoldingWord org
 
-**Status:** plan, pending approval. Not yet executed.
-**Date:** 2026-08-27 · **DRI:** Seth Stoll · **Requirements:** Tim Jore
+**Status:** executed — transferred 2026-09-02, public 2026-09-13. Kept as the
+record of the plan and its decisions.
+**Date:** 2026-08-27 · **DRI:** Seth Stoll · **Requirements:** the requirements owner
 
 ## Bottom line
 
@@ -20,11 +21,10 @@ Nothing engineering-substantial is missing.
 
 ## The two governance sources, and why they disagree
 
-- **De jure** — `dev-practices/new-project-checklist.md` and the
-  `engineering-operating-system.md` (EOS). These are explicitly headed
-  _"Proposal for the unfoldingWord dev team"_ (v1, 2026-05-06). They define a
-  full checklist: `main`-default, dependabot, CODEOWNERS, PR/issue templates,
-  branch protection, a tech-lead-group approval, a recorded DRI.
+- **De jure** — the org's internal new-project checklist and engineering
+  operating system (EOS), both still at proposal stage as of mid-2026. They
+  define a full checklist: `main`-default, dependabot, CODEOWNERS, PR/issue
+  templates, branch protection, a tech-lead-group approval, a recorded DRI.
 - **De facto** — what the actual org repos do. Minimal: single `main`,
   GitHub-Actions deploy, `AGENTS.md`/`CLAUDE.md` for ownership, almost none of
   the checklist's `.github/` files.
@@ -37,20 +37,21 @@ the siblings don't meet it either.
 
 ## The gate (human, before anything moves)
 
-Per the EOS decision-rights table, _"new repo creation — anyone can propose; the
-tech-lead group approves the name + ownership."_ There is no ratified transfer
-runbook and no named tech-lead-group roster in the docs (the body is itself
-listed as "currently absent from uW"), so honestly:
+The EOS assigns new-repo creation to a tech-lead group: anyone proposes, the
+group approves name and ownership. There is no ratified transfer runbook and no
+named roster for that group yet, so honestly:
 
 - **D1 — Approval + DRI.** Get a uW human acting as tech-lead-group approver to
   green-light `unfoldingWord/tc-mobile` and its ownership, and record the DRI
   (Seth) and a named **technical lead** (the EOS T2 merge-authority role — not
   currently named in `AGENTS.md`; the DRI section names builder/requirements/PM
   but no tech lead). Route via Birch (PM) / the uW eng leads.
-- **D2 — Public vs private.** uW default is **public**; tC Mobile is private and
-  `AGENTS.md` documents _why_ (it sidesteps the very approval gate this plan
-  closes). Once approved, the private reason expires — decide public, or
-  re-justify private and record it.
+- **D2 — Public vs private.** uW default is **public**; tC Mobile _was_ private
+  while `AGENTS.md` documented why (it sidestepped the very approval gate this
+  plan closed). **Decided: public, flipped 2026-09-13 (#250).** Keep it public:
+  a flip back would also disable the native lanes' signing gate and its
+  environment secrets (#321; `docs/native/README.md` §4a step 4) — not a free
+  change.
 
 ## What a GitHub _transfer_ carries — and what it doesn't
 

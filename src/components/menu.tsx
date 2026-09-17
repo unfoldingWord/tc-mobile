@@ -11,9 +11,10 @@ import { strings } from "./strings";
  * A natively disabled button can never be `document.activeElement`, so it must
  * be skipped for BOTH the initial focus (landing on it focuses nothing,
  * stranding the user behind the scrim) and the Tab-wrap boundary (a disabled
- * `last` never turns the wrap). The recorder menu's Redo and Erase are disabled
- * at idle/no-clip while the VU toggle stays live, which is exactly when a single
- * shared selector matters. Mirrors EraseConfirm.
+ * `last` never turns the wrap). The recorder menu's Erase is disabled at
+ * idle/no-clip while Edit stays live (it commits then edits a live/paused
+ * take, #134), which is exactly when a single shared selector matters. Mirrors
+ * EraseConfirm.
  *
  * A row carrying a hint (#135) is `aria-disabled` instead, and so MATCHES this
  * selector by design: it is focusable, announces its reason, and holds its place
@@ -28,10 +29,17 @@ interface MenuProps {
   onClose: () => void;
   /**
    * Panel heading, announced by a screen reader. Defaults to the global menu's
-   * title; the recorder opens the same surface with its own title (Redo now, VU
-   * and Erase in B6).
+   * title; the recorder opens the same surface with its own title (Edit, Mark
+   * finished and Erase in B6).
    */
   title?: string;
+  /**
+   * Accessible name of the header's dismiss control. Defaults to "Close menu",
+   * which is what this panel is on every menu — but not on the New Book dialog
+   * (#314), where it is the "create nothing" exit and a screen-reader user would
+   * otherwise be told a naming dialog closes a menu (George R2 P3-4).
+   */
+  closeLabel?: string;
   /**
    * The menu's contents. Empty on the global menu this lane: Template Library is
    * B7 (#33). An empty labelled panel is honest and operable infrastructure — it
@@ -53,6 +61,7 @@ export function Menu({
   open,
   onClose,
   title = strings.menuTitle,
+  closeLabel = strings.menuClose,
   children,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -108,6 +117,12 @@ export function Menu({
     const panel = panelRef.current;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // A child already handled this Escape (the rename field calls
+        // preventDefault on its own Cancel — G1). Honour it: closing the whole
+        // menu here would double-fire and drop an armed share via share.reset().
+        // This reads a flag on the one shared native event, so it holds no matter
+        // how React delegates the portalled field's synthetic event.
+        if (e.defaultPrevented) return;
         onCloseRef.current();
         return;
       }
@@ -156,7 +171,7 @@ export function Menu({
           <span className="t-title">{title}</span>
           <Control
             icon="back"
-            label={strings.menuClose}
+            label={closeLabel}
             variant="quiet"
             onClick={onClose}
           />

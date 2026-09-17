@@ -78,9 +78,9 @@ async function openLegacyV3() {
 }
 
 /**
- * Stand up the schema exactly as v4 shipped it (B8): `books` rows have no
- * `provenance` field yet. This is what a dev device that recorded on v0.1.x
- * (post-B8, pre-#253) holds when #253's v5 opens it.
+ * Stand up the v4 schema (the v3 pivot stores — v4 added no store, only the
+ * clip-encoding backfill). A chapter row written here has NO `name`, which is
+ * exactly what a device that recorded on v0.1.x holds when #264's v5 opens it.
  */
 async function openLegacyV4() {
   return openDB(DB_NAME, 4, {
@@ -98,8 +98,108 @@ async function openLegacyV4() {
   });
 }
 
+/**
+ * Stand up the schema exactly as v5 shipped it (#264): chapters carry `name`,
+ * but `books` rows have no `provenance` field yet. This is what a dev device
+ * that recorded on v0.1.x (post-#264, pre-#253) holds when #253's v6 opens it.
+ */
+async function openLegacyV5() {
+  return openDB(DB_NAME, 5, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
+
+describe("v4 → v5 chapter-name backfill (append-only)", () => {
+  it("stamps a pre-existing nameless chapter with name: null, keeping its data", async () => {
+    const v4 = await openLegacyV4();
+    await v4.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 6,
+      segmentIds: ["s1", "s2"],
+    });
+    v4.close();
+
+    const v5 = await getDb();
+    // getDb now opens v6 (#253's provenance backfill runs after this one, and
+    // no-ops over the empty books store here) — the chapter-name backfill
+    // itself still ran at its own v5 step on the way up.
+    expect(v5.version).toBe(6);
+
+    const chapter = await v5.get("chapters", "ch1" as never);
+    // The field is now present and null — never undefined — and every other
+    // field is untouched (ordinal, parent, segment order all come through).
+    expect(chapter).toEqual({
+      id: "ch1",
+      bookId: "b1",
+      number: 6,
+      segmentIds: ["s1", "s2"],
+      name: null,
+    });
+  });
+
+  it("leaves a chapter that already carries a name alone", async () => {
+    // Keys on the field being ABSENT, so a row written by a newer build before
+    // an older one reopened the database is not clobbered back to null.
+    const v4 = await openLegacyV4();
+    await v4.put("chapters", {
+      id: "ch2",
+      bookId: "b1",
+      number: 6,
+      segmentIds: [],
+      name: "Mark 6",
+    });
+    v4.close();
+
+    const v5 = await getDb();
+    expect((await v5.get("chapters", "ch2" as never))?.name).toBe("Mark 6");
+  });
+});
+
+describe("v3 → v5 chapter-name backfill over a real row", () => {
+  it("stamps a v3 nameless chapter with name: null on the way to v5, keeping its data", async () => {
+    // The existing v4→v5 test writes its chapter into a v4 database; the v3 path
+    // only ever ran over an EMPTY chapters store (G-P3.5). A device that recorded
+    // on the v3 pivot build holds nameless chapter rows and jumps v3→v5 in one
+    // open — the v4 clip backfill and the v5 chapter backfill both run on the way
+    // up. This pins that the chapter row survives and gains name: null.
+    const v3 = await openLegacyV3();
+    await v3.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: ["s1", "s2"],
+    });
+    v3.close();
+
+    const v5 = await getDb();
+    // getDb now opens v6; the v5 chapter backfill still runs on the way up,
+    // and the v6 provenance backfill no-ops over the empty books store.
+    expect(v5.version).toBe(6);
+
+    const chapter = await v5.get("chapters", "ch1" as never);
+    expect(chapter).toEqual({
+      id: "ch1",
+      bookId: "b1",
+      number: 3,
+      segmentIds: ["s1", "s2"],
+      name: null,
+    });
+  });
+});
 
 describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
   it("keeps every v3 row and stamps each clip as generation-0 PCM", async () => {
@@ -124,14 +224,15 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     v3.close();
 
     // getDb() opens at the CURRENT DB_VERSION, so a v3 device jumps straight
-    // through every intervening additive step (v4's clip backfill, #253's v5
-    // provenance backfill) in one open — exercising them run in sequence, not
-    // in isolation, is itself part of what "append-only" has to hold up under.
+    // through every intervening additive step (v4's clip backfill, #264's v5
+    // chapter-name backfill, #253's v6 provenance backfill) in one open —
+    // exercising them run in sequence, not in isolation, is itself part of
+    // what "append-only" has to hold up under.
     const db = await getDb();
-    expect(db.version).toBe(5);
+    expect(db.version).toBe(6);
 
     // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
-    // onward. A v3 device's recordings come through, and the v5 step (#253)
+    // onward. A v3 device's recordings come through, and the v6 step (#253)
     // backfilled the book with the "no template" provenance.
     const book = await db.get("books", "b1" as never);
     expect(book?.name).toBe("Book 001");
@@ -180,23 +281,23 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
   });
 });
 
-describe("v4 → v5 Book.provenance backfill (#253, append-only continues)", () => {
+describe("v5 → v6 Book.provenance backfill (#253, append-only continues)", () => {
   it("stamps every pre-existing book provenance: null, and leaves everything else untouched", async () => {
-    const v4 = await openLegacyV4();
-    await v4.put("books", {
+    const v5 = await openLegacyV5();
+    await v5.put("books", {
       id: "b1",
       name: "Book 001",
       languageCode: "en",
       chapterIds: ["c1"],
       createdAt: 5,
       updatedAt: 9,
-    }); // no `provenance` field — the pre-v5 shape
-    v4.close();
+    }); // no `provenance` field — the pre-v6 shape
+    v5.close();
 
-    const v5 = await getDb();
-    expect(v5.version).toBe(5);
+    const v6 = await getDb();
+    expect(v6.version).toBe(6);
 
-    const book = await v5.get("books", "b1" as never);
+    const book = await v6.get("books", "b1" as never);
     expect(book).toEqual({
       id: "b1",
       name: "Book 001",
@@ -212,8 +313,8 @@ describe("v4 → v5 Book.provenance backfill (#253, append-only continues)", () 
     // Keys on the field being ABSENT, so re-running it (or a row written by a
     // newer build before an older one reopened the database) is not
     // re-stamped back to null over a real provenance value.
-    const v4 = await openLegacyV4();
-    await v4.put("books", {
+    const v5 = await openLegacyV5();
+    await v5.put("books", {
       id: "b2",
       name: "Ruth 001",
       languageCode: null,
@@ -222,10 +323,10 @@ describe("v4 → v5 Book.provenance backfill (#253, append-only continues)", () 
       createdAt: 0,
       updatedAt: 0,
     });
-    v4.close();
+    v5.close();
 
-    const v5 = await getDb();
-    const book = await v5.get("books", "b2" as never);
+    const v6 = await getDb();
+    const book = await v6.get("books", "b2" as never);
     expect(book?.provenance).toEqual({ kind: "scripture", book: "RUT" });
   });
 });

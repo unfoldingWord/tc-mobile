@@ -1,0 +1,111 @@
+apply plugin: 'com.android.application'
+
+// Release signing credentials — read from env vars, never committed.
+// assembleDebug works with none of these set (debug keystore is auto-generated).
+// assembleRelease requires all four; see gradle.taskGraph.whenReady below.
+// The CI lane (android-apk.yml) decodes ANDROID_KEYSTORE_BASE64 from a secret
+// to a temp file and passes its absolute path as ANDROID_KEYSTORE_PATH.
+def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH") ?: ""
+def storePass    = System.getenv("ANDROID_STORE_PASSWORD") ?: ""
+def keyAliasVal  = System.getenv("ANDROID_KEY_ALIAS") ?: ""
+def keyPass      = System.getenv("ANDROID_KEY_PASSWORD") ?: ""
+def releaseSigningReady = keystorePath && storePass && keyAliasVal && keyPass
+
+// versionName mirrors package.json's "version" (#410) so Settings -> Apps on
+// the phone shows the same version number as the "v..." half of the in-app
+// build stamp (src/components/build-stamp.tsx), instead of the Capacitor
+// template's permanent "1.0". Settings alone still cannot distinguish two
+// builds that share a package.json version (e.g. two CI dispatches of the
+// same staging ref) -- that is why the facilitator runbook
+// (docs/training/facilitator-runbook.md) asks testers to report the full
+// build stamp, version + build SHA, not Settings. Read at configuration time
+// so every build type stays in sync with no separate -PversionName property
+// to remember, unlike versionCode (which stays a CI timestamp — see
+// docs/native/README.md #6).
+def packageJson = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+def appVersionName = packageJson.version as String
+
+android {
+    namespace = "org.unfoldingword.tcmobile"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "org.unfoldingword.tcmobile"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // CI passes -PversionCode=$(date +%s) for a strictly-increasing build
+        // number; local builds default to 1 (debug/dev only, never shipped).
+        versionCode project.hasProperty('versionCode') ? project.versionCode.toInteger() : 1
+        versionName appVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    if (releaseSigningReady) {
+        signingConfigs {
+            release {
+                storeFile file(keystorePath)
+                storePassword storePass
+                keyAlias keyAliasVal
+                keyPassword keyPass
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+// Fail loudly if a release build is requested without the signing env vars.
+// Fires after configuration but before any task executes, so it catches the
+// problem early without blocking assembleDebug.
+gradle.taskGraph.whenReady { taskGraph ->
+    def buildingRelease = taskGraph.allTasks.any { it.name ==~ /assemble.*Release|bundle.*Release/ }
+    if (buildingRelease && !releaseSigningReady) {
+        def missing = []
+        if (!keystorePath) missing << "ANDROID_KEYSTORE_PATH"
+        if (!storePass)    missing << "ANDROID_STORE_PASSWORD"
+        if (!keyAliasVal)  missing << "ANDROID_KEY_ALIAS"
+        if (!keyPass)      missing << "ANDROID_KEY_PASSWORD"
+        throw new GradleException(
+            "assembleRelease requires these env vars: ${missing.join(', ')}"
+        )
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
