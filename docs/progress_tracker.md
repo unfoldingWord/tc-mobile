@@ -11,6 +11,49 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-17 (evening) — #440 merged on accepted residuals after rounds 10/10b, v0.2.4 promoted and verified, and both native lanes re-cut from staging 8167a1d
+
+Two sessions in one entry. The first (~16:45 to ~19:10 UTC) closed the day entry's item 2 and cut v0.2.4; **this session did not run it and the paragraph below is reconstructed from the PR record** (the #440 triage and merge comments, the #462 body, the #467 body). The second (~19:10 to ~19:30 UTC) was the `/sod` continuation and the native re-cut, run and observed directly.
+
+### Shipped
+
+| PR   | What                                                                                                                           | Closes                       | Review outcome                                                                                                                                                                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #440 | durable failure log + Send from the crash screen (takeover of #289, #205)                                                      | #205; #289 closed superseded | **accept residuals, merge now** (DRI, by picker) at `fe23a2d` after rounds 10 and 10b (docs-only, the runbook's "always works" share-sheet claim). **Not dual-clean**: Frank R10 P2 → #466, George R10b P2 → #468, the coordinator half stays on #455, a P3 noted on #458. `78ad078`. |
+| #462 | `chore(release): v0.2.4` — carries #427, #420, #432, #429, #423, #436, #433, #426, #421, #425, #424, #298 and four tracker PRs | —                            | promotion PR #463 merged 18:36 UTC; **staging serves `{"version":"0.2.4","sha":"8167a1d"}` built 18:37 UTC**, checked by fetching `/version.json` at the start of the second session.                                                                                                 |
+
+#440 merged **after** v0.2.4 was cut, so `develop` is one PR ahead of `staging`; the next promotion carries the failure log. #440 also rewrote the "Errors have a channel" paragraph in `AGENTS.md`: the channel is built end to end, and the paragraph now lists what does and does not reach it (a failed save, delete, erase, mic/playback start and share _send_ still end at `console.error`).
+
+Opened, not merged: **#467** (draft, `fa24b03`, round 2) — #442's proposed fix was already shipped inside #432's round-5 commit `33aee7a`; the PR extracts the drag write into a pure `panAfterDragMove` and pins the composition, with mutation (iii) declared surviving (a node-only suite cannot see which setter a handler calls). **No triage comment is posted on the PR yet** — round 1's Frank P2 and the round-2 answer live only in the body, and no George run has been made at `fa24b03`.
+
+Dependabot closed #419 (00:33 UTC) and #431 (18:37 UTC) itself, "updatable in another way"; **#465** (14 updates, CI green, no review) is the live replacement. Filed since the day entry: #460, #461 (from #457's a11y batch), #466, #468 (the #440 residuals), #469 (`playSamples` awaits `resumeAudioContext()` unbounded — the #108 shape on the playback path).
+
+### Native lanes re-cut from `staging` `8167a1d` (v0.2.4)
+
+Both `workflow_dispatch` lanes were run from `staging`, paused at the `release-signing` gate, approved by the DRI (the coordinator's approval attempt and the release creation were both refused by the harness — correct, both are the human gate), and finished green:
+
+- **iOS TestFlight**, run 35263421091: `Successfully uploaded the new binary to App Store Connect` at 19:17 UTC; marketing version `1.0`, build `1789672492`. Green means uploaded, not delivered — Apple processing and the internal group's auto-distribute are outside the lane.
+- **Android APK**, run 35263423773: `app-release.apk` (6 161 364 bytes) downloaded from the run artifact and checked locally with `apksigner verify --print-certs` and `aapt dump badging` against the published v0.2.3 asset: **same signer certificate** (SHA-256 `eed23e1b…34baf2` on both), versionCode `1789672423` > `1789593540`, and versionName **`0.2.4`** — the first build where #421's `versionName` fix is visible (v0.2.3 said `1.0`). Published by the DRI as pre-release `android-release-v0.2.4` targeting `8167a1d`, asset attached and verified.
+
+Neither build has been run on a device. The v0.2.4 APK is the one a tester should now install; it installs over v0.2.3 in place and still will not install over the old debug-signed builds.
+
+### Held for the DRI
+
+- **#422** promotion plan (review only). **#441**, **#434**, **#418** unchanged.
+- **#464** (deferredreward, storage-pressure marker on Books, #247) and **#457** (jag3773, the a11y UI-layer batch) are drafts with green CI and no review yet.
+- An untracked Xcode-generated `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/` sits in the working tree; probably belongs in `.gitignore`, not committed here.
+
+### Next session, in order
+
+1. `/sod`.
+2. **#467**: post the round-1/round-2 triage comment (mandatory every round), run George at `fa24b03`, then undraft.
+3. The #452 design pass for #430 (history-stack model), then on-device system-Back testing on Android.
+4. #465 (Dependabot), #422 review, and the next `develop -> staging` promotion carrying #440.
+5. First review pass on #464 and #457.
+6. #405 item 1 + #404, #235 + #239/#230, #402, #418; promote the day entry's learnings into `AGENTS.md` and `docs/review/dual-review.md`.
+
+---
+
 ## 2026-09-17 (day) — the morning picker worked through: five of the seven parked PRs merged, two parked (one for a design pass, one at a final stop after nine rounds)
 
 The day session after the night run below, ~09:20 to ~16:45 UTC. The dev lead answered the seven cap escalations by picker at ~09:45 and extended the night's merge authority to the day ("same rules as last night"): merge once Frank and George are clean at the head SHA and CI is green, one at a time, re-checking the rest after each merge, the decision recorded on the PR; anything not dual-clean goes back to the DRI. **Every round past the cap was the DRI's explicit pick, each with a stop rule** — a new P1/P2 at the new head goes back to the picker, never into another round. Same lane worktrees and agents as the night, resumed by agent ID; George serialized, coordinator-run. One session restart (~12:31 UTC) killed a George run and the monitors; recovered from the rolling handoff note and relaunched.
