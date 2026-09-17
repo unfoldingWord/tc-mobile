@@ -732,19 +732,22 @@ describe("panAfterRematerialize", () => {
   });
 
   it("puts the line at the end of whatever comes back", () => {
-    // The composition that matters: the rest is not "no pan", it is F7's "the
-    // end, whatever the end becomes" — so after an undo that restores 2 000
-    // samples the line is at 2 000 and Record APPENDS. Mutation: hand the old
-    // index back and this reads 4 000, inside audio the translator never
-    // pointed at.
+    // The composition that matters, on the length that actually exposes the
+    // defect: undoing a CUT makes the buffer longer (8 000 samples back to
+    // 12 000), and `effectivePan` clamps to `length`, so a shorter restored
+    // buffer would have hidden the stale index behind the clamp. Here the rest
+    // is not "no pan" but F7's "the end, whatever the end becomes", so the line
+    // is at 12 000 and Record APPENDS. Mutation: hand the old index back and
+    // this reads 4 000, inside audio the translator never pointed at, where the
+    // next take punches in.
     const pan = effectivePan({
       mode: "record",
       selectionActive: false,
       zoomPan: null,
       panState: panAfterRematerialize(4000),
-      length: 2000,
+      length: 12_000,
     });
-    expect(pan).toBe(2000);
+    expect(pan).toBe(12_000);
   });
 });
 
