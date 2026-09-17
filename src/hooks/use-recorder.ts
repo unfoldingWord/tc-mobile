@@ -23,6 +23,7 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+import { reportFailure } from "./report-failure";
 
 /** The translator-facing sentence for each `classifyStopDecode` error class. Kept
  *  here beside the recorder's other error copy; the classifier stays UI-free. */
@@ -175,6 +176,96 @@ export interface RetryDecodeResult {
  * translator concluding the app is dead.
  */
 const STOP_FLUSH_TIMEOUT_MS = 5_000;
+
+/**
+ * How long `start()` waits for `resumeAudioContext()` before proceeding
+ * anyway (#108).
+ *
+ * WebKit's `resume()` from an `"interrupted"` `AudioContext` state has been
+ * observed to hang indefinitely. An unbounded `await` on that promise between
+ * `getUserMedia` and `new MediaRecorder` left the recorder stuck in
+ * `"requesting"` forever, with the microphone already hot and no way out of
+ * the sheet.
+ *
+ * 1000ms is a PROVISIONAL ASSUMPTION, not a measured value — the real
+ * distribution of WebKit's resume-from-interrupted latency is unmeasured on
+ * any device, which is exactly the open question issue #108 itself poses.
+ * This constant is the one place to correct it once an on-device pass
+ * answers that question, the same way `STOP_FLUSH_TIMEOUT_MS` above and
+ * `SCOPE_CAPACITY` below are each a single named knob for their own
+ * provisional value.
+ */
+export const RESUME_START_TIMEOUT_MS = 1_000;
+
+/**
+ * Call `resumeAudioContext()` but never let it block `start()` for longer
+ * than `RESUME_START_TIMEOUT_MS` (#108).
+ *
+ * `resumeAudioContext()` is invoked SYNCHRONOUSLY as the first statement,
+ * before the timer or the race promise are even constructed — `start()` is
+ * still inside the user gesture that opened the microphone at this point
+ * (the same timing the comments at its call site, at `resume()`, at
+ * `retryDecode()` and at `previewCapture()` all rely on), and queuing the
+ * real call behind a `.then` or a microtask would push it a tick later than
+ * today's bare `await resumeAudioContext()`.
+ *
+ * NEVER rejects. A `resume()` that fails fast is treated exactly like one
+ * that hangs — swallowed, and the caller proceeds — matching every other
+ * `resumeAudioContext()` call site in this file (`armForegroundResume`,
+ * `resume()`, `retryDecode()`, `previewCapture()`), all of which are already
+ * `void resumeAudioContext().catch(...)` with no propagation. A rejection,
+ * whether it arrives before or after the timer has already resolved the
+ * race, is reported through `reportFailure` rather than swallowed outright —
+ * closer to AGENTS.md's "errors have a channel before they have copy" bar —
+ * but it never reaches this function's own caller. This report is
+ * unconditional, not generation-gated: this function touches no React state,
+ * so there is no stale-generation state a late report could corrupt.
+ *
+ * A late RESOLVE (no error) after the timeout reports nothing — nothing went
+ * wrong, the shared context is simply "running" now, and whichever
+ * generation is current benefits silently through the existing #76
+ * per-frame `contextNeedsResume`/`available()` check.
+ *
+ * Built with a manual `Promise` executor and a local `settled` flag rather
+ * than `Promise.race`, so a same-tick or early rejection from
+ * `resumeAudioContext()` can never propagate as this function's own
+ * rejection before the `.then(resolve, reject)` handler below converts it —
+ * `raceAudioResume` must never reject. The timer uses the bare global
+ * `setTimeout`/`clearTimeout` (never `window.*`): this file already has that
+ * precedent (the `await new Promise((resolve) => setTimeout(resolve, 0))`
+ * calls in `stop()`), it needs no DOM global, and — unlike `window.setTimeout`
+ * — it is directly exercisable with `vi.useFakeTimers()` in this repo's
+ * jsdom-free, Node-only vitest suite.
+ */
+export function raceAudioResume(): Promise<void> {
+  const resumePromise = resumeAudioContext();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      resolve();
+    }, RESUME_START_TIMEOUT_MS);
+    resumePromise.then(
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      },
+      (cause: unknown) => {
+        // A rejection never bounds the race's own outcome — only resolve it
+        // if the timer has not already done so — but is always reported,
+        // whichever branch wins.
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve();
+        }
+        reportFailure(cause, "recorder-start-resume");
+      }
+    );
+  });
+}
 
 export interface UseRecorder {
   readonly state: RecorderState;
@@ -509,7 +600,10 @@ export function useRecorder(): UseRecorder {
 
       // Unlock Web Audio while we still have the user gesture that started
       // this recording — iOS will not resume the context later without one.
-      await resumeAudioContext();
+      // Bounded (#108): WebKit's resume() from "interrupted" has been
+      // observed to hang, and an unbounded await here left the recorder
+      // stuck in "requesting" forever with the mic already hot.
+      await raceAudioResume();
 
       // The resume is a real await on the first recording of a session — iOS
       // starts the context suspended — so a `cancel()` from navigation, the
@@ -517,7 +611,9 @@ export function useRecorder(): UseRecorder {
       // stopped this stream through `releaseStream`; a newer `start()` has
       // not, which is why the stream is abandoned by identity. Either way no
       // recorder is opened: one started after the teardown would report
-      // "recording" with the session floor already released.
+      // "recording" with the session floor already released. This check
+      // absorbs a cancel() landing during raceAudioResume's bounded wait
+      // exactly as it already did during the previous unbounded await.
       if (generation !== generationRef.current) {
         abandonStream(stream);
         return false;
