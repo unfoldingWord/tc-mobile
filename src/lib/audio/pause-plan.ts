@@ -56,10 +56,35 @@ type PausePlan = "pause-and-freeze" | "freeze-only" | "ignore";
  * honour over a take that already has a working recovery path, and would race
  * the interruption handler for the same state.
  *
+ * `captureLive` is the recorder's own live-frame flag (`recordingRef`): true from
+ * `start()`/`resume()`, and false the INSTANT any exit claims the take —
+ * `pause()` itself, `stop()`, `cancel()`, or the #59 interruption handler. False
+ * therefore means "somebody else is already answering for this take", and pause
+ * is not the one to answer: it refuses outright, from every state.
+ *
+ * That row is George R2 P2-1, and the `recording` cell is the one that closes it.
+ * `onInterrupted` is bound to `MediaRecorder.onerror` as well as to track `ended`,
+ * and the error arm is written for a recorder that is still natively
+ * `"recording"`. It sets `recordingRef` false and `setState("processing")`
+ * synchronously, but writes no `recorderStateRef` — so a persisted `pagehide` in
+ * the same hide transition read `"recording"`, planned `"pause-and-freeze"`, and
+ * its `setState("paused")` landed last. The translator came back to a Resume
+ * painted over a take #59 had already declared dead, on a recorder that cannot
+ * honour it. Refusing here leaves `"processing"` as the last write, which is the
+ * state the close path already knows how to recover from.
+ *
+ * Deliberately NOT `state === "recording"`-shaped: the refusal is a property of
+ * the claim, not of one cell, so a future state cannot quietly acquire a freeze
+ * it should not have.
+ *
  * No `default:` arm on purpose: a state added to the union fails
  * `npm run typecheck:lib` here instead of silently reading as "ignore".
  */
-export function pausePlan(state: NativeRecorderState): PausePlan {
+export function pausePlan(
+  state: NativeRecorderState,
+  captureLive: boolean
+): PausePlan {
+  if (!captureLive) return "ignore";
   switch (state) {
     case "recording":
       return "pause-and-freeze";

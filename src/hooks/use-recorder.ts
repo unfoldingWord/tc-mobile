@@ -766,6 +766,20 @@ export function useRecorder(): UseRecorder {
    * `"processing"` where `stop()` recovers the chunks, and painting a Resume the
    * recorder cannot honour over it would be worse than doing nothing.
    *
+   * `recordingRef` is the second input for the same reason, and closes the arm
+   * the state alone could not see (George R2 P2-1): `onInterrupted` also fires on
+   * `MediaRecorder.onerror`, where the recorder is still natively `"recording"`.
+   * It sets `recordingRef` false before `setState("processing")`, so reading the
+   * flag here is what tells a pause that the take has already been claimed —
+   * without it, a persisted `pagehide` in the same hide transition would freeze
+   * to `"paused"` and its `setState` would land after `"processing"`, painting a
+   * Resume over a take #59 had declared dead. Every other exit (`stop()`,
+   * `cancel()`, this function) clears the same flag, so the guard reads as "this
+   * take is still ours to pause" rather than as one handler's private signal. It
+   * is never false on a legitimate pause: the `:479-481` effect keeps it true for
+   * as long as React state is `"recording"`, which is the only state either
+   * caller offers a Pause from.
+   *
    * The elapsed bank on the already-paused path is an honest OVER-COUNT, chosen
    * deliberately over the alternatives. `MediaRecorder` reports no timestamp for
    * when the agent paused it, so `performance.now() - startedAtRef` includes the
@@ -786,7 +800,7 @@ export function useRecorder(): UseRecorder {
   const pause = useCallback((): boolean => {
     const recorder = recorderRef.current;
     if (!recorder) return false;
-    const plan = pausePlan(recorder.state);
+    const plan = pausePlan(recorder.state, recordingRef.current);
     if (plan === "ignore") return false;
     if (plan === "pause-and-freeze") recorder.pause();
     // Freeze the live scope the instant capture pauses: the analyser stays live
@@ -833,6 +847,26 @@ export function useRecorder(): UseRecorder {
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
     if (!recorder) return { samples: null, error: null, blob: null };
+
+    // Re-arm Web Audio in the gesture that called this, BEFORE any await
+    // (George R2 P2-2). This stop ends in `decodeToCanonical`, which is
+    // `getAudioContext().decodeAudioData` — and a context left "suspended" or
+    // "interrupted" by a background, a call or a page freeze makes that decode
+    // THROW. That is #106 exactly, and the reason `retryDecode` exists; the
+    // difference is that #58 makes "paused after a hide" the DEFAULT state a
+    // close now starts from, and the only capture-side re-arm on a paused take
+    // used to be the Resume tap. `armForegroundResume` does not cover it — it is
+    // gated on `state === "recording"`, which an auto-paused take is not.
+    //
+    // First statement after the null guard so it is spent inside the tap that
+    // called close: iOS will not honour the un-suspend once the activation is
+    // gone. Fire-and-forget, with the same sink as `resume()`, `retryDecode()`
+    // and `previewCapture()` — never awaited. An unbounded `await` here would be
+    // #108 one function over, and #470's source-text gate in
+    // `tests/recorder-resume-race.test.ts` refuses it outright.
+    void resumeAudioContext().catch((cause: unknown) => {
+      console.error("Could not resume the audio context", cause);
+    });
 
     // Everything this stop needs is captured HERE, before the first await.
     // The rule the two awaits below force: **the audio belongs to this

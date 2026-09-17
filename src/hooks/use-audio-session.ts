@@ -770,17 +770,24 @@ export function useAudioSession(): UseAudioSession {
       if (action === "pause") {
         try {
           // Holds the recorder, the stream and the chunks; the restored page
-          // finds a "paused" take that Resume continues and close commits. It
+          // finds a "paused" take that Resume continues and that a close still
+          // runs `stop()` on — committing when the decode succeeds, and holding
+          // the bytes for the #165 panel when a freeze left the shared context
+          // interrupted (George R2 P2-2; `stop()` now spends the closing tap on
+          // `resumeAudioContext()` to make the first outcome likelier). It
           // freezes even if the user agent got there first and already paused
           // the recorder (`pausePlan`), so the restored UI cannot claim a live
           // take over a recorder that stopped capturing.
           //
-          // It REFUSES, without freezing, when the recorder has gone inactive —
-          // a #59 mic interruption. That is legitimate and deliberately not
-          // handled here: `onInterrupted` owns that transition and takes the
-          // recorder to "processing", where `stop()` still recovers the chunks.
-          // Freezing to "paused" instead would paint a Resume the recorder
-          // cannot honour, and race the interruption handler for the state.
+          // It REFUSES, without freezing, when the recorder has gone inactive
+          // OR when another exit has already claimed the take — both are the #59
+          // interruption, whose `onerror` arm leaves the recorder natively
+          // "recording" while it takes React to "processing" (George R2 P2-1).
+          // That is legitimate and deliberately not handled here: `onInterrupted`
+          // owns the transition, and "processing" is where `stop()` still
+          // recovers the chunks. Freezing to "paused" instead would paint a
+          // Resume the recorder cannot honour, and — because both write the same
+          // React state — the later `setState` would simply win.
           pauseRecording();
         } catch (cause) {
           // Not silent, and not fatal: a pause that throws leaves the capture

@@ -58,10 +58,22 @@ type PageHideAction = "release" | "pause" | "none";
  *               freezes the scope before `setState("paused")`, so the take is
  *               whole and the timer cannot jump on resume — and "paused" is an
  *               already-existing, already-reviewed state the recorder renders
- *               Resume and a close-commit from. It does NOT bet on the mic
- *               surviving the freeze: if the stream dies, the track's `ended`
- *               fires the #59 interruption path into `processing`, where
- *               `stop()` still recovers the chunks.
+ *               Resume and a close from. It does NOT bet on the mic surviving
+ *               the freeze: if the stream dies, the track's `ended` fires the
+ *               #59 interruption path into `processing`, where `stop()` still
+ *               recovers the chunks.
+ *
+ *               "Renders a close from" is deliberately weaker than "commits"
+ *               (George R2 P2-2). Closing from `paused` runs `stop()`, and that
+ *               COMMITS when the decode succeeds and HOLDS the container bytes
+ *               for the #165 recovery panel when it does not — which a page
+ *               freeze makes likelier, because it can leave the shared audio
+ *               context suspended or interrupted (the #76/#106/#184 class).
+ *               `stop()` now spends the closing tap on `resumeAudioContext()`
+ *               before it yields, which is the best this layer can do; whether
+ *               that is enough on a real device is unverified, and the hold
+ *               panel is the backstop when it is not. Either way the take is not
+ *               lost, which is the whole of #58.
  *   paused      nothing. The mic is already suspended-but-held and still owns
  *               the floor; there is no capture to stop and releasing would be
  *               the very discard this fixes.
