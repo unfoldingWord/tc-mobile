@@ -1,8 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +16,6 @@ import {
   isCanonicalOrigin,
   isJsonContentType,
   isMainEntry,
-  normalizeSha,
   parseArgs,
   PROD_ORIGIN,
   remoteRefForOrigin,
@@ -22,6 +23,7 @@ import {
   resolveExpectedSha,
   resolveExpectedVersion,
   SHA_LENGTH,
+  shasMatch,
   SpaFallbackError,
 } from "../scripts/check-deploy.mjs";
 
@@ -80,8 +82,9 @@ describe("compareDeployed", () => {
 
   // round-1 George G3: the producer (vite.config.ts) and consumer
   // (check-deploy.mjs) can disagree on short-sha length if either drifts
-  // from the pinned `--short=7`. `compareDeployed` normalizes both sides so
-  // a same-commit prefix still matches even if lengths differ.
+  // from the pinned `--short=7`. `compareDeployed` compares by prefix (via
+  // `shasMatch`) so a same-commit prefix still matches even if lengths
+  // differ.
   it("matches shas of different lengths when one is a prefix of the other", () => {
     const result = compareDeployed(
       { version: "0.1.12", sha: "abc1234ff" },
@@ -91,26 +94,68 @@ describe("compareDeployed", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("still fails when normalized prefixes genuinely differ", () => {
+  it("still fails when prefixes genuinely differ", () => {
     const result = compareDeployed(
       { version: "0.1.12", sha: "abc9999ff" },
       { version: "0.1.12", sha: "abc1234" }
     );
     expect(result.shaMatches).toBe(false);
   });
+
+  // Round-3 George P3-1: `git rev-parse --short=<N>` is a *minimum*, not
+  // exact — git emits more characters when the requested length is
+  // ambiguous. The previous implementation truncated both sides to
+  // SHA_LENGTH before comparing, which throws away exactly the
+  // disambiguating suffix: two different commits sharing the same 7-char
+  // prefix (abc1234f, abc1234e) both truncated to abc1234 and compared
+  // equal — a false PASS on a promotion that changed the commit but not the
+  // version. `compareDeployed` must reject this pair, not pass it.
+  it("rejects two same-length shas that share the pinned-length prefix but disagree on git's disambiguating suffix (the exact truncation false PASS this fix closes)", () => {
+    const result = compareDeployed(
+      { version: "0.1.12", sha: "abc1234f" },
+      { version: "0.1.12", sha: "abc1234e" }
+    );
+    expect(result.shaMatches).toBe(false);
+    expect(result.ok).toBe(false);
+  });
 });
 
-describe("normalizeSha", () => {
-  it("truncates a long sha to the pinned length", () => {
-    expect(normalizeSha("abc1234ffffffff")).toBe("abc1234");
+describe("shasMatch", () => {
+  it("matches two identical shas", () => {
+    expect(shasMatch("abc1234", "abc1234")).toBe(true);
   });
 
-  it("leaves a sha already at the pinned length unchanged", () => {
-    expect(normalizeSha("abc1234")).toBe("abc1234");
+  it("matches when the longer sha starts with the shorter one", () => {
+    expect(shasMatch("abc1234", "abc1234ffffffff")).toBe(true);
   });
 
-  it("passes through non-string input unchanged", () => {
-    expect(normalizeSha(undefined)).toBeUndefined();
+  it("matches symmetrically regardless of argument order", () => {
+    expect(shasMatch("abc1234ffffffff", "abc1234")).toBe(true);
+  });
+
+  // The exact bug this function replaces `normalizeSha` + equality to fix:
+  // truncating both sides to SHA_LENGTH would have made this pair equal.
+  it("rejects two same-length shas that share the pinned-length prefix but diverge in git's disambiguating suffix", () => {
+    expect(shasMatch("abc1234f", "abc1234e")).toBe(false);
+  });
+
+  it("rejects a longer sha that does not actually start with the shorter one", () => {
+    expect(shasMatch("abc1234ff", "abc1234aa")).toBe(false);
+  });
+
+  it("rejects prefixes that differ within the pinned length", () => {
+    expect(shasMatch("abc9999ff", "abc1234")).toBe(false);
+  });
+
+  // A "prefix match" of fewer than SHA_LENGTH characters is not a
+  // meaningful disambiguation — a 3-character prefix collides constantly.
+  it("does not treat a too-short string as a valid prefix match", () => {
+    expect(shasMatch("abc", "abc1234")).toBe(false);
+  });
+
+  it("compares non-string input by identity, matching normalizeSha's previous fallback behavior", () => {
+    expect(shasMatch(undefined, undefined)).toBe(true);
+    expect(shasMatch(undefined, "abc1234")).toBe(false);
   });
 });
 
@@ -203,6 +248,133 @@ describe("CLI entry point (real subprocess, not just isMainEntry() in isolation)
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe("CLI entry point against a real server serving a malformed version.json body", () => {
+  // Round-3 George P3-4: `fetchVersionJson` parsed `res.json()` and handed
+  // the result straight to `compareDeployed`/`main()`'s log line without
+  // checking its shape. `res.json()` succeeds on ANY valid JSON document —
+  // `null`, `42`, `[]`, `{}` — not just an object with string `version`/`sha`
+  // fields. A `200 application/json` response of `null` made `main()` throw
+  // an uncaught `TypeError: Cannot read properties of null` instead of
+  // printing a `FAIL:` line, the exact failure-to-fail-closed shape this
+  // file's other tests exist to catch. These run the real CLI against a
+  // real local HTTP server — the only way to exercise `fetchVersionJson`,
+  // which is not exported — with `--sha=`/`--version=` both given so
+  // `ensureRemoteRefFresh` never runs and no git/network dependency on the
+  // canonical origin is needed.
+  const SCRIPT = path.join(
+    import.meta.dirname,
+    "..",
+    "scripts",
+    "check-deploy.mjs"
+  );
+
+  // This block's server and its CLI child share this test process's single
+  // event loop. `execFileSync` — used by the other CLI-subprocess describe
+  // block above — blocks that event loop synchronously until the child
+  // exits, which means the in-process `http.Server` below can never
+  // dequeue the child's incoming connection: every run hung until
+  // `execFileSync`'s own timeout SIGTERM'd it (observed directly: status
+  // `null`, signal `SIGTERM`, no stderr — reproduced live while writing
+  // this test, not theorized). `execFile` (async, promisified) yields
+  // control back to the event loop while the child runs, so the server can
+  // actually answer it.
+  const execFileAsync = promisify(execFile);
+
+  async function runCli(args: string[]) {
+    try {
+      await execFileAsync("node", [SCRIPT, ...args], {
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      return { status: 0, stdout: "", stderr: "" };
+    } catch (err) {
+      const e = err as {
+        code: number | null;
+        stdout: string;
+        stderr: string;
+      };
+      return { status: e.code, stdout: e.stdout, stderr: e.stderr };
+    }
+  }
+
+  async function withServer(
+    body: string,
+    fn: (origin: string) => Promise<void> | void
+  ): Promise<void> {
+    const server: Server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(body);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve)
+    );
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("expected a bound TCP address");
+      }
+      await fn(`http://127.0.0.1:${address.port}`);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve()))
+      );
+    }
+  }
+
+  it("fails closed with FAIL: (not an uncaught TypeError) when the origin serves a JSON null body", async () => {
+    await withServer("null", async (origin) => {
+      const result = await runCli([
+        `--origin=${origin}`,
+        "--version=0.1.12",
+        "--sha=abc1234",
+      ]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("FAIL:");
+      expect(result.stderr).not.toContain("TypeError");
+      expect(result.stderr).toContain("not a usable version.json");
+    });
+  });
+
+  it("fails closed with FAIL: when the origin serves a JSON object missing version/sha", async () => {
+    await withServer(JSON.stringify({ hello: "world" }), async (origin) => {
+      const result = await runCli([
+        `--origin=${origin}`,
+        "--version=0.1.12",
+        "--sha=abc1234",
+      ]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("FAIL:");
+      expect(result.stderr).not.toContain("TypeError");
+      expect(result.stderr).toContain("not a usable version.json");
+    });
+  });
+
+  it("fails closed with FAIL: when the origin serves a JSON array instead of an object", () =>
+    withServer(JSON.stringify(["not", "an", "object"]), async (origin) => {
+      const result = await runCli([
+        `--origin=${origin}`,
+        "--version=0.1.12",
+        "--sha=abc1234",
+      ]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("FAIL:");
+      expect(result.stderr).not.toContain("TypeError");
+    }));
+
+  it("still passes for a well-formed version.json body (both states, per AGENTS.md)", () =>
+    withServer(
+      JSON.stringify({ version: "0.1.12", sha: "abc1234", builtAt: "now" }),
+      async (origin) => {
+        const result = await runCli([
+          `--origin=${origin}`,
+          "--version=0.1.12",
+          "--sha=abc1234",
+        ]);
+        expect(result.status).toBe(0);
+      }
+    ));
 });
 
 describe("describeFetchFailure", () => {
@@ -338,6 +510,44 @@ describe("isCanonicalOrigin", () => {
     ).toBe(true);
   });
 
+  // Round-3 George P3-2: the first release of this function only accepted
+  // the plain https and scp-like ssh forms above, so a checkout cloned or
+  // repointed with any of these three (all legitimate, git-accepted ways to
+  // point at the same canonical repo) failed closed on a correct origin —
+  // a false FAIL on the gate whenever it runs with `--sha=`/`--version=`
+  // and no positional origin (which skips the fetch, but not this check).
+  it("accepts an explicit ssh:// URL", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("accepts an https URL with embedded userinfo", () => {
+    expect(
+      isCanonicalOrigin(
+        "https://some-user@github.com/unfoldingWord/tc-mobile.git"
+      )
+    ).toBe(true);
+  });
+
+  it("accepts the ssh.github.com alias host (SSH-over-443)", () => {
+    expect(
+      isCanonicalOrigin("git@ssh.github.com:unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("accepts an ssh:// URL without a trailing .git", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@github.com/unfoldingWord/tc-mobile")
+    ).toBe(true);
+  });
+
+  it("accepts the ssh.github.com alias host without a trailing .git", () => {
+    expect(
+      isCanonicalOrigin("git@ssh.github.com:unfoldingWord/tc-mobile")
+    ).toBe(true);
+  });
+
   // The exact scenario George's finding describes: a fork's origin.
   it("rejects a fork's URL", () => {
     expect(
@@ -375,6 +585,26 @@ describe("isCanonicalOrigin", () => {
 
   it("rejects undefined", () => {
     expect(isCanonicalOrigin(undefined)).toBe(false);
+  });
+
+  // The widened matching above must still reject a fork through each of the
+  // newly-accepted URL shapes, not just the original two.
+  it("rejects a fork's URL via ssh://", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@github.com/sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("rejects a fork's URL via the ssh.github.com alias host", () => {
+    expect(
+      isCanonicalOrigin("git@ssh.github.com:sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("rejects a fork's URL via https with embedded userinfo", () => {
+    expect(
+      isCanonicalOrigin("https://some-user@github.com/sethstoll3/tc-mobile.git")
+    ).toBe(false);
   });
 });
 
@@ -972,6 +1202,27 @@ describe("vite.config.ts stays in sync with SHA_LENGTH", () => {
     expect(
       match,
       'expected an execSync("git rev-parse --short=<N> HEAD") call in vite.config.ts'
+    ).not.toBeNull();
+    expect(Number(match![1])).toBe(SHA_LENGTH);
+  });
+
+  // Round-3 George P3-3: the `execSync` call above isn't the only literal
+  // `7` in this file — the fallback for when `git` isn't available
+  // (`process.env.WORKERS_CI_COMMIT_SHA?.slice(0, 7)`) carries an unshared
+  // copy of the same length. The test above didn't cover it, so a drift
+  // here (e.g. bumping the primary call to `--short=8` without touching the
+  // fallback slice) would go undetected.
+  it("vite.config.ts's WORKERS_CI_COMMIT_SHA fallback slices to the same length as SHA_LENGTH", () => {
+    const viteConfigSource = readFileSync(
+      path.join(import.meta.dirname, "..", "vite.config.ts"),
+      "utf8"
+    );
+    const match = /WORKERS_CI_COMMIT_SHA\?\.slice\(0,\s*(\d+)\)/.exec(
+      viteConfigSource
+    );
+    expect(
+      match,
+      "expected a WORKERS_CI_COMMIT_SHA?.slice(0, <N>) fallback in vite.config.ts"
     ).not.toBeNull();
     expect(Number(match![1])).toBe(SHA_LENGTH);
   });

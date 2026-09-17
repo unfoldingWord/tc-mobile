@@ -16,7 +16,11 @@ import pkg from "./package.json" with { type: "json" };
 // (`resolveExpectedSha()`, plus the `compareDeployed` comparison it feeds)
 // matches against this value — two correct call sites producing
 // different-length short SHAs for the same commit was a false FAIL waiting to
-// happen (round-1 George G3). Keep this in sync with `SHA_LENGTH` there.
+// happen (round-1 George G3). Keep this in sync with `SHA_LENGTH` there. The
+// `WORKERS_CI_COMMIT_SHA?.slice(0, 7)` fallback below carries the same `7`
+// for the same reason — round-3 George P3-3 found it was a second unshared
+// literal `tests/check-deploy.test.ts`'s drift guard didn't cover; that test
+// now pins both lines, not just the `execSync` call.
 const buildSha = (() => {
   try {
     return execSync("git rev-parse --short=7 HEAD", {

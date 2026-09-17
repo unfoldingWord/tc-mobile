@@ -142,23 +142,31 @@ export function remoteRefForOrigin(origin) {
 }
 
 /**
- * True only when `remoteUrl` is a GitHub URL (https or ssh, with or without
- * a trailing `.git`) that names `CANONICAL_REPO`, case-insensitively.
- * Accepts:
- *   https://github.com/unfoldingWord/tc-mobile
- *   https://github.com/unfoldingWord/tc-mobile.git
- *   git@github.com:unfoldingWord/tc-mobile.git
- *   git@github.com:unfoldingWord/tc-mobile
- * Anything else — a fork's URL, an unrepointed pre-transfer remote, `http://`,
- * a non-GitHub host, a malformed string, `undefined` — returns `false`.
- * Pure and exported for tests.
+ * True only when `remoteUrl` is a GitHub URL (https or ssh, any of git's
+ * accepted forms, with or without a trailing `.git`) that names
+ * `CANONICAL_REPO`, case-insensitively. Accepts:
+ *   https://github.com/unfoldingWord/tc-mobile[.git]
+ *   https://<user>@github.com/unfoldingWord/tc-mobile[.git]  (https w/ userinfo)
+ *   git@github.com:unfoldingWord/tc-mobile[.git]             (scp-like ssh)
+ *   git@ssh.github.com:unfoldingWord/tc-mobile[.git]         (SSH-over-443 alias host)
+ *   ssh://git@github.com/unfoldingWord/tc-mobile[.git]       (explicit ssh:// URL)
+ * The first release of this function missed the last three — a checkout
+ * cloned or repointed with any of them failed closed on a correct canonical
+ * origin, a false FAIL on the gate whenever it runs with no positional
+ * origin but `--sha=`/`--version=` given (which skips the fetch but not this
+ * check) (round-3 George P3-2). Anything else — a fork's URL, an
+ * unrepointed pre-transfer remote, `http://`, a non-GitHub host, a malformed
+ * string, `undefined` — returns `false`. Pure and exported for tests.
  */
 export function isCanonicalOrigin(remoteUrl) {
   if (typeof remoteUrl !== "string") return false;
   const trimmed = remoteUrl.trim().replace(/\.git$/i, "");
-  const httpsMatch = /^https:\/\/github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
-  const sshMatch = /^git@github\.com:([^/]+\/[^/]+)$/.exec(trimmed);
-  const repo = httpsMatch?.[1] ?? sshMatch?.[1];
+  const httpsMatch = /^https:\/\/(?:[^@/]+@)?github\.com\/([^/]+\/[^/]+)$/.exec(
+    trimmed
+  );
+  const sshUrlMatch = /^ssh:\/\/git@github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
+  const scpMatch = /^git@(?:ssh\.)?github\.com:([^/]+\/[^/]+)$/.exec(trimmed);
+  const repo = httpsMatch?.[1] ?? sshUrlMatch?.[1] ?? scpMatch?.[1];
   return repo?.toLowerCase() === CANONICAL_REPO.toLowerCase();
 }
 
@@ -401,14 +409,27 @@ export function resolveExpected(origin, { version, sha } = {}, deps = {}) {
 }
 
 /**
- * Pin a sha to `SHA_LENGTH` before comparing. Belt-and-braces alongside the
- * `--short=7` pin on both git invocations above: a `--sha=` passed by hand,
- * or a `version.json` built before this fix shipped, can still carry a
- * different length, and a defensive normalize here is what keeps that from
- * reading as a false FAIL. Exported for tests.
+ * True when two short shas name the same commit. `git rev-parse --short=<N>`
+ * pins `<N>` as a *minimum*, not an exact length — git emits more characters
+ * whenever that prefix is ambiguous against another object in the repo. The
+ * previous approach here truncated both sides to `SHA_LENGTH` and compared
+ * for equality, which throws away exactly the disambiguating suffix git
+ * added: two different, colliding commits `abc1234f` (served) and `abc1234e`
+ * (expected) both truncate to `abc1234` and compare equal — a false PASS on
+ * a promotion that changed the commit but not the version (round-3 George
+ * P3-1). Comparing by prefix instead — the shorter of the two strings must
+ * be at least `SHA_LENGTH` long, and the longer string must start with it —
+ * still matches a legitimate same-commit pair of different lengths
+ * (`abc1234` vs `abc1234ff`, e.g. a hand-typed `--sha=` against a longer
+ * deployed value) while correctly rejecting two disambiguated shas that
+ * merely share the `SHA_LENGTH`-long prefix (`abc1234ff` vs `abc1234aa`).
+ * Non-string input compares by identity, matching the previous behavior for
+ * `undefined`/missing fields. Exported for tests.
  */
-export function normalizeSha(sha) {
-  return typeof sha === "string" ? sha.slice(0, SHA_LENGTH) : sha;
+export function shasMatch(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return a === b;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= SHA_LENGTH && longer.startsWith(shorter);
 }
 
 /**
@@ -417,7 +438,7 @@ export function normalizeSha(sha) {
  * network call.
  */
 export function compareDeployed(deployed, expected) {
-  const shaMatches = normalizeSha(deployed.sha) === normalizeSha(expected.sha);
+  const shaMatches = shasMatch(deployed.sha, expected.sha);
   const versionMatches = deployed.version === expected.version;
   return {
     ok: shaMatches && versionMatches,
@@ -514,6 +535,29 @@ async function fetchVersionJson(
     throw new SpaFallbackError(
       `origin served a 200 response for ${url} that did not parse as JSON — ` +
         `likely a stale build or SPA fallback mislabelled as JSON: ${err.message}`
+    );
+  }
+  // `res.json()` succeeds on any valid JSON document — `null`, `42`, `"x"`,
+  // an array — not just an object shaped like version.json. Without this,
+  // `main()` passes an unusable body straight to `compareDeployed` and to
+  // its own `fetched.body.version`/`fetched.body.sha` log line, so a `200
+  // application/json` response of `null` (or `{}`, or `{"version":1}`) threw
+  // an uncaught TypeError stack instead of a `FAIL:` line (round-3 George
+  // P3-4). Validate the shape here, in the same place every other malformed
+  // response is turned into a `SpaFallbackError`.
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    typeof body.version !== "string" ||
+    typeof body.sha !== "string"
+  ) {
+    throw new SpaFallbackError(
+      `origin served ${url} as JSON, but it is not a usable version.json ` +
+        `(got ${JSON.stringify(body)}) — expected an object with string ` +
+        '"version" and "sha" fields. Likely a stale build, a different ' +
+        "JSON payload served from this path, or a version.json shape that " +
+        "changed without updating this check."
     );
   }
   return { url, body };

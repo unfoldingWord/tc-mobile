@@ -14,9 +14,10 @@ export declare function compareDeployed(
   expected: { version: string; sha: string }
 ): { ok: boolean; shaMatches: boolean; versionMatches: boolean };
 
-export declare function normalizeSha(
-  sha: string | undefined
-): string | undefined;
+export declare function shasMatch(
+  a: string | undefined,
+  b: string | undefined
+): boolean;
 
 export declare function isMainEntry(
   moduleUrl: string,
