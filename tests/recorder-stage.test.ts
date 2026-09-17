@@ -127,13 +127,23 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * booleans that could disagree with each other (#415).
  *
  * A fourth decision, `centerlineHidden`, lived in this table from R2 through
- * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the centerline is
- * visible in every state, so `Waveform` now draws it unconditionally
- * whenever a recorder `view` is present, with nothing left for this pure
- * module to decide — see the module docblock above `stageView`. There is
- * deliberately no test here pinning "always visible": that claim now lives
- * entirely in `Waveform`'s canvas draw, which this repo's convention treats
- * as review-only (see this PR's body for what is and is not verified).
+ * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the line is never
+ * suppressed, in any state, so there is nothing left for this pure module to
+ * decide — see the module docblock above `stageView`.
+ *
+ * Since #415 the line is not painted into the canvas AT ALL. A strip that
+ * translates would carry a painted line with it — the travelling second
+ * playhead the issue was filed against — so the line is a fixed DOM element on
+ * the stage, a sibling of the canvas (`recorder.tsx`'s centerline overlay),
+ * mounted wherever the `Waveform` path is. `LiveScope` still paints its own
+ * record head during capture, which is a different line on a different path.
+ * Restoring a `drawCenterline` on the canvas would bring #415's defect straight
+ * back, which is why this paragraph says where the line lives rather than
+ * leaving it to be rediscovered (George R6 P3).
+ *
+ * There is deliberately no test here pinning "always visible": that claim lives
+ * in JSX and CSS, which this repo's convention treats as review-only (see this
+ * PR's body for what is and is not verified).
  */
 
 const base = {
