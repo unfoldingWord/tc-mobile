@@ -27,19 +27,19 @@ import { firstNotFinished } from "@/types/view";
 
 /**
  * What App (slice 4) can drive from outside: a rebuild after a recorder commit,
- * and (#393) whether THIS screen's own chapter ≡ menu / erase-confirm currently
- * owns a system Back gesture, and how to dismiss it if so — the Segments half
- * of the same nav-layer fix the recorder already has via
- * `overlayBlocksClose`/`overlayDismissal`. The per-row overflow menu
- * (`rowMenuOpen`) is deliberately NOT covered here: unlike the chapter menu it
- * holds no in-flight write, and closing it needs a controlled prop on
- * `SegmentRow` that does not exist today — out of scope for this fix, tracked
- * as a residual in the PR rather than silently left unmentioned.
+ * and (#393) whether THIS screen's own chapter ≡ menu, a row's overflow menu,
+ * or the erase-confirm currently owns a system Back gesture, and how to
+ * dismiss it if so — the Segments half of the same nav-layer fix the recorder
+ * already has via `overlayBlocksClose`/`overlayDismissal`. The row overflow
+ * menu (Frank round-1 P2 on this PR) is dismissed through `rowMenuCloseSignal`
+ * below, a broadcast counter every `SegmentRow` watches — the screen tracks
+ * WHETHER a row menu is open (`rowMenuOpen`), never WHICH one, so a bump is
+ * sent to all of them and only the actually-open one's own effect acts on it.
  */
 export interface SegmentsScreenHandle {
   reload: () => void;
-  /** True while the chapter ≡ menu or its erase-confirm is open — the two
-   *  overlays `dismissOverlay` below can act on. */
+  /** True while the chapter ≡ menu, a row's overflow menu, or the
+   *  erase-confirm is open — the overlays `dismissOverlay` below can act on. */
   hasOpenOverlay: () => boolean;
   /** Dismiss the open overlay the same way its own scrim/Close/Escape would —
    *  a rename in flight lands silently (matching #384's accepted Close
@@ -262,51 +262,68 @@ export const SegmentsScreen = forwardRef<
   // sheet (G8: aria-modal alone is not trusted to hide the background).
   const listInert = eraseTarget !== null || rowMenuOpen || chapterMenuOpen;
 
-  // #393 — the chapter ≡ menu and its erase-confirm, the two overlays this
-  // screen can dismiss on command (`rowMenuOpen` is deliberately excluded, see
-  // `SegmentsScreenHandle`'s docblock). `hasChapterOverlay` — not `listInert`,
-  // which also includes `rowMenuOpen` — is what App's popstate handler traps.
-  const hasChapterOverlay = chapterMenuOpen || eraseTarget !== null;
-  // Whether THIS screen has pushed the extra history entry `hasChapterOverlay`
-  // needs — a ref, not derived from `hasChapterOverlay` itself, so the effect
+  // #393 (Frank round 1 P2 on this PR: the row overflow menu was originally
+  // left out here) — every overlay this screen can show at once: the chapter
+  // ≡ menu, a row's own overflow menu, and the erase-confirm. Only one is ever
+  // open at a time (opening any of them sets `listInert`, so the header/list
+  // triggers for the others are unreachable) — `hasScreenOverlay` is what
+  // App's popstate handler traps; `dismissOverlay` below decides which one.
+  const hasScreenOverlay =
+    chapterMenuOpen || rowMenuOpen || eraseTarget !== null;
+  // Broadcast to every `SegmentRow`: bump this to close whichever one's own
+  // overflow menu is open. The screen only ever knows THAT a row menu is
+  // open (`rowMenuOpen`, from `onMenuOpenChange`), never WHICH row — so this
+  // goes to all of them, and every row but the open one's own effect no-ops
+  // (`setMenuOpen(false)` on an already-closed menu bails out, same as the
+  // existing `onMenuOpenChange` re-report already relies on).
+  const [rowMenuCloseSignal, setRowMenuCloseSignal] = useState(0);
+  // Whether THIS screen has pushed the extra history entry `hasScreenOverlay`
+  // needs — a ref, not derived from `hasScreenOverlay` itself, so the effect
   // below can tell "just opened" from "just closed" on each transition rather
   // than re-pushing on every render the condition happens to be true.
   const overlayEntryPushed = useRef(false);
   useEffect(() => {
-    if (hasChapterOverlay && !overlayEntryPushed.current) {
+    if (hasScreenOverlay && !overlayEntryPushed.current) {
       overlayEntryPushed.current = true;
       onOverlayOpen();
-    } else if (!hasChapterOverlay && overlayEntryPushed.current) {
+    } else if (!hasScreenOverlay && overlayEntryPushed.current) {
       overlayEntryPushed.current = false;
       onOverlayClose();
     }
-  }, [hasChapterOverlay, onOverlayOpen, onOverlayClose]);
+  }, [hasScreenOverlay, onOverlayOpen, onOverlayClose]);
 
   useImperativeHandle(
     ref,
     () => ({
       reload,
-      hasOpenOverlay: () => hasChapterOverlay,
+      hasOpenOverlay: () => hasScreenOverlay,
       dismissOverlay: () => {
         // The SAME decision the recorder's system Back already makes for its
         // own ≡ menu/erase-confirm (`overlayBlocksClose`/`overlayDismissal`,
         // `lib/nav/navigation.ts`) — a rename in flight dismisses like an
         // on-screen Close always has (#384's Menu-level guard against that was
         // reverted); an erase in flight does not, so a system Back cannot race
-        // `saveEditedSegment` against it.
+        // `saveEditedSegment` against it. The chapter ≡ menu and the row menu
+        // are both plain menus with no in-flight write, so both fold into
+        // `menuOpen` here — mutually exclusive in the UI (each inerts the
+        // other's trigger), so at most one `if` below ever fires.
         const dismissal = overlayDismissal(
-          chapterMenuOpen,
+          chapterMenuOpen || rowMenuOpen,
           eraseTarget !== null,
           erase.erasing
         );
-        if (dismissal.closeMenu) onCloseChapterMenu();
+        if (dismissal.closeMenu) {
+          if (chapterMenuOpen) onCloseChapterMenu();
+          else if (rowMenuOpen) setRowMenuCloseSignal((n) => n + 1);
+        }
         if (dismissal.closeConfirm) closeErase();
       },
     }),
     [
       reload,
-      hasChapterOverlay,
+      hasScreenOverlay,
       chapterMenuOpen,
+      rowMenuOpen,
       eraseTarget,
       erase.erasing,
       onCloseChapterMenu,
@@ -488,6 +505,7 @@ export const SegmentsScreen = forwardRef<
                   }
                   onErase={() => setEraseTarget(row.segmentId)}
                   onMenuOpenChange={setRowMenuOpen}
+                  closeMenuSignal={rowMenuCloseSignal}
                 />
               </li>
             ))}

@@ -41,6 +41,17 @@ interface SegmentRowProps {
    */
   onMenuOpenChange?: (open: boolean) => void;
   /**
+   * Close this row's overflow menu on command (#393) — bumped by the SCREEN,
+   * broadcast to every row, so this is the one place a system Back's
+   * `dismissOverlay` can reach a menu the screen otherwise only knows is open
+   * SOMEWHERE (`onMenuOpenChange` reports a boolean, never which row). A
+   * change in value (not merely being defined) is what closes it, so this is
+   * inert on mount and inert on every row but the one actually open —
+   * `setMenuOpen(false)` on an already-closed menu is the same no-op bail-out
+   * `onMenuOpenChange`'s own re-report already relies on.
+   */
+  closeMenuSignal?: number;
+  /**
    * A save is landing (the list is refreshing). Opening the recorder is held
    * off until it does: the row still reads by its pre-save state, so entering
    * now would open on stale audio. Play stays live.
@@ -78,6 +89,7 @@ export function SegmentRow({
   onSetFinished,
   onErase,
   onMenuOpenChange,
+  closeMenuSignal,
   busy = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
@@ -92,6 +104,17 @@ export function SegmentRow({
       if (menuOpen) onMenuOpenChange?.(false);
     };
   }, [menuOpen, onMenuOpenChange]);
+  // #393 — a system Back's `dismissOverlay` closes this menu the same way its
+  // own scrim/Close/Escape would. A ref, not a straight prop compare, so the
+  // initial render (where `closeMenuSignal` first arrives already-defined at
+  // 0) does not itself read as a change and close a menu nobody opened yet.
+  const prevCloseMenuSignal = useRef(closeMenuSignal);
+  useEffect(() => {
+    if (closeMenuSignal !== prevCloseMenuSignal.current) {
+      prevCloseMenuSignal.current = closeMenuSignal;
+      setMenuOpen(false);
+    }
+  }, [closeMenuSignal]);
   const hasClip = row.hasClip;
   const durationMs = row.durationMs ?? 0;
   const ordinal = row.ordinal;
