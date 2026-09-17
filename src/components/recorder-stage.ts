@@ -139,6 +139,12 @@ interface StageInput {
   readonly selectionActive: boolean;
   /** A paused-take preview is on the stage, drawing its own whole-clip peaks. */
   readonly previewShown: boolean;
+  /**
+   * A pointer is mid-pan on the stage. It does not change WHAT is drawn — a
+   * drag pans the static window — only what may act on it while the gesture is
+   * in flight. See {@link StageView.windowControlsInert}.
+   */
+  readonly dragging: boolean;
 }
 
 /**
@@ -172,8 +178,18 @@ interface StageView {
   /**
    * Every control that READS OR MOVES the pan/zoom window is inert.
    *
+   * **Two owners, not one.** A buffer sounding is the original; a finger
+   * mid-pan is the second, added when #317 made a touch the way to pause
+   * (George R2 P1). The two are not the same condition and must both be here:
+   * the #317 touch STOPS playback before the drag starts, so `playingBuffer`
+   * goes false while the finger is still down and the pan is still moving —
+   * every control below would have come back to life mid-gesture, each acting
+   * on a window that slides out from under it a frame later. A second finger
+   * is all it takes, and #61 already treats two fingers as in scope here.
+   *
    * The enumeration, so the next reader sees the class rather than a scatter of
-   * guards. IN — each is wrong while a buffer sounds:
+   * guards. IN — each is wrong while a buffer sounds, and each is wrong again
+   * while a finger owns the stage:
    *
    * - **Zoom**: rebuilds the window around the centerline under a line that is
    *   already travelling, and does nothing visible at all while swapped;
@@ -203,14 +219,17 @@ interface StageView {
    *   still refused under `whole` and `inPlace`, where the view is deliberately
    *   pinned to what is being heard;
    * - **Play/stop itself**: the way out of this state, and the only control
-   *   that must never be inert while sounding;
+   *   that must never be inert while sounding. It IS inert while dragging, but
+   *   by its own term in `recorder.tsx` rather than by this flag, precisely
+   *   because this flag is true in the state where Play must stay live;
    * - **Cut**: acts on the visible band, never on the window. It is enabled
    *   only when a span is picked, which is exactly the case that does NOT swap
    *   the view — so what it removes is what is drawn and what was just heard.
    *   Gating it would break the two-tap "hear it, then cut it" flow this whole
    *   issue exists to create;
    * - **Undo/Redo**: history operations that read no window; they stop the
-   *   sound before rematerialising the buffer;
+   *   sound before rematerialising the buffer. They too carry their own
+   *   `dragging` term, for the reason Play does;
    * - **the selection handles**: they map a pointer through the pan window, but
    *   they are only ever drawn while a span is picked — the one case that keeps
    *   that window — so their mapping is always the one on screen. They stop the
@@ -218,7 +237,7 @@ interface StageView {
    * - **Back, the ≡ menu, the Editing pill**: they leave or suspend this state
    *   rather than acting inside it, and each stops playback on the way.
    *
-   * Mode-independent on purpose: it is the same condition it has always been.
+   * Mode-independent on purpose, as both of its owners are.
    */
   readonly windowControlsInert: boolean;
 }
@@ -332,9 +351,8 @@ interface FrozenPanInput {
  *   observes it) and none is needed: playback that nobody stopped ended where
  *   the range ends.
  * - **Anything else** — a `playBuffer` that failed to start, or a claim
- *   superseded by something else taking the floor. Neither played to the end,
- *   so the line stays where the loop last saw it rather than travelling to the
- *   end of a range that was never heard.
+ *   superseded by something else taking the floor. Neither is an ending with a
+ *   position in it, so nothing is written (`"keep"`); see below.
  *
  * Each ending is TOLD to this function. An earlier draft inferred "it ran out"
  * from "did the position advance past the range's start", and Frank's round-2
@@ -344,11 +362,22 @@ interface FrozenPanInput {
  * heard in full. `playBuffer`'s `onEnded` is the boundary that knows, and it
  * fires for this ending and no other.
  *
+ * **A `"keep"` writes nothing at all** (George R2 P2 #3). An ending that was
+ * neither asked for nor reported is not an ending this can place: `playBuffer`
+ * flips `playingBuffer` true OPTIMISTICALLY, before `playSamples`, so a throw
+ * there (an OOM in `toAudioBuffer`, a failed context resume) takes the flag
+ * false again with no `onEnded` — and the only position the frame loop ever
+ * read was that optimistic one, the range's START. Writing it is how the
+ * default Play from the F7 rest turned into a punch-in at sample 0. A claim
+ * superseded by another sound ends the same way and gets the same answer: leave
+ * the pan exactly as the translator last set it, which is what it already is,
+ * because a play does not write it.
+ *
  * Clamped to the clip for `viewportWindow`'s reason: the pan is also the record
  * insertion offset, and there is no inserting before the start or after the end.
  *
  * **`null` when the freeze lands on the end, and that is the point of the
- * return type** (George R1 P1). `null` is not "no pan": it is F7's append rest,
+ * `pan` field's type** (George R1 P1). `null` is not "no pan": it is F7's append rest,
  * which `effectivePan` reads as "the end, whatever the end turns out to be", and
  * which `onCut` preserves (`p === null ? null : …`) so a resting line tracks a
  * buffer that changed under it. Freezing the NUMBER `length` there would turn
@@ -358,14 +387,13 @@ interface FrozenPanInput {
  * instead of appending. An absolute sample is kept only when it is strictly
  * inside the clip, where it means one specific place in the audio.
  */
-export function frozenPan(input: FrozenPanInput): number | null {
-  const reached = input.stopRequested
-    ? input.observed
-    : input.ranOut
-      ? input.end
-      : input.observed;
+export function frozenPan(
+  input: FrozenPanInput
+): { kind: "keep" } | { kind: "pan"; pan: number | null } {
+  if (!input.stopRequested && !input.ranOut) return { kind: "keep" };
+  const reached = input.stopRequested ? input.observed : input.end;
   const clamped = Math.max(0, Math.min(reached, input.length));
-  return clamped >= input.length ? null : clamped;
+  return { kind: "pan", pan: clamped >= input.length ? null : clamped };
 }
 
 /**
@@ -448,6 +476,31 @@ export function recordDisabled(input: {
   return input.playingBuffer && !input.paused;
 }
 
+/**
+ * The transport half of the #317 stage lock: a control the finger holds down.
+ *
+ * {@link stageView}'s `windowControlsInert` covers what is drawn ON the stage —
+ * Zoom, Select, the paste marker — but Play, Undo and Redo cannot ride that
+ * flag, because it is also true while a buffer sounds and Play is the STOP in
+ * that state. They carry the `dragging` term on its own instead, through this,
+ * so the rule is written once rather than three times in JSX (George R2 P1).
+ *
+ * Why those three. The touch stops playback BEFORE the drag begins, so from the
+ * pointer-down until the lift `playingBuffer` is false while the pan is still
+ * moving and a resume is owed. In that window Play would start a second sound
+ * the lift then stops or doubles; Undo and Redo REPLACE `working`, and the lift
+ * would resume a sample index measured in the buffer that is gone — the same
+ * "index in the wrong buffer" defect `stopPlaybackDroppingPan` exists to
+ * prevent, arriving by a second finger instead.
+ *
+ * It takes the control's own answer rather than returning a bare flag so that
+ * the call site reads as one gate: there is no state in which a drag re-enables
+ * something its own gate already killed.
+ */
+export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
+  return dragging || otherwise;
+}
+
 export function stageView(input: StageInput): StageView {
   const inPlace = input.mode === "edit" && input.selectionActive;
   const render: StageRender = input.previewShown
@@ -457,5 +510,11 @@ export function stageView(input: StageInput): StageView {
       : inPlace
         ? "inPlace"
         : "scroll";
-  return { render, windowControlsInert: input.playingBuffer };
+  // `dragging` does NOT reach `render`: a drag pans the static window, it does
+  // not change what is drawn (George R2 P1 asked for the inert half only, and
+  // folding it into `render` would swap the view out from under the finger).
+  return {
+    render,
+    windowControlsInert: input.playingBuffer || input.dragging,
+  };
 }

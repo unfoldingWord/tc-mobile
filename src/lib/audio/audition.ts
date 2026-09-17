@@ -1,5 +1,5 @@
 /**
- * What edit-mode Play sounds — the audition decision (#284).
+ * What Play sounds — the audition decision (#284, #317).
  *
  * The first external tester tried to play a highlighted part of a segment
  * before deleting it and found no way to, then settled for memorising the shape
@@ -7,6 +7,14 @@
  * mode grew a Play; this is the half of it that decides WHICH samples that Play
  * sounds. It is pure and DOM-free, so the decision is provable in plain Node —
  * the recorder owns only how to sound the range it is handed.
+ *
+ * It is no longer edit-mode-only. The requirements owner's #317 rule — "Play
+ * starts from the sample under the line" — makes RECORD-mode Play the same
+ * question, so both toolbars call this and both speak `source` as the control's
+ * name. The one difference is the caller's, not this module's: record mode
+ * passes `selection: null` (a span left open on a path back from edit mode must
+ * not change what record-mode Play sounds), so `"selection"` is unreachable
+ * from there and the record bar answers `"line"` or `"whole"` only.
  */
 
 import { clampRange, spansWholeSample } from "./edit";
@@ -26,7 +34,8 @@ export interface AuditionPlan {
 }
 
 /**
- * Decide what edit-mode Play sounds, or `null` when there is nothing to hear.
+ * Decide what Play sounds, in either toolbar, or `null` when there is nothing
+ * to hear.
  *
  * With a span picked, the audition is **exactly** the samples a cut would
  * remove: the same `clampRange` normalisation AND the same `spansWholeSample`

@@ -232,12 +232,17 @@ export const strings = {
   selectStart: "Select a span to edit",
   selectStop: "Close the selection",
   cut: "Cut the selection",
-  // Edit-mode Play — the audition (#284). The glyph and the stop label are the
-  // record bar's (`playRecording` / `stopPlayback`); what is new is that the
-  // name says WHICH audio the tap will sound, because in edit mode that changes
-  // with the picked span. `auditionPlan`'s `source` chooses between these three,
-  // so the spoken name and the samples heard come from one decision:
-  // "selection" → below, "line" → below, "whole" → `playRecording`.
+  // Play's name says WHICH audio the tap will sound, because that changes with
+  // the line and the picked span. `auditionPlan`'s `source` chooses between
+  // these three, so the spoken name and the samples heard come from one
+  // decision: "selection" → below, "line" → below, "whole" → `playRecording`.
+  //
+  // Both toolbars use the map (George R2 P2). It arrived with the edit-mode
+  // audition (#284), but since #317 record-mode Play also starts from the line,
+  // and a control that sounds the tail while announcing "Play recording" lies to
+  // the one channel — a screen reader — that cannot see where the line is.
+  // "selection" is unreachable from the record bar: the plan only reads a span
+  // in edit mode.
   auditionSelection: "Play the selection",
   auditionFromLine: "Play from the line",
   paste: "Paste at the line",

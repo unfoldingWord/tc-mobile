@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   frozenPan,
+  heldByDrag,
   liveScopeShown,
   panGesture,
   recordDisabled,
@@ -136,6 +137,7 @@ const base = {
   playingBuffer: false,
   selectionActive: false,
   previewShown: false,
+  dragging: false,
 } as const;
 
 describe("stageView", () => {
@@ -301,6 +303,30 @@ describe("stageView", () => {
     expect(stageView({ ...base, previewShown: true }).windowControlsInert).toBe(
       false
     );
+  });
+
+  it("inerts the window controls while a finger owns the stage (#317)", () => {
+    // George R2 P1. The #317 touch PAUSES playback before the drag starts, so
+    // `playingBuffer` — the term this flag used to be — goes false while the
+    // finger is still down and the pan is still moving. Zoom, Select and the
+    // paste marker would come back to life mid-gesture, each acting on a window
+    // that slides out from under it a frame later.
+    expect(stageView({ ...base, dragging: true }).windowControlsInert).toBe(
+      true
+    );
+    expect(
+      stageView({ ...base, mode: "record", dragging: true }).windowControlsInert
+    ).toBe(true);
+  });
+
+  it("does not change WHAT is drawn while dragging", () => {
+    // A drag pans the static window; it is not a fourth way of drawing the
+    // stage. Fold `dragging` into `render` and a pan would swap the view out
+    // from under the finger.
+    expect(stageView({ ...base, dragging: true }).render).toBe("static");
+    expect(
+      stageView({ ...base, dragging: true, previewShown: true }).render
+    ).toBe("whole");
   });
 });
 
@@ -474,7 +500,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: LEN,
       })
-    ).toBe(4321);
+    ).toEqual({ kind: "pan", pan: 4321 });
   });
 
   it("freezes a clip that ran out at the END of the range, exactly", () => {
@@ -490,7 +516,7 @@ describe("frozenPan", () => {
         ranOut: true,
         length: LEN,
       })
-    ).toBe(END);
+    ).toEqual({ kind: "pan", pan: END });
   });
 
   it("freezes at the end even when no frame ever saw the clip move", () => {
@@ -505,14 +531,30 @@ describe("frozenPan", () => {
         ranOut: true,
         length: LEN,
       })
-    ).toBe(END);
+    ).toEqual({ kind: "pan", pan: END });
   });
 
-  it("leaves the line alone when the buffer never sounded", () => {
-    // A `playBuffer` that fails flips `playingBuffer` true optimistically and
-    // then false again, and a superseded claim ends the same way: no `onEnded`,
-    // so nothing ran out and the line must not travel to the end of a range
-    // that was never heard.
+  it("writes NOTHING when neither ending happened", () => {
+    // George R2 P2 #3. `playBuffer` flips `playingBuffer` true optimistically,
+    // BEFORE `playSamples`; if that throws (OOM in `toAudioBuffer`, a resume
+    // failure) the flag goes false again with no `onEnded` — and the only
+    // position the frame loop ever read was the optimistic one, the range's
+    // START. Writing that is how the default Play from the F7 rest turned into
+    // a punch-in at sample 0.
+    //
+    // An ending that is neither asked-for nor run-out is not an ending this can
+    // place, so it places nothing and the pan keeps whatever the translator
+    // last set — which is the pre-play value, because a play does not write it.
+    // Same answer for a claim superseded by another sound.
+    expect(
+      frozenPan({
+        observed: 0,
+        end: LEN,
+        stopRequested: false,
+        ranOut: false,
+        length: LEN,
+      })
+    ).toEqual({ kind: "keep" });
     expect(
       frozenPan({
         observed: 1000,
@@ -521,7 +563,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: LEN,
       })
-    ).toBe(1000);
+    ).toEqual({ kind: "keep" });
   });
 
   it("clamps to the clip, above and below", () => {
@@ -537,7 +579,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: LEN,
       })
-    ).toBe(0);
+    ).toEqual({ kind: "pan", pan: 0 });
     expect(
       frozenPan({
         observed: 500,
@@ -546,7 +588,7 @@ describe("frozenPan", () => {
         ranOut: true,
         length: LEN,
       })
-    ).toBe(500);
+    ).toEqual({ kind: "pan", pan: 500 });
   });
 
   it("answers the REST (null) when the freeze lands on the end", () => {
@@ -564,7 +606,7 @@ describe("frozenPan", () => {
         ranOut: true,
         length: LEN,
       })
-    ).toBeNull();
+    ).toEqual({ kind: "pan", pan: null });
     // Paused exactly at the end, and a position clamped down from past it: the
     // line is at the end either way, so both are the rest.
     expect(
@@ -575,7 +617,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: LEN,
       })
-    ).toBeNull();
+    ).toEqual({ kind: "pan", pan: null });
     expect(
       frozenPan({
         observed: LEN * 3,
@@ -584,7 +626,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: LEN,
       })
-    ).toBeNull();
+    ).toEqual({ kind: "pan", pan: null });
     // An empty segment has nothing but its rest.
     expect(
       frozenPan({
@@ -594,7 +636,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: 0,
       })
-    ).toBeNull();
+    ).toEqual({ kind: "pan", pan: null });
     // ...and a stop one sample inside is still an absolute position.
     expect(
       frozenPan({
@@ -604,7 +646,7 @@ describe("frozenPan", () => {
         ranOut: false,
         length: LEN,
       })
-    ).toBe(LEN - 1);
+    ).toEqual({ kind: "pan", pan: LEN - 1 });
   });
 
   it("keeps a run-out at the rest following the end through a later edit", () => {
@@ -623,7 +665,7 @@ describe("frozenPan", () => {
       mode: "record",
       selectionActive: false,
       zoomPan: null,
-      panState: frozen,
+      panState: frozen.kind === "pan" ? frozen.pan : 10_000,
       length: 12_000,
     });
     expect(pan).toBe(12_000);
@@ -696,5 +738,26 @@ describe("recordDisabled", () => {
     expect(recordDisabled({ ...live, dragging: true, paused: true })).toBe(
       true
     );
+  });
+});
+
+describe("heldByDrag", () => {
+  it("kills a control that would otherwise be live", () => {
+    // The George R2 P1 hole: the #317 touch stops playback BEFORE the drag
+    // begins, so every gate written against `playingBuffer` alone reads
+    // "nothing is sounding, this control is fine" while the finger is still
+    // down and the pan is still moving. Play, Undo and Redo are the three that
+    // can start a sound or replace the buffer the lift is going to resume in.
+    expect(heldByDrag(true, false)).toBe(true);
+  });
+
+  it("answers the control's own gate when no finger is down", () => {
+    // Both directions, so a term that always disabled could not pass.
+    expect(heldByDrag(false, false)).toBe(false);
+    expect(heldByDrag(false, true)).toBe(true);
+  });
+
+  it("never re-enables a control its own gate already killed", () => {
+    expect(heldByDrag(true, true)).toBe(true);
   });
 });

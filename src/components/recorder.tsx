@@ -17,6 +17,7 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import {
   frozenPan,
+  heldByDrag,
   liveScopeShown,
   panGesture,
   recordDisabled,
@@ -486,12 +487,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // translator resumed or backed out of must NOT disable Play at idle over the
     // stored buffer (George R2 #2). Not paused: disabled while recording, closing,
     // or with nothing to play.
-    const playDisabled =
+    //
+    // And dead while a finger owns the stage (#317, George R2 P1): that touch
+    // stops playback before the drag starts, so every term below reads "nothing
+    // is sounding" while the pan is still moving and the lift already owes a
+    // resume. `heldByDrag` carries the rest of that rule.
+    const playDisabled = heldByDrag(
+      dragging,
       busy ||
-      isClosing ||
-      (paused
-        ? previewState === "decoding" || previewState === "failed"
-        : recording || !hasAudio);
+        isClosing ||
+        (paused
+          ? previewState === "decoding" || previewState === "failed"
+          : recording || !hasAudio)
+    );
 
     // Which way the stage is drawn, and what that makes inert (#284). All four
     // answers come from ONE pure derivation, `stageView`, because review rounds
@@ -506,6 +514,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       playingBuffer: audio.playingBuffer,
       selectionActive: editor.selectionActive,
       previewShown: previewShown !== null,
+      // The second owner of the inert class (George R2 P1): the #317 touch
+      // stops playback BEFORE the drag begins, so `playingBuffer` is already
+      // false while the finger is still down and the pan is still moving.
+      dragging,
     });
     const wholeView = stage.render === "whole";
     // The waveform scrolls under the fixed centerline (#415/#416/#417). While
@@ -660,15 +672,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const freezePlaybackPan = useCallback(() => {
       if (!scrollPendingRef.current) return;
       scrollPendingRef.current = false;
-      setPanState(
-        frozenPan({
-          observed: playbackSampleRef.current,
-          end: soundingEndRef.current,
-          stopRequested: stopRequestedRef.current,
-          ranOut: ranOutRef.current,
-          length,
-        })
-      );
+      const frozen = frozenPan({
+        observed: playbackSampleRef.current,
+        end: soundingEndRef.current,
+        stopRequested: stopRequestedRef.current,
+        ranOut: ranOutRef.current,
+        length,
+      });
+      // `"keep"` writes NOTHING (George R2 P2 #3): a play that neither was
+      // stopped nor ran out never really started, and the only position the
+      // frame loop saw for it was `playBuffer`'s optimistic one — the range's
+      // start. Writing that turned the default Play from the rest into a
+      // punch-in at sample 0 when `playSamples` threw.
+      if (frozen.kind === "pan") setPanState(frozen.pan);
     }, [length]);
 
     /**
@@ -699,12 +715,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * the line below replaces it, so a #317 drag that captured its start before
      * calling this began a frame behind the audio it had just paused (Frank R2
      * P2 #1).
+     *
+     * It also DROPS any resume the #317 gesture still owes (George R2 P1). A
+     * stop is the translator asking for silence, and every non-lift route out
+     * of the drag — Undo, Redo, Select, ≡, Edit, Done editing, Cut, Paste,
+     * Back — comes through here or through `stopPlaybackDroppingPan`, so
+     * clearing the flag in the TWO stop paths covers all nine without nine
+     * assignments that a tenth handler could later forget. The `"interrupt"`
+     * in `onPointerDown` sets the flag immediately AFTER its own call here;
+     * that order is what makes it the one stop that does not void the resume.
      */
     const stopBuffer = audio.stopBuffer;
     const stopPlayback = useCallback(() => {
       const sample = readPlaybackSample();
       if (sample !== null) playbackSampleRef.current = sample;
       stopRequestedRef.current = true;
+      // Any stop VOIDS an owed #317 resume (George R2 P1). See the docblock.
+      resumeAfterDragRef.current = false;
       stopBuffer();
       freezePlaybackPan();
       return playbackSampleRef.current;
@@ -728,9 +755,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Clearing the one-shot is what makes it a drop rather than a deferral: the
      * layout effect must not freeze this play either, a commit later, against
      * the new buffer.
+     *
+     * It voids an owed #317 resume for the same reason `stopPlayback` does, and
+     * more sharply here: Undo and Redo are exactly the controls a second finger
+     * can reach mid-drag, and a lift resuming into the rematerialised buffer
+     * would sound — and then freeze — a sample index measured in the buffer
+     * that is gone (George R2 P1).
      */
     const stopPlaybackDroppingPan = useCallback(() => {
       scrollPendingRef.current = false;
+      resumeAfterDragRef.current = false;
       stopBuffer();
     }, [stopBuffer]);
 
@@ -818,9 +852,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           render: stage.render,
         });
         if (gesture === "ignore") return;
-        // Start from where playback had REACHED, not from `panState`, which is
-        // still the pre-play value for one more commit (the freeze runs in a
-        // layout effect after the stop lands).
+        // Start from where playback had REACHED, not from `panState`. The
+        // freeze that writes the reached position is synchronous inside
+        // `stopPlayback` (George R1 P2 #2), but it is a `setPanState` — so
+        // `pan` in THIS closure is still the pre-play value for one more
+        // commit, and only `stopPlayback`'s return value knows better. Do not
+        // "simplify" this to read `pan` after the stop; that is the
+        // frame-behind drag start this PR already paid for twice.
         let from = pan;
         if (gesture === "interrupt") {
           // "Playback never runs while the finger is down" — synchronously, in
@@ -830,6 +868,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // behind, and a drag begun there would rewind the waveform under the
           // finger and resume early on lift (Frank R2 P2 #1).
           from = Math.max(0, Math.min(stopPlayback(), length));
+          // AFTER the stop, never before: `stopPlayback` voids an owed resume
+          // (George R2 P1), and this is the one stop that owes a new one.
           resumeAfterDragRef.current = true;
         }
         setDragging(true);
@@ -865,9 +905,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // so by the time a move arrives, either nothing is sounding or the stop
         // has not yet been through a commit, and in both cases this drag is the
         // one the translator asked for. Nothing else can start a sound
-        // mid-drag: Play and Record are both disabled while `dragging` cannot
-        // reach them (they are controls, not the stage), and the resume this
-        // gesture owes happens on LIFT.
+        // mid-drag: Record reads `dragging` through `recordDisabled` and Play
+        // through `heldByDrag` — which it did NOT until George R2 P1, so the
+        // second finger this sentence claimed was blocked could in fact tap
+        // Play, Undo or Redo. The resume this gesture owes happens on LIFT, and
+        // any other stop in between voids it (`stopPlayback`).
         if (!dragging || recording || paused || busy) return;
         const width = stageRef.current?.clientWidth ?? 1;
         // Drag right reveals earlier audio: the sample under the centerline
@@ -3050,10 +3092,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   />
                   <Control
                     icon={audio.playingBuffer ? "pause" : "play"}
+                    // The name comes from `playPlan.source`, the same map the
+                    // edit toolbar uses, because since #317 this control plays
+                    // from the LINE and not always the whole segment (George R2
+                    // P2). Speaking "Play recording" over a tap that sounds
+                    // only the tail is a lie told to the one channel — a screen
+                    // reader — that cannot see the line. `"whole"` is the F7
+                    // rest and the line at 0, where it IS the whole segment;
+                    // `"selection"` is unreachable here (`playPlan` reads the
+                    // span in edit mode only) and falls through to the same
+                    // name rather than adding a branch that cannot run.
                     label={
                       audio.playingBuffer
                         ? strings.stopPlayback
-                        : strings.playRecording
+                        : playPlan?.source === "line"
+                          ? strings.auditionFromLine
+                          : strings.playRecording
                     }
                     variant="play"
                     disabled={playDisabled}
@@ -3094,11 +3148,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // Inert when there is nothing to hear — no audio, or a span
                     // dragged shut — exactly as Cut is on the same span. While it
                     // sounds it is the stop, so it stays live. `idleEditable`
-                    // carries the close window, where the sheet is committing.
-                    disabled={
+                    // carries the close window, where the sheet is committing;
+                    // `heldByDrag` carries the #317 finger (George R2 P1),
+                    // which cannot co-occur with `playingBuffer` because the
+                    // touch stops playback before the drag begins.
+                    disabled={heldByDrag(
+                      dragging,
                       !audio.playingBuffer &&
-                      (!idleEditable || playPlan === null)
-                    }
+                        (!idleEditable || playPlan === null)
+                    )}
                     onClick={onAuditionButton}
                   />
                   <Control
@@ -3157,7 +3215,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     label={strings.undo}
                     variant="quiet"
                     size={24}
-                    disabled={!idleEditable || !editor.canUndo}
+                    // `heldByDrag` is the history half of the #317 stage lock
+                    // (George R2 P1): Undo rematerialises `working`, and a lift
+                    // still owing a resume would sound a sample index measured
+                    // in the buffer that no longer exists.
+                    disabled={heldByDrag(
+                      dragging,
+                      !idleEditable || !editor.canUndo
+                    )}
                     onClick={onUndo}
                   />
                   <Control
@@ -3168,8 +3233,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // Same guard the menu Redo had (George R4): a Redo mid-take
                     // would rematerialise the working buffer under the locked
                     // insertion offset — but `idleEditable` forbids that, and edit
-                    // mode is idle-only regardless.
-                    disabled={!idleEditable || !editor.canRedo}
+                    // mode is idle-only regardless. `heldByDrag` is the #317
+                    // finger, for the same reason Undo carries it.
+                    disabled={heldByDrag(
+                      dragging,
+                      !idleEditable || !editor.canRedo
+                    )}
                     onClick={onRedo}
                   />
                   <Control
