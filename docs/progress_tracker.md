@@ -24,7 +24,7 @@ An unattended run from ~00:30 to ~09:20 UTC (the DRI's evening of 09-16 into the
 | #433 | `react-hooks/refs` bail-out gate; the live #212 shape in `useBooks` hoisted (takeover of #234) | #212   | George R4 (cap) APPROVE at `fd03d51`; a prescribed probe + comment landed at `b2f0a27` with Frank re-run, recorded on the PR (`ad78389`)            |
 | #436 | `version.json`, `npm run check:deploy`, rollback runbook (takeover of #215)                    | #176   | George R4 (cap) APPROVE at `ebbd4c5`, four P3s deferred to #443; process/meta, both reviewers at the merge SHA (`472bdb5`)                          |
 
-Also merged: #412 (tracker), #298 (`@types/node` 26), #425 (#243 write-back, closes #243), #424 (#411 docs). Closed as superseded with a courtesy comment: #274, #234, #215. Filed: #428, #434, #435, #437, #438, #439, #441, #442, #443.
+Also merged: #412 (tracker), #298 (`@types/node` 26), #425 (#243 write-back, closes #243), #424 (#411 docs). Closed as superseded with a courtesy comment: #274, #234, #215. Filed: #428, #434, #435, #437, #438, #439, #441, #442, #443, and #445 (the pre-push hook tests before it builds, so the #436 precache-manifest test fails a docs-only push from a stale `dist/` — found while pushing this entry).
 
 ### Parked at the round cap — the DRI's morning decision
 
