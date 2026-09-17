@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -135,6 +137,67 @@ describe("isMainEntry", () => {
 
   it("does not match when argv[1] is missing (e.g. a REPL)", () => {
     expect(isMainEntry("file:///a/b.mjs", undefined)).toBe(false);
+  });
+});
+
+describe("CLI entry point (real subprocess, not just isMainEntry() in isolation)", () => {
+  // This PR's takeover-round Frank re-review, P2: every test above exercises
+  // `isMainEntry()` and the other exported helpers directly, but nothing
+  // spawns the actual script — the bottom-of-file
+  // `if (isMainEntry(...)) { await main(); }` call could be deleted, or
+  // `main()` changed to never run, and every test in this file would still
+  // pass. AGENTS.md's gate-testing rule is explicit: "test a gate script's
+  // entry path and defaults, not just its exported function." A real
+  // subprocess run of the CLI itself is the only thing that actually
+  // exercises that line.
+  const SCRIPT = path.join(
+    import.meta.dirname,
+    "..",
+    "scripts",
+    "check-deploy.mjs"
+  );
+
+  function runCli(scriptPath: string, args: string[]) {
+    try {
+      execFileSync("node", [scriptPath, ...args], {
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      return { status: 0, stdout: "", stderr: "" };
+    } catch (err) {
+      const e = err as {
+        status: number | null;
+        stdout: string;
+        stderr: string;
+      };
+      return { status: e.status, stdout: e.stdout, stderr: e.stderr };
+    }
+  }
+
+  it("really runs main() and exits non-zero with FAIL on an unrecognized flag", () => {
+    const result = runCli(SCRIPT, ["--bogus-flag-xyz"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAIL:");
+    expect(result.stderr).toContain("unrecognized argument");
+  });
+
+  // The exact regression round-1 Frank F1 fixed: a hand-built
+  // `file://${process.argv[1]}` comparison skips percent-encoding, so a
+  // checkout path containing a space never matched and `main()` silently
+  // never ran — exit 0, no output. Copies the real script (unmodified) into
+  // a directory whose name contains a space and runs it from there.
+  it("still runs main() when invoked from a path containing a space (round-1 Frank F1 regression, exercised end to end)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "check deploy space "));
+    try {
+      const dest = path.join(dir, "check-deploy.mjs");
+      cpSync(SCRIPT, dest);
+      const result = runCli(dest, ["--bogus-flag-xyz"]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("FAIL:");
+      expect(result.stderr).toContain("unrecognized argument");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

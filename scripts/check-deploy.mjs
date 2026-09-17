@@ -31,12 +31,18 @@
  * whatever commit the promoter's local checkout happens to have `HEAD` on
  * (round-3 George #1; round-5 George G-F1 for the version half, which was
  * left behind and made a correct `v0.2.0` production promotion FAIL against a
- * checkout still on `0.1.12`). Run `git fetch origin` first for that to be
- * accurate; both fall back to the local checkout (with a printed reason) for
- * any other origin, or if the remote-tracking ref can't be resolved at all.
- * The SHA is the primary signal (it identifies the exact commit); version is
- * checked too since a stale build can share a SHA with nothing meaningful if
- * HEAD has moved.
+ * checkout still on `0.1.12`). The check fetches that remote-tracking ref
+ * itself — scoped to the one branch, with an explicit destination refspec so
+ * it updates even on a `--single-branch` clone (`ensureRemoteRefFresh`,
+ * below) — and **fails closed** for a known origin: if the fetch fails, or
+ * the ref still can't be resolved afterward, the check refuses to run rather
+ * than falling back to the local checkout (this PR's takeover-round Frank
+ * P1, hardened further in the round-1 George/Frank re-review). Falling back
+ * to the local checkout only ever happens for an origin with no known
+ * remote-tracking ref (a hand-typed preview-Worker URL) — there is no
+ * promoted branch to be stale there. The SHA is the primary signal (it
+ * identifies the exact commit); version is checked too since a stale build
+ * can share a SHA with nothing meaningful if HEAD has moved.
  *
  * `--require-origin` refuses to fall back to the staging default when no
  * origin was given — used by `check:deploy:prod` (round-1 George G2) so a
@@ -59,13 +65,27 @@ const PROD_ORIGIN = "https://tc-mobile.unfoldingword.workers.dev";
 // still disagree on length for the same commit (round-1 George G3).
 const SHA_LENGTH = 7;
 
+// This PR's own takeover-round Frank re-review, P2: `ensureRemoteRefFresh`'s
+// `git fetch` is a network call made through plain synchronous `execSync`,
+// which has no default timeout — a stalled DNS lookup, SSH prompt, credential
+// helper, or blackholed connection would hang the whole check indefinitely,
+// never reaching the bounded 15s HTTP timeout `fetchVersionJson` already has
+// (`DEFAULT_TIMEOUT_MS`, below). Every git invocation in this file now shares
+// the same bound, so a hang becomes the existing fail-closed error path
+// (`execSync` throws `ETIMEDOUT` on the child process, which the calling
+// try/catch already turns into a FAIL line) instead of hanging forever.
+const GIT_TIMEOUT_MS = 15_000;
+
 function currentVersion() {
   const pkgPath = path.resolve(import.meta.dirname, "../package.json");
   return JSON.parse(readFileSync(pkgPath, "utf8")).version;
 }
 
 function runGitSync(cmd) {
-  return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] })
+  return execSync(cmd, {
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: GIT_TIMEOUT_MS,
+  })
     .toString()
     .trim();
 }
