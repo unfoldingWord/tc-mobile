@@ -34,15 +34,18 @@
  * checkout still on `0.1.12`). The check fetches that remote-tracking ref
  * itself — scoped to the one branch, with an explicit destination refspec so
  * it updates even on a `--single-branch` clone (`ensureRemoteRefFresh`,
- * below) — and **fails closed** for a known origin: if the fetch fails, or
- * the ref still can't be resolved afterward, the check refuses to run rather
- * than falling back to the local checkout (this PR's takeover-round Frank
- * P1, hardened further in the round-1 George/Frank re-review). Falling back
- * to the local checkout only ever happens for an origin with no known
- * remote-tracking ref (a hand-typed preview-Worker URL) — there is no
- * promoted branch to be stale there. The SHA is the primary signal (it
- * identifies the exact commit); version is checked too since a stale build
- * can share a SHA with nothing meaningful if HEAD has moved.
+ * below) — and **fails closed** for a known origin: if the local `origin`
+ * remote isn't actually this repo (a fork, an unrepointed pre-transfer
+ * clone), if the fetch fails, if the ref still can't be resolved afterward,
+ * or if the ref's `package.json` can't be read, the check refuses to run
+ * rather than falling back to the local checkout (this PR's takeover-round
+ * Frank P1, hardened further across the round-1/round-2 George/Frank
+ * re-reviews). Falling back to the local checkout only ever happens for an
+ * origin with no known remote-tracking ref (a hand-typed preview-Worker
+ * URL) — there is no promoted branch to be stale there. The SHA is the
+ * primary signal (it identifies the exact commit); version is checked too
+ * since a stale build can share a SHA with nothing meaningful if HEAD has
+ * moved.
  *
  * `--require-origin` refuses to fall back to the staging default when no
  * origin was given — used by `check:deploy:prod` (round-1 George G2) so a
@@ -55,15 +58,45 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const DEFAULT_ORIGIN = "https://tc-mobile-staging.unfoldingword.workers.dev";
-const PROD_ORIGIN = "https://tc-mobile.unfoldingword.workers.dev";
+// Exported (round-2 George P3-4): `package.json`'s `check:deploy:prod` script
+// and this file's `remoteRefForOrigin` used to be two unshared strings — a
+// later edit to the npm script's URL would silently stop matching the exact
+// equality in `remoteRefForOrigin`, dropping expected-sha/version resolution
+// to local HEAD/package.json with no error (the same defect class as
+// round-1 George G2, one layer down). `tests/check-deploy.test.ts` now reads
+// `package.json` and asserts its `check:deploy:prod` script contains this
+// exact exported value.
+export const DEFAULT_ORIGIN =
+  "https://tc-mobile-staging.unfoldingword.workers.dev";
+export const PROD_ORIGIN = "https://tc-mobile.unfoldingword.workers.dev";
+
+// Round-2 George P2: `ensureRemoteRefFresh` fetches from the local `origin`
+// remote and treats `origin/staging`/`origin/main` as the promoted tip
+// Cloudflare deploys — true only when `origin` actually points at this repo.
+// AGENTS.md's own transfer section tells contributors who cloned before the
+// 2026-09-13 org move to repoint `origin`, and a GitHub fork copies
+// `staging`/`main` at fork time. On a fork or an unrepointed clone, the
+// fetch above SUCCEEDS against that stale branch, updates local
+// `origin/staging` to the stale tip, and if the *also*-stale deployed
+// Worker happens to match it, the gate prints PASS on a promotion that
+// never deployed — the exact #143 false PASS this whole check exists to
+// close. (If the fork lacks the branch, the fetch fails closed already;
+// the dangerous case is the one a fork actually starts with: the branch
+// exists, and is stale.) `CANONICAL_REPO` and `isCanonicalOrigin()`, below,
+// close that gap by refusing to trust any `origin` that isn't this repo.
+const CANONICAL_REPO = "unfoldingWord/tc-mobile";
 
 // Short SHAs must be a fixed length on both the producer (vite.config.ts's
 // `buildSha`, which this script's own `resolveExpectedSha()` mirrors) and
 // the consumer (`compareDeployed`, below) — `git rev-parse --short HEAD`
 // alone varies with a repo's `core.abbrev`, so two correct call sites can
 // still disagree on length for the same commit (round-1 George G3).
-const SHA_LENGTH = 7;
+// Exported (round-2 George P3-5) so a test can assert `vite.config.ts`'s
+// `--short=<N>` still matches this exact value — `git rev-parse --short=N`
+// is a *minimum*, not exact: it can emit more than `N` characters when that
+// prefix is ambiguous, and nothing previously tied the two literals together
+// once `SHA_LENGTH` was introduced.
+export const SHA_LENGTH = 7;
 
 // This PR's own takeover-round Frank re-review, P2: `ensureRemoteRefFresh`'s
 // `git fetch` is a network call made through plain synchronous `execSync`,
@@ -109,6 +142,27 @@ export function remoteRefForOrigin(origin) {
 }
 
 /**
+ * True only when `remoteUrl` is a GitHub URL (https or ssh, with or without
+ * a trailing `.git`) that names `CANONICAL_REPO`, case-insensitively.
+ * Accepts:
+ *   https://github.com/unfoldingWord/tc-mobile
+ *   https://github.com/unfoldingWord/tc-mobile.git
+ *   git@github.com:unfoldingWord/tc-mobile.git
+ *   git@github.com:unfoldingWord/tc-mobile
+ * Anything else — a fork's URL, an unrepointed pre-transfer remote, `http://`,
+ * a non-GitHub host, a malformed string, `undefined` — returns `false`.
+ * Pure and exported for tests.
+ */
+export function isCanonicalOrigin(remoteUrl) {
+  if (typeof remoteUrl !== "string") return false;
+  const trimmed = remoteUrl.trim().replace(/\.git$/i, "");
+  const httpsMatch = /^https:\/\/github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
+  const sshMatch = /^git@github\.com:([^/]+\/[^/]+)$/.exec(trimmed);
+  const repo = httpsMatch?.[1] ?? sshMatch?.[1];
+  return repo?.toLowerCase() === CANONICAL_REPO.toLowerCase();
+}
+
+/**
  * Freshens the remote-tracking ref `resolveExpectedSha`/`resolveExpectedVersion`
  * are about to read, by running `git fetch origin <branch>` for it. Without
  * this, the "run `git fetch origin` first" instruction in AGENTS.md is a
@@ -145,9 +199,18 @@ export function remoteRefForOrigin(origin) {
  * No-ops for any origin without a known remote-tracking ref (a hand-typed
  * preview-Worker URL) — there is nothing to fetch there; the resolvers fall
  * back to local `HEAD` for that case regardless, which is legitimate (no
- * known branch exists to be stale). `runGit`/`warn` are injected exactly as
- * in `resolveExpectedSha`, so a test can fake git without a real repository
- * or network. Exported for tests.
+ * known branch exists to be stale).
+ *
+ * Before fetching, also fails closed unless the local `origin` remote
+ * resolves to `unfoldingWord/tc-mobile` (`isCanonicalOrigin`, above) —
+ * round-2 George P2. Without this, a fork's `origin` (which GitHub copies
+ * `staging`/`main` into at fork time) or an unrepointed pre-transfer clone
+ * would let the fetch **succeed** against that stale branch, update local
+ * `origin/staging` to the stale tip, and match an also-stale deployed
+ * `version.json` — the exact #143 false PASS the fetch itself exists to
+ * close, just moved one level up the trust chain. `runGit`/`warn` are
+ * injected exactly as in `resolveExpectedSha`, so a test can fake git
+ * without a real repository or network. Exported for tests.
  */
 export function ensureRemoteRefFresh(
   origin,
@@ -156,6 +219,25 @@ export function ensureRemoteRefFresh(
   const ref = remoteRefForOrigin(origin);
   if (!ref) return;
   const branch = ref.slice("origin/".length);
+  let remoteUrl;
+  try {
+    remoteUrl = runGit("git remote get-url origin");
+  } catch (err) {
+    throw new Error(
+      `could not read the "origin" remote's URL (${err.message}) — refusing to trust an unnamed remote as the promoted branch. ` +
+        'Confirm this checkout has an "origin" remote, or pass --sha=/--version= explicitly to bypass ref resolution.'
+    );
+  }
+  if (!isCanonicalOrigin(remoteUrl)) {
+    throw new Error(
+      `"origin" is "${remoteUrl}", not ${CANONICAL_REPO} — refusing to treat it as the promoted branch. ` +
+        "A fork or an unrepointed pre-transfer clone can have a stale " +
+        `${branch} that happens to match a stale deploy, the exact #143 ` +
+        'false-PASS shape this check exists to close. Repoint "origin" to ' +
+        `https://github.com/${CANONICAL_REPO}.git (see AGENTS.md), or pass ` +
+        "--sha=/--version= explicitly to bypass ref resolution."
+    );
+  }
   try {
     runGit(
       `git fetch origin +refs/heads/${branch}:refs/remotes/origin/${branch} --quiet`
@@ -192,31 +274,43 @@ export function ensureRemoteRefFresh(
  * `runGit` is injected (default: real `git` via `execSync`) so a test can
  * fake git without a real repository or network; `warn` is injected so a
  * test can capture which ref/fallback was used instead of asserting on
- * stdout. Exported for tests.
+ * stdout.
+ *
+ * For a *known* origin, this never falls back to `HEAD` on failure —
+ * `ensureRemoteRefFresh` has already fetched and `git rev-parse --verify`d
+ * this exact ref before this function is ever called via `resolveExpected`,
+ * so a failure here means something unexpected (a race, a corrupted repo)
+ * and falling back would silently reintroduce the mixed-source G-F1 shape
+ * (round-2 George P3-2, applied symmetrically to both halves — the finding
+ * was raised against `resolveExpectedVersion`, but the identical risk
+ * exists here). Falling back to `HEAD` remains legitimate only for an
+ * origin with **no** known ref — there is no promoted branch to be stale.
+ * Exported for tests.
  */
 export function resolveExpectedSha(
   origin,
   { runGit = runGitSync, warn = () => {} } = {}
 ) {
   const ref = remoteRefForOrigin(origin);
-  if (ref) {
-    try {
-      const sha = runGit(`git rev-parse --short=${SHA_LENGTH} ${ref}`);
-      warn(
-        `expected sha resolved from ${ref} (the promoted branch tip Cloudflare deploys), not local HEAD`
-      );
-      return sha;
-    } catch (err) {
-      warn(
-        `could not resolve ${ref} (${err.message}) — falling back to local HEAD; run "git fetch origin" first for an accurate check`
-      );
-    }
-  } else {
+  if (!ref) {
     warn(
       `${origin} is not a known staging/prod default — using local HEAD as the expected sha`
     );
+    return runGit(`git rev-parse --short=${SHA_LENGTH} HEAD`);
   }
-  return runGit(`git rev-parse --short=${SHA_LENGTH} HEAD`);
+  let sha;
+  try {
+    sha = runGit(`git rev-parse --short=${SHA_LENGTH} ${ref}`);
+  } catch (err) {
+    throw new Error(
+      `could not resolve ${ref} (${err.message}) — refusing to fall back to local HEAD for a known staging/prod origin (ensureRemoteRefFresh already verified ${ref} resolves). ` +
+        "Pass --sha= explicitly to bypass ref resolution."
+    );
+  }
+  warn(
+    `expected sha resolved from ${ref} (the promoted branch tip Cloudflare deploys), not local HEAD`
+  );
+  return sha;
 }
 
 /**
@@ -233,9 +327,17 @@ export function resolveExpectedSha(
  *
  * Reads `package.json`'s `version` out of the ref with `git show`. Falls back
  * to this checkout's `package.json` (`currentVersion()`, naming the reason)
- * when the origin has no known ref, when the ref can't be resolved (e.g. `git
- * fetch origin` was never run), or when what the ref holds has no usable
- * `version` field.
+ * only when the origin has **no known ref** — there is no promoted branch to
+ * be stale there. For a *known* origin, this never falls back: round-2
+ * George P3-2 found that the old fallback-on-`git show`-failure path could
+ * still fire *after* `ensureRemoteRefFresh` had already fetched and verified
+ * the ref — e.g. a sparse/partial clone that never lazy-fetched that blob —
+ * silently reintroducing the exact mixed-source shape (verified sha from the
+ * ref, version from the working tree) round-5 George G-F1 fixed. A promoter
+ * on `develop` at `0.2.3` confirming a real `v0.2.4` deploy would get a
+ * false FAIL: sha matches (ref-resolved and verified), but version compares
+ * local `0.2.3` against deployed `0.2.4`. Throws instead, for both an
+ * unreadable ref and one with no usable `version` field.
  *
  * `runGit` and `warn` are injected exactly as in `resolveExpectedSha`, so a
  * test can fake git without a real repository or network. Exported for tests.
@@ -251,23 +353,25 @@ export function resolveExpectedVersion(
     );
     return currentVersion();
   }
+  let version;
   try {
-    const version = JSON.parse(runGit(`git show ${ref}:package.json`)).version;
-    if (typeof version === "string" && version.length > 0) {
-      warn(
-        `expected version resolved from ${ref}:package.json (the promoted branch tip Cloudflare deploys), not this checkout`
-      );
-      return version;
-    }
-    warn(
-      `${ref}:package.json has no usable "version" field — falling back to this checkout's package.json`
-    );
+    version = JSON.parse(runGit(`git show ${ref}:package.json`)).version;
   } catch (err) {
-    warn(
-      `could not read ${ref}:package.json (${err.message}) — falling back to this checkout's package.json; run "git fetch origin" first for an accurate check`
+    throw new Error(
+      `could not read ${ref}:package.json (${err.message}) — refusing to fall back to this checkout's package.json for a known staging/prod origin (ensureRemoteRefFresh already verified ${ref} resolves). ` +
+        "Pass --version= explicitly to bypass ref resolution."
     );
   }
-  return currentVersion();
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(
+      `${ref}:package.json has no usable "version" field — refusing to fall back to this checkout's package.json for a known staging/prod origin. ` +
+        "Pass --version= explicitly to bypass ref resolution."
+    );
+  }
+  warn(
+    `expected version resolved from ${ref}:package.json (the promoted branch tip Cloudflare deploys), not this checkout`
+  );
+  return version;
 }
 
 /**

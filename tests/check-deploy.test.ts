@@ -8,16 +8,20 @@ import { describe, expect, it } from "vitest";
 
 import {
   compareDeployed,
+  DEFAULT_ORIGIN,
   describeFetchFailure,
   ensureRemoteRefFresh,
+  isCanonicalOrigin,
   isJsonContentType,
   isMainEntry,
   normalizeSha,
   parseArgs,
+  PROD_ORIGIN,
   remoteRefForOrigin,
   resolveExpected,
   resolveExpectedSha,
   resolveExpectedVersion,
+  SHA_LENGTH,
   SpaFallbackError,
 } from "../scripts/check-deploy.mjs";
 
@@ -296,6 +300,84 @@ describe("remoteRefForOrigin", () => {
   });
 });
 
+describe("isCanonicalOrigin", () => {
+  // Round-2 George P2: `ensureRemoteRefFresh` fetches from the local
+  // `origin` remote and trusts `origin/staging`/`origin/main` as the
+  // promoted tip. That trust is only warranted when `origin` actually
+  // points at this repo — a fork (which GitHub copies `staging`/`main`
+  // into at fork time) or an unrepointed pre-transfer clone would let the
+  // fetch succeed against a stale branch and reopen the #143 false PASS
+  // this whole check exists to close.
+  it("accepts the canonical https URL", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile")
+    ).toBe(true);
+  });
+
+  it("accepts the canonical https URL with a trailing .git", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("accepts the canonical ssh URL", () => {
+    expect(isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile")).toBe(
+      true
+    );
+  });
+
+  it("accepts the canonical ssh URL with a trailing .git", () => {
+    expect(
+      isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the owner/repo", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingword/TC-Mobile.git")
+    ).toBe(true);
+  });
+
+  // The exact scenario George's finding describes: a fork's origin.
+  it("rejects a fork's URL", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("rejects the pre-transfer owner (the old, unrepointed remote)", () => {
+    expect(isCanonicalOrigin("git@github.com:sethstoll3/tc-mobile.git")).toBe(
+      false
+    );
+  });
+
+  it("rejects a non-GitHub host", () => {
+    expect(
+      isCanonicalOrigin("https://gitlab.com/unfoldingWord/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("rejects a similarly-named but different repo", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile-staging")
+    ).toBe(false);
+  });
+
+  it("rejects http (not https)", () => {
+    expect(
+      isCanonicalOrigin("http://github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("rejects malformed input", () => {
+    expect(isCanonicalOrigin("not a url at all")).toBe(false);
+  });
+
+  it("rejects undefined", () => {
+    expect(isCanonicalOrigin(undefined)).toBe(false);
+  });
+});
+
 describe("ensureRemoteRefFresh", () => {
   // Frank P1 (this takeover round): resolveExpectedSha/resolveExpectedVersion
   // read whatever the local remote-tracking ref already has — accurate only
@@ -307,6 +389,18 @@ describe("ensureRemoteRefFresh", () => {
   // branch before either resolver reads it.
   const STAGING = "https://tc-mobile-staging.unfoldingword.workers.dev";
   const PROD = "https://tc-mobile.unfoldingword.workers.dev";
+  const CANONICAL_URL = "https://github.com/unfoldingWord/tc-mobile.git";
+
+  // A fake `runGit` that answers "git remote get-url origin" with the
+  // canonical URL and defers everything else to the caller — every test
+  // below that isn't specifically about the canonical-origin gate uses
+  // this so it doesn't have to repeat that stub.
+  function withCanonicalOrigin(rest: (cmd: string) => string) {
+    return (cmd: string) => {
+      if (cmd === "git remote get-url origin") return CANONICAL_URL;
+      return rest(cmd);
+    };
+  }
 
   // George round 1, P3-1: a bare `git fetch origin <branch>` only updates
   // `origin/<branch>` when that branch is already covered by
@@ -317,10 +411,10 @@ describe("ensureRemoteRefFresh", () => {
   // explicit destination refspec, and the ref must be verified afterward.
   it("fetches with an explicit destination refspec for the staging default origin, not a bare branch name", () => {
     const calls: string[] = [];
-    const runGit = (cmd: string) => {
+    const runGit = withCanonicalOrigin((cmd) => {
       calls.push(cmd);
       return "";
-    };
+    });
     const warnings: string[] = [];
     ensureRemoteRefFresh(STAGING, { runGit, warn: (m) => warnings.push(m) });
     expect(calls).toEqual([
@@ -332,10 +426,10 @@ describe("ensureRemoteRefFresh", () => {
 
   it("fetches with an explicit destination refspec for the production origin", () => {
     const calls: string[] = [];
-    const runGit = (cmd: string) => {
+    const runGit = withCanonicalOrigin((cmd) => {
       calls.push(cmd);
       return "";
-    };
+    });
     ensureRemoteRefFresh(PROD, { runGit });
     expect(calls).toEqual([
       "git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet",
@@ -343,7 +437,7 @@ describe("ensureRemoteRefFresh", () => {
     ]);
   });
 
-  it("does nothing for an origin with no known remote ref", () => {
+  it("does nothing for an origin with no known remote ref (never even checks the origin remote)", () => {
     const runGit = () => {
       throw new Error("must not shell out for an unknown origin");
     };
@@ -355,9 +449,9 @@ describe("ensureRemoteRefFresh", () => {
   });
 
   it("throws (fails closed) when the fetch itself fails, rather than leaving a stale ref unnoticed", () => {
-    const runGit = () => {
+    const runGit = withCanonicalOrigin(() => {
       throw new Error("could not resolve host: github.com");
-    };
+    });
     expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
       /could not fetch origin\/staging/
     );
@@ -372,15 +466,46 @@ describe("ensureRemoteRefFresh", () => {
   // resolved afterward. Must throw, never fall back to HEAD/package.json
   // for a known staging/prod origin.
   it("throws (fails closed) when the fetch reports success but the ref still cannot be resolved afterward — the --single-branch shape", () => {
-    const runGit = (cmd: string) => {
+    const runGit = withCanonicalOrigin((cmd) => {
       if (cmd.startsWith("git fetch origin")) return ""; // "succeeds"
       if (cmd.startsWith("git rev-parse --verify")) {
         throw new Error("unknown revision or path not in the working tree");
       }
       throw new Error(`unexpected git command: ${cmd}`);
-    };
+    });
     expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
       /origin\/staging still could not be resolved/
+    );
+  });
+
+  // Red-first (round-2 George P2): the exact fork scenario from the finding
+  // — `origin` is a fork with a stale `staging`, and the fetch against it
+  // would otherwise "succeed". Must fail closed BEFORE any fetch is
+  // attempted, not just distrust the result afterward.
+  it("throws (fails closed) when the origin remote is not unfoldingWord/tc-mobile, before ever fetching", () => {
+    const calls: string[] = [];
+    const runGit = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd === "git remote get-url origin") {
+        return "https://github.com/sethstoll3/tc-mobile.git"; // a fork
+      }
+      throw new Error(`must not run further git commands: ${cmd}`);
+    };
+    expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
+      /"origin" is "https:\/\/github\.com\/sethstoll3\/tc-mobile\.git", not unfoldingWord\/tc-mobile/
+    );
+    // The fetch itself must never run once the origin is untrusted — this
+    // is what makes the check fail closed BEFORE trusting a stale fork
+    // branch, not merely distrust it afterward.
+    expect(calls).toEqual(["git remote get-url origin"]);
+  });
+
+  it("throws (fails closed) when the origin remote's URL can't even be read", () => {
+    const runGit = () => {
+      throw new Error("fatal: No such remote 'origin'");
+    };
+    expect(() => ensureRemoteRefFresh(STAGING, { runGit })).toThrow(
+      /could not read the "origin" remote's URL/
     );
   });
 });
@@ -435,7 +560,14 @@ describe("resolveExpectedSha", () => {
     expect(warnings.join(" ")).toContain("not a known staging/prod default");
   });
 
-  it("falls back to local HEAD when the remote-tracking ref can't be resolved (e.g. not fetched)", () => {
+  // Round-2 George P3-2, applied symmetrically: this used to fall back to
+  // local HEAD when `git rev-parse` on the ref failed. It no longer does,
+  // for a *known* origin — `ensureRemoteRefFresh` already fetched and
+  // `git rev-parse --verify`d this exact ref before `resolveExpectedSha` is
+  // ever called via `resolveExpected`, so a failure here past that point
+  // means something is genuinely wrong, and falling back would silently
+  // reintroduce the mixed-source G-F1 shape.
+  it("throws instead of falling back to local HEAD when the ref can't be resolved, for a known origin", () => {
     const calls: string[] = [];
     const runGit = (cmd: string) => {
       calls.push(cmd);
@@ -444,18 +576,14 @@ describe("resolveExpectedSha", () => {
       }
       return "fallback1";
     };
-    const warnings: string[] = [];
-    const sha = resolveExpectedSha(
-      "https://tc-mobile-staging.unfoldingword.workers.dev",
-      { runGit, warn: (m) => warnings.push(m) }
-    );
-    expect(sha).toBe("fallback1");
-    expect(calls).toEqual([
-      "git rev-parse --short=7 origin/staging",
-      "git rev-parse --short=7 HEAD",
-    ]);
-    expect(warnings.join(" ")).toContain("could not resolve origin/staging");
-    expect(warnings.join(" ")).toContain("git fetch origin");
+    expect(() =>
+      resolveExpectedSha(
+        "https://tc-mobile-staging.unfoldingword.workers.dev",
+        { runGit }
+      )
+    ).toThrow(/refusing to fall back to local HEAD/);
+    // Only the ref attempt ran — no silent fallback to HEAD.
+    expect(calls).toEqual(["git rev-parse --short=7 origin/staging"]);
   });
 });
 
@@ -523,31 +651,35 @@ describe("resolveExpectedVersion", () => {
     expect(warnings.join(" ")).toContain("not a known staging/prod default");
   });
 
-  it("falls back to this checkout's package.json when the ref can't be resolved (e.g. not fetched)", () => {
+  // Round-2 George P3-2 (the finding as filed): this used to fall back to
+  // this checkout's package.json when `git show <ref>:package.json` failed.
+  // It no longer does, for a *known* origin. Concrete scenario from the
+  // finding: a promoter on develop at 0.2.3 confirms a real v0.2.4
+  // production deploy; the fetch and `origin/main` verify succeed (sha
+  // matches), but `git show origin/main:package.json` fails (a
+  // sparse/partial clone that never lazy-fetched that blob) — falling back
+  // would compare local 0.2.3 against deployed 0.2.4 and false-FAIL a
+  // correct promotion, the exact G-F1 mixed-source shape.
+  it("throws instead of falling back to this checkout's package.json when the ref's package.json can't be read, for a known origin", () => {
     const runGit = () => {
       throw new Error("unknown revision or path not in the working tree");
     };
-    const warnings: string[] = [];
-    const version = resolveExpectedVersion(
-      "https://tc-mobile-staging.unfoldingword.workers.dev",
-      { runGit, warn: (m) => warnings.push(m) }
-    );
-    expect(version).toBe(LOCAL_VERSION);
-    expect(warnings.join(" ")).toContain(
-      "could not read origin/staging:package.json"
-    );
-    expect(warnings.join(" ")).toContain("git fetch origin");
+    expect(() =>
+      resolveExpectedVersion(
+        "https://tc-mobile-staging.unfoldingword.workers.dev",
+        { runGit }
+      )
+    ).toThrow(/refusing to fall back to this checkout's package\.json/);
   });
 
-  it("falls back to this checkout's package.json when the ref's package.json has no usable version", () => {
+  it("throws instead of falling back when the ref's package.json has no usable version, for a known origin", () => {
     const runGit = () => JSON.stringify({ name: "tc-mobile" });
-    const warnings: string[] = [];
-    const version = resolveExpectedVersion(
-      "https://tc-mobile-staging.unfoldingword.workers.dev",
-      { runGit, warn: (m) => warnings.push(m) }
-    );
-    expect(version).toBe(LOCAL_VERSION);
-    expect(warnings.join(" ")).toContain("no usable");
+    expect(() =>
+      resolveExpectedVersion(
+        "https://tc-mobile-staging.unfoldingword.workers.dev",
+        { runGit }
+      )
+    ).toThrow(/no usable "version" field/);
   });
 });
 
@@ -561,6 +693,8 @@ describe("resolveExpected", () => {
   // resolver reads the ref.
   const PROD = "https://tc-mobile.unfoldingword.workers.dev";
   const refGit = (cmd: string) => {
+    if (cmd === "git remote get-url origin")
+      return "https://github.com/unfoldingWord/tc-mobile.git";
     if (
       cmd ===
       "git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet"
@@ -580,17 +714,18 @@ describe("resolveExpected", () => {
     });
   });
 
-  it("fetches the ref (with an explicit destination refspec) and verifies it before resolving either half", () => {
+  it("checks the origin remote, fetches the ref (with an explicit destination refspec), and verifies it before resolving either half", () => {
     const calls: string[] = [];
     const runGit = (cmd: string) => {
       calls.push(cmd);
       return refGit(cmd);
     };
     resolveExpected(PROD, {}, { runGit });
-    expect(calls[0]).toBe(
+    expect(calls[0]).toBe("git remote get-url origin");
+    expect(calls[1]).toBe(
       "git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet"
     );
-    expect(calls[1]).toBe("git rev-parse --verify --quiet origin/main");
+    expect(calls[2]).toBe("git rev-parse --verify --quiet origin/main");
   });
 
   it("lets an explicit --version override the ref resolution", () => {
@@ -624,6 +759,9 @@ describe("resolveExpected", () => {
 
   it("propagates ensureRemoteRefFresh's failure — refuses to compare against a possibly-stale ref rather than falling back silently (Frank P1)", () => {
     const runGit = (cmd: string) => {
+      if (cmd === "git remote get-url origin") {
+        return "https://github.com/unfoldingWord/tc-mobile.git";
+      }
       if (cmd.startsWith("git fetch origin")) {
         throw new Error("could not resolve host: github.com");
       }
@@ -631,6 +769,18 @@ describe("resolveExpected", () => {
     };
     expect(() => resolveExpected(PROD, {}, { runGit })).toThrow(
       /could not fetch origin\/main/
+    );
+  });
+
+  it("propagates the non-canonical-origin failure too (round-2 George P2)", () => {
+    const runGit = (cmd: string) => {
+      if (cmd === "git remote get-url origin") {
+        return "https://github.com/sethstoll3/tc-mobile.git"; // a fork
+      }
+      throw new Error(`must not run further git commands: ${cmd}`);
+    };
+    expect(() => resolveExpected(PROD, {}, { runGit })).toThrow(
+      /not unfoldingWord\/tc-mobile/
     );
   });
 });
@@ -762,5 +912,67 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--version=0.2.0", "--version=0.3.0"])).toThrow(
       /--version was given more than once/
     );
+  });
+});
+
+describe("package.json's check:deploy:prod stays in sync with PROD_ORIGIN", () => {
+  // Round-2 George P3-4: `check:deploy:prod`'s `--origin=` and
+  // `remoteRefForOrigin`'s exact-match map were two unshared strings. A
+  // later edit to the npm script's URL (a custom domain, a typo) would
+  // silently drop `remoteRefForOrigin` back to `undefined` for that origin,
+  // which resolves expected sha/version from local HEAD/package.json
+  // instead of the promoted ref — a false FAIL (or a coincidental false
+  // PASS) on every real production promotion, discovered only by a
+  // promoter's confusion, not by this suite. Reading `package.json` fresh
+  // (not importing it, so this also catches a JSON-level edit at build
+  // time) and asserting the exported constant appears in the script text
+  // closes that gap mechanically.
+  it("check:deploy:prod's npm script contains the exact exported PROD_ORIGIN", () => {
+    const pkg = JSON.parse(
+      readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")
+    ) as { scripts: Record<string, string> };
+    expect(pkg.scripts["check:deploy:prod"]).toContain(PROD_ORIGIN);
+  });
+
+  // Not asserted by the finding, but the same drift risk for the staging
+  // default: `check:deploy` doesn't pass --origin at all (it relies on
+  // parseArgs' DEFAULT_ORIGIN), so this instead pins DEFAULT_ORIGIN itself
+  // against remoteRefForOrigin's map, closing the loop on both origins.
+  it("remoteRefForOrigin maps the exact exported DEFAULT_ORIGIN and PROD_ORIGIN", () => {
+    expect(remoteRefForOrigin(DEFAULT_ORIGIN)).toBe("origin/staging");
+    expect(remoteRefForOrigin(PROD_ORIGIN)).toBe("origin/main");
+  });
+});
+
+describe("vite.config.ts stays in sync with SHA_LENGTH", () => {
+  // Round-2 George P3-5: `SHA_LENGTH = 7` here parallels `vite.config.ts`'s
+  // `git rev-parse --short=7 HEAD` (the sha producer, reused by the footer
+  // build stamp). `git rev-parse --short=<N>` is a *minimum*, not exact —
+  // it can emit more than `N` characters when that prefix is ambiguous —
+  // and nothing previously tied the two literals together once
+  // `SHA_LENGTH` was introduced as its own constant. This reads
+  // `vite.config.ts`'s source fresh and asserts it still pins the exact
+  // same length as the exported `SHA_LENGTH`.
+  it("vite.config.ts's buildSha pins the same --short=<N> as SHA_LENGTH", () => {
+    const viteConfigSource = readFileSync(
+      path.join(import.meta.dirname, "..", "vite.config.ts"),
+      "utf8"
+    );
+    // Match the actual `execSync(...)` call, not a doc comment: the file's
+    // own comment block above `buildSha` explains the `--short=7` choice in
+    // prose, and a plain `toContain("--short=" + SHA_LENGTH)` matched that
+    // prose even when the real call below it was mutated to `--short=8` —
+    // a false green caught only by running this test against the mutation
+    // (round-2 George P3-5 mutation proof, this round). Anchoring on
+    // `execSync("git rev-parse --short=<N> HEAD"` pins the assertion to the
+    // code path that actually produces the build's sha.
+    const match = /execSync\(\s*["']git rev-parse --short=(\d+) HEAD["']/.exec(
+      viteConfigSource
+    );
+    expect(
+      match,
+      'expected an execSync("git rev-parse --short=<N> HEAD") call in vite.config.ts'
+    ).not.toBeNull();
+    expect(Number(match![1])).toBe(SHA_LENGTH);
   });
 });

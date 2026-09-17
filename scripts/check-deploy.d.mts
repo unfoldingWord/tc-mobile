@@ -1,6 +1,14 @@
 // Hand-written declaration for check-deploy.mjs's pure exports, so
 // tests/check-deploy.test.ts type-checks without pulling scripts/ into
 // tsconfig.app.json's `include` or turning on allowJs project-wide.
+export declare const DEFAULT_ORIGIN: string;
+export declare const PROD_ORIGIN: string;
+export declare const SHA_LENGTH: number;
+
+export declare function isCanonicalOrigin(
+  remoteUrl: string | undefined
+): boolean;
+
 export declare function compareDeployed(
   deployed: { version: string; sha: string },
   expected: { version: string; sha: string }

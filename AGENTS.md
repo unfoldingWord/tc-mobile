@@ -381,9 +381,11 @@ compare against local `HEAD` by default: for the staging and production
 default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
 (`scripts/check-deploy.mjs`) read the corresponding **remote-tracking ref**
 instead — `origin/staging` for `check:deploy`, `origin/main` for
-`check:deploy:prod` — falling back to local `HEAD`/this checkout's
-`package.json` (and printing why) only when that ref can't be resolved, or
-the origin isn't one of these two defaults.
+`check:deploy:prod`. Falling back to local `HEAD`/this checkout's
+`package.json` (and printing why) only ever happens for an origin that
+**isn't** one of these two known defaults (a hand-typed preview-Worker
+URL) — there is no promoted branch to be stale there. For a known origin,
+see the fail-closed behavior below: nothing falls back.
 
 Earlier drafts of this section said to run `git fetch origin` yourself
 before either bare command — a **documented** prerequisite the gate itself
@@ -397,12 +399,25 @@ that fetch itself, scoped to the one branch it's about to read
 (`git fetch origin staging` / `git fetch origin main`, with an explicit
 destination refspec so it updates the remote-tracking ref even on a
 `--single-branch` clone), before resolving either half — and **fails
-closed** if the fetch itself fails, or if the ref still can't be resolved
-after a successful fetch, rather than silently falling back to whatever the
-local ref or working tree already had. The fetch is skipped only when
-**both** `--sha=<short-sha>` and `--version=<x.y.z>` are given explicitly —
-there is then nothing left to resolve from the ref. Giving only one of the
-two still triggers the fetch, to resolve the other half.
+closed** if the fetch itself fails, if the ref still can't be resolved
+after a successful fetch, or if the ref's `package.json` can't be read,
+rather than silently falling back to whatever the local ref or working
+tree already had. The fetch is skipped only when **both**
+`--sha=<short-sha>` and `--version=<x.y.z>` are given explicitly — there is
+then nothing left to resolve from the ref. Giving only one of the two still
+triggers the fetch, to resolve the other half.
+
+**The fetch also refuses to trust a non-canonical `origin`** (round-2
+George P2). A fork's `origin` copies `staging`/`main` at fork time, and an
+unrepointed pre-transfer clone's `origin` may not track this repo at all
+(see "The transfer broke Cloudflare Workers Builds" below) — either way,
+the fetch above would otherwise succeed against that stale branch and let
+a stale deployed build coincidentally match it, the exact #143 false PASS
+this check exists to close, just moved one level up the trust chain.
+Before fetching, the check runs `git remote get-url origin` and fails
+closed unless it resolves to `https://github.com/unfoldingWord/tc-mobile`
+(https or ssh, with or without `.git`). Repoint `origin` (see the transfer
+section) if this check fails on a clone that should be trusted.
 
 `check:deploy:prod` is
 `node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
@@ -584,9 +599,11 @@ redirect. Issue and PR numbers carried over unchanged.
 bound to the repo under its old owner, and the first promotion after the move
 (#142, staging v0.1.11) merged green on GitHub without ever deploying. Until
 both Workers are re-linked to the org repo, **a merged promotion PR is not a
-deployed build** — confirm the served bundle's version string on the staging
-URL, not the merge. The AGENTS.md rule that the Cloudflare account is
-unfoldingWord was already true; only the GitHub side moved.
+deployed build** — confirm the served bundle's version string with
+`npm run check:deploy` / `npm run check:deploy:prod` (see "Confirming a
+deploy and rolling one back" above), not the merge. The AGENTS.md rule that
+the Cloudflare account is unfoldingWord was already true; only the GitHub
+side moved.
 
 Other contributors now push here (Jesse, `jag3773`, from 2026-09-02),
 which is what the version/milestone scheme above and the reviewer/author split
