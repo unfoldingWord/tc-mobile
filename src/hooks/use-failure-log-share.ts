@@ -168,6 +168,20 @@ export function useFailureLogShare(): UseFailureLogShare {
   const runId = useRef(0);
   /** Re-entry guard for tap 2: one share in flight at a time. */
   const sending = useRef(false);
+  /**
+   * Re-entry guard for tap 1 — the twin of `useShareFlow`'s `preparingRef`, and
+   * missing here until Frank found it in takeover round 4.
+   *
+   * A ref and set SYNCHRONOUSLY, because the only thing standing between two
+   * taps is that no render happens in between: the panel keeps the prepare
+   * control on screen and enabled while `preparing` paints, so a second tap
+   * during the IndexedDB read (or a native stage) is ordinary use on a slow
+   * phone, not an edge case. Without this both calls saw `armed === null`, the
+   * second bumped `runId` and invalidated the first, and a first run that had
+   * SUCCEEDED was discarded — with the screen reporting whatever the second one
+   * hit.
+   */
+  const preparing = useRef(false);
   /** Aborts an in-flight native stage, the way `useShareFlow` does. */
   const aborter = useRef<AbortController | null>(null);
 
@@ -188,7 +202,11 @@ export function useFailureLogShare(): UseFailureLogShare {
   );
 
   const prepare = useCallback(async (): Promise<void> => {
-    if (armed.current !== null) return;
+    // Already armed, already preparing, or a chooser is still up: ignore. All
+    // three are the same statement — this run would take a run that is already
+    // under way away from it.
+    if (armed.current !== null || preparing.current || sending.current) return;
+    preparing.current = true;
     const id = (runId.current += 1);
     const current = () => id === runId.current;
     const controller = new AbortController();
@@ -285,7 +303,15 @@ export function useFailureLogShare(): UseFailureLogShare {
       setError("failed");
       setStatus("idle");
     } finally {
-      if (current() && aborter.current === controller) aborter.current = null;
+      // Only the run that still owns the flow releases the guard. A stale run —
+      // one a `reset` or an unmount bumped past — must not clear a NEWER run's
+      // guard, or a further tap would start a second prepare over the top of it,
+      // which is the defect this guard was added for (`useShareFlow` carries the
+      // same `if (current())` for the same reason).
+      if (current()) {
+        preparing.current = false;
+        if (aborter.current === controller) aborter.current = null;
+      }
     }
   }, []);
 
@@ -369,6 +395,14 @@ export function useFailureLogShare(): UseFailureLogShare {
   const reset = useCallback(() => {
     runId.current += 1;
     aborter.current?.abort();
+    aborter.current = null;
+    // Released HERE, not in the bailed-out run's `finally`: that run's `current()`
+    // is false from the line above, so it deliberately leaves the guard alone —
+    // and if `reset` did not clear it, a panel closed mid-prepare would leave tap
+    // 1 dead for the life of the screen. `sending` is NOT cleared, for the reason
+    // `useShareFlow.reset` gives: the send that owns a chooser is the only thing
+    // allowed to release it.
+    preparing.current = false;
     const stale = armed.current;
     armed.current = null;
     // Same as the unmount arm: a staged file nobody will send is dropped rather
