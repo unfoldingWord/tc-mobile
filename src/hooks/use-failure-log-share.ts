@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatFailureLog } from "@/lib/failure-text";
-import { readFailures } from "@/lib/storage/failures";
+import { readFailureLog } from "./failure-log";
 import { reportFailure } from "./report-failure";
 import {
   classifyShareError,
@@ -247,7 +247,16 @@ export function useFailureLogShare(): UseFailureLogShare {
         return;
       }
       setStatus("preparing");
-      const entries = await readFailures();
+      // ON THE LANE (George R3 P2-1). A render throw reports from
+      // `componentDidCatch`, so its row is queued — possibly behind a transcode
+      // sweep's one-per-clip cascade — and this screen's Send is the control the
+      // runbook tells a facilitator to use BEFORE Restart. Reading off the lane
+      // could hand over a file that does not contain the crash it was sent
+      // about, or say "There is nothing to send now" while the crash is still in
+      // memory; Restart would then land the row on a phone whose file has
+      // already gone, and on a deterministic home-path throw Books never becomes
+      // a second door.
+      const entries = await readFailureLog();
       if (!current()) return;
       // The panel only renders Send while the log is non-empty, so an empty
       // read means it was cleared between the render and the tap.

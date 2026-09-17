@@ -4,7 +4,7 @@ import { Control } from "./control";
 import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
 import { strings } from "./strings";
-import { clearFailureLog } from "@/hooks/failure-log";
+import { clearFailureLog, useLogGeneration } from "@/hooks/failure-log";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 
 interface FailureLogPanelProps {
@@ -48,25 +48,37 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // into React state to render a count would defeat the reason `countFailures`
   // exists — the Books screen already has the number this panel is given.
   const share = useFailureLogShare();
+  // Which version of the rows is on disk — see `useLogGeneration`. The count in
+  // props is what the Notice says; this is what the armed payload is checked
+  // against, because the two stop moving together at the ring's limit.
+  const generation = useLogGeneration();
 
-  // Drop an armed payload when a NEW failure lands between the two gestures
-  // (George P3-D, round 2). Tap 1 renders a snapshot of the log; the count
-  // beside it is live. Without this, a failure arriving during that window made
-  // the Notice say "2 problems recorded" while Share still held the one-entry
-  // file — the screen and the file disagreeing about what is being sent, which
-  // is exactly the kind of quiet mismatch a maintainer cannot detect from the
-  // file alone. Re-arming costs one tap and is the honest answer.
-  const armedAt = useRef(count);
+  // Drop an armed payload when the LOG CHANGES between the two gestures (George
+  // P3-D round 2, keyed correctly since George R3 P2-2). Tap 1 renders a
+  // snapshot of the rows; the panel beside it is live. Without this, a failure
+  // arriving during that window made the Notice say "2 problems recorded" while
+  // Share still held the one-entry file — the screen and the file disagreeing
+  // about what is being sent, which is exactly the kind of quiet mismatch a
+  // maintainer cannot detect from the file alone. Re-arming costs one tap and is
+  // the honest answer.
+  //
+  // Keyed on the generation and NOT on `count`, which is the version of this
+  // that only worked below the ring's limit. At the cap every further append
+  // prunes the oldest row, so the count does not move at all: the panel would
+  // have kept an armed File that is missing the newest failure and still
+  // contains one that has been deleted, with a Notice agreeing with neither —
+  // the same defect, at the one bound where the store guarantees it happens.
+  const armedAt = useRef(generation);
   useEffect(() => {
     if (share.status === "idle") {
-      armedAt.current = count;
+      armedAt.current = generation;
       return;
     }
-    if (count !== armedAt.current) {
-      armedAt.current = count;
+    if (generation !== armedAt.current) {
+      armedAt.current = generation;
       share.reset();
     }
-  }, [count, share]);
+  }, [generation, share]);
 
   // Tap 1 — read the log and render it to a text File, arming the send gesture.
   const onPrepare = useCallback(() => {
@@ -82,13 +94,14 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // guard here is what does it (George R2 P3-4, refuted with a test rather than
   // patched). `send` leaves the status on "ready" for its whole duration — it
   // only goes back to "idle" once the chooser has resolved — so the effect above
-  // still sees a live payload when the count moves, calls `share.reset()`, and
-  // that bumps `runId`. The in-flight send then falls into its `if (!current())
-  // return "superseded"` arm, which is not one of the two outcomes that close
-  // the menu. The panel is back on tap 1 with the new count beside it, which is
-  // exactly the behaviour asked for. `a failure landing while the share sheet is
-  // open keeps the menu open` in `e2e/failure-log.spec.ts` pins it: reverting
-  // the count-change `share.reset()` kills that case.
+  // still sees a live payload when the generation moves, calls `share.reset()`,
+  // and that bumps `runId`. The in-flight send then falls into its
+  // `if (!current()) return "superseded"` arm, which is not one of the two
+  // outcomes that close the menu. The panel is back on tap 1 with the new count
+  // beside it, which is exactly the behaviour asked for. `a failure landing
+  // while the share sheet is open keeps the menu open` in
+  // `e2e/failure-log.spec.ts` pins it: reverting the generation-change
+  // `share.reset()` kills that case.
   const onSend = useCallback(() => {
     void share.send().then((outcome) => {
       if (outcome === "sent" || outcome === "dismissed") onDone();

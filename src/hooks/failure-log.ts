@@ -5,6 +5,7 @@ import {
   appendFailure,
   clearFailures,
   countFailures,
+  readFailures,
 } from "@/lib/storage/failures";
 import { reportFailure, subscribeToFailures } from "./report-failure";
 import type { StoredFailure } from "@/types/failure";
@@ -77,62 +78,84 @@ function enqueue<T>(op: () => Promise<T>): Promise<T> {
 }
 
 /**
- * How many rows the log held the last time anything looked — module scope, so
- * it outlives the screen that reads it (George R2 P2-1).
+ * ── The log's state, and the one rule that keeps it honest ──
  *
- * **The remount is the whole reason this is not `useState(0)`.** `App` unmounts
- * `BooksScreen` for the length of a chapter visit, so a facilitator who sees the
- * red mark, opens a chapter to check that the recording survived, and comes Back
- * would land on a Books that first-paints with no mark, no `FailureLogPanel` and
- * a plain "Open menu" — until an async `countFailures()` put it back. The one
- * state-in-place signal this feature has would blink out exactly when someone
- * went to look at it, and a tap in that window opens the menu a quiet phone
- * gets. The screen's other two standing markers already treat this remount as
- * load-bearing: `useStoragePersistence` caches its settled answer at module
- * scope, and encoder health is a `useSyncExternalStore`. This is the third.
+ * Two numbers, updated together, at module scope so they outlive the screen
+ * that reads them.
  *
- * A cold first launch still starts at 0 and that is inherent — nothing has read
- * the database yet. A remount is a different thing, and must not.
+ * **`count`** is how many rows the log holds. It is the Books marker's whole
+ * input. It lives here rather than in `useState` because `App` unmounts
+ * `BooksScreen` for the length of a chapter visit (George R2 P2-1): a hook that
+ * began each mount at 0 would blink the one state-in-place signal this feature
+ * has out of existence exactly when a facilitator went to check whether the
+ * recording survived and came Back, and a tap in that window opens the menu a
+ * quiet phone gets. The screen's other two standing markers already treat that
+ * remount as load-bearing — `useStoragePersistence` caches its settled answer
+ * at module scope, encoder health is a `useSyncExternalStore`. This is the
+ * third. A cold first launch still starts at 0, which is inherent; a remount
+ * must not.
+ *
+ * **`generation`** is which VERSION of the log those rows are. It moves on
+ * every landed write, including the ones that leave `count` alone. That is not
+ * a hypothetical: the ring prunes at FAILURE_LOG_LIMIT, so at the cap
+ * every further append deletes the oldest row and the count stays put. A panel
+ * that watched the count would hold an armed snapshot that is missing the newest
+ * row and still contains the pruned one, and the Notice beside it would agree
+ * with neither — the same "screen and file disagree, and a maintainer cannot
+ * tell from the file" mismatch the armed-snapshot drop exists to close, at the
+ * exact bound this store is built around (George R3 P2-2).
+ *
+ * **The rule: everything that touches the log goes through {@link enqueue}.**
+ * Not only the writes. Round 1 put the clear on the write lane because a clear
+ * that overtook an append un-cleared itself. Round 3 found the same shape on the
+ * read side twice over — a count read racing a clear lands the pre-clear number
+ * and lights the marker over an empty store, and the crash screen's Send read
+ * the rows while the crash's own row was still queued behind a transcode sweep,
+ * so tap 1 could send a file that does not contain the crash it was sent about
+ * (George R3 P2-1, P2-3). One lane for every read and every write is one rule
+ * instead of three guards, and it is the only version of this that a later
+ * reader can apply without being told the list.
+ *
+ * The one exception is marked where it lives: code already running INSIDE a lane
+ * op calls the store helpers directly, because re-entering `enqueue` there would
+ * wait on a lane that is waiting on it.
  */
-let lastCount = 0;
+let logCount = 0;
+let logGeneration = 0;
 
 /**
- * Subscribers to {@link lastCount}, in the `useSyncExternalStore` shape.
+ * Subscribers to the two numbers above, in the `useSyncExternalStore` shape.
  *
  * Fires when a row is STORED or cleared, not when a failure is REPORTED: those
  * are different moments, and a marker that lit before the row existed would send
  * a facilitator to an empty log.
  */
-const countWatchers = new Set<() => void>();
+const logWatchers = new Set<() => void>();
 
-/** Subscribe to the count. The store half of `useSyncExternalStore`. */
-function subscribeToFailureCount(onChange: () => void): () => void {
-  countWatchers.add(onChange);
+/** Subscribe to the log's state. The store half of `useSyncExternalStore`. */
+function subscribeToLog(onChange: () => void): () => void {
+  logWatchers.add(onChange);
   return () => {
-    countWatchers.delete(onChange);
+    logWatchers.delete(onChange);
   };
 }
 
 /**
- * The snapshot half. Returns the cached number, never a fresh read: React may
- * call this many times per render and it must be stable and synchronous.
+ * The snapshot halves. Each returns a cached primitive, never a fresh read:
+ * React may call these many times per render and they must be stable and
+ * synchronous. Primitives rather than an object for the same reason — an object
+ * rebuilt per call would re-render on every notification forever.
  */
 function getFailureCount(): number {
-  return lastCount;
+  return logCount;
 }
 
-/**
- * Record a newly known count and tell the subscribers, if it moved.
- *
- * The equality check is not an optimisation: `useSyncExternalStore` re-renders
- * on every notification, and the count is re-read after every write, so
- * notifying on an unchanged number would re-render Books on each append once
- * the ring is at its limit and the number stops moving.
- */
-function setLastCount(next: number): void {
-  if (next === lastCount) return;
-  lastCount = next;
-  for (const watcher of Array.from(countWatchers)) {
+function getLogGeneration(): number {
+  return logGeneration;
+}
+
+function notifyLog(): void {
+  for (const watcher of Array.from(logWatchers)) {
     try {
       watcher();
     } catch (watcherFailure) {
@@ -145,21 +168,102 @@ function setLastCount(next: number): void {
 }
 
 /**
- * Re-read the count into the cache. Resolves to `true` when the read landed.
+ * A write landed: the rows are different now, whether or not the NUMBER is.
  *
- * Called after every successful write and clear — NOT only from the hook's
- * effect — because a failure reported while a chapter is open has no mounted
- * reader at all, and the count must still be right when Books comes back.
+ * INSIDE a lane op only. Re-reads the count rather than adjusting it, because an
+ * append at the ring's limit also prunes and a guess would drift from the store
+ * it describes — and because a failure reported during a chapter visit has no
+ * mounted reader to do it.
+ *
+ * A failed re-read is swallowed and the old number kept: the generation still
+ * has to move, because the rows moved. Reporting it would be a lie about the
+ * write (which succeeded) and `writeEntry`'s own swallow is the terminal for
+ * anything that goes wrong on this path.
+ *
+ * One notification carrying both facts, so a Books re-render is decided once.
+ * Books reads only `count`, so `useSyncExternalStore` compares the same number
+ * and bails out — which is what keeps the marker from re-rendering on every
+ * append once the ring is at its limit. It is React's bail-out doing that now,
+ * not an equality guard here, and the difference matters: a guard here would
+ * also have suppressed the generation the panel needs.
  */
-async function refreshCount(): Promise<boolean> {
+async function markLogWritten(): Promise<void> {
   try {
-    setLastCount(await countFailures());
-    return true;
+    logCount = await countFailures();
   } catch {
-    // Quiet by design; the hook's retry ladder owns recovery while a screen is
-    // mounted, and a read that fails with nothing on screen has nobody to tell.
-    return false;
+    // Quiet by design: the count is stale by one write, the hook's ladder and
+    // the foreground listeners will correct it, and nothing on screen can act
+    // on a failed count read.
   }
+  logGeneration += 1;
+  notifyLog();
+}
+
+/**
+ * A clear landed. INSIDE a lane op only.
+ *
+ * Set rather than re-read: the transaction that just committed emptied the
+ * store, so the number is known exactly.
+ */
+function markLogCleared(): void {
+  logCount = 0;
+  logGeneration += 1;
+  notifyLog();
+}
+
+/**
+ * A pure read corrected the count. INSIDE a lane op only.
+ *
+ * Does NOT move the generation: nothing about the rows changed, so an armed
+ * share is still a true snapshot of them and must not be thrown away by a
+ * routine foreground read.
+ */
+async function readCountIntoStore(): Promise<void> {
+  const next = await countFailures();
+  if (next === logCount) return;
+  logCount = next;
+  notifyLog();
+}
+
+/**
+ * Re-read the count, ON THE LANE. Resolves to `true` when the read landed.
+ *
+ * The lane is the whole point (George R3 P2-3). The hook calls this from its
+ * mount, from the retry ladder, and from `visibilitychange`/`focus` — and a
+ * count read started on foreground could otherwise still be in flight when the
+ * person taps bin → confirm Clear, resolve afterwards with the pre-clear number,
+ * and leave the ≡ saying "1 problem recorded" over an empty store. Queued behind
+ * the clear, it reads the store the clear left.
+ *
+ * NOT called from inside a lane op — {@link markLogWritten} is that path.
+ */
+function refreshCount(): Promise<boolean> {
+  return enqueue(readCountIntoStore).then(
+    () => true,
+    () => false
+  );
+}
+
+/**
+ * Read the log's rows, ON THE LANE.
+ *
+ * The share path's entry point, and the reason it is not `readFailures` directly
+ * (George R3 P2-1). A render throw reports from `componentDidCatch`, which
+ * queues its append — behind whatever is already on the lane, and the unchanged
+ * transcode sweep can queue one row per failed Finished clip. The crash screen's
+ * Send is on that same screen, and the runbook tells a facilitator to use it
+ * BEFORE Restart. An off-lane read there could snapshot the pre-crash log: "There
+ * is nothing to send now" while the crash is still in memory, or a file with no
+ * `[render]` entry in it — and on a deterministic home-path throw, Restart lands
+ * back on the crash screen, so Books never becomes a second door. The file has
+ * already left the phone by then.
+ *
+ * Queued, rather than `await flushFailureLog()` and then read, because a flush
+ * only proves the lane WAS empty: a write can queue between the flush resolving
+ * and the read opening its transaction. Being on the lane is the property.
+ */
+export function readFailureLog(): Promise<StoredFailure[]> {
+  return enqueue(() => readFailures());
 }
 
 /**
@@ -208,17 +312,12 @@ export function installFailureLog(): () => void {
 async function writeEntry(entry: StoredFailure): Promise<void> {
   try {
     await appendFailure(entry);
-    // The count is re-read HERE rather than incremented: at the ring's limit an
-    // append also prunes, so the number does not always move, and a guess would
-    // drift from the store it is supposed to describe. It also updates the cache
-    // when no screen is mounted to do it — a failure during a chapter visit.
-    //
-    // AWAITED, so the read stays on the lane with the write it describes. A
-    // floating read could still be in flight when `clearFailureLog` sets 0 and
-    // would then land afterwards with the pre-clear number, leaving the marker
-    // lit over an empty log. The cost is one cheap count between two appends of
-    // a cascade; the benefit is that `flushFailureLog` covers the count too.
-    await refreshCount();
+    // Direct, not `refreshCount`: this function is ALREADY a lane op, and
+    // re-entering `enqueue` here would wait on a lane that is waiting on this.
+    // Awaited, so the store update stays inside the op that caused it — which
+    // is also what makes `flushFailureLog` cover the count and the generation,
+    // not just the row.
+    await markLogWritten();
   } catch (writeFailure) {
     console.error("[failure-log] could not store a failure", writeFailure);
   }
@@ -261,9 +360,7 @@ export function clearFailureLog(): Promise<void> {
       reportFailure(clearFailure, "failure-log-clear");
       throw clearFailure;
     }
-    // Known exactly, so it is set rather than re-read: the transaction that just
-    // committed emptied the store.
-    setLastCount(0);
+    markLogCleared();
   });
 }
 
@@ -284,6 +381,34 @@ export function clearFailureLog(): Promise<void> {
  */
 export function flushFailureLog(): Promise<void> {
   return lane;
+}
+
+/**
+ * Which version of the log is on disk — a number that moves on every landed
+ * write and every landed clear, and on nothing else.
+ *
+ * What it is for: `FailureLogPanel` arms a File from the rows at tap 1 and hands
+ * it over at tap 2, and it has to drop that armed payload if the rows changed in
+ * between. The count cannot tell it — at the ring's limit an append prunes the
+ * oldest and the count stays exactly where it was, so the panel would send a
+ * snapshot that is missing the newest row and still contains a row that is gone,
+ * while the Notice beside it agrees with neither (George R3 P2-2).
+ *
+ * Deliberately NOT the count, and deliberately a second hook rather than one
+ * hook returning both: Books reads only the count and must not re-render when a
+ * generation moves without it, which is the whole reason the ring's no-op
+ * appends were made quiet in the first place.
+ *
+ * It is a counter, not a timestamp or a key. A wall clock can go backwards on a
+ * phone whose date is wrong, and the store's keys are out-of-line
+ * auto-increments this module has no other reason to read.
+ */
+export function useLogGeneration(): number {
+  return useSyncExternalStore(
+    subscribeToLog,
+    getLogGeneration,
+    getLogGeneration
+  );
 }
 
 /**
@@ -326,7 +451,7 @@ export function flushFailureLog(): Promise<void> {
  */
 export function useFailureCount(recoveryToken = 0): number {
   const count = useSyncExternalStore(
-    subscribeToFailureCount,
+    subscribeToLog,
     getFailureCount,
     // Server snapshot: this app never server-renders, but `renderToStaticMarkup`
     // is how `tests/error-boundary.test.ts` reaches the crash screen's markup,

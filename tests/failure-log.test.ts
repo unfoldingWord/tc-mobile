@@ -1,5 +1,8 @@
 import "fake-indexeddb/auto";
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { unwrap } from "idb";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -9,7 +12,9 @@ import {
   clearFailureLog,
   flushFailureLog,
   installFailureLog,
+  readFailureLog,
   useFailureCount,
+  useLogGeneration,
 } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
 import { getDb } from "@/lib/storage/db";
@@ -40,6 +45,37 @@ const entry = (over: Partial<StoredFailure> = {}): StoredFailure => ({
   message: "Error: boom",
   ...over,
 });
+
+/**
+ * What a screen reads on its FIRST paint — one render of the hook, no effects.
+ *
+ * There is no renderer in this suite, but `renderToStaticMarkup` runs a
+ * component body exactly once and resolves `useSyncExternalStore` through its
+ * server snapshot. That is precisely the paint at issue whenever the question is
+ * "what does Books show the instant it comes back", and it is the only way to
+ * read these two hooks here.
+ */
+function firstPaintCount(): number {
+  let seen = 0;
+  renderToStaticMarkup(
+    createElement(function CountProbe() {
+      seen = useFailureCount();
+      return null;
+    })
+  );
+  return seen;
+}
+
+function firstPaintGeneration(): number {
+  let seen = 0;
+  renderToStaticMarkup(
+    createElement(function GenerationProbe() {
+      seen = useLogGeneration();
+      return null;
+    })
+  );
+  return seen;
+}
 
 describe("the failure store", () => {
   beforeEach(async () => {
@@ -583,5 +619,179 @@ describe("the count a remount inherits", () => {
     await clearFailureLog();
 
     expect(firstPaint()).toBe("<span>0</span>");
+  });
+});
+
+/**
+ * The log's ordering lane, on the READ side.
+ *
+ * Round 1 put the clear on the write lane. Round 3 found the same shape twice on
+ * the read side (George R3 P2-1, P2-3), which is what turned three fixes into
+ * one rule: **everything that touches the log goes through `enqueue`.** These
+ * cases pin the rule rather than the two symptoms it was found through.
+ */
+describe("every read of the log is on the write lane", () => {
+  let uninstall: (() => void) | null = null;
+
+  beforeEach(async () => {
+    await clearAllStores();
+    await clearFailureLog();
+    uninstall = installFailureLog();
+  });
+
+  afterEach(() => {
+    uninstall?.();
+    uninstall = null;
+    vi.restoreAllMocks();
+  });
+
+  it("queues a read behind an append that has not landed yet", async () => {
+    // The crash screen's shape: a render throw queues its row from
+    // `componentDidCatch`, and the facilitator taps Send on that same screen —
+    // possibly while a transcode sweep's one-row-per-clip cascade is still
+    // draining. An off-lane read hands over a file that does not contain the
+    // crash it was sent about, and nothing on the phone can take that back.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realAppend = failuresStore.appendFailure;
+    vi.spyOn(failuresStore, "appendFailure").mockImplementationOnce(
+      async (pending) => {
+        await held;
+        await realAppend(pending);
+      }
+    );
+
+    reportFailure(new Error("the crash itself"), "render");
+    const reading = readFailureLog();
+    let settled = false;
+    void reading.then(() => {
+      settled = true;
+    });
+
+    // Every chance to jump the queue.
+    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(settled).toBe(false);
+
+    release?.();
+    const rows = await reading;
+    expect(rows.map((row) => row.context)).toEqual(["render"]);
+  });
+
+  it("a clear cannot be overtaken by a count read that started before it", async () => {
+    // The foreground shape: `visibilitychange`/`focus` start a count read, the
+    // person then taps bin → confirm Clear, and an off-lane read resolves
+    // afterwards with the pre-clear number — leaving the marker lit over an
+    // empty store and a panel whose Send has nothing to send.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realCount = failuresStore.countFailures;
+    vi.spyOn(failuresStore, "countFailures").mockImplementationOnce(
+      async () => {
+        await held;
+        return realCount();
+      }
+    );
+
+    reportFailure(new Error("one row"), "unhandled-rejection");
+    const clearing = clearFailureLog();
+    release?.();
+    await clearing;
+
+    // The count read resolved 1 while the clear was already queued behind it.
+    // On the lane, the clear is the last word.
+    expect(firstPaintCount()).toBe(0);
+    expect(await countFailures()).toBe(0);
+  });
+
+  /**
+   * The wiring, not just the primitive.
+   *
+   * `readFailureLog` being lane-ordered is worth nothing if a caller goes around
+   * it, and nothing else in this repo would notice: knip sees an import that is
+   * used, ESLint sees a legal layer, and no runtime test can reach the share
+   * hook's `prepare` without a renderer. So the rule is asserted directly — one
+   * module owns the store, and everything else asks that module.
+   */
+  it("nothing in src/ reaches the store except the log module itself", () => {
+    const root = new URL("../src/", import.meta.url).pathname;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((found) => {
+        const full = join(dir, found.name);
+        if (found.isDirectory()) return walk(full);
+        return /\.tsx?$/.test(found.name) ? [full] : [];
+      });
+
+    const importers = walk(root)
+      .filter((file) =>
+        /from "[^"]*storage\/failures"/.test(readFileSync(file, "utf8"))
+      )
+      .map((file) => file.slice(root.length))
+      .sort();
+
+    expect(importers).toEqual(["hooks/failure-log.ts"]);
+  });
+});
+
+/**
+ * The count and the generation answer two different questions, and the ring is
+ * the reason one cannot stand in for the other.
+ */
+describe("the log's generation", () => {
+  let uninstall: (() => void) | null = null;
+
+  beforeEach(async () => {
+    await clearAllStores();
+    await clearFailureLog();
+    uninstall = installFailureLog();
+  });
+
+  afterEach(() => {
+    uninstall?.();
+    uninstall = null;
+  });
+
+  it("moves on an append the count cannot see, at the ring's limit", async () => {
+    // Fill to the cap. From here every append also prunes, so the number the
+    // marker shows is frozen at 50 for the rest of this phone's life.
+    for (let i = 0; i < FAILURE_LOG_LIMIT; i++) {
+      reportFailure(new Error(`filler ${i}`), "unhandled-rejection");
+    }
+    await flushFailureLog();
+    expect(firstPaintCount()).toBe(FAILURE_LOG_LIMIT);
+    const armed = firstPaintGeneration();
+
+    reportFailure(new Error("the one the facilitator is sending"), "render");
+    await flushFailureLog();
+
+    // The count is unchanged — which is exactly why the panel cannot use it to
+    // decide whether an armed File is still a true snapshot of the rows.
+    expect(firstPaintCount()).toBe(FAILURE_LOG_LIMIT);
+    expect(firstPaintGeneration()).not.toBe(armed);
+  });
+
+  it("moves on a clear", async () => {
+    reportFailure(new Error("to be discarded"), "unhandled-rejection");
+    await flushFailureLog();
+    const armed = firstPaintGeneration();
+
+    await clearFailureLog();
+    expect(firstPaintGeneration()).not.toBe(armed);
+  });
+
+  it("does NOT move on a plain re-read", async () => {
+    // A routine foreground count must not throw away an armed share: nothing
+    // about the rows changed, so the snapshot in the person's hand is still true.
+    reportFailure(new Error("one row"), "unhandled-rejection");
+    await flushFailureLog();
+    const armed = firstPaintGeneration();
+
+    await readFailureLog();
+    await flushFailureLog();
+
+    expect(firstPaintGeneration()).toBe(armed);
   });
 });

@@ -573,6 +573,63 @@ test("a failure landing between the two gestures drops the armed snapshot", asyn
   ).toBeVisible();
 });
 
+test("at the ring's limit a new failure STILL drops the armed snapshot", async ({
+  page,
+}) => {
+  // George R3 P2-2, and the reason the panel watches a generation rather than
+  // the count. `appendFailure` prunes the oldest row once the log holds 50, so
+  // from the cap onward every further failure leaves `countFailures()` at
+  // exactly 50. A panel keyed on the count would hold an armed File that is
+  // missing the newest failure and still contains one that has been deleted,
+  // with the Notice beside it agreeing with neither — the same mismatch the
+  // armed-snapshot drop exists to close, at the one bound the store guarantees
+  // will be reached on a phone that is having a bad day.
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => true,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+  await page.reload();
+
+  // Fill to the cap with DISTINCT objects, so the funnel's identity dedup does
+  // not collapse them into one row.
+  await page.evaluate((limit) => {
+    for (let i = 0; i < limit; i++) {
+      void Promise.reject(new Error(`filler ${i}`));
+    }
+  }, 50);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 50 problems recorded.",
+    { timeout: 20_000 }
+  );
+
+  await menuControl(page).click();
+  const menu = page.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByText("50 problems recorded")).toBeVisible();
+
+  // Tap 1 arms a File holding the 50 rows that exist right now.
+  await page.getByRole("button", { name: "Send problem report" }).click();
+  await expect(page.getByRole("button", { name: "Share now" })).toBeVisible();
+
+  // The 51st failure. It appends and prunes: the rows change, the NUMBER does
+  // not, and the Notice cannot show any difference.
+  await forceFailure(page);
+  await expect(menu.getByText("50 problems recorded")).toBeVisible();
+
+  // The stale payload is dropped anyway. This is the assertion that a
+  // count-keyed panel fails.
+  await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Send problem report" })
+  ).toBeVisible();
+});
+
 test("a failure landing while the share sheet is open keeps the menu open", async ({
   page,
 }) => {
