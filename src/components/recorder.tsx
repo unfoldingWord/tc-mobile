@@ -130,9 +130,14 @@ interface RecorderProps {
   clipboard: Int16Array | null;
   onClipboardChange: (clip: Int16Array | null) => void;
   /**
-   * The clip has been pasted, so it is no longer the only copy of that phrase.
-   * The slot itself stays full (G3 multi-paste); this is what tells App it may
-   * stop holding another copy's database upgrade for it (#221).
+   * A buffer carrying the clipboard's phrase has been WRITTEN, so the slot is no
+   * longer the only copy of it. The slot itself stays full (G3 multi-paste);
+   * this is what tells App it may stop holding another copy's database upgrade
+   * for it (#221).
+   *
+   * Said on a successful save, never on the paste itself: a paste that is undone
+   * and closed reaches no disk, and the undo log dies with the sheet, so the
+   * phrase would be back to existing in the slot alone (Frank R5 P1).
    */
   onClipboardPasted: () => void;
   /**
@@ -226,7 +231,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const editor = useSegmentEditor(view?.samples ?? null, {
       clip: clipboard,
       set: onClipboardChange,
-      markPasted: onClipboardPasted,
     });
     const [menuOpen, setMenuOpen] = useState(false);
     // The sheet is two modes over one segment (#89): a record mode (the hero
@@ -1791,6 +1795,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       [cancelPreview]
     );
 
+    /**
+     * Release the clipboard's hold on another copy's database upgrade (#221),
+     * but only when a write that actually carried its phrase has landed.
+     *
+     * Both conditions are load-bearing. `editor.pastedClipboard` is false when
+     * the paste was undone — the buffer just written has the hole back, and the
+     * session's undo log does not survive the close — and `saved` is false when
+     * the write did not land, in which case the samples are in App's recovery
+     * slot and `pendingTake` is what holds the upgrade instead. Claiming on
+     * either alone would tell App the phrase is on disk when it is not, and a
+     * yielded connection then costs the only copy of it (Frank R5 P1).
+     *
+     * The slot is never emptied here: one cut still pastes into several segments
+     * across the chapter (G3). Only the claim changes.
+     */
+    const claimClipboardPersisted = useCallback(
+      (saved: boolean) => {
+        if (saved && editor.pastedClipboard) onClipboardPasted();
+      },
+      [editor, onClipboardPasted]
+    );
+
     // The no-capture commit tail, shared by `close()` (when nothing was captured)
     // and `leaveHeldTake` (the recovery-panel exit). ONE path for both halves of
     // the session work an exit still owes — a pending B5 edit AND a pending
@@ -1823,17 +1849,29 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 stayOpen(strings.clearFailed);
                 return false;
               }
+              // Deliberately no `claimClipboardPersisted` here: this write is a
+              // buffer cut down to nothing, so whatever was pasted into it went
+              // to disk in no form at all. The clipboard is still the only copy.
               dirty.current = true;
               break;
             }
-            case "save-edit":
+            case "save-edit": {
               // A non-empty edit replaces the audio through the same never-lose
               // machinery a recording uses (owned slot → App recovery on failure),
-              // so its boolean is not branched on here. It demotes an approved
-              // segment to draft unless re-marked, and the mark rides the write.
-              await saveEditedSegment(segmentId, editor.working, plan.finished);
+              // so its boolean does not branch the CLOSE. It does decide one
+              // thing: whether the clipboard's phrase reached the disk in this
+              // buffer, which is what releases the upgrade hold (#221).
+              // It demotes an approved segment to draft unless re-marked, and
+              // the mark rides the write.
+              const saved = await saveEditedSegment(
+                segmentId,
+                editor.working,
+                plan.finished
+              );
+              claimClipboardPersisted(saved);
               dirty.current = true;
               break;
+            }
             case "mark":
               try {
                 await setFinished(plan.finished);
@@ -1860,7 +1898,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           return true;
         }
       },
-      [editor, saveEditedSegment, segmentId, setFinished, stayOpen, onExit]
+      [
+        editor,
+        saveEditedSegment,
+        segmentId,
+        setFinished,
+        stayOpen,
+        onExit,
+        claimClipboardPersisted,
+      ]
     );
 
     /**
@@ -2013,13 +2059,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // cut/paste this session came first (Model A) and must be part of what
             // the recording splices into. insertionOffset was captured against the
             // same working length.
-            await saveRecording(
-              segmentId,
-              editor.working,
-              plan.samples,
-              insertionOffset.current,
-              plan.finished
-            );
+            {
+              const saved = await saveRecording(
+                segmentId,
+                editor.working,
+                plan.samples,
+                insertionOffset.current,
+                plan.finished
+              );
+              // The one thing its boolean IS read for: the splice base is the
+              // working buffer, so a landed take carried any applied paste to
+              // disk with it, and the clipboard stops holding another copy's
+              // upgrade (#221). A failure leaves the samples in App's recovery
+              // slot, where `pendingTake` holds it instead.
+              claimClipboardPersisted(saved);
+            }
             dirty.current = true;
             // A committed take owes nothing else, so the tail only has to exit —
             // and it exits through the SAME `onExit(dirty)` every other path takes.
@@ -2093,6 +2147,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       cancelPreview,
       pendingWork,
       executeTail,
+      claimClipboardPersisted,
       stayOpen,
       menuOpen,
       confirmOpen,

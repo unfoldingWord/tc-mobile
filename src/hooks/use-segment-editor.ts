@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { clampRange, sliceRange, spansWholeSample } from "@/lib/audio/edit";
 import {
+  appliedPasteOf,
   canRedo as logCanRedo,
   canUndo as logCanUndo,
   emptyLog,
@@ -28,18 +29,6 @@ const EMPTY = new Int16Array(0);
 export interface Clipboard {
   readonly clip: Int16Array | null;
   readonly set: (clip: Int16Array | null) => void;
-  /**
-   * The clip has been pasted somewhere, so these samples are no longer the only
-   * copy of that phrase.
-   *
-   * The slot is deliberately NOT emptied on paste — G3 is that one cut can be
-   * pasted into several segments across the chapter — so "still full" cannot
-   * mean "still unpasted". Somebody has to say which, and only `paste()` knows.
-   * The multi-tab upgrade guard is what reads it: it holds another copy's
-   * upgrade while cut audio exists nowhere else, and must stop holding it the
-   * moment that stops being true (George R3 P2-1).
-   */
-  readonly markPasted: () => void;
 }
 
 export interface SegmentEditor {
@@ -50,6 +39,19 @@ export interface SegmentEditor {
   readonly peaks: Peaks | null;
   /** An op has been applied (and not undone) — the segment must be re-persisted. */
   readonly hasEdits: boolean;
+  /**
+   * An APPLIED op pastes the clipboard's current samples, so a buffer written
+   * from `working` right now carries that phrase onto the disk.
+   *
+   * The slot is deliberately NOT emptied on paste — G3 is that one cut can be
+   * pasted into several segments across the chapter — so "still full" cannot
+   * mean "still unpasted", and the multi-tab upgrade guard (#221) needs to know
+   * which. This is derived, not latched: an undo takes it back, because the
+   * undone paste is not in `working` and the history dies with the sheet. Only
+   * the recorder converts it into a claim, and only after a save succeeded
+   * (Frank R5 P1).
+   */
+  readonly pastedClipboard: boolean;
   /** The picked span while selection mode is open, or null (nothing picked). */
   readonly selection: SampleRange | null;
   /** Selection mode is on: the frame is shown (pan stays available beneath it). */
@@ -239,12 +241,11 @@ export function useSegmentEditor(
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
       applyLog(pushOp(log, { kind: "paste", at, clip }));
-      // The slot stays full on purpose (G3, multi-paste across the chapter), so
-      // this is the only signal that these samples now exist somewhere other
-      // than the clipboard. Said after the op is applied, and unconditionally
-      // once it is: an undo puts the hole back but the phrase is still in the
-      // undo log, not only in this slot.
-      clipboard.markPasted();
+      // Nothing is told to the clipboard here. A paste is not what makes the
+      // phrase exist somewhere else — a WRITE is, and this one may still be
+      // undone, at which point the log dies with the sheet and the slot is the
+      // only copy again (Frank R5 P1). `pastedClipboard` below reports the state
+      // instead, and the recorder claims it once a save has landed.
     },
     [clipboard, working.length, log, applyLog]
   );
@@ -270,6 +271,7 @@ export function useSegmentEditor(
     workingLength: working.length,
     peaks,
     hasEdits: log.cursor > 0,
+    pastedClipboard: appliedPasteOf(log, clipboard.clip),
     selection,
     selectionActive,
     // The scissors' enabled state asks the SAME question `cut` and the audition
