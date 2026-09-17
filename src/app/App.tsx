@@ -15,7 +15,10 @@ import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useSaveTake } from "@/hooks/use-save-take";
 import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
-import { holdsUnsavedAudio } from "@/lib/takes/pending-take";
+import {
+  holdsUnsavedAudio,
+  panelWouldLoseAudio,
+} from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
@@ -108,26 +111,13 @@ export function App() {
   // close. Cleared on every chapter change so it never carries audio from one
   // chapter into another; lost on page close naturally (never persisted).
   //
-  // `pasted` rides with the samples rather than beside them, so the two cannot
-  // drift: a cut always arrives unpasted, and the flag can only be read through
-  // the clip it belongs to. It exists because the slot is NOT emptied on paste
-  // (G3 multi-paste), so "still full" does not mean "still the only copy" — and
-  // the upgrade guard below must only hold another copy's upgrade for the
-  // second of those (George R3 P2-1).
-  const [clipboard, setClipboardState] = useState<{
-    clip: Int16Array | null;
-    pasted: boolean;
-  }>({ clip: null, pasted: false });
-  // A new cut replaces the samples AND resets the flag — the fresh phrase has
-  // not been pasted anywhere, whatever the last one did.
-  const setClipboard = useCallback((clip: Int16Array | null) => {
-    setClipboardState({ clip, pasted: false });
-  }, []);
-  const markClipboardPasted = useCallback(() => {
-    setClipboardState((current) =>
-      current.pasted ? current : { ...current, pasted: true }
-    );
-  }, []);
+  // Just the samples. A `pasted` flag rode alongside them for two rounds so the
+  // upgrade guard could stop holding a phrase that was on disk elsewhere, and it
+  // was wrong in the losing direction both times the unchanged tree moved
+  // underneath it (Frank R5 P1, George R4 P2). The guard now holds on the
+  // samples until the chapter change that clears them — see
+  // `holdsUnsavedAudio` for why nothing derived can be right here.
+  const [clipboard, setClipboard] = useState<Int16Array | null>(null);
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
@@ -177,22 +167,30 @@ export function App() {
       holdsUnsavedAudio({
         pendingTake,
         recorderOpen: recorder !== null,
-        clipboard: clipboard.clip,
-        clipboardPasted: clipboard.pasted,
+        clipboard,
       }),
     [pendingTake, recorder, clipboard]
   );
   const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
 
   // The condition above is reported as it happens; this is where it is allowed
-  // to take the screen over. It waits until nothing is held, because the panel
-  // unmounts everything under it — including the sheet holding a recording and
-  // the recovery screen that could still save one. The wait is the whole reason
-  // the hook reports rather than decides: a `blocked` arriving while a take is
-  // in hand is remembered here, and shows the moment the take is let go, rather
-  // than being dropped on the floor.
+  // to take the screen over. The wait is the whole reason the hook reports
+  // rather than decides: a `blocked` arriving while a take is in hand is
+  // remembered here, and shows the moment the take is let go, rather than being
+  // dropped on the floor.
+  //
+  // A DIFFERENT question from the one the connection asks, and the difference is
+  // the clipboard (George R4 P1). This waits only for work the panel itself
+  // would destroy — the sheet it unmounts, the recovery screen that could still
+  // save. A cut phrase is not that: the slot is state up here and outlives the
+  // panel, while WITHHOLDING the panel is what loses it, because the Back that
+  // Segments offers as its recovery for a failed load is untrapped without a
+  // panel up and runs `backToBooks`, which clears the slot.
   const databasePanel =
-    databaseStatus === "ok" || holdsUnsavedWork() ? null : databaseStatus;
+    databaseStatus === "ok" ||
+    panelWouldLoseAudio({ pendingTake, recorderOpen: recorder !== null })
+      ? null
+      : databaseStatus;
 
   const openChapter = useCallback(
     (id: ChapterId) => {
@@ -407,13 +405,20 @@ export function App() {
   }
 
   // Behind the held take, never in front of it: this says the database cannot
-  // be reached, and a held recording is the one thing that outranks that.
-  // `databasePanel` is null while anything is held, so reaching here means the
-  // screen is free to be taken over.
+  // be reached, and a held recording is the one thing that outranks that. The
+  // `SaveFailed` return above is what enforces that ordering; `databasePanel`'s
+  // `pendingTake` arm is the second line of defence, not the only one.
+  //
+  // The clipboard CAN be full here, which is the change George R4 P1 asked for,
+  // and it is why the panel is told: its restart is the one control on screen,
+  // and reloading drops the slot. It arms the same way `SaveFailed`'s does.
   if (databasePanel) {
     return (
       <main className="app-shell grid h-full place-items-center">
-        <DatabasePanel status={databasePanel} />
+        <DatabasePanel
+          status={databasePanel}
+          holdsCutAudio={(clipboard?.length ?? 0) > 0}
+        />
       </main>
     );
   }
@@ -455,9 +460,8 @@ export function App() {
           audio={audio}
           saveRecording={saveRecording}
           saveEditedSegment={saveEditedSegment}
-          clipboard={clipboard.clip}
+          clipboard={clipboard}
           onClipboardChange={setClipboard}
-          onClipboardPasted={markClipboardPasted}
           onExit={closeRecorder}
           onRequestBack={goBack}
         />

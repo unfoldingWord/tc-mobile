@@ -88,27 +88,41 @@ export function recoverySafetyLine(
 }
 
 /**
- * The label on the restart control shown for a `downgrade`, in each of its two
- * taps.
+ * The label on a restart control that would destroy audio held only in memory,
+ * in each of its two taps.
  *
- * Two taps, like Discard beside it, because it is the same kind of action: the
- * held recording is RAM-only, and reloading the document destroys it. A
- * one-tap, auto-focused control that throws away the only copy of a recording
- * would be the exact loss this whole screen exists to prevent, and it would be
- * inconsistent with the Discard directly under it (Frank R4 P1).
+ * Two taps, like the Discard beside it on this screen, because it is the same
+ * kind of action: the held audio is RAM-only, and reloading the document
+ * destroys it. A one-tap control that throws away the only copy of a recording
+ * is the exact loss these screens exist to prevent (Frank R4 P1).
+ *
+ * Shared with `DatabasePanel`, which grew the same two taps for the same reason
+ * (George R4 P1): once the panel is allowed to show over a full clipboard, its
+ * restart is the one control on screen and the cut phrase does not survive it.
+ * One function rather than two so the two surfaces cannot drift into saying
+ * different things about the same loss — `subject` is the only thing that
+ * differs, because it is the only thing that differs.
  *
  * The armed label names the loss rather than only the action. It is the last
- * thing the translator reads before the recording is gone, so it does not say
- * "restart" and leave them to work the rest out. What the screen should say
- * about that loss BEFORE the control is armed — and whether anything could
- * rescue the audio first — is the product question on #441; this is the
- * minimum that keeps the tap honest.
+ * thing the translator reads before the audio is gone, so it does not say
+ * "restart" and leave them to work the rest out. What a screen should say about
+ * that loss BEFORE the control is armed — and whether anything could rescue the
+ * audio first — is the product question on #441; this is the minimum that keeps
+ * the tap honest.
  */
-export function restartLabel(editOnly: boolean, armed: boolean): string {
+export function restartLabel(
+  subject: "recording" | "changes" | "cutAudio",
+  armed: boolean
+): string {
   if (!armed) return "Restart the app";
-  return editOnly
-    ? "Tap again to restart and lose these changes"
-    : "Tap again to restart and lose this recording";
+  switch (subject) {
+    case "changes":
+      return "Tap again to restart and lose these changes";
+    case "cutAudio":
+      return "Tap again to restart and lose the audio you cut";
+    case "recording":
+      return "Tap again to restart and lose this recording";
+  }
 }
 
 /**

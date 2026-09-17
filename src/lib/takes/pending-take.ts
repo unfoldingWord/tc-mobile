@@ -215,16 +215,27 @@ export function discardSave(current: PendingTake | null): {
  *                  capture, because capture state is not visible from `App` and
  *                  the coarse answer is wrong only in the direction that costs
  *                  the other copy a wait
- *   clipboard      audio CUT from a segment and NOT YET PASTED. The hole is
- *                  already committed to disk, so until it lands somewhere these
- *                  samples are the only copy left of that phrase — the same
- *                  unrecoverable loss the close plan already treats it as.
- *                  `clipboardPasted` is what makes "not yet pasted" real: the
- *                  slot is deliberately not emptied on paste (G3 lets one cut
- *                  go into several segments), so a full clipboard says nothing
- *                  on its own about whether the phrase exists anywhere else,
- *                  and holding an upgrade on it would wait out the rest of the
- *                  chapter (George R3 P2-1)
+ *   clipboard      audio CUT from a segment. The hole is already committed to
+ *                  disk, so until the phrase lands somewhere else these samples
+ *                  may be the only copy of it — the same unrecoverable loss the
+ *                  close plan already treats it as. Held while the slot is
+ *                  non-empty, which the chapter change that clears the slot
+ *                  already bounds
+ *
+ * **A full slot is held work, full stop — there is deliberately no "but it has
+ * been pasted" arm.** One existed for two rounds and cost two more findings, and
+ * this is the reasoning that removed it. "Pasted" cannot be observed; it can
+ * only be tracked, because `paste()` does not empty the slot (G3 lets one cut go
+ * into several segments). Tracking it meant a flag, and the flag was wrong in
+ * the losing direction every time the unchanged tree moved underneath it: set at
+ * the paste, it survived an undo that wrote nothing (Frank R5 P1); set at the
+ * write, it survived an erase of the segment written to (George R4 P2). Both
+ * ended the same way — the guard says the phrase is safe, the connection is
+ * yielded, and a restart takes the only copy. Nothing derived can be right here,
+ * because what it is derived from is what keeps changing; what the slot holds
+ * cannot go stale. The price is that another copy's upgrade may wait out the
+ * rest of a chapter after a cut, which costs a person time — the side of this
+ * trade the whole rule exists to take.
  *
  * What is deliberately NOT held work: a name being typed, and an armed share.
  * Both are re-doable in seconds from what is still on disk, and holding another
@@ -235,16 +246,48 @@ export function holdsUnsavedAudio(held: {
   readonly pendingTake: PendingTake | null;
   readonly recorderOpen: boolean;
   readonly clipboard: Int16Array | null;
-  /** Whether the clip in that slot has since been pasted somewhere. */
-  readonly clipboardPasted: boolean;
 }): boolean {
   if (held.pendingTake !== null) return true;
   if (held.recorderOpen) return true;
-  // Pasted: the phrase is in a segment's edit history now, so this slot is a
-  // convenience for pasting it again, not the last copy of anything.
-  if (held.clipboardPasted) return false;
   // An emptied clipboard is not held audio. `length === 0` is reachable — the
   // slot is set from a cut whose selection can be empty — and treating it as
   // held would block an upgrade over nothing.
   return (held.clipboard?.length ?? 0) > 0;
+}
+
+/**
+ * Whether taking the screen with `DatabasePanel` would DESTROY held audio — a
+ * different question from `holdsUnsavedAudio` above, with a different answer.
+ *
+ * One predicate used to answer both, and the clipboard is the arm where the two
+ * answers differ (George R4 P1). Yielding the connection is what loses a cut
+ * phrase, so the clipboard belongs in the yield decision. The panel does not
+ * lose it — the slot is `App` state and outlives the screen — so it does not
+ * belong here, and putting it here is what caused the loss:
+ *
+ *   1. the panel is withheld while the slot is full;
+ *   2. so `popAction` returns no `trap-database-panel` (it traps only when the
+ *      panel is actually up), and a Back is an ordinary `to-books`;
+ *   3. the app is `blocked` or `reloadNeeded`, so a chapter load fails and
+ *      `SegmentsScreen` offers its documented recovery — back out and re-enter;
+ *   4. `backToBooks` runs `setClipboard(null)`, chapter-scoped by design (G3);
+ *   5. and the panel that would have said "close the other copy" appears only
+ *      after the slot it was protecting has been emptied.
+ *
+ * So the panel now shows, the Back is trapped, and the slot survives. The two
+ * arms left are the ones the panel really does destroy: the recorder sheet,
+ * which the panel unmounts and `leave()` cancels the capture of, and a pending
+ * take — which never reaches this question anyway, because `SaveFailed` outranks
+ * the panel and returns first. It is listed rather than relied upon, so that the
+ * ordering in `App` is a second line of defence and not the only one.
+ *
+ * NOT a re-derivation of the above with one arm dropped: these are two rules
+ * that happen to share arms, and a future arm belongs to whichever of them is
+ * true of it.
+ */
+export function panelWouldLoseAudio(held: {
+  readonly pendingTake: PendingTake | null;
+  readonly recorderOpen: boolean;
+}): boolean {
+  return held.pendingTake !== null || held.recorderOpen;
 }

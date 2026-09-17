@@ -131,7 +131,7 @@ export function SaveFailed({
             icon="retry"
             label={
               terminal
-                ? restartLabel(editOnly, restartArmed)
+                ? restartLabel(editOnly ? "changes" : "recording", restartArmed)
                 : "Try saving again"
             }
             variant="primary"

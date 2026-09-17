@@ -84,34 +84,6 @@ export function redo(log: EditLog): EditLog {
 }
 
 /**
- * Whether an op that is CURRENTLY APPLIED pastes exactly these samples.
- *
- * The multi-tab upgrade guard (#221) asks it, through the recorder, at the one
- * moment it can be answered honestly: a buffer has just been written to disk,
- * and the question is whether that buffer carries the clipboard's phrase. If it
- * does, the clipboard is no longer the only copy and must stop holding another
- * copy's upgrade.
- *
- * `cursor`, not `ops.length`, is the whole point. An undone paste is in the log
- * but not in the buffer, and the buffer is what reached the disk — the history
- * itself is discarded on close (see the lifetime note above), so an undone paste
- * leaves the phrase in the clipboard alone (Frank R5 P1).
- *
- * Identity, not contents. The clipboard is replaced wholesale on each cut and
- * never mutated in place (see `EditOp`), so the reference a paste captured is
- * the same object the slot still holds iff it is the same phrase — and a cut
- * that replaced the slot since then correctly reads as a different clip. An
- * empty or absent clip is nothing to protect, so it is never "pasted".
- */
-export function appliedPasteOf(log: EditLog, clip: Int16Array | null): boolean {
-  if (clip === null || clip.length === 0) return false;
-  for (const op of log.ops.slice(0, log.cursor)) {
-    if (op.kind === "paste" && op.clip === clip) return true;
-  }
-  return false;
-}
-
-/**
  * The audio the log currently describes: `original` with the applied ops
  * (those before the cursor) replayed in order.
  *

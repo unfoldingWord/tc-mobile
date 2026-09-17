@@ -4,6 +4,7 @@ import {
   discardSave,
   failSave,
   holdsUnsavedAudio,
+  panelWouldLoseAudio,
   retrySave,
   startSave,
   succeedSave,
@@ -189,7 +190,6 @@ describe("holdsUnsavedAudio", () => {
     pendingTake: null,
     recorderOpen: false,
     clipboard: null,
-    clipboardPasted: false,
   };
 
   it("holds nothing when nothing is in hand", () => {
@@ -207,9 +207,9 @@ describe("holdsUnsavedAudio", () => {
     expect(holdsUnsavedAudio({ ...empty, recorderOpen: true })).toBe(true);
   });
 
-  it("holds CUT audio that has not been pasted", () => {
-    // The hole it came from is already committed to disk, so these samples are
-    // the only copy left of that phrase. Yielding the connection unmounts the
+  it("holds CUT audio", () => {
+    // The hole it came from is already committed to disk, so these samples may
+    // be the only copy left of that phrase. Yielding the connection unmounts the
     // screen that could paste them, and a restart drops the slot — the segment
     // keeps its hole and the phrase is gone (George R2 P2-2).
     expect(holdsUnsavedAudio({ ...empty, clipboard: pcm() })).toBe(true);
@@ -223,32 +223,76 @@ describe("holdsUnsavedAudio", () => {
     );
   });
 
-  it("releases once the clip has been PASTED, though the slot stays full", () => {
-    // The case that was a lie until George R3 P2-1. `paste()` does not empty the
-    // slot — G3 lets one cut go into several segments across the chapter — so
-    // before the flag existed a cut-then-pasted-then-saved phrase went on
-    // holding another copy's upgrade until the translator changed chapter or
-    // killed the tab. The samples are in a segment's edit history by then; this
-    // slot is a convenience for pasting again, not the last copy of anything.
+  it("holds a full slot on the SAMPLES alone — nothing about a paste releases it", () => {
+    // The re-shape (George R4 P2, DRI 2026-09-17). A "has been pasted" arm lived
+    // here for two rounds and was wrong in the losing direction both times: set
+    // at the paste it survived an undo that wrote nothing (Frank R5 P1); set at
+    // the write it survived an erase of the segment written to (George R4 P2).
+    // There is nothing left to go stale — the only input is what the slot holds.
+    //
+    // Stated as a property rather than a case, because the defect was always a
+    // second input that disagreed with the first: no field of `held` other than
+    // these three can exist, so no caller can hand over a reason to release.
     const holding = { ...empty, clipboard: pcm() };
     expect(holdsUnsavedAudio(holding)).toBe(true);
-    expect(holdsUnsavedAudio({ ...holding, clipboardPasted: true })).toBe(
-      false
-    );
+    expect(Object.keys(holding).sort()).toEqual([
+      "clipboard",
+      "pendingTake",
+      "recorderOpen",
+    ]);
   });
 
   it("releases when the chapter changes and the slot is emptied", () => {
+    // The bound on the wait, and the reason a full slot needs no release of its
+    // own: leaving the chapter clears the clipboard (G3, chapter-scoped), so the
+    // longest another copy can wait on a cut is the rest of one chapter.
     const holding = { ...empty, clipboard: pcm() };
     expect(holdsUnsavedAudio({ ...holding, clipboard: null })).toBe(false);
   });
+});
 
-  it("holds a FRESH cut made after an earlier one was pasted", () => {
-    // `pasted` belongs to the samples in the slot, not to the slot: a new cut
-    // replaces both. Were the flag sticky, every cut after the first paste
-    // would be unprotected for the rest of the chapter — the defect inverted.
-    expect(
-      holdsUnsavedAudio({ ...empty, clipboard: pcm(), clipboardPasted: false })
-    ).toBe(true);
+describe("panelWouldLoseAudio", () => {
+  const empty = { pendingTake: null, recorderOpen: false };
+
+  it("does not wait on the clipboard — the panel does not destroy it", () => {
+    // The whole of George R4 P1. `holdsUnsavedAudio` holds a cut phrase because
+    // YIELDING loses it; the panel does not, because the slot is App state and
+    // outlives the screen. Withholding the panel is what loses it: no panel
+    // means no `trap-database-panel`, so the Back that `SegmentsScreen` offers
+    // as its documented recovery for a failed load runs `backToBooks`, which
+    // clears the slot — and then the panel appears, over an empty one.
+    //
+    // Handed a full slot through a variable rather than an object literal on
+    // purpose: the parameter type does not mention the clipboard, and this must
+    // still read false if some later hand adds it back.
+    const holding = { ...empty, clipboard: pcm() };
+    expect(panelWouldLoseAudio(empty)).toBe(false);
+    expect(panelWouldLoseAudio(holding)).toBe(false);
+  });
+
+  it("waits on the two things the panel really does destroy", () => {
+    const { take } = held();
+    expect(panelWouldLoseAudio({ ...empty, recorderOpen: true })).toBe(true);
+    expect(panelWouldLoseAudio({ ...empty, pendingTake: take })).toBe(true);
+  });
+
+  it("disagrees with holdsUnsavedAudio on the clipboard, and ONLY there", () => {
+    // Both states of the split, in one case: the two predicates must differ for
+    // a held clip and agree on everything else. Collapsing them back into one —
+    // in either direction — kills this.
+    const { take } = held();
+    const clip = { pendingTake: null, recorderOpen: false, clipboard: pcm() };
+    expect(holdsUnsavedAudio(clip)).toBe(true);
+    expect(panelWouldLoseAudio(clip)).toBe(false);
+
+    for (const both of [
+      { pendingTake: null, recorderOpen: false, clipboard: null },
+      { pendingTake: null, recorderOpen: true, clipboard: null },
+      { pendingTake: take, recorderOpen: false, clipboard: null },
+      { pendingTake: take, recorderOpen: true, clipboard: pcm() },
+    ]) {
+      expect(panelWouldLoseAudio(both)).toBe(holdsUnsavedAudio(both));
+    }
   });
 });
 

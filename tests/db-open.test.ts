@@ -762,7 +762,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     }
   });
 
-  it("waits on cut audio that has not been pasted, and goes through once it has been", async () => {
+  it("waits on cut audio, and goes through once the app hands the refusal on", async () => {
     // The clipboard arm of `holdsUnsavedAudio`, end to end through the storage
     // layer: a phrase cut from a segment whose hole is already on disk is the
     // only copy of that phrase, so the upgrade waits for it exactly as it waits
@@ -779,7 +779,6 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
         pendingTake: null,
         recorderOpen: false,
         clipboard: cut,
-        clipboardPasted: false,
       })
     );
     await getDb();
@@ -799,31 +798,58 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     }
   });
 
-  it("does not wait on a clip that has already been pasted, though the slot is still full", async () => {
-    // The same cut, after it has landed in another segment. `paste()` does NOT
-    // empty the slot — G3 lets one cut go into several segments across the
-    // chapter — so before the flag existed this held the other copy's upgrade
-    // until the translator changed chapter or killed the tab, for samples that
-    // were already on disk (George R3 P2-1).
+  it("goes on waiting on a clip that HAS been pasted, while the slot is still full", async () => {
+    // The re-shape, end to end (George R4 P2, DRI 2026-09-17). The same cut,
+    // after it has landed in another segment. For two rounds this released the
+    // upgrade, on the reasoning that the phrase was on disk now — and twice the
+    // unchanged tree took that disk copy away again without telling anyone (an
+    // undo of the paste, then an erase of the segment pasted into), leaving the
+    // slot the only copy while the guard said otherwise. It waits.
     //
     // Asserted through `blocking()` rather than through a deferred release,
     // because that is where the predicate is actually consulted: a release-based
-    // case yields unconditionally and would pass with the arm removed.
+    // case yields unconditionally and would pass whatever the predicate said.
     const cut = new Int16Array([1, 2, 3]);
     const app = registerCoordinator(() =>
       holdsUnsavedAudio({
         pendingTake: null,
         recorderOpen: false,
         clipboard: cut,
-        clipboardPasted: true,
       })
     );
     await getDb();
 
     const newer = openNewerCopy();
     try {
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.onYielded).not.toHaveBeenCalled();
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("stops waiting when the chapter change empties the slot", async () => {
+    // The bound on that wait, through the same seam. The predicate is read at
+    // `versionchange` time, so emptying the slot is enough — nothing has to
+    // remember to release anything (`lib/takes/pending-take.ts`).
+    let clipboard: Int16Array | null = new Int16Array([1, 2, 3]);
+    const app = registerCoordinator(() =>
+      holdsUnsavedAudio({
+        pendingTake: null,
+        recorderOpen: false,
+        clipboard,
+      })
+    );
+    await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.onYielded).not.toHaveBeenCalled();
+
+      clipboard = null; // backToBooks / openChapter, chapter-scoped (G3)
+      yieldDeferredUpgrade();
       expect(await raceOpen(newer)).toBe("opened");
-      expect(newer.wasBlocked()).toBe(false);
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);

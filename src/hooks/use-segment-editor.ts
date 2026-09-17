@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 
 import { clampRange, sliceRange, spansWholeSample } from "@/lib/audio/edit";
 import {
-  appliedPasteOf,
   canRedo as logCanRedo,
   canUndo as logCanUndo,
   emptyLog,
@@ -39,19 +38,6 @@ export interface SegmentEditor {
   readonly peaks: Peaks | null;
   /** An op has been applied (and not undone) — the segment must be re-persisted. */
   readonly hasEdits: boolean;
-  /**
-   * An APPLIED op pastes the clipboard's current samples, so a buffer written
-   * from `working` right now carries that phrase onto the disk.
-   *
-   * The slot is deliberately NOT emptied on paste — G3 is that one cut can be
-   * pasted into several segments across the chapter — so "still full" cannot
-   * mean "still unpasted", and the multi-tab upgrade guard (#221) needs to know
-   * which. This is derived, not latched: an undo takes it back, because the
-   * undone paste is not in `working` and the history dies with the sheet. Only
-   * the recorder converts it into a claim, and only after a save succeeded
-   * (Frank R5 P1).
-   */
-  readonly pastedClipboard: boolean;
   /** The picked span while selection mode is open, or null (nothing picked). */
   readonly selection: SampleRange | null;
   /** Selection mode is on: the frame is shown (pan stays available beneath it). */
@@ -241,11 +227,12 @@ export function useSegmentEditor(
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
       applyLog(pushOp(log, { kind: "paste", at, clip }));
-      // Nothing is told to the clipboard here. A paste is not what makes the
-      // phrase exist somewhere else — a WRITE is, and this one may still be
-      // undone, at which point the log dies with the sheet and the slot is the
-      // only copy again (Frank R5 P1). `pastedClipboard` below reports the state
-      // instead, and the recorder claims it once a save has landed.
+      // The slot is NOT emptied, and nothing is told about the paste. One cut
+      // goes into several segments across a chapter (G3), and two rounds of
+      // review established that nothing derived from a paste can safely say the
+      // phrase is now somewhere else — an undo or an erase takes it back again.
+      // The upgrade guard holds on the samples themselves until the chapter
+      // changes (`lib/takes/pending-take.ts`, George R4 P2).
     },
     [clipboard, working.length, log, applyLog]
   );
@@ -271,7 +258,6 @@ export function useSegmentEditor(
     workingLength: working.length,
     peaks,
     hasEdits: log.cursor > 0,
-    pastedClipboard: appliedPasteOf(log, clipboard.clip),
     selection,
     selectionActive,
     // The scissors' enabled state asks the SAME question `cut` and the audition

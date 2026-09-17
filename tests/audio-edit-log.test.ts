@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  appliedPasteOf,
   canRedo,
   canUndo,
   emptyLog,
@@ -123,59 +122,5 @@ describe("edit-log", () => {
     expect(log.ops.length).toBe(0); // the empty log we started from is intact
     expect(log.cursor).toBe(0);
     expect(pushed).not.toBe(log);
-  });
-});
-
-/**
- * The question the multi-tab upgrade guard asks of a session about to write
- * (#221): does the buffer going to disk carry the clipboard's phrase?
- *
- * It is the difference between releasing another copy's database upgrade and
- * holding it, and the wrong answer in the releasing direction costs the only
- * copy of cut audio — the clipboard is RAM, and a yielded connection ends in a
- * reload (Frank R5 P1).
- */
-describe("appliedPasteOf", () => {
-  const clip = buf(90, 91);
-  const other = buf(90, 91); // same samples, different slot — a later cut
-
-  it("is true while the paste of that clip is applied", () => {
-    const log = pushOp(emptyLog(), { kind: "paste", at: 2, clip });
-    expect(appliedPasteOf(log, clip)).toBe(true);
-    // Still true with other ops layered over it.
-    const more = pushOp(log, { kind: "cut", range: { start: 0, end: 1 } });
-    expect(appliedPasteOf(more, clip)).toBe(true);
-  });
-
-  it("goes back to false when the paste is UNDONE", () => {
-    // The whole finding. An undone paste is in `ops` but not in `working`, and
-    // `working` is what a close persists — the history itself dies with the
-    // sheet. Reading `ops` rather than the cursor would tell App the phrase is
-    // safely on disk when the clipboard is the only place it exists.
-    const log = pushOp(emptyLog(), { kind: "paste", at: 2, clip });
-    const undone = undo(log);
-    expect(undone.ops.length).toBe(1); // still in the history...
-    expect(appliedPasteOf(undone, clip)).toBe(false); // ...but not in the audio
-    expect(appliedPasteOf(redo(undone), clip)).toBe(true);
-  });
-
-  it("does not count a paste of a DIFFERENT clip", () => {
-    // Each cut replaces the slot wholesale with a fresh buffer, so identity is
-    // what says "this phrase". A paste of the previous clip must not release the
-    // hold on the one the slot holds now, even when the samples happen to match.
-    const log = pushOp(emptyLog(), { kind: "paste", at: 0, clip: other });
-    expect(appliedPasteOf(log, clip)).toBe(false);
-    expect(appliedPasteOf(log, other)).toBe(true);
-  });
-
-  it("is false for a cut-only history, and for nothing to protect", () => {
-    const cutOnly = pushOp(emptyLog(), {
-      kind: "cut",
-      range: { start: 0, end: 2 },
-    });
-    expect(appliedPasteOf(cutOnly, clip)).toBe(false);
-    expect(appliedPasteOf(cutOnly, null)).toBe(false);
-    // An empty slot is not a phrase; it can never be the only copy of one.
-    expect(appliedPasteOf(cutOnly, buf())).toBe(false);
   });
 });

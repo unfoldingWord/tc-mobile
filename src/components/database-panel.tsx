@@ -1,6 +1,9 @@
+import { useState } from "react";
+
 import type { DatabaseStatus } from "@/hooks/use-database-status";
 import { Control } from "./control";
 import { Icon, type IconName } from "./icon";
+import { restartLabel } from "./recovery-copy";
 import { strings } from "./strings";
 
 /** The heading that names the alert, referenced by `aria-labelledby`. */
@@ -26,6 +29,17 @@ function focusOnMount(node: HTMLParagraphElement | null): void {
 
 interface DatabasePanelProps {
   status: Exclude<DatabaseStatus, "ok">;
+  /**
+   * The chapter clipboard holds a cut phrase, so the restart below would destroy
+   * the only copy of it.
+   *
+   * This panel used to be withheld entirely while that was true, which is what
+   * lost the phrase: with no panel up, `popAction` traps no Back, and the Back
+   * that `SegmentsScreen` offers as its recovery for a failed load runs
+   * `backToBooks` and clears the slot (George R4 P1). The panel shows instead —
+   * and, since the slot does not survive its restart, that restart arms.
+   */
+  holdsCutAudio: boolean;
 }
 
 /**
@@ -48,9 +62,14 @@ interface DatabasePanelProps {
  * (`onUnblocked`), so the teach line says just that and the button is there for
  * someone who would rather start over than hunt for the other tab.
  */
-export function DatabasePanel({ status }: DatabasePanelProps) {
+export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
   const blocked = status === "blocked";
   const mark: IconName = blocked ? "copies" : "info";
+  // Armed only while there is something to lose. With an empty slot a restart
+  // costs nothing and this is the one control the panel exists for — two taps
+  // there would be friction over nothing.
+  const [armed, setArmed] = useState(false);
+  const restartArmed = holdsCutAudio && armed;
 
   return (
     <div
@@ -84,11 +103,26 @@ export function DatabasePanel({ status }: DatabasePanelProps) {
 
       <Control
         icon="retry"
-        label={strings.appReload}
+        label={
+          restartArmed ? restartLabel("cutAudio", true) : strings.appReload
+        }
         variant="primary"
         size={30}
-        onClick={reload}
+        className={restartArmed ? "text-[var(--s-live)]" : undefined}
+        onClick={() => {
+          if (!holdsCutAudio || restartArmed) {
+            reload();
+            return;
+          }
+          setArmed(true);
+        }}
       />
+
+      {restartArmed && (
+        <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+          Tap again and the audio you cut is gone.
+        </p>
+      )}
     </div>
   );
 }

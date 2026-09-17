@@ -99,27 +99,46 @@ describe("recoverySafetyLine", () => {
 });
 
 describe("restartLabel", () => {
-  it("does not throw the recording away on one tap", () => {
-    // Restarting destroys the held recording — it is RAM-only — exactly as
-    // Discard does, so it is armed the same way. A one-tap, auto-focused control
-    // that loses the only copy of a recording is the loss this whole screen
-    // exists to prevent (Frank R4 P1).
-    expect(restartLabel(false, false)).toBe("Restart the app");
-    expect(restartLabel(false, false)).not.toMatch(/lose|gone/i);
+  const subjects = ["recording", "changes", "cutAudio"] as const;
+
+  it("does not throw the audio away on one tap", () => {
+    // Restarting destroys held audio — it is RAM-only — exactly as Discard does,
+    // so it is armed the same way. A one-tap, auto-focused control that loses
+    // the only copy is the loss these screens exist to prevent (Frank R4 P1).
+    for (const subject of subjects) {
+      expect(restartLabel(subject, false)).toBe("Restart the app");
+      expect(restartLabel(subject, false)).not.toMatch(/lose|gone/i);
+    }
   });
 
   it("names the loss on the armed tap, not just the action", () => {
-    // The last thing read before the recording is gone. "Restart" alone leaves
-    // the translator to work out what it costs.
-    expect(restartLabel(false, true)).toBe(
+    // The last thing read before the audio is gone. "Restart" alone leaves the
+    // translator to work out what it costs.
+    expect(restartLabel("recording", true)).toBe(
       "Tap again to restart and lose this recording"
     );
-    expect(restartLabel(true, true)).toBe(
+    expect(restartLabel("changes", true)).toBe(
       "Tap again to restart and lose these changes"
     );
-    for (const editOnly of [false, true]) {
-      expect(restartLabel(editOnly, true)).toMatch(/lose/i);
+    for (const subject of subjects) {
+      expect(restartLabel(subject, true)).toMatch(/lose/i);
     }
+  });
+
+  it("names the CUT phrase for the database panel, not a recording", () => {
+    // The panel's restart is shared with this screen's (George R4 P1), and the
+    // thing it destroys is different: a phrase cut out of a segment whose hole
+    // is already on disk. Calling that "this recording" would point the
+    // translator at the take still sitting safely in the list.
+    expect(restartLabel("cutAudio", true)).toBe(
+      "Tap again to restart and lose the audio you cut"
+    );
+    expect(restartLabel("cutAudio", true)).not.toMatch(
+      /this recording|these changes/i
+    );
+    // And the three subjects do not collapse into one another.
+    const armed = subjects.map((s) => restartLabel(s, true));
+    expect(new Set(armed).size).toBe(subjects.length);
   });
 });
 

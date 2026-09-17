@@ -119,8 +119,13 @@ export function popAction(
   // `exit-app` — the copy that was waiting for the other one to close leaves
   // instead, and reopening is blocked all over again — and from Segments it
   // runs `backToBooks()` under a panel that stays up regardless (George R3 P3).
-  // Nothing is held while the panel shows, so this is state-machine parity
-  // rather than a take-loss guard; the way out is the panel's own control.
+  // The way out is the panel's own control.
+  //
+  // This started as state-machine parity — no audio was held while the panel
+  // showed, so nothing could be lost by a stray Back. That is no longer true and
+  // the trap now carries weight: the panel shows over a full clipboard (George
+  // R4 P1), and `backToBooks` clears the slot, so an untrapped Back from here
+  // would destroy the cut phrase this whole guard exists to protect.
   if (databasePanel) return "trap-database-panel";
   if (committing) return "rearm-during-commit";
   if (direction === "forward") return "trap-forward";
