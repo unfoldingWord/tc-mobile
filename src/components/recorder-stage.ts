@@ -193,10 +193,12 @@ interface StageView {
    *
    * - **Zoom**: rebuilds the window around the centerline under a line that is
    *   already travelling, and does nothing visible at all while swapped;
-   * - **the paste marker**: pinned at the centerline's screen position but
-   *   pastes at `win.centerlineSample` — under a swapped view it points at one
-   *   sample and inserts at another (it is unmounted, not merely disabled, so
-   *   the false POSITION goes too);
+   * - **the paste marker**: drawn centered above the canvas (#414 — no longer
+   *   pinned to the centerline's screen position, which used to sit it on top
+   *   of the sample it pastes at) but still pastes at `win.centerlineSample`
+   *   — under a swapped view that reads as "the middle of the clip" rather
+   *   than the pan window's own sample (it is unmounted, not merely disabled,
+   *   so the false IMPLICATION goes too);
    * - **Select**: seeds its span from `win.centerlineSample` ± the visible
    *   width — a position that, while sounding, no longer matches what the
    *   (always-visible, #316) line marks once the view has swapped to the

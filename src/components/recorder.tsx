@@ -4,6 +4,7 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -15,6 +16,7 @@ import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
+import { resolveProbedPx } from "./recorder-layout";
 import {
   dragOriginAfterInterrupt,
   frozenPan,
@@ -182,7 +184,9 @@ export interface RecorderHandle {
  * that menu. EDIT mode — entered deliberately, from either the record menu's
  * "Edit recording" row or the toolbar Edit control (#315), both firing
  * `onEnterEdit` — is the [play] [zoom] [select] [undo] [redo] [menu] spread
- * with the selection frame, paste marker and floating Cut, marked by a header
+ * with the selection frame over the canvas, the paste marker in its own
+ * reserved row above the canvas (#414 — no longer an overlay drawn on top of
+ * the waveform), and Cut in its own reserved row below, marked by a header
  * "Editing" pill that also exits. A live/paused take does not block either
  * entry point: `onEnterEdit` commits the take first (#134), then opens edit
  * mode over the committed audio. Edit-mode Play is the audition (#284): it
@@ -445,6 +449,45 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // on close). It is off while a take is live or the sheet is committing, and
     // off with no segment loaded.
     const idleEditable = view !== null && state === "idle" && !isClosing;
+
+    // The edit-mode canvas shrink below reads its size from
+    // `--c-recorder-paste-row` (`3-components.css`) rather than repeating the
+    // 44+6 arithmetic in JS (George R3 P3) — a hardcoded `150` would silently
+    // stop matching the reserved `.recorder-paste` row's actual height the
+    // next time `--c-control-md` or `--p-space-2` changes (the #362 40→44
+    // question already open in this file is exactly that kind of change).
+    //
+    // `getComputedStyle(...).getPropertyValue("--c-recorder-paste-row")`
+    // would NOT do this: a custom property's computed value is its
+    // specified value with `var()` substituted, not `calc()` resolved, so
+    // that call would hand back the literal string "calc(44px + 6px)", and
+    // `parseFloat` on that is `NaN`. Applying the token to a real property
+    // (`height`) on a detached probe element is what actually resolves the
+    // `calc()`/`var()` chain to a used pixel value — the standard technique
+    // for reading a custom property's real number from JS.
+    //
+    // Read once via `useMemo`, not per frame: spacing tokens carry no theme
+    // media query (unlike the `--s-*` colour roles), so they cannot change
+    // under this component without a page reload, which would remount it
+    // anyway. `50` is a defensive fallback for an environment where the
+    // probe cannot resolve at all, not a second source of truth for it.
+    // `resolveProbedPx` (`recorder-layout.ts`) owns the "did this actually
+    // resolve" check, not a bare `Number.isFinite` here — a "0px" read, what
+    // an UNRESOLVED custom property's used height actually computes to, is
+    // finite and would otherwise read as success (George R4 P3): the group
+    // would then grow back to ~296px on the rare failure this guard exists
+    // to catch, worsening the overflow-onto-Cut risk tracked at #428.
+    const pasteRowPx = useMemo(() => {
+      if (typeof document === "undefined") return 50;
+      const probe = document.createElement("div");
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.height = "var(--c-recorder-paste-row)";
+      document.body.appendChild(probe);
+      const raw = getComputedStyle(probe).height;
+      probe.remove();
+      return resolveProbedPx(raw, 50);
+    }, []);
 
     // A take is being made or committed: any non-idle recorder state, OR the F8
     // close window (Back tapped, the stop→decode→save still in flight). Across all
@@ -2853,6 +2896,66 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 );
               })()}
               <div className="recorder-stage flex-1">
+                {mode === "edit" && (
+                  <div className="recorder-paste flex justify-center">
+                    {/* Always mounted in edit mode, like `.recorder-cut` below
+                      the canvas — only the button inside is conditional
+                      (George R1 P2). `.recorder-stage` is a centered,
+                      clipping column: an in-flow row that mounts and
+                      unmounts (rather than reserving its height) recenters
+                      the group underneath it, so the waveform itself would
+                      jump on every Select toggle and every no-selection
+                      audition once the clipboard is full. Reserving the row
+                      keeps the canvas's vertical position stable across
+                      those transitions; `.recorder-paste`'s `min-height`
+                      carries the reserved space (3-components.css).
+
+                      The drop icon sits above the canvas, clear of the
+                      waveform band (#414) — drawn over the band it hid the
+                      exact sample the paste lands on. It still reads as
+                      centerline-aligned without any positioning math: this
+                      row and the canvas below it share the same centered
+                      parent, so centering the row here lines up with the
+                      canvas's own CENTER_FRACTION=0.5 line, the same way
+                      `.recorder-cut` below the canvas already does for the
+                      scissors icon. No `stopPropagation` needed on its
+                      pointerdown — unlike the old in-canvas placement, this
+                      row is a sibling of `.recorder-canvas`, not a
+                      descendant, so a tap here can never bubble into the
+                      canvas's own pan handler. */}
+                    {idleEditable &&
+                      editor.canPaste &&
+                      !editor.selectionActive &&
+                      !stage.windowControlsInert && (
+                        // Unmounted, not merely `disabled` like Cut, on either
+                        // gate — each guards a different way tapping it would
+                        // insert at the wrong sample, not just draw wrong:
+                        //
+                        // - `windowControlsInert` (#284): under a swapped view
+                        //   the drawn line reads as "the middle of the clip"
+                        //   while `onPaste` still inserts at the pan window's
+                        //   `win.centerlineSample`. `recorder-stage.ts` carries
+                        //   the rest of that class.
+                        // - `!editor.selectionActive`: with a selection open,
+                        //   `win` is built from the zoom's view pan rather than
+                        //   `panState`, so `win.centerlineSample` would not be
+                        //   the record insertion offset the drawn line implies
+                        //   (the `onPaste` callback's own comment, above,
+                        //   spells out why this render gate is load-bearing).
+                        //
+                        // `disabled` would leave the wrong implication on
+                        // screen either way; removing the button removes it.
+                        <button
+                          type="button"
+                          className="paste-marker"
+                          aria-label={strings.paste}
+                          onClick={onPaste}
+                        >
+                          <Icon name="paste" size={26} />
+                        </button>
+                      )}
+                  </div>
+                )}
                 <div
                   ref={stageRef}
                   // `overflow-hidden`: while a buffer sounds the waveform is
@@ -2922,7 +3025,38 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // `recorder-stage.ts`'s module docblock for the superseded
                         // George R2 / R4 P3 findings that used to justify hiding it.
                         peaks={previewShown ? previewShown.peaks : editor.peaks}
-                        height={200}
+                        // `200 - pasteRowPx` in edit mode, 200 everywhere else
+                        // this branch renders (idle, playback preview, the
+                        // tap-failed fallback): edit mode is the only state
+                        // that also reserves `.recorder-paste` above and
+                        // `.recorder-cut` below (George R2 P2), and without
+                        // this the two reserved rows plus an unchanged 200px
+                        // canvas grow the centered `.recorder-stage` group from
+                        // ~246px to ~296px — clipped under `overflow: hidden`
+                        // on a short stage (a `Notice`, a wrapped 320px
+                        // toolbar, or a short viewport). Shrinking the canvas
+                        // by exactly the paste row's reserved box
+                        // (`pasteRowPx`, above) keeps the group at its
+                        // pre-#414 height instead, and reading that box off
+                        // the same CSS token the row's own `min-height` uses
+                        // means the two cannot drift apart (George R3 P3).
+                        // Bars scale to whatever height is drawn (`displayGain`
+                        // is a fraction of the lane, `waveform.tsx`'s draw
+                        // effect reads `height` off its own deps), and
+                        // `PlayheadOverlay` stretches `top-0 bottom-0` rather
+                        // than assuming a pixel value, so neither needs a
+                        // matching change. This is a mode-entry step, not a
+                        // per-frame one: `mode` only flips on
+                        // `onEnterEdit`/exit, so the reflow happens once,
+                        // alongside the toolbar swap, not on every
+                        // Select/audition toggle. `WaveformScroller` (#432)
+                        // only translates this canvas during playback; it
+                        // never touches `height`, so the reservation holds
+                        // unchanged whether or not the scroller is active
+                        // (round 7 rebase onto #432 — carried the #414 height
+                        // fix forward onto the new wrapper, no behavior
+                        // change to either).
+                        height={mode === "edit" ? 200 - pasteRowPx : 200}
                         recorded={hasAudio || previewShown !== null}
                         // The #358 display fit is suppressed only for a take with
                         // nothing committed behind it — the paused first take
@@ -3046,34 +3180,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         startLabel={strings.selectionStartHandle}
                         endLabel={strings.selectionEndHandle}
                       />
-                    )}
-                  {mode === "edit" &&
-                    idleEditable &&
-                    editor.canPaste &&
-                    !editor.selectionActive &&
-                    !stage.windowControlsInert && (
-                      // The paste marker rides the centerline (mockup 5): tapping it
-                      // inserts the clipboard there. stopPropagation so the tap does
-                      // not also arm a pan on the stage beneath it.
-                      //
-                      // Unmounted, not merely disabled, while `windowControlsInert`
-                      // (#284): it is pinned at a FIXED 50% of the stage because it
-                      // rides the centerline of the pan window, while `onPaste`
-                      // inserts at `win.centerlineSample` — so under a swapped view
-                      // it would sit over the midpoint and paste at the END. Taking
-                      // the control away takes the false POSITION away with it,
-                      // which a `disabled` would not. See `recorder-stage.ts` for
-                      // the rest of the class.
-                      <button
-                        type="button"
-                        className="paste-marker"
-                        style={{ left: `${CENTER_FRACTION * 100}%` }}
-                        aria-label={strings.paste}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={onPaste}
-                      >
-                        <Icon name="paste" size={26} />
-                      </button>
                     )}
                 </div>
                 {mode === "edit" && (

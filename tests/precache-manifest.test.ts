@@ -208,6 +208,30 @@ describe.skipIf(!existsSync(SW))(
   }
 );
 
+// `describe.skipIf(!existsSync(SW))` above is a convenience for a developer
+// running the suite on an unbuilt tree — a missing `dist/sw.js` skips rather
+// than fails, so `npm run verify`'s pre-build test pass and a fresh clone's
+// `npm test` both exit 0 with nothing built yet. Unguarded, that is also how
+// this file behaves inside CI: the Quality job runs `npm test` before any
+// build exists, so this describe block has been skipping there on every run
+// since it landed (#436) — and the Build job that actually produces
+// `dist/sw.js` never re-asks the question at all. Round 7 (#414/#420, same
+// gap Frank found for tests/dist-css.test.ts) closes that with a dedicated
+// CI step (`.github/workflows/ci.yml`, Build job, after `npm run build`)
+// that re-runs this file with `REQUIRE_DIST_BUILD=1` set — a purpose-built
+// env var, not GitHub Actions' ambient `CI` (`true` in every job, including
+// Quality, where skipping is still correct). Only that one step sets it, so
+// local dev, Quality, and `npm run verify`'s pre-build pass are unaffected.
+it("fails, rather than silently skips, when required to find a build and does not", () => {
+  if (process.env.REQUIRE_DIST_BUILD && !existsSync(SW)) {
+    throw new Error(
+      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — this step " +
+        "must run in ci.yml's Build job, after `npm run build`, not before " +
+        "it and not in the Quality job."
+    );
+  }
+});
+
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
   const readers = obsThumbnailReaders();
   const jpgPrecached = globPatterns().some((p) => /\bjpe?g\b/i.test(p));

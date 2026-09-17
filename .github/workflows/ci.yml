@@ -186,6 +186,31 @@ jobs:
           fi
           echo "obs/thumbs absent from dist/sw.js."
 
+      # tests/dist-css.test.ts and tests/precache-manifest.test.ts's
+      # `dist/sw.js`-reading block both read the actual build output, but the
+      # Quality job (above) runs `npm test` BEFORE this job's `npm run build`
+      # even exists, so their `describe.skipIf(build artifact missing)`
+      # guards skip both there, every run (Frank, round 6 on #414/#420, for
+      # dist-css; the same gap has applied to precache-manifest's `dist/sw.js`
+      # block since #436). This job produces the build but, until now, ran no
+      # tests against it at all — so a regression either test exists to catch
+      # could ship through a fully green CI with neither job ever evaluating
+      # either assertion.
+      #
+      # `REQUIRE_DIST_BUILD=1` turns each file's added "fails, not skips,
+      # when required to find a build and does not" case from a no-op into a
+      # real assertion — proving this step is a gate and not just another
+      # place these tests quietly skip: with a real `dist/` (the normal case,
+      # right after the build above) every test runs and passes; strip
+      # `dist/` first and this same invocation goes red instead of green,
+      # which is what makes it catch a Build job that silently stopped
+      # producing output, not just a Build job that never asked at all. Scoped
+      # to this one step — Quality and local `npm test`/`npm run verify` never
+      # set this var, so their existing skip-when-unbuilt behavior is
+      # unchanged.
+      - name: Build-artifact tests actually run here, not just skip
+        run: REQUIRE_DIST_BUILD=1 npm test -- tests/dist-css.test.ts tests/precache-manifest.test.ts
+
       # The e2e smoke harness (#251) must never reach a shipped build. What
       # keeps it out is `vite.config.ts`'s `build.rollupOptions.external`, not
       # `main.tsx`'s `import.meta.env.MODE` guard — a runtime guard alone does
