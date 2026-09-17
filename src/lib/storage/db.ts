@@ -201,6 +201,36 @@ export interface UpgradeCoordinator {
 let coordinator: UpgradeCoordinator | null = null;
 
 /**
+ * A `versionchange` this copy refused because work was held, kept so it can
+ * still be honoured once that work is gone.
+ *
+ * `versionchange` fires once per upgrade attempt. The other copy does not ask
+ * again — it simply sits on its blocked screen — so a refusal with nothing to
+ * replay it is permanent, and "wait while a take is in hand" quietly becomes
+ * "wait until this tab is closed".
+ *
+ * A stale one is left in the slot rather than cleared from every path a
+ * connection can die on: it checks for itself that the connection it captured
+ * is still the app's, does nothing if it is not, and is replaced by the next
+ * refusal.
+ */
+let deferredUpgrade: (() => void) | null = null;
+
+/**
+ * Honour a `versionchange` this copy refused earlier, now that the work it was
+ * refused to protect has been let go.
+ *
+ * Called by the app, because only the app knows when that is (`use-database-
+ * status.ts`, as the answer changes). Does nothing if no upgrade was refused,
+ * which is the ordinary case.
+ */
+export function yieldDeferredUpgrade(): void {
+  const pending = deferredUpgrade;
+  deferredUpgrade = null;
+  pending?.();
+}
+
+/**
  * Register the app's coordinator, or `null` to unregister.
  *
  * With none registered the connection is given up on request: nothing is
@@ -378,14 +408,35 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // import), and a browser turns an exception thrown from an event
         // listener into a window `error`, which `app/install-failure-listeners`
         // reports. Escaping IS the channel here.
-        if (coordinator?.holdsUnsavedWork() === true) return;
+        const held = connection;
+        const yieldNow = (): void => {
+          invalidate();
+          held.close();
+          // Said last, and only after the close: this build asks for a version
+          // the database no longer has, so it cannot reopen. The app's only
+          // honest exit from here is a restart.
+          coordinator?.onYielded();
+        };
 
-        invalidate();
-        connection.close();
-        // Said last, and only after the close: this build asks for a version
-        // the database no longer has, so it cannot reopen. The app's only
-        // honest exit from here is a restart.
-        coordinator?.onYielded();
+        if (coordinator?.holdsUnsavedWork() === true) {
+          // Refused, NOT forgotten. `versionchange` fires once: dropping it here
+          // would turn "the other copy waits while a take is in hand" into "the
+          // other copy is stuck for the rest of this tab's life", long after the
+          // take was saved and this connection stopped being worth protecting.
+          // `yieldDeferredUpgrade()` runs this the moment the app says the work
+          // is gone.
+          deferredUpgrade = () => {
+            // Unless the connection went in the meantime — a `closeDb()`, or the
+            // browser terminating it. There is nothing left to give up then, and
+            // nothing to tell the app: it is not out of date because of a
+            // connection nothing holds any more.
+            if (dbPromise !== handle) return;
+            yieldNow();
+          };
+          return;
+        }
+
+        yieldNow();
       },
       terminated() {
         // The browser abnormally closed the connection (resource pressure, a

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   setUpgradeCoordinator,
+  yieldDeferredUpgrade,
   type UpgradeCoordinator,
 } from "@/lib/storage/db";
 
@@ -59,8 +60,19 @@ export function useDatabaseStatus(
   // given away. A layout effect is flushed synchronously in the commit itself,
   // so no task can come between the two. The work is one assignment; the
   // synchronous cost is why this is the only thing done here.
+  const heldRef = useRef(false);
   useLayoutEffect(() => {
     predicateRef.current = holdsUnsavedWork;
+
+    // And the moment the work is let go, release an upgrade that was refused to
+    // protect it. Nothing else can: `versionchange` fires once, so without this
+    // the other copy waits not "while a take is in hand" but for as long as this
+    // tab lives (Frank R3 P2). Telling an external system what React's state has
+    // just become is what an effect is for.
+    const held = holdsUnsavedWork();
+    const released = heldRef.current && !held;
+    heldRef.current = held;
+    if (released) yieldDeferredUpgrade();
   }, [holdsUnsavedWork]);
 
   // Registered once, for as long as this hook is mounted, and unregistered only

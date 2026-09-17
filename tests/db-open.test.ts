@@ -8,6 +8,7 @@ import {
   closeDb,
   getDb,
   setUpgradeCoordinator,
+  yieldDeferredUpgrade,
   type UpgradeCoordinator,
 } from "@/lib/storage/db";
 
@@ -628,6 +629,49 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     } finally {
       await release(newer);
     }
+  });
+
+  it("gives up a refused upgrade once the app says the work is gone", async () => {
+    // `versionchange` fires once. Refusing it protects the take in hand, but
+    // nothing asks again — so without a replay the other copy is not waiting for
+    // the take to be saved, it is waiting for this tab to be closed.
+    let holding = true;
+    const app = registerCoordinator(() => holding);
+    await getDb();
+
+    const newer = openNewerCopy();
+    try {
+      expect(await raceOpen(newer)).toBe("waiting");
+      expect(app.onYielded).not.toHaveBeenCalled();
+
+      // The take is saved and the recorder closed. No second `versionchange`
+      // will ever arrive; this is the only thing that can let the other copy
+      // through.
+      holding = false;
+      yieldDeferredUpgrade();
+
+      expect(await raceOpen(newer)).toBe("opened");
+      expect(app.onYielded).toHaveBeenCalledTimes(1);
+    } finally {
+      await release(newer);
+    }
+  });
+
+  it("has nothing to give up when no upgrade was refused", async () => {
+    // The other state of that gate. Work is held and released all the time with
+    // no other copy anywhere near; a release that yielded anyway would close a
+    // working connection and put a restart screen in front of someone who was
+    // simply finished recording.
+    const app = registerCoordinator(() => false);
+    const db = await getDb();
+
+    yieldDeferredUpgrade();
+
+    expect(app.onYielded).not.toHaveBeenCalled();
+    await expect(
+      db.get("clipMeta", "absent" as never)
+    ).resolves.toBeUndefined();
+    await closeDb();
   });
 
   it("gives it up once the app has unregistered", async () => {
