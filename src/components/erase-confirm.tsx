@@ -112,6 +112,15 @@ export function EraseConfirm({
     const panel = panelRef.current;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Marked handled, ALWAYS — including mid-erase, when `cancel` is a
+        // no-op. This dialog can be stacked over an open `Menu` (the failure
+        // log's Clear, George R2 P3-3, is armed from inside the menu rather
+        // than after closing it, so a mis-tap returns to the panel with an
+        // armed share intact). `menu.tsx` closes on Escape unless a child
+        // claims it, reading `defaultPrevented` on this same native event —
+        // the contract its rename field already uses. Without this, one Escape
+        // would cancel the confirm and tear down the menu behind it.
+        e.preventDefault();
         // Mid-erase, Escape does nothing: the op is already committing.
         cancel();
         return;
@@ -134,8 +143,15 @@ export function EraseConfirm({
         first.focus();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // CAPTURE, not bubble. This dialog can be stacked over an open `Menu` (the
+    // failure log's Clear, George R2 P3-3), and `menu.tsx` binds its own window
+    // keydown when it opens — which is BEFORE this one, so on the bubble phase
+    // the menu would read `defaultPrevented` as false and close itself before
+    // this handler ever ran. Capturing puts the topmost dialog first, which is
+    // what "modal" means, and it is what makes the `defaultPrevented` contract
+    // `menu.tsx` already documents for its rename field work here too.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [open, cancel]);
 
   if (!open) return null;

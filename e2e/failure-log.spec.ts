@@ -573,6 +573,63 @@ test("a failure landing between the two gestures drops the armed snapshot", asyn
   ).toBeVisible();
 });
 
+test("a failure landing while the share sheet is open keeps the menu open", async ({
+  page,
+}) => {
+  // George R2 P3-4. The armed-snapshot drop above covers the window BETWEEN the
+  // two gestures. This is the window after tap 2: the OS chooser is already up
+  // holding the old File and nothing in this app can recall it, so a failure
+  // landing now is in the log and not in what was sent. Closing the menu on the
+  // resolve would leave the person believing the newest problem went out.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => true,
+    });
+    // The sheet stays up until the test says the person picked an app.
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: () =>
+        new Promise<void>((resolve) => {
+          (window as unknown as { __closeSheet: () => void }).__closeSheet =
+            resolve;
+        }),
+    });
+  });
+  await page.reload();
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+
+  const menu = page.getByRole("dialog", { name: "Menu" });
+  await page.getByRole("button", { name: "Send problem report" }).click();
+  const send = page.getByRole("button", { name: "Share now" });
+  await expect(send).toBeVisible();
+
+  // Tap 2. The chooser is now up, holding a one-entry file.
+  await send.click();
+
+  // A second failure lands while the person is still choosing an app.
+  await forceFailure(page);
+  await expect(menu.getByText("2 problems recorded")).toBeVisible();
+
+  // They pick one; `navigator.share` resolves.
+  await page.evaluate(() =>
+    (window as unknown as { __closeSheet: () => void }).__closeSheet()
+  );
+
+  // The menu must stay open, back on tap 1, so one more arm covers the new row.
+  await expect(menu).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send problem report" })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
+  await expect(menu.getByText("2 problems recorded")).toBeVisible();
+});
+
 test("clear empties the log, and it stays empty across a reload", async ({
   page,
 }) => {
@@ -586,8 +643,17 @@ test("clear empties the log, and it stays empty across a reload", async ({
   await expect(menu).toBeVisible();
   await page.getByRole("button", { name: "Clear problem report" }).click();
 
+  // The bin arms a confirm rather than clearing (George R2 P3-3) — the same
+  // dialog the segment Erase and the book Delete use.
+  const confirm = page.getByRole("dialog", {
+    name: "Clear the problem report?",
+  });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Clear", exact: true }).click();
+
   // Clearing closes the menu with it rather than leaving an emptied panel over
   // two controls that now do nothing.
+  await expect(confirm).toHaveCount(0);
   await expect(menu).toHaveCount(0);
   await expect(menuControl(page)).toHaveAccessibleName("Open menu");
 
@@ -595,4 +661,63 @@ test("clear empties the log, and it stays empty across a reload", async ({
   await page.reload();
   await expect(menuControl(page)).toHaveAccessibleName("Open menu");
   await expect(marker(page)).toHaveCount(0);
+});
+
+// The other half of that gate. A confirm that only ever gets confirmed is not a
+// confirm: the case it exists for is the mis-tap, and the log has to still be
+// there afterwards — in the store, not only on screen. `clearFailures` has no
+// undo and the report is the only copy of what went wrong that leaves the phone.
+// This confirm is the first one in the app that opens OVER a live `Menu` rather
+// than after closing it (the book Delete closes the menu first, which is right
+// there because the row it targets is about to vanish; here a mis-tap has to
+// return the person to the panel with an armed share intact). Two dialogs mean
+// two window keydown listeners, so Escape has to stop at the top one.
+test("Escape closes the clear confirm without tearing down the menu", async ({
+  page,
+}) => {
+  await forceFailure(page);
+  await menuControl(page).click();
+  await page.getByRole("button", { name: "Clear problem report" }).click();
+
+  const confirm = page.getByRole("dialog", {
+    name: "Clear the problem report?",
+  });
+  await expect(confirm).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send problem report" })
+  ).toBeVisible();
+});
+
+test("cancelling the clear confirm leaves the log on disk", async ({
+  page,
+}) => {
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+  await page.getByRole("button", { name: "Clear problem report" }).click();
+
+  const confirm = page.getByRole("dialog", {
+    name: "Clear the problem report?",
+  });
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toHaveCount(0);
+
+  // Still in the menu, still one problem, and the panel's controls still there.
+  await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send problem report" })
+  ).toBeVisible();
+
+  // And still in IndexedDB, which is the assertion that would survive a version
+  // of this that merely repainted.
+  await page.reload();
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
 });

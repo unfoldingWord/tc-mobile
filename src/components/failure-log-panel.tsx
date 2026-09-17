@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Control } from "./control";
+import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
 import { strings } from "./strings";
 import { clearFailureLog } from "@/hooks/failure-log";
@@ -35,6 +36,13 @@ interface FailureLogPanelProps {
  * and no dead menu row on a phone that has never failed.
  */
 export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
+  // The bin is behind a confirm, like every other destructive write in this app
+  // (George R2 P3-3): the segment Erase and the book Delete both go through
+  // `EraseConfirm`, and this clear is less recoverable than either — the log is
+  // the only record of what went wrong, there is no undo, and the bin sits
+  // directly under the Share the thumb has just been using.
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   // `clearFailureLog` directly, not through a hook that also LOADS the entries
   // (George #6, round 1). The panel renders no entry, so reading every stack
   // into React state to render a count would defeat the reason `countFailures`
@@ -69,6 +77,18 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // Close on the outcomes that end the flow, and NOT on `retry` (the File is
   // still armed for another tap) or `failed` (its Notice lives in this panel and
   // has to stay visible), exactly as the chapter and book shares do.
+  //
+  // A failure landing AFTER tap 2 already keeps the menu open, and no extra
+  // guard here is what does it (George R2 P3-4, refuted with a test rather than
+  // patched). `send` leaves the status on "ready" for its whole duration — it
+  // only goes back to "idle" once the chooser has resolved — so the effect above
+  // still sees a live payload when the count moves, calls `share.reset()`, and
+  // that bumps `runId`. The in-flight send then falls into its `if (!current())
+  // return "superseded"` arm, which is not one of the two outcomes that close
+  // the menu. The panel is back on tap 1 with the new count beside it, which is
+  // exactly the behaviour asked for. `a failure landing while the share sheet is
+  // open keeps the menu open` in `e2e/failure-log.spec.ts` pins it: reverting
+  // the count-change `share.reset()` kills that case.
   const onSend = useCallback(() => {
     void share.send().then((outcome) => {
       if (outcome === "sent" || outcome === "dismissed") onDone();
@@ -79,9 +99,12 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // panel's marker. Close the menu with it rather than leaving an emptied panel
   // standing over two controls that now do nothing.
   const onClear = useCallback(() => {
+    setClearing(true);
     void clearFailureLog().then(
       () => onDone(),
       () => {
+        setClearing(false);
+        setConfirmingClear(false);
         // A failed clear leaves the log exactly as it was, which is the safe
         // side of this write — nothing is lost, and the marker keeps its count,
         // so the panel stays put and a second tap can try again. Deliberately
@@ -141,7 +164,16 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         icon="trash"
         label={strings.clearFailureLog}
         variant="quiet"
-        onClick={onClear}
+        onClick={() => setConfirmingClear(true)}
+      />
+      <EraseConfirm
+        open={confirmingClear}
+        title={strings.clearFailureLogConfirmTitle}
+        confirmLabel={strings.clearFailureLogConfirm}
+        cancelLabel={strings.eraseCancel}
+        busy={clearing}
+        onConfirm={onClear}
+        onCancel={() => setConfirmingClear(false)}
       />
     </>
   );

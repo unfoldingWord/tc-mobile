@@ -524,4 +524,11 @@ export const strings = {
   shareFailureLogNothing: "There is nothing to send now.",
   shareFailureLogFailed: "Could not send the problem report. Try again.",
   clearFailureLog: "Clear problem report",
+  // Behind the bin: the same two-tap confirm the segment Erase and the book
+  // Delete use, not a second dialog (George R2 P3-3). Clearing is the one
+  // irreversible write in this panel — the report is the only copy of what went
+  // wrong that ever leaves the phone, and the bin sits directly under Share,
+  // which is where the thumb already is.
+  clearFailureLogConfirmTitle: "Clear the problem report?",
+  clearFailureLogConfirm: "Clear",
 } as const;
