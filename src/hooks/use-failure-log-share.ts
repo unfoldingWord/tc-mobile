@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatFailureLog } from "@/lib/failure-text";
-import { readFailureLog, useLogGeneration } from "./failure-log";
+import {
+  getLogGeneration,
+  readFailureLog,
+  useLogGeneration,
+} from "./failure-log";
 import { reportFailure } from "./report-failure";
 import {
   classifyShareError,
@@ -354,6 +358,30 @@ export function useFailureLogShare(): UseFailureLogShare {
     }
   }, []);
 
+  const reset = useCallback(() => {
+    runId.current += 1;
+    // Nothing is armed after this, so nothing has a version. Cleared here rather
+    // than in the effect so every path out — a panel close, an unmount, a send —
+    // leaves the stamp in the same state a fresh mount has.
+    armedGeneration.current = null;
+    aborter.current?.abort();
+    aborter.current = null;
+    // Released HERE, not in the bailed-out run's `finally`: that run's `current()`
+    // is false from the line above, so it deliberately leaves the guard alone —
+    // and if `reset` did not clear it, a panel closed mid-prepare would leave tap
+    // 1 dead for the life of the screen. `sending` is NOT cleared, for the reason
+    // `useShareFlow.reset` gives: the send that owns a chooser is the only thing
+    // allowed to release it.
+    preparing.current = false;
+    const stale = armed.current;
+    armed.current = null;
+    // Same as the unmount arm: a staged file nobody will send is dropped rather
+    // than left in the OS cache.
+    if (stale?.kind === "native") void nativeShare.discard(stale.staged);
+    setStatus("idle");
+    setError(null);
+  }, []);
+
   const send = useCallback(async (): Promise<ShareOutcome> => {
     // A share is already in flight: leave the payload armed so a double-tap
     // cannot open a second share whose rejection drops the first's.
@@ -365,6 +393,31 @@ export function useFailureLogShare(): UseFailureLogShare {
       setError("failed");
       setStatus("idle");
       return "failed";
+    }
+    // ── The drop, checked again HERE, synchronously, before anything leaves ──
+    //
+    // Frank R8 P2, and it was reproduced rather than reasoned about: the passive
+    // effect below is the only thing that dropped a stale payload, and a tap in
+    // the window between React committing the write's render and that effect
+    // running beat it. In headless Chromium, with the failure and the tap in one
+    // task, the armed one-entry File went to `navigator.share` and the drop ran
+    // afterwards — the report left the phone missing the very failure it was
+    // sent about, which is exactly the mismatch the generation exists to catch.
+    //
+    // `getLogGeneration()` and not the `generation` this render captured: the
+    // captured value is the one that is provably a version behind in that window.
+    //
+    // The DROP ITSELF is `reset()`, the same call the effect makes — one code
+    // path, not a second copy of it. That matters more than it looks: `reset`
+    // also discards a staged native file, and a hand-rolled drop here would have
+    // been the place that forgot to. The effect stays, because it is what
+    // disarms the control when nobody taps at all.
+    if (
+      armedGeneration.current !== null &&
+      getLogGeneration() !== armedGeneration.current
+    ) {
+      reset();
+      return "superseded";
     }
     sending.current = true;
     // The staged file belongs to THIS send from here, taken synchronously
@@ -434,31 +487,7 @@ export function useFailureLogShare(): UseFailureLogShare {
     } finally {
       sending.current = false;
     }
-  }, []);
-
-  const reset = useCallback(() => {
-    runId.current += 1;
-    // Nothing is armed after this, so nothing has a version. Cleared here rather
-    // than in the effect so every path out — a panel close, an unmount, a send —
-    // leaves the stamp in the same state a fresh mount has.
-    armedGeneration.current = null;
-    aborter.current?.abort();
-    aborter.current = null;
-    // Released HERE, not in the bailed-out run's `finally`: that run's `current()`
-    // is false from the line above, so it deliberately leaves the guard alone —
-    // and if `reset` did not clear it, a panel closed mid-prepare would leave tap
-    // 1 dead for the life of the screen. `sending` is NOT cleared, for the reason
-    // `useShareFlow.reset` gives: the send that owns a chooser is the only thing
-    // allowed to release it.
-    preparing.current = false;
-    const stale = armed.current;
-    armed.current = null;
-    // Same as the unmount arm: a staged file nobody will send is dropped rather
-    // than left in the OS cache.
-    if (stale?.kind === "native") void nativeShare.discard(stale.staged);
-    setStatus("idle");
-    setError(null);
-  }, []);
+  }, [reset]);
 
   // ── An armed payload is only true while the ROWS it was read from are ──
   //
@@ -504,6 +533,27 @@ export function useFailureLogShare(): UseFailureLogShare {
   // A write that lands after the read still drops it: `armedGeneration` is
   // stamped with the version the rows came from, so the moment the status
   // becomes `"ready"` and the live generation disagrees, the payload goes.
+  //
+  // **TWO TRIGGERS, ONE DROP** (Frank R8 P2). This effect was the only trigger,
+  // and a passive effect is not a guard against a TAP: between React committing
+  // the render that moved the generation and this effect running, the armed
+  // payload is still armed and `send` was still willing to hand it over. That is
+  // not reasoning — it was reproduced in headless Chromium against the shipped
+  // build, with the failure and the tap in one task, and the stale one-entry
+  // File went to `navigator.share` while this effect ran a beat later. The e2e
+  // case `a failure landing in the SAME TASK as tap 2 sends nothing` is that
+  // reproduction, kept.
+  //
+  // So `send` now asks the same question synchronously, from
+  // `getLogGeneration()` rather than the `generation` captured below — the
+  // captured one is precisely what is a version behind in that window. The two
+  // triggers call the SAME `reset()`, which is why there is no second copy of
+  // the drop to keep in step (and why neither can forget to discard a staged
+  // native file, which `reset` does and a hand-rolled drop would not have).
+  //
+  // This effect stays and is not redundant: it is what disarms the control when
+  // NOBODY taps, so the screen stops offering a snapshot that is no longer true.
+  // `send`'s check is what protects the tap itself. Neither covers the other.
   const generation = useLogGeneration();
   useEffect(() => {
     if (status !== "ready") return;

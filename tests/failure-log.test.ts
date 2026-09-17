@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearFailureLog,
   flushFailureLog,
+  getLogGeneration,
   installFailureLog,
   readFailureLog,
   renderFailureRefusal,
@@ -835,6 +836,10 @@ describe("every read of the log is on the write lane", () => {
    * renderer.
    */
   it("only the share flow consumes the log's generation", () => {
+    // Both readers, not just the subscribed one: round 9 added a synchronous
+    // `getLogGeneration` for `send`'s tap-time check, and an export that a
+    // second surface can reach is exactly what George R4 P2-1 was about. One
+    // regex so a new consumer of EITHER shape fails this.
     const root = new URL("../src/", import.meta.url).pathname;
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((found) => {
@@ -845,7 +850,11 @@ describe("every read of the log is on the write lane", () => {
 
     const consumers = walk(root)
       .filter((file) => file !== join(root, "hooks/failure-log.ts"))
-      .filter((file) => /\buseLogGeneration\b/.test(readFileSync(file, "utf8")))
+      .filter((file) =>
+        /\b(useLogGeneration|getLogGeneration)\b/.test(
+          readFileSync(file, "utf8")
+        )
+      )
       .map((file) => file.slice(root.length))
       .sort();
 
@@ -1086,6 +1095,22 @@ describe("the log's generation", () => {
 
     await clearFailureLog();
     expect(firstPaintGeneration()).not.toBe(armed);
+  });
+
+  it("the synchronous getter is current the moment a write lands", async () => {
+    // What `send`'s tap-time check reads (Frank R8 P2). The hook cannot be
+    // driven here — there is no renderer in this suite, and arming a payload
+    // needs `navigator.share`/`canShare` and a File besides — so what IS pinned
+    // is the contract `send` depends on: this getter is never a version behind
+    // the subscribed one, which is the whole reason it is read instead of the
+    // value a render captured. The tap itself is covered in the e2e suite.
+    const before = getLogGeneration();
+
+    reportFailure(new Error("one row"), "unhandled-rejection");
+    await flushFailureLog();
+
+    expect(getLogGeneration()).not.toBe(before);
+    expect(getLogGeneration()).toBe(firstPaintGeneration());
   });
 
   it("does NOT move on a plain re-read", async () => {

@@ -150,7 +150,22 @@ function getFailureCount(): number {
   return logCount;
 }
 
-function getLogGeneration(): number {
+/**
+ * Also exported, and not only as the `useSyncExternalStore` snapshot: a TAP
+ * HANDLER has to be able to ask what the generation is **now** (Frank R8 P2).
+ *
+ * The number a component captured at render is the one thing that is provably
+ * stale in the window that matters — a write lands, the store notifies, React
+ * commits, and the passive effect that acts on it has not run yet. A handler
+ * reading the render's value in that window reads the version from before the
+ * write and concludes nothing changed. Reading it straight from the module is
+ * the only answer that cannot be a render behind.
+ *
+ * `useLogGeneration` remains the way a component RENDERS the generation; this
+ * is the way an event handler DECIDES on it. Both are pinned to one consumer by
+ * the wiring gate in `tests/failure-log.test.ts`.
+ */
+export function getLogGeneration(): number {
   return logGeneration;
 }
 

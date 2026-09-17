@@ -642,6 +642,108 @@ test("a failure landing between the two gestures drops the armed snapshot", asyn
   ).toBeVisible();
 });
 
+test("a failure REPORTED but not yet stored does not refuse tap 2", async ({
+  page,
+}) => {
+  // The second state of the round-9 gate, and the case that corrected my own
+  // account of Frank R8 P2. Read this before changing the check in `send`.
+  //
+  // Both statements below run in ONE task, the same deterministic interleaving
+  // `a failure landing DURING tap 1` uses:
+  //
+  //   1. A synthetic `error` event. `install-failure-listeners.ts` listens on
+  //      window, so `reportFailure` runs synchronously.
+  //   2. Tap 2, whose React handler also runs synchronously.
+  //
+  // What I first assumed, and what is false: that step 1 moves the generation
+  // before step 2 reads it. It does not. `reportFailure` only QUEUES the append
+  // (`failure-log.ts` — `void enqueue(() => writeEntry(entry))`), and the
+  // generation moves in `markLogWritten`, after IndexedDB has committed. So at
+  // the instant of the tap the store still holds one row, the armed File is an
+  // exact picture of it, and the screen still says "1 problem recorded".
+  //
+  // Sending is therefore CORRECT here, and refusing would be the bug: a queued
+  // write is not a stale payload. On a phone mid-transcode-sweep there is almost
+  // always a write in flight, so a check that keyed on "something is queued"
+  // would make Send refusable at essentially any moment — turning the one exit
+  // the log has into a control that fails for reasons the person cannot see.
+  //
+  // The window `send`'s synchronous check actually closes is the other one: the
+  // write has LANDED and moved the generation, React has committed that render,
+  // and the passive effect that drops the payload has not run yet. That ordering
+  // is internal to React and cannot be forced from Playwright, so it is covered
+  // by inspection plus the unit case pinning `getLogGeneration` current — said
+  // plainly on the PR rather than implied by this file's existence.
+  //
+  // `__shared` records what actually left the app, because after the flow
+  // settles the control reads the same in both directions.
+  await page.addInitScript(() => {
+    (window as unknown as { __shared: string[] }).__shared = [];
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => true,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: { text?: string; files?: File[] }) => {
+        const seen = (window as unknown as { __shared: string[] }).__shared;
+        if (data.files) for (const file of data.files) seen.push(file.name);
+        else seen.push("text");
+      },
+    });
+  });
+  await page.reload();
+  await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+
+  await forceFailure(page);
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 1 problem recorded."
+  );
+  await menuControl(page).click();
+
+  // Tap 1 arms a one-entry payload.
+  await page.getByRole("button", { name: "Send problem report" }).click();
+  await expect(page.getByRole("button", { name: "Share now" })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new ErrorEvent("error", {
+        error: new Error("landed with tap 2"),
+        message: "landed with tap 2",
+      })
+    );
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Share now"]')
+      ?.click();
+  });
+
+  // Settle on a state reached either way — the armed control goes away whether
+  // the send was spent or refused. No sleep; this is an auto-retrying assertion,
+  // and `navigator.share` is awaited before the status goes idle, so by the time
+  // it passes anything that was going to leave has left.
+  await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
+
+  // THE assertion: the report went out. One file, the one that was armed. A
+  // `send` that refused here would leave this empty, which is what a check
+  // keyed on anything looser than the landed generation would do.
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __shared: string[] }).__shared
+    )
+  ).toHaveLength(1);
+
+  // A completed send ends the flow, so the panel closes the menu (`onDone`).
+  await expect(page.getByRole("dialog", { name: "Menu" })).toHaveCount(0);
+
+  // The second failure lands afterwards and the marker catches up. The sent file
+  // is one entry short of what the log now holds, and that is not a defect — it
+  // is what "sent a moment ago" means. Nothing on screen claims otherwise, and
+  // the next tap covers both.
+  await expect(menuControl(page)).toHaveAccessibleName(
+    "Open menu. 2 problems recorded."
+  );
+});
+
 test("at the ring's limit a new failure STILL drops the armed snapshot", async ({
   page,
 }) => {
