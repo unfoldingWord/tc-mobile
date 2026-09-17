@@ -6,7 +6,7 @@ import {
   clearFailures,
   countFailures,
 } from "@/lib/storage/failures";
-import { subscribeToFailures } from "./report-failure";
+import { reportFailure, subscribeToFailures } from "./report-failure";
 import type { StoredFailure } from "@/types/failure";
 
 /**
@@ -155,20 +155,35 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
  * On the shared lane (C1 above), so a clear cannot overtake an append that is
  * still in flight and leave the person with a row they thought they discarded.
  *
- * REJECTS to the caller, and logs on the way past. Both halves matter and
+ * REJECTS to the caller, and reports on the way past. Both halves matter and
  * neither is redundant (Frank #2 ≡ George #4, round 1): the rejection is how the
- * panel knows not to report the log as discarded, and the `console.error` is the
- * only evidence a maintainer will ever get, since nothing below here — neither
- * `clearFailures` nor `getDb` — logs anything of its own. Without it a clear
+ * panel knows not to report the log as discarded, and the report is the only
+ * evidence a maintainer will ever get, since nothing below here — neither
+ * `clearFailures` nor `getDb` — says anything of its own. Without it a clear
  * that failed produced no UI change AND no trace, which is the "errors have a
  * channel" bar failing in the one module that exists to satisfy it.
+ *
+ * **Through the funnel, not to the console** (Frank, takeover round 9). Round 1
+ * settled for `console.error` here on the argument that a row about a failed
+ * clear is noise in the log it failed to clear. That trade reads differently now
+ * that the share path reports its own failures: the console is not a channel on
+ * a phone in a village — AGENTS.md says so in as many words — and this was the
+ * last path in the feature that had only one. The row is not noise, it is the
+ * answer to "why is this log still here after I discarded it", and it goes out
+ * with the next report.
+ *
+ * It cannot recurse. The append this queues is behind the failed clear on the
+ * same lane, and if it fails too `writeEntry` swallows it: a failure of the log's
+ * own write is the one place this module does not report. What would recurse is
+ * reporting from inside `writeEntry`, which is exactly what that function's
+ * docblock refuses to do.
  */
 export function clearFailureLog(): Promise<void> {
   return enqueue(async () => {
     try {
       await clearFailures();
     } catch (clearFailure) {
-      console.error("[failure-log] could not clear the log", clearFailure);
+      reportFailure(clearFailure, "failure-log-clear");
       throw clearFailure;
     }
     notifyWatchers();

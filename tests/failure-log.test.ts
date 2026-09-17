@@ -469,10 +469,14 @@ describe("the durable sink", () => {
     expect(await countFailures()).toBe(0);
   });
 
-  it("a failed clear rejects to the caller AND leaves a trace", async () => {
+  it("a failed clear rejects to the caller AND lands in the durable log", async () => {
     // The panel needs the rejection (so it does not report the log as
-    // discarded); a maintainer needs the line (nothing under `clearFailureLog`
-    // logs anything of its own). Frank #2 ≡ George #4, round 1.
+    // discarded); a maintainer needs the reason (nothing under
+    // `clearFailureLog` says anything of its own). Frank #2 ≡ George #4, round
+    // 1 — and the reason goes through the FUNNEL rather than to the console
+    // (Frank, takeover round 9): a console line is not a channel on a phone in a
+    // village, which is the whole premise of this feature, and this was the last
+    // path in it that had only one.
     reportFailure(new Error("boom"), "a");
     await settle(1);
 
@@ -481,11 +485,16 @@ describe("the durable sink", () => {
     );
 
     await expect(clearFailureLog()).rejects.toThrow("connection closed");
-    expect(
-      logged.some((args) => String(args[0]).includes("could not clear the log"))
-    ).toBe(true);
-    // And the row is still there — a failed clear loses nothing.
-    expect(await countFailures()).toBe(1);
+    // The append queued by that report is behind the failed clear on the same
+    // lane, so waiting for the log to reach two rows is waiting for it to land.
+    await settle(2);
+    const rows = await readFailures();
+    expect(rows[0]).toMatchObject({
+      context: "failure-log-clear",
+      message: "Error: connection closed",
+    });
+    // And the original row is still there — a failed clear loses nothing.
+    expect(rows).toHaveLength(2);
   });
 
   it("a failed clear does not poison the lane", async () => {

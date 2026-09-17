@@ -88,10 +88,11 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         // no copy: a fourth string for a case a retry resolves is not worth the
         // reading load on a screen built for people who may not read.
         //
-        // NOT silent, which is what AGENTS.md forbids: `clearFailureLog` logs
-        // the reason on its way past, and that is the only trace of it there
-        // will be (Frank #2 ≡ George #4, round 1 — this comment used to claim
-        // that logging happened when nothing below it logged at all).
+        // NOT silent, which is what AGENTS.md forbids: `clearFailureLog`
+        // reports the reason through the funnel on its way past, so it lands in
+        // the very log the clear failed to empty and leaves with the next send
+        // (Frank #2 ≡ George #4, round 1 for the channel; Frank, takeover round
+        // 9, for making that channel the durable one rather than the console).
       }
     );
   }, [onDone]);
