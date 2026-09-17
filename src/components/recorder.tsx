@@ -2703,7 +2703,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
 
     return (
-      <div className="recorder-scrim" role="dialog" aria-modal="true">
+      <div
+        className="recorder-scrim"
+        role="dialog"
+        aria-modal="true"
+        // #198 / #164 R-19. Every sibling dialog (menu, erase confirm, save
+        // failed, the database panel, the error boundary) carries a name; this
+        // one did not, so it announced as an unnamed dialog. A static label,
+        // not `aria-labelledby` pointing at the breadcrumb below: the
+        // breadcrumb renders "" until `view` resolves, and a name that is
+        // sometimes empty is the same gap with an extra step.
+        aria-label={strings.recorderDialog}
+      >
         {/* THE INERT RULE (#75). An overlay inerts the sheet because nested
           aria-modal dialogs do not reliably hide the background for AT/switch
           users — G8 already refused to trust that on the Segments list — and

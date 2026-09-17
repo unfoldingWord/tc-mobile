@@ -121,6 +121,15 @@ export const strings = {
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
 
   // ── Recorder sheet (B4) ──────────────────────────────────────────────────
+  // The recorder sheet's own accessible name (#198). It matched no name at all
+  // before: `role="dialog" aria-modal="true"` with nothing to announce, on the
+  // one surface a translator spends the whole session inside. Deliberately the
+  // noun of `closeRecorder` above rather than an invented title, so AT says
+  // "Recorder, dialog" and its dismiss says "Close recorder" — the same rule
+  // `blockedByTake` below already follows: name the control, do not invent.
+  // NOT the breadcrumb: that is empty until the segment loads, and a name that
+  // is sometimes absent is the gap this closes.
+  recorderDialog: "Recorder",
   closeRecorder: "Close recorder",
   recorderBreadcrumb: (
     book: string,
