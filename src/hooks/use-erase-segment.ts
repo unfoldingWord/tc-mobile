@@ -72,6 +72,12 @@ export interface UseEraseSegment {
   erase(segmentId: SegmentId): Promise<EraseResult>;
   /** True while an erase is in flight — the confirm/menu disables its Erase button on this. */
   erasing: boolean;
+  /** The live guard, for a caller that must read the CURRENT moment rather
+   *  than last render's `erasing` (George round 2 P3-4, #393): system Back now
+   *  calls `SegmentsScreen.dismissOverlay` → `closeErase` directly, bypassing
+   *  `EraseConfirm`'s own Cancel/Escape path — the same reason
+   *  `EraseConfirm` itself reads `inFlightRef` rather than `busy` for Escape. */
+  isErasing: () => boolean;
   /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
   error: string | null;
 }
@@ -95,6 +101,10 @@ export function useEraseSegment(
    * it can fire a second `clearSegmentTake` against a row the first is clearing.
    */
   const erasingRef = useRef(false);
+  // A stable identity, matching `erase` (also `useCallback`) — an inline
+  // arrow at the return site below would give a caller's `useImperativeHandle`
+  // deps a new function every render for no reason.
+  const isErasing = useCallback(() => erasingRef.current, []);
 
   const erase = useCallback(
     async (segmentId: SegmentId): Promise<EraseResult> => {
@@ -117,5 +127,5 @@ export function useEraseSegment(
     [onErased]
   );
 
-  return { erase, erasing, error };
+  return { erase, erasing, isErasing, error };
 }

@@ -119,11 +119,14 @@ export function App() {
   }, [pushRawHistoryEntry]);
 
   // The programmatic half of #393/#374's overlay-entry bookkeeping: consume the
-  // entry `pushHistoryEntry` pushed for an open Books/Segments overlay, once it
-  // closes by a NON-popstate path (a tap on Close/scrim, a successful rename).
-  // `suppressPop` marks the resulting popstate as ours, same as `closeRecorder`
-  // below already does for its own programmatic close.
-  const consumeOverlayEntry = useCallback(() => {
+  // entry `pushHistoryEntry` pushed for an open Books/Segments overlay OR (George
+  // round 2 P2-2) the recorder's own entry, once either closes by a NON-popstate
+  // path (a tap on Close/scrim, a successful rename, an erase-on-open, a failed
+  // save's `onExit`) — `closeRecorder` below now calls this too, rather than
+  // issuing its own unguarded `history.back()`, since George found it had
+  // drifted from this guard in a different way than the finding below.
+  // `suppressPop` marks the resulting popstate as ours.
+  const consumeHistoryEntry = useCallback(() => {
     // Frank round 1 P2 (#393, second pass): a reopen (or any other deferred
     // push) already deferred ITS push (`pendingPush`, above) because the
     // previous close's `back()` was still in flight — so THIS close has
@@ -137,6 +140,22 @@ export function App() {
       pendingPush.current = false;
       return;
     }
+    // George round 2 P2-2 (#393): a DIFFERENT traversal can already be
+    // outstanding here (this call's own earlier scenario, from the OTHER
+    // side — `closeRecorder` firing while an overlay consume's `back()`
+    // has not yet landed). `suppressPop` already true means exactly that;
+    // issuing a second `back()` would race it, the defect this round's P2-2
+    // named. Leave it alone — the outstanding traversal's own popstate lands
+    // and does its own bookkeeping; there is nothing else to do here.
+    if (suppressPop.current) return;
+    // George round 2 P2-1 (#393): `backRequested` is `goBack`'s own latch
+    // (George R2 G3) against a redundant on-screen Back — set here too, not
+    // only there, so a header Back tapped in the window between THIS
+    // `back()` and its popstate landing no-ops instead of firing a SECOND,
+    // uncoordinated traversal that this file already documents (`goBack`,
+    // above) as coalescing into a stack-mis-shaping jump. Cleared with
+    // `suppressPop` where this call's own popstate lands, below.
+    backRequested.current = true;
     suppressPop.current = true;
     window.history.back();
   }, []);
@@ -248,13 +267,17 @@ export function App() {
       // browser already popped the entry and the handler pops the protective
       // one it re-armed, so leave history alone. A programmatic close (erase,
       // which calls `onExit` directly with no popstate) still has its entry on
-      // the stack — consume it, suppressing the popstate that `back()` fires.
-      if (!committing.current) {
-        suppressPop.current = true;
-        window.history.back();
-      }
+      // the stack — consume it. George round 2 P2-2 (#393): this used to issue
+      // its own unguarded `history.back()`, which ignored a still-outstanding
+      // overlay-consume traversal (Edit inside a row's overflow menu: closing
+      // the row menu, opening the recorder, then an erase-on-open or a failed
+      // save closing it again — all before the row menu's own consume popstate
+      // landed) and left a phantom recorder entry in the stack. Sharing
+      // `consumeHistoryEntry`'s guard fixes this the same way it already
+      // protects the overlay case.
+      if (!committing.current) consumeHistoryEntry();
     },
-    [leave]
+    [leave, consumeHistoryEntry]
   );
 
   // A held take whose save has failed takes over the screen with retry/discard
@@ -397,7 +420,7 @@ export function App() {
           // the screen dismiss its own overlay exactly the way its scrim/
           // Close would. That state change flips `hasOpenOverlay()` false,
           // which the screen's own effect answers by consuming THIS re-armed
-          // entry (`onOverlayClose` → `consumeOverlayEntry`), landing the
+          // entry (`onOverlayClose` → `consumeHistoryEntry`), landing the
           // stack back where it was before the overlay opened.
           //
           // `suppressPop.current` is guaranteed false here (the early-return
@@ -474,7 +497,7 @@ export function App() {
             ref={booksRef}
             onOpenChapter={openChapter}
             onOverlayOpen={pushHistoryEntry}
-            onOverlayClose={consumeOverlayEntry}
+            onOverlayClose={consumeHistoryEntry}
           />
         ) : (
           <SegmentsScreen
@@ -484,7 +507,7 @@ export function App() {
             onBack={goBack}
             onOpenRecorder={openRecorder}
             onOverlayOpen={pushHistoryEntry}
-            onOverlayClose={consumeOverlayEntry}
+            onOverlayClose={consumeHistoryEntry}
           />
         )}
       </div>

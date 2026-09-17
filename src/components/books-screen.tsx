@@ -90,6 +90,7 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
       renameBook,
       deleteBook,
       deleting,
+      isDeleting,
       deleteFailed,
     } = useBooks();
     // A first-mount shelf-read failure leaves `books` at [] with `error` set —
@@ -673,6 +674,23 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
         overlayEntryPushed.current = false;
         onOverlayClose();
       }
+      // George round 2 P3-3 (#393): release the entry on UNMOUNT too, not only
+      // on a same-mount false transition above — App unmounts this screen
+      // (the Books/Segments swap, the `SaveFailed` recovery early-return), and
+      // with no cleanup an overlay still open at that instant leaked its
+      // history entry: the next Back either no-ops (nothing left to consume)
+      // or walks one layer further than it should. Safe alongside the branch
+      // above — `onOverlayOpen`/`onOverlayClose` are referentially stable for
+      // the app's lifetime (`App.tsx` wraps both in `useCallback` with fixed
+      // deps), so this only ever actually fires a SECOND time on a genuine
+      // unmount; on the false-transition above, `overlayEntryPushed.current`
+      // is already `false` by the time this would run, so it is a no-op then.
+      return () => {
+        if (overlayEntryPushed.current) {
+          overlayEntryPushed.current = false;
+          onOverlayClose();
+        }
+      };
     }, [hasBooksOverlay, onOverlayOpen, onOverlayClose]);
 
     useImperativeHandle(
@@ -699,10 +717,18 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
           // would never see the consume that clears it, trapping every later
           // Back on `rearm-during-commit` even once the dialog is cancellable
           // again.
+          // `isDeleting()`, not `deleting` (George round 2 P3-4, #393): `deleting`
+          // is last render's value — `deleteBook` sets the ref synchronously but
+          // the state update it also fires is not guaranteed visible to a
+          // handler running off that same render's closure. System Back calls
+          // this directly, bypassing the confirm panel's own Cancel/Escape,
+          // where a `busy`-driven disabled Cancel button already covers the
+          // gap; nothing here disables system Back, so read the live guard the
+          // same way `creatingBook.current` already is, just below.
           const dismissal = overlayDismissal(
             hasMenuOverlay,
             deleteTargetId !== null,
-            deleting,
+            isDeleting(),
             newBookSeed !== null && creatingBook.current
           );
           if (dismissal.closeMenu) {
@@ -721,7 +747,7 @@ export const BooksScreen = forwardRef<BooksScreenHandle, BooksScreenProps>(
         shareMenuBook,
         menuOpen,
         deleteTargetId,
-        deleting,
+        isDeleting,
         onCancelNewBook,
         onCloseShareMenu,
         closeDeleteConfirm,

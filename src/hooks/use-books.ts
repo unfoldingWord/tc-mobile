@@ -355,6 +355,11 @@ export function useBooks() {
    * can open a second delete transaction over the same tree.
    */
   const deletingRef = useRef(false);
+  // A stable identity, like every other function this hook returns
+  // (`reload`/`createBook`/etc. are all `useCallback`) — an inline arrow at
+  // the return site below would give a caller's `useImperativeHandle`/
+  // `useCallback` deps a new function every render for no reason.
+  const isDeleting = useCallback(() => deletingRef.current, []);
 
   /**
    * The ONE place this hook sets or clears `error`.
@@ -670,5 +675,12 @@ export function useBooks() {
     renameBook,
     deleteBook,
     deleting,
+    // The live guard, for a caller that must read the CURRENT moment rather
+    // than last render's `deleting` (George round 2 P3-4, #393): system Back
+    // now calls `BooksScreen.dismissOverlay` → `closeDeleteConfirm` directly,
+    // bypassing the confirm panel's own `Cancel`/Escape path, the same way
+    // `creatingBook.current` (not `newBookError`/render state) already has to
+    // answer `onCancelNewBook`'s refusal before the next render exists.
+    isDeleting,
   };
 }

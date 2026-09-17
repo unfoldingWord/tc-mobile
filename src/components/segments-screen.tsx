@@ -236,6 +236,13 @@ export const SegmentsScreen = forwardRef<
     setSavingChapterName(false);
   }, []);
   const erase = useEraseSegment();
+  // Destructured to a bare identifier, not called as `erase.isErasing()`
+  // below: `erase` itself is a fresh object every render (its return is not
+  // memoized), so calling a method ON it makes `react-hooks/exhaustive-deps`
+  // conservatively want the whole object in the deps array (a method call
+  // could depend on `this`) even though `isErasing`'s own identity is stable
+  // (`useCallback` inside the hook). A bare call sidesteps that.
+  const { isErasing } = erase;
   const closeErase = useCallback(() => setEraseTarget(null), []);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
@@ -305,6 +312,23 @@ export const SegmentsScreen = forwardRef<
       overlayEntryPushed.current = false;
       onOverlayClose();
     }
+    // George round 2 P3-3 (#393): release the entry on UNMOUNT too, not only
+    // on a same-mount false transition above — App unmounts this screen (the
+    // Books/Segments swap, the `SaveFailed` recovery early-return), and with
+    // no cleanup an overlay still open at that instant leaked its history
+    // entry: the next Back either no-ops (nothing left to consume) or walks
+    // one layer further than it should. Safe alongside the branch above —
+    // `onOverlayOpen`/`onOverlayClose` are referentially stable for the app's
+    // lifetime (`App.tsx` wraps both in `useCallback` with fixed deps), so
+    // this only ever actually fires a SECOND time on a genuine unmount; on
+    // the false-transition above, `overlayEntryPushed.current` is already
+    // `false` by the time this would run, so it is a no-op then.
+    return () => {
+      if (overlayEntryPushed.current) {
+        overlayEntryPushed.current = false;
+        onOverlayClose();
+      }
+    };
   }, [hasScreenOverlay, onOverlayOpen, onOverlayClose]);
 
   useImperativeHandle(
@@ -322,10 +346,16 @@ export const SegmentsScreen = forwardRef<
         // are both plain menus with no in-flight write, so both fold into
         // `menuOpen` here — mutually exclusive in the UI (each inerts the
         // other's trigger), so at most one `if` below ever fires.
+        // `erase.isErasing()`, not `erase.erasing` (George round 2 P3-4,
+        // #393): `erasing` is last render's value — `EraseConfirm` itself
+        // reads `inFlightRef` rather than `busy` for exactly this reason
+        // (`erase-confirm.tsx`'s own doc). System Back calls this directly,
+        // bypassing `EraseConfirm.cancel()`'s Escape/Cancel path, so read the
+        // live ref the same way Books' `creatingBook.current` already is.
         const dismissal = overlayDismissal(
           chapterMenuOpen || rowMenuOpen,
           eraseTarget !== null,
-          erase.erasing
+          isErasing()
         );
         // Whether a dismissal actually started (Frank, on 25faf3f, #393) —
         // matches `BooksScreenHandle.dismissOverlay`'s contract. Returning
@@ -359,7 +389,7 @@ export const SegmentsScreen = forwardRef<
       chapterMenuOpen,
       rowMenuOpen,
       eraseTarget,
-      erase.erasing,
+      isErasing,
       onCloseChapterMenu,
       closeErase,
     ]
