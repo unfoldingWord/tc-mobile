@@ -646,7 +646,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             alert mark and says so in its name. The `control-hinted` wrapper is
             rendered UNCONDITIONALLY — swapping the button's parent as a failure
             lands would remount it and destroy it while focused, the same trap
-            `Control`'s own hint wrapper documents. */}
+            `Control`'s own hint wrapper documents.
+
+            Why the wrapper is hand-rolled here rather than passed as `Control`'s
+            `hint`: that prop is read only while the control is `disabled`
+            (`control.tsx`, `shownHint = disabled && hint`), because it exists to
+            say WHY a control is inert (#135). This ≡ must stay live — reaching
+            the report is the whole point — so the built-in mark would never
+            render. Same two classes, same `aria-hidden` sibling shape, so the
+            two marks cannot drift apart visually; the only difference is the
+            colour, because this one is a state mark rather than a reason. */}
         <span className="control-hinted">
           <Control
             icon="menu"

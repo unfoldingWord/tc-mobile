@@ -65,6 +65,15 @@ async function reload(): Promise<void> {
  * order: Restart is the primary action and keeps the big `--primary` control.
  * This one is quiet — it is for the facilitator standing next to the
  * translator, not for the translator.
+ *
+ * The armed gesture DOES change the control's paint (`default`, not `quiet`),
+ * and that is not decoration. Both taps are the same glyph in the same place,
+ * so with one paint for both states the only thing separating "prepare" from
+ * "send" was the accessible name — text, on the screen this app is least
+ * willing to make anyone read. The menu panel solves it by going `primary`;
+ * here `primary` is taken by Restart and a second one would compete with the
+ * action a non-reader should reach first, so the armed state steps up one
+ * level instead of two.
  */
 function SendLogControl() {
   const share = useFailureLogShare();
@@ -89,12 +98,7 @@ function SendLogControl() {
   return (
     <>
       {share.status === "ready" ? (
-        <Control
-          icon="share"
-          label={strings.shareSend}
-          variant="quiet"
-          onClick={onSend}
-        />
+        <Control icon="share" label={strings.shareSend} onClick={onSend} />
       ) : (
         <Control
           icon="share"

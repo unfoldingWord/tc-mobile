@@ -275,10 +275,11 @@ jobs:
   # mp3.worker.ts round-trip, decodeAudioData of the worker's in-memory MP3
   # output (not the IndexedDB clipData round-trip, which the Node/fake-indexeddb
   # suite already covers), the service worker's atomic precache install, and a
-  # real two-tab IndexedDB blocked/versionchange — none of which the Node/vitest
-  # suite above can see by construction (lib/ is DOM-free on purpose). Gated to
-  # pull_request only, and only when the browser-boundary code it exercises
-  # actually changed, so a docs-only or components-only PR pays nothing for it.
+  # real two-tab IndexedDB blocked/versionchange — and, since #205, the durable
+  # failure log driven through the real UI of the shipped `dist/` build. None of
+  # which the Node/vitest suite above can see by construction (lib/ is DOM-free
+  # on purpose). Gated to pull_request only, and only when the code it exercises
+  # actually changed, so a docs-only PR pays nothing for it.
   browser-smoke:
     name: Headless-Chromium Smoke
     if: github.event_name == 'pull_request'
@@ -306,14 +307,28 @@ jobs:
       # and under the round-1 gate (`src/hooks/` or `vite.config.ts` only)
       # they would not have run it (round-1 Frank C2).
       #
-      # `src/app/main.tsx` is in the gate for the same reason and is easy to
+      # `src/app/main.tsx` was in the gate for the same reason and is easy to
       # miss: it is the ONLY production loader of the harness (the
       # `import.meta.env.MODE === "e2e"` dynamic `import()` at its foot). A PR
       # that deletes or breaks just that branch changes no other gated path, so
-      # without this entry the gate reads `smoke=false`, Playwright never runs,
+      # without that entry the gate reads `smoke=false`, Playwright never runs,
       # and CI goes green while `window.__e2e` has silently stopped loading —
       # every spec here would fail on the next PR that did trip the gate
       # (round-2 Frank F2 / George G-3).
+      #
+      # It, and the per-directory list around it, are now subsumed by a plain
+      # `src/` (#205). The list was derivable while every spec drove either the
+      # harness or the service worker. `e2e/failure-log.spec.ts` does neither:
+      # it loads `/` from the shipped `dist/` build and asserts the real UI —
+      # the ≡ marker on Books, the menu panel, the crash boundary's copy, the
+      # shared File's contents. Its dependency set is therefore the whole app
+      # graph reachable from `main.tsx`, not a subdirectory of it. A
+      # components-only PR that removed the marker (or the panel's mount, which
+      # is one `count > 0` away) would, under the old list, have skipped all
+      # thirteen of its cases and merged green — the "a gate is tested in both
+      # states" failure AGENTS.md names, in the shape where the gate is simply
+      # never reached. Over-running this suite costs a few minutes; under-running
+      # it is the defect. `docs/**` and `*.md` still pay nothing.
       #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
@@ -335,7 +350,7 @@ jobs:
           # then reads a here-string, not a pipe: no pipeline whose exit status
           # could be confused with the match result.
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+          if grep -qE '^(src/|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
             echo "smoke=true" >> "$GITHUB_OUTPUT"
           else
             echo "smoke=false" >> "$GITHUB_OUTPUT"

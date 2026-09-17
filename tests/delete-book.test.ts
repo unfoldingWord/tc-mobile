@@ -49,9 +49,16 @@ const samples = (n: number, value = 1000): Int16Array =>
  * probe, and the only way to assert that an idempotent re-run wrote NOTHING
  * rather than merely not throwing.
  *
- * The six are listed rather than read from `objectStoreNames` so the counts are
- * typed (and so a seventh store added later is a compile-time prompt to decide
- * what a book delete owes it, not a silent gap).
+ * The stores are listed rather than read from `objectStoreNames` so the counts
+ * are typed (and so a store added later is a compile-time prompt to decide what
+ * a book delete owes it, not a silent gap).
+ *
+ * `failures` (v6, #205) is that prompt having fired, and the answer is
+ * **nothing**: the failure log is device-scoped, not book-scoped, so deleting a
+ * book must leave it exactly as it was — including the entries a failed delete
+ * would itself have appended. Listing it here is what makes that a checked
+ * property rather than an untested assumption; the "nothing else changed"
+ * assertions below now cover it like every other store.
  */
 const ALL_STORES = [
   "books",
@@ -60,6 +67,7 @@ const ALL_STORES = [
   "takes",
   "clipMeta",
   "clipData",
+  "failures",
 ] as const;
 
 type StoreCounts = Record<(typeof ALL_STORES)[number], number>;
@@ -67,7 +75,7 @@ type StoreCounts = Record<(typeof ALL_STORES)[number], number>;
 async function countAll(): Promise<StoreCounts> {
   const db = await getDb();
   const tx = db.transaction(ALL_STORES, "readonly");
-  const [books, chapters, segments, takes, clipMeta, clipData] =
+  const [books, chapters, segments, takes, clipMeta, clipData, failures] =
     await Promise.all([
       tx.objectStore("books").count(),
       tx.objectStore("chapters").count(),
@@ -75,6 +83,7 @@ async function countAll(): Promise<StoreCounts> {
       tx.objectStore("takes").count(),
       tx.objectStore("clipMeta").count(),
       tx.objectStore("clipData").count(),
+      tx.objectStore("failures").count(),
     ]);
   await tx.done;
   // Every store the schema declares is covered: a delete that leaked into one
@@ -82,7 +91,7 @@ async function countAll(): Promise<StoreCounts> {
   expect(Array.from(db.objectStoreNames).sort()).toEqual(
     [...ALL_STORES].sort()
   );
-  return { books, chapters, segments, takes, clipMeta, clipData };
+  return { books, chapters, segments, takes, clipMeta, clipData, failures };
 }
 
 /**
@@ -193,6 +202,7 @@ describe("deleteBook", () => {
       takes: 0,
       clipMeta: 0,
       clipData: 0,
+      failures: 0,
     });
   });
 
@@ -226,6 +236,7 @@ describe("deleteBook", () => {
       takes: before.takes - 3,
       clipMeta: before.clipMeta - 3,
       clipData: before.clipData - 3,
+      failures: before.failures,
     });
   });
 
@@ -346,6 +357,7 @@ describe("deleteBook", () => {
       takes: 0,
       clipMeta: 0,
       clipData: 0,
+      failures: 0,
     });
   });
 
@@ -425,6 +437,7 @@ describe("deleteBook", () => {
       takes: 0,
       clipMeta: 0,
       clipData: 0,
+      failures: 0,
     });
   });
 
@@ -491,6 +504,7 @@ describe("deleteBook", () => {
       takes: 0,
       clipMeta: 0,
       clipData: 0,
+      failures: 0,
     });
   });
 });

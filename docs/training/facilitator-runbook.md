@@ -17,8 +17,10 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    an APK from a download link; an iPhone installs through TestFlight. <!-- source: docs/tester-install.md, "Android (download link)" and "iPhone or iPad (TestFlight)" sections --> The
    Android app needs **Android 7.0 (2016) or newer** — an older phone cannot
    install it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
-3. Bring a paper or digital "problem report" sheet (see [section 5](#5-reporting-a-problem))
-   — there is no in-app way to send us a report yet. <!-- source: gh issue #205, open as of 2026-09-15; no reporting UI found in src/ during this pass -->
+3. Bring a paper or digital "problem report" sheet (see [section 5](#5-reporting-a-problem)).
+   The app can now send us what it recorded about a failure, but only the app's
+   own side of it — what the person was doing, and whether their recording
+   survived, still has to come from you. <!-- source: gh issue #205; src/components/failure-log-panel.tsx (the menu panel), src/components/books-screen.tsx (the ≡ mark) -->
 4. Charge every phone. Recording drains the battery faster than normal use.
 
 ## 2. Setting up a participant's phone
@@ -89,8 +91,37 @@ with Share.
 
 ## 5. Reporting a problem
 
-There is no in-app "report a problem" button yet — a person is the reporting
-channel for now. <!-- source: gh issue #205, open as of 2026-09-15 ("Give the failure sink a durable, non-reader-visible destination"); no reporting UI found in src/ during this pass --> When something goes wrong, write down:
+### Send what the app recorded
+
+The app keeps its own short record of anything that went wrong on that phone —
+the last 50 problems, and nothing a person typed or recorded. <!-- source: src/types/failure.ts (FAILURE_LOG_LIMIT = 50); src/lib/storage/failures.ts (the ring); src/lib/failure-text.ts (what a stored entry holds) --> It survives
+closing and reopening the app. <!-- source: src/lib/storage/db.ts v6 `failures` store; e2e/failure-log.spec.ts "the log survives a reload" -->
+
+1. On the **Books** screen (the first screen), look at the **≡** button in the
+   top corner. If something has gone wrong, it carries a small red mark. <!-- source: src/components/books-screen.tsx -->
+2. Tap **≡**. The menu says how many problems were recorded, and shows two
+   buttons. Like everything else in this app they are **pictures, not words**:
+   the **share** icon and the **bin** icon. <!-- source: src/components/failure-log-panel.tsx (icon-only Controls; the two Notices carry the only text) -->
+3. Tap the **share** icon once — it prepares the report — then tap it again
+   when it turns into the highlighted share button. The phone's normal share
+   sheet opens: mail, a messaging app, or save to a file. Send it to your
+   maintainer contact. Two taps is deliberate, and it is the same two taps as
+   sharing a recording. <!-- source: src/hooks/use-failure-log-share.ts (two-gesture share, file or text) -->
+4. Tap the **bin** icon afterwards if you want the mark to go quiet again. It
+   empties only this problem record — nothing anyone recorded is touched. <!-- source: src/lib/storage/failures.ts clearFailures (clears only the `failures` store) -->
+
+If the app itself fails and shows the restart screen, that screen has its own
+smaller **share** icon underneath the big restart button — use it before
+tapping restart. <!-- source: src/components/error-boundary.tsx (SendLogControl, variant "quiet", rendered after the primary Restart) -->
+
+Two things to know honestly: the mark appears on the Books screen only, so you
+will see it when you go back there; <!-- source: src/components/books-screen.tsx; gh issue #205 round-1 G7, accepted as product intent --> and sending has not yet been tried on a
+real phone's share sheet, so tell us if it does not open. <!-- source: gh PR for #205, "not device-verified" -->
+
+### Write down what the app cannot know
+
+The app's record does not say what was happening in the room. When something
+goes wrong, still write down:
 
 1. **Phone make and model** (for example, "Samsung Galaxy A17").
 2. **Android version**, if you can find it (Settings → About phone).
