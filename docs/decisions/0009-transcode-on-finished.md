@@ -293,9 +293,15 @@ goes silent forever.
 one `ready` at the foot of its module, after its `message` listener is
 registered; an unproven blob-built worker is given no PCM until it has, bounded
 by `ENCODER_READY_TIMEOUT_MS` (3 s — this measures script load of an in-memory
-blob, not an encode). A blob that does not answer is discarded, the worker
-rebuilt from the chunk URL, and **the same job runs there**, its PCM never having
-left this thread.
+blob, not an encode). A blob that does not answer costs this job nothing but the
+wait: the worker is rebuilt from the chunk URL and **the same job runs there**,
+its PCM never having left this thread.
+
+The constant rests on a measurement rather than on reasoning about one. The
+Chromium smoke times a fresh worker from `new Worker` to `ready` and logs it:
+**5.8 ms and 9.6 ms on two runs, against a 3000 ms window**. That is one engine on a desktop, and a
+phone may be an order of magnitude slower — which is why the window is made
+_safe_ rather than merely long, below.
 
 The order is the point (George R1 P1). Judging the blob only once it had failed
 an encode meant the discovering job was the job that died for it — a failed
@@ -311,6 +317,43 @@ it.
 An **abort** during the handshake deliberately judges nothing: that is the app
 stopping the job, not evidence about the blob, and no PCM was transferred, so
 there is not even an in-flight encode for `terminate()` to stop.
+
+**Silence is not a verdict, and the timer that measures it is #166's timer**
+(George R2 P2). The handshake first shipped with a bare `setTimeout`, in the one
+module that contains `onStall` precisely because a bare timeout cannot tell a
+dead worker from a frozen one — and the window it guards is worse-placed than it
+looks, since `ready` is posted at the FOOT of `mp3.worker.ts`, after the whole
+lamejs IIFE has evaluated, and the moment it is most likely open is a launch
+sweep encoding on a blob worker that a cancelled Share just re-warmed: exactly
+when a translator puts the phone down. It now carries the same three guards as
+the silence deadline — never judge while `pageHidden()`, grant one fresh window
+after a possible freeze (seeded from the current state, so a handshake that
+begins while already hidden is safe), and re-arm for the remainder rather than
+trip early.
+
+And one expiry no longer revokes the blob. It used to, for the life of the page,
+leaving `snapshotStarted` true so nothing refetched — which on a page that has
+lived across a deploy sends every later encode to a purged chunk URL: #192
+re-opened by its own guard, the same shape as the proof bug above. An `error`
+event and a synchronous `new Worker(blob)` throw still discard, because those
+say the platform CANNOT run these bytes; silence only says "not yet". A visible
+timeout costs THIS job a fallback to the chunk URL — a per-construction choice
+that leaves the snapshot alone — and the next construction tries the blob again.
+`SNAPSHOT_MUTE_STRIKES` = 2 bounds the cost of being wrong twice, at two more
+handshake windows.
+
+**The abort is re-asked, not only listened for** (George R2 P3). An abort that
+has already fired is never delivered again, and every settle path below the
+handshake listens rather than asks. If `ready` won the race with an abort, the
+handshake's own listener was already detached and nothing rejected the job: the
+continuation posted a chapter's PCM and held the app's single encoder lane for a
+share whose menu was closed. Two checks cover it, and deliberately only two —
+`encodeInWorker`'s entry, which is what stops a job the caller abandoned between
+taking the lane and reaching `encodeMp3` from constructing a worker at all, and
+the first statement of `runEncodeOnWorker`, next to the `postMessage` it
+protects. A third, written after the handshake `await`, was removed: nothing but
+a synchronous call separates it from the second, so it shadowed it and left
+neither one killable by mutation.
 
 A **synchronous** `new Worker(blob)` throw is a verdict too (George R1 P2-3). A
 CSP with `worker-src 'self'`, or a WebView that throws on `blob:`, never reaches
@@ -339,12 +382,16 @@ the object-URL pair. What those tests pin is the **decision** — which URL each
 worker is built from, when the snapshot is taken, and when a snapshot is thrown
 away — not that a real blob worker runs the real chunk; that is the Chromium
 smoke's job, below. Mutation-proven, each mutation restored afterwards: building
-always from the chunk URL kills thirteen tests; skipping the `ready` handshake
-kills five; and dropping the production gate, the once-only fetch guard, the
-error arm of the guard, the discard on a mute blob, the retry after a synchronous
+always from the chunk URL kills seventeen tests; skipping the `ready` handshake
+kills seven; and dropping the production gate, the once-only fetch guard, the
+error arm of the guard, the retry after a synchronous
 construction throw, the classic-worker choice, proof-on-the-snapshot, or the
-short ready deadline each kills exactly the tests named for it. Letting an abort
-during the handshake discard the snapshot kills the abort test. The worker's own
+per-construction fallback each kills exactly the tests named for it. Letting an
+abort during the handshake discard the snapshot kills the abort test; judging
+the handshake while the page is hidden, refusing a fresh window after a freeze,
+setting `SNAPSHOT_MUTE_STRIKES` to 1, and never discarding on silence at all
+each kill the test named for them. So does each of the two abort re-checks,
+separately — which is the reason there are two and not three. The worker's own
 `ready` ping has no Node coverage by construction — removing it is caught by the
 Chromium spec below, which is where it is proven.
 

@@ -24,6 +24,7 @@
  */
 
 import {
+  ENCODER_READY_TIMEOUT_MS,
   ENCODER_SILENCE_TIMEOUT_MS,
   encoderSnapshotTaken,
   warmEncoder,
@@ -348,6 +349,46 @@ function chunkRequestCount(): number {
 }
 
 /**
+ * How long does a worker take to say `ready` (#192, George R2 P2)?
+ *
+ * `ENCODER_READY_TIMEOUT_MS` has to cover evaluation of the whole worker chunk,
+ * lamejs included, because `ready` is posted at the FOOT of `mp3.worker.ts`. The
+ * constant was chosen by reasoning about that; this measures it.
+ *
+ * What it measures precisely: a FRESH worker built from the same module URL the
+ * codec's chunk path uses, from `new Worker` to the `ready` message, on this
+ * browser. It is NOT the blob — the codec keeps its worker private and there is
+ * no seam to borrow one — so it bounds the evaluation cost, not the blob's own
+ * construction. And it is one engine: a phone may be an order of magnitude
+ * slower, which is why the window is made freeze-aware and forgiving of one
+ * expiry rather than merely long.
+ */
+async function measureWorkerReady(): Promise<{
+  readyMs: number;
+  deadlineMs: number;
+}> {
+  const worker = new Worker(
+    new URL("../hooks/mp3.worker.ts", import.meta.url),
+    {
+      type: "module",
+    }
+  );
+  try {
+    const started = performance.now();
+    const readyMs = await new Promise<number>((resolve, reject) => {
+      worker.onmessage = (event: MessageEvent<{ kind: string }>) => {
+        if (event.data.kind !== "ready") return;
+        resolve(performance.now() - started);
+      };
+      worker.onerror = (event) => reject(new Error(event.message));
+    });
+    return { readyMs, deadlineMs: ENCODER_READY_TIMEOUT_MS };
+  } finally {
+    worker.terminate();
+  }
+}
+
+/**
  * Does the blob snapshot EXIST yet?
  *
  * The spec waits on this before simulating the purge: blocking the chunk before
@@ -387,6 +428,7 @@ declare global {
       encodeAndDecode: typeof encodeAndDecode;
       encodeWithHeartbeat: typeof encodeWithHeartbeat;
       encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
+      measureWorkerReady: typeof measureWorkerReady;
       workerSnapshotReady: typeof workerSnapshotReady;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
@@ -400,6 +442,7 @@ window.__e2e = {
   encodeAndDecode,
   encodeWithHeartbeat,
   encodeAfterAbortRebuild,
+  measureWorkerReady,
   workerSnapshotReady,
   openDb,
   watchVersionChange,

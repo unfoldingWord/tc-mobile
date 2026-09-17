@@ -146,11 +146,18 @@ export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
  * once that blob has answered anything, because proof latches on the snapshot.
  * A chunk-built worker never waits at all.
  *
- * Short on purpose, and deliberately NOT `ENCODER_SILENCE_TIMEOUT_MS`. This
- * measures script load and evaluation of a ~170 KB zero-import IIFE from an
- * in-memory blob — no network, no decode, no encode — so seconds are already
- * generous for a slow phone, whereas waiting fifteen of them is exactly the hole
- * in storage relief (#12) that finding P2-4 is about.
+ * Short on purpose, and deliberately NOT `ENCODER_SILENCE_TIMEOUT_MS`: waiting
+ * fifteen seconds before falling back is exactly the hole in storage relief
+ * (#12) that George R1 P2-4 is about.
+ *
+ * What it has to cover is evaluation of the whole ~170 KB worker chunk, lamejs
+ * included, because `ready` is posted at the FOOT of `mp3.worker.ts` — not the
+ * "script load" an earlier version of this comment claimed (George R2 P2). The
+ * #251 smoke measures that evaluation on Chromium and logs the number; it is
+ * single-digit milliseconds there, which is the only engine anyone has measured.
+ * Three seconds is a guess about phones, so the window is made SAFE rather than
+ * merely long: it is not counted while the page is hidden, and one expiry costs
+ * this job a fallback rather than the snapshot (`SNAPSHOT_MUTE_STRIKES`).
  */
 export const ENCODER_READY_TIMEOUT_MS = 3_000;
 
@@ -430,8 +437,17 @@ let snapshotUrl: string | null = null;
 let snapshotStarted = false;
 let snapshotProven = false;
 
-/** The script every worker is built from: the snapshot if we have one. */
-function workerScriptUrl(): string {
+/**
+ * The script the next worker is built from: the snapshot if we have one.
+ *
+ * `preferChunk` is the one exception, and it is a per-CONSTRUCTION choice rather
+ * than a change of mind about the snapshot (George R2 P2): a blob that has let a
+ * visible handshake window pass in silence is stepped around for this job while
+ * the snapshot itself is kept, because a single timeout is not evidence that the
+ * bytes cannot run. A later construction tries the blob again.
+ */
+function workerScriptUrl(preferChunk: boolean): string {
+  if (preferChunk) return encoderChunkUrl;
   return snapshotUrl ?? encoderChunkUrl;
 }
 
@@ -452,12 +468,13 @@ function constructWorker(url: string, fromSnapshot: boolean): Worker {
   return fromSnapshot ? new Worker(url) : new Worker(url, { type: "module" });
 }
 
-function encoderWorker(): Worker {
+function encoderWorker(preferChunk = false): Worker {
   if (!sharedWorker) {
-    let fromSnapshot = snapshotUrl !== null;
+    const url = workerScriptUrl(preferChunk);
+    let fromSnapshot = url === snapshotUrl;
     let worker: Worker;
     try {
-      worker = constructWorker(workerScriptUrl(), fromSnapshot);
+      worker = constructWorker(url, fromSnapshot);
     } catch (cause) {
       // A SYNCHRONOUS throw is the platform refusing this URL outright — a CSP
       // with `worker-src 'self'`, a WebView that throws on `blob:` (George R1
@@ -548,6 +565,45 @@ function recoverEncoderWorker(): void {
  */
 function discardUnprovenSnapshot(): void {
   if (workerFromSnapshot && !snapshotProven) discardWorkerSnapshot();
+}
+
+/**
+ * How many VISIBLE handshake windows a blob worker has let pass in silence.
+ * Reset nowhere: the question is about the blob, and the blob does not change.
+ */
+let snapshotMuteStrikes = 0;
+
+/**
+ * How many of those it takes to throw the snapshot away.
+ *
+ * ONE was the round-2 behaviour and was wrong (George R2 P2). A timeout is not a
+ * verdict on the bytes the way an `error` or a synchronous construction throw
+ * is: those say this platform CANNOT run the blob, while silence says only that
+ * it has not answered yet, and the visible-window rule below can still be beaten
+ * by a WebView that throttles a worker without ever setting `document.hidden`,
+ * or by a phone slow enough to spend the window evaluating lamejs. Getting that
+ * wrong is not a slow encode — it revokes the one purge-immune copy of the
+ * worker for the life of the page and sends every later encode to a chunk URL
+ * that, on a page which has lived across a deploy, is exactly the URL that is
+ * gone. #192, re-opened by its own guard.
+ *
+ * So one timeout costs this job a fallback and nothing else; the snapshot stays
+ * and the next construction tries it again. Two says the blob really is mute,
+ * and the cost of being wrong twice — two more handshake windows per page — is
+ * not worth defending against.
+ */
+const SNAPSHOT_MUTE_STRIKES = 2;
+
+/**
+ * A blob-built worker stayed silent for a full VISIBLE handshake window.
+ *
+ * Deliberately NOT `discardUnprovenSnapshot` on the first one; see
+ * `SNAPSHOT_MUTE_STRIKES`. A proven blob never reaches here — the handshake is
+ * skipped for it entirely.
+ */
+function noteHandshakeTimeout(): void {
+  snapshotMuteStrikes += 1;
+  if (snapshotMuteStrikes >= SNAPSHOT_MUTE_STRIKES) discardWorkerSnapshot();
 }
 
 /** Throw away a snapshot that cannot run, and stop trying to take another. */
@@ -708,19 +764,36 @@ async function encodeInWorker(
   // Only an unproven blob waits, so this is at most one wait per page and a
   // chunk-built worker never pays it. What it buys is the ORDER: the blob is
   // judged before `postMessage` transfers a chapter's PCM into it, so a snapshot
-  // that turns out not to run is discarded, the worker rebuilt from the chunk
-  // URL, and THIS job simply runs there. Before the handshake the first encode
-  // on a bad blob was the job that died for it — a failed Share, or a sweep
-  // segment recorded as failed — and the fallback only arrived for whoever came
-  // next (George R1 P1).
+  // that turns out not to run is stepped around, the worker rebuilt from the
+  // chunk URL, and THIS job simply runs there. Before the handshake the first
+  // encode on a bad blob was the job that died for it — a failed Share, or a
+  // sweep segment recorded as failed — and the fallback only arrived for whoever
+  // came next (George R1 P1).
   if (workerFromSnapshot && !snapshotProven && !workerReady) {
-    await awaitWorkerReady(worker, signal);
+    const outcome = await awaitWorkerReady(worker, signal);
     if (!workerReady) {
-      discardUnprovenSnapshot();
+      // A TIMEOUT is not a verdict on the blob — see `noteHandshakeTimeout`.
+      // An `error` already was one, and the durable listener has discarded the
+      // snapshot and dropped the handle by the time we get here.
+      if (outcome === "timeout") noteHandshakeTimeout();
       dropEncoderWorker();
-      worker = obtainWorker();
+      // Force the chunk for THIS job: on the timeout path the snapshot usually
+      // survives, so a plain rebuild would hand us the same silent blob again.
+      worker = obtainWorker(true);
     }
   }
+  // The abort may have landed while we waited, and `ready` may have won the race
+  // to settle the handshake — in which case nothing rejected this job and the
+  // listener that would have is already detached (George R2 P3). Unchecked, the
+  // continuation posts a chapter's PCM and holds the single encoder lane until
+  // it finishes, long after the share menu closed.
+  //
+  // The check is deliberately NOT written here as well. It is the first
+  // statement of `runEncodeOnWorker`, and nothing but a synchronous call
+  // separates the two places — so a second copy is the same check written twice,
+  // shadowing the first and making neither one killable by mutation. It lives
+  // next to the `postMessage` it protects, where it also covers the path that
+  // never handshakes at all.
   return runEncodeOnWorker(worker, samples, signal);
 }
 
@@ -735,9 +808,9 @@ async function encodeInWorker(
  * durable listener (which drops the handle) and the job's `onerror` (which
  * rejects it).
  */
-function obtainWorker(): Worker {
+function obtainWorker(preferChunk = false): Worker {
   try {
-    return encoderWorker();
+    return encoderWorker(preferChunk);
   } catch (cause) {
     dropEncoderWorker();
     noteEncodeFailed();
@@ -748,50 +821,116 @@ function obtainWorker(): Worker {
   }
 }
 
+/** How `awaitWorkerReady` ended. `ready` covers any message, not just `ready`. */
+type HandshakeOutcome = "ready" | "error" | "timeout";
+
 /**
- * Wait until `worker` has answered ANYTHING, errored, or spent
- * `ENCODER_READY_TIMEOUT_MS` (#192). Rejects only on abort.
+ * Wait until `worker` has answered ANYTHING, errored, or stayed silent for a
+ * VISIBLE `ENCODER_READY_TIMEOUT_MS` (#192). Rejects only on abort.
  *
- * It resolves no value: the caller reads `workerReady`, which the durable
- * message listener owns, so a message that lands in the gap between this
- * resolving and the caller looking is still counted. A worker that errors has
- * already been discarded and dropped by the durable `error` listener before this
- * returns.
+ * The caller also reads `workerReady`, which the durable message listener owns,
+ * so a message landing in the gap between this resolving and the caller looking
+ * is still counted. A worker that errors has already been discarded and dropped
+ * by the durable `error` listener before this returns.
+ *
+ * VISIBLE is the whole of George R2 P2. The first cut was a bare
+ * `setTimeout(ENCODER_READY_TIMEOUT_MS)`, in a module that contains `onStall`
+ * precisely because a bare timeout cannot tell a dead worker from a frozen one.
+ * `ready` is posted at the FOOT of `mp3.worker.ts`, so in a production build the
+ * whole lamejs IIFE has to evaluate first — and the moment this window is most
+ * likely to be open is the worst possible one: the launch sweep starts an encode
+ * on the blob worker that a cancelled Share just re-warmed, which is exactly
+ * when a translator puts the phone down. An iOS freeze there would have been
+ * read as a mute blob.
+ *
+ * So the three guards are `onStall`'s, for the same reasons: never judge while
+ * hidden, grant one fresh window after a possible freeze, and re-arm for the
+ * remainder rather than trip early.
  */
 function awaitWorkerReady(
   worker: Worker,
   signal: AbortSignal | undefined
-): Promise<void> {
+): Promise<HandshakeOutcome> {
   return new Promise((resolve, reject) => {
     if (workerReady) {
-      resolve();
+      resolve("ready");
       return;
     }
     let done = false;
-    // Declared before `timer` and reading it from the closure: every caller is
-    // an event or the timer itself, so none can run before the synchronous
-    // block below has assigned it.
-    const detach = () => {
+    // When this window began. Reset whenever a fresh one is granted.
+    let waitingSince = Date.now();
+    // Seeded from the CURRENT state, like the stall timer's: a handshake that
+    // begins while the page is already hidden gets no hide transition, so
+    // without the seed the latch would stay false and a resume could trip it.
+    let mightHaveFrozen = pageHidden();
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (ms: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(onDeadline, ms);
+    };
+    const stopVisibility = subscribeVisibility(() => {
+      if (pageHidden()) {
+        mightHaveFrozen = true;
+      } else {
+        mightHaveFrozen = false;
+        waitingSince = Date.now();
+      }
+    });
+    const detach = (outcome: HandshakeOutcome) => {
       done = true;
       clearTimeout(timer);
-      worker.removeEventListener("message", onSettle);
-      worker.removeEventListener("error", onSettle);
+      stopVisibility();
+      worker.removeEventListener("message", onAnswered);
+      worker.removeEventListener("error", onErrored);
       signal?.removeEventListener("abort", onAbort);
+      resolve(outcome);
     };
-    function onSettle(): void {
+    function onAnswered(): void {
       if (done) return;
-      detach();
-      resolve();
+      detach("ready");
+    }
+    function onErrored(): void {
+      if (done) return;
+      detach("error");
+    }
+    function onDeadline(): void {
+      if (done) return;
+      // A hidden page cannot be judged — its worker is frozen or throttled with
+      // it — so never trip while hidden; re-arm and wait for the resume.
+      if (pageHidden()) {
+        arm(ENCODER_READY_TIMEOUT_MS);
+        return;
+      }
+      // Resumed after a possible freeze: the elapsed silence spans a suspension
+      // we cannot measure, so grant a fresh window rather than trust it — even
+      // when this overdue timer beat the `visibilitychange` handler to the
+      // resume. One fresh window per freeze.
+      if (mightHaveFrozen) {
+        mightHaveFrozen = false;
+        waitingSince = Date.now();
+        arm(ENCODER_READY_TIMEOUT_MS);
+        return;
+      }
+      const waited = Date.now() - waitingSince;
+      if (waited < ENCODER_READY_TIMEOUT_MS) {
+        arm(ENCODER_READY_TIMEOUT_MS - waited);
+        return;
+      }
+      detach("timeout");
     }
     function onAbort(): void {
       if (done) return;
-      detach();
+      done = true;
+      clearTimeout(timer);
+      stopVisibility();
+      worker.removeEventListener("message", onAnswered);
+      worker.removeEventListener("error", onErrored);
       reject(abortReason(signal!));
     }
-    worker.addEventListener("message", onSettle);
-    worker.addEventListener("error", onSettle);
+    worker.addEventListener("message", onAnswered);
+    worker.addEventListener("error", onErrored);
     signal?.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(onSettle, ENCODER_READY_TIMEOUT_MS);
+    arm(ENCODER_READY_TIMEOUT_MS);
   });
 }
 
@@ -802,6 +941,16 @@ function runEncodeOnWorker(
   signal?: AbortSignal
 ): Promise<Uint8Array<ArrayBuffer>> {
   return new Promise((resolve, reject) => {
+    // An abort that ALREADY fired is not delivered again, and everything below
+    // listens rather than asks (George R2 P3). This function is reached a
+    // handshake later than the caller's own entry check, so the state can have
+    // changed underneath it — and the cost of not asking is a chapter's PCM
+    // posted into a worker for a share whose menu is already closed, holding the
+    // app's single encoder lane for the length of that encode.
+    if (signal?.aborted) {
+      reject(abortReason(signal));
+      return;
+    }
     // The silence heartbeat (#166). `lastMessageAt` is the last sign of life from
     // the worker; the timer measures how long it has been quiet, NOT how long the
     // encode has run — so a page freeze, which stops the worker too, cannot make

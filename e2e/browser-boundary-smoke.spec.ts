@@ -92,6 +92,10 @@ declare global {
         chunkRequestsAfter: number;
         mp3Length: number;
       }>;
+      measureWorkerReady: () => Promise<{
+        readyMs: number;
+        deadlineMs: number;
+      }>;
       workerSnapshotReady: () => boolean;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
@@ -294,6 +298,36 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
       // even though nothing here awaits that completion.
       await context.close();
     }
+  });
+});
+
+test.describe("how long the worker takes to say ready (#192, George R2 P2)", () => {
+  test("a worker evaluates its whole chunk and answers far inside the handshake window", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const result = await page.evaluate(
+      async () => await window.__e2e!.measureWorkerReady()
+    );
+    // Logged, not just asserted: the number is the point. `ENCODER_READY_TIMEOUT_MS`
+    // has to cover evaluation of the whole chunk — lamejs included, since `ready`
+    // is posted at the foot of the module — and until this ran, the constant rested
+    // on reasoning about that rather than on a measurement of it.
+    console.log(
+      `[ready] worker construction → ready: ${result.readyMs.toFixed(1)} ms ` +
+        `(window ${result.deadlineMs} ms)`
+    );
+
+    // It answered at all, which is the load-bearing half: a worker that never
+    // posts `ready` would hang this evaluate and fail the test.
+    expect(result.readyMs).toBeGreaterThan(0);
+    // And with room to spare. A tenth of the window is a deliberately loose
+    // bound — this is one engine on one machine, and a phone may be an order of
+    // magnitude slower, which is exactly why the window is freeze-aware and
+    // forgives one expiry rather than simply being long.
+    expect(result.readyMs).toBeLessThan(result.deadlineMs / 10);
   });
 });
 

@@ -38,6 +38,17 @@ class FakeWorker {
   private errorListeners: ((event: ErrorEventish) => void)[] = [];
   private messageListeners: ((event: { data: unknown }) => void)[] = [];
 
+  /**
+   * How many `message` listeners are attached. One is durable (proof, attached
+   * at construction); a SECOND means `awaitWorkerReady` is currently waiting on
+   * this worker. Tests about the handshake assert on it rather than assuming
+   * a job got that far — three tests in this file once passed because the job
+   * was still queued on the encoder lane and never reached the code they named.
+   */
+  get waitingForReady(): boolean {
+    return this.messageListeners.length > 1;
+  }
+
   constructor(
     public url: string | URL,
     public options?: unknown
@@ -148,6 +159,34 @@ function stubSnapshotEnvironment(): void {
 /** Everything the app's own bundle URL looks like: NOT the blob. */
 const isChunkUrl = (url: string | URL) => String(url) !== BLOB_URL;
 
+/**
+ * A `document` stand-in: Node has none, so freeze/resume is driven by hand.
+ * The same helper `encoder-deadline.test.ts` uses for the stall timer, because
+ * the handshake window now answers to the same rule (George R2 P2).
+ */
+function installFakeDocument() {
+  const listeners: Record<string, Array<() => void>> = {};
+  const doc = {
+    hidden: false,
+    addEventListener(type: string, fn: () => void) {
+      (listeners[type] ??= []).push(fn);
+    },
+    removeEventListener(type: string, fn: () => void) {
+      listeners[type] = (listeners[type] ?? []).filter((f) => f !== fn);
+    },
+  };
+  (globalThis as { document?: unknown }).document = doc;
+  const dispatchVisibility = () => {
+    for (const fn of [...(listeners["visibilitychange"] ?? [])]) fn();
+  };
+  /** Flip visibility AND fire the event, the normal case. */
+  const setHidden = (hidden: boolean) => {
+    doc.hidden = hidden;
+    dispatchVisibility();
+  };
+  return { doc, setHidden, dispatchVisibility };
+}
+
 /** The n-th constructed worker, asserting it exists. */
 const nth = (n: number): FakeWorker => {
   const worker = FakeWorker.instances[n];
@@ -181,6 +220,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete (globalThis as { Worker?: unknown }).Worker;
+  delete (globalThis as { document?: unknown }).document;
   delete (globalThis as { fetch?: unknown }).fetch;
   delete (globalThis as { Blob?: unknown }).Blob;
   delete (URL as { createObjectURL?: unknown }).createObjectURL;
@@ -254,6 +294,42 @@ describe("the shared encoder worker's lifetime", () => {
     expect(FakeWorker.instances).toHaveLength(2);
     nth(1).emitDone(new Uint8Array([2]).buffer);
     await expect(p2).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("builds no worker for a job aborted after it took the lane", async () => {
+    // `untilSettled` already rejects a job whose signal was aborted BEFORE it
+    // asked for the lane, so that case proves nothing about this module. The
+    // real one is the job that took the lane, did its own awaits — the sweep
+    // loads a clip, a share gathers a chapter — and only then calls
+    // `encodeMp3`, with the share menu closed somewhere in between. That abort
+    // is never re-delivered, so `encodeInWorker` has to ask.
+    const controller = new AbortController();
+    const p = withEncoder(controller.signal, (codec) => {
+      controller.abort();
+      return codec.encodeMp3(Int16Array.of(1));
+    });
+    await expect(p).rejects.toBeInstanceOf(DOMException);
+    // What distinguishes the entry check from `runEncodeOnWorker`'s: that one
+    // would also have rejected this job, but a worker would exist by then.
+    expect(FakeWorker.instances).toEqual([]);
+  });
+
+  it("never posts PCM for a job whose signal already aborted", async () => {
+    warmEncoder();
+    const warmed = nth(0);
+
+    // `runEncodeOnWorker` only ever LISTENED for an abort, and an abort that has
+    // already fired is not delivered again (George R2 P3). The entry check in
+    // `encodeInWorker` runs a handshake earlier than this, so the two are not
+    // the same moment — and `withEncoder` reaches the codec a microtask after
+    // the caller, which is enough for a menu to close.
+    const controller = new AbortController();
+    controller.abort();
+    await expect(encode(Int16Array.of(1), controller.signal)).rejects.toThrow();
+
+    // The buffer never went anywhere, and the warm worker is untouched.
+    expect(warmed.posted).toEqual([]);
+    expect(warmed.terminated).toBe(false);
   });
 
   it("drops a warm worker that dies before any encode, and does not reuse the dead handle (R1)", async () => {
@@ -578,17 +654,130 @@ describe("the ready handshake on an unproven blob (#192 × #166)", () => {
     await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
     await microtasks();
 
-    // Judged, discarded, rebuilt from the chunk — and the job is still alive.
-    expect(revoked).toEqual([BLOB_URL]);
+    // Stepped around, rebuilt from the chunk — and the job is still alive.
     expect(blobWorker.terminated).toBe(true);
     expect(blobWorker.posted).toEqual([]);
     expect(isChunkUrl(nth(2).url)).toBe(true);
+
+    // But the snapshot SURVIVES a single silent window (George R2 P2). One
+    // timeout is not evidence that the bytes cannot run — only that they have
+    // not answered yet — and revoking on it would throw away the one
+    // purge-immune copy of the worker for the life of the page.
+    expect(revoked).toEqual([]);
 
     // The caller never sees the fallback: the encode it asked for RESOLVES.
     // Before the handshake this job rejected, and only whoever came next got a
     // working encoder (George R1 P1).
     nth(2).emitDone(new Uint8Array([2]).buffer);
     await expect(p).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("throws the snapshot away only after a SECOND visible silent window", async () => {
+    await rebuildFromSnapshot();
+
+    // Strike one: fall back, keep the snapshot.
+    const first = encode(Int16Array.of(2));
+    await microtasks();
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+    expect(revoked).toEqual([]);
+    nth(2).emitDone(new Uint8Array([2]).buffer);
+    await expect(first).resolves.toBeInstanceOf(Uint8Array);
+
+    // The chunk worker dies, so the next construction goes back to the blob —
+    // which is the point of keeping it.
+    nth(2).emitError(new Error("chunk worker crashed"));
+    const second = encode(Int16Array.of(3));
+    await microtasks();
+    expect(nth(3).url).toBe(BLOB_URL);
+
+    // Strike two, and only now is the blob written off.
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+    expect(revoked).toEqual([BLOB_URL]);
+    expect(isChunkUrl(nth(4).url)).toBe(true);
+    nth(4).emitDone(new Uint8Array([3]).buffer);
+    await expect(second).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("does not count the handshake window while the page is HIDDEN", async () => {
+    const { setHidden } = installFakeDocument();
+    const blobWorker = await rebuildFromSnapshot();
+
+    const p = encode(Int16Array.of(2));
+    await microtasks();
+
+    // The translator puts the phone down while the blob is still evaluating
+    // lamejs — which is exactly when this window is most likely to be open, the
+    // launch sweep having started on a worker a cancelled Share just re-warmed.
+    // A frozen worker is not a mute one, and `onStall` exists in this module for
+    // the same reason (George R2 P2).
+    setHidden(true);
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT * 5);
+    await microtasks();
+    expect(revoked).toEqual([]);
+    expect(blobWorker.terminated).toBe(false);
+    expect(FakeWorker.instances).toHaveLength(2);
+
+    // It comes back and answers: no fallback ever happened, and the blob is the
+    // worker that encodes.
+    setHidden(false);
+    blobWorker.emitReady();
+    await microtasks();
+    expect(blobWorker.posted).toHaveLength(1);
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("grants one fresh window after a freeze, even if the overdue timer runs first", async () => {
+    const { doc, dispatchVisibility } = installFakeDocument();
+    const blobWorker = await rebuildFromSnapshot();
+
+    const p = encode(Int16Array.of(2));
+    await microtasks();
+
+    // Hide fires normally, latching that a freeze may span this window.
+    doc.hidden = true;
+    dispatchVisibility();
+
+    // The freeze ends: the platform flips `hidden` back BEFORE running the
+    // queued visibilitychange handler, and the overdue timer runs in between.
+    doc.hidden = false;
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+    await microtasks();
+    // It must not have judged the un-measurable silence it just woke up to.
+    expect(revoked).toEqual([]);
+    expect(blobWorker.terminated).toBe(false);
+
+    dispatchVisibility();
+    blobWorker.emitReady();
+    await microtasks();
+    blobWorker.emitDone(new Uint8Array([2]).buffer);
+    await expect(p).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("does not post PCM when an abort lands while ready is winning the race", async () => {
+    const blobWorker = await rebuildFromSnapshot();
+
+    const controller = new AbortController();
+    const p = encode(Int16Array.of(2), controller.signal);
+    await microtasks();
+    // The job really is parked in the handshake — not still queued on the
+    // encoder lane, which is how a test like this passes without ever running
+    // the line it names.
+    expect(blobWorker.waitingForReady).toBe(true);
+
+    // `ready` settles the handshake, which detaches its abort listener; the
+    // abort then lands in the gap before the encode starts. Nothing is
+    // listening for it any more, so only an explicit re-check catches it
+    // (George R2 P3) — and without that the chapter's PCM goes into the worker
+    // and holds the app's single lane for a share whose menu is closed.
+    blobWorker.emitReady();
+    controller.abort();
+    await microtasks();
+
+    await expect(p).rejects.toBeInstanceOf(DOMException);
+    expect(blobWorker.posted).toEqual([]);
   });
 
   it("never latches encoder health for a mute blob", async () => {
