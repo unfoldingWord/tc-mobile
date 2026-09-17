@@ -34,8 +34,14 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * the state below, and `lib/` may not import from `hooks/`. The classifier that
  * produces it stays in `hooks/save-failure.ts` and re-exports this type, so
  * there is still only one definition.
+ *
+ * `downgrade` is the one that is NOT retryable: a newer copy of the app has
+ * upgraded the database past this build, so `getDb()` fails the version check
+ * before any transaction is reached and will do so on every attempt. The other
+ * two are blips — a full phone, or anything else — where the next Retry can
+ * genuinely land.
  */
-export type SaveFailureKind = "quota" | "unknown";
+export type SaveFailureKind = "quota" | "downgrade" | "unknown";
 
 /**
  * A finished recording that is not on disk yet.
@@ -150,6 +156,14 @@ export function failSave(
  */
 export function retrySave(current: PendingTake | null): PendingTake | null {
   if (!current || current.state === "saving") return current;
+  // A `downgrade` cannot be retried — `getDb()` fails the version check before
+  // any transaction, identically, every time. The recovery screen offers a
+  // restart instead of Retry for this kind, so nothing should reach here; this
+  // is defence in depth, and it refuses by returning the slot UNCHANGED, which
+  // every caller already reads as "refused" (`retryPendingTake` compares
+  // identity). Arming a save that cannot land would spin the screen through
+  // "Saving" and back for as long as someone kept tapping (George R2 P2-1).
+  if (current.kind === "downgrade") return current;
   return { ...current, state: "saving", kind: null };
 }
 
@@ -176,4 +190,104 @@ export function discardSave(current: PendingTake | null): {
   readonly orphan: ClipId | null;
 } {
   return { next: null, orphan: current?.clipId ?? null };
+}
+
+/**
+ * Everything this copy of the app is holding that exists ONLY in memory, and
+ * that closing the database connection would therefore destroy.
+ *
+ * This is the guard behind the multi-tab upgrade decision (#221): when another
+ * copy wants to upgrade the database, this copy refuses to give up its
+ * connection while any of these is true, and the other copy waits. The trade is
+ * deliberate and one-directional — refusing costs a person time, yielding costs
+ * a translator audio that cannot be recorded again.
+ *
+ * Here rather than inline in `App` because it is a rule about held audio, not
+ * about rendering, and because this repo has no renderer: inline in a component
+ * it could only ever be review surface, and the one arm that was missing
+ * (the clipboard) is exactly the kind of omission a test catches.
+ *
+ * The three arms:
+ *
+ *   pendingTake    a finished recording whose save has not landed
+ *   recorderOpen   the sheet where a take is recorded, edited and committed.
+ *                  Coarse on purpose: an OPEN sheet counts, not a running
+ *                  capture, because capture state is not visible from `App` and
+ *                  the coarse answer is wrong only in the direction that costs
+ *                  the other copy a wait
+ *   clipboard      audio CUT from a segment. The hole is already committed to
+ *                  disk, so until the phrase lands somewhere else these samples
+ *                  may be the only copy of it — the same unrecoverable loss the
+ *                  close plan already treats it as. Held while the slot is
+ *                  non-empty, which the chapter change that clears the slot
+ *                  already bounds
+ *
+ * **A full slot is held work, full stop — there is deliberately no "but it has
+ * been pasted" arm.** One existed for two rounds and cost two more findings, and
+ * this is the reasoning that removed it. "Pasted" cannot be observed; it can
+ * only be tracked, because `paste()` does not empty the slot (G3 lets one cut go
+ * into several segments). Tracking it meant a flag, and the flag was wrong in
+ * the losing direction every time the unchanged tree moved underneath it: set at
+ * the paste, it survived an undo that wrote nothing (Frank R5 P1); set at the
+ * write, it survived an erase of the segment written to (George R4 P2). Both
+ * ended the same way — the guard says the phrase is safe, the connection is
+ * yielded, and a restart takes the only copy. Nothing derived can be right here,
+ * because what it is derived from is what keeps changing; what the slot holds
+ * cannot go stale. The price is that another copy's upgrade may wait out the
+ * rest of a chapter after a cut, which costs a person time — the side of this
+ * trade the whole rule exists to take.
+ *
+ * What is deliberately NOT held work: a name being typed, and an armed share.
+ * Both are re-doable in seconds from what is still on disk, and holding another
+ * copy's upgrade for work that costs a retype is the trade this rule exists to
+ * refuse in the other direction.
+ */
+export function holdsUnsavedAudio(held: {
+  readonly pendingTake: PendingTake | null;
+  readonly recorderOpen: boolean;
+  readonly clipboard: Int16Array | null;
+}): boolean {
+  if (held.pendingTake !== null) return true;
+  if (held.recorderOpen) return true;
+  // An emptied clipboard is not held audio. `length === 0` is reachable — the
+  // slot is set from a cut whose selection can be empty — and treating it as
+  // held would block an upgrade over nothing.
+  return (held.clipboard?.length ?? 0) > 0;
+}
+
+/**
+ * Whether taking the screen with `DatabasePanel` would DESTROY held audio — a
+ * different question from `holdsUnsavedAudio` above, with a different answer.
+ *
+ * One predicate used to answer both, and the clipboard is the arm where the two
+ * answers differ (George R4 P1). Yielding the connection is what loses a cut
+ * phrase, so the clipboard belongs in the yield decision. The panel does not
+ * lose it — the slot is `App` state and outlives the screen — so it does not
+ * belong here, and putting it here is what caused the loss:
+ *
+ *   1. the panel is withheld while the slot is full;
+ *   2. so `popAction` returns no `trap-database-panel` (it traps only when the
+ *      panel is actually up), and a Back is an ordinary `to-books`;
+ *   3. the app is `blocked` or `reloadNeeded`, so a chapter load fails and
+ *      `SegmentsScreen` offers its documented recovery — back out and re-enter;
+ *   4. `backToBooks` runs `setClipboard(null)`, chapter-scoped by design (G3);
+ *   5. and the panel that would have said "close the other copy" appears only
+ *      after the slot it was protecting has been emptied.
+ *
+ * So the panel now shows, the Back is trapped, and the slot survives. The two
+ * arms left are the ones the panel really does destroy: the recorder sheet,
+ * which the panel unmounts and `leave()` cancels the capture of, and a pending
+ * take — which never reaches this question anyway, because `SaveFailed` outranks
+ * the panel and returns first. It is listed rather than relied upon, so that the
+ * ordering in `App` is a second line of defence and not the only one.
+ *
+ * NOT a re-derivation of the above with one arm dropped: these are two rules
+ * that happen to share arms, and a future arm belongs to whichever of them is
+ * true of it.
+ */
+export function panelWouldLoseAudio(held: {
+  readonly pendingTake: PendingTake | null;
+  readonly recorderOpen: boolean;
+}): boolean {
+  return held.pendingTake !== null || held.recorderOpen;
 }

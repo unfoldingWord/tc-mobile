@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
+import { DatabasePanel } from "@/components/database-panel";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
 import {
@@ -11,8 +12,13 @@ import {
 import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
+import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useSaveTake } from "@/hooks/use-save-take";
 import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
+import {
+  holdsUnsavedAudio,
+  panelWouldLoseAudio,
+} from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
@@ -104,6 +110,13 @@ export function App() {
   // remounting per segment — G3: it reaches across a chapter and is lost on
   // close. Cleared on every chapter change so it never carries audio from one
   // chapter into another; lost on page close naturally (never persisted).
+  //
+  // Just the samples. A `pasted` flag rode alongside them for two rounds so the
+  // upgrade guard could stop holding a phrase that was on disk elsewhere, and it
+  // was wrong in the losing direction both times the unchanged tree moved
+  // underneath it (Frank R5 P1, George R4 P2). The guard now holds on the
+  // samples until the chapter change that clears them — see
+  // `holdsUnsavedAudio` for why nothing derived can be right here.
   const [clipboard, setClipboard] = useState<Int16Array | null>(null);
 
   const audio = useAudioSession();
@@ -139,6 +152,67 @@ export function App() {
     // rebuilds, which is the window a second take is lost in — so reload then.
     useSaveTake({ onSaved: () => segmentsRef.current?.reload() });
 
+  // Whether giving up the database connection would strand work that exists
+  // only in memory — asked by `lib/storage` from inside a `versionchange`
+  // handler when another copy of this app wants to upgrade the database (#221).
+  //
+  // The rule itself lives in `lib/takes/pending-take.ts`, where it can be
+  // tested: which of these arms count, and which kinds of unsaved work are
+  // deliberately excluded, is stated and unit-tested there rather than inline in
+  // a component this repo has no renderer to exercise. The CLIPBOARD arm is one
+  // George found missing (R2 P2-2) — cut audio whose hole is already committed
+  // is the only copy of that phrase.
+  const holdsUnsavedWork = useCallback(
+    () =>
+      holdsUnsavedAudio({
+        pendingTake,
+        recorderOpen: recorder !== null,
+        clipboard,
+      }),
+    [pendingTake, recorder, clipboard]
+  );
+  const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
+
+  // The condition above is reported as it happens; this is where it is allowed
+  // to take the screen over. The wait is the whole reason the hook reports
+  // rather than decides: a `blocked` arriving while a take is in hand is
+  // remembered here, and shows the moment the take is let go, rather than being
+  // dropped on the floor.
+  //
+  // A DIFFERENT question from the one the connection asks, and the difference is
+  // the clipboard (George R4 P1). This waits only for work the panel itself
+  // would destroy — the sheet it unmounts, the recovery screen that could still
+  // save. A cut phrase is not that: the slot is state up here and outlives the
+  // panel, while WITHHOLDING the panel is what loses it, because the Back that
+  // Segments offers as its recovery for a failed load is untrapped without a
+  // panel up and runs `backToBooks`, which clears the slot.
+  const databasePanel =
+    databaseStatus === "ok" ||
+    panelWouldLoseAudio({ pendingTake, recorderOpen: recorder !== null })
+      ? null
+      : databaseStatus;
+
+  // Whether a restart would take a cut phrase with it. Read by BOTH screens that
+  // offer one, because either can be the screen a translator is looking at when
+  // they tap: `SaveFailed` outranks the panel while a take is held, so the
+  // panel's own warning cannot mount then, and the take's screen has to carry it
+  // instead (George R5 P2).
+  const holdsCutAudio = (clipboard?.length ?? 0) > 0;
+
+  // This copy has given up its connection and cannot open another: `getDb()` is
+  // latched and rejects before it opens, for the rest of the page's life.
+  //
+  // Told to the recorder because the panel that says so is WITHHELD while the
+  // sheet is up — rightly, since mounting it unmounts the sheet and `leave()`
+  // cancels a live capture. The consequence was that every failure path inside
+  // the sheet reported a permanent condition as a retryable one, with the honest
+  // screen unreachable behind it (#450, then George R6 P2). `failureExit` in
+  // `lib/takes` turns this one bit into that decision, in one place.
+  //
+  // `blocked` is deliberately NOT folded in here: it ends when the other copy
+  // closes, and the app is told so, so a retry under it is exactly right.
+  const databaseUnreachable = databaseStatus === "reloadNeeded";
+
   const openChapter = useCallback(
     (id: ChapterId) => {
       leave();
@@ -147,7 +221,7 @@ export function App() {
       setRecorder(null);
       setChapterId(id);
     },
-    [leave, pushHistoryEntry]
+    [leave, pushHistoryEntry, setClipboard]
   );
 
   const backToBooks = useCallback(() => {
@@ -155,7 +229,7 @@ export function App() {
     setClipboard(null); // chapter-scoped (G3)
     setRecorder(null);
     setChapterId(null);
-  }, [leave]);
+  }, [leave, setClipboard]);
 
   const openRecorder = useCallback(
     (segmentId: SegmentId, ordinal: number) => {
@@ -227,7 +301,23 @@ export function App() {
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
       const screen = screenFor(chapterId !== null, recorder !== null);
-      switch (popAction(direction, screen, committing.current, recovering)) {
+      switch (
+        popAction(
+          direction,
+          screen,
+          committing.current,
+          recovering,
+          databasePanel !== null
+        )
+      ) {
+        case "trap-database-panel":
+          // The database panel is a modal in the same slot as `SaveFailed`, not
+          // a navigation level. Absorb the gesture the same way: a Back from the
+          // blocked panel would otherwise exit the app — the copy that was
+          // waiting for the other one to close leaves, and reopening is blocked
+          // again — and the panel's own control is the way out (George R3 P3).
+          pushHistoryEntry();
+          return;
         case "trap-recovery":
           // The `SaveFailed` recovery screen is a modal, not a navigation level
           // (George R2 G2), and the only in-memory copy of the held take lives in
@@ -293,7 +383,14 @@ export function App() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [chapterId, recorder, recovering, backToBooks, pushHistoryEntry]);
+  }, [
+    chapterId,
+    recorder,
+    recovering,
+    databasePanel,
+    backToBooks,
+    pushHistoryEntry,
+  ]);
 
   // Ahead of everything: a held take whose save has failed keeps the microphone
   // and any sound off under the modal with no control to reach them. (`recovery`
@@ -301,6 +398,16 @@ export function App() {
   useEffect(() => {
     if (recovering) leave();
   }, [recovering, leave]);
+
+  // The database panel below takes the screen over the same way, and for the
+  // same reason needs the same call: the Segments list can be playing a segment
+  // back when the panel replaces it, and `useAudioSession` lives up here, so the
+  // sound would carry on under a screen with no stop on it. Keyed on the PANEL
+  // and not on the status — `leave()` cancels an in-progress take, and the
+  // status goes to `blocked` while one may still be held.
+  useEffect(() => {
+    if (databasePanel) leave();
+  }, [databasePanel, leave]);
 
   if (recovery) {
     return (
@@ -310,10 +417,27 @@ export function App() {
           kind={recovery.kind}
           editOnly={recovery.editOnly}
           ordinal={recordingOrdinal}
+          holdsCutAudio={holdsCutAudio}
           attempts={recovery.attempts}
           onRetry={retryPendingTake}
           onDiscard={discardPendingTake}
         />
+      </main>
+    );
+  }
+
+  // Behind the held take, never in front of it: this says the database cannot
+  // be reached, and a held recording is the one thing that outranks that. The
+  // `SaveFailed` return above is what enforces that ordering; `databasePanel`'s
+  // `pendingTake` arm is the second line of defence, not the only one.
+  //
+  // The clipboard CAN be full here, which is the change George R4 P1 asked for,
+  // and it is why the panel is told: its restart is the one control on screen,
+  // and reloading drops the slot. It arms the same way `SaveFailed`'s does.
+  if (databasePanel) {
+    return (
+      <main className="app-shell grid h-full place-items-center">
+        <DatabasePanel status={databasePanel} holdsCutAudio={holdsCutAudio} />
       </main>
     );
   }
@@ -357,6 +481,7 @@ export function App() {
           saveEditedSegment={saveEditedSegment}
           clipboard={clipboard}
           onClipboardChange={setClipboard}
+          databaseUnreachable={databaseUnreachable}
           onExit={closeRecorder}
           onRequestBack={goBack}
         />

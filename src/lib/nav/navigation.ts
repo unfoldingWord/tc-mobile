@@ -87,11 +87,18 @@ export function navDirection(from: number, to: number): NavDirection {
  *   the app stays put. Never route a Forward as a Back (F2).
  * - **Back** → the `backEffectFor` mapping for the current screen.
  *
- * `trap-recovery` and `rearm-during-commit` both re-arm by pushing a fresh entry;
- * they are named apart so the handler's intent — and each test row — stays legible.
+ * - **The database panel is up (`databasePanel`)** → `trap-database-panel`,
+ *   whatever the direction. Same slot and same shape as the recovery modal: a
+ *   full-screen `alertdialog` that replaced the tree rather than a level within
+ *   it. Checked after recovery, which outranks it, and before everything else.
+ *
+ * `trap-recovery`, `trap-database-panel` and `rearm-during-commit` all re-arm by
+ * pushing a fresh entry; they are named apart so the handler's intent — and each
+ * test row — stays legible.
  */
 export type PopAction =
   | "trap-recovery"
+  | "trap-database-panel"
   | "rearm-during-commit"
   | "trap-forward"
   | "ignore"
@@ -101,9 +108,25 @@ export function popAction(
   direction: NavDirection,
   screen: Screen,
   committing: boolean,
-  recovering: boolean
+  recovering: boolean,
+  databasePanel = false
 ): PopAction {
   if (recovering) return "trap-recovery";
+  // Same shape as the recovery modal and for the same structural reason: the
+  // database panel is a full-screen `alertdialog` in that same slot, NOT a
+  // navigation level, and the screen it replaced is not reachable underneath.
+  // Left untrapped, a system Back from the blocked panel on Books runs
+  // `exit-app` — the copy that was waiting for the other one to close leaves
+  // instead, and reopening is blocked all over again — and from Segments it
+  // runs `backToBooks()` under a panel that stays up regardless (George R3 P3).
+  // The way out is the panel's own control.
+  //
+  // This started as state-machine parity — no audio was held while the panel
+  // showed, so nothing could be lost by a stray Back. That is no longer true and
+  // the trap now carries weight: the panel shows over a full clipboard (George
+  // R4 P1), and `backToBooks` clears the slot, so an untrapped Back from here
+  // would destroy the cut phrase this whole guard exists to protect.
+  if (databasePanel) return "trap-database-panel";
   if (committing) return "rearm-during-commit";
   if (direction === "forward") return "trap-forward";
   if (direction === "same") return "ignore";

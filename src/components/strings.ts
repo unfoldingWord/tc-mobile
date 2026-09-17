@@ -481,4 +481,21 @@ export const strings = {
   // recordings already sitting at risk.
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
+
+  // ── The database is unreachable (#221) ───────────────────────────────────
+  // Two full-screen states, one in each copy of the app, when a newer copy
+  // upgrades the database. The mark on the panel carries the meaning; these
+  // lines support it, and are the whole text layer a screen reader speaks.
+  // Both offer the same exit, `appReload` above — restarting is what picks up
+  // the newer build, and on the blocked side it is what re-tries the open.
+  dbBlocked: "Another copy of this app is open.",
+  // Closing the other copy is the WHOLE action. This panel takes itself down
+  // when that happens — the open that was blocked comes through and the storage
+  // layer says so (`onUnblocked`) — so asking for a restart as well would be
+  // asking for a step that is not needed, which a non-reader treating the two
+  // lines as one action would do anyway (George R2 P3). "Restart" belongs on
+  // `dbOutOfDateTeach` below, where it genuinely is the only exit.
+  dbBlockedTeach: "Close the other one to carry on.",
+  dbOutOfDate: "This copy is out of date.",
+  dbOutOfDateTeach: "Restart to use the new version.",
 } as const;

@@ -223,7 +223,7 @@ test.describe("the encoder heartbeat through a real busy worker (#166, #279 Geor
 });
 
 test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () => {
-  test("the app's real connection sees a native versionchange; a concurrent delete stays blocked", async ({
+  test("the app's real connection sees a native versionchange and yields, so a concurrent delete proceeds", async ({
     browser,
   }) => {
     const context = await browser.newContext();
@@ -276,18 +276,27 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
           )
       );
 
-      // `src/lib/storage/db.ts` on `develop` HEAD attaches no `blocking()`
-      // handler (that lands in #236/#240, both open drafts, unmerged as of
-      // this PR) — so the app's own connection never closes itself on a
-      // native `versionchange`, and a concurrent delete from another tab
-      // stays genuinely `blocked` rather than proceeding. This is real
-      // Chromium IndexedDB behaviour through the app's real connection, not
-      // an inference from `fake-indexeddb`. Once #236/#240 land and `db.ts`
-      // closes on `versionchange`, this assertion is expected to flip to
-      // `"success"` — updating it then is that change's job, not a
-      // regression in this one. `.github/workflows/ci.yml`'s paths gate
-      // covers `src/lib/storage/` so that PR cannot land without running this.
-      expect(outcome).toBe("blocked");
+      // FLIPPED, deliberately, by the PR that superseded #236/#240 — which is
+      // the change this assertion was written to wait for, in as many words:
+      // "Once #236/#240 land and `db.ts` closes on `versionchange`, this
+      // assertion is expected to flip to `success` — updating it then is that
+      // change's job, not a regression in this one."
+      //
+      // `db.ts` now attaches `blocking()`. Both documents have the app mounted,
+      // so both have registered an upgrade coordinator, and with nothing held
+      // both answer "yield": each closes its own connection when the delete's
+      // native `versionchange` reaches it, and the delete proceeds instead of
+      // sitting on `onblocked`.
+      //
+      // This is the one piece of REAL-BROWSER evidence behind #221's P2. Node
+      // and `fake-indexeddb` can show that the close is reached synchronously
+      // inside the handler; only this can show that a real Chromium connection
+      // really lets go and that the operation waiting on it really proceeds.
+      // What it does NOT prove is the strict "before the handler returns"
+      // property — a close deferred by a microtask would very likely also
+      // satisfy a delete — and that half stays pinned by `tests/db-open.test.ts`,
+      // "gives up the connection inside the handler".
+      expect(outcome).toBe("success");
 
       const versionChangeFired = await pageA.evaluate(
         () => window.__e2e!.versionChangeFired
