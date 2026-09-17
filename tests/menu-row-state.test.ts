@@ -184,7 +184,7 @@ describe("rowHint — which reasons carry a cue", () => {
       strings.previewUnavailable,
       strings.recorderInterrupted,
     ]) {
-      expect(copy).toContain(strings.closeRecorder);
+      expect(copy).toContain(`"${strings.closeRecorder}"`);
     }
   });
 
