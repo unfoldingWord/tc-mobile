@@ -10,6 +10,21 @@
  */
 import { filenameSafe } from "@/lib/utils";
 
+/**
+ * The verb every "did not make it into what's being shared" sentence uses.
+ * `shareMissing`, `shareBookMissing`, and `shareBookMissingAndPartial`'s own
+ * two extra clauses all end here, so a future tightening of the wording
+ * lands in one place. Before this, the combined Notice's clauses were typed
+ * out separately from `shareMissing` — the alias `shareBookPartial` added
+ * (George #423 round 2) protected the partial-only Notice, but not the one
+ * Notice the book menu actually shows when both gaps exist, which a verb
+ * edit to `shareMissing` alone would silently miss (George #423 round 3
+ * P3-2).
+ */
+function couldNotBeIncluded(subject: string): string {
+  return `${subject} could not be included.`;
+}
+
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -310,9 +325,7 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    n === 1
-      ? "1 segment could not be included."
-      : `${n} segments could not be included.`,
+    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -330,9 +343,7 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    n === 1
-      ? "1 chapter could not be included."
-      : `${n} chapters could not be included.`,
+    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -381,15 +392,31 @@ export const strings = {
   // across an unknown number of shipped chapters, and this string does not
   // track how many of them are distinct, so naming "a chapter" or
   // pluralizing "chapters" off it would reintroduce the #400/#423 bug. George
-  // round 2 also caught that falling back to `shareBookPartial` verbatim just
+  // round 2 caught that falling back to `shareBookPartial` verbatim just
   // re-concatenates two identically-shaped "could not be included" sentences
   // — the exact ambiguity the n===1 clause exists to prevent. "additional"
-  // disambiguates without counting chapters.
+  // blocks that double-count reading.
+  //
+  // George round 3 then caught that "additional" alone still drops the
+  // producer invariant: `partialSegments` only ever comes from chapters that
+  // DID make it into the zip (`book.ts:105-107,130-148`), and the n===1
+  // clause says so ("of an included chapter") while the n>1 clause did not.
+  // Concrete failure: one chapter partial (two never-recorded segments,
+  // still ships) plus a second chapter never recorded at all — `missing ===
+  // 1`, `partialSegments === 2` (`tests/book-export.test.ts:238-254` pins
+  // the partial-chapter half of that shape). "2 additional segments could
+  // not be included" does not say those two segments sit in a chapter that
+  // shipped, so a translator could read both facts as about the one omitted
+  // chapter and never look at the one that actually has holes. "of included
+  // audio" is the uncounted locator: it names the scope `book.ts` guarantees
+  // without pluralizing "chapter" off `n`, which would reintroduce #400/#423.
   shareBookMissingAndPartial: (chapters: number, segments: number): string =>
     `${strings.shareBookMissing(chapters)} ${
       segments === 1
-        ? "1 segment of an included chapter could not be included."
-        : `${segments} additional segments could not be included.`
+        ? couldNotBeIncluded("1 segment of an included chapter")
+        : couldNotBeIncluded(
+            `${segments} additional segments of included audio`
+          )
     }`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still

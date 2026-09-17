@@ -9,8 +9,12 @@ import { strings } from "@/components/strings";
  * count of chapters — `src/lib/export/book.ts`). A book with ONE chapter and
  * two missing segments read "2 segments were left out of chapters that were
  * otherwise included," implying more than one chapter when there was only
- * one — `gatherChapterPcm` can return `missing > 1` for a single chapter
- * (`tests/chapter-export.test.ts:121-134`, `:153-163`).
+ * one — `gatherChapterPcm` can return `missing > 1` for a single chapter,
+ * the exact grain `tests/book-export.test.ts:238-254` pins (one chapter, two
+ * never-recorded segments, `partialSegments === 2`) — George round 3 (#423
+ * P3-4) caught that this comment used to point at `chapter-export.test.ts`
+ * cases that are the wrong counter (a single `missing === 1` case, and a
+ * whole-chapter miss, the opposite of `partialSegments`).
  *
  * A first fix kept "chapters" as a supposedly uncounted, generic noun, but
  * Frank's diff review (PR #423) caught that bare "chapters" still reads as
@@ -70,8 +74,19 @@ describe("strings.shareBookPartial", () => {
  *
  * George round 2 also found the `segments > 1` clause still concatenates two
  * identically-shaped "could not be included" sentences — the exact ambiguity
- * the n===1 clause exists to prevent. Fixed with "additional", a word that
- * disambiguates without counting chapters `partialSegments` cannot count.
+ * the n===1 clause exists to prevent. Fixed with "additional".
+ *
+ * George round 3 (#423 P2) then found "additional" alone still drops the
+ * producer invariant `book.ts` guarantees: `partialSegments` only ever comes
+ * from chapters that DID make it into the zip. A book with one chapter
+ * partial (two never-recorded segments) and a second chapter never recorded
+ * at all reports `missing === 1`, `partialSegments === 2`; "2 additional
+ * segments could not be included" does not say those two segments sit in a
+ * chapter that shipped, so a translator could read both facts as about the
+ * one omitted chapter and never look at the one that has holes. Fixed with
+ * an uncounted locator, "of included audio", that cannot pluralize "chapter"
+ * off `n` — mirroring the n===1 clause's own disambiguation without naming a
+ * count nothing here tracks.
  */
 describe("strings.shareBookMissingAndPartial", () => {
   it("scopes the n===1 partial segment to an included chapter, in cause-neutral wording", () => {
@@ -90,12 +105,21 @@ describe("strings.shareBookMissingAndPartial", () => {
     expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(/left out/i);
   });
 
-  it("disambiguates the n>1 partial clause with 'additional', not a chapter count (George R2 P3)", () => {
+  it("scopes the n>1 partial segments to included audio, without naming a chapter count (George R3 P2)", () => {
     expect(strings.shareBookMissingAndPartial(1, 2)).toBe(
-      "1 chapter could not be included. 2 additional segments could not be included."
+      "1 chapter could not be included. 2 additional segments of included audio could not be included."
     );
     expect(strings.shareBookMissingAndPartial(2, 3)).toBe(
-      "2 chapters could not be included. 3 additional segments could not be included."
+      "2 chapters could not be included. 3 additional segments of included audio could not be included."
+    );
+  });
+
+  it("never pluralizes 'chapter' as a count of partial chapters (regression guard, #400/#423)", () => {
+    // "additional segments of included audio" must not become "additional
+    // segments of N chapters" — that would reintroduce the #400 bug in the
+    // n>1 combined clause specifically.
+    expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(
+      /\d+ chapters? of/i
     );
   });
 });
