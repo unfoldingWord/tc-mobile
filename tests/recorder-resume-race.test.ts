@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -175,5 +177,95 @@ describe("raceAudioResume (#108)", () => {
 
     expect(clearSpy).toHaveBeenCalled();
     clearSpy.mockRestore();
+  });
+});
+
+/**
+ * The wiring, not just the helper (#108, Frank round 1b P2).
+ *
+ * Every case above proves `raceAudioResume` behaves once it is CALLED — it
+ * says nothing about whether `start()` still calls it. This repo has no
+ * renderer, so `start()` (a `useCallback` inside `useRecorder()`) cannot be
+ * exercised directly (see `tests/foreground-resume.test.ts`'s own note on
+ * why `armForegroundResume` had to be extracted as a plain function to be
+ * testable at all). A revert of the one-line call-site change in `start()` —
+ * back to a bare `await resumeAudioContext();` — would leave every case
+ * above green (this PR's own mutation table, row 7). So the wiring is
+ * asserted directly against the source text, the same way
+ * `tests/failure-log.test.ts`'s "the wiring, not just the primitive" reads
+ * `src/` with `readdirSync`/`readFileSync` rather than trying to render
+ * anything.
+ *
+ * Honesty about what this proves: this is a TEXTUAL gate. It proves the
+ * bounded call site is present in the source, not that `start()` behaves
+ * correctly at runtime — the runtime behavior is what `raceAudioResume`'s
+ * own tests above cover, and what a device pass still owes (see the PR
+ * body).
+ */
+describe("the wiring, not just the helper (#108)", () => {
+  const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
+  const source = () => readFileSync(sourceUrl, "utf8");
+
+  /**
+   * This file's own doc comments legitimately quote the pre-#108 shape —
+   * e.g. "today's bare `await resumeAudioContext()`" — to explain what
+   * `raceAudioResume` replaced. A naive text match would treat that
+   * documentation as a regression. Comments are stripped before matching so
+   * the gate reads CODE, not prose about code. Safe here specifically:
+   * grepped for a `//` or `/*` inside any string literal in this file and
+   * found none, so a block/line comment strip cannot misfire on a literal.
+   */
+  const stripComments = (text: string) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+  it("never awaits resumeAudioContext() directly — every use is bounded or fire-and-forget", () => {
+    // #108 IS this line: an unbounded `await resumeAudioContext()` between
+    // getUserMedia and `new MediaRecorder` is the exact defect. Every
+    // remaining call site in this file (armForegroundResume, resume(),
+    // retryDecode(), previewCapture()) is fire-and-forget
+    // (`void resumeAudioContext().catch(...)`); the one bounded call lives
+    // inside raceAudioResume, itself never awaited. Reverting the start()
+    // call site back to a bare await must fail this — the former mutation
+    // table row 7 (SURVIVED) becomes KILLED by this test.
+    const code = stripComments(source());
+    expect(code).not.toMatch(/await\s+resumeAudioContext\s*\(/);
+  });
+
+  it("start() awaits raceAudioResume exactly once, and raceAudioResume itself calls the real resumeAudioContext unawaited", () => {
+    const code = stripComments(source());
+
+    // Exactly one caller bounds its wait on raceAudioResume — start().
+    // Deleting that line must fail this.
+    const awaitedRaceCalls =
+      code.match(/await\s+raceAudioResume\s*\(\s*\)/g) ?? [];
+    expect(awaitedRaceCalls).toHaveLength(1);
+
+    // Isolate raceAudioResume's own body (brace-counted from its
+    // declaration) so this checks the helper's wiring specifically, not
+    // just "somewhere in the file".
+    const declStart = code.indexOf("function raceAudioResume");
+    expect(declStart).toBeGreaterThan(-1);
+    const braceOpen = code.indexOf("{", declStart);
+    expect(braceOpen).toBeGreaterThan(-1);
+    let depth = 0;
+    let braceClose = -1;
+    for (let i = braceOpen; i < code.length; i++) {
+      if (code[i] === "{") depth++;
+      else if (code[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          braceClose = i;
+          break;
+        }
+      }
+    }
+    expect(braceClose).toBeGreaterThan(braceOpen);
+    const body = code.slice(braceOpen, braceClose + 1);
+
+    // The real resumeAudioContext is called inside raceAudioResume, and
+    // never awaited there either — the synchronous, in-gesture call the
+    // design relies on.
+    expect(body).toMatch(/resumeAudioContext\s*\(\s*\)/);
+    expect(body).not.toMatch(/await\s+resumeAudioContext\s*\(/);
   });
 });
