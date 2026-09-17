@@ -341,13 +341,16 @@ export const SegmentsScreen = forwardRef<
           variant="quiet"
           onClick={onBack}
         />
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-w-0 flex-1 truncate border-0 bg-transparent p-0 text-left"
-          style={{ color: "var(--s-ink)" }}
-        >
-          {bookName} &gt; {chapterHeading}
+        {/* A control-sized hit area, not a ~20px text run (#164 R-10): its
+            action is Back, the same as the 44px control beside it, and two
+            adjacent ways to do one thing should not be two different sizes to
+            a thumb. Geometry lives in `.breadcrumb` (layer 3) rather than in
+            arbitrary utilities here, so the 44px floor reads the same
+            `--c-control-md` every other control does. */}
+        <button type="button" onClick={onBack} className="breadcrumb">
+          <span>
+            {bookName} &gt; {chapterHeading}
+          </span>
         </button>
         {!showEmpty && (
           <Control
