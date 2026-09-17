@@ -280,6 +280,43 @@ export interface PopStateReconciliation {
    *  case; a genuine extra navigation, coalesced into the same popstate,
    *  that still needs routing when greater than 0. */
   remaining: number;
+  /**
+   * What to do with `pushState` calls deferred while a `back()` was
+   * outstanding (George round 4 P2-3, #393) — a THIRD field, not left for the
+   * caller to re-derive from the two above, because getting it wrong is
+   * exactly this finding: draining unconditionally as soon as
+   * `outstandingBacks` reaches 0 (App's round-3 code) ignored `remaining`,
+   * so a queued push (an overlay open, `openChapter`, `openRecorder`)
+   * requested for the screen THIS popstate is now routing AWAY from (a
+   * genuine coalesced Back) still landed on it — pushing a chapter/recorder
+   * entry the very same event's routing step immediately closes again.
+   *
+   * - `"hold"` — `outstandingBacks` has not yet reached 0; more of this
+   *   app's own `back()`s are still outstanding. Never drain here: a push
+   *   landing while a further back() is in flight is the original hazard
+   *   `queuedPushes` exists to prevent (Frank round 1 / George round 1
+   *   P2-2). Reachable only when `remaining` is 0 (see below).
+   * - `"drain"` — every outstanding `back()` has resolved AND nothing is
+   *   left over (`remaining` is 0): the popstate this app expected has
+   *   landed exactly, so whatever was queued for the CURRENT screen is
+   *   still valid and should be pushed for real, in order.
+   * - `"drop"` — every outstanding `back()` has resolved but `remaining` is
+   *   greater than 0: a genuine extra navigation coalesced into this same
+   *   popstate, which the caller is about to route (leaving the screen the
+   *   queued push targeted). Discard the queue without pushing — "a queued
+   *   `openRecorder` is for the screen you are leaving" (George's own
+   *   words); materializing it here would be the exact defect this finding
+   *   names.
+   *
+   * `"drain"` and `"drop"` are mutually exclusive with `"hold"` and with
+   * each other precisely because `remaining` can only be nonzero once
+   * `outstandingBacks` has fully resolved to 0 (`consumed` cannot exceed
+   * `outstandingBacks`, so `outstandingBacks - consumed === 0` is a
+   * precondition for `delta - consumed > 0` ever being reachable) — there is
+   * no state where BOTH "more is still outstanding" and "a genuine extra
+   * navigation landed" are true at once.
+   */
+  queuedPushAction: "hold" | "drain" | "drop";
 }
 
 export function reconcilePopState(
@@ -288,8 +325,12 @@ export function reconcilePopState(
 ): PopStateReconciliation | null {
   if (outstandingBacks <= 0 || delta <= 0) return null;
   const consumed = Math.min(delta, outstandingBacks);
+  const remainingOutstanding = outstandingBacks - consumed;
+  const remaining = delta - consumed;
   return {
-    outstandingBacks: outstandingBacks - consumed,
-    remaining: delta - consumed,
+    outstandingBacks: remainingOutstanding,
+    remaining,
+    queuedPushAction:
+      remainingOutstanding > 0 ? "hold" : remaining > 0 ? "drop" : "drain",
   };
 }

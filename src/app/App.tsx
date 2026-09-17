@@ -165,6 +165,28 @@ export function App() {
   // so this guard is a proven no-op for them.
   const queuedPushes = useRef(0);
   const pushHistoryEntry = useCallback(() => {
+    // George round 4 P2-1 (#393): REFUSE, not queue, while `goBack`'s own
+    // routed `back()` is outstanding (`backRequested`) — checked FIRST,
+    // ahead of `outstandingBacks`. Those two latches mean different things:
+    // `outstandingBacks` marks a back() this app expects to be fully
+    // ABSORBED (its resulting popstate carries no new navigational intent,
+    // so queuing a push to replay once it resolves is safe); `backRequested`
+    // marks a back() that is a REAL navigation about to be ROUTED
+    // (`to-books`/`commit-close-recorder`/...), and which screen it lands on
+    // is decided only once that popstate arrives. Queuing a push here (the
+    // `outstandingBacks` treatment) would drain it onto whatever screen the
+    // route ends up leaving the user on — e.g. after `to-books`, the drain
+    // would land a chapter/recorder/overlay entry on the BOOKS shelf, which
+    // never asked for it (the coalescing pair `goBack`'s own comment already
+    // documents, reached through this door instead of a second `back()`).
+    // Refusing instead leaves whatever UI change already ran synchronously
+    // before this call (`setRecorder(...)`, `setChapterId(...)`) to be
+    // resolved by that SAME routed popstate once it lands —
+    // `commit-close-recorder` immediately closing a sheet that never got its
+    // own history entry is safe (it never drops a take, only ever commits or
+    // leaves it open), just a transient open-then-close UI flicker, not the
+    // history desync this guard exists to prevent.
+    if (backRequested.current) return;
     if (outstandingBacks.current > 0) {
       queuedPushes.current += 1;
       return;
@@ -243,7 +265,27 @@ export function App() {
     // ITSELF). Refusing here is simplest: the overlay/recorder close already
     // has its own outcome in flight, and this tap's intent (leave the
     // screen) is served once that settles and a later, real Back is tried.
-    if (backRequested.current || outstandingBacks.current > 0) return;
+    //
+    // George round 4 P2-1 (#393): ALSO refuse while `committing` or
+    // `dismissingOverlay` is true — matching the SAME windows `popAction`
+    // itself absorbs as `rearm-during-commit` (`committing.current ||
+    // dismissingOverlay.current`, the switch below). Without this, a tap
+    // here during one of those windows issued its own uncounted `back()`
+    // (`outstandingBacks` stays 0, since this path never touches it) that
+    // `reconcilePopState` cannot see coming — landing as a dead, silently
+    // absorbed tap at best, or stacking as an extra uncounted traversal
+    // alongside the commit's/dismiss's own eventual consume at worst, the
+    // exact coalescing-pair risk every other fix in this file exists to
+    // close. Refusing here means the tap's intent (leave the screen) is
+    // served once the commit/dismiss settles and a later, real Back is
+    // tried — nothing is lost, only deferred.
+    if (
+      backRequested.current ||
+      outstandingBacks.current > 0 ||
+      committing.current ||
+      dismissingOverlay.current
+    )
+      return;
     backRequested.current = true;
     window.history.back();
   }, []);
@@ -389,22 +431,38 @@ export function App() {
         if (reconciled.outstandingBacks === 0) {
           // Every `back()` this app had outstanding has now landed — ONLY
           // now, not on every popstate the old single-bit `suppressPop`
-          // branch ran for, is it safe to: (1) consider the overlay-dismiss
+          // branch ran for, is it safe to consider the overlay-dismiss
           // window over (`dismissingOverlay` — see its own comment for why
           // this must wait for the count, not merely "a popstate landed",
           // since the window it guards can still be open even while
           // `outstandingBacks` reads 0: `dismiss-screen-overlay` sets it
-          // BEFORE the eventual consume is even issued), and (2) drain every
-          // push that was deferred while a back() was in flight, in order —
-          // `queuedPushes` is a COUNT (George round 3 P3-2), not the round
-          // 1/2 single bit, so more than one deferred push drains correctly
-          // instead of collapsing to one.
+          // BEFORE the eventual consume is even issued).
           dismissingOverlay.current = false;
-          if (queuedPushes.current > 0) {
+          // George round 4 P2-3 (#393): do NOT drain unconditionally just
+          // because `outstandingBacks` reached 0 — check what this SAME
+          // popstate is actually doing first, via `reconciled.queuedPushAction`
+          // (the pure decision, see `reconcilePopState`'s doc). Draining here
+          // unconditionally (round-3's bug) could materialize a queued push
+          // meant for the CURRENT screen even though `remaining > 0` means
+          // this popstate is about to route the app AWAY from it below —
+          // landing the pushed entry on a screen already being left.
+          if (
+            reconciled.queuedPushAction === "drain" &&
+            queuedPushes.current > 0
+          ) {
             const drain = queuedPushes.current;
             queuedPushes.current = 0;
             for (let i = 0; i < drain; i += 1) pushRawHistoryEntry();
+          } else if (reconciled.queuedPushAction === "drop") {
+            // A genuine extra Back coalesced in beyond what was outstanding
+            // — the queued push targeted a screen this same event is now
+            // routing past, so it is discarded rather than drained.
+            queuedPushes.current = 0;
           }
+          // else "hold": more of this app's own back()s are still
+          // outstanding (only reachable when `reconciled.outstandingBacks`
+          // is itself > 0, so this branch is unreachable here — see the
+          // `reconcilePopState` invariant test — kept for clarity, not logic).
         }
         if (reconciled.remaining <= 0) return; // fully absorbed; nothing to route
         // Else: `remaining` genuine backward step(s) coalesced into this SAME

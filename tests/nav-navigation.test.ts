@@ -307,10 +307,13 @@ describe("reconcilePopState (#393, George round 3 P3-3)", () => {
 
   it("fully absorbs a single outstanding back() against a single-step popstate", () => {
     // The common consume case (an overlay close, a programmatic recorder
-    // close): one `back()` issued, one popstate, exactly accounted for.
+    // close): one `back()` issued, one popstate, exactly accounted for —
+    // `queuedPushAction` is `"drain"`: whatever was queued for the CURRENT
+    // screen is still valid, since nothing extra happened.
     expect(reconcilePopState(1, 1)).toEqual({
       outstandingBacks: 0,
       remaining: 0,
+      queuedPushAction: "drain",
     });
   });
 
@@ -322,10 +325,14 @@ describe("reconcilePopState (#393, George round 3 P3-3)", () => {
     // treated any popstate in that window as fully "ours" and silently ate
     // the extra step — exactly the bug George's round 3 P2-1 found. This
     // model attributes only what was outstanding (1) and reports the other
-    // level as `remaining`, so the caller still routes it.
+    // level as `remaining`, so the caller still routes it — and
+    // `queuedPushAction` is `"drop"` (George round 4 P2-3): the extra step is
+    // about to route the app AWAY from the screen a queued push targeted, so
+    // draining it here would land it on a screen already being left.
     expect(reconcilePopState(1, 2)).toEqual({
       outstandingBacks: 0,
       remaining: 1,
+      queuedPushAction: "drop",
     });
   });
 
@@ -335,9 +342,13 @@ describe("reconcilePopState (#393, George round 3 P3-3)", () => {
     // that only travelled one level so far (sequential delivery, not fully
     // coalesced yet) — one is accounted for, one is still owed, and NOTHING
     // should be routed as a genuine navigation from this popstate alone.
+    // `queuedPushAction` is `"hold"`: a further back() is still outstanding,
+    // so draining now would push while that traversal is still in flight —
+    // the original hazard `queuedPushes` exists to prevent.
     expect(reconcilePopState(2, 1)).toEqual({
       outstandingBacks: 1,
       remaining: 0,
+      queuedPushAction: "hold",
     });
   });
 
@@ -345,6 +356,7 @@ describe("reconcilePopState (#393, George round 3 P3-3)", () => {
     expect(reconcilePopState(2, 2)).toEqual({
       outstandingBacks: 0,
       remaining: 0,
+      queuedPushAction: "drain",
     });
   });
 
@@ -352,10 +364,66 @@ describe("reconcilePopState (#393, George round 3 P3-3)", () => {
     // Same starting count as the row above, but the OTHER legal delivery
     // shape (sequential, not coalesced) — this model does not need to know
     // in advance which one the browser will choose; each popstate is
-    // reconciled independently against whatever is still outstanding.
+    // reconciled independently against whatever is still outstanding. The
+    // first popstate holds (one back() is still owed); the second drains.
     const first = reconcilePopState(2, 1);
-    expect(first).toEqual({ outstandingBacks: 1, remaining: 0 });
+    expect(first).toEqual({
+      outstandingBacks: 1,
+      remaining: 0,
+      queuedPushAction: "hold",
+    });
     const second = reconcilePopState(first!.outstandingBacks, 1);
-    expect(second).toEqual({ outstandingBacks: 0, remaining: 0 });
+    expect(second).toEqual({
+      outstandingBacks: 0,
+      remaining: 0,
+      queuedPushAction: "drain",
+    });
+  });
+
+  describe("queuedPushAction (#393, George round 4 P2-3)", () => {
+    // The load-bearing table for this finding: `App.tsx`'s round-3 code
+    // drained `queuedPushes` as soon as `outstandingBacks` reached 0,
+    // WITHOUT checking `remaining` — so a queued push (an overlay open,
+    // `openChapter`, `openRecorder`) requested for the screen a coalesced
+    // extra Back is now routing AWAY from still landed on it, immediately
+    // undone by that same event's routing step. `queuedPushAction` makes the
+    // three reachable states explicit and pins which is which.
+    it("is 'hold' whenever more of this app's own back()s are still outstanding", () => {
+      // Non-null assertions are safe here: every (outstandingBacks, delta)
+      // pair below has outstandingBacks > 0 and delta > 0, the only inputs
+      // `reconcilePopState` returns `null` for are outstandingBacks <= 0 or
+      // delta <= 0 (see its own early-return guard).
+      expect(reconcilePopState(3, 1)!.queuedPushAction).toBe("hold");
+      expect(reconcilePopState(2, 1)!.queuedPushAction).toBe("hold");
+    });
+
+    it("is 'drain' only when fully resolved with nothing left over", () => {
+      expect(reconcilePopState(1, 1)!.queuedPushAction).toBe("drain");
+      expect(reconcilePopState(3, 3)!.queuedPushAction).toBe("drain");
+    });
+
+    it("is 'drop' whenever a genuine extra navigation coalesced in, even after everything outstanding resolved", () => {
+      expect(reconcilePopState(1, 2)!.queuedPushAction).toBe("drop");
+      expect(reconcilePopState(2, 5)!.queuedPushAction).toBe("drop");
+    });
+
+    it("never returns 'drain' or 'drop' while outstandingBacks has not reached 0 (mutually exclusive)", () => {
+      // Every reachable (outstandingBacks, delta) pair with delta <=
+      // outstandingBacks + 5 either holds (more owed) or resolves exactly
+      // one way — never both a nonzero remaining count AND more outstanding
+      // at once. This is the invariant the docblock states algebraically;
+      // this row proves it by exhaustion over a representative range rather
+      // than trusting the algebra alone.
+      for (let outstanding = 1; outstanding <= 4; outstanding += 1) {
+        for (let delta = 1; delta <= 6; delta += 1) {
+          const result = reconcilePopState(outstanding, delta);
+          if (!result) continue;
+          if (result.outstandingBacks > 0) {
+            expect(result.queuedPushAction).toBe("hold");
+            expect(result.remaining).toBe(0);
+          }
+        }
+      }
+    });
   });
 });

@@ -1221,6 +1221,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // offered on a segment that has stored audio — a first, uncommitted recording
     // in this session has nothing on disk to erase.
     const erase = useEraseSegment();
+    // Destructured to a bare identifier, not called as `erase.isErasing()`
+    // below (George round 4 P2-2, #393): `erase` itself is a fresh object
+    // every render (its return is not memoized), so calling a method ON it
+    // makes `react-hooks/exhaustive-deps` conservatively want the whole
+    // object in a callback's deps array (a method call could depend on
+    // `this`) even though `isErasing`'s own identity is stable (`useCallback`
+    // inside the hook) — the same fix `segments-screen.tsx`'s `dismissOverlay`
+    // already needed for the identical reason.
+    const { isErasing } = erase;
     const onConfirmErase = useCallback(() => {
       // Stop any buffer playback before the delete: EraseConfirm latches its
       // in-flight guard synchronously and the sheet is inert, so Play — the only
@@ -1375,7 +1384,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // screen, the Back must dismiss IT and stay, never commit over an in-flight
       // erase (the R-B6 last-writer race) or a menu selection. Resolve false so
       // App keeps the sheet's protective history entry and the sheet itself.
-      if (overlayBlocksClose(menuOpen, confirmOpen, erase.erasing)) {
+      //
+      // `isErasing()`, not `erase.erasing` (George round 4 P2-2, #393):
+      // `erasing` is last render's value — `erase()` sets `erasingRef.current
+      // = true` synchronously before its first `await`, but the `setErasing`
+      // state update it also fires is not guaranteed visible to a system
+      // Back landing in this same window, before the next render. Books'/
+      // Segments' `dismissOverlay` already read the live ref for exactly this
+      // reason (round 3); this is the one call site that had not been.
+      if (overlayBlocksClose(menuOpen, confirmOpen, isErasing())) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
         // un-inerts the sheet, exposing Record, whose new capture the erase's
@@ -1383,7 +1400,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // down. The sheet's gate is now `overlayUp && !takeActive` (#75), not
         // `confirmOpen` alone — but `overlayUp` folds in `erase.erasing`, and an
         // erase is only ever reachable at idle, so R4-1 still holds exactly.
-        const dismiss = overlayDismissal(menuOpen, confirmOpen, erase.erasing);
+        const dismiss = overlayDismissal(menuOpen, confirmOpen, isErasing());
         if (dismiss.closeMenu) setMenuOpen(false);
         if (dismiss.closeConfirm) setConfirmOpen(false);
         return Promise.resolve(false);
@@ -1563,7 +1580,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       stayOpen,
       menuOpen,
       confirmOpen,
-      erase.erasing,
+      isErasing,
       heldTake,
     ]);
 
