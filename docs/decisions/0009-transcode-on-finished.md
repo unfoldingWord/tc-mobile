@@ -267,16 +267,37 @@ zero-import IIFE, which is valid module source.
 **A snapshot that cannot run must not brick the encoder.** Node has no `Worker`
 and no real blob worker, and the browsers that matter here — iOS Safari, the
 Android WebView — are not the one CI runs. So the path ships with a self-healing
-guard rather than on faith. A snapshot-built worker that errors
-**without ever having answered a message** is read as a bad snapshot (wrong
-format, truncated fetch, a CSP that forbids blob workers): the snapshot is
-revoked and discarded, and the next rebuild falls back to the chunk URL, so the
-codec degrades to #182's behaviour instead of losing the encoder entirely. A
-worker that has answered at least once has **proven** the blob runs, so a later
-crash — an OOM mid-encode — keeps it; discarding there would re-expose #192 after
-one ordinary crash. The snapshot is production-only: in dev the chunk is served
-as an unbundled module with live imports, so a blob copy would resolve nothing,
-and dev has no service worker purging assets out from under the page.
+guard rather than on faith. A snapshot-built worker that fails
+**without ever having answered a message** is read as a bad snapshot: the
+snapshot is revoked and discarded, and the next rebuild falls back to the chunk
+URL, so the codec degrades to #182's behaviour instead of losing the encoder
+entirely. A worker that has answered at least once has **proven** the blob runs,
+so a later crash — an OOM mid-encode — keeps it; discarding there would re-expose
+#192 after one ordinary crash. The snapshot is production-only: in dev the chunk
+is served as an unbundled module with live imports, so a blob copy would resolve
+nothing, and dev has no service worker purging assets out from under the page.
+
+**"Fails" means both ways a worker can fail, not just the error event.** #192's
+fix shape was written before the silence deadline (#166, PR #279) existed, and
+names only `worker.onerror`. That arm catches the snapshot that will not parse or
+load — a wrong format, a CSP that forbids blob workers. It does not catch the
+snapshot that **loads and then answers nothing**: a truncated fetch ending on a
+statement boundary is valid JS with no `message` listener, which errors never and
+goes silent forever. Judging only the error arm would leave every rebuild coming
+from the same mute blob, each encode burning a full `ENCODER_SILENCE_TIMEOUT_MS`
+before rejecting — an encoder wedged for the life of the page, strictly worse
+than the #182 behaviour the fallback exists to reach, and reached by the very
+mechanism meant to prevent it. So a **stall** on an unproven snapshot-built
+worker discards the snapshot too. An **abort** deliberately does not: that is the
+app terminating a healthy worker, and its re-warm is meant to come from the
+snapshot.
+
+What keeps the stall arm safe is that `mp3.worker.ts` posts its first heartbeat
+on the first frame it encodes, so a running worker is **proven** within
+milliseconds of the request — a slow-but-progressing encode can never be read as
+a bad snapshot, and only a worker that has said nothing at all for a full visible
+window is. Proof is therefore taken from ANY message, a heartbeat included, not
+only from the one that settles the encode.
 
 Everything about the snapshot is best-effort. A failed fetch, an absent `fetch`,
 `Blob` or `createObjectURL`, and a synchronous `new Worker` throw all leave the
@@ -287,17 +308,22 @@ Unit-tested in Node (`tests/mp3-codec.test.ts`) by stubbing `fetch`, `Blob` and
 the object-URL pair. What those tests pin is the **decision** — which URL each
 worker is built from, when the snapshot is taken, and when a snapshot is thrown
 away — not that a real blob worker runs the real chunk; that is the Chromium
-smoke's job, below. Mutation-proven: building always from the chunk URL kills
-four tests; dropping the production gate, the once-only fetch guard, the
-discard-on-unproven-error guard, or the `proven` condition each kills exactly
-the test named for it.
+smoke's job, below. Mutation-proven, each mutation restored afterwards: building
+always from the chunk URL kills eight tests; dropping the production gate, the
+once-only fetch guard, the discard-on-unproven-error arm or the stall arm each
+kills exactly the test named for it; dropping the `proven` condition kills the
+three tests that assert a proven snapshot is kept; marking `proven` only on the
+settling message rather than on any message kills the heartbeat-is-proof test;
+and letting `recoverEncoderWorker` judge the snapshot — so an abort discards it —
+kills the abort test.
 
 **Verified in a real browser**, which #192 did not expect to be possible — the
 issue was written before the headless-Chromium smoke (#251) landed.
-`e2e/browser-boundary-smoke.spec.ts` loads the app, waits for BOTH chunk
-requests (the warm worker's script load and the snapshot's own `fetch`), then
-fails every later request for the hashed chunk — the purge, simulated the only
-way a test can — aborts an in-flight encode to force the rebuild, and encodes.
+`e2e/browser-boundary-smoke.spec.ts` loads the app, waits for the snapshot's own
+`fetch` of the chunk to land — asked of the page's resource timeline, so the
+whole spec reads one clock — then fails every later request for the hashed chunk
+— the purge, simulated the only way a test can — aborts an in-flight encode to
+force the rebuild, and encodes.
 A real MP3 comes back from a worker built entirely from the blob, and the
 rebuild issued no new chunk request. The gate fails in the other state, which
 is what makes it a gate (#270): with the snapshot ignored and the rebuild back
@@ -310,3 +336,10 @@ not touch the network. What it does NOT prove is the trigger: the real
 `cleanupOutdatedCaches` purge chain still needs a device with **two deployed
 builds** to observe, and iOS Safari and Android WebView have run none of this.
 Folded into the on-device pass (#245 / #263).
+
+One trap for whoever runs that spec locally: `captureWorkerSnapshot` is gated on
+`import.meta.env.PROD`, which Vite derives from `NODE_ENV`. A shell that exports
+`NODE_ENV=development` compiles the whole snapshot path out of **every** build,
+`--mode e2e` included, and the spec then times out waiting for a fetch that can
+never happen. CI sets no `NODE_ENV`, so it does not hit this; the spec's poll now
+says so in its failure message.

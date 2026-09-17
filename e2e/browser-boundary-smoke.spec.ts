@@ -296,9 +296,21 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     // assertion below would fail for a reason that has nothing to do with the
     // fix. Asked of the page's resource timeline rather than Playwright's
     // request events, so the whole test reads one clock.
+    //
+    // The `message` is not decoration. `captureWorkerSnapshot` is gated on
+    // `import.meta.env.PROD`, which Vite derives from NODE_ENV — so a shell that
+    // exports `NODE_ENV=development` (this dev container does) compiles the whole
+    // snapshot path out of the build and this poll times out on a bare "expected
+    // true, received false" that says nothing about why. CI sets no NODE_ENV, so
+    // it does not hit this; a laptop can.
     await expect
       .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotFetched()), {
         timeout: 10_000,
+        message:
+          "captureWorkerSnapshot never fetched the worker chunk. It is gated on " +
+          "import.meta.env.PROD — if NODE_ENV is set to development in this " +
+          "shell, Vite builds with PROD=false and the snapshot path is compiled " +
+          "out. Re-run with NODE_ENV unset.",
       })
       .toBe(true);
 
