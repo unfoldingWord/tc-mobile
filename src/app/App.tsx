@@ -106,17 +106,38 @@ export function App() {
   // drains) is still correct — a repeated on-screen Back tap is a narrower
   // problem than the coalescing class the count above exists to solve.
   const backRequested = useRef(false);
-  // A monotonic id stamped on every entry, so the handler can tell Back from
-  // Forward by comparing the destination index to where we were (F2). Only ever
-  // increments; the live stack is strictly increasing in it (see `navDirection`).
-  const nextIndex = useRef(0);
+  // The CURRENT entry's depth — 0 at the entry the app loaded on, +1 per real
+  // push from there. Updated to ground truth (`event.state.index`) on every
+  // landed popstate, so it is always the depth `navDirection` and
+  // `reconcilePopState` compare a new destination against (F2).
+  //
+  // Frank, on 11775a6, #393 (George round 3's `reconcilePopState` follow-up):
+  // this used to be stamped from a GLOBALLY monotonic counter (`nextIndex`,
+  // incremented on every push and never reset or decremented) rather than
+  // this ref's own current value. That made stamped indices non-contiguous
+  // across a Back-then-push: push (depth 0→1, stamped `1`) → Back (1→0) →
+  // `dismiss-screen-overlay` re-arms with ANOTHER push, which the OLD scheme
+  // stamped `2` (the counter kept climbing) even though the real browser
+  // stack — `pushState` always truncates the forward entries a Back walked
+  // past — is back to exactly ONE level deep, the SAME physical depth as the
+  // entry the counter had already used for `1`. `reconcilePopState`'s
+  // `delta` (`fromIndex - toIndex`) is only meaningful as a REAL traversal
+  // count when indices track actual depth; fed a counter-driven gap instead,
+  // a single one-level Back down to root (`2 → 0`) miscounted as TWO levels,
+  // manufacturing a phantom `remaining` navigation that routed `exit-app`/
+  // `to-books` after an overlay dismiss that should have been a total no-op.
+  // Stamping every push from THIS ref's own current value, not a separate
+  // ever-climbing counter, keeps every reachable entry's stamped index equal
+  // to its actual physical depth, so reused depths after a truncating Back
+  // (correctly) reuse the same index value instead of leaving a gap.
   const navIndex = useRef(0);
 
   const pushRawHistoryEntry = useCallback(() => {
-    // A marker entry whose only job is to be there for Back to consume, carrying
-    // the monotonic index that tells Back from Forward. Routing reads live React
-    // state for the screen, so the entry needs nothing more than its index.
-    const index = ++nextIndex.current;
+    // A marker entry whose only job is to be there for Back to consume,
+    // carrying the depth that tells Back from Forward (`navDirection`) and
+    // feeds `reconcilePopState`'s displacement arithmetic. Routing reads live
+    // React state for the screen, so the entry needs nothing more than this.
+    const index = navIndex.current + 1;
     window.history.pushState({ tc: true, index }, "");
     navIndex.current = index;
   }, []);
@@ -200,7 +221,6 @@ export function App() {
   useEffect(() => {
     window.history.replaceState({ tc: true, index: 0 }, "");
     navIndex.current = 0;
-    nextIndex.current = 0;
   }, []);
 
   const goBack = useCallback(() => {

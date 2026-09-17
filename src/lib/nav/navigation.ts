@@ -252,6 +252,25 @@ export function overlayDismissal(
  * popstate did not move backward at all — forward/same are `navDirection`'s
  * concern, not this function's) — the ordinary case, meaning: route this
  * popstate normally, nothing to reconcile first.
+ *
+ * **Precondition — `delta` must be an actual traversal count, not merely a
+ * difference of two labels.** Frank, on `11775a6` (#393): `App.tsx` used to
+ * stamp each pushed entry from a globally monotonic counter, incremented on
+ * every push and never reset. That works for `navDirection`'s simple
+ * greater/less/equal comparison, but NOT for this function's arithmetic — a
+ * Back (which the real History API always processes by walking to an
+ * adjacent entry, never by "jumping" past one still on the stack) followed
+ * by a re-push truncates the browser's own forward entries and starts a new
+ * one from the CURRENT position, so the real stack is exactly as deep as it
+ * was before the Back — but a global counter keeps counting up regardless,
+ * leaving a gap between the label the app last saw and the one it stamps
+ * next that does not correspond to any real traversal at all. Feeding that
+ * gap in as `delta` manufactures a phantom "extra" navigation this function
+ * then (correctly, given its input) reports as `remaining` — the actual bug
+ * was in what `App.tsx` computed before calling this, never in this
+ * function's own arithmetic, which is why fixing it needed no change here:
+ * `App.tsx`'s `navIndex` ref must always be stamped as an actual, current
+ * depth (see its own comment), never from an independent counter.
  */
 export interface PopStateReconciliation {
   /** `outstandingBacks`, after this popstate's displacement is attributed
