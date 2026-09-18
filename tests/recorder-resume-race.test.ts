@@ -114,6 +114,28 @@ describe("raceAudioResume (#108)", () => {
     expect(resolved).toBe(true);
   });
 
+  it("the TIMER win reports exactly once under recorder-start-resume-timeout, naming the bound (#475)", async () => {
+    resumeAudioContext.mockReturnValue(new Promise(() => {}));
+
+    const race = raceAudioResume();
+    await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS);
+    await race;
+
+    // The bound firing IS the #108 fact the log exists to carry: one row,
+    // under its own key (not the rejection branch's), whose message states
+    // the bound in ms so a reader of the log can tell which knob it was.
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(Error),
+      "recorder-start-resume-timeout"
+    );
+    const reported: unknown = reportFailure.mock.calls[0]?.[0];
+    expect(reported).toBeInstanceOf(Error);
+    expect((reported as Error).message).toContain(
+      String(RESUME_START_TIMEOUT_MS)
+    );
+  });
+
   it("does not resolve before the timeout elapses", async () => {
     resumeAudioContext.mockReturnValue(new Promise(() => {}));
 
@@ -124,6 +146,8 @@ describe("raceAudioResume (#108)", () => {
 
     await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS - 1);
     expect(resolved).toBe(false);
+    // The #475 row sits on the timer edge, not before it (#475).
+    expect(reportFailure).not.toHaveBeenCalled();
   });
 
   it("a late REJECTION after the timeout reaches reportFailure, unswallowed", async () => {
@@ -133,7 +157,13 @@ describe("raceAudioResume (#108)", () => {
     const race = raceAudioResume();
     await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS);
     await race;
-    expect(reportFailure).not.toHaveBeenCalled();
+    // The timer win itself is one row (#475) — nothing more yet.
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Error),
+      "recorder-start-resume-timeout"
+    );
 
     const cause = new Error("resume rejected late");
     gate.reject(cause);
@@ -141,8 +171,14 @@ describe("raceAudioResume (#108)", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(reportFailure).toHaveBeenCalledTimes(1);
-    expect(reportFailure).toHaveBeenCalledWith(cause, expect.any(String));
+    // The late rejection is a SECOND row, under the rejection branch's own
+    // key — the two facts are distinct and both reach the funnel.
+    expect(reportFailure).toHaveBeenCalledTimes(2);
+    expect(reportFailure).toHaveBeenNthCalledWith(
+      2,
+      cause,
+      "recorder-start-resume"
+    );
   });
 
   it("an early REJECTION before the timeout still reaches reportFailure, and the function still resolves (not rejects)", async () => {
@@ -154,7 +190,7 @@ describe("raceAudioResume (#108)", () => {
     expect(reportFailure).toHaveBeenCalledWith(cause, expect.any(String));
   });
 
-  it("a late RESOLVE after the timeout reports nothing", async () => {
+  it("a late RESOLVE after the timeout adds no row of its own — only the timer's", async () => {
     const gate = deferred<void>();
     resumeAudioContext.mockReturnValue(gate.promise);
 
@@ -166,7 +202,17 @@ describe("raceAudioResume (#108)", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(reportFailure).not.toHaveBeenCalled();
+    // Exactly the timer's one row (#475); the late resolve itself reports
+    // nothing — nothing went wrong, the context is simply "running" now.
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(Error),
+      "recorder-start-resume-timeout"
+    );
+    expect(reportFailure).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "recorder-start-resume"
+    );
   });
 
   it("clears the pending timer once resume settles early", async () => {

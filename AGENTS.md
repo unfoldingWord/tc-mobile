@@ -201,15 +201,20 @@ this file will not blur the two.** What reaches the funnel today is: uncaught
 errors and unhandled rejections (`app/install-failure-listeners.ts`), render
 throws (`components/error-boundary.tsx`), encoder health and recovery
 (`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
-share _prepare_ (`hooks/share-flow.ts`), `cancel()`'s native `stop()` guard
-(`hooks/use-recorder.ts`, context key `"recorder-cancel-stop"`, #474), and
-the log's own share and clear paths. What still ends at `console.error` and
-is therefore **never written down** is most of what a translator actually
-hits: a failed save (`hooks/use-save-take.ts`), a failed book delete
-(`hooks/use-books.ts`), a failed erase (`hooks/use-erase-segment.ts`),
-mic/playback/record-start and `stopRecording`'s commit-path backstop
-(`hooks/use-audio-session.ts`, #480), the recorder's preview path, and
-share _send_ (`hooks/share-flow.ts`). Routing those is follow-up work — and it
+share _prepare_ (`hooks/share-flow.ts`), the recorder's own guards and bounds
+(`hooks/use-recorder.ts`: `cancel()`'s native `stop()` guard
+`"recorder-cancel-stop"` #474, `start()`'s resume rejection
+`"recorder-start-resume"` #470 and its 1000 ms bound firing
+`"recorder-start-resume-timeout"` #475, an interruption that leaves the native
+recorder still active `"recorder-interrupted-active"` #478),
+`stopRecording`'s commit-path backstop (`hooks/use-audio-session.ts`,
+`"recorder-stop-backstop"`, #480), and the log's own share and clear paths.
+What still ends at `console.error` and is therefore **never written down** is
+most of what a translator actually hits: a failed save
+(`hooks/use-save-take.ts`), a failed book delete (`hooks/use-books.ts`), a
+failed erase (`hooks/use-erase-segment.ts`), mic/playback/record-start
+(`hooks/use-audio-session.ts`), the recorder's preview path, and share _send_
+(`hooks/share-flow.ts`). Routing those is follow-up work — and it
 is not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 Until it lands, do not describe the log as holding "anything that went wrong":

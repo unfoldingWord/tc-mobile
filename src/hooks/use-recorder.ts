@@ -224,7 +224,13 @@ export const RESUME_START_TIMEOUT_MS = 1_000;
  * A late RESOLVE (no error) after the timeout reports nothing — nothing went
  * wrong, the shared context is simply "running" now, and whichever
  * generation is current benefits silently through the existing #76
- * per-frame `contextNeedsResume`/`available()` check.
+ * per-frame `contextNeedsResume`/`available()` check. The TIMER win itself
+ * reports once, under `"recorder-start-resume-timeout"` (#475): the bound
+ * firing is the #108 fact the log exists to carry, so every tester phone
+ * becomes a measurement of how often `resume()` takes longer than
+ * `RESUME_START_TIMEOUT_MS`. That row fires on EVERY `start()` whose resume
+ * overruns the bound; if a phone's resume-from-interrupted is routinely
+ * slow it competes for the failure ring, and the constant is the one knob.
  *
  * Built with a manual `Promise` executor and a local `settled` flag rather
  * than `Promise.race`, so a same-tick or early rejection from
@@ -244,6 +250,12 @@ export function raceAudioResume(): Promise<void> {
     const timer = setTimeout(() => {
       settled = true;
       resolve();
+      reportFailure(
+        new Error(
+          `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; start() proceeded without it (#108)`
+        ),
+        "recorder-start-resume-timeout"
+      );
     }, RESUME_START_TIMEOUT_MS);
     resumePromise.then(
       () => {
@@ -654,6 +666,19 @@ export function useRecorder(): UseRecorder {
       // the take. Guarded by generation so an interruption on a superseded
       // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
       // teardown) does NOT fire `ended`, so this only reacts to real losses.
+      // The still-active arm (recorder not yet "inactive") is reported once
+      // per take so tester phones show whether it is ever reached (#478).
+      //
+      // Per take, not per call: a fresh binding per start() closure, like
+      // `chunks` above. `onInterrupted` is bound to `onerror` AND every
+      // track's `onended`, so one interruption can invoke it more than once,
+      // in different tasks — and the funnel's own dedup collapses only the
+      // same Error identity within one microtask, which a synthesized Error
+      // per call is not. Never reset: a take that hits the still-active arm
+      // is frozen at "processing" and cannot resume, so per-take and
+      // per-interruption coincide today. If a take ever continues after an
+      // interruption, this boolean would suppress a second, genuine one.
+      let interruptionReported = false;
       const onInterrupted = () => {
         if (generation !== generationRef.current) return;
         clearTick();
@@ -680,6 +705,14 @@ export function useRecorder(): UseRecorder {
           // truncate the slice stop() will recover.
           stream?.getTracks().forEach((track) => track.stop());
           closeTap();
+        } else if (!interruptionReported) {
+          interruptionReported = true;
+          reportFailure(
+            new Error(
+              `Recorder interrupted while still ${recorder.state}: the microphone stays live on the frozen sheet until Back (#59 residual)`
+            ),
+            "recorder-interrupted-active"
+          );
         }
       };
       recorder.onerror = onInterrupted;
