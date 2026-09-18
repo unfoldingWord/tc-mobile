@@ -18,9 +18,21 @@
  *
  * #199 offered accepting that as a residual (which is what `PermissionPanel`
  * already did) or landing focus deliberately. This is the second, for all
- * three panels rather than one: a resolved panel leaves the sheet in exactly
- * the state a fresh open leaves it, so it should land focus exactly where a
- * fresh open does — the same call, not a second policy.
+ * three panels rather than one. The landing is the ≡ ("More actions")
+ * control, resolved by its accessible name (`recorder.tsx`, `menuLandmark`) —
+ * deliberately NOT the header Back that a fresh open lands on. An earlier
+ * draft shared the open call on the argument that a resolved panel leaves the
+ * sheet as a fresh open does, but the two edges are not alike: open is not
+ * mid-task, recovery is. Back is `close()`, which SAVES, so a keyboard or
+ * switch user whose "Try again" had just succeeded had the next Space/Enter
+ * armed to exit — the #97 hazard `use-focus-restore.ts`'s contract forbids,
+ * reintroduced on exactly the users #199 exists for (George R1 P2 on #457,
+ * pinned by `tests/panel-recovery-focus.test.ts`). Do not "simplify" the call
+ * site back to the open-edge call.
+ *
+ * The answer is three-valued (`focus` / `hold` / `idle`), not a boolean,
+ * because the closing edge needs the caller to leave its history alone — see
+ * `panelRecoveryFocus` below.
  *
  * Booleans, never elements, so it stays inside `lib/`'s DOM ban and runs in the
  * Node-only suite. The half that reads the DOM and calls `.focus()` lives in

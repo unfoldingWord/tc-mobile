@@ -26,7 +26,11 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0b0f14" />
+    <!-- `--p-cool-950`, the dark floor (`src/app/styles/1-primitives.css`):
+         what the OS chrome shows until `installStoredTheme` repaints it from
+         the computed token. Pinned to the primitive by `tests/theme.test.ts`;
+         the old `#0b0f14` was a value no token ever had. -->
+    <meta name="theme-color" content="#0b1016" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta

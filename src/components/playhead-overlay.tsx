@@ -149,7 +149,8 @@ export function PlayheadOverlay({
       // object: `opacity` and `left` are written imperatively in rAF, and a value
       // declared in `style` would be reset by React on any parent re-render
       // during a preview (VuMeter keeps its live `transform` out of JSX for the
-      // same reason). `background` is static, so it stays in `style` safely.
+      // same reason). The background is the `bg-ink` class below, through the
+      // colour bridge `tests/style-bridge.test.ts` gates — not `style`.
       // `z-[1]` so the line is painted ABOVE the selection overlay (#284 /
       // George R5). Neither node set a z-index, so document order decided it and
       // this one is mounted first: on the flow this PR exists for — tighten the
