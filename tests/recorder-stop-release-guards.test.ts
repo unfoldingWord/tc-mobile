@@ -3,24 +3,34 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * Two release-on-throw properties in `use-recorder.ts` (#59, PR #474):
+ * Three release-on-throw properties in `use-recorder.ts` (#59, PR #474,
+ * #485):
  *
  *   1. `cancel()`'s native `recorder.stop()` call is guarded, so a throw
  *      there cannot skip `releaseStream()` (round-5 cap decision, option A —
  *      see the PR body and the dev-lead decision comment for the rest of
  *      that reduction).
  *   2. `stop()`'s bounded-flush `await new Promise<Blob>` is wrapped in a
- *      `try { ... } finally { ... }` whose `finally` releases the stream and
- *      tap `stop()` already stole out of the shared refs, so a throw from
- *      the executor cannot leave them stranded (George R5 P2, round 6). The
- *      executor's OWN `recorder.stop()` call stays bare — guarding it would
- *      be the J7 shape (correctness depends on the recorder's post-throw
- *      state) that rounds 3 and 4 oscillated on; the round-5 decision left
- *      it out, and round 6 does not reopen it. A `try`/`finally` around the
- *      whole await is a different, state-independent property (J6): once
- *      the executor throws, the blob promise is already rejected and the
- *      take is already lost, so releasing in a `finally` cannot truncate
- *      anything that wasn't already gone.
+ *      `try { ... } catch { ... } finally { ... }`: the `finally` releases
+ *      the stream and the LOCAL tap `stop()` already stole out of the shared
+ *      refs, so a throw from the executor cannot leave them stranded (George
+ *      R5 P2, round 6); the `catch` — on the AWAIT — returns React state to
+ *      `idle` when current, drops the recorder ref when it is still this
+ *      recorder, and returns the failure in the `StopResult` instead of
+ *      rethrowing, so the sheet is not stuck at `processing` behind a zombie
+ *      ref that blocks the next `start()` (#485, George R6). The executor's
+ *      OWN `recorder.stop()` call stays bare — guarding it would be the J7
+ *      shape (correctness depends on the recorder's post-throw state) that
+ *      rounds 3 and 4 oscillated on; the round-5 decision left it out, and
+ *      neither round 6 nor #485 reopens it. Both the `finally` and the
+ *      `catch` are a different, state-independent property (J6): once the
+ *      executor throws, the blob promise is already rejected and the take is
+ *      already lost, so nothing here reads `recorder.state` — the catch
+ *      reasons only about the generation and the ref this invocation
+ *      captured.
+ *   3. The already-`"inactive"` arm (an interruption ended the recorder on
+ *      its own) releases the stream and closes the same LOCAL tap after the
+ *      blob is sealed (#485 finding 2).
  *
  * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. There is no `MediaRecorder`
  * and no renderer in this Node-only suite, so `cancel()` and `stop()` — both
@@ -34,11 +44,14 @@ import { describe, expect, it } from "vitest";
  *
  * WHAT IT PROVES, EXACTLY: that the source text wraps `cancel()`'s native
  * `stop()` call and reports its failure through the funnel; that `stop()`'s
- * flush await is wrapped in a `try`/`finally` whose `finally` releases both
- * the stream and the tap; and that the flush executor's own `recorder.stop()`
- * call is not itself inside any `try`/`catch`. It does NOT prove either catch
- * or finally behaves correctly at runtime, that either call ever throws, or
- * that any device has run this. The PR body says the same.
+ * flush await is wrapped in a `try`/`catch`/`finally` whose `catch` sets
+ * idle, drops the ref and returns the failure, and whose `finally` releases
+ * the stream and the literal local `tap?.close()`; that the flush `try`
+ * holds no nested `try` and the catch reads no `recorder.state`; and that
+ * the inactive arm closes the same local tap after the blob is sealed. It
+ * does NOT prove any catch or finally behaves correctly at runtime, that
+ * either call ever throws, or that any device has run this. The PR body says
+ * the same.
  *
  * WHY THE GUARDS EXIST, so a future reader does not delete them as noise:
  *
@@ -192,20 +205,38 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
 });
 
 /**
- * Round 6 (George R5 P2): the flush executor's bounded `await new
- * Promise<Blob>` is wrapped in `try { ... } finally { ... }`. This replaces
- * round 5's "no try/catch remains around the flush-executor's
- * `recorder.stop()`" case, which pinned the WRONG property once the round-6
- * fix landed — that case would now fail on the CORRECT code, since the
- * executor sits inside a `try` (the outer one wrapping the whole await), even
- * though the executor's own `recorder.stop()` call is still bare. The
- * property that actually matters is pinned below instead: the outer
- * try/finally exists and releases both the stream and the tap, and the
- * native call itself is not additionally wrapped in a `try`/`catch` of its
- * own (a `finally` around the whole await is fine — round 6 does not reopen
- * the J7 question rounds 3/4 oscillated on).
+ * Round 6 (George R5 P2) wrapped the flush executor's bounded `await new
+ * Promise<Blob>` in `try { ... } finally { ... }`, and this describe pinned
+ * "finally, NOT catch" — a `catch` around the same await was read as the
+ * round-3/4 shape (a guard whose correctness branches on the recorder's
+ * post-throw `state`, the J7 question the round-5 cap left out). #485
+ * (George R6 on #474) supersedes that pin: the same throw ALSO rode out of
+ * `stop()` with React state left at "processing" and `recorderRef` still
+ * holding the dead recorder, so the sheet stayed `busy`, every Back stayed,
+ * and a later `start()` returned early on the zombie ref. The fix is a
+ * `catch` on the AWAIT — not on the executor's own `recorder.stop()`, which
+ * stays bare — that sets `idle` (when current), drops the ref (when it is
+ * still this recorder) and returns the failure in the `StopResult`. That
+ * catch reads no `recorder.state`: once the executor throws the take is
+ * already lost, so it reasons only about the generation and the ref this
+ * invocation captured (J6). What separates J6 from J7 is therefore NOT
+ * "catch vs finally" but two properties pinned below instead: the flush
+ * `try` contains no nested `try` (the native call inside the executor is
+ * bare), and neither the catch body nor the text between it and the
+ * `finally` mentions `recorder.state`.
+ *
+ * Also #485 finding 2: the `finally`'s close was matched as any `.close()`,
+ * so `tapRef.current?.close()` — a no-op after `stop()` stole the tap into
+ * the local `tap` and nulled `tapRef` — passed the gate while the VU clone's
+ * tracks stayed live (mutation run at origin/develop's test text: it passed
+ * 6/6). And the already-`"inactive"` arm's own `tap?.close()` — the reason the
+ * shared close was split in #474 — was not gated at all (deleting it also
+ * passed 6/6). Both arms now pin the LOCAL `tap?.close()` literally: `tap` is
+ * typed `LevelTap | null`, so `tap?.close()` is the only spelling that
+ * typechecks, and `closeTap()` reads the ref `stop()` already nulled — after
+ * the steal it is a no-op, and a NEWER recording's tap could be in that ref.
  */
-describe("stop()'s flush await releases the stolen stream and tap even when it throws (#59, George R5 P2)", () => {
+describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path returns to idle (#59 #474 R6, #485)", () => {
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
   const stripComments = (text: string) =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -226,13 +257,14 @@ describe("stop()'s flush await releases the stolen stream and tap even when it t
   };
 
   /**
-   * Isolate `stop()`'s own body, then its `else` branch (the
-   * `recorder.state !== "inactive"` arm — the `if` branch, recovering an
-   * interruption's own `"inactive"` end, has no flush to await and is
-   * untouched by this round), so every assertion below checks THIS branch's
-   * wiring specifically and not just "somewhere in the file" — `cancel()`'s
-   * guard above also contains `recorder.stop()`, `try`, and `catch`-shaped
-   * text, and a plain file-wide match could be satisfied by the wrong site.
+   * Isolate `stop()`'s own body, then BOTH arms of its `if/else` on
+   * `recorder.state`: the `if` arm recovers an interruption's own
+   * `"inactive"` end (no flush to await; gated since #485), the `else` arm
+   * drives the bounded flush. Every assertion below checks ONE arm's wiring
+   * specifically and not just "somewhere in the file" — `cancel()`'s guard
+   * above also contains `recorder.stop()`, `try`, and `catch`-shaped text,
+   * and each arm contains a `tap?.close()`, so a plain file-wide or
+   * whole-`stop()` match could be satisfied by the wrong site.
    */
   const stopDeclStart = code.indexOf("const stop = useCallback");
   if (stopDeclStart === -1) {
@@ -249,6 +281,20 @@ describe("stop()'s flush await releases the stolen stream and tap even when it t
     throw new Error("stop()'s closing brace not found");
   }
   const stopBody = code.slice(stopBraceOpen, stopBraceClose + 1);
+
+  const ifLiteral = 'if (recorder.state === "inactive") {';
+  const ifIdx = stopBody.indexOf(ifLiteral);
+  if (ifIdx === -1) {
+    throw new Error(
+      "stop()'s inactive arm not found — has the if/else shape changed?"
+    );
+  }
+  const ifBraceOpen = ifIdx + ifLiteral.length - 1;
+  const ifBraceClose = matchingBraceClose(stopBody, ifBraceOpen);
+  if (ifBraceClose === -1 || ifBraceClose <= ifBraceOpen) {
+    throw new Error("stop()'s inactive arm closing brace not found");
+  }
+  const ifArmBody = stopBody.slice(ifBraceOpen, ifBraceClose + 1);
 
   const elseIdx = stopBody.indexOf("} else {");
   if (elseIdx === -1) {
@@ -268,12 +314,10 @@ describe("stop()'s flush await releases the stolen stream and tap even when it t
 
   /**
    * Within the else branch, find the `try { ... }` that wraps the flush
-   * await, and — distinctly — whether it is followed by `catch` or
-   * `finally`. Reused by both assertions below: (a) needs the `finally`
-   * block's own contents; (b) needs to know the wrapping is a `finally`, not
-   * a `catch`, so a future `catch` reintroduced around the same await (the
-   * round 3/4 shape) is caught as a DIFFERENT defect from either of these
-   * two cases, not silently accepted as "some kind of try is here, fine".
+   * await, then what follows it. Since #485 that is `catch { ... }` and then
+   * `finally { ... }`; each is located from the previous block's matching
+   * close so the three are proven CONTIGUOUS, not merely present somewhere
+   * in the branch.
    */
   const tryIdx = elseBody.indexOf("try {");
   if (tryIdx === -1) {
@@ -287,9 +331,55 @@ describe("stop()'s flush await releases the stolen stream and tap even when it t
     throw new Error("the flush await's try block closing brace not found");
   }
   const tryBody = elseBody.slice(tryBraceOpen, tryBraceClose + 1);
-
   const afterTry = elseBody.slice(tryBraceClose + 1);
-  const finallyMatch = /^\s*finally\s*\{/.exec(afterTry);
+
+  /**
+   * The ONE contiguous pattern for the throw path (#485): the try's own
+   * closing brace, flowing DIRECTLY into a `catch {` (no binding — the cause
+   * is not reported on this path; see the source comment) whose body is
+   * exactly, in order: the generation-gated `setState("idle")`, the
+   * identity-gated `recorderRef.current = null`, and the literal three-field
+   * return carrying the same sentence `stopRecording`'s backstop uses. It is
+   * anchored by `search(...) === tryBraceClose` (the technique
+   * `tests/recorder-failure-rows.test.ts` uses), so a detached catch, a
+   * `finally` slid in between, or a matching catch on some OTHER try in the
+   * branch cannot satisfy it. What it deliberately does NOT allow: a bare
+   * `setState("idle")` (a superseded stop would repaint a newer recording's
+   * screen), a bare `recorderRef.current = null` (accepted by George as
+   * safe today, but the identity form is what stays safe if a future await
+   * lands before the try), or a `throw`/rethrow in place of the return (the
+   * `UseRecorder.stop` contract says the failure is in the result, and
+   * `stopRecording` documents "never rejects").
+   */
+  const catchPattern =
+    /\}\s*catch\s*\{\s*if\s*\(\s*generation\s*===\s*generationRef\.current\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*return\s*\{\s*samples:\s*null,\s*error:\s*"Could not finish this recording\.",\s*blob:\s*null,?\s*\}\s*;\s*\}/;
+
+  const catchMatch = /^\s*catch\s*\{/.exec(afterTry);
+  const catchBraceOpen =
+    catchMatch === null
+      ? -1
+      : tryBraceClose + 1 + catchMatch.index + catchMatch[0].length - 1;
+  const catchBraceClose =
+    catchBraceOpen === -1 ? -1 : matchingBraceClose(elseBody, catchBraceOpen);
+  const catchBody =
+    catchBraceClose === -1
+      ? ""
+      : elseBody.slice(catchBraceOpen, catchBraceClose + 1);
+  const afterCatch =
+    catchBraceClose === -1 ? "" : elseBody.slice(catchBraceClose + 1);
+  const finallyMatch = /^\s*finally\s*\{/.exec(afterCatch);
+  const finallyBraceOpen =
+    finallyMatch === null
+      ? -1
+      : catchBraceClose + 1 + finallyMatch.index + finallyMatch[0].length - 1;
+  const finallyBraceClose =
+    finallyBraceOpen === -1
+      ? -1
+      : matchingBraceClose(elseBody, finallyBraceOpen);
+  const finallyBody =
+    finallyBraceClose === -1
+      ? ""
+      : elseBody.slice(finallyBraceOpen, finallyBraceClose + 1);
 
   it("the flush await lives inside a try, and the source text still contains the recorder.stop() call it awaits", () => {
     // Both anchors independently checked before anything downstream assumes
@@ -300,59 +390,70 @@ describe("stop()'s flush await releases the stolen stream and tap even when it t
     expect(tryBody).toMatch(/recorder\.stop\s*\(\s*\)\s*;/);
   });
 
-  it("that try is followed by a finally (not a catch) whose body releases both the stream and the tap", () => {
-    // Deliberately `finally`, not `catch`: George R5 P2's fix is
-    // state-independent (J6) — it releases regardless of whether the
-    // executor threw or resolved normally, not "if it threw, then release".
-    // A `catch` here would only run on a throw and skip the release on the
-    // (also load-bearing) normal-completion path, which already relies on
-    // this same release happening.
-    expect(finallyMatch).not.toBeNull();
-    const finallyBraceOpen =
-      tryBraceClose +
-      1 +
-      (finallyMatch?.index ?? 0) +
-      (finallyMatch?.[0].length ?? 0) -
-      1;
-    expect(finallyBraceOpen).toBeGreaterThan(tryBraceClose);
-    const finallyBraceClose = matchingBraceClose(elseBody, finallyBraceOpen);
-    expect(finallyBraceClose).toBeGreaterThan(finallyBraceOpen);
-    const finallyBody = elseBody.slice(finallyBraceOpen, finallyBraceClose + 1);
+  it("that try flows directly into a catch that sets idle when current, drops the recorder ref when it is still this recorder, and returns the failure in the result (#485)", () => {
+    // Deleting the `setState("idle")`, dropping its generation guard,
+    // deleting the ref null or its identity guard, replacing the `return`
+    // with a `throw`, or moving the three statements into the `finally` and
+    // deleting the catch (then `afterTry` starts at `finally`) must all fail
+    // this.
+    expect(afterTry).toMatch(/^\s*catch\s*\{/);
+    expect(elseBody.search(catchPattern)).toBe(tryBraceClose);
+  });
 
+  it("the catch is followed by a finally whose body releases the stream and closes the LOCAL tap, not the ref (#474 R6, #485)", () => {
+    // The release stays a `finally`, state-independent (J6): it runs whether
+    // the executor threw or resolved normally, after the catch body and
+    // before the catch's return value is delivered.
+    expect(finallyMatch).not.toBeNull();
+    expect(finallyBraceClose).toBeGreaterThan(finallyBraceOpen);
     // Deleting either release call, or moving it back out of the finally
     // (reverting to a bare post-await release), must fail this.
     expect(finallyBody).toMatch(/abandonStream\(/);
-    expect(finallyBody).toMatch(/\.close\(\)/);
+    // Literally `tap?.close()`: `tapRef.current?.close()` and `closeTap()`
+    // both read the ref `stop()` nulled before the await — a no-op that
+    // leaves the VU clone's tracks live, and a newer recording's tap could
+    // be in that ref. The old `/\.close\(\)/` let the first one through.
+    expect(finallyBody).toMatch(/\btap\?\.close\(\)\s*;/);
+    expect(finallyBody).not.toMatch(/closeTap\s*\(/);
+    expect(finallyBody).not.toMatch(/tapRef/);
   });
 
-  it("the executor's own recorder.stop() call is not itself inside any try/catch (a try/finally around the whole await is fine)", () => {
-    // Distinguishes the round-6 shape (a try/FINALLY around the whole await,
-    // with the native call bare inside it) from the round-3/4 shape (a
-    // try/CATCH around the native call itself, branching on
-    // `recorder.state` afterward) — the latter is the J7 property the
-    // round-5 decision explicitly left out and round 6 does not reopen.
-    // Only a `try` block that is itself followed by `catch` counts here;
-    // the outer try/finally this call sits inside must NOT trip this.
-    const isInsideAnyTryCatchBlock = (
-      body: string,
-      targetIndex: number
-    ): boolean => {
-      const tryOpen = /\btry\b\s*\{/g;
-      let match: RegExpExecArray | null;
-      while ((match = tryOpen.exec(body)) !== null) {
-        const blockOpen = match.index + match[0].length - 1;
-        const blockClose = matchingBraceClose(body, blockOpen);
-        if (blockClose === -1) continue;
-        const isCatch = /^\s*catch\b/.test(body.slice(blockClose + 1));
-        if (isCatch && targetIndex > blockOpen && targetIndex < blockClose) {
-          return true;
-        }
-      }
-      return false;
-    };
+  it("the catch reads nothing unobservable: no nested try inside the flush try, and no recorder.state in the catch or before the finally", () => {
+    // This is what separates the #485 shape (J6: a catch on the AWAIT that
+    // reasons only about the generation and the ref this invocation
+    // captured) from the round-3/4 shape (J7: a try/catch around the native
+    // `recorder.stop()` itself, branching on `recorder.state` afterward to
+    // decide whether to seal now or keep waiting). The round-5 cap left J7
+    // out and #485 does not reopen it; wrapping the executor's own
+    // `recorder.stop()` in its own try, or adding an
+    // `if (recorder.state === "inactive")` anywhere in the catch, must fail
+    // this. The `if` arm's own `recorder.state` test sits outside `elseBody`
+    // and cannot trip it.
+    expect(tryBody.slice(1)).not.toMatch(/\btry\b/);
+    expect(catchBody).not.toBe("");
+    expect(catchBody).not.toMatch(/recorder\.state/);
+    expect(afterTry.slice(0, afterTry.length - afterCatch.length)).not.toMatch(
+      /recorder\.state/
+    );
+  });
 
-    const stopIdx = elseBody.indexOf("recorder.stop();");
-    expect(stopIdx).toBeGreaterThan(-1);
-    expect(isInsideAnyTryCatchBlock(elseBody, stopIdx)).toBe(false);
+  it("the already-inactive arm releases the stream and closes the LOCAL tap, after the blob is sealed (#485)", () => {
+    // The `if` arm is the device-verified #59 recovery path (an interruption
+    // ended the recorder on its own). Its `tap?.close()` was split out of the
+    // shared post-if/else close in #474 R6 and was not gated at all —
+    // deleting it left this file 6/6 green at origin/develop's text. The
+    // order matters too: the clone's tracks are stopped only once the flush
+    // window is past and the blob is sealed, so moving the close above
+    // `blob = new Blob(` must fail this.
+    expect(ifBraceClose).toBe(elseIdx); // the slice ends where `} else {` begins
+    expect(ifArmBody).toMatch(
+      /\bif\s*\(\s*stream\s*\)\s*abandonStream\(\s*stream\s*\)\s*;/
+    );
+    expect(ifArmBody).toMatch(/\btap\?\.close\(\)\s*;/);
+    expect(ifArmBody).not.toMatch(/closeTap\s*\(/);
+    expect(ifArmBody).not.toMatch(/tapRef/);
+    const sealIdx = ifArmBody.indexOf("blob = new Blob(");
+    expect(sealIdx).toBeGreaterThan(-1);
+    expect(ifArmBody.search(/\btap\?\.close\(\)/)).toBeGreaterThan(sealIdx);
   });
 });

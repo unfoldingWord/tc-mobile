@@ -134,8 +134,12 @@ export interface StopResult {
   readonly samples: Int16Array | null;
   /**
    * A translator-facing reason when `samples` is null and it is worth saying —
-   * an empty capture or an undecodable one. Null when there is nothing to say:
-   * a superseded stop, whose UI belongs to a newer recording.
+   * an empty capture, an undecodable one, or a teardown that threw (a native
+   * `stop()` throwing inside the flush: `error` is "Could not finish this
+   * recording.", `samples` and `blob` both null — the executor rejected before
+   * any blob was sealed, so there are no bytes to keep — and the recorder is
+   * back at `idle`, free to `start()` again; #485). Null when there is nothing
+   * to say: a superseded stop, whose UI belongs to a newer recording.
    */
   readonly error: string | null;
   /**
@@ -314,8 +318,12 @@ export interface UseRecorder {
   resume: () => void;
   /**
    * Stop and return the captured audio as canonical mono 16-bit PCM, or the
-   * reason it produced none. The failure is in the result, not the `error`
-   * state — see `StopResult`.
+   * reason it produced none — an empty capture, an undecodable one, or a
+   * teardown that threw. The failure is in the result, not the `error` state
+   * — see `StopResult`. A throw inside its own flush does not reject: that
+   * path resolves `{ samples: null, error: "Could not finish this recording.",
+   * blob: null }` (no bytes were sealed) with state back at `idle` and the
+   * recorder ref dropped, so `start()` is free again (#485).
    */
   stop: () => Promise<StopResult>;
   /**
@@ -964,7 +972,45 @@ export function useRecorder(): UseRecorder {
           // unobservable state.
           recorder.stop();
         });
+      } catch {
+        // The catch is on the AWAIT, not on the executor's `recorder.stop()`
+        // (which stays bare, above): once the executor throws, the blob promise
+        // is already rejected and the take is already lost, so nothing here
+        // depends on the recorder's post-throw state (J6, not J7) — this
+        // branch reasons only about the generation and the recorder ref THIS
+        // invocation captured at the top of `stop()`. Without it the throw
+        // rode out of `stop()` with React state left at "processing" (set
+        // above, never cleared) and `recorderRef` still holding the dead
+        // recorder — so the sheet stayed `busy`, the status Notice read
+        // "Recording finished" over a take that was gone, every Back stayed,
+        // and a later `start()` returned early on the zombie ref without
+        // opening a mic (#485, George R6 on #474). The UI state belongs to the
+        // current generation, as at every other exit; the ref is nulled only
+        // while it is still THIS recorder, mirroring `abandonStream`'s
+        // `streamRef.current === stream` — the executor throws synchronously
+        // inside `new Promise`, so nothing can have installed a newer recorder
+        // in between, but the identity form does not depend on that surviving
+        // a future await. The failure rides the `StopResult`, honouring the
+        // "never rejects" contract `stopRecording` documents, so its backstop
+        // stays a backstop: this path returns its failure in the result and
+        // writes no failure-log row (#485 keeps its scope to the two findings
+        // it names; whether this path should own a row of its own is open,
+        // not decided here — the runbook's §5 list and AGENTS.md say so).
+        if (generation === generationRef.current) setState("idle");
+        if (recorderRef.current === recorder) recorderRef.current = null;
+        return {
+          samples: null,
+          error: "Could not finish this recording.",
+          blob: null, // the executor rejected before any blob was sealed
+        };
       } finally {
+        // The `catch` above owns the React state and the recorder ref (idle
+        // only when current; the ref only when it is still this recorder);
+        // this `finally` still owns the stream and the tap, and runs after the
+        // catch body and before the catch's return value is delivered — JS
+        // `try/catch/finally` semantics: the `return` in the catch does not
+        // skip the finally.
+        //
         // A `finally`, not a bare release after the await: once the executor
         // itself throws, the blob promise is already REJECTED and the take is
         // already lost — there is no `onstop` left to come, so releasing here

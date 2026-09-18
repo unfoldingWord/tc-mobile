@@ -208,7 +208,9 @@ share _prepare_ (`hooks/share-flow.ts`), the recorder's own guards and bounds
 `"recorder-start-resume-timeout"` #475, an interruption that leaves the native
 recorder still active `"recorder-interrupted-active"` #478),
 `stopRecording`'s commit-path backstop (`hooks/use-audio-session.ts`,
-`"recorder-stop-backstop"`, #480), and the log's own share and clear paths.
+`"recorder-stop-backstop"`, #480 — a throw inside `stop()`'s own flush is
+returned in the `StopResult` and does not reach it, #485), and the log's own
+share and clear paths.
 What still ends at `console.error` and is therefore **never written down** is
 most of what a translator actually hits: a failed save
 (`hooks/use-save-take.ts`), a failed book delete (`hooks/use-books.ts`), a
