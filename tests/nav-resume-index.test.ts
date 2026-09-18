@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  backEffectFor,
   navDirection,
   popAction,
   resumeNavIndex,
@@ -97,6 +96,17 @@ describe("reload/bootstrap integration (fake history.state, no jsdom)", () => {
   });
 
   it("adopting the resumed index at mount, the SAME post-reload Back reads correctly and does not misfire", () => {
+    // George R1 P3-6 (PR #492): a reload always resets React state to Books
+    // (`chapterId = null`, `App.tsx:42-46`) regardless of history depth — the
+    // mount effect at `App.tsx:85-89` runs unconditionally on every mount, a
+    // reload included, and nothing restores `chapterId`/`recorder` from the
+    // history entry. So the SCREEN this row must exercise is Books
+    // (`screenFor(false, false)`), not Segments — driving it with
+    // `screenFor(true, false)` asserted a property that holds by coincidence
+    // (both screens avoid `trap-forward`) while pinning the wrong `popAction`
+    // outcome for a reader/PR2 to copy: it would compute `"to-books"` and
+    // call `backToBooks()` on a tree that is already showing Books.
+    //
     // The mount effect reads window.history.state BEFORE the first popstate —
     // simulate the fix: it adopts the current top entry's own index rather
     // than forcing 0.
@@ -109,9 +119,9 @@ describe("reload/bootstrap integration (fake history.state, no jsdom)", () => {
     const toIndex = resumeNavIndex(landingState);
     const direction = navDirection(adoptedNavIndex, toIndex);
     expect(direction).toBe("back"); // no misfire — correctly read as Back.
-    expect(popAction(direction, screenFor(true, false), false, false)).toBe(
-      backEffectFor(screenFor(true, false))
-    ); // routes normally, no trap-forward
+    expect(popAction(direction, screenFor(false, false), false, false)).toBe(
+      "exit-app"
+    ); // routes normally to the real post-reload root, no trap-forward
   });
 
   it("adopting the resumed index does not skip a physical level on the FOLLOWING Back either", () => {

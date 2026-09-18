@@ -14,11 +14,7 @@
  * `leave()`. That is the line the test pins and a mutation must break.
  */
 
-import {
-  routeBackToLayer,
-  type LayerStack,
-  type RouteBackToLayerResult,
-} from "@/lib/nav/layer-stack";
+import { routeBackToLayer, type LayerStack } from "@/lib/nav/layer-stack";
 
 export type Screen = "books" | "segments" | "recorder";
 
@@ -102,16 +98,31 @@ export function navDirection(from: number, to: number): NavDirection {
  * pushing a fresh entry; they are named apart so the handler's intent — and each
  * test row — stays legible.
  *
- * **`layer` (docs/design/back-navigation.md #452 PR1)** — the screen-scoped
- * `layerStack` has an open overlay on top. Checked after the two global traps
- * and the transition-in-flight guard (invariant 3: "if no global trap and no
- * screen transition is in flight, the screen-scoped `layerStack`'s top entry
- * only"), and before `direction`/`screen` are consulted at all — an overlay
- * never held a history entry of its own (invariant 1), so neither Forward nor
- * "same" has any meaning for it; only whether its top layer is busy does.
- * `result` is `routeBackToLayer`'s own decision (dismiss / refused-busy /
- * empty); this function never calls `dismiss()` itself, only reports what the
- * adapter (PR2, `hooks/use-nav-stack.ts`) must do.
+ * **`rearm-layer-dismiss` / `rearm-layer-busy` (docs/design/back-navigation.md
+ * #452 PR1, contract fixed per George R1 P2-1 on PR #492)** — the
+ * screen-scoped `layerStack` has an open overlay on top. Checked after the
+ * two global traps and the transition-in-flight guard (invariant 3: "if no
+ * global trap and no screen transition is in flight, the screen-scoped
+ * `layerStack`'s top entry only"), and before `direction`/`screen` are
+ * consulted at all — an overlay never held a history entry of its own
+ * (invariant 1), so neither Forward nor "same" has any meaning for it; only
+ * whether its top layer is busy does.
+ *
+ * A `popstate` has ALREADY popped the screen-depth entry before this function
+ * runs (`App.tsx:301-302`), exactly the same as every other non-screen
+ * intercept above (`trap-recovery`/`trap-database-panel`/
+ * `rearm-during-commit`) — so BOTH outcomes must re-arm that entry, not just
+ * one: `"rearm-layer-dismiss"` means dismiss the top layer (the adapter
+ * recovers it via `topLayer(stack)`) AND push a fresh entry;
+ * `"rearm-layer-busy"` means push a fresh entry only, same as every other
+ * re-arm case. Two string tags rather than the object this PR originally
+ * shipped (`{kind:"layer", result:...}`) specifically so the obligation is
+ * encoded in the type `App.tsx`'s existing string `switch` already consumes,
+ * not left to a docblock a reader could miss — the earlier object shape's own
+ * prose taught the wrong contract ("nothing on `refused-busy`"), and George's
+ * review caught it before PR2 could copy it. This also removes the never-
+ * produced `{kind:"layer", result:{kind:"empty"}}` combination entirely
+ * (former P3-4): a plain string has no `"empty"` branch to write.
  */
 export type PopAction =
   | "trap-recovery"
@@ -124,10 +135,11 @@ export type PopAction =
   // every existing call site and test row compiles and passes unchanged;
   // PR2 does the rename.
   | "rearm-during-commit"
+  | "rearm-layer-dismiss"
+  | "rearm-layer-busy"
   | "trap-forward"
   | "ignore"
-  | BackEffect
-  | { readonly kind: "layer"; readonly result: RouteBackToLayerResult };
+  | BackEffect;
 
 /**
  * `layerStack` is an OPTIONAL trailing parameter, defaulting to an empty
@@ -169,7 +181,20 @@ export function popAction(
   // empty stack (every existing caller, PR1) falls straight through to the
   // direction/screen routing below, unchanged from `develop`.
   if (layerStack.length > 0) {
-    return { kind: "layer", result: routeBackToLayer(layerStack) };
+    const result = routeBackToLayer(layerStack);
+    switch (result.kind) {
+      case "dismiss":
+        return "rearm-layer-dismiss";
+      case "refused-busy":
+        return "rearm-layer-busy";
+      case "empty":
+        // Unreachable: `routeBackToLayer` only returns "empty" for an empty
+        // stack, and `layerStack.length > 0` is checked above. Handled
+        // explicitly (as a re-arm, never a silent screen-level fall-through)
+        // rather than left for a `default` to paper over, in case that
+        // invariant is ever broken by a future change to either function.
+        return "rearm-layer-busy";
+    }
   }
   if (direction === "forward") return "trap-forward";
   if (direction === "same") return "ignore";

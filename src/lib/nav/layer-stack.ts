@@ -59,11 +59,23 @@ export function topLayer(stack: LayerStack): Layer | undefined {
 
 /**
  * The result of routing a Back against a layer stack. `routeBackToLayer` never
- * calls `dismiss()` itself — it is pure decision only (docs/design/
- * back-navigation.md, "Pure core": "the adapter performs the dismiss/refuse
- * the result names"). The caller (PR2's adapter) is responsible for actually
- * invoking `dismiss()` on a `"dismiss"` result and for re-arming the
- * protective history entry on a `"refused-busy"` result.
+ * calls `dismiss()` itself, and it never touches history — it names WHICH
+ * layer (if any) is on top and whether it is busy; nothing more.
+ *
+ * IMPORTANT, corrected per George R1 P2-1 (PR #492): this type does NOT, by
+ * itself, say what the adapter must do with the browser's history entry. An
+ * earlier version of this docblock claimed the adapter re-arms only on
+ * `"refused-busy"` and does nothing on `"dismiss"` — that was backwards. A
+ * `popstate` has already popped the screen-depth entry before any of this
+ * runs (`App.tsx:301-302`), exactly like every other non-screen intercept in
+ * `popAction` (`trap-recovery`/`trap-database-panel`/`rearm-during-commit`
+ * all re-arm, `App.tsx:313-336`), so BOTH a `"dismiss"` and a `"refused-busy"`
+ * outcome require the adapter to re-arm; `"dismiss"` additionally calls
+ * `dismiss()` on the named layer. That full, corrected contract is encoded
+ * where the adapter actually reads it — `navigation.ts`'s `popAction`, as the
+ * string tags `"rearm-layer-dismiss"` / `"rearm-layer-busy"` — not here. This
+ * type stays three-way (`empty`/`dismiss`/`refused-busy`) because it is still
+ * useful as the narrower, per-layer decision `popAction` builds on.
  *
  * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
@@ -79,8 +91,13 @@ export type RouteBackToLayerResult =
  * - Empty stack → `{kind: "empty"}`; the caller falls through to
  *   `backEffectFor`/`popAction`'s screen-level routing.
  * - Non-empty, top not busy → `{kind: "dismiss", layerId}`.
- * - Non-empty, top busy → `{kind: "refused-busy", layerId}`; the caller must
- *   re-arm (no history/state change) rather than proceed.
+ * - Non-empty, top busy → `{kind: "refused-busy", layerId}`.
+ *
+ * See `RouteBackToLayerResult`'s docblock for what the adapter must actually
+ * do with each of these (both non-empty outcomes re-arm the screen-depth
+ * entry the `popstate` already consumed; `"dismiss"` additionally dismisses
+ * the named layer) — `navigation.ts`'s `popAction` is where that full
+ * contract is encoded, as `"rearm-layer-dismiss"` / `"rearm-layer-busy"`.
  *
  * `navigation.ts`'s `popAction` calls this once `layerStack` is non-empty,
  * but no caller passes a non-empty stack yet — that wiring is PR2.

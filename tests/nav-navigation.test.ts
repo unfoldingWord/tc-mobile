@@ -205,7 +205,12 @@ describe("overlayDismissal", () => {
 });
 
 /**
- * popAction's new `"layer"` case (#452 PR1, docs/design/back-navigation.md).
+ * popAction's new layer-routing tags, `"rearm-layer-dismiss"` and
+ * `"rearm-layer-busy"` (#452 PR1, docs/design/back-navigation.md; shape
+ * corrected per George R1 P2-1 on PR #492 — both names say "rearm" on
+ * purpose, since both outcomes re-arm the screen-depth entry the `popstate`
+ * already consumed; only `"rearm-layer-dismiss"` additionally means dismiss
+ * the top layer, recovered by the adapter via `topLayer(stack)`).
  * `layerStack` is an OPTIONAL trailing parameter defaulting to an empty
  * stack — a hard PR1 constraint is that this is a ZERO-BEHAVIOUR-CHANGE
  * addition, so every row above this point (every existing call, all five
@@ -273,20 +278,34 @@ describe("popAction — layer routing (#452 PR1)", () => {
     }
   });
 
-  it("a non-empty stack with a non-busy top layer returns the layer's dismiss decision", () => {
+  /**
+   * George R1 P2-1 (PR #492): a `popstate` has already popped the SCREEN-DEPTH
+   * entry before `popAction` runs (`App.tsx:301-302`) — overlays never owned
+   * one of their own (invariant 1). Every existing intercept that is not a
+   * real screen pop re-arms with `pushHistoryEntry()`
+   * (`trap-recovery`/`trap-database-panel`/`rearm-during-commit`,
+   * `App.tsx:313-336`), and so does the recorder's own overlay-absorb path
+   * (`App.tsx:353`, re-arms BEFORE the overlay is even asked to dismiss). The
+   * layer case must match: BOTH a dismiss and a refusal re-arm the entry the
+   * popstate already consumed — `"dismiss"` also tells the adapter to dismiss
+   * the top layer (recovered via `topLayer(stack)`), `"refused-busy"` re-arms
+   * only. Two string tags, not an object, so the obligation is encoded in the
+   * type App.tsx's existing string `switch` already consumes, not left to
+   * prose a reader could miss (the bug this replaces: `tests/nav-layer-
+   * stack.test.ts`'s old comment taught "nothing on refused-busy").
+   */
+  it("a non-empty stack with a non-busy top layer re-arms AND signals dismiss", () => {
     const stack: LayerStack = [fakeLayer("book-menu", false)];
-    expect(popAction("back", "books", false, false, false, stack)).toEqual({
-      kind: "layer",
-      result: { kind: "dismiss", layerId: "book-menu" },
-    });
+    expect(popAction("back", "books", false, false, false, stack)).toBe(
+      "rearm-layer-dismiss"
+    );
   });
 
-  it("a non-empty stack with a busy top layer returns the layer's refused-busy decision — never the screen-level routing", () => {
+  it("a non-empty stack with a busy top layer re-arms only — never the screen-level routing", () => {
     const stack: LayerStack = [fakeLayer("deleting", true)];
-    expect(popAction("back", "books", false, false, false, stack)).toEqual({
-      kind: "layer",
-      result: { kind: "refused-busy", layerId: "deleting" },
-    });
+    expect(popAction("back", "books", false, false, false, stack)).toBe(
+      "rearm-layer-busy"
+    );
     // Prove it did NOT fall through to backEffectFor("books") = "exit-app".
     expect(popAction("back", "books", false, false, false, stack)).not.toBe(
       "exit-app"
@@ -298,10 +317,9 @@ describe("popAction — layer routing (#452 PR1)", () => {
       fakeLayer("bottom-menu", false),
       fakeLayer("top-confirm", true),
     ];
-    expect(popAction("back", "segments", false, false, false, stack)).toEqual({
-      kind: "layer",
-      result: { kind: "refused-busy", layerId: "top-confirm" },
-    });
+    expect(popAction("back", "segments", false, false, false, stack)).toBe(
+      "rearm-layer-busy"
+    );
   });
 
   it("the two global traps still outrank a non-empty layer stack", () => {

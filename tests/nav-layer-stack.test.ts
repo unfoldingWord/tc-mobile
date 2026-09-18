@@ -5,9 +5,23 @@ import { routeBackToLayer, topLayer, type Layer } from "@/lib/nav/layer-stack";
 /**
  * The layer-stack decision table (docs/design/back-navigation.md, "Pure
  * core" and "Test plan"). `routeBackToLayer` never calls `dismiss()` itself —
- * it is pure decision only, so these tests simulate what the adapter (PR2)
- * will do with the result: call `dismiss()` on a `"dismiss"` outcome, and
- * nothing on `"refused-busy"` or `"empty"`.
+ * it is pure decision only: it names WHICH layer (if any) is the top of the
+ * stack and whether it is busy. These tests cover only that narrow decision.
+ *
+ * George R1 P2-1 (PR #492): the FULL adapter obligation is NOT "call
+ * `dismiss()` on a `"dismiss"` outcome, and nothing on `"refused-busy"` or
+ * `"empty"`" — that was this file's own bug. A `popstate` has already popped
+ * the screen-depth entry before `popAction` runs (`App.tsx:301-302`), and
+ * every existing non-screen intercept re-arms it (`App.tsx:313-336`, and the
+ * recorder overlay-absorb path at `:353`). So the real contract is: a
+ * `"dismiss"` outcome means dismiss the layer AND re-arm; a `"refused-busy"`
+ * outcome means re-arm only. That full contract is encoded where the adapter
+ * actually reads it — `navigation.ts`'s `popAction`, as the string tags
+ * `"rearm-layer-dismiss"` / `"rearm-layer-busy"` (both names say "rearm" on
+ * purpose) — and pinned in `tests/nav-navigation.test.ts`'s
+ * "popAction — layer routing" block, not here. This file's own assertions
+ * below are correct as far as they go (which layer, busy or not) but must
+ * not be read as the whole adapter contract on their own.
  */
 
 function fakeLayer(
@@ -34,7 +48,11 @@ describe("routeBackToLayer", () => {
     const { layer, dismissCount } = fakeLayer("menu", false);
     const result = routeBackToLayer([layer]);
     expect(result).toEqual({ kind: "dismiss", layerId: "menu" });
-    // Simulate the adapter: it dismisses only on a "dismiss" result.
+    // Simulate the layer-level half of the adapter: it calls dismiss() only
+    // on a "dismiss" result. The adapter ALSO re-arms the screen-depth entry
+    // in this case — that half of the contract is popAction's
+    // "rearm-layer-dismiss" tag, tested in tests/nav-navigation.test.ts, not
+    // modeled here.
     if (result.kind === "dismiss") layer.dismiss();
     expect(dismissCount()).toBe(1);
   });
@@ -45,6 +63,8 @@ describe("routeBackToLayer", () => {
     expect(result).toEqual({ kind: "refused-busy", layerId: "confirm" });
     if ((result as { kind: string }).kind === "dismiss") layer.dismiss();
     expect(dismissCount()).toBe(0);
+    // The adapter still re-arms here (popAction's "rearm-layer-busy" tag) —
+    // "dismiss() never fires" is not "nothing happens".
   });
 
   it("with two layers, only the TOP layer's dismiss() fires — a layer below the top is never asked (invariant 3)", () => {
