@@ -44,14 +44,24 @@ import type { ShareError } from "@/hooks/share-flow";
 export type ShareOutcome = "partial" | "nothing" | "failed";
 
 /**
- * Every outcome, for the exhaustiveness tests. A hand-written list can fall
- * behind its union, so the test round-trips it through `ShareOutcome`.
+ * Every outcome, for the exhaustiveness tests.
+ *
+ * Derived, not hand-written. A literal array typed `ShareOutcome[]` checks its
+ * ENTRIES and says nothing about completeness — widen the union, handle the
+ * new member in the switch below, forget the list, and it still compiled and
+ * every test still passed (Frank R1 P2 on #457). A `Record<ShareOutcome, …>`
+ * with a key missing does not compile, so the list is complete by
+ * construction: the same reasoning as the `never` default in
+ * `shareOutcomeGlyph`, at the type level instead of the switch.
  */
-export const SHARE_OUTCOMES: readonly ShareOutcome[] = [
-  "partial",
-  "nothing",
-  "failed",
-];
+const EVERY_OUTCOME: Record<ShareOutcome, true> = {
+  partial: true,
+  nothing: true,
+  failed: true,
+};
+export const SHARE_OUTCOMES = Object.keys(
+  EVERY_OUTCOME
+) as readonly ShareOutcome[];
 
 export interface ShareOutcomeGlyph {
   /** The mark. Distinct per outcome — that is this module's whole job. */

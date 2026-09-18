@@ -52,6 +52,25 @@ describe("the viewport does not forbid pinch zoom (#164 R-11)", () => {
   });
 });
 
+describe("the rename field keeps its 16px floor (#164 R-11)", () => {
+  // `::placeholder` has its own rule; `\s*\{` keeps this on the field itself.
+  const rule = /\.name-input\s*\{([^}]*)\}/s.exec(components);
+
+  it("has a .name-input rule in the component layer", () => {
+    expect(rule?.[1], "no .name-input rule in 3-components.css").toBeTruthy();
+  });
+
+  // With `user-scalable=no` gone, this floor is the ONLY thing standing
+  // between a focused rename field and a zoomed sheet (iOS auto-zooms a
+  // focused input under 16px, and now Android can too). The rule's own
+  // comment says "do not lower it" — and a comment is not a gate (George R1
+  // P3 on #457). A literal, not a token: no token is 16px, and the rule says
+  // why.
+  it("sets font-size to exactly 16px", () => {
+    expect(rule?.[1] ?? "").toMatch(/font-size:\s*16px\s*;/);
+  });
+});
+
 describe("the breadcrumb is a control-sized target (#164 R-10)", () => {
   const rule = /\.breadcrumb\s*\{([^}]*)\}/s.exec(components);
 

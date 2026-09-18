@@ -39,6 +39,11 @@
   --color-ink-muted: var(--s-ink-muted);
   --color-ink-faint: var(--s-ink-faint);
   --color-voice: var(--s-voice);
+  /* The accent as INK, split from the accent as a fill in layer 2 because on
+     light the fill is 3.0:1 as 12px text on a wash of itself. Bridged so a
+     JSX caller painting accent text has a role that clears AA, and is not
+     left with `text-voice` (George R1 P3 on #457). */
+  --color-voice-text: var(--s-voice-text);
   --color-done: var(--s-done);
   --color-live: var(--s-live);
   --color-warn: var(--s-warn);

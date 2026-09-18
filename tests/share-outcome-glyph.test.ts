@@ -8,10 +8,13 @@ import {
   SHARE_OUTCOMES,
   shareErrorGlyph,
   shareOutcomeGlyph,
-  type ShareOutcome,
 } from "@/components/share-outcome-glyph";
 import type { ShareError } from "@/hooks/share-flow";
 import { noticePresentation } from "@/components/notice-tone";
+
+/** Source-shape reads, because there is no renderer here (#197). */
+const read = (rel: string) =>
+  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
 /**
  * The share outcomes must be tellable apart WITHOUT reading (#178).
@@ -109,13 +112,25 @@ describe("shareOutcomeGlyph (#178)", () => {
 });
 
 describe("the outcome list is exhaustive over ShareOutcome (#178)", () => {
-  it("SHARE_OUTCOMES holds every member of the union", () => {
-    // A hand-written list can fall behind the type. Assigning each member to
-    // the union and back is what makes the compiler complain if it does, and
-    // the length check catches a duplicate padding the count.
-    const roundTrip: ShareOutcome[] = [...SHARE_OUTCOMES];
-    expect(new Set(roundTrip).size).toBe(SHARE_OUTCOMES.length);
-    expect(SHARE_OUTCOMES.length).toBe(3);
+  // A hand-written list typed `ShareOutcome[]` checks its ENTRIES, not its
+  // completeness: widen the union to a fourth outcome, handle it in the
+  // switch, forget the list, and every case above still passes over three
+  // while the "every outcome" export is one short — and a hard-coded
+  // `length === 3` is the same claim restated, not a check of it (Frank R1 P2
+  // on #457). So the list is DERIVED from a `Record<ShareOutcome, …>`, where a
+  // missing key is a compile error: complete by construction, the same
+  // `never`-default reasoning `shareOutcomeGlyph` uses, at the type level.
+  //
+  // What a runtime test can still do is pin the MECHANISM, so a later tidy-up
+  // back to a literal array — which compiles, and passes everything else —
+  // fails here.
+  it("is derived from a Record keyed by the union, not hand-written", () => {
+    const source = read("src/components/share-outcome-glyph.ts");
+    expect(source).toMatch(/Record<ShareOutcome, true>/);
+    expect(source).toMatch(/SHARE_OUTCOMES = Object\.keys\(/);
+    expect(source, "the hand-written list is back").not.toMatch(
+      /SHARE_OUTCOMES: readonly ShareOutcome\[\] = \[/
+    );
   });
 });
 
@@ -156,10 +171,6 @@ describe("shareErrorGlyph (#178)", () => {
 describe("the share menus actually pass the mark (#178)", () => {
   // The table could be perfect and wired to nothing — the knip blind spot
   // AGENTS.md names first, since a module imported only by a test looks used.
-  // Source-shape, because there is no renderer here (#197).
-  const read = (rel: string) =>
-    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
-
   for (const screen of [
     "src/components/segments-screen.tsx",
     "src/components/books-screen.tsx",
