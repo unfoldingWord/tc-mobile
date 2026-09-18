@@ -91,6 +91,42 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
   const cancelBody = code.slice(braceOpen, braceClose + 1);
 
   /**
+   * True when `targetIndex` falls inside the braces of ANY `try { ... }`
+   * block in `body`, regardless of what else that block contains or where
+   * the target sits within it. Brace-counted (not "immediately after `try
+   * {`") so a `try` block with an earlier, unrelated statement before the
+   * target — `try { void 0; recorder.stop(); } catch (...) { ... }` — is
+   * still caught (Frank round 5 P2, second pass: the prior "text
+   * immediately before the call" check missed exactly this shape). Scanning
+   * per `try` occurrence and bounding by that block's own matching brace —
+   * not "any `try` anywhere in `body`" — keeps an unrelated `try` elsewhere
+   * in the same executor from causing a false positive (Frank round 5 P2,
+   * first pass).
+   */
+  const isInsideAnyTryBlock = (body: string, targetIndex: number): boolean => {
+    const tryOpen = /\btry\b\s*\{/g;
+    let match: RegExpExecArray | null;
+    while ((match = tryOpen.exec(body)) !== null) {
+      const blockOpen = match.index + match[0].length - 1;
+      let blockDepth = 0;
+      let blockClose = -1;
+      for (let i = blockOpen; i < body.length; i++) {
+        if (body[i] === "{") blockDepth++;
+        else if (body[i] === "}") {
+          blockDepth--;
+          if (blockDepth === 0) {
+            blockClose = i;
+            break;
+          }
+        }
+      }
+      if (blockClose === -1) continue;
+      if (targetIndex > blockOpen && targetIndex < blockClose) return true;
+    }
+    return false;
+  };
+
+  /**
    * The ONE pattern every positive assertion below is anchored to: a `try`
    * wrapping exactly `recorder.stop();`, flowing DIRECTLY (no `finally`, no
    * intervening statement) into a `catch (cause)` whose body is exactly the
@@ -161,16 +197,16 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
     expect(flushBraceClose).toBeGreaterThan(flushBraceOpen);
     const flushBody = code.slice(flushBraceOpen, flushBraceClose + 1);
 
-    // The call is present and bare. Scoped to the text immediately BEFORE
-    // this specific call, not "no `try` anywhere in the executor" — a
-    // future, unrelated `try` guarding something else in this same
-    // executor (constructing the Blob, arming the timer) would be
-    // legitimate and must not fail this gate (Frank round 5 P2). Only a
-    // `try {` whose next statement is this `recorder.stop()` call counts
-    // as the reverted hunk coming back.
+    // The call is present and bare — not nested inside ANY try block in
+    // this executor, no matter what else that block contains or where the
+    // call sits within it (a leading unrelated statement before it still
+    // counts as wrapped). Scoped to whichever `try` block, if any, actually
+    // CONTAINS this call — not "no `try` anywhere in the executor" — so a
+    // future, unrelated `try` guarding something else in this same executor
+    // (constructing the Blob, arming the timer) stays legitimate and does
+    // not fail this gate (Frank round 5 P2, first pass).
     const stopIdx = flushBody.indexOf("recorder.stop();");
     expect(stopIdx).toBeGreaterThan(-1);
-    const immediatelyBefore = flushBody.slice(0, stopIdx);
-    expect(immediatelyBefore).not.toMatch(/try\s*\{\s*$/);
+    expect(isInsideAnyTryBlock(flushBody, stopIdx)).toBe(false);
   });
 });
