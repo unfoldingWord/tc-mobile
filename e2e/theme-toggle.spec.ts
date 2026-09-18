@@ -52,6 +52,32 @@ const themeColor = (page: import("@playwright/test").Page) =>
         ?.getAttribute("content") ?? null
   );
 
+/**
+ * The iOS sibling of `theme-color` (George R1 P2 on #457): the standalone
+ * status-bar style. What this can prove in Chromium is only that the attribute
+ * is WRITTEN — whether iOS reads it after launch is a device question
+ * `use-theme.ts` records as unverified, not a claim this spec makes.
+ */
+const statusBarStyle = (page: import("@playwright/test").Page) =>
+  page.evaluate(
+    () =>
+      document
+        .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+        ?.getAttribute("content") ?? null
+  );
+
+/** The `≡` control, by role — its name carries the failure count (#205). */
+const menuControl = (page: import("@playwright/test").Page) =>
+  page.getByRole("button", { name: /^Open menu/ });
+
+/**
+ * The alert badge on the `≡`, the state-in-place signal for a non-reader. By
+ * class, because it is `aria-hidden` on purpose — same locator, same reason,
+ * as `e2e/failure-log.spec.ts`.
+ */
+const failureMarker = (page: import("@playwright/test").Page) =>
+  page.locator("header .control-hint");
+
 /** The resolved rgb() of a CSS colour, so a hex token and a computed value compare. */
 const resolved = (page: import("@playwright/test").Page, value: string) =>
   page.evaluate((v) => {
@@ -82,6 +108,8 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(await resolved(page, (await themeColor(page)) ?? "")).toBe(
       DARK_FLOOR
     );
+    // And the iOS standalone status-bar style ships dark with it.
+    expect(await statusBarStyle(page)).toBe("black-translucent");
 
     // --- 2. the toggle is where a translator can find it -------------------
     await page.getByRole("button", { name: "Open menu" }).click();
@@ -104,6 +132,11 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(await resolved(page, (await themeColor(page)) ?? "")).toBe(
       LIGHT_FLOOR
     );
+    // The iOS half of the same defect: `theme-color` is not what an installed
+    // iOS PWA reads for its status bar, and `black-translucent` left there
+    // means light clock-and-battery glyphs over a near-white floor. `default`
+    // is the dark-content style (George R1 P2 on #457).
+    expect(await statusBarStyle(page)).toBe("default");
 
     // The menu stays open across the tap, which is the affordance doing the
     // explaining for a non-reader: the screen changes behind the scrim, and
@@ -119,6 +152,7 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     await toDark.click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
+    expect(await statusBarStyle(page)).toBe("black-translucent");
 
     // --- 5. it is remembered ----------------------------------------------
     // The reason #171 chose a persisted toggle over `prefers-color-scheme`:
@@ -133,6 +167,9 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(await resolved(page, (await themeColor(page)) ?? "")).toBe(
       LIGHT_FLOOR
     );
+    // Written before React renders (`installStoredTheme`), so a relaunch in
+    // light does not ship the dark status-bar style from `index.html`.
+    expect(await statusBarStyle(page)).toBe("default");
   });
 
   test("the light theme's own ink is painted, not left at the dark value", async ({
@@ -209,6 +246,11 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
     const openChapter = page.getByRole("button", { name: /^Open Chapter/ });
     await expect(openChapter).toBeVisible();
 
+    // A quiet log before the tap — asserted, not assumed, so the count below
+    // is this test's own failure and not something carried in.
+    await expect(menuControl(page)).toHaveAccessibleName("Open menu");
+    await expect(failureMarker(page)).toHaveCount(0);
+
     // Switch to light, with the write failing underneath.
     await page.getByRole("button", { name: "Open menu" }).click();
     await page
@@ -234,9 +276,22 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
       LIGHT_FLOOR
     );
 
-    // And the failure was REPORTED, not swallowed — the one sink (#167). Proved
-    // by the write having actually thrown: storage holds nothing for our key,
-    // so the theme above came from the live value and not from a read.
+    // And the failure was REPORTED, not swallowed — the one sink (#167),
+    // proved by what the report does that nothing else can: the durable log
+    // now holds one row, so the ≡ carries the count in its name and the alert
+    // mark beside it (#205). An earlier draft of this test inferred the report
+    // from the write having thrown, which proves nothing about the report at
+    // all — delete `reportFailure` from `use-theme.ts` and every assertion
+    // above still passes (Frank R1 P2 on #457). This one does not.
+    await expect(menuControl(page)).toHaveAccessibleName(
+      "Open menu. 1 problem recorded."
+    );
+    await expect(failureMarker(page)).toHaveCount(1);
+
+    // Separately: the write DID throw. Storage holds nothing for our key, so
+    // the theme above came from the live value and not from a read — without
+    // this, a fault injection that silently stopped injecting would let the
+    // navigation assertions pass for the wrong reason.
     const stored = await page.evaluate(() =>
       window.localStorage.getItem("tc-mobile.theme")
     );

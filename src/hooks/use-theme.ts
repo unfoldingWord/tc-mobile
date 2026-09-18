@@ -23,8 +23,11 @@ import {
  *   - COVERED, in real Chromium against the shipped `dist/` build
  *     (`e2e/theme-toggle.spec.ts`): the toggle flips `data-theme`, the computed
  *     `--s-floor` and the `theme-color` meta both follow, two taps return, the
- *     choice survives a reload, and — since the QA round — a theme whose WRITE
- *     THROWS still survives a Books → chapter → Books round trip.
+ *     choice survives a reload, the iOS status-bar meta is WRITTEN (not that
+ *     iOS reads it — see `installStoredTheme`), and — since the QA round — a
+ *     theme whose WRITE THROWS still survives a Books → chapter → Books round
+ *     trip AND lands one row in the durable failure log, asserted through the
+ *     ≡ control's name and mark rather than inferred from the throw.
  *   - NOT COVERED: `readTheme`'s catch path (an accessor that throws on READ,
  *     as opposed to on write), and `applyTheme`'s empty-`--s-floor` early
  *     return. Both are engine-specific states this suite cannot produce.
@@ -118,10 +121,26 @@ function readTheme(): Theme {
  * the COMPUTED `--s-floor` rather than from a second copy of the hex, so the
  * chrome cannot drift from the token the body actually paints. (The old
  * hard-coded `#0b0f14` had already drifted: `--s-floor` resolves to `#0b1016`.)
+ *
+ * `apple-mobile-web-app-status-bar-style` is the iOS sibling of that meta, and
+ * `theme-color` does not cover it: an installed iOS PWA reads THIS one for the
+ * status bar's own content, and `index.html` ships it `black-translucent`
+ * (light glyphs, content laid under the bar) for the dark default. Left alone,
+ * the light screen kept light clock-and-battery glyphs over a near-white
+ * floor — the same "dark chrome over a white screen" class the `theme-color`
+ * repaint closes, on the one platform this app has actually been run on
+ * (George R1 P2 on #457). `default` is Apple's dark-content style. Whether iOS
+ * re-reads the meta after launch is NOT verified — see `installStoredTheme`.
  */
 function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   root.setAttribute("data-theme", theme);
+  document
+    .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+    ?.setAttribute(
+      "content",
+      theme === "light" ? "default" : "black-translucent"
+    );
   const floor = getComputedStyle(root).getPropertyValue("--s-floor").trim();
   if (floor === "") return;
   const meta = document.querySelector('meta[name="theme-color"]');
@@ -141,6 +160,19 @@ function applyTheme(theme: Theme): void {
  * zero-flash fix is an inline script in `index.html`, which is a build and CSP
  * question rather than a line here. Not observed on a device — nothing in this
  * file has been run on a phone.
+ *
+ * A SECOND RESIDUAL, also unverified: `applyTheme` rewrites
+ * `apple-mobile-web-app-status-bar-style` alongside `theme-color`, and whether
+ * iOS reads that meta LIVE (on a toggle, after launch) or only once at the
+ * launch of an installed PWA is not known here — no iOS device was available
+ * to the session that added it, and `e2e/theme-toggle.spec.ts` proves only
+ * that the attribute is written. If iOS reads it at launch only, a toggle to
+ * light gets the right status bar from the NEXT launch and the wrong one until
+ * then; this call, which runs before React renders, is what makes the next
+ * launch right. Inference, not observed: `default` lays the page BELOW the
+ * bar where `black-translucent` lays it under, so a live re-read would also
+ * move the top safe-area inset by the bar's height. Both halves need a check
+ * on an installed iOS build, and until one is made neither is claimed.
  */
 export function installStoredTheme(): void {
   applyTheme(currentTheme());
