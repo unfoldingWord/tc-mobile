@@ -79,12 +79,15 @@ export function navDirection(from: number, to: number): NavDirection {
  *   farther back: a plain Back walks toward the document unload that destroys the
  *   heap and the take with it (Frank R3 G-R3-1). Checked FIRST — the modal
  *   outranks the screen beneath and any direction.
- * - **A commit is in flight (`committing`)** → `rearm-during-commit`,
- *   whatever the direction. This is the F1 data-loss guard: while the recorder's
- *   Back is running stop → decode → save (seconds on a long take), a second Back
- *   must be ABSORBED by re-pushing the protective entry, never allowed to escape
- *   the recorder and drop the uncommitted take (#58). Break this row and the
- *   second Back leaves over an unsaved recording — the exact regression.
+ * - **A screen transition is in flight (`transitionInFlight`)** →
+ *   `rearm-transition-busy`, whatever the direction. This is the F1 data-loss
+ *   guard: while the recorder's Back is running stop → decode → save (seconds on
+ *   a long take), a second Back must be ABSORBED by re-pushing the protective
+ *   entry, never allowed to escape the recorder and drop the uncommitted take
+ *   (#58). Break this row and the second Back leaves over an unsaved recording —
+ *   the exact regression. In PR2 the recorder's commit-close is the only screen
+ *   transition with an async in-flight window, so this guard is that absorber in
+ *   practice; the name generalizes (invariant 7) without changing what sets it.
  * - **Forward** → `trap-forward`: cancel it (the handler re-asserts history),
  *   the app stays put. Never route a Forward as a Back (F2).
  * - **Back** → the `backEffectFor` mapping for the current screen.
@@ -94,9 +97,9 @@ export function navDirection(from: number, to: number): NavDirection {
  *   full-screen `alertdialog` that replaced the tree rather than a level within
  *   it. Checked after recovery, which outranks it, and before everything else.
  *
- * `trap-recovery`, `trap-database-panel` and `rearm-during-commit` all re-arm by
- * pushing a fresh entry; they are named apart so the handler's intent — and each
- * test row — stays legible.
+ * `trap-recovery`, `trap-database-panel` and `rearm-transition-busy` all re-arm
+ * by pushing a fresh entry; they are named apart so the handler's intent — and
+ * each test row — stays legible.
  *
  * **`rearm-layer-dismiss` / `rearm-layer-busy` (docs/design/back-navigation.md
  * #452 PR1, contract fixed per George R1 P2-1 on PR #492)** — the
@@ -123,7 +126,7 @@ export function navDirection(from: number, to: number): NavDirection {
  * A `popstate` has ALREADY popped the screen-depth entry before this function
  * runs (`App.tsx:301-302`), exactly the same as every other non-screen
  * intercept above (`trap-recovery`/`trap-database-panel`/
- * `rearm-during-commit`) — so on Back, BOTH outcomes must re-arm that entry,
+ * `rearm-transition-busy`) — so on Back, BOTH outcomes must re-arm that entry,
  * not just one: `"rearm-layer-dismiss"` means dismiss the top layer (the
  * adapter recovers it via `topLayer(stack)`) AND push a fresh entry;
  * `"rearm-layer-busy"` means push a fresh entry only, same as every other
@@ -152,14 +155,14 @@ export function navDirection(from: number, to: number): NavDirection {
 export type PopAction =
   | "trap-recovery"
   | "trap-database-panel"
-  // NOTE (#452 PR1 → PR2): the design (invariant 7) renames this to
-  // "rearm-transition-busy" once the guard generalizes to every screen
-  // transition, not just the recorder's commit-close. That rename touches
-  // `App.tsx`'s switch (a consumer), which is out of PR1's scope — PR1 is a
-  // zero-behaviour-change pure-core PR. Kept as "rearm-during-commit" here so
-  // every existing call site and test row compiles and passes unchanged;
-  // PR2 does the rename.
-  | "rearm-during-commit"
+  // Invariant 7's name (docs/design/back-navigation.md:290-291): the guard this
+  // tag names re-arms while a screen transition is in flight. In PR2 the ONLY
+  // screen transition with an async in-flight window is the recorder's
+  // commit-close (stop → decode → save) — invariant 7's "every other screen
+  // pop" has no async member today, so this stays the recorder-commit-close
+  // absorber in practice, renamed from the PR1 placeholder "rearm-during-commit"
+  // (#452 PR2, invariant 7) without any change in what sets it.
+  | "rearm-transition-busy"
   | "rearm-layer-dismiss"
   | "rearm-layer-busy"
   | "trap-forward"
@@ -180,7 +183,7 @@ export type PopAction =
 export function popAction(
   direction: NavDirection,
   screen: Screen,
-  committing: boolean,
+  transitionInFlight: boolean,
   recovering: boolean,
   databasePanel = false,
   layerStack: LayerStack = []
@@ -201,7 +204,7 @@ export function popAction(
   // R4 P1), and `backToBooks` clears the slot, so an untrapped Back from here
   // would destroy the cut phrase this whole guard exists to protect.
   if (databasePanel) return "trap-database-panel";
-  if (committing) return "rearm-during-commit";
+  if (transitionInFlight) return "rearm-transition-busy";
   // Invariant 3, stage 2: only once no global trap is up AND no screen
   // transition is in flight, AND the gesture is a Back (George R2 P2-1 — the
   // "popstate already popped the screen-depth entry" premise below is false

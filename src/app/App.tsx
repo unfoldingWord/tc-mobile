@@ -333,16 +333,18 @@ export function App() {
           // The `SaveFailed` recovery screen is a modal, not a navigation level
           // (George R2 G2), and the only in-memory copy of the held take lives in
           // React state behind it. RE-ARM to absorb the gesture — the same push
-          // `rearm-during-commit` uses — never `history.back()`: the browser has
+          // `rearm-transition-busy` uses — never `history.back()`: the browser has
           // already popped one entry toward root, and a second back() walks toward
           // the document unload that drops the take (Frank R3 G-R3-1). Retry /
           // Discard on the panel are the only ways out.
           pushHistoryEntry();
           return;
-        case "rearm-during-commit":
-          // A commit owns the stack. The browser just popped the protective
-          // entry; re-push it so the recorder stays trapped, and ignore the
-          // gesture — the in-flight commit is the only thing that may leave.
+        case "rearm-transition-busy":
+          // A screen transition owns the stack. The browser just popped the
+          // protective entry; re-push it so the recorder stays trapped, and
+          // ignore the gesture — the in-flight commit is the only thing that may
+          // leave. In PR2 the recorder's commit-close is the only transition
+          // that sets this guard (invariant 7's rename of `rearm-during-commit`).
           pushHistoryEntry();
           return;
         case "rearm-layer-busy":
