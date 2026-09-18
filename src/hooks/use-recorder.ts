@@ -226,6 +226,24 @@ export const RESUME_START_TIMEOUT_MS = 1_000;
  * generation is current benefits silently through the existing #76
  * per-frame `contextNeedsResume`/`available()` check.
  *
+ * RESOLVES `true` WHEN THE TIMER WON, `false` when `resume()` settled first
+ * (either way). The timer win is the #108 fact the log exists to carry
+ * (#475) — but this function does NOT write that row itself. It has no
+ * generation to check, and `cancel()` never holds this timer: a Back or a
+ * `pagehide` while `"requesting"` bumps the generation and releases the
+ * stream, the timer still fires at T+1000 ms, and a row written from here
+ * would record an abandoned Record tap as a #108 event and light the Books
+ * `≡` for it (George R1 P2 on #498). So the fact is returned to `start()`,
+ * which reports it only after the same generation check it already makes
+ * after the await — a cancelled or superseded start reports nothing. The
+ * wait itself stays un-aborted on purpose: a cancelled `start()` must still
+ * never hang on a `resume()` that never settles (the original #108 defect).
+ * The rejection-branch report below is the one row this function writes,
+ * and it stays unconditional for the reason above: this function touches
+ * no React state, so there is no stale-generation state a late report
+ * could corrupt — and a `resume()` that REJECTS is a fact worth a row even
+ * on a start that was abandoned, unlike a bound that merely elapsed.
+ *
  * Built with a manual `Promise` executor and a local `settled` flag rather
  * than `Promise.race`, so a same-tick or early rejection from
  * `resumeAudioContext()` can never propagate as this function's own
@@ -237,20 +255,22 @@ export const RESUME_START_TIMEOUT_MS = 1_000;
  * — it is directly exercisable with `vi.useFakeTimers()` in this repo's
  * jsdom-free, Node-only vitest suite.
  */
-export function raceAudioResume(): Promise<void> {
+export function raceAudioResume(): Promise<boolean> {
   const resumePromise = resumeAudioContext();
-  return new Promise<void>((resolve) => {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
     const timer = setTimeout(() => {
       settled = true;
-      resolve();
+      // The timer won. No report from here — see the docblock: the caller
+      // owns the generation check this fact must sit behind.
+      resolve(true);
     }, RESUME_START_TIMEOUT_MS);
     resumePromise.then(
       () => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        resolve();
+        resolve(false);
       },
       (cause: unknown) => {
         // A rejection never bounds the race's own outcome — only resolve it
@@ -259,7 +279,7 @@ export function raceAudioResume(): Promise<void> {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          resolve();
+          resolve(false);
         }
         reportFailure(cause, "recorder-start-resume");
       }
@@ -602,8 +622,10 @@ export function useRecorder(): UseRecorder {
       // this recording — iOS will not resume the context later without one.
       // Bounded (#108): WebKit's resume() from "interrupted" has been
       // observed to hang, and an unbounded await here left the recorder
-      // stuck in "requesting" forever with the mic already hot.
-      await raceAudioResume();
+      // stuck in "requesting" forever with the mic already hot. `true` when
+      // the bound elapsed before resume() settled — reported below, behind
+      // the generation check, never by the helper (George R1 P2 on #498).
+      const resumeTimedOut = await raceAudioResume();
 
       // The resume is a real await on the first recording of a session — iOS
       // starts the context suspended — so a `cancel()` from navigation, the
@@ -617,6 +639,27 @@ export function useRecorder(): UseRecorder {
       if (generation !== generationRef.current) {
         abandonStream(stream);
         return false;
+      }
+      // The bound firing on a start that is STILL CURRENT is the #108 fact
+      // the log exists to carry (#475): every tester phone becomes a
+      // measurement of how often resume() takes longer than
+      // `RESUME_START_TIMEOUT_MS`. Placed after the generation check on
+      // purpose — a start() that cancel() discarded during the wait (Back
+      // or pagehide while "requesting") is not a #108 event and must not
+      // light the Books `≡`. This row fires on EVERY live start() whose
+      // resume overruns the bound; if a phone's resume-from-interrupted is
+      // routinely slow it competes for the failure ring, and the constant is
+      // the one knob. The row cannot tell a WebKit resume() that hung from a
+      // page frozen mid-wait by background throttling — both elapse the same
+      // timer — so which one a device row records is an inference for the
+      // reader, not a fact the row carries.
+      if (resumeTimedOut) {
+        reportFailure(
+          new Error(
+            `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
+          ),
+          "recorder-start-resume-timeout"
+        );
       }
 
       const mimeType = pickMimeType();
@@ -654,7 +697,26 @@ export function useRecorder(): UseRecorder {
       // the take. Guarded by generation so an interruption on a superseded
       // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
       // teardown) does NOT fire `ended`, so this only reacts to real losses.
-      const onInterrupted = () => {
+      // The still-active arm (recorder not yet "inactive") is reported once
+      // per take so tester phones show whether it is ever reached (#478).
+      // The row carries only what this frame can observe — `recorder.state`
+      // and `event.type`, i.e. which feed fired (`error` from the recorder,
+      // `ended` from a track). Whether the mic is still hot is NOT observable
+      // here: on `ended` the track is already dead, and an `error` at
+      // "recording" may be followed by an `ended` that reaches the inactive
+      // arm and releases everything — so the row must not assert it.
+      //
+      // Per take, not per call: a fresh binding per start() closure, like
+      // `chunks` above. `onInterrupted` is bound to `onerror` AND every
+      // track's `onended`, so one interruption can invoke it more than once,
+      // in different tasks — and the funnel's own dedup collapses only the
+      // same Error identity within one microtask, which a synthesized Error
+      // per call is not. Never reset: a take that hits the still-active arm
+      // is frozen at "processing" and cannot resume, so per-take and
+      // per-interruption coincide today. If a take ever continues after an
+      // interruption, this boolean would suppress a second, genuine one.
+      let interruptionReported = false;
+      const onInterrupted = (event: Event) => {
         if (generation !== generationRef.current) return;
         clearTick();
         // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
@@ -680,6 +742,24 @@ export function useRecorder(): UseRecorder {
           // truncate the slice stop() will recover.
           stream?.getTracks().forEach((track) => track.stop());
           closeTap();
+        } else if (!interruptionReported) {
+          interruptionReported = true;
+          reportFailure(
+            new Error(
+              `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`,
+              // The `error` feed's event carries the native failure as
+              // `.error` (lib.dom types `MediaRecorder.onerror`'s event as
+              // `ErrorEvent`; `MediaRecorderErrorEvent` is not declared at
+              // TypeScript 5.9.3, so this narrows structurally rather than
+              // by that name). `describeCause` walks `.cause`, so the durable
+              // row names the DOMException — `NotReadableError`,
+              // `InvalidStateError` — instead of only that an error arrived
+              // (George R1 P3 on #498). The `ended` feed has no such field:
+              // `undefined` keeps that row's shape unchanged.
+              { cause: "error" in event ? event.error : undefined }
+            ),
+            "recorder-interrupted-active"
+          );
         }
       };
       recorder.onerror = onInterrupted;

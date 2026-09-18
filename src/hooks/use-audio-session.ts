@@ -7,6 +7,7 @@ import {
   resumeAudioContext,
   type PlaybackHandle,
 } from "./audio-io";
+import { reportFailure } from "./report-failure";
 import {
   useRecorder,
   type RecorderState,
@@ -646,7 +647,10 @@ export function useAudioSession(): UseAudioSession {
       // Backstop only — `stop()` returns its failure in the result and does not
       // reject. The reason rides the result to the recorder sheet (a toolbar
       // Notice), rather than `playbackError`, which would bleed onto the
-      // Segments screen after the sheet is gone.
+      // Segments screen after the sheet is gone. Reported to the funnel so a
+      // failed confirmed Stop leaves a row (#480); console.error is kept
+      // beside it, not replaced.
+      reportFailure(cause, "recorder-stop-backstop");
       console.error("Stopping the recorder failed", cause);
       return {
         samples: null,

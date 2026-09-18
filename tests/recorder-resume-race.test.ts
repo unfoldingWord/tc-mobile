@@ -19,6 +19,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * instead of being swallowed silently or left as an unhandled rejection on the
  * losing side of the race.
  *
+ * The helper resolves a boolean — `true` when its timer won — and writes NO
+ * row for that (George R1 P2 on #498): the #475 `"recorder-start-resume-
+ * timeout"` row is `start()`'s to write, behind its generation check, so a
+ * Record tap cancelled during the wait never lands one. The cases below pin
+ * the boolean and the helper's silence under that key; the `start()` half is
+ * the textual gate in `tests/recorder-failure-rows.test.ts` (#475).
+ *
  * Mirrors `tests/foreground-resume.test.ts`'s `vi.mock("@/hooks/audio-io")`
  * shape (same 5-member mock — `raceAudioResume` calls the already-imported
  * `resumeAudioContext`, so no new binding is added to that surface) and
@@ -76,8 +83,9 @@ describe("raceAudioResume (#108)", () => {
     resumeAudioContext.mockResolvedValue(undefined);
 
     // No advanceTimersByTimeAsync — a healthy resume must not wait for the
-    // timer at all, only for its own microtasks to flush.
-    await expect(raceAudioResume()).resolves.toBeUndefined();
+    // timer at all, only for its own microtasks to flush. `false`: the timer
+    // did not win (George R1 P2 — the boolean is what start() reports on).
+    await expect(raceAudioResume()).resolves.toBe(false);
     expect(reportFailure).not.toHaveBeenCalled();
   });
 
@@ -114,6 +122,27 @@ describe("raceAudioResume (#108)", () => {
     expect(resolved).toBe(true);
   });
 
+  it("the TIMER win resolves `true` and raceAudioResume itself writes NO recorder-start-resume-timeout row (#475, George R1 P2)", async () => {
+    resumeAudioContext.mockReturnValue(new Promise(() => {}));
+
+    const race = raceAudioResume();
+    await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS);
+
+    // The bound firing IS the #108 fact the log exists to carry — but the
+    // helper only REPORTS THE FACT to its caller as `true`. The row itself
+    // is written by start(), after its generation check, so a start() that
+    // cancel() already discarded during the wait (Back or pagehide while
+    // "requesting") never lands a durable row for an abandoned Record tap
+    // (George R1 P2). The helper has no generation to check, so it must not
+    // report: the test pins that the timer branch is silent under the key.
+    await expect(race).resolves.toBe(true);
+    expect(reportFailure).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "recorder-start-resume-timeout"
+    );
+    expect(reportFailure).not.toHaveBeenCalled();
+  });
+
   it("does not resolve before the timeout elapses", async () => {
     resumeAudioContext.mockReturnValue(new Promise(() => {}));
 
@@ -124,15 +153,17 @@ describe("raceAudioResume (#108)", () => {
 
     await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS - 1);
     expect(resolved).toBe(false);
+    expect(reportFailure).not.toHaveBeenCalled();
   });
 
-  it("a late REJECTION after the timeout reaches reportFailure, unswallowed", async () => {
+  it("a late REJECTION after the timeout reaches reportFailure, unswallowed — and is the ONLY row the helper writes", async () => {
     const gate = deferred<void>();
     resumeAudioContext.mockReturnValue(gate.promise);
 
     const race = raceAudioResume();
     await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS);
-    await race;
+    // The timer won: `true` to the caller, no row from here (George R1 P2).
+    await expect(race).resolves.toBe(true);
     expect(reportFailure).not.toHaveBeenCalled();
 
     const cause = new Error("resume rejected late");
@@ -141,31 +172,41 @@ describe("raceAudioResume (#108)", () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    // The late rejection is a row under the rejection branch's own key —
+    // the one row this helper writes itself. The timeout row is start()'s.
     expect(reportFailure).toHaveBeenCalledTimes(1);
-    expect(reportFailure).toHaveBeenCalledWith(cause, expect.any(String));
+    expect(reportFailure).toHaveBeenCalledWith(cause, "recorder-start-resume");
+    expect(reportFailure).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "recorder-start-resume-timeout"
+    );
   });
 
-  it("an early REJECTION before the timeout still reaches reportFailure, and the function still resolves (not rejects)", async () => {
+  it("an early REJECTION before the timeout still reaches reportFailure, and the function still resolves `false` (not rejects)", async () => {
     const cause = new Error("resume rejected early");
     resumeAudioContext.mockRejectedValue(cause);
 
-    await expect(raceAudioResume()).resolves.toBeUndefined();
+    // `false`: the rejection settled the race, not the timer.
+    await expect(raceAudioResume()).resolves.toBe(false);
     expect(reportFailure).toHaveBeenCalledTimes(1);
-    expect(reportFailure).toHaveBeenCalledWith(cause, expect.any(String));
+    expect(reportFailure).toHaveBeenCalledWith(cause, "recorder-start-resume");
   });
 
-  it("a late RESOLVE after the timeout reports nothing", async () => {
+  it("a late RESOLVE after the timeout adds no row at all — the helper resolves `true` and stays silent", async () => {
     const gate = deferred<void>();
     resumeAudioContext.mockReturnValue(gate.promise);
 
     const race = raceAudioResume();
     await vi.advanceTimersByTimeAsync(RESUME_START_TIMEOUT_MS);
-    await race;
+    await expect(race).resolves.toBe(true);
 
     gate.resolve(undefined);
     await Promise.resolve();
     await Promise.resolve();
 
+    // Nothing went wrong on the late resolve — the context is simply
+    // "running" now — and the timer win is start()'s row to write, not this
+    // helper's (George R1 P2). No row from either branch.
     expect(reportFailure).not.toHaveBeenCalled();
   });
 
