@@ -19,7 +19,11 @@
  * only.
  */
 
-/** Which of the two surviving raw-`history.back()` issuers is asking. */
+/**
+ * Which of the two surviving raw-`history.back()` issuers is asking.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
+ */
 export type TravelIssuer = "go-back" | "commit-close";
 
 /**
@@ -28,18 +32,27 @@ export type TravelIssuer = "go-back" | "commit-close";
  * booleans — four rows, small enough to enumerate completely (Amendment A's
  * table) rather than defended by an unreachable clamp (F5, invariant 10
  * superseded).
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export interface TravelGuardState {
   readonly goBackOutstanding: boolean;
   readonly commitCloseOutstanding: boolean;
 }
 
-/** The guard's state before any `history.back()` has been issued. */
+/**
+ * The guard's state before any `history.back()` has been issued.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
+ */
 export const initialTravelGuardState: TravelGuardState = {
   goBackOutstanding: false,
   commitCloseOutstanding: false,
 };
 
+/**
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
+ */
 export interface BeginBackResult {
   /** `true` if this issuer may proceed and call `history.back()`. */
   readonly ok: boolean;
@@ -83,6 +96,8 @@ export interface BeginBackResult {
  * PR2 wires this into real `history.back()` calls. Nothing in this PR (#452
  * PR1) calls `history.back()` at all, so the concrete failure scenario #493
  * describes cannot occur from this PR's code.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export function beginBack(
   state: TravelGuardState,
@@ -106,6 +121,8 @@ export function beginBack(
  * Clear `issuer`'s outstanding flag once its `history.back()` has settled
  * (the `popstate` it caused has landed, or it was cancelled). Idempotent: no
  * matter what the flag's current value is, settling always clears it.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export function settleBack(
   state: TravelGuardState,

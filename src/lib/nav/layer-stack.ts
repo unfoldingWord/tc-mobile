@@ -32,6 +32,8 @@
  * at the call site; only the ref-backed one can ever reflect a synchronous
  * flip with no intervening render. See the "busy()-is-a-ref" negative example
  * in `tests/nav-layer-stack.test.ts`.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export interface Layer {
   readonly id: string;
@@ -39,10 +41,18 @@ export interface Layer {
   dismiss(): void;
 }
 
-/** Screen-scoped stack of open overlays, bottom-to-top open order. */
+/**
+ * Screen-scoped stack of open overlays, bottom-to-top open order.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
+ */
 export type LayerStack = readonly Layer[];
 
-/** The most-recently-opened layer, or `undefined` for an empty stack. */
+/**
+ * The most-recently-opened layer, or `undefined` for an empty stack.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
+ */
 export function topLayer(stack: LayerStack): Layer | undefined {
   return stack[stack.length - 1];
 }
@@ -54,6 +64,8 @@ export function topLayer(stack: LayerStack): Layer | undefined {
  * the result names"). The caller (PR2's adapter) is responsible for actually
  * invoking `dismiss()` on a `"dismiss"` result and for re-arming the
  * protective history entry on a `"refused-busy"` result.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export type RouteBackToLayerResult =
   | { readonly kind: "empty" }
@@ -69,6 +81,11 @@ export type RouteBackToLayerResult =
  * - Non-empty, top not busy → `{kind: "dismiss", layerId}`.
  * - Non-empty, top busy → `{kind: "refused-busy", layerId}`; the caller must
  *   re-arm (no history/state change) rather than proceed.
+ *
+ * `navigation.ts`'s `popAction` calls this once `layerStack` is non-empty,
+ * but no caller passes a non-empty stack yet — that wiring is PR2.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export function routeBackToLayer(stack: LayerStack): RouteBackToLayerResult {
   const layer = topLayer(stack);

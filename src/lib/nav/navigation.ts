@@ -263,6 +263,8 @@ export function overlayDismissal(
  * reads `"same"` (both `<`/`>` comparisons on `NaN` are false), so a REAL Back
  * gesture would be silently swallowed, and an adopted `NaN`/`Infinity`
  * baseline can never advance by `++nextIndex.current` again either.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
 export function resumeNavIndex(state: unknown): number {
   if (
