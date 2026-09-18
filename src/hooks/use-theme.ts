@@ -126,11 +126,22 @@ function setLiveTheme(next: Theme): void {
 function readTheme(): Theme {
   try {
     return readStoredTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
-  } catch (cause) {
-    // Not swallowed — routed to the one sink (#167). A translator gets the
-    // default theme, which is the app's normal state, so there is nothing to
-    // say on screen; the maintainer still gets the report.
-    reportFailure(cause, "use-theme: read");
+  } catch {
+    // Deliberately NOT routed to `reportFailure` (George R4 P2-2 on #457). The
+    // one sink's durable subscriber is the failure log the Books `≡` counts
+    // and marks (#205): the translator-facing problem channel, unfiltered,
+    // 50 rows — and lifecycle noise is not a failure there (the #478
+    // constraint). This runs once per launch; a throw here leaves the app in
+    // its normal state, the default theme, with nothing for a translator or
+    // facilitator to act on. Reporting it wrote one row per cold start on an
+    // engine where the accessor throws, lit the marker for a cosmetic
+    // fallback, and after 50 launches pushed the real save failure a
+    // facilitator would send out of the ring. The persist path in `toggle`
+    // is the opposite case — user-initiated, and the choice will be lost on
+    // relaunch — so that one IS reported, and `e2e/theme-toggle.spec.ts`
+    // pins the row. Nothing at console level either: the maintainer's read on
+    // a stored preference that was never readable is the default theme
+    // itself, and the cause is the engine's storage policy, not this app's.
     return readStoredTheme(null);
   }
 }

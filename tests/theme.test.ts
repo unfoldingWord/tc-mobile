@@ -322,4 +322,87 @@ describe("the light theme is reachable (#171)", () => {
       ).toMatch(/data-theme/);
     }
   });
+
+  it("a FROZEN LiveScope repaints on a theme change, not only a live one", () => {
+    // `LiveScope` stays mounted with `active === false` through pause,
+    // processing and close (`liveScopeShown`, `recorder-stage.ts`), holding
+    // its last frame. Listing `theme` in the draw deps re-runs the effect on a
+    // toggle, but the re-run painted only on the `active` path (peek + rAF):
+    // with a paused take on screen it re-read the colours, bound a fresh
+    // observer, and painted nothing — the frozen bars kept the previous
+    // theme's amber until Resume or a resize (George R4 P2-1 on #457). The
+    // frozen-resize repaint, `paint(lastScopeRef.current)`, is the path that
+    // already exists for exactly this state, so the effect must take it
+    // itself when `!active`: AFTER the observer is bound (one frozen-repaint
+    // path, not two), BEFORE the active branch, and never through
+    // `readScope`, which advances the ring (the extra-column defect George R3
+    // found on the peek path).
+    //
+    // Source-shape, not behaviour: no DOM runner in the Node suite (#197), and
+    // the scenario needs a theme control on a screen that keeps `LiveScope`
+    // mounted (#149), which does not exist yet.
+    const source = read("src/components/live-scope.tsx");
+    const draw =
+      /useLayoutEffect\(\(\) => \{([\s\S]*?)\n    return \(\) => \{/.exec(
+        source
+      );
+    expect(
+      draw?.[1],
+      "no draw effect body found in live-scope.tsx"
+    ).toBeTruthy();
+    const body = draw?.[1] ?? "";
+    const bind = body.indexOf("observer.observe(canvas)");
+    expect(
+      bind,
+      "the draw effect does not bind the ResizeObserver"
+    ).toBeGreaterThan(-1);
+    const live = body.indexOf("if (active) {");
+    expect(live, "no active branch in the draw effect").toBeGreaterThan(bind);
+    const frozen = body.slice(bind, live);
+    expect(
+      frozen,
+      "no guarded frozen repaint between the observer bind and the active branch"
+    ).toMatch(/^\s*if \(!active\) paint\(lastScopeRef\.current\);\s*$/m);
+    // The comment beside the repaint names `readScope` as the thing NOT to
+    // call, so strip comment lines before the negative match — code only.
+    const frozenCode = frozen.replace(/^\s*\/\/.*$/gm, "");
+    expect(
+      frozenCode,
+      "the frozen repaint must not advance the ring"
+    ).not.toMatch(/readScope/);
+  });
+
+  it("a theme READ fallback is not a translator-facing failure; a failed WRITE still is", () => {
+    // `reportFailure` is the one funnel, and its production subscriber is the
+    // durable log the Books `≡` counts and marks (#205): the translator-facing
+    // problem channel — unfiltered, 50 rows (the #478 constraint, tracker
+    // 2026-09-18 learning 2). `readTheme` runs once per launch, and a throw on
+    // READ (Safari with cookies blocked, a WebView with storage off) falls
+    // back to the default theme, which is the app's normal state: nothing for
+    // a translator or facilitator to act on. Reporting it put one row in that
+    // log per cold start — "N problems recorded" for a cosmetic fallback, and
+    // after 50 launches the ring drops the real save failure a facilitator
+    // would send (George R4 P2-2 on #457). So the read fallback is silent
+    // toward the log, with the reason in its comment.
+    //
+    // The persist path is the other case: user-initiated, and the choice will
+    // not survive a relaunch — that row stays, and `e2e/theme-toggle.spec.ts`
+    // asserts it through the ≡ name and mark. Both halves are pinned here so
+    // neither is "tidied" into the other.
+    const hook = read("src/hooks/use-theme.ts");
+    const readFn = /function readTheme\(\)[^{]*\{([\s\S]*?)\n\}/.exec(hook);
+    expect(readFn?.[1], "no readTheme in use-theme.ts").toBeTruthy();
+    const readBody = readFn?.[1] ?? "";
+    expect(
+      readBody,
+      "readTheme reports its read fallback to the failure log"
+    ).not.toContain("reportFailure(");
+    // And it still falls back to the default rather than rethrowing.
+    expect(readBody, "readTheme no longer falls back to the default").toMatch(
+      /readStoredTheme\(null\)/
+    );
+    expect(hook, "the persist failure is no longer reported").toMatch(
+      /reportFailure\(cause, "use-theme: persist"\)/
+    );
+  });
 });

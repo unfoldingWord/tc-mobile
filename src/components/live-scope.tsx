@@ -101,7 +101,9 @@ export function LiveScope({
   // canvas cannot see that on its own — so the effect lists it. Today a toggle
   // unmounts this canvas (the toggle is Books-only); once it is reachable from
   // the recorder (#149) this is what keeps the scope from holding the previous
-  // theme's amber (George R2 P2 on #457).
+  // theme's amber (George R2 P2 on #457) — while active through the loop's
+  // restart, and while FROZEN (paused / processing / close) through the
+  // explicit repaint after the observer bind below (George R4 P2-1).
   const theme = useLiveTheme();
   // Hold the latest reader without retriggering the loop — the hook may hand a
   // fresh function identity each render, and restarting for that drops frames.
@@ -191,6 +193,18 @@ export function LiveScope({
       if (!active) paint(lastScopeRef.current);
     });
     observer.observe(canvas);
+    // A theme change while FROZEN takes the same path (George R4 P2-1): this
+    // effect re-runs on `theme`, and with `active` false nothing below would
+    // paint — the colours above were re-read into fresh closures and the stale
+    // frame stayed on the previous theme's amber until Resume or a resize. The
+    // ring is not advanced here (`lastScopeRef`, never `readScope` — see the
+    // peek note below), and a first mount while frozen has nothing to paint
+    // yet, which `paint` already treats as a no-op. Inference, not observed:
+    // ResizeObserver also delivers an initial notification on `observe()`
+    // per its spec, which would repaint through the callback above — but that
+    // is a spec detail of the engine, not this file's contract, so the repaint
+    // is stated here rather than relied on there.
+    if (!active) paint(lastScopeRef.current);
 
     let raf = 0;
     if (active) {
