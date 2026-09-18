@@ -334,7 +334,23 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           return;
         case "commit-close-recorder": {
           const handle = getRecorderHandleRef.current();
-          if (!handle) return;
+          if (!handle) {
+            // No recorder handle even though `screenFor` returned "recorder":
+            // a mount the adapter expected is gone. Not reachable in PR2's App
+            // tree (the App early-returns for recovering/databasePanel re-arm
+            // via trap-recovery/trap-database-panel first, and
+            // panelWouldLoseAudio withholds the panel while recorder !== null),
+            // but a future caller — a PR3 overlay conversion, an inner error
+            // boundary, a recorderOpen render that does not mount Recorder —
+            // could produce it. The browser has ALREADY popped the screen-depth
+            // entry, so re-arm it here like every other non-screen intercept in
+            // this switch (George R1 P2-2): returning without the re-arm would
+            // strand the app one physical level below the screen it is showing
+            // (invariant 2). Surface the missed mount — it should never happen.
+            console.error("commit-close-recorder: no recorder handle on Back");
+            pushHistoryEntry();
+            return;
+          }
           // Re-arm SYNCHRONOUSLY — before the async commit — so the stop →
           // decode → save window is never a moment with no entry protecting the
           // recorder (F1). Run the same close() the on-screen Back runs; on exit
