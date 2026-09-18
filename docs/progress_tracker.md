@@ -11,6 +11,111 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-17 (late evening) — the V1 must-haves batch: scoped to three code lanes, #108's bound and #442's regression pin merged, the #452 Back design landed, #58 in round 3, and #59's driven flush abandoned under a pre-set stop rule
+
+~19:30 to ~21:45 UTC, the batch the dev lead asked for after the evening entry's INAs. Merge authority was the same picker answer as the night and day runs ("same rules as last night"); every DRI decision below was a picker answer, and the two native re-cuts and v0.2.4 are in the evening entry, not repeated here. Lanes ran in isolated worktrees on the shared lane protocol (Frank in the lane, George serialized and coordinator-run, hand-back `READY-FOR-GEORGE pr= sha= round=`); Opus only for the two recorder-core lanes (#58, #59), Sonnet otherwise.
+
+### Scope first: only three of the nine `v1-required` issues had code left
+
+A scoping workflow read all nine `v1-required` issues against the tree before any lane was spawned. **Code left: #58, #108, #59.** The other six close on a device or a person, not a PR: **#336** (share on the release APK), **#269** (Finished-MP3 playback on Android), **#413** (three ordered iOS checks), **#245** (the device run), **#418** (the requirements owner's confirmation), **#262** (`docs/tester-install.md`'s two placeholders plus a tester's TestFlight confirmation). The dev lead then relabelled **#205, #374, #442** `v1-required` and added two lanes: "#442 verify, then fix" and the #452 Back design pass. The v0.2.4 device run sheet was offered and not picked, so #245 was left alone.
+
+### Shipped
+
+| PR   | What                                                                                                                | Closes                | Review outcome                                                                                                                                                                                                                                                                                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #467 | `panAfterDragMove` extracted from the recorder's drag handler, with the regression pinned                           | #442 (closed by hand) | #442's proposed fix had already shipped inside #432's round-5 commit `33aee7a`; this is the refactor plus tests. Dual-clean after the coordinator directed Frank's prescribed extraction over the lane's stop. George's chased sibling → **#473** (`onCut` cut-to-end leaves `panState = newLength`; deliberately **not** labelled `v1-required` — DRI's call). `5140602`. |
+| #470 | `start()` races `resumeAudioContext()` against a 1000 ms bound (`raceAudioResume`) instead of awaiting it unbounded | — (**part of** #108)  | Dual-clean: Frank at `bd56f6c`, George at `38a3b10`; two post-approve test-only commits (George's own probe, and a **source-text wiring gate** that closed Frank's R1b P2 after the coordinator overrode the lane's REFUTE), no George re-run, recorded. George P3 → **#475** (report to the failure log when the bound fires). Playback sibling is #469. `07458fc`.       |
+| #476 | `docs/design/back-navigation.md` — the #452 design pass                                                             | — (#452 stays open)   | Docs on green. Three models, each attacked, one chosen: **overlays never touch `history`**; an in-memory layer stack; a pure core in `src/lib/nav/`; Amendments A–F; PR1–PR6. Summary and seven open questions posted on #452. **Not** Frank/George-reviewed; nothing built; nothing run. `e7602b1`.                                                                       |
+| #472 | the evening tracker entry                                                                                           | —                     | Docs on green; read end to end first. `24ab792`.                                                                                                                                                                                                                                                                                                                           |
+
+**#108 stays open on purpose** — the 1000 ms constant is a placeholder until a device measures resume-from-interrupted latency — **and nearly did not**: #470's body said "not `Closes #108`" and "does not close #108", and GitHub's closing-keyword parser matched both **despite the negation** (`closingIssuesReferences: [108]`). Both sentences were reworded and the field re-checked empty before the merge. #471 and #474 were checked the same way.
+
+### Open, not merged
+
+- **#471 (#58, draft)** — a persisted (bfcache) `pagehide` pauses the take instead of cancelling it: pure `pageHideAction(state, persisted)` and `pausePlan`, `pause()` returns whether it froze. **Parked overnight at round 3: Frank APPROVE at `4a96a2c`, George NOT run at that head** — the session ended at the dev lead's request, so it is not review-clean yet (parking note: issuecomment-5721702006). Round 1: Frank clean, George 2 P2 + 2 P3, all fixed or (one half) refuted with file:line. Round 2 at `1a55e0a`: Frank APPROVE, George **2 P2** — (1) a persisted `pagehide` can freeze to `"paused"` over a #59 `error` that already claimed the take while the recorder is still natively `"recording"`; (2) `stop()` never re-arms the AudioContext before `decodeAudioData`, and this PR makes paused-after-restore the default, so "close commits" lands on the decode-hold panel. Both real on the coordinator's read; both one-line fixes (a `pausePlan` row; an **un-awaited** `resumeAudioContext()` at the top of `stop()` — #470's wiring gate forbids an awaited one). Round 3 built both (`5dfdee2`), and its mutations caught **two weaknesses in the lane's own new gate** — an `indexOf` ordering check that passed when the call was deleted (`-1 < n`), and a `.catch(` match an empty catch satisfied — both hardened (`fb284c1`, `4a96a2c`). George's residual (nothing mirrors `"processing"` eagerly; not closable from `use-audio-session.ts` alone) → **#481**. Triage posted for rounds 1 and 2. Hook wiring is review-only; two mutations are reported **SURVIVED**. No persisted `pagehide` has been observed on any device.
+- **#474 (#59, draft) — parked at the cap, escalated to the dev lead.** Its history is the session's main lesson, below. At `a9c9da4`: Frank APPROVE, George 1 P2 + 1 P3. Three options are on the PR (issuecomment-5721475198); the coordinator recommends **A — reduce to `cancel()`'s guard only**, the half both reviewers found right in two consecutive rounds.
+
+### #59: the driven flush was tried and abandoned
+
+The dev lead picked "build on Opus, truncation-gated", then after George's round 1 (1 P1 + 2 P2) "one owner-record round" with a **stop rule set in advance**: any P1/P2 at the new head ends the driven flush, fall back to guards only, no round 3. Round 2 at `a7ab07b`: Frank APPROVE, George **2 P1 + 1 P2** — the rule fired and was applied without re-asking. The deciding observation: round 1 required `cancel()` to stop the flush's tracks **synchronously** (a discarded page must not strand a live microphone); round 2 required it **not** to while a confirmed Close is awaiting the flush (or the confirmed take is truncated). Both are correct readings of unchanged contracts (`leave()`'s "synchronous and total"; `stop()`'s steal-out-of-the-ref). Satisfying both is an ownership state machine in the recorder core for an interruption arm **no device has been observed reaching**.
+
+The guards-only fallback then took two more rounds and hit the cap the same way: round 3's prescription (after a thrown `stop()` on a still-active recorder, seal now) was reversed by round 4 (sealing before the track-stop loses the final slice — on WebKit, the whole take). Every variant reasons about what `MediaRecorder` does after a native `stop()` throws while active: a state never observed, not simulable in the suite, and undefined by the spec. **#59 stays open**; its status note is on the issue. **#478** proposes the evidence-first step: report the still-active interruption arm to the failure log so tester phones show whether it is ever reached.
+
+### Filed and closed
+
+Filed: **#473** (`onCut` cut-to-end pan), **#475** (report the #108 bound to the failure log), **#478** (report #59's still-active arm), **#479** (a throwing `track.stop()` still breaks `cancel()`'s contract — post-training), **#480** (`stopRecording()`'s backstop ends at `console.error`), **#481** (the `"processing"` mirror lag). Closed: **#442** (already fixed by #432 round 5; pinned by #467). **#458** was closed at 19:07 UTC with #440's merge (its SaveFailed flush shipped there); the evening entry does not record the close.
+
+### Learnings
+
+1. **A closing keyword next to an issue number closes it, negation or not.** Check `gh pr view --json closingIssuesReferences` before merging any "Part of" PR; the rule is now in the lane brief.
+2. **A stop rule set before the round is what made the #59 call cheap.** The rule fired on evidence and nobody had to argue for abandoning sunk work at 21:00.
+3. **When round N+1 negates round N's prescribed fix, the defect is in the premise, not the patch.** It happened twice on #474. The signal to stop is the reversal, not the round count.
+4. **A design brief is a hypothesis.** Both Opus lanes found a real defect in their workflow-produced brief (the #59 brief's generation guard in `finalize` was itself a hot-mic bug; the #58 brief's `leave()` audit missed `micTokenRef`).
+5. **Use an idle George slot early** — running him on #474 before its rebase surfaced the P1 an hour sooner. And his **no-verdict exit (rc=3) recurred once**; one re-run delivered, as documented.
+6. **A large document must not travel through a workflow agent's structured output.** The #452 synthesis returned a placeholder, then hit the retry cap; writing the doc to a file and returning a small summary worked. And a workflow-produced doc still has to be read: process leftovers, a false `@pivotpending` claim and wrong deadline arithmetic were corrected before #476, and two "three weeks" slips got through anyway (fixed in this PR).
+7. **A source-text wiring gate is the honest answer to "no renderer"** when something precise can be stated: it turned SURVIVED mutations into KILLED ones on #470 and #474, and says in its own docblock that it proves text, not behaviour. #474 round 4 shows the limit — the gate faithfully pinned an order that was wrong.
+
+### Held for the DRI
+
+- **#474**: pick A / B / C (on the PR). **#473**: `v1-required` or not.
+- **The #452 design's seven open questions** (on #452) — in particular whether `@capacitor/app` lands before the training. Its claim that Android's hardware Back does nothing useful in the APK is an **inference from the tree** (`@capacitor/app` absent, bare `BridgeActivity`); one tap on a phone with the v0.2.4 APK settles it.
+- **The next `develop -> staging` promotion (v0.2.5)**: `develop` is ahead of `staging` by #440, #467, #470 and docs. Not cut this session.
+- Device and people items unchanged: #336, #269, #413, #245, #418, #262; **#465** (Dependabot, green, unreviewed); #422; #464 and #457 (contributor drafts, untouched).
+
+### Next session, in order
+
+1. `/sod`.
+2. **#471**: George at the round-3 head; merge if dual-clean with CI green and closing references empty (#58 stays open for its device half). Round 4 is its cap.
+3. **#474**: act on the DRI's pick.
+4. **v0.2.5** promotion once #471 settles, then `npm run check:deploy`, then the native re-cuts (user-run).
+5. **#452 PR1** (pure core, zero behaviour change) — independent of every open question.
+6. #478 and #475 together (same shape: one `reportFailure` row each), then #480.
+
+---
+
+## 2026-09-17 (evening) — #440 merged on accepted residuals after rounds 10/10b, v0.2.4 promoted and verified, and both native lanes re-cut from staging 8167a1d
+
+Two sessions in one entry. The first (~16:45 to ~19:10 UTC) closed the day entry's item 2 and cut v0.2.4; **this session did not run it and the paragraph below is reconstructed from the PR record** (the #440 triage and merge comments, the #462 body, the #467 body). The second (~19:10 to ~19:30 UTC) was the `/sod` continuation and the native re-cut, run and observed directly.
+
+### Shipped
+
+| PR   | What                                                                                                                           | Closes                       | Review outcome                                                                                                                                                                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #440 | durable failure log + Send from the crash screen (takeover of #289, #205)                                                      | #205; #289 closed superseded | **accept residuals, merge now** (DRI, by picker) at `fe23a2d` after rounds 10 and 10b (docs-only, the runbook's "always works" share-sheet claim). **Not dual-clean**: Frank R10 P2 → #466, George R10b P2 → #468, the coordinator half stays on #455, a P3 noted on #458. `78ad078`. |
+| #462 | `chore(release): v0.2.4` — carries #427, #420, #432, #429, #423, #436, #433, #426, #421, #425, #424, #298 and four tracker PRs | —                            | promotion PR #463 merged 18:36 UTC; **staging serves `{"version":"0.2.4","sha":"8167a1d"}` built 18:37 UTC**, checked by fetching `/version.json` at the start of the second session.                                                                                                 |
+
+#440 merged **after** v0.2.4 was cut, so `develop` is one PR ahead of `staging`; the next promotion carries the failure log. #440 also rewrote the "Errors have a channel" paragraph in `AGENTS.md`: the channel is built end to end, and the paragraph now lists what does and does not reach it (a failed save, delete, erase, mic/playback start and share _send_ still end at `console.error`).
+
+Opened, not merged: **#467** (draft, `fa24b03`, round 2) — #442's proposed fix was already shipped inside #432's round-5 commit `33aee7a`; the PR extracts the drag write into a pure `panAfterDragMove` and pins the composition, with mutation (iii) declared surviving (a node-only suite cannot see which setter a handler calls). **No triage comment is posted on the PR yet** — round 1's Frank P2 and the round-2 answer live only in the body, and no George run has been made at `fa24b03`.
+
+Dependabot closed #419 (00:33 UTC) and #431 (18:37 UTC) itself, "updatable in another way"; **#465** (14 updates, CI green, no review) is the live replacement. Filed since the day entry: #460, #461 (from #457's a11y batch), #466, #468 (the #440 residuals), #469 (`playSamples` awaits `resumeAudioContext()` unbounded — the #108 shape on the playback path).
+
+### Native lanes re-cut from `staging` `8167a1d` (v0.2.4)
+
+Both `workflow_dispatch` lanes were run from `staging`, paused at the `release-signing` gate, approved by the DRI (the coordinator's approval attempt and the release creation were both refused by the harness — correct, both are the human gate), and finished green:
+
+- **iOS TestFlight**, run 35263421091: `Successfully uploaded the new binary to App Store Connect` at 19:17 UTC; marketing version `1.0`, build `1789672492`. Green means uploaded, not delivered — Apple processing and the internal group's auto-distribute are outside the lane.
+- **Android APK**, run 35263423773: `app-release.apk` (6 161 364 bytes) downloaded from the run artifact and checked locally with `apksigner verify --print-certs` and `aapt dump badging` against the published v0.2.3 asset: **same signer certificate** (SHA-256 `eed23e1b…34baf2` on both), versionCode `1789672423` > `1789593540`, and versionName **`0.2.4`** — the first build where #421's `versionName` fix is visible (v0.2.3 said `1.0`). Published by the DRI as pre-release `android-release-v0.2.4` targeting `8167a1d`, asset attached and verified.
+
+Neither build has been run on a device. The v0.2.4 APK is the one a tester should now install; it installs over v0.2.3 in place and still will not install over the old debug-signed builds.
+
+### Held for the DRI
+
+- **#422** promotion plan (review only). **#441**, **#434**, **#418** unchanged.
+- **#464** (deferredreward, storage-pressure marker on Books, #247) and **#457** (jag3773, the a11y UI-layer batch) are drafts with green CI and no review yet.
+- An untracked Xcode-generated `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/` sits in the working tree; probably belongs in `.gitignore`, not committed here.
+
+### Next session, in order
+
+1. `/sod`.
+2. **#467**: post the round-1/round-2 triage comment (mandatory every round), run George at `fa24b03`, then undraft.
+3. The #452 design pass for #430 (history-stack model), then on-device system-Back testing on Android.
+4. #465 (Dependabot), #422 review, and the next `develop -> staging` promotion carrying #440.
+5. First review pass on #464 and #457.
+6. #405 item 1 + #404, #235 + #239/#230, #402, #418; promote the day entry's learnings into `AGENTS.md` and `docs/review/dual-review.md`.
+
+---
+
 ## 2026-09-17 (day) — the morning picker worked through: five of the seven parked PRs merged, two parked (one for a design pass, one at a final stop after nine rounds)
 
 The day session after the night run below, ~09:20 to ~16:45 UTC. The dev lead answered the seven cap escalations by picker at ~09:45 and extended the night's merge authority to the day ("same rules as last night"): merge once Frank and George are clean at the head SHA and CI is green, one at a time, re-checking the rest after each merge, the decision recorded on the PR; anything not dual-clean goes back to the DRI. **Every round past the cap was the DRI's explicit pick, each with a stop rule** — a new P1/P2 at the new head goes back to the picker, never into another round. Same lane worktrees and agents as the night, resumed by agent ID; George serialized, coordinator-run. One session restart (~12:31 UTC) killed a George run and the monitors; recovered from the rolling handoff note and relaunched.

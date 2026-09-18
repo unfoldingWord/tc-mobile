@@ -46,6 +46,20 @@
  * step stamps `name: null` on every pre-existing chapter row, so a reader never
  * meets `undefined` and the display fallback keys on one shape. Additive, like
  * v4: no store dropped, no other field touched.
+ *
+ * ── v6 (#205): the durable failure log — append-only ──
+ *
+ * A `failures` store, so the one failure sink has a destination that survives
+ * the page (AGENTS.md: "`console.error` is not a channel on a phone in a
+ * village"). Additive in the strongest sense: a NEW store, so there is no
+ * backfill to run and not one existing row is read or rewritten. A v5 device's
+ * recordings come through untouched, and a build that predates v6 simply has no
+ * log — it does not fail to open, because the store it never heard of is not
+ * one it asks for.
+ *
+ * Out-of-line auto-increment keys, so insertion order is key order and the ring
+ * in `failures.ts` can prune the oldest from the front of a cursor without
+ * trusting a phone's clock.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -62,9 +76,10 @@ import type {
   TakeId,
 } from "@/types/domain";
 import type { ClipMeta } from "@/types/audio";
+import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -97,6 +112,12 @@ export interface TcMobileDb extends DBSchema {
    * `clipMeta.encoding` says which; read them through `clipFromRecord`.
    */
   clipData: { key: ClipId; value: ArrayBuffer };
+  /**
+   * The durable failure log (#205), newest at the highest key. Keyed by an
+   * out-of-line auto-increment — no `keyPath` — so a row is plain data with no
+   * key field baked into it and insertion order is key order.
+   */
+  failures: { key: number; value: StoredFailure };
 }
 
 /**
@@ -154,6 +175,38 @@ class DatabaseBlockedError extends Error {
  * avoid referencing the DOM's `DOMException` from this DOM-free layer. */
 function isVersionError(cause: unknown): boolean {
   return (cause as { name?: string } | null)?.name === "VersionError";
+}
+
+/**
+ * Is a refusal from this module one that NOTHING on this page can clear?
+ *
+ * The two above are opposites, and a caller that treats them alike gets one of
+ * them wrong. `DatabaseBlockedError` clears the moment the other copy closes —
+ * which is exactly what the screens showing it ask the person to do, so a retry
+ * there is a real offer. `DatabaseDowngradeError` is the yield latch
+ * ({@link getDb}, and see that class's own docblock): once this copy has given
+ * its connection away, every open for the rest of the page's life fails
+ * identically, and a retry is a promise the code cannot keep.
+ *
+ * Lives here, beside the two classes, so the strings cannot drift away from the
+ * definitions they name. Takes the `name` rather than the error so a caller that
+ * only kept the name — the failure log swallows the error itself, by design —
+ * can still ask. A `null` name is "no refusal recorded", never "terminal":
+ * nothing is more retryable than a write that was never refused.
+ *
+ * **Compared as a literal on purpose.** `DatabaseDowngradeError.name` would be
+ * the CLASS's name, which a minified production build is free to mangle; the
+ * constructors above assign `this.name` as a literal precisely so the instance's
+ * name survives that. Matching the literal is what makes this work in the build
+ * that ships, and it is the same reason `isVersionError` above matches by name.
+ *
+ * First caller: the crash screen's Restart (`components/error-boundary.tsx`),
+ * which must not hold a reload on a refusal that can never clear (George R7
+ * P2-1). The other three failure-log surfaces that still offer a retry after a
+ * yield are #455, deliberately not swept here.
+ */
+export function isTerminalOpenRefusal(name: string | null): boolean {
+  return name === "DatabaseDowngradeError";
 }
 
 let dbPromise: Promise<IDBPDatabase<TcMobileDb>> | null = null;
@@ -399,6 +452,28 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
 
           db.createObjectStore("clipMeta", { keyPath: "id" });
           db.createObjectStore("clipData");
+        }
+
+        // v6 (#205): the durable failure log. A new store and nothing else —
+        // no row anywhere is read, stamped or moved, so this is the cheapest
+        // shape an upgrade has. Guarded on `oldVersion < 6` like its siblings
+        // so a fresh install creates it once and a v5 device gains it once.
+        //
+        // ORDER IS LOAD-BEARING: this runs BEFORE the two backfills below, and
+        // therefore before the upgrade has awaited anything (George #2, round
+        // 1). A `versionchange` transaction stays alive across awaited IDB
+        // requests — idb's documented pattern, and what the backfills rely on —
+        // but a STRUCTURE change after the handler has yielded is a different
+        // thing, and some WebKit versions refuse it with `InvalidStateError`,
+        // aborting the whole upgrade. On a fresh install both backfills below
+        // open a cursor unconditionally, so a v6 create placed after them sits
+        // behind two awaits on every new phone — and iOS is the October target.
+        // The create depends on no awaited result, so keeping it up here costs
+        // nothing and removes the question. Pinned by
+        // `tests/db-migration.test.ts`, which fails the upgrade if a structure
+        // change is attempted after a yield.
+        if (oldVersion < 6) {
+          db.createObjectStore("failures", { autoIncrement: true });
         }
 
         // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the

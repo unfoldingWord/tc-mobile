@@ -23,6 +23,7 @@ import {
   pickMimeType,
   resumeAudioContext,
 } from "./audio-io";
+import { reportFailure } from "./report-failure";
 
 /** The translator-facing sentence for each `classifyStopDecode` error class. Kept
  *  here beside the recorder's other error copy; the classifier stays UI-free. */
@@ -175,6 +176,96 @@ export interface RetryDecodeResult {
  * translator concluding the app is dead.
  */
 const STOP_FLUSH_TIMEOUT_MS = 5_000;
+
+/**
+ * How long `start()` waits for `resumeAudioContext()` before proceeding
+ * anyway (#108).
+ *
+ * WebKit's `resume()` from an `"interrupted"` `AudioContext` state has been
+ * observed to hang indefinitely. An unbounded `await` on that promise between
+ * `getUserMedia` and `new MediaRecorder` left the recorder stuck in
+ * `"requesting"` forever, with the microphone already hot and no way out of
+ * the sheet.
+ *
+ * 1000ms is a PROVISIONAL ASSUMPTION, not a measured value — the real
+ * distribution of WebKit's resume-from-interrupted latency is unmeasured on
+ * any device, which is exactly the open question issue #108 itself poses.
+ * This constant is the one place to correct it once an on-device pass
+ * answers that question, the same way `STOP_FLUSH_TIMEOUT_MS` above and
+ * `SCOPE_CAPACITY` below are each a single named knob for their own
+ * provisional value.
+ */
+export const RESUME_START_TIMEOUT_MS = 1_000;
+
+/**
+ * Call `resumeAudioContext()` but never let it block `start()` for longer
+ * than `RESUME_START_TIMEOUT_MS` (#108).
+ *
+ * `resumeAudioContext()` is invoked SYNCHRONOUSLY as the first statement,
+ * before the timer or the race promise are even constructed — `start()` is
+ * still inside the user gesture that opened the microphone at this point
+ * (the same timing the comments at its call site, at `resume()`, at
+ * `retryDecode()` and at `previewCapture()` all rely on), and queuing the
+ * real call behind a `.then` or a microtask would push it a tick later than
+ * today's bare `await resumeAudioContext()`.
+ *
+ * NEVER rejects. A `resume()` that fails fast is treated exactly like one
+ * that hangs — swallowed, and the caller proceeds — matching every other
+ * `resumeAudioContext()` call site in this file (`armForegroundResume`,
+ * `resume()`, `retryDecode()`, `previewCapture()`), all of which are already
+ * `void resumeAudioContext().catch(...)` with no propagation. A rejection,
+ * whether it arrives before or after the timer has already resolved the
+ * race, is reported through `reportFailure` rather than swallowed outright —
+ * closer to AGENTS.md's "errors have a channel before they have copy" bar —
+ * but it never reaches this function's own caller. This report is
+ * unconditional, not generation-gated: this function touches no React state,
+ * so there is no stale-generation state a late report could corrupt.
+ *
+ * A late RESOLVE (no error) after the timeout reports nothing — nothing went
+ * wrong, the shared context is simply "running" now, and whichever
+ * generation is current benefits silently through the existing #76
+ * per-frame `contextNeedsResume`/`available()` check.
+ *
+ * Built with a manual `Promise` executor and a local `settled` flag rather
+ * than `Promise.race`, so a same-tick or early rejection from
+ * `resumeAudioContext()` can never propagate as this function's own
+ * rejection before the `.then(resolve, reject)` handler below converts it —
+ * `raceAudioResume` must never reject. The timer uses the bare global
+ * `setTimeout`/`clearTimeout` (never `window.*`): this file already has that
+ * precedent (the `await new Promise((resolve) => setTimeout(resolve, 0))`
+ * calls in `stop()`), it needs no DOM global, and — unlike `window.setTimeout`
+ * — it is directly exercisable with `vi.useFakeTimers()` in this repo's
+ * jsdom-free, Node-only vitest suite.
+ */
+export function raceAudioResume(): Promise<void> {
+  const resumePromise = resumeAudioContext();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      resolve();
+    }, RESUME_START_TIMEOUT_MS);
+    resumePromise.then(
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      },
+      (cause: unknown) => {
+        // A rejection never bounds the race's own outcome — only resolve it
+        // if the timer has not already done so — but is always reported,
+        // whichever branch wins.
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve();
+        }
+        reportFailure(cause, "recorder-start-resume");
+      }
+    );
+  });
+}
 
 export interface UseRecorder {
   readonly state: RecorderState;
@@ -509,7 +600,10 @@ export function useRecorder(): UseRecorder {
 
       // Unlock Web Audio while we still have the user gesture that started
       // this recording — iOS will not resume the context later without one.
-      await resumeAudioContext();
+      // Bounded (#108): WebKit's resume() from "interrupted" has been
+      // observed to hang, and an unbounded await here left the recorder
+      // stuck in "requesting" forever with the mic already hot.
+      await raceAudioResume();
 
       // The resume is a real await on the first recording of a session — iOS
       // starts the context suspended — so a `cancel()` from navigation, the
@@ -517,7 +611,9 @@ export function useRecorder(): UseRecorder {
       // stopped this stream through `releaseStream`; a newer `start()` has
       // not, which is why the stream is abandoned by identity. Either way no
       // recorder is opened: one started after the teardown would report
-      // "recording" with the session floor already released.
+      // "recording" with the session floor already released. This check
+      // absorbs a cancel() landing during raceAudioResume's bounded wait
+      // exactly as it already did during the previous unbounded await.
       if (generation !== generationRef.current) {
         abandonStream(stream);
         return false;
@@ -747,39 +843,75 @@ export function useRecorder(): UseRecorder {
       if (stream) abandonStream(stream);
       await new Promise((resolve) => setTimeout(resolve, 0));
       blob = new Blob(chunks, { type: recorder.mimeType });
+      // The flush window is past — now stop the cloned capture tracks of THIS
+      // stop's tap (its graph was disconnected up top). The local `tap`, not
+      // closeTap(): a newer recording's tap in the ref must not be touched.
+      // Mirrors the `finally` in the other branch below, so both arms release
+      // the same way; this arm has nothing that can throw between here and
+      // there, so a bare call after the blob is sealed is equivalent to a
+      // `finally` and needs none.
+      tap?.close();
     } else {
-      blob = await new Promise<Blob>((resolve) => {
-        // Bounded. On the timeout we take whatever the local array already holds
-        // — everything MediaRecorder delivered before it stopped answering —
-        // rather than waiting for an event that is not coming.
+      try {
+        blob = await new Promise<Blob>((resolve) => {
+          // Bounded. On the timeout we take whatever the local array already holds
+          // — everything MediaRecorder delivered before it stopped answering —
+          // rather than waiting for an event that is not coming.
+          //
+          // Deliberately NOT paired with releasing the tracks the moment `stop()`
+          // is invoked: the final `dataavailable` arrives between `stop()` and
+          // `onstop`, and killing the capture tracks inside that window is a way
+          // to truncate it. That slice is the whole recording for a take under one
+          // timeslice, which is the loss this module's chunk ownership exists to
+          // prevent. The microphone is released immediately after this await and
+          // before the decode, so bounding the wait bounds the hot mic too.
+          const finish = () =>
+            resolve(new Blob(chunks, { type: recorder.mimeType }));
+          const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+          recorder.onstop = () => {
+            clearTimeout(timer);
+            finish();
+          };
+          // Bare, deliberately: guarding IT would mean branching on
+          // `recorder.state` afterward to decide whether to seal now or keep
+          // waiting for `onstop`/the timer — correctness that depends on the
+          // recorder's post-throw state, which is neither observed on a
+          // device nor simulable in this Node-only suite (no `MediaRecorder`).
+          // That is the J7 shape rounds 3 and 4 oscillated on; the round-5 cap
+          // decision left it out. The `finally` below is the J6 shape instead
+          // — it reasons about nothing beyond the stream and tap this
+          // invocation already owns, so it stays correct regardless of that
+          // unobservable state.
+          recorder.stop();
+        });
+      } finally {
+        // A `finally`, not a bare release after the await: once the executor
+        // itself throws, the blob promise is already REJECTED and the take is
+        // already lost — there is no `onstop` left to come, so releasing here
+        // cannot truncate a final slice the way releasing before `onstop`/the
+        // timer fires would (the very thing the executor's own bound exists
+        // to avoid). What a bare release-after-await would cost instead is a
+        // hot microphone: `stop()` stole the stream and the VU tap's clone
+        // out of the shared refs before this await (`streamRef.current =
+        // null` / `tapRef.current = null`, above), so a `cancel()` landing
+        // after a throw here finds both refs already null and its
+        // `releaseStream()` releases neither — the original tracks AND the VU
+        // clone stay live for the life of the page (George R5 P2).
         //
-        // Deliberately NOT paired with releasing the tracks the moment `stop()`
-        // is invoked: the final `dataavailable` arrives between `stop()` and
-        // `onstop`, and killing the capture tracks inside that window is a way
-        // to truncate it. That slice is the whole recording for a take under one
-        // timeslice, which is the loss this module's chunk ownership exists to
-        // prevent. The microphone is released immediately after this await and
-        // before the decode, so bounding the wait bounds the hot mic too.
-        const finish = () =>
-          resolve(new Blob(chunks, { type: recorder.mimeType }));
-        const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
-        recorder.onstop = () => {
-          clearTimeout(timer);
-          finish();
-        };
-        recorder.stop();
-      });
-
-      // Only our own stream. `releaseStream()` reads the shared ref, which by now
-      // may hold a NEWER recording's stream — releasing that would cut off a
-      // recording in progress.
-      if (stream) abandonStream(stream);
+        // Reachability, as in `cancel()`'s docblock: the current MediaStream
+        // Recording spec's `stop()` algorithm defines no throw at all (step 2
+        // is "if state is inactive, abort these steps", not "throw"). No
+        // engine in evidence throws from `stop()`. This is insurance against
+        // an engine departing from the spec, not a fix for an observed or
+        // spec-defined failure.
+        //
+        // Only our own stream. `releaseStream()` reads the shared ref, which
+        // by now may hold a NEWER recording's stream — releasing that would
+        // cut off a recording in progress.
+        if (stream) abandonStream(stream);
+        tap?.close();
+      }
     }
-
-    // The flush window is past — now stop the cloned capture tracks of THIS
-    // stop's tap (its graph was disconnected up top). The local `tap`, not
-    // closeTap(): a newer recording's tap in the ref must not be touched.
-    tap?.close();
 
     // The shared UI state belongs to the current generation; the failure travels
     // with the result to whoever called stop(). A superseded stop stays silent —
@@ -945,7 +1077,30 @@ export function useRecorder(): UseRecorder {
     // nulls the tap too, but keep the flag consistent with the other exits).
     recordingRef.current = false;
     const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    // Guarded because of the casualty a throw here would cause, not because
+    // one has been observed: an uncaught throw would skip `releaseStream()`
+    // on the next line and propagate out of `cancel()` into `leave()`, whose
+    // whole contract is "synchronous and total … the microphone has to be
+    // released in the same task as the tap". `cancel()` is what `pagehide`,
+    // navigation and unmount all reach, so a throw would leave a hot
+    // microphone on a page that is going away — and the take is being
+    // abandoned regardless, so there is nothing to weigh against releasing
+    // the mic.
+    //
+    // Reachability, honestly: the current MediaStream Recording spec's
+    // `stop()` algorithm defines NO throw at all — step 2 is "if state is
+    // inactive, abort these steps", not "throw" (the `state !== "inactive"`
+    // test above already makes that step moot here regardless). No engine in
+    // evidence throws from `stop()` while active or otherwise. This guard is
+    // insurance against an engine departing from the spec, not a fix for a
+    // spec-defined or observed failure.
+    if (recorder && recorder.state !== "inactive") {
+      try {
+        recorder.stop();
+      } catch (cause) {
+        reportFailure(cause, "recorder-cancel-stop");
+      }
+    }
     releaseStream();
     chunksRef.current = [];
     setElapsedMs(0);

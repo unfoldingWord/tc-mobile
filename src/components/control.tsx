@@ -16,8 +16,21 @@ interface ControlProps {
   size?: number;
   className?: string;
   /**
-   * Take focus on mount. Only for a control that *is* the screen — the
-   * recovery overlay — where landing anywhere else is landing nowhere.
+   * Take focus on mount. For a control that *is* the screen — the recovery
+   * overlay — where landing anywhere else is landing nowhere; or for one that
+   * has just BECOME the primary action of an already-focused surface, where the
+   * thing the person is about to tap did not exist a moment ago.
+   *
+   * The second case is the failure-log panel's Share (`failure-log-panel.tsx`):
+   * tap 1 prepares the report and swaps the quiet Share for an armed Send, and
+   * the menu's own focus grab is keyed on `[open]` (`menu.tsx`) so it has
+   * already happened and will not happen again. Without this, the control that
+   * replaced the one under the person's finger is not the one focus is on.
+   *
+   * Not a licence to scatter it: two controls claiming focus on the same commit
+   * is a race with no defined winner. One per surface (George R7 P3-3 — this
+   * comment claimed "only the recovery overlay" while the panel had been using
+   * it for two rounds).
    */
   autoFocus?: boolean;
   /**
