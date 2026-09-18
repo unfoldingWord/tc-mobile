@@ -832,6 +832,14 @@ export function useAudioSession(): UseAudioSession {
           // Not silent, and not fatal: a pause that throws leaves the capture
           // running, which is still better than the discard this replaced.
           console.error("Could not pause the recorder for pagehide", cause);
+          // Routed to the durable channel too, and under its OWN context so it
+          // is never collapsed into or confused with the measurement row below
+          // (Frank R4): AGENTS.md's channel-before-copy rule means the REAL
+          // `cause` belongs in the log, not a constructed message that would
+          // drop its name and stack. A third row in the rare throw case is a
+          // deliberate exception to the "two rows per lifecycle" budget below
+          // — a genuine unhandled exception outranks that budget.
+          reportFailure(cause, "pagehide-pause-threw");
         }
         reportFailure(
           new Error(
@@ -868,12 +876,15 @@ export function useAudioSession(): UseAudioSession {
     // Beside `onPageHide`, not a separate effect (#478, #58 George R3 P2-3):
     // same lifecycle, same cleanup, and the ref flag it reads is only ever
     // written by `onPageHide` above, so the two belong in one place. Fires
-    // ONLY when a "pagehide-pause" row was written since the last `pageshow`
-    // — a restore that follows a hide nobody paused for (release/none) writes
-    // nothing, keeping this at two rows maximum per pagehide/pageshow pair:
-    // the pause, and whether the restore that answers it ever arrived. The
-    // flag is cleared here regardless, so a page that is shown without ever
-    // being hidden again (impossible) or shown twice cannot double-report.
+    // ONLY when a "pagehide-pause" row was written for an ACTUAL freeze since
+    // the last `pageshow` — a restore that follows a hide nobody paused for
+    // (release/none), or one whose pause was refused/threw, writes nothing —
+    // keeping this at two rows for the ordinary case: the pause, and whether
+    // the restore that answers it ever arrived. (A pause that THROWS adds a
+    // third, separate row — see `reportFailure(cause, "pagehide-pause-threw")`
+    // above — a deliberate exception, not a miscount.) The flag is cleared
+    // here regardless, so a page that is shown without ever being hidden again
+    // (impossible) or shown twice cannot double-report.
     const onPageShow = (event: PageTransitionEvent) => {
       if (!pagehidePauseReportedRef.current) return;
       pagehidePauseReportedRef.current = false;

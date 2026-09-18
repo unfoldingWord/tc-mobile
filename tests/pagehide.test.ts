@@ -128,16 +128,42 @@ describe("recorder.tsx's preview auto-play refuses a hidden page (#58, George R3
   it("gates the preview auto-play on page visibility as well as the gesture check", () => {
     const code = source();
     const gestureAt = code.indexOf("audio.audioNeedsGesture()");
-    const visibilityAt = code.indexOf('document.visibilityState === "visible"');
     // Both anchors asserted present FIRST. Without this, deleting either one
     // makes `indexOf` return -1, which is "less than" any real index and
     // would pass a naive distance check — the exact trap
     // `tests/pause-plan.test.ts` names for `stop()`'s gate.
     expect(gestureAt).toBeGreaterThan(-1);
-    expect(visibilityAt).toBeGreaterThan(-1);
-    // The two checks must be close together — in the same `if` — not merely
-    // present somewhere in a file this large. A generous window that still
-    // fails if either anchor moves into an unrelated branch.
-    expect(Math.abs(gestureAt - visibilityAt)).toBeLessThan(200);
+
+    // Isolate the ACTUAL `if (...)` condition that owns the gesture check,
+    // paren-depth counted out of the stripped source — the same technique
+    // `tests/pause-plan.test.ts`'s `stopBody()` uses. A pure character-distance
+    // check (an earlier version of this test) would pass for two ADJACENT but
+    // unrelated `if`s — one dead visibility check followed by a live
+    // gesture-only one — so this reads ONE condition, not "somewhere nearby"
+    // (Frank round 4).
+    const ifAt = code.lastIndexOf("if (", gestureAt);
+    expect(ifAt).toBeGreaterThan(-1);
+    const parenOpen = code.indexOf("(", ifAt);
+    expect(parenOpen).toBeGreaterThan(-1);
+    let depth = 0;
+    let parenClose = -1;
+    for (let i = parenOpen; i < code.length; i++) {
+      if (code[i] === "(") depth++;
+      else if (code[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          parenClose = i;
+          break;
+        }
+      }
+    }
+    expect(parenClose).toBeGreaterThan(parenOpen);
+    const condition = code.slice(parenOpen, parenClose + 1);
+
+    // Both conjuncts inside THIS condition, joined by `&&` — not two
+    // unrelated fragments an `||` or a second `if` could still satisfy.
+    expect(condition).toMatch(
+      /audio\.audioNeedsGesture\(\)\s*&&\s*document\.visibilityState\s*===\s*"visible"/
+    );
   });
 });
