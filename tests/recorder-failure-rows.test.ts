@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * Two recorder-path failure rows reach the funnel (`reportFailure`) from
+ * Three recorder-path failure rows reach the funnel (`reportFailure`) from
  * code the Node suite cannot execute:
  *
  *   1. `onInterrupted` in `start()` (use-recorder.ts) reports ONE row per
@@ -12,11 +12,17 @@ import { describe, expect, it } from "vitest";
  *      `"recording"` or `"paused"` — the arm on which the handler releases
  *      nothing (#478, the #59 residual). The row names the two facts the
  *      handler can observe: `recorder.state` and `event.type` (`error` from
- *      the recorder or `ended` from a track). Whether the mic is actually
- *      still hot on that arm is NOT observable there and the row does not
- *      claim it. The `"inactive"` arm — the device-verified #59 path — gets
- *      no row.
- *   2. `stopRecording()`'s backstop `catch` (use-audio-session.ts) reports
+ *      the recorder or `ended` from a track), and carries the `error`
+ *      feed's native `DOMException` as its `cause` (George R1 P3). Whether
+ *      the mic is actually still hot on that arm is NOT observable there
+ *      and the row does not claim it. The `"inactive"` arm — the
+ *      device-verified #59 path — gets no row.
+ *   2. `start()` itself (use-recorder.ts) reports ONE row under
+ *      `"recorder-start-resume-timeout"` when `raceAudioResume()` resolved
+ *      `true` (its 1000 ms timer won) AND the start is still the current
+ *      generation after the await (#475; George R1 P2 moved the report out
+ *      of the helper's timer so a cancelled start writes nothing).
+ *   3. `stopRecording()`'s backstop `catch` (use-audio-session.ts) reports
  *      the cause under `"recorder-stop-backstop"`, with the existing
  *      `console.error` kept beside it, not replaced (#480; AGENTS.md
  *      "Errors have a channel before they have copy").
@@ -117,9 +123,18 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
    * carry (#478 Shape: "the recorder state and which event arrived"). An
    * earlier `[\s\S]*?` admitted `new Error(``)` (panel r1 mutation M15,
    * 8/8 green). `[^`]` spans newlines, so a Prettier wrap still matches.
+   *
+   * The `{ cause: "error" in event ? event.error : undefined }` segment is
+   * George R1 P3: the `error` feed's event carries the native failure as
+   * `.error` (`ErrorEvent.error` in lib.dom — `MediaRecorderErrorEvent` is
+   * not declared at TypeScript 5.9.3, so the narrowing is structural), and
+   * `describeCause` (lib/failure-text.ts) walks `.cause`, so the durable row
+   * names the `DOMException` (`NotReadableError`, `InvalidStateError`, …)
+   * instead of only "an error arrived". The `ended` feed has no such field
+   * and the ternary's `undefined` arm keeps that row's shape unchanged.
    */
   const reportPattern =
-    /\}\s*else\s+if\s*\(\s*!interruptionReported\s*\)\s*\{\s*interruptionReported\s*=\s*true;\s*reportFailure\(\s*new Error\(\s*`[^`]*\$\{event\.type\}[^`]*\$\{recorder\.state\}[^`]*`\s*\),\s*"recorder-interrupted-active"\s*\);\s*\}/;
+    /\}\s*else\s+if\s*\(\s*!interruptionReported\s*\)\s*\{\s*interruptionReported\s*=\s*true;\s*reportFailure\(\s*new Error\(\s*`[^`]*\$\{event\.type\}[^`]*\$\{recorder\.state\}[^`]*`\s*,\s*\{\s*cause:\s*"error"\s+in\s+event\s*\?\s*event\.error\s*:\s*undefined\s*,?\s*\}\s*\),\s*"recorder-interrupted-active"\s*\);\s*\}/;
 
   it("(1) the handler body carries guard + set + report as one contiguous else-if", () => {
     expect(handlerBody).toMatch(reportPattern);
@@ -199,6 +214,84 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
       /import\s*\{\s*reportFailure\s*\}\s*from\s*"\.\/report-failure"\s*;/
     );
     expect(code).not.toMatch(/(?:const|let|function)\s+reportFailure\b/);
+  });
+});
+
+describe("source pins (text shape only): start() writes the resume-timeout row itself, after its generation check (#475, George R1 P2)", () => {
+  /**
+   * WHY THE ROW MOVED OUT OF `raceAudioResume` (George R1 P2). The helper's
+   * timer used to call `reportFailure` directly. `cancel()` bumps
+   * `generationRef` and releases the stream but never holds that timer, and
+   * a Close / Back / `pagehide` while `"requesting"` does not route through
+   * `stopRecording()` (`attemptsCapture("requesting")` is false in
+   * `lib/takes/close-plan.ts`), so a Record tap abandoned inside the
+   * 1000 ms wait still landed a durable #108 row and lit the Books `≡` for
+   * a start that had already been discarded. The helper has no generation
+   * to check; `start()` does. So `raceAudioResume` now resolves `true` when
+   * its timer won, and `start()` reports — after the same generation check
+   * it already made after the await, so a cancelled or superseded start
+   * reports nothing. The wait itself stays un-aborted (the original #108
+   * defect was an unbounded wait, and a cancelled start() must still never
+   * hang on a `resume()` that never settles).
+   *
+   * `tests/recorder-resume-race.test.ts` proves the helper's half at
+   * runtime (the boolean, and that its timer branch is silent). This gate
+   * pins `start()`'s half, which the Node suite cannot execute: the awaited
+   * boolean, the report sitting CONTIGUOUSLY after the generation check
+   * (not before it, not elsewhere), the message naming the bound, and the
+   * key being one site in the file that is NOT inside `raceAudioResume`.
+   */
+  const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
+  const code = stripComments(readFileSync(sourceUrl, "utf8"));
+
+  const startBody = bodyAfter(code, "const start = useCallback");
+  const raceBody = bodyAfter(code, "function raceAudioResume");
+
+  const awaitPattern =
+    /const\s+resumeTimedOut\s*=\s*await\s+raceAudioResume\s*\(\s*\)\s*;/;
+
+  /**
+   * ONE contiguous pattern: the generation check that follows the await
+   * (its exact `abandonStream(stream); return false;` body), then the
+   * `if (resumeTimedOut)` report under its own key with a message that
+   * interpolates the bound constant. Moving the report above the check,
+   * detaching it from the check, or dropping it cannot satisfy this.
+   */
+  const gatedReportPattern =
+    /if\s*\(\s*generation\s*!==\s*generationRef\.current\s*\)\s*\{\s*abandonStream\(\s*stream\s*\)\s*;\s*return\s+false\s*;\s*\}\s*if\s*\(\s*resumeTimedOut\s*\)\s*\{\s*reportFailure\(\s*new Error\(\s*`[^`]*\$\{RESUME_START_TIMEOUT_MS\}[^`]*`\s*\),\s*"recorder-start-resume-timeout"\s*\)\s*;\s*\}/;
+
+  it("(1) start() captures raceAudioResume()'s boolean from its one awaited call", () => {
+    expect(startBody).toMatch(awaitPattern);
+    expect(startBody.match(/await\s+raceAudioResume\s*\(/g) ?? []).toHaveLength(
+      1
+    );
+  });
+
+  it("(2) the report is contiguous with, and AFTER, the generation check that directly follows the await", () => {
+    const awaitMatch = startBody.match(awaitPattern);
+    expect(awaitMatch).not.toBeNull();
+    const awaitAt = startBody.search(awaitPattern);
+    const reportAt = startBody.search(gatedReportPattern);
+    expect(reportAt).toBeGreaterThan(awaitAt);
+    // Nothing but whitespace between the await and the check+report: the
+    // check the report sits behind IS the one absorbing a cancel() that
+    // landed during the wait, not some later generation check in start().
+    const awaitEnd = awaitAt + (awaitMatch as RegExpMatchArray)[0].length;
+    expect(startBody.slice(awaitEnd, reportAt)).toMatch(/^\s*$/);
+  });
+
+  it('(3) "recorder-start-resume-timeout" is one site in the file, inside start(), and raceAudioResume holds only its rejection-branch report', () => {
+    expect(code.match(/"recorder-start-resume-timeout"/g) ?? []).toHaveLength(
+      1
+    );
+    expect(startBody).toMatch(/"recorder-start-resume-timeout"/);
+    expect(raceBody).not.toMatch(/recorder-start-resume-timeout/);
+    // The timer branch reports nothing: the helper's single report site is
+    // the rejection branch under its own key (#470).
+    expect(raceBody.match(/reportFailure\s*\(/g) ?? []).toHaveLength(1);
+    expect(raceBody).toMatch(
+      /reportFailure\(\s*cause\s*,\s*"recorder-start-resume"\s*\)/
+    );
   });
 });
 

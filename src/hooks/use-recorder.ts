@@ -224,17 +224,25 @@ export const RESUME_START_TIMEOUT_MS = 1_000;
  * A late RESOLVE (no error) after the timeout reports nothing — nothing went
  * wrong, the shared context is simply "running" now, and whichever
  * generation is current benefits silently through the existing #76
- * per-frame `contextNeedsResume`/`available()` check. The TIMER win itself
- * reports once, under `"recorder-start-resume-timeout"` (#475): the bound
- * firing is the #108 fact the log exists to carry, so every tester phone
- * becomes a measurement of how often `resume()` takes longer than
- * `RESUME_START_TIMEOUT_MS`. That row fires on EVERY `start()` whose resume
- * overruns the bound; if a phone's resume-from-interrupted is routinely
- * slow it competes for the failure ring, and the constant is the one knob.
- * The row cannot tell a WebKit `resume()` that hung from a page frozen
- * mid-wait by background throttling — both elapse the same timer — so which
- * one a device row records is an inference for the reader, not a fact the
- * row carries.
+ * per-frame `contextNeedsResume`/`available()` check.
+ *
+ * RESOLVES `true` WHEN THE TIMER WON, `false` when `resume()` settled first
+ * (either way). The timer win is the #108 fact the log exists to carry
+ * (#475) — but this function does NOT write that row itself. It has no
+ * generation to check, and `cancel()` never holds this timer: a Back or a
+ * `pagehide` while `"requesting"` bumps the generation and releases the
+ * stream, the timer still fires at T+1000 ms, and a row written from here
+ * would record an abandoned Record tap as a #108 event and light the Books
+ * `≡` for it (George R1 P2 on #498). So the fact is returned to `start()`,
+ * which reports it only after the same generation check it already makes
+ * after the await — a cancelled or superseded start reports nothing. The
+ * wait itself stays un-aborted on purpose: a cancelled `start()` must still
+ * never hang on a `resume()` that never settles (the original #108 defect).
+ * The rejection-branch report below is the one row this function writes,
+ * and it stays unconditional for the reason above: this function touches
+ * no React state, so there is no stale-generation state a late report
+ * could corrupt — and a `resume()` that REJECTS is a fact worth a row even
+ * on a start that was abandoned, unlike a bound that merely elapsed.
  *
  * Built with a manual `Promise` executor and a local `settled` flag rather
  * than `Promise.race`, so a same-tick or early rejection from
@@ -247,26 +255,22 @@ export const RESUME_START_TIMEOUT_MS = 1_000;
  * — it is directly exercisable with `vi.useFakeTimers()` in this repo's
  * jsdom-free, Node-only vitest suite.
  */
-export function raceAudioResume(): Promise<void> {
+export function raceAudioResume(): Promise<boolean> {
   const resumePromise = resumeAudioContext();
-  return new Promise<void>((resolve) => {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
     const timer = setTimeout(() => {
       settled = true;
-      resolve();
-      reportFailure(
-        new Error(
-          `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
-        ),
-        "recorder-start-resume-timeout"
-      );
+      // The timer won. No report from here — see the docblock: the caller
+      // owns the generation check this fact must sit behind.
+      resolve(true);
     }, RESUME_START_TIMEOUT_MS);
     resumePromise.then(
       () => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        resolve();
+        resolve(false);
       },
       (cause: unknown) => {
         // A rejection never bounds the race's own outcome — only resolve it
@@ -275,7 +279,7 @@ export function raceAudioResume(): Promise<void> {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          resolve();
+          resolve(false);
         }
         reportFailure(cause, "recorder-start-resume");
       }
@@ -618,8 +622,10 @@ export function useRecorder(): UseRecorder {
       // this recording — iOS will not resume the context later without one.
       // Bounded (#108): WebKit's resume() from "interrupted" has been
       // observed to hang, and an unbounded await here left the recorder
-      // stuck in "requesting" forever with the mic already hot.
-      await raceAudioResume();
+      // stuck in "requesting" forever with the mic already hot. `true` when
+      // the bound elapsed before resume() settled — reported below, behind
+      // the generation check, never by the helper (George R1 P2 on #498).
+      const resumeTimedOut = await raceAudioResume();
 
       // The resume is a real await on the first recording of a session — iOS
       // starts the context suspended — so a `cancel()` from navigation, the
@@ -633,6 +639,27 @@ export function useRecorder(): UseRecorder {
       if (generation !== generationRef.current) {
         abandonStream(stream);
         return false;
+      }
+      // The bound firing on a start that is STILL CURRENT is the #108 fact
+      // the log exists to carry (#475): every tester phone becomes a
+      // measurement of how often resume() takes longer than
+      // `RESUME_START_TIMEOUT_MS`. Placed after the generation check on
+      // purpose — a start() that cancel() discarded during the wait (Back
+      // or pagehide while "requesting") is not a #108 event and must not
+      // light the Books `≡`. This row fires on EVERY live start() whose
+      // resume overruns the bound; if a phone's resume-from-interrupted is
+      // routinely slow it competes for the failure ring, and the constant is
+      // the one knob. The row cannot tell a WebKit resume() that hung from a
+      // page frozen mid-wait by background throttling — both elapse the same
+      // timer — so which one a device row records is an inference for the
+      // reader, not a fact the row carries.
+      if (resumeTimedOut) {
+        reportFailure(
+          new Error(
+            `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
+          ),
+          "recorder-start-resume-timeout"
+        );
       }
 
       const mimeType = pickMimeType();
@@ -719,7 +746,17 @@ export function useRecorder(): UseRecorder {
           interruptionReported = true;
           reportFailure(
             new Error(
-              `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`
+              `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`,
+              // The `error` feed's event carries the native failure as
+              // `.error` (lib.dom types `MediaRecorder.onerror`'s event as
+              // `ErrorEvent`; `MediaRecorderErrorEvent` is not declared at
+              // TypeScript 5.9.3, so this narrows structurally rather than
+              // by that name). `describeCause` walks `.cause`, so the durable
+              // row names the DOMException — `NotReadableError`,
+              // `InvalidStateError` — instead of only that an error arrived
+              // (George R1 P3 on #498). The `ended` feed has no such field:
+              // `undefined` keeps that row's shape unchanged.
+              { cause: "error" in event ? event.error : undefined }
             ),
             "recorder-interrupted-active"
           );
