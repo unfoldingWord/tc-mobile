@@ -144,9 +144,16 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
     expect(flushBraceClose).toBeGreaterThan(flushBraceOpen);
     const flushBody = code.slice(flushBraceOpen, flushBraceClose + 1);
 
-    // The call is present, bare, and the executor's body has no `try` at
-    // all — re-adding a try/catch anywhere around it must fail this.
-    expect(flushBody).toMatch(/recorder\.stop\s*\(\s*\)\s*;/);
-    expect(flushBody).not.toMatch(/\btry\b/);
+    // The call is present and bare. Scoped to the text immediately BEFORE
+    // this specific call, not "no `try` anywhere in the executor" — a
+    // future, unrelated `try` guarding something else in this same
+    // executor (constructing the Blob, arming the timer) would be
+    // legitimate and must not fail this gate (Frank round 5 P2). Only a
+    // `try {` whose next statement is this `recorder.stop()` call counts
+    // as the reverted hunk coming back.
+    const stopIdx = flushBody.indexOf("recorder.stop();");
+    expect(stopIdx).toBeGreaterThan(-1);
+    const immediatelyBefore = flushBody.slice(0, stopIdx);
+    expect(immediatelyBefore).not.toMatch(/try\s*\{\s*$/);
   });
 });
