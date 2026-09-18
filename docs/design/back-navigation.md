@@ -1,6 +1,6 @@
 # Design pass: the history-stack model for system-Back (#452)
 
-**Status:** Draft design, awaiting DRI review · **Date:** 2026-09-17 ·
+**Status:** PR1 merged (#492); PR2 in review (#499), DRI decisions 1–4 recorded on the PR · **Date:** 2026-09-18 ·
 **Tracking:** [#452](https://github.com/unfoldingWord/tc-mobile/issues/452),
 supersedes [#430](https://github.com/unfoldingWord/tc-mobile/pull/430)
 (parked as a draft at `36e10fd`, never merged)
@@ -67,10 +67,12 @@ Each model was scored on four axes:
   2026-09-30 production gate and under three to the first-week-of-October
   training on Android phones;
 - **(d)** how much of the mechanism is Node-testable in `src/lib/nav`, the
-  only layer this repo can red-first test at all — there is no jsdom or
-  renderer here (`AGENTS.md`), so `App.tsx`, `books-screen.tsx`,
-  `segments-screen.tsx` and `recorder.tsx`'s wiring code stays review-only no
-  matter which model wins.
+  layer Vitest can red-first cover (there is no jsdom or renderer here,
+  `AGENTS.md`). The nav adapter's own DOM paths (`use-nav-stack.ts`) are
+  covered by Playwright against the shipped build
+  (`e2e/back-navigation.spec.ts`), not by Vitest; `App.tsx`,
+  `books-screen.tsx`, `segments-screen.tsx` and `recorder.tsx`'s broader wiring
+  code stays review-only no matter which model wins.
 
 I re-verified, myself, in this worktree, the load-bearing facts the scoring
 turns on, rather than trusting the models' own citations at face value:
@@ -457,12 +459,12 @@ recorder close (`commitCloseRecorder`'s raw `window.history.back()`,
 `hooks/use-nav-stack.ts`): that is a THIRD raw issuer
 outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
 the any-outstanding guard cannot see or refuse against it — already disclosed
-at `travel-guard.ts:34-45`. `goBack` and the recorder's commit-close exit are
+at `travel-guard.ts` (the THIRD raw issuer paragraph). `goBack` and the recorder's commit-close exit are
 rewritten to call `beginBack` (settling at the next landing with
 `settleOutstanding`) instead of touching **only** `backRequested` — **not**
 `suppressPop`, which stays fully load-bearing in the adapter at the
 programmatic close, `trap-forward`, and the commit-close consume, per
-`travel-guard.ts:15-32` (#494 item
+`travel-guard.ts` (the CORRECTED (George R1 P2-3) paragraph) (#494 item
 1, George R4 P2-1). Dropping `suppressPop` would route the commit-close
 consume-back as a real Segments Back → `"to-books"` → `backToBooks()` →
 `setClipboard(null)`. That wiring landed in PR2 (`hooks/use-nav-stack.ts`).
@@ -678,7 +680,10 @@ inference until it is run on an actual Android device.
 - No jsdom/renderer exists in this repo; `App.tsx`, `books-screen.tsx`,
   `segments-screen.tsx`, `recorder.tsx` stay review-only regardless of this
   document. Only the pure decisions in `src/lib/nav` are Vitest-covered —
-  which is why this design pushes as much as possible into that layer.
+  which is why this design pushes as much as possible into that layer. The nav
+  adapter's DOM wiring (`use-nav-stack.ts`) has no Vitest coverage either, but
+  is exercised by Playwright against the shipped build
+  (`e2e/back-navigation.spec.ts`).
 - On-screen Back and system Back must continue to share exactly one code
   path (`goBack` → `history.back()` → the one `popstate` listener), per this
   repo's own stated "one Back path" design rationale from the original #168/#259
@@ -757,10 +762,13 @@ inference until it is run on an actual Android device.
    EMPTY (no overlay pushes until PR3/PR4), so observable Back behaviour is
    unchanged except where the design names a fix (Amendments A/B, the refused
    commit-close absorb). "Landed (code)" is a statement of what the tree does;
-   the DOM/reload/commit-close paths are review-only and an on-device (T2)
-   item, NOT claimed verified here (no renderer, no device run). This is the
-   PR that touches the highest-stakes path in the app and should bake before
-   PR3 opens.
+   the popstate routing, the reload adopt, the idle sheet-close-and-land and
+   the double-Back guard run in headless Chromium in
+   `e2e/back-navigation.spec.ts`. The refused-commit-close absorb else-branch
+   and the Amendment C cleanup are review-only (no headless spec reaches them),
+   and iOS Safari / Android WebView remain T2 device items; no on-device run is
+   claimed here. This is the PR that touches the highest-stakes path in the app
+   and should bake before PR3 opens.
 3. **PR3 — Books' overlays.** Builds the missing ref accessors (F4) for
    `savingBookName` and `deleting`; converts Books' five overlays to
    `Layer`s; wires Amendment D for the book ≡ menu's Share status; includes
@@ -826,7 +834,11 @@ on `feat/452-pr2-nav-adapter`: it extracts App.tsx's inline history machinery
 wholesale, wires Amendments A–C, resolves #494's four items, and deletes the
 per-issuer `settleBack` in favour of `settleOutstanding`. This is a statement
 of what the code does — the routing/guard/reload decisions are Node-tested in
-`src/lib/nav`, but the adapter's DOM paths (popstate, reload adopt, the
-refused-commit-close absorb, the Amendment C cleanup) have **no renderer here** and are
-review-only plus an on-device (T2) item; nothing here claims they were run on a
-device or reviewed clean. Next: PR3 (Books' overlays) after PR2 bakes.
+`src/lib/nav`, and the adapter's core DOM paths (popstate routing, the reload
+adopt, the idle commit-close/sheet-close-and-land, the double-Back guard) run
+in headless Chromium in `e2e/back-navigation.spec.ts`. The
+refused-commit-close absorb else-branch and the Amendment C cleanup have **no
+renderer that reaches them** and are review-only; iOS Safari / Android WebView
+remain an on-device (T2) item; nothing here claims a device run. PR2 is in
+review as #499 with DRI decisions 1–4 recorded on the PR. Next: PR3 (Books'
+overlays) after PR2 bakes.

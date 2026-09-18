@@ -85,7 +85,7 @@ async function seedToRecorder(page: Page) {
   ).toBeVisible();
 }
 
-test("(a) Back from Segments returns to Books and does not leave the app", async ({
+test("(a) Back from Segments returns to Books (stays on the app's own document — tab floor, see header)", async ({
   page,
 }) => {
   await seedToSegments(page);
@@ -99,18 +99,26 @@ test("(a) Back from Segments returns to Books and does not leave the app", async
   await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
     0
   );
-  // Still the app's own document, not a blank navigation past the shelf.
+  // Still the app's own document. NB in a headless tab entry 0 is the floor
+  // (see header), so this URL half cannot fail whatever the adapter does — the
+  // Books-visible assertion above is the load-bearing one; the literal
+  // "does not exit the app" a phone gesture triggers is a device item.
   await expect(page).toHaveURL(/\/$/);
 });
 
-test("(b) Back from the recorder commit-closes it and lands on Segments", async ({
+test("(b) Back from the recorder closes the sheet and lands on Segments (idle path; whether close() ran is not observed — no microphone)", async ({
   page,
 }) => {
   await seedToRecorder(page);
   await page.goBack();
 
-  // The sheet is gone (commit-close ran its idle path and exited) and the
-  // Segments screen underneath it is back — NOT Books.
+  // The sheet is gone and the Segments screen underneath it is back — NOT
+  // Books. What the spec observes is the sheet-close and the landing; it does
+  // NOT distinguish the commit path (requestClose → re-arm → transitionInFlight
+  // → the consuming back()) from a bare sheet-close — both end at index 1 with
+  // no available DOM/index observable between them (mutation: bypassing
+  // requestClose leaves this case green). That the commit path itself ran is a
+  // device item (see header).
   await expect(
     page.getByRole("button", { name: "Close recorder" })
   ).toHaveCount(0);
@@ -148,7 +156,7 @@ test("(c) after a reload at depth, the adapter adopts the resumed index and Back
   await expect(page).toHaveURL(/\/$/);
 });
 
-test("(d) a rapid double Back from the recorder does not escape the app (#168 guard)", async ({
+test("(d) a rapid double Back from the recorder rests at Segments depth (index 1), not walked to the root (#168 guard)", async ({
   page,
 }) => {
   await seedToRecorder(page);
@@ -160,10 +168,14 @@ test("(d) a rapid double Back from the recorder does not escape the app (#168 gu
   // recorder's on-screen Back is one `goBack` (`onRequestBack`, the single Back
   // path #168), so the first sets the guard and issues one `history.back()` and
   // the second is REFUSED — only ONE traversal is ever outstanding. Drop the
-  // guard and both `goBack`s issue `history.back()` in the same task; Chromium
-  // coalesces two synchronous traversals into one multi-entry jump (the #493
-  // browser-API coalescing hazard the any-outstanding rule exists to remove),
-  // walking the app PAST Segments to the root before any re-arm can intervene.
+  // guard and both `goBack`s issue `history.back()` in the same task; the app
+  // then ends at the root (index 0) rather than at Segments depth. The inferred
+  // mechanism is Chromium coalescing the two synchronous traversals into one
+  // multi-entry jump (the #493 browser-API coalescing hazard the any-outstanding
+  // rule exists to remove) — the observable is the end index alone, not the
+  // coalescing itself. That red-first kill is timing-dependent on this
+  // coalescing: observed red on repeated runs (the large majority of N), not
+  // reliably on a single post-build invocation.
   await page.evaluate(() => {
     const back = document.querySelector<HTMLButtonElement>(
       '[aria-label="Close recorder"]'
@@ -186,8 +198,10 @@ test("(d) a rapid double Back from the recorder does not escape the app (#168 gu
   await expect(newBookCta(page)).toHaveCount(0);
   // The depth signal is what the screen alone cannot show: exactly ONE level was
   // traversed, so the app rests at Segments depth (index 1) with the shelf entry
-  // still below it — not walked down to the root (index 0) by a coalesced second
+  // still below it — not walked down to the root (index 0) by a second
   // Back. This is the assertion that goes red when the any-outstanding guard is
-  // dropped.
+  // dropped (see the mechanism note above — the kill depends on the browser
+  // coalescing two same-task traversals, so it reproduces on repeated runs
+  // rather than on every single one).
   expect(await navIndex(page)).toBe(1);
 });

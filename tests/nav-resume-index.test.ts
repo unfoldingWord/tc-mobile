@@ -85,8 +85,10 @@ describe("resumeNavIndex", () => {
  * These remain PURE-function tests, though — there is no renderer here
  * (AGENTS.md), so nothing below exercises the adapter's real mount effect or a
  * real `popstate`. They pin the decision table the adapter composes and the
- * BOTH-refs contract it must honour; the DOM reload path itself is review-only
- * and an on-device (T2) item, NOT claimed done here. The first test below
+ * BOTH-refs contract it must honour; the DOM reload path itself is not
+ * observable from these Node rows (no renderer). It is exercised by
+ * e2e/back-navigation.spec.ts case (c) in headless Chromium and remains an
+ * on-device (T2) item, NOT claimed done here. The first test below
  * demonstrates the OLD un-adopted baseline (develop's bug); the two after it
  * demonstrate what the adopted composition the adapter now uses produces.
  */
@@ -106,7 +108,7 @@ describe("resumeNavIndex + navDirection + popAction composition (the pure decisi
     );
   });
 
-  it("with the resumed index adopted (the pure composition the PR2 adapter performs), the SAME post-reload Back classifies correctly — DOM path review-only", () => {
+  it("with the resumed index adopted (the pure composition the PR2 adapter performs), the SAME post-reload Back classifies correctly — DOM path exercised by e2e case (c), a device item", () => {
     // George R1 P3-6 (PR #492): a reload always resets React state to Books
     // (`chapterId` starts `null`) regardless of history depth — the adapter's
     // mount effect runs on every mount, a reload included, and nothing restores

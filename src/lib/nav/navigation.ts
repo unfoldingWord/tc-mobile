@@ -156,7 +156,7 @@ export function navDirection(from: number, to: number): NavDirection {
 export type PopAction =
   | "trap-recovery"
   | "trap-database-panel"
-  // Invariant 7's name (docs/design/back-navigation.md:290-291): the guard this
+  // Invariant 7's name (docs/design/back-navigation.md, invariant 7): the guard this
   // tag names re-arms while a screen transition is in flight. In PR2 the ONLY
   // screen transition with an async in-flight window is the recorder's
   // commit-close (stop → decode → save) — invariant 7's "every other screen

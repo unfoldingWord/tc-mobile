@@ -212,15 +212,18 @@ describe("settleOutstanding — the any-issuer landing settle (#494 item 2)", ()
    * The pure half this row can pin is the refusal itself — state returned
    * UNCHANGED, no second flag set — which is exactly the signal on which the
    * adapter absorbs rather than re-issues. The suppress/absorb decision is
-   * adapter DOM code, covered in real Chromium by e2e/back-navigation.spec.ts
-   * (the rapid-double-Back case) and on-device, not by this Node row. This
+   * adapter DOM code that NO headless spec reaches: the double-Back case in
+   * e2e/back-navigation.spec.ts exercises the goBack refusal and the
+   * guard-CLEAR settle, not this else-branch (mutation: dropping the absorb
+   * else-branch leaves all four e2e cases green). The absorb stays review-only
+   * and a device item, not covered by this Node row. This
    * REPLACES an earlier "drain"
    * row that asserted a settle-then-re-issue sequence the adapter no longer
    * performs: that drain issued a SECOND traversal and left the app one physical
    * level below the screen it was showing (invariant 2's "one entry per screen
    * depth"), reproducing neither develop's end state nor an un-raced close.
    */
-  it("refused commit-close: while go-back is outstanding beginBack refuses and returns state unchanged (the pure refusal; the adapter's suppressPop absorb is carried by e2e/back-navigation.spec.ts)", () => {
+  it("refused commit-close: while go-back is outstanding beginBack refuses and returns state unchanged (the pure refusal; the adapter's suppressPop absorb else-branch is review-only and a device item — no headless spec reaches it, see use-nav-stack.ts commit-close case)", () => {
     // A goBack is outstanding when requestClose resolves.
     const goBackOutstanding: TravelGuardState = {
       goBackOutstanding: true,

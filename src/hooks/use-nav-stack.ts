@@ -25,12 +25,18 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * onion keep the routing logic Node-testable while the browser wiring stays in
  * one reviewable place. The Vitest suite has no renderer (AGENTS.md: no jsdom),
  * so it covers only the pure decisions this composes; the DOM paths themselves
- * — `popstate` routing, the reload adopt, the commit-close, and the
+ * — `popstate` routing, the reload adopt, the sheet-close-and-land, and the
  * double-Back guard — are exercised in real Chromium by
  * `e2e/back-navigation.spec.ts` (Playwright, against the shipped `dist/`
- * build) and remain an on-device item for iOS Safari and Android WebView. The
- * one path no headless spec reaches is the ms-window commit-close race whose
- * exact end state stays a device item (see the commit-close case below).
+ * build) and remain an on-device item for iOS Safari and Android WebView. Two
+ * things that spec does NOT reach, and which stay device items: the recorder's
+ * commit path ITSELF (`requestClose` → re-arm push → `transitionInFlight` →
+ * the consuming back()) is not observably distinct from a bare sheet-close in
+ * the idle, no-microphone spec — case (b) asserts the sheet-close and the
+ * Segments landing, not that `requestClose` ran; and the ms-window
+ * commit-close RACE (the refused-commit-close absorb else-branch below) is not
+ * reachable from a headless spec at all — its exact end state stays a device
+ * item (see the commit-close case below).
  *
  * What the adapter owns (six refs):
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
@@ -50,7 +56,8 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  *   - `transitionInFlight` — the recorder-commit-close in-flight absorber
  *     (renamed from `committing`, invariant 7). While set, every popstate
  *     re-arms instead of routing (the #58/#168 data-loss guard).
- *   - `suppressPop` — KEPT verbatim (travel-guard.ts:15-32): the "this popstate
+ *   - `suppressPop` — KEPT verbatim (travel-guard.ts, the CORRECTED (George R1
+ *     P2-3) paragraph): the "this popstate
  *     is one WE caused, do not route it" flag, set at three sites — the
  *     programmatic close (`commitCloseRecorder`), `trap-forward`'s cancel, and
  *     the commit-close settle. The commit-close settle sets it in BOTH its
@@ -203,7 +210,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // and the handler re-armed, so leave history alone); a programmatic close
     // still has its entry on the stack, so consume it, suppressing the popstate
     // that back() fires. This raw back() is the THIRD issuer OUTSIDE the travel
-    // guard — suppressPop-guarded, never fed to beginBack (travel-guard.ts:34-45).
+    // guard — suppressPop-guarded, never fed to beginBack (travel-guard.ts, the
+    // THIRD raw issuer paragraph).
     onRecorderClosedRef.current(dirty);
     if (!transitionInFlight.current) {
       suppressPop.current = true;

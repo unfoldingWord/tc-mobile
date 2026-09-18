@@ -36,7 +36,10 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
   );
 
   it("F2 (P2): beginBack refuses a second request from EITHER issuer while one is outstanding, and settleOutstanding clears it (answers #493)", () => {
-    // The adapter composes these (review-only, no renderer — AGENTS.md): as of
+    // The adapter composes these; these Node rows have no renderer (AGENTS.md)
+    // so they observe only the pure decision, not the adapter's DOM wiring
+    // (the goBack refusal and guard-CLEAR settle are exercised in headless
+    // Chromium by e2e/back-navigation.spec.ts case (d)): as of
     // PR2 use-nav-stack.ts's `goBack` calls `beginBack("go-back")` in place of
     // the old `backRequested` latch, the commit-close settle calls
     // `beginBack("commit-close")`, and every popstate landing clears the guard
@@ -80,9 +83,11 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     // corpus-level claim about the PURE composition: adopting the resumed
     // index (instead of forcing 0) makes the landing read as "back", not
     // "forward". The adapter's mount effect now reads window.history.state and
-    // adopts this index into BOTH refs; the composition is proven here, but the
-    // DOM reload path itself is review-only (no renderer — AGENTS.md), not a
-    // claim it has been exercised on a device.
+    // adopts this index into BOTH refs; the composition is proven here. The DOM
+    // reload path itself is not observable from this Node row (no renderer —
+    // AGENTS.md); it is exercised by e2e/back-navigation.spec.ts case (c) in
+    // headless Chromium and remains a device item, not a claim it ran on a
+    // device.
     const adoptedAtMount = resumeNavIndex({ tc: true, index: 2 });
     const landingIndex = resumeNavIndex({ tc: true, index: 1 });
     expect(navDirection(adoptedAtMount, landingIndex)).toBe("back");
@@ -127,16 +132,19 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     "R1-G-P3-3 (still-possible): a Layer's id/busy() must resolve against the live entity (e.g. the shelf-resolved book), never a stale stored id — this is a documented PR3/PR4 review-checklist discipline (see Residual Risks), not a property the pure Layer/LayerStack type can enforce or that a test can observe without a concrete overlay's own entity-resolution code. PR3/PR4 scope."
   );
 
-  it("R3-G-P3-2: beginBack refuses a commit-close while a go-back is outstanding and returns the state UNCHANGED (the pure refusal; the adapter's absorb behaviour is carried by e2e/back-navigation.spec.ts)", () => {
+  it("R3-G-P3-2: beginBack refuses a commit-close while a go-back is outstanding and returns the state UNCHANGED (the pure refusal; the adapter's absorb is review-only and a T2 device item — no headless spec reaches the ms window, see e2e/back-navigation.spec.ts header)", () => {
     // travel-guard.ts's beginBack REFUSES a second request while one is
     // outstanding; it does not queue one. This row pins ONLY that pure fact:
     // the refusal returns state unchanged. The claim about what the adapter
     // DOES with that signal — set suppressPop and absorb the outstanding
     // goBack's landing rather than issue a second history.back(), converging
     // the race to the same end state as an un-raced commit-close (invariant 7)
-    // — is adapter DOM behaviour these Node rows cannot observe, and it is
-    // carried by the real-Chromium spec (e2e/back-navigation.spec.ts, the
-    // rapid-double-Back case), not by this title. An earlier implementation
+    // — is adapter DOM behaviour these Node rows cannot observe, and NO headless
+    // spec reaches it either: the rapid-double-Back case in
+    // e2e/back-navigation.spec.ts exercises the goBack refusal and the
+    // guard-CLEAR settle, not this else-branch (mutation: dropping the absorb
+    // else-branch leaves all four e2e cases green). It stays review-only and a
+    // device item (spec header). An earlier implementation
     // DRAINED (re-issued the settle on the next landing), which reproduced
     // neither develop's end state nor an un-raced close and left the app one
     // physical level below the screen it showed (invariant 2); the absorb
