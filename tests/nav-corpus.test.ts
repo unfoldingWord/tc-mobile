@@ -71,6 +71,22 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     // Without the fix (baseline forced to 0 regardless of the real stack),
     // the same landing would read as "forward" — navDirection(0, 1).
     expect(navDirection(0, landingIndex)).toBe("forward");
+
+    // George R2 P2-2 (PR #492): the contract requires BOTH navIndex AND
+    // nextIndex adopt this same value — pushHistoryEntry stamps only from
+    // `++nextIndex.current` (App.tsx:78). Proved against the real stamp path,
+    // not just navDirection: a nextIndex correctly seeded at the adopted
+    // value stamps the next push one above it, and the following Back reads
+    // "back"; a nextIndex left at 0 (the mis-wire PR2 must not make) stamps
+    // BELOW the adopted value and the following Back misreads as "forward" —
+    // F3 again, one push later. See tests/nav-resume-index.test.ts for the
+    // dedicated positive/negative pair.
+    const correctlySeededNextIndex = adoptedAtMount;
+    expect(navDirection(correctlySeededNextIndex + 1, adoptedAtMount)).toBe(
+      "back"
+    );
+    const misWiredNextIndex = 0;
+    expect(navDirection(misWiredNextIndex + 1, adoptedAtMount)).toBe("forward");
   });
 
   it.todo(

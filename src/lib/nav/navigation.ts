@@ -100,20 +100,32 @@ export function navDirection(from: number, to: number): NavDirection {
  *
  * **`rearm-layer-dismiss` / `rearm-layer-busy` (docs/design/back-navigation.md
  * #452 PR1, contract fixed per George R1 P2-1 on PR #492)** — the
- * screen-scoped `layerStack` has an open overlay on top. Checked after the
- * two global traps and the transition-in-flight guard (invariant 3: "if no
- * global trap and no screen transition is in flight, the screen-scoped
- * `layerStack`'s top entry only"), and before `direction`/`screen` are
- * consulted at all — an overlay never held a history entry of its own
- * (invariant 1), so neither Forward nor "same" has any meaning for it; only
- * whether its top layer is busy does.
+ * screen-scoped `layerStack` has an open overlay on top, and the gesture is a
+ * **Back**. Checked after the two global traps and the transition-in-flight
+ * guard, and before `direction === "back"` falls through to `screen` routing
+ * (invariant 3: "if no global trap and no screen transition is in flight,
+ * ON BACK, the screen-scoped `layerStack`'s top entry only") — an overlay
+ * never held a history entry of its own (invariant 1), so neither Forward nor
+ * "same" has any meaning for it; only whether its top layer is busy does.
+ *
+ * **Layer routing applies ONLY on Back (George R2 P2-1 on PR #492).** The
+ * premise below — a `popstate` has already popped the screen-depth entry —
+ * is true for Back and FALSE for Forward: Forward RESTORED a previously
+ * truncated entry, and the live cancel for it is `trap-forward`'s own extra
+ * `history.back()`, not a layer re-arm. Both recorder-close paths
+ * (`App.tsx:266-268`, `:345-360`) leave a forward entry behind; if a non-empty
+ * stack were allowed to shadow Forward, a Forward swipe over an open overlay
+ * would dismiss the overlay and re-arm instead of cancelling the Forward, and
+ * the user's next Back would fall through past the now-empty stack to
+ * `to-books` — an earlier revision of this function had exactly this bug,
+ * caught before PR2 could copy it.
  *
  * A `popstate` has ALREADY popped the screen-depth entry before this function
  * runs (`App.tsx:301-302`), exactly the same as every other non-screen
  * intercept above (`trap-recovery`/`trap-database-panel`/
- * `rearm-during-commit`) — so BOTH outcomes must re-arm that entry, not just
- * one: `"rearm-layer-dismiss"` means dismiss the top layer (the adapter
- * recovers it via `topLayer(stack)`) AND push a fresh entry;
+ * `rearm-during-commit`) — so on Back, BOTH outcomes must re-arm that entry,
+ * not just one: `"rearm-layer-dismiss"` means dismiss the top layer (the
+ * adapter recovers it via `topLayer(stack)`) AND push a fresh entry;
  * `"rearm-layer-busy"` means push a fresh entry only, same as every other
  * re-arm case. Two string tags rather than the object this PR originally
  * shipped (`{kind:"layer", result:...}`) specifically so the obligation is
@@ -176,11 +188,15 @@ export function popAction(
   if (databasePanel) return "trap-database-panel";
   if (committing) return "rearm-during-commit";
   // Invariant 3, stage 2: only once no global trap is up AND no screen
-  // transition is in flight does the screen-scoped layer stack get a say —
-  // and only its TOP entry (`routeBackToLayer` never looks below it). An
-  // empty stack (every existing caller, PR1) falls straight through to the
-  // direction/screen routing below, unchanged from `develop`.
-  if (layerStack.length > 0) {
+  // transition is in flight, AND the gesture is a Back (George R2 P2-1 — the
+  // "popstate already popped the screen-depth entry" premise below is false
+  // for Forward, whose own live cancel is `trap-forward`'s extra
+  // `history.back()`, not a layer re-arm), does the screen-scoped layer stack
+  // get a say — and only its TOP entry (`routeBackToLayer` never looks below
+  // it). An empty stack (every existing caller, PR1), or a non-Back
+  // direction, falls straight through to the direction/screen routing below,
+  // unchanged from `develop`.
+  if (direction === "back" && layerStack.length > 0) {
     const result = routeBackToLayer(layerStack);
     switch (result.kind) {
       case "dismiss":
@@ -271,6 +287,18 @@ export function overlayDismissal(
  * (`hooks/use-nav-stack.ts`), not this pure function. This file only decides
  * WHAT index a given `state` value resumes to; it never reads `window` itself
  * (lib/ stays DOM-free — AGENTS.md).
+ *
+ * **Contract for BOTH refs (George R2 P2-2 on PR #492):** the caller must
+ * assign this SAME returned number to both `navIndex.current` AND
+ * `nextIndex.current` on mount — adopting only `navIndex` is not enough.
+ * `pushHistoryEntry` stamps every pushed entry from `++nextIndex.current`
+ * alone (`App.tsx:78`), never from `navIndex`; if `nextIndex` is left at its
+ * old value while `navIndex` adopts this one, the very next push stamps a
+ * LOWER index on top of the one just adopted, desyncing the strictly-
+ * increasing invariant `navDirection` depends on (see above) and
+ * reintroducing this same reload hazard one push later — proved directly
+ * against the `++nextIndex.current` stamp path in
+ * `tests/nav-resume-index.test.ts`.
  *
  * The one remaining, disclosed limitation is unchanged from today: a reload
  * always shows Books regardless of history depth (no session-restore of which

@@ -159,4 +159,35 @@ describe("resumeNavIndex + navDirection + popAction composition (pure-core proof
       "exit-app"
     ); // Books, the correct root — not a skipped level.
   });
+
+  /**
+   * George R2 P2-2 (PR #492): `resumeNavIndex`'s own docblock says the
+   * adapter must adopt the returned value into BOTH `navIndex` and
+   * `nextIndex` — but every composition test above only ever feeds it into
+   * `navDirection`, never into a `++nextIndex` stand-in. `pushHistoryEntry`
+   * stamps from `++nextIndex.current` alone (`App.tsx:78`), not from
+   * `navIndex`. A PR2 that copies these tests and adopts only `navIndex`,
+   * leaving `nextIndex` at the mount effect's old unconditional `0`
+   * (`App.tsx:88`, untouched by this PR), stamps the NEXT pushed entry with a
+   * LOWER index than the one just adopted — desyncing the strictly-increasing
+   * invariant `navDirection` relies on (`navigation.ts:58-60`) — and the
+   * following Back misreads as Forward. That is finding F3 again, one push
+   * later than the first-Back-only rows above look.
+   */
+  it("George R2 P2-2: the contract requires BOTH refs adopt the SAME baseline — proven against the actual stamp path (`++nextIndex.current`)", () => {
+    const adopted = resumeNavIndex({ tc: true, index: 2 });
+    // The contract's required wiring: nextIndex starts at the SAME adopted
+    // value navIndex did, not left at its old default.
+    let nextIndex = adopted;
+    const stamped = ++nextIndex; // pushHistoryEntry's own `++nextIndex.current`
+    expect(navDirection(stamped, adopted)).toBe("back");
+  });
+
+  it("George R2 P2-2 (negative — the mis-wire PR2 must not make): nextIndex left un-synced at 0 reintroduces F3 on the very next push", () => {
+    const adopted = resumeNavIndex({ tc: true, index: 2 });
+    // The mis-wire: navIndex adopts, nextIndex does not.
+    let nextIndex = 0;
+    const stamped = ++nextIndex;
+    expect(navDirection(stamped, adopted)).toBe("forward"); // the F3 misfire
+  });
 });

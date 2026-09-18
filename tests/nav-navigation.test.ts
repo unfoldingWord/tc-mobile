@@ -338,4 +338,31 @@ describe("popAction — layer routing (#452 PR1)", () => {
       "rearm-during-commit"
     );
   });
+
+  /**
+   * George R2 P2-1 (PR #492): the layer-routing premise — "a popstate has
+   * ALREADY popped the screen-depth entry" — holds only for Back. Forward
+   * RESTORED a previously truncated entry; its live cancel is `trap-forward`'s
+   * own extra `history.back()`, not a layer re-arm. The F2 row above
+   * (`"traps a Forward instead of misrouting it as a Back"`) uses the
+   * empty-stack default and so CANNOT catch a non-empty stack shadowing it —
+   * these two rows exist specifically because that one does not cover this.
+   */
+  it("a non-empty stack does not shadow Forward — `trap-forward` still cancels it, never a layer re-arm (George R2 P2-1)", () => {
+    const nonBusyStack: LayerStack = [fakeLayer("menu", false)];
+    const busyStack: LayerStack = [fakeLayer("deleting", true)];
+    expect(
+      popAction("forward", "segments", false, false, false, nonBusyStack)
+    ).toBe("trap-forward");
+    expect(
+      popAction("forward", "recorder", false, false, false, busyStack)
+    ).toBe("trap-forward");
+  });
+
+  it("a non-empty stack does not shadow 'same' — `ignore` still wins, never a layer re-arm (George R2 P2-1)", () => {
+    const stack: LayerStack = [fakeLayer("menu", false)];
+    expect(popAction("same", "segments", false, false, false, stack)).toBe(
+      "ignore"
+    );
+  });
 });
