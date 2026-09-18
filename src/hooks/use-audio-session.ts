@@ -115,8 +115,14 @@ export interface UseAudioSession {
    */
   audioNeedsGesture: () => boolean;
   startRecording: () => void;
-  /** Pause the in-progress recording without ending the take. */
-  pauseRecording: () => void;
+  /**
+   * Pause the in-progress recording without ending the take. Returns whether
+   * it actually froze — false when there is no recorder to pause or a #59
+   * interruption already claimed the take (`pausePlan`'s "ignore" cells).
+   * The `pagehide` handler's instrumentation reads this so its report never
+   * claims a freeze that did not happen (#478, #58 George R3 P2-3, Frank R4).
+   */
+  pauseRecording: () => boolean;
   /** Resume a paused recording into the same take. */
   resumeRecording: () => void;
   /**
@@ -642,8 +648,10 @@ export function useAudioSession(): UseAudioSession {
   // that value. Mirroring unconditionally would be the opposite bug: a refused
   // pause (no recorder, or a #59 interruption already took it inactive) would
   // claim "paused" while React stayed elsewhere.
-  const pauseRecording = useCallback(() => {
-    if (pauseCapture()) recorderStateRef.current = "paused";
+  const pauseRecording = useCallback((): boolean => {
+    const frozen = pauseCapture();
+    if (frozen) recorderStateRef.current = "paused";
+    return frozen;
   }, [pauseCapture]);
   // Resume must RECLAIM the floor, because a preview (#101, approach B) may have
   // released the mic's claim to sound the paused take — so the floor is then held
@@ -781,18 +789,24 @@ export function useAudioSession(): UseAudioSession {
         // ONE cell of `pageHideAction`'s table whose platform premise nobody
         // has observed on a device — that a `pagehide` really does land while
         // `MediaRecorder` is still natively "recording", and that freezing it
-        // here really does survive to a `pageshow` restore. Read BEFORE
-        // `pauseRecording()` runs, so the row carries what the browser
-        // believed at the moment of the hide, not what this call just did to
-        // it. Never gates behaviour — reportFailure never throws (see its
-        // docblock) and nothing here depends on its result.
-        pagehidePauseReportedRef.current = true;
-        reportFailure(
-          new Error(
-            `pagehide pause: persisted=${event.persisted}, native state=${nativeState()}`
-          ),
-          "pagehide-pause"
-        );
+        // here really does survive to a `pageshow` restore. `nativeState()` is
+        // read BEFORE `pauseRecording()` runs, so the row carries what the
+        // browser believed at the moment of the hide, not what this call just
+        // did to it. Never gates behaviour — `reportFailure` never throws (see
+        // its docblock) and nothing here depends on its result.
+        //
+        // `frozen` is the pause's ACTUAL outcome, not assumed from having
+        // reached this branch: a #59 interruption can race this same hide and
+        // leave `pausePlan` refusing to freeze — `recordingRef` already false,
+        // the native recorder possibly still "recording" — because
+        // `onInterrupted` owns that transition and this branch deliberately
+        // does not fight it (see below). Reporting "frozen=true" there would
+        // manufacture false field evidence for the very premise this exists to
+        // measure (Frank round 4), and it must not arm the `pageshow` pairing
+        // below, which promises "a paused take was restored" — nothing was
+        // paused.
+        const priorNativeState = nativeState();
+        let frozen = false;
         try {
           // Holds the recorder, the stream and the chunks; the restored page
           // finds a "paused" take that Resume continues and that a close still
@@ -813,12 +827,19 @@ export function useAudioSession(): UseAudioSession {
           // recovers the chunks. Freezing to "paused" instead would paint a
           // Resume the recorder cannot honour, and — because both write the same
           // React state — the later `setState` would simply win.
-          pauseRecording();
+          frozen = pauseRecording();
         } catch (cause) {
           // Not silent, and not fatal: a pause that throws leaves the capture
           // running, which is still better than the discard this replaced.
           console.error("Could not pause the recorder for pagehide", cause);
         }
+        reportFailure(
+          new Error(
+            `pagehide pause: persisted=${event.persisted}, native state=${priorNativeState}, frozen=${frozen}`
+          ),
+          "pagehide-pause"
+        );
+        if (frozen) pagehidePauseReportedRef.current = true;
       }
 
       // Nothing should keep SOUNDING into a hidden page, whichever way the
