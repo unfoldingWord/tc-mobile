@@ -58,10 +58,13 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     expect(commitCloseWhileGoBackOutstanding.ok).toBe(true);
   });
 
-  it("F3 (P2): a reload mid-stack no longer misroutes the first post-reload Back as a phantom Forward, and does not skip a physical level (Amendment B)", () => {
+  it("F3 (P2): IF the adapter adopts the resumed index (PR2, not yet wired — Frank R4 P2 on PR #492), a reload mid-stack would no longer misroute the first post-reload Back as a phantom Forward, and would not skip a physical level (Amendment B)", () => {
     // Traced concretely in tests/nav-resume-index.test.ts; this row pins the
-    // corpus-level claim: adopting the resumed index (instead of forcing 0)
-    // makes the landing read as "back", not "forward".
+    // corpus-level claim about the PURE composition: adopting the resumed
+    // index (instead of forcing 0) makes the landing read as "back", not
+    // "forward". `App.tsx`'s mount effect does not adopt it yet (unchanged,
+    // `App.tsx:85-89`) — that wiring is PR2 — so this is a composition proof
+    // for PR2 to reproduce, not a claim the live reload defect is fixed.
     const adoptedAtMount = resumeNavIndex({ tc: true, index: 2 });
     const landingIndex = resumeNavIndex({ tc: true, index: 1 });
     expect(navDirection(adoptedAtMount, landingIndex)).toBe("back");

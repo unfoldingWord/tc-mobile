@@ -12,11 +12,16 @@ import {
  *
  * `resumeNavIndex` is pure: no `window`, no `history`, only what the adapter
  * (PR2) will read from `window.history.state` and hand in as a plain value.
- * The second describe block below drives an integration-shaped scenario with
- * fake `history.state`-shaped inputs to confirm the fix actually closes the
- * `trap-forward` misfire / skipped-level hazard the design traces through —
- * still no jsdom, no real `history`, just the same pure functions wired
- * together the way the adapter will.
+ * The second describe block below drives a scenario with fake
+ * `history.state`-shaped inputs, composing `resumeNavIndex` with
+ * `navDirection`/`popAction` the way the adapter is DESIGNED to — no jsdom,
+ * no real `history`, and no exercise of `App.tsx`'s actual (still unchanged,
+ * still unconditional) mount effect. That composition proof is real and
+ * useful — it is the exact decision table PR2 must reproduce — but it is not
+ * evidence the live reload defect is fixed in this PR (Frank R4 P2, PR
+ * #492): that requires PR2 to actually wire `resumeNavIndex` into the mount
+ * effect, which has not happened yet. See the second describe block's own
+ * docblock for the corrected scope statement.
  */
 describe("resumeNavIndex", () => {
   it("resumes 0 for a fresh load with no state at all", () => {
@@ -68,19 +73,30 @@ describe("resumeNavIndex", () => {
 });
 
 /**
- * The reload-then-Back scenario the design traces through concretely: reload
- * while on the recorder (physical depth 2). Without the fix, the mount effect
- * force-resets `navIndex`/`nextIndex` to 0 regardless of what is physically
- * below, so the first post-reload Back (landing on the depth-1 entry,
- * `{tc:true,index:1}`) reads as "forward" against the wrongly-reset baseline
- * of 0 and `popAction` returns `trap-forward` — which cancels by walking the
- * browser back ANOTHER physical level, skipping the depth-1 entry entirely
- * for one Back gesture. With the fix, the mount effect adopts
- * `resumeNavIndex(window.history.state)` as its baseline instead of forcing
- * 0, so the same landing reads as a genuine "back" and routes normally.
+ * SCOPE, corrected per Frank R4 P2 (PR #492): this describe block's earlier
+ * name and comments read as "confirms the fix actually closes" the reload
+ * hazard — overclaiming what a pure-function test can prove. `App.tsx:85-89`
+ * still runs its OLD, unconditional `replaceState`/reset on every mount
+ * TODAY, unchanged by this PR (Amendment B's fix is PR1's pure half only;
+ * wiring `resumeNavIndex` into the mount effect is PR2, per this PR's own
+ * "Deferred to PR2" list). So the reload-then-Back defect this describes is
+ * STILL PRESENT on `develop`/this branch's shipped app — nothing here
+ * exercises `App.tsx`'s real mount effect, only the pure functions PR2 will
+ * compose.
+ *
+ * What these tests DO prove, correctly: `resumeNavIndex` + `navDirection` +
+ * `popAction`, composed the way the adapter is DESIGNED to compose them,
+ * classify a reload-then-Back scenario correctly — no `trap-forward`
+ * misfire, no skipped physical level — GIVEN that composition is actually
+ * wired in. That is a real, valuable regression test for the pure core (and
+ * the exact decision table PR2 must reproduce), but it is a claim about the
+ * pure functions' correctness, not a claim that the live defect is fixed.
+ * The first test below (still using the WRONG, un-adopted baseline) is the
+ * one that demonstrates the defect currently shipping; the two after it
+ * demonstrate what the correct composition WOULD produce once PR2 wires it.
  */
-describe("reload/bootstrap integration (fake history.state, no jsdom)", () => {
-  it("without adopting the resumed index, a post-reload Back misfires as trap-forward", () => {
+describe("resumeNavIndex + navDirection + popAction composition (pure-core proof for PR2, not yet wired into App.tsx)", () => {
+  it("without adopting the resumed index (App.tsx's CURRENT, unwired behaviour), a post-reload Back misfires as trap-forward", () => {
     // Simulate: reload happened while the current entry (top of stack) was
     // stamped `index:2` (recorder depth), but the OLD, unconditional
     // mount-reset behaviour still zeroes `navIndex` regardless.
@@ -95,7 +111,7 @@ describe("reload/bootstrap integration (fake history.state, no jsdom)", () => {
     );
   });
 
-  it("adopting the resumed index at mount, the SAME post-reload Back reads correctly and does not misfire", () => {
+  it("IF the adapter adopts the resumed index (PR2, not yet wired), the SAME post-reload Back would classify correctly — a pure-composition proof, not a claim about the shipped app", () => {
     // George R1 P3-6 (PR #492): a reload always resets React state to Books
     // (`chapterId = null`, `App.tsx:42-46`) regardless of history depth — the
     // mount effect at `App.tsx:85-89` runs unconditionally on every mount, a
@@ -107,9 +123,11 @@ describe("reload/bootstrap integration (fake history.state, no jsdom)", () => {
     // outcome for a reader/PR2 to copy: it would compute `"to-books"` and
     // call `backToBooks()` on a tree that is already showing Books.
     //
-    // The mount effect reads window.history.state BEFORE the first popstate —
-    // simulate the fix: it adopts the current top entry's own index rather
-    // than forcing 0.
+    // Frank R4 P2 (PR #492): this row HYPOTHESIZES what the mount effect
+    // would read BEFORE the first popstate IF PR2 wires it to call
+    // `resumeNavIndex(window.history.state)` — App.tsx's mount effect does
+    // NOT do this yet (unchanged, `App.tsx:85-89`), so this is a composition
+    // proof for PR2 to reproduce, not evidence the live app is fixed.
     const currentEntryAtMount = { tc: true, index: 2 }; // top of stack, depth 2
     const adoptedNavIndex = resumeNavIndex(currentEntryAtMount);
     expect(adoptedNavIndex).toBe(2);
@@ -124,13 +142,14 @@ describe("reload/bootstrap integration (fake history.state, no jsdom)", () => {
     ); // routes normally to the real post-reload root, no trap-forward
   });
 
-  it("adopting the resumed index does not skip a physical level on the FOLLOWING Back either", () => {
-    // Continue the corrected scenario: after the Back above lands (depth 1,
-    // Segments), navIndex is updated to the landing index (1) exactly as the
-    // real popstate handler already does (`navIndex.current = toIndex`,
+  it("IF adopted, the resumed index does not skip a physical level on the FOLLOWING Back either — same pure-composition scope as above", () => {
+    // Continue the hypothesized scenario: after the Back above lands (depth
+    // 1, Segments), navIndex is updated to the landing index (1) exactly as
+    // the real popstate handler already does (`navIndex.current = toIndex`,
     // App.tsx:302, unaffected by this fix). The following Back — landing on
     // the depth-0 entry — must read as a normal "back", not compound any
-    // earlier corruption.
+    // earlier corruption. Still a pure-composition proof, not a live-app
+    // claim (see the describe block's docblock).
     const navIndexAfterFirstBack = 1; // set by the popstate handler itself
     const nextLandingState = { tc: true, index: 0 };
     const toIndex = resumeNavIndex(nextLandingState);
