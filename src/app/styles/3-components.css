@@ -48,6 +48,20 @@
     --c-tile-sm: 48px;
     --c-tile-lg: 56px;
 
+    /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
+       two parts this file gained in #457. Their geometry is named here, not
+       read from layer 1 inside the rules, so a primitive-scale revision has one
+       place per part to be inspected or held (Frank R3 P2 on #457). The notice
+       gap is `--p-space-3`, not `--c-gap-parts` (`--p-space-2`): reusing the
+       relationship token would have moved a reviewed 8px to 6px, which is a
+       design call and not this boundary fix. */
+    --c-notice-gap: var(--p-space-3);
+    --c-notice-pad: var(--p-space-4);
+    --c-notice-radius: var(--p-radius-md);
+    --c-notice-text: var(--p-text-md);
+    --c-breadcrumb-inset: var(--p-space-2);
+    --c-breadcrumb-radius: var(--p-radius-md);
+
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
 
@@ -251,10 +265,10 @@
   .notice {
     display: flex;
     align-items: center;
-    gap: var(--p-space-3);
-    padding: var(--p-space-4);
-    border-radius: var(--p-radius-md);
-    font-size: var(--p-text-md);
+    gap: var(--c-notice-gap);
+    padding: var(--c-notice-pad);
+    border-radius: var(--c-notice-radius);
+    font-size: var(--c-notice-text);
     background: var(--s-surface);
     border: 1px solid var(--s-edge);
     color: var(--s-ink);
@@ -304,14 +318,14 @@
     min-height: var(--c-control-md);
     display: flex;
     align-items: center;
-    padding: 0 var(--p-space-2);
+    padding: 0 var(--c-breadcrumb-inset);
     border: none;
     background: transparent;
     color: var(--s-ink);
     font: inherit;
     text-align: left;
     cursor: pointer;
-    border-radius: var(--p-radius-md);
+    border-radius: var(--c-breadcrumb-radius);
   }
   .breadcrumb > span {
     min-width: 0;

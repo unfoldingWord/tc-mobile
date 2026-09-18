@@ -269,6 +269,16 @@ describe("the light theme is reachable (#171)", () => {
       apply,
       "applyTheme runs after the listeners are notified"
     ).toBeLessThan(notify);
+    // Ordering alone is not enough: an `applyTheme(next)` that appears before
+    // the loop but is DEFERRED — wrapped in `queueMicrotask`, `setTimeout`,
+    // `requestAnimationFrame` or a `.then` — passes the index check above and
+    // still lets the subscriber render on the old attribute. So the call must
+    // be a bare, synchronous statement of the setter's body: the line is
+    // nothing but `applyTheme(next);` (panel P3 on #457).
+    expect(
+      body,
+      "applyTheme(next) is not a bare synchronous statement in setLiveTheme"
+    ).toMatch(/^\s*applyTheme\(next\);\s*$/m);
     // And the toggle still goes through that setter, not around it.
     expect(hook).toMatch(/setLiveTheme\(next\)/);
   });

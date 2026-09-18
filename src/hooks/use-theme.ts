@@ -69,7 +69,11 @@ import {
  */
 let liveTheme: Theme | null = null;
 
-/** Subscribers, so every mounted `useTheme` sees one toggle. */
+/**
+ * Subscribers, so every mounted `useLiveTheme` — and so every `useTheme`,
+ * which is built on it — sees one toggle. The two canvases subscribe here
+ * without ever calling `toggle`, which is why this is not "every `useTheme`".
+ */
 const listeners = new Set<() => void>();
 
 /**
