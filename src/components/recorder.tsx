@@ -2493,12 +2493,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // ever resolve to the ≡ or to nothing, never to Back or the "Editing"
     // pill. Shared by the overlay restore and the panel recovery below, which
     // are the two edges that hand focus back into a sheet the translator is
-    // still working in. `null` when the ≡ is not rendered, and a no-op when it
-    // is `disabled` — both of which leave focus alone, the contract's own
-    // "prefer `null` over anything dangerous". Inference, not observed on a
-    // device: on the recovery edge the ≡'s `disabled` expression
-    // (`!view || isClosing || denied || heldTake !== null`) has just cleared,
-    // because a panel resolving is what clears it.
+    // still working in. `null` when the ≡ is not rendered, AND `null` when it
+    // is natively `disabled` — an earlier draft promised the second half in
+    // this comment and returned the disabled node anyway (George R3 P2-2 on
+    // #457): `.focus()` on a disabled button is a silent no-op, and
+    // `use-focus-restore.ts`'s `hasFallback` checks connectivity, not
+    // `disabled`, so both callers "succeeded" with focus on <body> and the
+    // next Tab on header Back. Both `null`s leave focus alone, the contract's
+    // own "prefer `null` over anything dangerous". Native `disabled` only,
+    // the same idiom that hook uses for the trigger: an `aria-disabled`
+    // control keeps its place in the Tab order (#135), and the ≡ has no
+    // `hint`, so `Control` sets the native attribute for it. The ≡'s
+    // `disabled` expression is `!view || isClosing || denied ||
+    // heldTake !== null`; a panel resolving clears `denied` / `heldTake`, and
+    // the recovery effect below is what copes when the rest has not cleared
+    // on the same commit.
     const menuLandmark = useCallback((): HTMLElement | null => {
       const sheet = sheetRef.current;
       if (!sheet) return null;
@@ -2508,21 +2517,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       );
       const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
       if (target === null) return null;
-      return (
+      const menu =
         buttons.find(
           (button) => button.getAttribute("aria-label") === target
-        ) ?? null
-      );
+        ) ?? null;
+      if (menu === null) return null;
+      if (menu.hasAttribute("disabled")) return null;
+      return menu;
     }, []);
-
-    // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
-    // user is not stranded on the now-`inert` list behind the modal. Mount-only —
-    // App keys the sheet on segmentId, so it remounts per open and per segment.
-    // The permission panel autofocuses its own Retry when it later appears, which
-    // is after this has run.
-    useEffect(() => {
-      focusSheet();
-    }, [focusSheet]);
 
     // A mic permission/start failure, at idle (distinct from a decode failure,
     // which travels as `stopError`). Keyed on `recorderError`, NOT the merged
@@ -2664,6 +2666,36 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const editToolbarHint =
       editReason !== null ? toolbarEditHint(editReason) : null;
 
+    // A full-body panel owns the sheet body — the permission panel, the
+    // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
+    // its own control. Read by all three focus effects below.
+    const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
+
+    // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
+    // user is not stranded on the now-`inert` list behind the modal. Mount-only —
+    // App keys the sheet on segmentId, so it remounts per open and per segment.
+    //
+    // UNLESS a panel already owns the first commit. An earlier comment here
+    // said the permission panel "autofocuses its own Retry when it later
+    // appears, which is after this has run" — true for the async mic path
+    // (Record is gated on `view`), false for `!audio.supported`:
+    // `isRecordingSupported()` is a synchronous first-render fact, so on a
+    // WebView with no `MediaRecorder` the first paint IS `PermissionPanel`.
+    // React's commit focused its Retry, then this passive effect ran
+    // `focusSheet()` — the sheet's first `button`, header Back — and the next
+    // Space/Enter/switch-activate was armed to `close()`: the #97 hazard the
+    // recovery effect keeps off its edge, applied on the open edge to the users
+    // the panel is for (George R3 P2-1 on #457). So the open edge yields when a
+    // panel owns the FIRST commit, read through a `useRef` snapshot of that
+    // render's value: `panelOwnsFocus` is deliberately NOT a dependency, since
+    // re-running on the panel resolving would land on Back — the recovery
+    // defect round 1 closed. The recovery edge stays `menuLandmark`'s.
+    const panelOwnsFocusAtMount = useRef(panelOwnsFocus);
+    useEffect(() => {
+      if (panelOwnsFocusAtMount.current) return;
+      focusSheet();
+    }, [focusSheet]);
+
     // Put focus back where the overlay took it from, AFTER `inert` has lifted
     // (#97). A layout effect, not the close handler and not a passive one: React
     // removes the `inert` attribute in the mutation phase, layout effects run
@@ -2679,7 +2711,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // its own control in the same commit, and stealing that back would strand a
     // screen-reader user off the Retry they were just handed. The capture is
     // consumed either way, so it can never fire late.
-    const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
     useLayoutEffect(() => {
       if (overlayUp) return;
       // HOLD the capture through the commit window rather than spending it
@@ -2751,7 +2782,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // The ≡, NOT `focusSheet()`: that is header Back, and Back is `close()`
       // — see `menuLandmark` for why the open edge may land there and this
       // edge may not (George R1 P2 on #457).
-      if (action === "focus") menuLandmark()?.focus();
+      if (action === "focus") {
+        const landmark = menuLandmark();
+        // No landmark — the ≡ is not rendered, or is still natively
+        // `disabled` on this commit (`!view` or `isClosing` may outlast the
+        // panel; `menuLandmark` returns `null` rather than an unfocusable
+        // node, George R3 P2-2 on #457). Same lesson as `hold`: do nothing
+        // AND remember nothing, so `ownedLastCommit` stays true and a later
+        // commit on which the ≡ is enabled can still recover. Writing the
+        // ref here would spend the recovery on a landing that never
+        // happened, with focus left on <body>.
+        if (landmark === null) return;
+        landmark.focus();
+      }
       panelOwnedFocus.current = panelOwnsFocus;
     }, [panelOwnsFocus, isClosing, menuLandmark]);
 
