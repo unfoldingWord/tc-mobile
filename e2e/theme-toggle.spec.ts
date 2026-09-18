@@ -270,8 +270,9 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
     await page.getByRole("button", { name: "Back to books" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
-    // The OS chrome too: it is repainted by the same effect, so a reverted
-    // theme would have taken the status bar back to dark with it.
+    // The OS chrome too: it is repainted by the same `applyTheme` call (in the
+    // store on a toggle, in `useTheme`'s mount reconcile on the way back), so
+    // a reverted theme would have taken the status bar back to dark with it.
     expect(await resolved(page, (await themeColor(page)) ?? "")).toBe(
       LIGHT_FLOOR
     );

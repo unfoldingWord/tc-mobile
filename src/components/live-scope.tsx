@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import { useLiveTheme } from "@/hooks/use-theme";
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -95,6 +96,13 @@ export function LiveScope({
   className,
 }: LiveScopeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Read for its subscription only: a `data-theme` switch remaps `--s-voice`
+  // and `--s-live`, which the draw effect reads once per run, and a painted
+  // canvas cannot see that on its own — so the effect lists it. Today a toggle
+  // unmounts this canvas (the toggle is Books-only); once it is reachable from
+  // the recorder (#149) this is what keeps the scope from holding the previous
+  // theme's amber (George R2 P2 on #457).
+  const theme = useLiveTheme();
   // Hold the latest reader without retriggering the loop — the hook may hand a
   // fresh function identity each render, and restarting for that drops frames.
   const readScopeRef = useRef(readScope);
@@ -126,9 +134,11 @@ export function LiveScope({
     if (!ctx) return;
 
     // Geometry and colours are read once per effect, not per frame: the window
-    // is a pure function of headFraction, and the CSS tokens do not change mid
-    // take. `--s-voice` is the audio amber, `--s-live` the record-head red —
-    // the same roles `Waveform` uses.
+    // is a pure function of headFraction, and the CSS tokens change only on a
+    // `data-theme` switch — which `theme` in the deps below turns into a
+    // re-run, so this read stays per-effect rather than per-frame. `--s-voice`
+    // is the audio amber, `--s-live` the record-head red — the same roles
+    // `Waveform` uses.
     const win = captureWindow(headFraction);
     const span = win.endFraction - win.startFraction;
     const styles = getComputedStyle(canvas);
@@ -220,7 +230,11 @@ export function LiveScope({
       observer.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [active, headFraction, height]);
+    // `theme` is listed for its side effect only, like `Waveform`'s `finished`:
+    // a re-run re-reads the two colours above. While active that restarts the
+    // loop through the same peek-paint path an `active`/`height` edge already
+    // takes, so a mid-take toggle repaints in place rather than freezing.
+  }, [active, headFraction, height, theme]);
 
   return (
     <canvas

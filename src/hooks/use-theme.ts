@@ -85,8 +85,27 @@ function currentTheme(): Theme {
   return liveTheme;
 }
 
+/**
+ * Move the live theme AND put it on the document in the same call, before any
+ * subscriber is told.
+ *
+ * `useSyncExternalStore` re-renders in the click that calls this, and in that
+ * render the control already shows the moon and the "dark screen" label. While
+ * `applyTheme` ran only in `useTheme`'s effect, the browser could paint one
+ * frame of the new chrome on the still-dark `data-theme` before the effect set
+ * the attribute and rewrote `theme-color` — the same flash class
+ * `installStoredTheme` refuses on launch, on the gesture the light theme
+ * exists for (George R2 P2 on #457). React's own docs say an effect caused by
+ * a click "generally" runs before the browser repaints, so that frame was not
+ * guaranteed to appear; "generally" is the scheduler's promise and not this
+ * file's, and applying here removes the dependence on it. Applying on the
+ * STORE rather than in the hook is also what keeps a future Segments toggle
+ * (#149) correct while `BooksScreen`, today's only `useTheme` caller, is
+ * unmounted.
+ */
 function setLiveTheme(next: Theme): void {
   liveTheme = next;
+  applyTheme(next);
   for (const listener of listeners) listener();
 }
 
@@ -184,24 +203,40 @@ export interface UseTheme {
   readonly toggle: () => void;
 }
 
-export function useTheme(): UseTheme {
-  // Subscribed to the module-level value, NOT seeded from storage per mount —
-  // see `liveTheme` above for the navigation defect that caused. Every mounted
-  // copy of this hook therefore agrees, and a remount picks up the live theme
-  // rather than re-deriving one from a write that may have failed.
-  const theme = useSyncExternalStore(subscribe, currentTheme, currentTheme);
+/**
+ * The live theme as a subscription and nothing else — no toggle, no apply.
+ *
+ * For the two canvases (`Waveform`, `LiveScope`): a canvas painted once cannot
+ * observe a CSS-variable change, and `data-theme` is one, so each draw effect
+ * lists this value to re-run on a toggle (George R2 P2 on #457). Kept apart
+ * from `useTheme` so a chapter row's canvas carries neither a toggle it never
+ * calls nor a reconcile effect per row.
+ *
+ * Subscribed to the module-level value, NOT seeded from storage per mount —
+ * see `liveTheme` above for the navigation defect that caused. Every mounted
+ * copy therefore agrees, and a remount picks up the live theme rather than
+ * re-deriving one from a write that may have failed.
+ */
+export function useLiveTheme(): Theme {
+  return useSyncExternalStore(subscribe, currentTheme, currentTheme);
+}
 
-  // Re-apply on mount so the attribute and the live value cannot diverge if
-  // something else has written `data-theme` in between. Idempotent, which is
-  // the property AGENTS.md asks of every write.
+export function useTheme(): UseTheme {
+  const theme = useLiveTheme();
+
+  // A mount-time RECONCILE, not where the theme is applied: the toggle applies
+  // inside `setLiveTheme`, in the gesture, so a toggle never waits on this. It
+  // exists so the attribute and the live value cannot diverge if something
+  // else wrote `data-theme` while no `useTheme` was mounted (a chapter is
+  // open). Idempotent, which is the property AGENTS.md asks of every write.
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    applyTheme(currentTheme());
+  }, []);
 
   const toggle = useCallback(() => {
     const next = nextTheme(currentTheme());
-    // The live value moves FIRST, so the screen is correct whatever storage
-    // does next.
+    // The live value and `data-theme` move FIRST, together, so the screen is
+    // correct whatever storage does next.
     setLiveTheme(next);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, next);

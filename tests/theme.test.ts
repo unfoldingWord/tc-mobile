@@ -219,4 +219,97 @@ describe("the light theme is reachable (#171)", () => {
     expect(config).toContain(`theme_color: "${floor![1]}"`);
     expect(config).toContain(`background_color: "${floor![1]}"`);
   });
+
+  it("index.html's own theme-color is the floor token too, for the pre-JS bar", () => {
+    // The manifest was moved onto the token; the document the browser reads
+    // FIRST was not, so until `installStoredTheme` ran the OS chrome was still
+    // `#0b0f14` — a value no token has ever had, the drift this lane exists to
+    // close (George R2 P3 on #457). Same pin as the manifest, same primitive.
+    const floor = /--p-cool-950:\s*(#[0-9a-f]{6})/i.exec(
+      read("src/app/styles/1-primitives.css")
+    );
+    expect(floor?.[1], "no --p-cool-950 primitive found").toBeTruthy();
+    const html = read("index.html");
+    const meta = /<meta\s+name="theme-color"\s+content="(#[0-9a-f]{6})"/i.exec(
+      html
+    );
+    expect(meta?.[1], "no theme-color meta in index.html").toBeTruthy();
+    expect((meta?.[1] ?? "").toLowerCase()).toBe(
+      (floor?.[1] ?? "").toLowerCase()
+    );
+  });
+
+  it("the toggle applies the theme IN the gesture, before any subscriber renders", () => {
+    // `toggle` moves the live store first and React re-renders in the click:
+    // the control already shows the moon and the "dark screen" label. If
+    // `applyTheme` ran only in `useEffect`, the browser could paint one frame
+    // of the new chrome on the still-dark `data-theme` — the same flash class
+    // `installStoredTheme` refuses on launch, now on the gesture the light
+    // theme exists for (George R2 P2 on #457). So the attribute and the store
+    // must move together: `setLiveTheme` applies BEFORE it notifies, and the
+    // effect is left as a mount-time reconcile only.
+    //
+    // Source-shape, not behaviour: there is no DOM runner in the Node suite
+    // (#197) and no way to render the hook and observe the attribute between
+    // the store write and the subscriber's render. `e2e/theme-toggle.spec.ts`
+    // waits on the attribute, so it cannot see an intermediate frame either.
+    const hook = read("src/hooks/use-theme.ts");
+    const setter = /function setLiveTheme\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(
+      hook
+    );
+    expect(setter?.[1], "no setLiveTheme in use-theme.ts").toBeTruthy();
+    const body = setter?.[1] ?? "";
+    const apply = body.indexOf("applyTheme(");
+    const notify = body.indexOf("listener()");
+    expect(apply, "setLiveTheme does not call applyTheme").toBeGreaterThan(-1);
+    expect(notify, "setLiveTheme does not notify listeners").toBeGreaterThan(
+      -1
+    );
+    expect(
+      apply,
+      "applyTheme runs after the listeners are notified"
+    ).toBeLessThan(notify);
+    // And the toggle still goes through that setter, not around it.
+    expect(hook).toMatch(/setLiveTheme\(next\)/);
+  });
+
+  it("both canvases re-draw on a theme change, not only on their own props", () => {
+    // A canvas painted once cannot observe a CSS-variable change — which is
+    // exactly why `finished` sits in `Waveform`'s draw deps. `data-theme` is
+    // a CSS-variable change of the same class (`--c-wave-stroke`, `--s-voice`,
+    // `--s-ink-faint`). Today `useTheme` is Books-only and `App` renders Books
+    // XOR Segments, so a toggle unmounts every canvas — but the moment the
+    // toggle is reachable from a screen with a `Waveform` or `LiveScope`
+    // mounted (#149), the bars keep the previous theme's amber/faint until
+    // `peaks`/`finished`/`active` happen to change (George R2 P2 on #457).
+    // So both draw effects subscribe to the live theme and list it.
+    const hook = read("src/hooks/use-theme.ts");
+    expect(hook).toMatch(/export function useLiveTheme\(\)/);
+    for (const rel of [
+      "src/components/waveform.tsx",
+      "src/components/live-scope.tsx",
+    ]) {
+      const source = read(rel);
+      expect(source, `${rel} does not subscribe to the live theme`).toMatch(
+        /useLiveTheme\(\)/
+      );
+      // The dep is `theme`, in the array of the one `useLayoutEffect` that
+      // draws — the only `useLayoutEffect` in either file.
+      const draw =
+        /useLayoutEffect\(\(\) => \{[\s\S]*?\n  \}, \[([^\]]*)\]\);/.exec(
+          source
+        );
+      expect(draw?.[1], `${rel}: no draw effect deps found`).toBeTruthy();
+      expect(
+        (draw?.[1] ?? "").split(",").map((d) => d.trim()),
+        `${rel}: the draw effect does not list the theme`
+      ).toContain("theme");
+      // And the invariant comment names `data-theme`, so the next reader does
+      // not "simplify" it back out on the grounds that tokens never change.
+      expect(
+        source,
+        `${rel}: the draw comment does not name data-theme`
+      ).toMatch(/data-theme/);
+    }
+  });
 });
