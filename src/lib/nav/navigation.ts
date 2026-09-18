@@ -14,6 +14,12 @@
  * `leave()`. That is the line the test pins and a mutation must break.
  */
 
+import {
+  routeBackToLayer,
+  type LayerStack,
+  type RouteBackToLayerResult,
+} from "@/lib/nav/layer-stack";
+
 export type Screen = "books" | "segments" | "recorder";
 
 /** Which screen is showing, from the two pieces of nav state App holds. */
@@ -95,21 +101,50 @@ export function navDirection(from: number, to: number): NavDirection {
  * `trap-recovery`, `trap-database-panel` and `rearm-during-commit` all re-arm by
  * pushing a fresh entry; they are named apart so the handler's intent — and each
  * test row — stays legible.
+ *
+ * **`layer` (docs/design/back-navigation.md #452 PR1)** — the screen-scoped
+ * `layerStack` has an open overlay on top. Checked after the two global traps
+ * and the transition-in-flight guard (invariant 3: "if no global trap and no
+ * screen transition is in flight, the screen-scoped `layerStack`'s top entry
+ * only"), and before `direction`/`screen` are consulted at all — an overlay
+ * never held a history entry of its own (invariant 1), so neither Forward nor
+ * "same" has any meaning for it; only whether its top layer is busy does.
+ * `result` is `routeBackToLayer`'s own decision (dismiss / refused-busy /
+ * empty); this function never calls `dismiss()` itself, only reports what the
+ * adapter (PR2, `hooks/use-nav-stack.ts`) must do.
  */
 export type PopAction =
   | "trap-recovery"
   | "trap-database-panel"
+  // NOTE (#452 PR1 → PR2): the design (invariant 7) renames this to
+  // "rearm-transition-busy" once the guard generalizes to every screen
+  // transition, not just the recorder's commit-close. That rename touches
+  // `App.tsx`'s switch (a consumer), which is out of PR1's scope — PR1 is a
+  // zero-behaviour-change pure-core PR. Kept as "rearm-during-commit" here so
+  // every existing call site and test row compiles and passes unchanged;
+  // PR2 does the rename.
   | "rearm-during-commit"
   | "trap-forward"
   | "ignore"
-  | BackEffect;
+  | BackEffect
+  | { readonly kind: "layer"; readonly result: RouteBackToLayerResult };
 
+/**
+ * `layerStack` is an OPTIONAL trailing parameter, defaulting to an empty
+ * stack, specifically so every existing call site (`App.tsx`, untouched by
+ * this PR) and every existing test row keeps compiling and keeps producing
+ * the identical result it does on `develop` today — an empty stack can never
+ * satisfy the new `layerStack.length > 0` check below, so the new `"layer"`
+ * case is unreachable unless a caller opts in by passing a non-empty stack,
+ * which no caller does yet (that wiring is PR2). Zero behaviour change.
+ */
 export function popAction(
   direction: NavDirection,
   screen: Screen,
   committing: boolean,
   recovering: boolean,
-  databasePanel = false
+  databasePanel = false,
+  layerStack: LayerStack = []
 ): PopAction {
   if (recovering) return "trap-recovery";
   // Same shape as the recovery modal and for the same structural reason: the
@@ -128,6 +163,14 @@ export function popAction(
   // would destroy the cut phrase this whole guard exists to protect.
   if (databasePanel) return "trap-database-panel";
   if (committing) return "rearm-during-commit";
+  // Invariant 3, stage 2: only once no global trap is up AND no screen
+  // transition is in flight does the screen-scoped layer stack get a say —
+  // and only its TOP entry (`routeBackToLayer` never looks below it). An
+  // empty stack (every existing caller, PR1) falls straight through to the
+  // direction/screen routing below, unchanged from `develop`.
+  if (layerStack.length > 0) {
+    return { kind: "layer", result: routeBackToLayer(layerStack) };
+  }
   if (direction === "forward") return "trap-forward";
   if (direction === "same") return "ignore";
   return backEffectFor(screen);
@@ -168,4 +211,58 @@ export function overlayDismissal(
   erasing: boolean
 ): { closeMenu: boolean; closeConfirm: boolean } {
   return { closeMenu: menuOpen, closeConfirm: confirmOpen && !erasing };
+}
+
+/**
+ * Amendment B of docs/design/back-navigation.md — reload/bootstrap safety.
+ *
+ * `App.tsx`'s mount effect runs `window.history.replaceState({tc:true,
+ * index:0}, ""); navIndex.current = 0; nextIndex.current = 0;`
+ * UNCONDITIONALLY on every mount, including a reload mid-stack. `replaceState`
+ * only rewrites the CURRENT (top) entry; whatever real entries sit below keep
+ * whatever index they were stamped with in the previous page life. Traced
+ * concretely in the design doc: reload while at physical depth 2 restamps
+ * only that top entry to `index:0`, while the depth-0/depth-1 entries below
+ * still carry their original `index:0`/`index:1` — so the first post-reload
+ * Back lands on the depth-1 entry (`{index:1}`), `navDirection(0, 1)` reads
+ * "forward" against the freshly-reset baseline, `popAction` returns
+ * `trap-forward`, and the resulting cancelling `history.back()` burns a
+ * SECOND physical level the user never asked to skip. This is a pre-existing
+ * hazard on `develop` today (confirmed against `App.tsx:85-89` and
+ * `:301-302`), not something #452's redesign introduces.
+ *
+ * `resumeNavIndex` is the fix's pure half: given whatever `window.history.state`
+ * already holds on mount, decide what `navIndex`/`nextIndex` should ADOPT
+ * instead of blindly resetting to 0 and lying about what is physically below.
+ * `null`/anything that does not carry this app's own `{tc: true, index: N}`
+ * shape → `0` (a fresh load, or an entry from before this app ever wrote one —
+ * nothing to adopt). A well-formed entry → its own `index`, unchanged. This
+ * never desyncs from the real stack: it only ever adopts truth that is
+ * already there, never rewrites an index a lower entry might still be
+ * compared against.
+ *
+ * Wiring this into the mount effect (calling `window.history.state`, deciding
+ * whether to `replaceState` vs. adopt) is the adapter's job — PR2
+ * (`hooks/use-nav-stack.ts`), not this pure function. This file only decides
+ * WHAT index a given `state` value resumes to; it never reads `window` itself
+ * (lib/ stays DOM-free — AGENTS.md).
+ *
+ * The one remaining, disclosed limitation is unchanged from today: a reload
+ * always shows Books regardless of history depth (no session-restore of which
+ * chapter/segment was open). That is an existing, accepted simplification;
+ * this fix removes the STACK CORRUPTION a reload could cause, not the
+ * "always lands on Books" behavior.
+ */
+export function resumeNavIndex(state: unknown): number {
+  if (
+    typeof state === "object" &&
+    state !== null &&
+    "tc" in state &&
+    (state as { tc?: unknown }).tc === true &&
+    "index" in state &&
+    typeof (state as { index?: unknown }).index === "number"
+  ) {
+    return (state as { index: number }).index;
+  }
+  return 0;
 }

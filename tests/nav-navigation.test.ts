@@ -8,6 +8,7 @@ import {
   popAction,
   screenFor,
 } from "@/lib/nav/navigation";
+import type { Layer, LayerStack } from "@/lib/nav/layer-stack";
 
 /**
  * The History wiring in `App.tsx` is browser-only and untestable here (there is
@@ -200,5 +201,123 @@ describe("overlayDismissal", () => {
       closeMenu: true,
       closeConfirm: false,
     });
+  });
+});
+
+/**
+ * popAction's new `"layer"` case (#452 PR1, docs/design/back-navigation.md).
+ * `layerStack` is an OPTIONAL trailing parameter defaulting to an empty
+ * stack — a hard PR1 constraint is that this is a ZERO-BEHAVIOUR-CHANGE
+ * addition, so every row above this point (every existing call, all five
+ * positional args or fewer) must keep producing exactly what it does today.
+ * That is asserted directly below, not just assumed.
+ */
+function fakeLayer(id: string, busy: boolean): Layer {
+  return { id, busy: () => busy, dismiss: () => {} };
+}
+
+describe("popAction — layer routing (#452 PR1)", () => {
+  it("an empty layerStack (the default) reproduces every pre-existing row unchanged", () => {
+    // Every existing call site in App.tsx passes no 6th argument at all, so
+    // this is the exact shape `develop`'s only caller uses. Confirm the
+    // omitted-argument form and the explicit-empty-array form agree, and
+    // that both match the pre-existing (5-arg) results already pinned above.
+    const rows: Array<
+      [
+        Parameters<typeof popAction>[0],
+        Parameters<typeof popAction>[1],
+        boolean,
+        boolean,
+        boolean?,
+      ]
+    > = [
+      ["back", "recorder", false, false],
+      ["back", "segments", false, false],
+      ["back", "books", false, false],
+      ["forward", "segments", false, false],
+      ["forward", "recorder", false, false],
+      ["same", "segments", false, false],
+      ["back", "recorder", true, false],
+      ["back", "segments", true, false],
+      ["forward", "recorder", true, false],
+      ["back", "segments", false, true],
+      ["back", "books", false, true],
+      ["back", "recorder", false, true],
+      ["back", "books", false, false, true],
+      ["back", "segments", false, false, true],
+      ["back", "recorder", false, false, true],
+    ];
+    for (const [
+      direction,
+      screen,
+      committing,
+      recovering,
+      databasePanel,
+    ] of rows) {
+      const withoutSixthArg =
+        databasePanel === undefined
+          ? popAction(direction, screen, committing, recovering)
+          : popAction(direction, screen, committing, recovering, databasePanel);
+      const withExplicitEmptyStack =
+        databasePanel === undefined
+          ? popAction(direction, screen, committing, recovering, false, [])
+          : popAction(
+              direction,
+              screen,
+              committing,
+              recovering,
+              databasePanel,
+              []
+            );
+      expect(withExplicitEmptyStack).toEqual(withoutSixthArg);
+    }
+  });
+
+  it("a non-empty stack with a non-busy top layer returns the layer's dismiss decision", () => {
+    const stack: LayerStack = [fakeLayer("book-menu", false)];
+    expect(popAction("back", "books", false, false, false, stack)).toEqual({
+      kind: "layer",
+      result: { kind: "dismiss", layerId: "book-menu" },
+    });
+  });
+
+  it("a non-empty stack with a busy top layer returns the layer's refused-busy decision — never the screen-level routing", () => {
+    const stack: LayerStack = [fakeLayer("deleting", true)];
+    expect(popAction("back", "books", false, false, false, stack)).toEqual({
+      kind: "layer",
+      result: { kind: "refused-busy", layerId: "deleting" },
+    });
+    // Prove it did NOT fall through to backEffectFor("books") = "exit-app".
+    expect(popAction("back", "books", false, false, false, stack)).not.toBe(
+      "exit-app"
+    );
+  });
+
+  it("only the TOP layer is routed — a layer beneath a busy top is never asked (invariant 3)", () => {
+    const stack: LayerStack = [
+      fakeLayer("bottom-menu", false),
+      fakeLayer("top-confirm", true),
+    ];
+    expect(popAction("back", "segments", false, false, false, stack)).toEqual({
+      kind: "layer",
+      result: { kind: "refused-busy", layerId: "top-confirm" },
+    });
+  });
+
+  it("the two global traps still outrank a non-empty layer stack", () => {
+    const stack: LayerStack = [fakeLayer("menu", false)];
+    expect(popAction("back", "books", false, true, false, stack)).toBe(
+      "trap-recovery"
+    );
+    expect(popAction("back", "books", false, false, true, stack)).toBe(
+      "trap-database-panel"
+    );
+  });
+
+  it("a screen transition in flight (committing) still outranks a non-empty layer stack (invariant 3: 'no screen transition in flight')", () => {
+    const stack: LayerStack = [fakeLayer("menu", false)];
+    expect(popAction("back", "recorder", true, false, false, stack)).toBe(
+      "rearm-during-commit"
+    );
   });
 });
