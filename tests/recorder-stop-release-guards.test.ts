@@ -25,7 +25,10 @@ import { describe, expect, it } from "vitest";
  *      instead of returning early with `blob: null`, so a throw cannot
  *      discard a take whose slices are in hand and cannot leave the sheet
  *      stuck at `processing` behind a zombie ref that blocks the next
- *      `start()` (#485, George R6; panel r1 P2 on PR #500). The executor's
+ *      `start()` (#485, George R6; panel r1 P2 on PR #500). The tail's
+ *      three exits each write `setState("idle")` behind the `current`
+ *      gate, and that write is pinned too (panel r2 P2 on #500: deleting
+ *      it had left every case green). The executor's
  *      OWN `recorder.stop()` call stays bare — guarding it would be the J7
  *      shape (correctness depends on the recorder's post-throw state) that
  *      rounds 3 and 4 oscillated on; the round-5 decision left it out, and
@@ -57,8 +60,10 @@ import { describe, expect, it } from "vitest";
  * timer and releases the stream and the literal local `tap?.close()`; that
  * the flush `try` holds no nested `try` and the catch reads no
  * `recorder.state`; that the tail's empty-capture exit picks its sentence on
- * `flushThrew`; and that the inactive arm closes the same local tap after
- * the blob is sealed. It does NOT prove any catch or finally behaves
+ * `flushThrew`; that each of the tail's three exits writes `setState("idle")`
+ * behind its `current` gate and returns straight after; and that the
+ * inactive arm closes the same local tap after the blob is sealed. It does
+ * NOT prove any catch or finally behaves
  * correctly at runtime, that either call ever throws, or that any device has
  * run this. The PR body says the same.
  *
@@ -264,7 +269,7 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
  * already nulled — after the steal it is a no-op, and a NEWER recording's
  * tap could be in that ref.
  */
-describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path reports, seals what it has and falls through to idle (#59 #474 R6, #485, panel r1)", () => {
+describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path reports, seals what it has and falls through to a tail that returns to idle (#59 #474 R6, #485, panel r1, panel r2)", () => {
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
   const stripComments = (text: string) =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -454,6 +459,49 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     expect(afterElse).toMatch(
       /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
     );
+  });
+
+  it("every exit of the tail returns React state to idle when current — the property #485 finding 1 is named for (panel r2 P2)", () => {
+    // #485 finding 1 is "the throw rode out of `stop()` with React state
+    // left at `processing`, so the sheet stayed `busy` and every Back
+    // stayed". The catch above falls through to the tail precisely so the
+    // tail's `setState("idle")` covers the throw path too — but until this
+    // case nothing pinned that the tail HAS one: deleting the empty-capture
+    // exit's `if (current) setState("idle");` left all nine cases green
+    // (panel r2 P2 on #500). A throw-path seal reaches all three exits
+    // (empty → notice, decodable → take, undecodable → hold), so all three
+    // are pinned, each as one contiguous shape: the exit's own condition or
+    // verdict, then the `current`-gated idle write, then the `return {` —
+    // nothing in between. Deleting the write, dropping its `current` gate,
+    // painting `"processing"` instead, or moving the write below the
+    // `return` must all fail this. The tail is `stopBody` after the
+    // `if/else` on `recorder.state`, so a `setState` in either arm or in
+    // `cancel()` cannot satisfy it.
+    const afterElse = stopBody.slice(elseBraceClose + 1);
+    // `current` is re-derived from the generation AFTER the flush settles —
+    // the throw path's catch runs a microtask later than the throw, and a
+    // `leave()` may have moved the generation on since `processing` was set.
+    const currentDecl = afterElse.search(
+      /\bconst\s+current\s*=\s*generation\s*===\s*generationRef\.current\s*;/
+    );
+    expect(currentDecl).toBeGreaterThan(-1);
+    const emptyExit = afterElse.search(
+      /blob\.size\s*===\s*0\s*\)\s*\{\s*if\s*\(\s*current\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*return\s*\{/
+    );
+    expect(emptyExit).toBeGreaterThan(currentDecl);
+    // The decode exits re-read the generation as `current2` after their own
+    // await, then paint idle on the same gate.
+    expect(afterElse).toMatch(
+      /classifyStopDecode\(\s*\{\s*decoded:\s*true,\s*sampleCount:\s*samples\.length,?\s*\},\s*current2,?\s*\)\s*;\s*if\s*\(\s*current2\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*return\s*\{/
+    );
+    expect(afterElse).toMatch(
+      /classifyStopDecode\(\s*\{\s*decoded:\s*false,?\s*\},\s*current2,?\s*\)\s*;\s*if\s*\(\s*current2\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*return\s*\{/
+    );
+    // The tail owns exactly these three idle writes and never paints
+    // anything else: a fourth write, or any other state, is a new exit this
+    // gate has not read.
+    expect(afterElse.match(/setState\(\s*"idle"\s*\)/g) ?? []).toHaveLength(3);
+    expect(afterElse.match(/setState\(/g) ?? []).toHaveLength(3);
   });
 
   it("the catch is followed by a finally whose body clears the flush timer, releases the stream and closes the LOCAL tap, not the ref (#474 R6, #485, panel r1)", () => {
