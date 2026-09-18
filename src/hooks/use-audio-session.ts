@@ -7,6 +7,7 @@ import {
   resumeAudioContext,
   type PlaybackHandle,
 } from "./audio-io";
+import { reportFailure } from "./report-failure";
 import {
   useRecorder,
   type RecorderState,
@@ -218,6 +219,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    nativeState,
     readMeterAvailable,
     readScope,
     peekScope,
@@ -737,6 +739,13 @@ export function useAudioSession(): UseAudioSession {
     if (recorderState === "idle" && session.live === "mic") session.stopAll();
   }, [recorderState, session]);
 
+  // Set the instant a persisted pagehide freezes a live take to "paused"
+  // (below), cleared on the next `pageshow`. This is the ONLY thing that flag
+  // exists for: gating the `pageshow` report so it fires at most once per
+  // pagehide-pause, never on a `pageshow` that follows a hide this session
+  // never paused anything for (#478, #58 George R3 P2-3).
+  const pagehidePauseReportedRef = useRef(false);
+
   useEffect(() => {
     // The page may be discarded without ever unmounting. A hot microphone on a
     // page that is going away is not arguable — but a page the browser only
@@ -768,6 +777,22 @@ export function useAudioSession(): UseAudioSession {
       // The capture first: it is the only thing here that can lose audio, and a
       // hidden page may be frozen at any point in this handler.
       if (action === "pause") {
+        // Instrument, do not redesign (#478, #58 George R3 P2-3). This is the
+        // ONE cell of `pageHideAction`'s table whose platform premise nobody
+        // has observed on a device — that a `pagehide` really does land while
+        // `MediaRecorder` is still natively "recording", and that freezing it
+        // here really does survive to a `pageshow` restore. Read BEFORE
+        // `pauseRecording()` runs, so the row carries what the browser
+        // believed at the moment of the hide, not what this call just did to
+        // it. Never gates behaviour — reportFailure never throws (see its
+        // docblock) and nothing here depends on its result.
+        pagehidePauseReportedRef.current = true;
+        reportFailure(
+          new Error(
+            `pagehide pause: persisted=${event.persisted}, native state=${nativeState()}`
+          ),
+          "pagehide-pause"
+        );
         try {
           // Holds the recorder, the stream and the chunks; the restored page
           // finds a "paused" take that Resume continues and that a close still
@@ -819,16 +844,39 @@ export function useAudioSession(): UseAudioSession {
       // the first thing on screen when the page comes back.
       setPlaybackError(null);
     };
+    // Beside `onPageHide`, not a separate effect (#478, #58 George R3 P2-3):
+    // same lifecycle, same cleanup, and the ref flag it reads is only ever
+    // written by `onPageHide` above, so the two belong in one place. Fires
+    // ONLY when a "pagehide-pause" row was written since the last `pageshow`
+    // — a restore that follows a hide nobody paused for (release/none) writes
+    // nothing, keeping this at two rows maximum per pagehide/pageshow pair:
+    // the pause, and whether the restore that answers it ever arrived. The
+    // flag is cleared here regardless, so a page that is shown without ever
+    // being hidden again (impossible) or shown twice cannot double-report.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!pagehidePauseReportedRef.current) return;
+      pagehidePauseReportedRef.current = false;
+      reportFailure(
+        new Error(`pageshow: persisted=${event.persisted}`),
+        "pageshow"
+      );
+    };
     window.addEventListener("pagehide", onPageHide);
-    return () => window.removeEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
     // Every one of these is referentially stable for the hook's life — `session`
     // is a lazy `useState` (:201), `setPlaying` a `useCallback([])` (:262),
     // `stopBuffer` a `useCallback` over two stable values (:398), `pauseRecording`
     // a `useCallback` over `use-recorder`'s `pause`, itself `useCallback([clearTick])`
-    // with `clearTick` `useCallback([])`, and `leave` a `useCallback` over four
-    // stable values (:668) — so the widened list still attaches exactly ONE
-    // listener for the hook's lifetime, as `[leave]` alone did.
-  }, [leave, pauseRecording, stopBuffer, session, setPlaying]);
+    // with `clearTick` `useCallback([])`, `nativeState` a `useCallback([])` off
+    // `recorderRef` (added #478/#58 George R3 P2-3), and `leave` a `useCallback`
+    // over four stable values (:668) — so the widened list still attaches exactly
+    // ONE `pagehide` and ONE `pageshow` listener for the hook's lifetime, as
+    // `[leave]` alone once did.
+  }, [leave, pauseRecording, stopBuffer, session, setPlaying, nativeState]);
 
   useEffect(() => () => leave(), [leave]);
 

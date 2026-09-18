@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { pageHideAction } from "@/lib/audio/pagehide";
@@ -36,7 +38,7 @@ import type { CaptureState } from "@/lib/takes/close-plan";
  */
 const WHEN_PERSISTED = {
   idle: "none",
-  requesting: "none",
+  requesting: "release",
   recording: "pause",
   paused: "none",
   processing: "none",
@@ -81,10 +83,61 @@ describe("pageHideAction", () => {
     expect(pageHideAction("processing", true)).toBe("none");
   });
 
-  it("does nothing from idle or requesting when the page IS persisted", () => {
-    // Nothing has been captured: `idle` has no recorder, and `requesting` is a
-    // `getUserMedia` await that a freeze cannot resolve either way.
+  it("does nothing from idle when the page IS persisted", () => {
+    // Nothing has been captured: idle has no recorder and nothing to release.
     expect(pageHideAction("idle", true)).toBe("none");
-    expect(pageHideAction("requesting", true)).toBe("none");
+  });
+
+  it("releases a not-yet-recording mic from requesting when the page IS persisted (George R3 P2-1)", () => {
+    // `requesting` spans TWO windows inside `start()`: the `getUserMedia`
+    // prompt (no stream yet — a frozen page cannot resolve it either way, and
+    // `cancel()`'s generation bump is what makes a late resolve abandon the
+    // stream it just opened) and, after the grant, the `await
+    // raceAudioResume()` window where `streamRef` already holds a live stream
+    // but no recorder exists yet. "none" would leave a granted, hot
+    // microphone that nothing in the UI can reach — `release` is the pre-#58
+    // behaviour, kept for both windows.
+    expect(pageHideAction("requesting", true)).toBe("release");
+  });
+});
+
+/**
+ * The one wiring fact about `recorder.tsx`'s preview auto-play that a pure
+ * table cannot hold (George R3 P2-2), asserted against the SOURCE TEXT — the
+ * same shape and comment-stripping as `tests/recorder-resume-race.test.ts`
+ * and `tests/pause-plan.test.ts`'s `stop()` gate, because the alternative is
+ * no gate at all: this repo has no renderer, so this `if` is unreachable from
+ * Node.
+ *
+ * What it pins: the auto-play `if` that follows a preview decode checks
+ * `document.visibilityState === "visible"` alongside `audio.audioNeedsGesture()`.
+ * Deleting the visibility conjunct, or moving it out of this `if`, must fail
+ * here.
+ *
+ * What it does NOT pin, and cannot: that the conjunct actually stops a sound
+ * from a real hidden page, that `document.visibilityState` reads correctly
+ * across every engine, or any other runtime behaviour — this repo has no
+ * renderer in its test suite. This is a TEXTUAL gate only.
+ */
+describe("recorder.tsx's preview auto-play refuses a hidden page (#58, George R3 P2-2)", () => {
+  const sourceUrl = new URL("../src/components/recorder.tsx", import.meta.url);
+  const stripComments = (text: string) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const source = () => stripComments(readFileSync(sourceUrl, "utf8"));
+
+  it("gates the preview auto-play on page visibility as well as the gesture check", () => {
+    const code = source();
+    const gestureAt = code.indexOf("audio.audioNeedsGesture()");
+    const visibilityAt = code.indexOf('document.visibilityState === "visible"');
+    // Both anchors asserted present FIRST. Without this, deleting either one
+    // makes `indexOf` return -1, which is "less than" any real index and
+    // would pass a naive distance check — the exact trap
+    // `tests/pause-plan.test.ts` names for `stop()`'s gate.
+    expect(gestureAt).toBeGreaterThan(-1);
+    expect(visibilityAt).toBeGreaterThan(-1);
+    // The two checks must be close together — in the same `if` — not merely
+    // present somewhere in a file this large. A generous window that still
+    // fails if either anchor moves into an unrelated branch.
+    expect(Math.abs(gestureAt - visibilityAt)).toBeLessThan(200);
   });
 });

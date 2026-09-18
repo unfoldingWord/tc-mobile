@@ -1374,13 +1374,29 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           if (gen !== previewGenRef.current) return;
           setPreview({ buffer, peaks });
           setPreviewState("none");
-          // Auto-play only if the context is audible NOW. This runs after the decode
-          // await, OUTSIDE the Play tap's gesture, so an iOS context left
-          // "interrupted" by a route change/Siri/background DURING the decode would
-          // sound a silent preview that looks like it is playing (George R9). When it
-          // needs a gesture, leave the prepared preview on stage (Play stays enabled,
-          // the waveform shows) so the next tap replays it in-gesture and sounds.
-          if (!audio.audioNeedsGesture()) {
+          // Auto-play only if the context is audible NOW, and only into a page the
+          // translator can currently see. This runs after the decode await, OUTSIDE
+          // the Play tap's gesture, so an iOS context left "interrupted" by a route
+          // change/Siri/background DURING the decode would sound a silent preview
+          // that looks like it is playing (George R9). When it needs a gesture, leave
+          // the prepared preview on stage (Play stays enabled, the waveform shows) so
+          // the next tap replays it in-gesture and sounds.
+          //
+          // The visibility conjunct closes a #58 gap (George R3 P2-2): the pre-#58
+          // `leave()` bumped the preview epoch on EVERY pagehide, so a decode landing
+          // after a hide was always dropped by the `gen !== previewGenRef.current`
+          // checks above. `pageHideAction`'s "none" branch (paused/processing/idle)
+          // no longer does that — it deliberately keeps the capture and the epoch
+          // alive so a `pageshow` restore finds the same preview — so a decode that
+          // was in flight when the page hid can now land after the restore. Without
+          // this conjunct that arrival would sound into a just-restored, possibly
+          // still-backgrounded page; gating on visibility gives it the same "leave it
+          // on stage for the next tap" outcome the gesture branch already has, not a
+          // new one.
+          if (
+            !audio.audioNeedsGesture() &&
+            document.visibilityState === "visible"
+          ) {
             audio.playBuffer(buffer, 0, { preemptPausedMic: true });
           }
         } catch (cause) {

@@ -99,8 +99,31 @@ type PageHideAction = "release" | "pause" | "none";
  *               #165 held blob is produced after those awaits and is in memory
  *               too, so it is equally unreachable. Nothing that was kept before
  *               is lost now.
- *   requesting  nothing. A `getUserMedia` prompt is up and no recorder exists; a
- *               frozen page cannot resolve it either way.
+ *   requesting  release (George R3 P2-1). This state spans TWO different
+ *               windows inside `start()`, and `release` is correct in both:
+ *
+ *               Before the permission resolves, no stream exists yet.
+ *               `cancel()`'s `releaseStream()` has nothing to act on, so what
+ *               protects this window is `cancel()`'s generation bump alone: a
+ *               `getUserMedia` resolve that lands after the hide checks that
+ *               bump against `start()`'s FIRST generation guard (right after
+ *               the await, before `streamRef` is assigned) and abandons the
+ *               stream it just opened rather than hand it to a recorder
+ *               nobody is looking at.
+ *
+ *               After the permission resolves but before the recorder exists
+ *               — `streamRef` is already assigned, and `start()` is inside
+ *               its `await raceAudioResume()` — `cancel()`'s
+ *               `releaseStream()` stops the live stream synchronously, in the
+ *               same pagehide-handler tick that decides "release"; the same
+ *               generation bump then also makes the SECOND guard (right after
+ *               `raceAudioResume()`) abandon the stream, so a `start()` that
+ *               resumes after the freeze cannot open a recorder onto a stream
+ *               that no longer belongs to any live generation.
+ *
+ *               Either window, "none" would leave a granted, hot microphone
+ *               with nothing in the UI able to close it. `release` is the
+ *               pre-#58 behaviour, unchanged, for both.
  *   idle        nothing. Nothing has been captured.
  *
  * No `default:` arm on purpose: a sixth state added to `CaptureState` fails
@@ -114,9 +137,10 @@ export function pageHideAction(
   switch (state) {
     case "recording":
       return "pause";
+    case "requesting":
+      return "release";
     case "paused":
     case "processing":
-    case "requesting":
     case "idle":
       return "none";
   }

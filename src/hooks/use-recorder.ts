@@ -348,6 +348,14 @@ export interface UseRecorder {
    */
   readLevel: () => number;
   /**
+   * The `MediaRecorder`'s own `.state` ("inactive" | "recording" | "paused"),
+   * or `"none"` when no recorder exists yet. For failure-log instrumentation
+   * that wants the fact the browser itself believes, independent of the React
+   * mirror's one-commit lag (#478, #58 George R3 P2-3) — see
+   * `hooks/use-audio-session.ts`'s `pagehide` handler.
+   */
+  nativeState: () => MediaRecorder["state"] | "none";
+  /**
    * Whether the VU meter's `readLevel` can be trusted RIGHT NOW. A PULL like
    * `readLevel`, polled on the meter's own frame clock. `true` when NOT in a live
    * take — outside recording the meter rests empty via `active` rather than
@@ -482,6 +490,20 @@ export function useRecorder(): UseRecorder {
 
   /** The current capture level for the VU meter, 0 when nothing is capturing. */
   const readLevel = useCallback((): number => tapRef.current?.read() ?? 0, []);
+
+  /**
+   * The `MediaRecorder`'s own `.state`, snapshotted synchronously —
+   * `"none"` when no recorder exists yet. For the failure-log instrumentation
+   * the `pagehide` handler adds in `hooks/use-audio-session.ts` (#478, #58
+   * George R3 P2-3): the REACT state above is what `pageHideAction` decides
+   * on, but the NATIVE state is the fact worth a tester's phone recording,
+   * because it is what the browser itself believes at that instant,
+   * independent of the one-commit lag `recorderStateRef`'s own comment
+   * documents. Read-only, no side effect — the same shape as `readLevel`.
+   */
+  const nativeState = useCallback((): MediaRecorder["state"] | "none" => {
+    return recorderRef.current?.state ?? "none";
+  }, []);
 
   // Whether that level can be trusted this frame (#76). Gated on `recordingRef`
   // exactly like `readScope` below, and for the same teardown-window reason: at
@@ -1167,6 +1189,7 @@ export function useRecorder(): UseRecorder {
     previewCapture,
     cancel,
     readLevel,
+    nativeState,
     readMeterAvailable,
     readScope,
     peekScope,
