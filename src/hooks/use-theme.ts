@@ -190,12 +190,18 @@ function applyTheme(theme: Theme): void {
  * launch of an installed PWA is not known here — no iOS device was available
  * to the session that added it, and `e2e/theme-toggle.spec.ts` proves only
  * that the attribute is written. If iOS reads it at launch only, a toggle to
- * light gets the right status bar from the NEXT launch and the wrong one until
- * then; this call, which runs before React renders, is what makes the next
- * launch right. Inference, not observed: `default` lays the page BELOW the
- * bar where `black-translucent` lays it under, so a live re-read would also
- * move the top safe-area inset by the bar's height. Both halves need a check
- * on an installed iOS build, and until one is made neither is claimed.
+ * light gets the right status bar from the NEXT launch AT BEST — and this
+ * call does not by itself make that launch right: `index.html` always ships
+ * `black-translucent`, and `applyTheme` mutates only the live DOM, so what
+ * an installed PWA reads at process start is the shipped meta, not the
+ * repainted one. Whether iOS then re-reads the meta after this script has
+ * rewritten it is exactly the unknown above, so iOS launch chrome is
+ * UNVERIFIED, not closed (George R3 P3 on #457). A real launch fix is the
+ * same inline script in `index.html` the first residual defers to.
+ * Inference, not observed: `default` lays the page BELOW the bar where
+ * `black-translucent` lays it under, so a live re-read would also move the
+ * top safe-area inset by the bar's height. Both halves need a check on an
+ * installed iOS build, and until one is made neither is claimed.
  */
 export function installStoredTheme(): void {
   applyTheme(currentTheme());

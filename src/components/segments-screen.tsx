@@ -266,6 +266,9 @@ export const SegmentsScreen = forwardRef<
   const shareErrorText = shareErrorCopy(share.error, "chapter");
   // Hoisted: the same mark for a chapter and a book, from one table.
   const sharePartial = shareOutcomeGlyph("partial");
+  // Mark and tone for the error line, from the same table (#178); `undefined`
+  // for `encoder` and for no error, which is `Notice`'s own default.
+  const shareErrorMark = shareErrorGlyph(share.error);
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -525,7 +528,9 @@ export const SegmentsScreen = forwardRef<
               // `nothing` and `failed` both wear the `alert` tone — that split
               // is #147's open question — so the mark is the only thing
               // separating "record a segment first" from "try again" (#178).
-              <Notice icon={shareErrorGlyph(share.error)}>
+              // The tone comes from the same table as the mark, so a #147
+              // re-tone reaches this line without a second edit (George R3 P3).
+              <Notice tone={shareErrorMark?.tone} icon={shareErrorMark?.icon}>
                 {shareErrorText}
               </Notice>
             )}

@@ -136,12 +136,18 @@ describe("the outcome list is exhaustive over ShareOutcome (#178)", () => {
 
 describe("shareErrorGlyph (#178)", () => {
   it("maps the two outcome codes to the outcome table's marks", () => {
-    expect(shareErrorGlyph("nothing")).toBe(shareOutcomeGlyph("nothing").icon);
-    expect(shareErrorGlyph("failed")).toBe(shareOutcomeGlyph("failed").icon);
+    expect(shareErrorGlyph("nothing")?.icon).toBe(
+      shareOutcomeGlyph("nothing").icon
+    );
+    expect(shareErrorGlyph("failed")?.icon).toBe(
+      shareOutcomeGlyph("failed").icon
+    );
   });
 
   it("separates nothing from failed, which is the whole point", () => {
-    expect(shareErrorGlyph("nothing")).not.toBe(shareErrorGlyph("failed"));
+    expect(shareErrorGlyph("nothing")?.icon).not.toBe(
+      shareErrorGlyph("failed")?.icon
+    );
   });
 
   it("leaves `encoder` on the tone's own mark, as a named choice", () => {
@@ -179,8 +185,9 @@ describe("the share menus actually pass the mark (#178)", () => {
       const source = read(screen);
       // The partial/gap Notice.
       expect(source).toMatch(/icon=\{sharePartial\.icon\}/);
-      // The error Notice.
-      expect(source).toMatch(/icon=\{shareErrorGlyph\(/);
+      // The error Notice — the mark hoisted from `shareErrorGlyph` beside
+      // `sharePartial` (George R3 P3 on #457 moved the tone with it).
+      expect(source).toMatch(/icon=\{(bookS|s)hareErrorMark\?\.icon\}/);
       // And no bare `<Notice>` left holding share copy, which is what the
       // error line looked like before.
       expect(source).not.toMatch(
@@ -201,4 +208,34 @@ describe("the share menus actually pass the mark (#178)", () => {
       /const \{ role, icon: toneIcon \} = noticePresentation/
     );
   });
+});
+
+/**
+ * The error Notices take their TONE from the table too (George R3 P3-3 on
+ * #457).
+ *
+ * `shareOutcomeGlyph` owns `{ icon, tone }`, and the partial path passes both.
+ * The two share-error call sites passed only the icon and leaned on `Notice`'s
+ * default `alert` — correct today, since `nothing` and `failed` are both
+ * `alert`, but if #147 ever re-tones `nothing` in the table, the table's own
+ * tests would go green while the screens stayed `alert`. So the bridge hands
+ * the screens the whole entry, and the screens pass both halves.
+ */
+describe("the share error Notices carry the table's tone (#457 George R3 P3-3)", () => {
+  it("shareErrorGlyph returns the outcome table's whole entry, tone included", () => {
+    expect(shareErrorGlyph("nothing")).toEqual(shareOutcomeGlyph("nothing"));
+    expect(shareErrorGlyph("failed")).toEqual(shareOutcomeGlyph("failed"));
+  });
+
+  for (const screen of [
+    "src/components/segments-screen.tsx",
+    "src/components/books-screen.tsx",
+  ]) {
+    it(`${screen.split("/").pop()} passes the table's tone to the error Notice`, () => {
+      const source = read(screen);
+      expect(source).toMatch(/tone=\{(bookS|s)hareErrorMark\?\.tone\}/);
+      // And no error Notice left leaning on the default tone.
+      expect(source).not.toMatch(/<Notice icon=\{shareErrorGlyph\(/);
+    });
+  }
 });

@@ -99,28 +99,37 @@ export function shareOutcomeGlyph(outcome: ShareOutcome): ShareOutcomeGlyph {
 }
 
 /**
- * The mark for a `ShareError` Notice — the bridge from the code the hook
- * produces to the outcome vocabulary above.
+ * The mark AND tone for a `ShareError` Notice — the bridge from the code the
+ * hook produces to the outcome vocabulary above.
  *
  * Paired with `shareErrorText`, which maps the same codes to words: one table
  * for what the line says, one for what its mark is, both exhaustive over
  * `ShareError` so widening that union cannot leave either silent.
  *
+ * The whole table entry, not the icon alone (George R3 P3 on #457): the two
+ * share-error Notices passed only the icon and leaned on `Notice`'s default
+ * `alert` tone — right today, since `nothing` and `failed` are both `alert`,
+ * but if #147 ever re-tones `nothing` in the table above, this module's own
+ * tests would go green while the screens stayed `alert`. Handing the screens
+ * `{ icon, tone }` keeps the tone where it is owned, as the `partial` path
+ * already does.
+ *
  * `encoder` (#166) keeps the `alert` tone's own triangle and is NOT given a
  * glyph here. It is not one of #178's three outcomes, its copy already names a
  * different subsystem, and inventing a fourth mark for it would widen this
  * lane into a case nobody has asked about. Named rather than defaulted, so the
- * choice is visible instead of looking like an oversight.
+ * choice is visible instead of looking like an oversight. `undefined` means
+ * `Notice`'s defaults for both halves.
  */
 export function shareErrorGlyph(
   error: ShareError | null
-): IconName | undefined {
+): ShareOutcomeGlyph | undefined {
   if (error === null) return undefined;
   switch (error) {
     case "nothing":
-      return shareOutcomeGlyph("nothing").icon;
+      return shareOutcomeGlyph("nothing");
     case "failed":
-      return shareOutcomeGlyph("failed").icon;
+      return shareOutcomeGlyph("failed");
     case "encoder":
       return undefined;
     default: {

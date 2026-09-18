@@ -90,9 +90,21 @@ test.beforeEach(async ({ page }) => {
   await expect(marker(page)).toHaveCount(0);
 });
 
-test("a quiet phone shows no marker and an empty menu", async ({ page }) => {
+test("a quiet phone shows no marker and a menu with no Send control", async ({
+  page,
+}) => {
   // The other state of the gate. Without this, a marker rendered
   // unconditionally would pass every assertion below.
+  //
+  // NOT an "empty menu", which an earlier name called it (George R3 P3 on
+  // #457): the global menu always holds the theme toggle (#171,
+  // `books-screen.tsx`), so what a quiet phone shows is a menu WITHOUT the
+  // failure-log Send control. That toggle is also where `Menu`'s open-edge
+  // focus lands when `failureCount === 0` — it is the first actionable
+  // control outside the header (`menu.tsx`). That landing is a consequence of
+  // the menu's general rule, not a decision recorded anywhere this spec's
+  // author could find; it is named here so a later case that opens the menu
+  // and presses Enter knows it will flip the theme rather than reach the log.
   await expect(menuControl(page)).toHaveAccessibleName("Open menu");
   await expect(marker(page)).toHaveCount(0);
   await menuControl(page).click();

@@ -472,6 +472,9 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // the menu open across prepare → ready → send. Map its error code to copy here.
   const bookShareErrorText = shareErrorText(bookShare.error, "book");
   const sharePartial = shareOutcomeGlyph("partial");
+  // Mark and tone for the error line, from the same table (#178); `undefined`
+  // for `encoder` and for no error, which is `Notice`'s own default.
+  const bookShareErrorMark = shareErrorGlyph(bookShare.error);
   // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,
@@ -944,8 +947,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             )}
             {bookShareErrorText && (
               // See the Segments menu: `nothing` and `failed` share the
-              // `alert` tone (#147), so the mark carries the difference (#178).
-              <Notice icon={shareErrorGlyph(bookShare.error)}>
+              // `alert` tone (#147), so the mark carries the difference (#178);
+              // the tone rides from the same table (George R3 P3).
+              <Notice
+                tone={bookShareErrorMark?.tone}
+                icon={bookShareErrorMark?.icon}
+              >
                 {bookShareErrorText}
               </Notice>
             )}
