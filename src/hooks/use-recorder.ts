@@ -843,39 +843,75 @@ export function useRecorder(): UseRecorder {
       if (stream) abandonStream(stream);
       await new Promise((resolve) => setTimeout(resolve, 0));
       blob = new Blob(chunks, { type: recorder.mimeType });
+      // The flush window is past — now stop the cloned capture tracks of THIS
+      // stop's tap (its graph was disconnected up top). The local `tap`, not
+      // closeTap(): a newer recording's tap in the ref must not be touched.
+      // Mirrors the `finally` in the other branch below, so both arms release
+      // the same way; this arm has nothing that can throw between here and
+      // there, so a bare call after the blob is sealed is equivalent to a
+      // `finally` and needs none.
+      tap?.close();
     } else {
-      blob = await new Promise<Blob>((resolve) => {
-        // Bounded. On the timeout we take whatever the local array already holds
-        // — everything MediaRecorder delivered before it stopped answering —
-        // rather than waiting for an event that is not coming.
+      try {
+        blob = await new Promise<Blob>((resolve) => {
+          // Bounded. On the timeout we take whatever the local array already holds
+          // — everything MediaRecorder delivered before it stopped answering —
+          // rather than waiting for an event that is not coming.
+          //
+          // Deliberately NOT paired with releasing the tracks the moment `stop()`
+          // is invoked: the final `dataavailable` arrives between `stop()` and
+          // `onstop`, and killing the capture tracks inside that window is a way
+          // to truncate it. That slice is the whole recording for a take under one
+          // timeslice, which is the loss this module's chunk ownership exists to
+          // prevent. The microphone is released immediately after this await and
+          // before the decode, so bounding the wait bounds the hot mic too.
+          const finish = () =>
+            resolve(new Blob(chunks, { type: recorder.mimeType }));
+          const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+          recorder.onstop = () => {
+            clearTimeout(timer);
+            finish();
+          };
+          // Bare, deliberately: guarding IT would mean branching on
+          // `recorder.state` afterward to decide whether to seal now or keep
+          // waiting for `onstop`/the timer — correctness that depends on the
+          // recorder's post-throw state, which is neither observed on a
+          // device nor simulable in this Node-only suite (no `MediaRecorder`).
+          // That is the J7 shape rounds 3 and 4 oscillated on; the round-5 cap
+          // decision left it out. The `finally` below is the J6 shape instead
+          // — it reasons about nothing beyond the stream and tap this
+          // invocation already owns, so it stays correct regardless of that
+          // unobservable state.
+          recorder.stop();
+        });
+      } finally {
+        // A `finally`, not a bare release after the await: once the executor
+        // itself throws, the blob promise is already REJECTED and the take is
+        // already lost — there is no `onstop` left to come, so releasing here
+        // cannot truncate a final slice the way releasing before `onstop`/the
+        // timer fires would (the very thing the executor's own bound exists
+        // to avoid). What a bare release-after-await would cost instead is a
+        // hot microphone: `stop()` stole the stream and the VU tap's clone
+        // out of the shared refs before this await (`streamRef.current =
+        // null` / `tapRef.current = null`, above), so a `cancel()` landing
+        // after a throw here finds both refs already null and its
+        // `releaseStream()` releases neither — the original tracks AND the VU
+        // clone stay live for the life of the page (George R5 P2).
         //
-        // Deliberately NOT paired with releasing the tracks the moment `stop()`
-        // is invoked: the final `dataavailable` arrives between `stop()` and
-        // `onstop`, and killing the capture tracks inside that window is a way
-        // to truncate it. That slice is the whole recording for a take under one
-        // timeslice, which is the loss this module's chunk ownership exists to
-        // prevent. The microphone is released immediately after this await and
-        // before the decode, so bounding the wait bounds the hot mic too.
-        const finish = () =>
-          resolve(new Blob(chunks, { type: recorder.mimeType }));
-        const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
-        recorder.onstop = () => {
-          clearTimeout(timer);
-          finish();
-        };
-        recorder.stop();
-      });
-
-      // Only our own stream. `releaseStream()` reads the shared ref, which by now
-      // may hold a NEWER recording's stream — releasing that would cut off a
-      // recording in progress.
-      if (stream) abandonStream(stream);
+        // Reachability, as in `cancel()`'s docblock: the current MediaStream
+        // Recording spec's `stop()` algorithm defines no throw at all (step 2
+        // is "if state is inactive, abort these steps", not "throw"). No
+        // engine in evidence throws from `stop()`. This is insurance against
+        // an engine departing from the spec, not a fix for an observed or
+        // spec-defined failure.
+        //
+        // Only our own stream. `releaseStream()` reads the shared ref, which
+        // by now may hold a NEWER recording's stream — releasing that would
+        // cut off a recording in progress.
+        if (stream) abandonStream(stream);
+        tap?.close();
+      }
     }
-
-    // The flush window is past — now stop the cloned capture tracks of THIS
-    // stop's tap (its graph was disconnected up top). The local `tap`, not
-    // closeTap(): a newer recording's tap in the ref must not be touched.
-    tap?.close();
 
     // The shared UI state belongs to the current generation; the failure travels
     // with the result to whoever called stop(). A superseded stop stays silent —
