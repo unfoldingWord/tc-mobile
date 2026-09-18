@@ -158,16 +158,48 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
     expect(cancelBody).toMatch(guardPattern);
   });
 
-  it("releaseStream() follows the try/catch, not the other way around", () => {
-    // Both anchors must be found (indexOf === -1 fails the test outright,
-    // never compares as "less than" and passes vacuously) before their
-    // order is compared. Deleting the releaseStream() call, or moving it
-    // above the try/catch, must fail this.
-    const catchAnchor = cancelBody.search(guardPattern);
+  it("releaseStream() runs unconditionally after the guarded if-block, not nested inside it", () => {
+    // A textual "releaseStream() appears after the try/catch" check is not
+    // enough (Frank round 5 P2, 4th pass): moving the call INSIDE the
+    // `if (recorder && recorder.state !== "inactive")` block, right after
+    // the catch, would still leave every anchor in textual order — but then
+    // a null `recorder`, or one already `"inactive"`, skips releaseStream()
+    // entirely, exactly the hot-mic casualty this gate exists to prevent.
+    // So this locates the if-guard's OWN closing brace by brace-counting
+    // from its declaration, and requires releaseStream() to sit strictly
+    // after it — i.e. outside the conditional, unconditional on the
+    // recorder's state.
+    const ifGuardStart = cancelBody.indexOf(
+      'if (recorder && recorder.state !== "inactive")'
+    );
+    expect(ifGuardStart).toBeGreaterThan(-1);
+    const ifBraceOpen = cancelBody.indexOf("{", ifGuardStart);
+    expect(ifBraceOpen).toBeGreaterThan(-1);
+    let ifDepth = 0;
+    let ifBraceClose = -1;
+    for (let i = ifBraceOpen; i < cancelBody.length; i++) {
+      if (cancelBody[i] === "{") ifDepth++;
+      else if (cancelBody[i] === "}") {
+        ifDepth--;
+        if (ifDepth === 0) {
+          ifBraceClose = i;
+          break;
+        }
+      }
+    }
+    expect(ifBraceClose).toBeGreaterThan(ifBraceOpen);
+
+    // The guard itself must still live inside this if-block (ties this test
+    // to the same guard the others pin, not some other unrelated if).
+    const guardAnchor = cancelBody.search(guardPattern);
+    expect(guardAnchor).toBeGreaterThan(ifBraceOpen);
+    expect(guardAnchor).toBeLessThan(ifBraceClose);
+
     const releaseAnchor = cancelBody.indexOf("releaseStream();");
-    expect(catchAnchor).toBeGreaterThan(-1);
     expect(releaseAnchor).toBeGreaterThan(-1);
-    expect(releaseAnchor).toBeGreaterThan(catchAnchor);
+    // Deleting the call, moving it above the guard, or nesting it inside
+    // the if-block (Frank's exact scenario) must all fail this.
+    expect(releaseAnchor).toBeGreaterThan(ifBraceClose);
   });
 
   /**
