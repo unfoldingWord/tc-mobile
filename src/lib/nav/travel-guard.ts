@@ -35,10 +35,14 @@
  * `window.history.back()` issuer this two-issuer matrix does not cover at
  * all — not `goBack`, not the commit-close exit. It is suppressed rather than
  * arbitrated (its `popstate` never reaches `popAction`), so it does not need
- * a slot in `TravelGuardState` for THIS design to be correct, but it is one
- * more raw issuer for whoever eventually answers #493's cross-issuer
- * coalescing question to account for — noted here so it is not missed when
- * that's revisited.
+ * a slot in `TravelGuardState` for THIS design to be correct. **#493 is
+ * answered below for the two issuers this file tracks (2026-09-18, round 4:
+ * see `beginBack`'s docblock)** — but `closeRecorder`'s own raw
+ * `history.back()` call is outside `TravelGuardState` entirely, so the
+ * any-outstanding guard cannot see it or refuse against it. Whether a
+ * `closeRecorder` call racing an outstanding `goBack`/`commit-close` call can
+ * itself coalesce is not evaluated here; noted so it is not missed if this
+ * third issuer is ever folded into the guard's accounting.
  *
  * The wiring — rewriting `goBack` to call `beginBack`/`settleBack` instead of
  * touching `backRequested` directly, and doing the same for the recorder's
@@ -92,51 +96,53 @@ export interface BeginBackResult {
 /**
  * Whether `issuer` may proceed with a `history.back()` call right now.
  *
- * Per Amendment A's table: an issuer is refused only when it has its OWN
- * outstanding call still unsettled — never by the other issuer's outstanding
- * call, because a `goBack` and the recorder's commit-close exit consume
- * different physical history entries and do not contend with each other. This
- * single rule reproduces all four rows of the matrix:
+ * **The any-outstanding rule (2026-09-18, PR #492 round 4 — answers #493,
+ * dev lead decision):** an issuer is refused whenever EITHER flag is already
+ * set, regardless of which issuer is asking:
  *
- * | `goBackOutstanding` | `commitCloseOutstanding` | a third request...                        |
- * | -------------------- | ------------------------- | ------------------------------------------ |
- * | false                 | false                      | proceeds, sets its own flag                 |
- * | true                  | false                      | refused if another `goBack`; a commit-close request proceeds independently |
- * | false                 | true                       | mirror of the above                         |
- * | true                  | true                       | refused entirely (either issuer)            |
+ * | any flag outstanding? | a request from either issuer...            |
+ * | ---------------------- | -------------------------------------------- |
+ * | no (both false)         | proceeds, sets its own flag                  |
+ * | yes (either/both true)  | refused, whichever issuer asks               |
+ *
+ * `issuer` still matters for two things only: which flag `beginBack` SETS on
+ * success, and which flag `settleBack` clears (see below) — it plays no part
+ * in the refusal decision itself, which now checks BOTH flags.
  *
  * When refused, `next` is the unchanged input state — the caller must NOT
  * proceed: do not call `history.back()`, and do not `pushState` either. The
- * stack simply did not move. This is corrected from an earlier version of
- * this docblock (George R1 P2-2, PR #492) that said a refusal "must re-arm
- * instead", drawing a false analogy to `routeBackToLayer`'s `"refused-busy"`
- * — that case is decided AFTER a `popstate` has already popped an entry
- * (`App.tsx:301-311`), so re-arming there means restoring what the browser
- * just consumed. `beginBack` is decided BEFORE `history.back()` is ever
- * called — it is the pure form of the pre-issue double-tap latch already at
- * `App.tsx:101-103` (`if (backRequested.current) return;`), which also does
- * nothing on refusal, not push a fresh entry. Pushing here would be actively
- * harmful: it would call `pushState` while the FIRST `history.back()` call is
- * still outstanding, which is exactly the coalescing/desync hazard
- * `App.tsx:98-100`'s comment already names — a later `popstate` could then
- * skip a level or misread as `"forward"`. The re-arm language belongs to
+ * stack simply did not move. This is unchanged from an earlier correction
+ * (George R1 P2-2, PR #492) that removed a false "must re-arm instead"
+ * analogy to `routeBackToLayer`'s `"refused-busy"` — that case is decided
+ * AFTER a `popstate` has already popped an entry (`App.tsx:301-311`), so
+ * re-arming there means restoring what the browser just consumed. `beginBack`
+ * is decided BEFORE `history.back()` is ever called — it is the pure form of
+ * the pre-issue double-tap latch already at `App.tsx:101-103`
+ * (`if (backRequested.current) return;`), which also does nothing on
+ * refusal, not push a fresh entry. Pushing here would be actively harmful: it
+ * would call `pushState` while an outstanding `history.back()` call has not
+ * yet settled, which is exactly the coalescing/desync hazard
+ * `App.tsx:98-100`'s comment already names. The re-arm language belongs to
  * `routeBackToLayer`'s `"refused-busy"` case only, not here.
  *
- * OPEN RISK, not fixed here (tracked: #493, Frank R1 on PR #492): the
- * "different physical entries do not contend" reasoning above addresses
- * LOGICAL contention (which entry each call targets), not BROWSER-API
- * contention — two `window.history.back()` calls issued before the first
+ * **ANSWERS #493 (2026-09-18, PR #492 round 4), superseding the ORIGINAL
+ * per-issuer matrix this function shipped with (Frank R1/R2/R4/R5 on PR
+ * #492):** the retired matrix refused an issuer only against its OWN
+ * outstanding flag, reasoning that `goBack` and the recorder's commit-close
+ * exit target different physical history entries and so "do not contend."
+ * That addressed LOGICAL contention only. It did not address BROWSER-API
+ * contention: two `window.history.back()` calls issued before the first
  * one's `popstate` has landed can coalesce into a single multi-entry
  * traversal in some browsers, independent of which entries they logically
- * target (the same class of hazard `App.tsx`'s existing `backRequested`
- * double-tap latch already guards against for a SINGLE issuer). This function
- * faithfully implements the design document's own stated matrix
- * (docs/design/back-navigation.md, Amendment A) as written; revising that
- * matrix — e.g. collapsing both flags into one `anyOutstanding` guard — is a
- * design decision, not a PR1 implementation bug, and needs DRI review before
- * PR2 wires this into real `history.back()` calls. Nothing in this PR (#452
- * PR1) calls `history.back()` at all, so the concrete failure scenario #493
- * describes cannot occur from this PR's code.
+ * target — the same class of hazard `App.tsx`'s existing `backRequested`
+ * double-tap latch already guards against for a SINGLE issuer, just not
+ * across issuers. Collapsing the refusal to any-outstanding removes the
+ * possibility of two calls being simultaneously outstanding at all, so the
+ * coalescing question cannot arise regardless of which browser's History
+ * implementation is asked. This answers #493 rather than deferring it again;
+ * it does not claim to have observed browser coalescing behavior directly
+ * (Frank's confidence on that was itself "medium" — browser-dependent), only
+ * that the any-outstanding rule removes the precondition the hazard needs.
  *
  * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
  */
@@ -144,11 +150,9 @@ export function beginBack(
   state: TravelGuardState,
   issuer: TravelIssuer
 ): BeginBackResult {
-  const alreadyOutstanding =
-    issuer === "go-back"
-      ? state.goBackOutstanding
-      : state.commitCloseOutstanding;
-  if (alreadyOutstanding) {
+  const anyOutstanding =
+    state.goBackOutstanding || state.commitCloseOutstanding;
+  if (anyOutstanding) {
     return { ok: false, next: state };
   }
   const next: TravelGuardState =

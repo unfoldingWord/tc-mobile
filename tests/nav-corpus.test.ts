@@ -35,7 +35,14 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     "F1 (P1): layerStack has no unmount-safety net (Amendment C's fix — a centrally-owned cleanup effect in hooks/use-nav-stack.ts with dependency array [screen, recovering, databasePanel]) is adapter-level, React-lifecycle code. The pure core has no notion of a React unmount at all, so nothing in src/lib/nav can assert it. PR2 scope."
   );
 
-  it("F2 (P2): the two remaining raw history.back() issuers (goBack, the recorder's commit-close exit) are now bookkept by a pure, tested travel-guard instead of unformalized adapter code (Amendment A) — the exact R2-G-P2-1 / R2-G-P2-2 / R3-G-P2-1 shape this closes", () => {
+  it("F2 (P2): IF the adapter calls beginBack/settleBack (PR2, not yet wired — George R3 P2-2 on PR #492), a second same-issuer request is refused while the first is outstanding, and — since round 4's any-outstanding guard (answers #493) — so is a DIFFERENT issuer's request, not just the same one", () => {
+    // Nothing in src/ (outside tests/) imports beginBack/settleBack yet — the
+    // live issuers (App.tsx:101-103's backRequested latch, App.tsx:358-360's
+    // commit-close settle) are UNCHANGED and still touch their own
+    // unformalized refs directly. This row pins the pure decision table PR2
+    // must wire in, not a claim the live issuers have been replaced
+    // (George R3 P2-2 — a green row with the old title invited exactly that
+    // misreading).
     const firstGoBack = beginBack(initialTravelGuardState, "go-back");
     expect(firstGoBack.ok).toBe(true);
 
@@ -49,13 +56,21 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     const thirdGoBack = beginBack(settled, "go-back");
     expect(thirdGoBack.ok).toBe(true);
 
-    // The recorder's commit-close exit is a DIFFERENT issuer and is not
-    // blocked by an outstanding goBack (Amendment A's table, row 2).
+    // #493, answered round 4 (2026-09-18): the recorder's commit-close exit
+    // is a DIFFERENT issuer, but ANY outstanding call now refuses a request
+    // from either issuer — cross-issuer `history.back()` coalescing is no
+    // longer possible, superseding Amendment A's original "different
+    // physical entries do not contend" per-issuer table.
     const commitCloseWhileGoBackOutstanding = beginBack(
       thirdGoBack.next,
       "commit-close"
     );
-    expect(commitCloseWhileGoBackOutstanding.ok).toBe(true);
+    expect(commitCloseWhileGoBackOutstanding.ok).toBe(false);
+
+    // Once goBack settles, the recorder's commit-close exit may proceed.
+    const goBackSettled = settleBack(thirdGoBack.next, "go-back");
+    const commitCloseAfterSettle = beginBack(goBackSettled, "commit-close");
+    expect(commitCloseAfterSettle.ok).toBe(true);
   });
 
   it("F3 (P2): IF the adapter adopts the resumed index (PR2, not yet wired — Frank R4 P2 on PR #492), a reload mid-stack would no longer misroute the first post-reload Back as a phantom Forward, and would not skip a physical level (Amendment B)", () => {
