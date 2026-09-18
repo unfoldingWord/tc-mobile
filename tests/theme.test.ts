@@ -149,6 +149,32 @@ describe("the light theme is reachable (#171)", () => {
     );
   });
 
+  it("sits AFTER the failure-log panel, so ≡-with-failures lands on the report", () => {
+    // `Menu` focuses its first actionable child on open (`menu.tsx`). While
+    // the log is non-empty the ≡ is named "Open menu. N problems recorded."
+    // and its whole point is reaching the report — so the toggle, which is
+    // unconditional, must not be the first child in front of the panel, or a
+    // switch/AT user who activates what they landed on flips the theme
+    // instead (George R1 P2 on #457). The panel is mounted only while
+    // `failureCount > 0`, so on a quiet phone the toggle is still first.
+    const screen = read("src/components/books-screen.tsx");
+    const menu = screen.indexOf(
+      "<Menu open={menuOpen} onClose={() => setMenuOpen(false)}>"
+    );
+    expect(menu).toBeGreaterThan(-1);
+    const body = screen.slice(menu);
+    const panel = body.indexOf("<FailureLogPanel");
+    const toggle = body.indexOf("onClick={theme.toggle}");
+    expect(panel, "FailureLogPanel is not in the global menu").toBeGreaterThan(
+      -1
+    );
+    expect(toggle, "the toggle is not in the global menu").toBeGreaterThan(-1);
+    expect(
+      panel,
+      "the theme toggle is mounted ahead of the failure-log panel"
+    ).toBeLessThan(toggle);
+  });
+
   it("is applied before React renders, not in an effect", () => {
     // An effect runs after the first paint: a translator who chose light would
     // see a dark frame on every launch. The call must sit above `createRoot`.

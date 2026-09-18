@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -203,5 +206,59 @@ describe("panelRecoveryFocus holds through a close that may fail (#457 QA P2)", 
         expect(
           panelRecoveryFocus({ ownedLastCommit, ownsNow, closing: true })
         ).toBe("hold");
+  });
+});
+
+/**
+ * WHERE the recovery lands (George R1 P2 on #457).
+ *
+ * The decision above says WHEN; this pins the target. The first version of the
+ * caller reused the open-edge landing — the sheet's first `button`, which is
+ * header Back — for the recovery edge too. Back is `close()`, which SAVES, and
+ * `use-focus-restore.ts`'s contract is explicit that a landmark "must never be
+ * a destructive or exiting control": a keyboard/switch user whose "Try again"
+ * had just succeeded would have had the very next Space/Enter/switch-activate
+ * armed to leave — the #97 hazard, on exactly the users #199 exists for.
+ *
+ * Open and recovery are different edges: open is not mid-task, recovery is.
+ * So the recovery lands on the ≡, resolved by accessible name through
+ * `overlayFallbackLabel` — the same landmark the overlay restore in the same
+ * file uses, for the same reason — and never by position.
+ *
+ * Source-shape, because there is no DOM runner here (#197) and the `.focus()`
+ * itself stays uncovered (#361).
+ */
+describe("the recovery landing is the ≡ landmark, never the sheet's first button (#457 George R1 P2)", () => {
+  const recorder = readFileSync(
+    path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+    "utf8"
+  );
+
+  it("hands a `focus` action to the menu landmark", () => {
+    expect(recorder).toMatch(
+      /if \(action === "focus"\) menuLandmark\(\)\?\.focus\(\);/
+    );
+    expect(
+      recorder,
+      "the recovery edge still lands on header Back"
+    ).not.toMatch(/if \(action === "focus"\) focusSheet\(\);/);
+  });
+
+  it("resolves that landmark by accessible name, not by position", () => {
+    const start = recorder.indexOf("const menuLandmark = useCallback(");
+    expect(start, "no menuLandmark callback in recorder.tsx").toBeGreaterThan(
+      -1
+    );
+    const body = recorder.slice(start, recorder.indexOf("}, []);", start));
+    expect(body).toMatch(
+      /overlayFallbackLabel\(labels, strings\.recorderMenuOpen\)/
+    );
+    expect(body).not.toMatch(/querySelector<HTMLElement>\("button"\)/);
+  });
+
+  it("keeps the open-edge landing as its own call, used on the open edge only", () => {
+    // `focusSheet` still exists — the open edge is allowed to land on the
+    // sheet's first control — but it is called from exactly one place now.
+    expect(recorder.match(/focusSheet\(\);/g)?.length).toBe(1);
   });
 });

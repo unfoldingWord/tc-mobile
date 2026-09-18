@@ -784,10 +784,20 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      {/* The global menu. Its first entry is the theme toggle (#171): a
-          complete light theme has existed in `2-semantic.css` since the pivot
-          with nothing able to select it, written for the one condition that
-          makes this app unusable — direct equatorial sun on a dark screen.
+      {/* The global menu: the failure-log panel, then the theme toggle.
+
+          THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
+          focus on its first actionable child on open, and while the log is
+          non-empty the ≡ is named "Open menu. N problems recorded." — reaching
+          the report is its whole point. So the report is what a switch/AT
+          user must land on, not a control that flips the theme (George R1 P2
+          on #457). The panel is mounted only while the log holds something,
+          so a phone that has never failed opens on the toggle, as before.
+
+          The toggle (#171): a complete light theme has existed in
+          `2-semantic.css` since the pivot with nothing able to select it,
+          written for the one condition that makes this app unusable — direct
+          equatorial sun on a dark screen.
 
           ONE control that flips, not two rows or a three-state cycle: its
           label names the DESTINATION so AT does not announce the state a user
@@ -798,6 +808,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           wrong; that is the affordance doing the explaining, which is the
           `state-in-place` rule this repo prefers over a message. */}
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        {failureCount > 0 && (
+          <FailureLogPanel
+            count={failureCount}
+            onDone={() => setMenuOpen(false)}
+          />
+        )}
         <Control
           icon={theme.theme === "dark" ? "sun" : "moon"}
           label={
@@ -808,14 +824,6 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           variant="quiet"
           onClick={theme.toggle}
         />
-        {/* Mounted only while the log holds something, so a phone that has
-            never failed opens the same empty panel it always did. */}
-        {failureCount > 0 && (
-          <FailureLogPanel
-            count={failureCount}
-            onDone={() => setMenuOpen(false)}
-          />
-        )}
       </Menu>
 
       {/* New Book asks for the name before it creates anything (#314). The same

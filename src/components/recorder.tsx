@@ -2473,13 +2473,46 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       void executeTail(planPendingWork(pendingWork()));
     }, [executeTail, pendingWork]);
 
-    // The sheet's own landing: its first focusable, which is the header Back.
-    // Named once because TWO edges need exactly it — the open edge below, and a
-    // full-body panel resolving (#199) — and a resolved panel leaves the sheet
-    // in the same state a fresh open does, so it must be the same call and not
-    // a second policy that can drift from this one.
+    // The sheet's landing on OPEN: its first focusable, which is the header
+    // Back. Open-edge ONLY. An earlier draft shared this with the recovery
+    // edge (#199) on the argument that a resolved panel leaves the sheet in
+    // the state a fresh open does — but the two edges are not alike: open is
+    // not mid-task, recovery is. A keyboard/switch user whose "Try again" had
+    // just succeeded was landed on "Close recorder", with the very next
+    // Space/Enter/switch-activate armed to `close()` — which SAVES. That is
+    // the #97 hazard `use-focus-restore.ts`'s contract forbids ("the landmark
+    // must never be a destructive or exiting control"), reintroduced on
+    // exactly the users #199 exists for (George R1 P2 on #457).
     const focusSheet = useCallback(() => {
       sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
+    }, []);
+
+    // The safe landmark for every mid-task hand-off: the "More actions" (≡)
+    // control, resolved by its accessible NAME through `overlayFallbackLabel`
+    // (`lib/a11y/focus-restore.ts`) and never by position — so it can only
+    // ever resolve to the ≡ or to nothing, never to Back or the "Editing"
+    // pill. Shared by the overlay restore and the panel recovery below, which
+    // are the two edges that hand focus back into a sheet the translator is
+    // still working in. `null` when the ≡ is not rendered, and a no-op when it
+    // is `disabled` — both of which leave focus alone, the contract's own
+    // "prefer `null` over anything dangerous". Inference, not observed on a
+    // device: on the recovery edge the ≡'s `disabled` expression
+    // (`!view || isClosing || denied || heldTake !== null`) has just cleared,
+    // because a panel resolving is what clears it.
+    const menuLandmark = useCallback((): HTMLElement | null => {
+      const sheet = sheetRef.current;
+      if (!sheet) return null;
+      const buttons = Array.from(sheet.querySelectorAll<HTMLElement>("button"));
+      const labels = buttons.map(
+        (button) => button.getAttribute("aria-label") ?? ""
+      );
+      const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
+      if (target === null) return null;
+      return (
+        buttons.find(
+          (button) => button.getAttribute("aria-label") === target
+        ) ?? null
+      );
     }, []);
 
     // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
@@ -2670,28 +2703,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // The ≡ is safe in every mode: it reopens the very overlay that just
         // closed, and this app renders it under the same accessible name in
         // both places it lives (the header in record mode, the toolbar in
-        // edit mode). `overlayFallbackLabel` (`lib/a11y/focus-restore.ts`)
-        // picks it by that name, never by position, so it can only ever
-        // resolve to the ≡ or to nothing — never to Back or the pill.
-        fallback: (() => {
-          const sheet = sheetRef.current;
-          if (!sheet) return null;
-          const buttons = Array.from(
-            sheet.querySelectorAll<HTMLElement>("button")
-          );
-          const labels = buttons.map(
-            (button) => button.getAttribute("aria-label") ?? ""
-          );
-          const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
-          if (target === null) return null;
-          return (
-            buttons.find(
-              (button) => button.getAttribute("aria-label") === target
-            ) ?? null
-          );
-        })(),
+        // edit mode). `menuLandmark` above resolves it by that name, never by
+        // position, so it can only ever resolve to the ≡ or to nothing —
+        // never to Back or the pill.
+        fallback: menuLandmark(),
       });
-    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore]);
+    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore, menuLandmark]);
 
     // The OTHER half of `panelOwnsFocus` (#199). The effect above suppresses
     // itself while a full-body panel is up, because each panel `autoFocus`es
@@ -2731,9 +2748,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // does exit never renders again, so unmounting consumes the hold and
       // nothing has to spend it explicitly.
       if (action === "hold") return;
-      if (action === "focus") focusSheet();
+      // The ≡, NOT `focusSheet()`: that is header Back, and Back is `close()`
+      // — see `menuLandmark` for why the open edge may land there and this
+      // edge may not (George R1 P2 on #457).
+      if (action === "focus") menuLandmark()?.focus();
       panelOwnedFocus.current = panelOwnsFocus;
-    }, [panelOwnsFocus, isClosing, focusSheet]);
+    }, [panelOwnsFocus, isClosing, menuLandmark]);
 
     const markReason = markRowReason({
       hasView: view !== null,
