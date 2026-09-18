@@ -247,13 +247,35 @@ by the overlay's own Close/Cancel/scrim, or by a Back landing on it — calls
 
 On a `popstate`: check `recovering`, then `databasePanel` (unchanged,
 merged, correct); then check whether a screen transition is in flight
-(Amendment A's shared guard); then call `routeBackToLayer(layerStack)` — if
-the top layer exists, either `dismiss()` it (not busy) or refuse (busy,
-re-arm, no state change) — consuming **no** screen-depth index change either
-way, because the overlay never had one; only if the layer stack is empty
-does the `popstate` fall through to `backEffectFor(screen)` (`to-books` /
-`exit-app` / `commit-close-recorder`), the only path that changes
-`navIndex`.
+(Amendment A's shared guard); then, **only when the gesture is Back** — a
+non-empty layer stack never shadows Forward or "same" (superseded by #492
+round 1; see below) — call `routeBackToLayer(layerStack)`: if the top layer
+exists, either `dismiss()` it (not busy) or refuse (busy). A `popstate` has
+ALREADY popped the screen-depth entry before this decision runs, so **both**
+outcomes re-arm it (push a fresh protective entry) — `dismiss` additionally
+calls `dismiss()` on the named layer; `refused-busy` re-arms only. `popAction`
+itself never touches history: it names one of two string tags,
+`"rearm-layer-dismiss"` / `"rearm-layer-busy"` (not the object shape
+originally specified here — see "Pure core" below), and the adapter performs
+the re-arm/dismiss the tag names. Only if the layer stack is empty, or the
+gesture is Forward/"same", does the `popstate` fall through to Forward's own
+cancelling handling or `backEffectFor(screen)` (`to-books` / `exit-app` /
+`commit-close-recorder`), the only path that changes `navIndex`.
+
+> **Superseded by #492 round 1 (2026-09-18):** the two paragraphs above
+> originally specified `routeBackToLayer` itself deciding history and a
+> `popAction` case of `{kind:'layer', result}` that consumed "no screen-depth
+> index change either way." Implementation (PR #492) found that framing
+> backwards: a `popstate` always pops the screen-depth entry before `popAction`
+> runs, regardless of whether a layer absorbs the gesture, so BOTH the
+> `"dismiss"` and `"refused-busy"` outcomes must re-arm it, not neither. The
+> object-shaped `popAction` result was also replaced with two string tags so
+> the obligation is encoded in the type `App.tsx`'s existing string `switch`
+> already consumes, rather than left to prose a reader could miss (the earlier
+> object shape's own docblock taught the wrong contract once — George R1
+> P2-1). `routeBackToLayer` itself is unchanged: it still returns the
+> three-way `{kind:'empty'|'refused-busy'|'dismiss', layerId?}` object below;
+> only `popAction`'s consumption of that result changed shape.
 
 ### Pure core
 
@@ -267,8 +289,13 @@ does the `popstate` fall through to `backEffectFor(screen)` (`to-books` /
   `screenFor`/`backEffectFor`/`navDirection` kept **verbatim**; `popAction`
   regains a signature of `(direction, screen, transitionInFlight, recovering,
 databasePanel, layerStack)`, with `rearm-during-commit` renamed
-  `rearm-transition-busy` (invariant 7) and a new `{kind:'layer', result}`
-  case inserted between the two global traps and the screen-level switch.
+  `rearm-transition-busy` (invariant 7) and, **superseded by #492 round 1**,
+  two new string tags — `"rearm-layer-dismiss"` / `"rearm-layer-busy"` — in
+  place of the originally-specified `{kind:'layer', result}` case, checked
+  only on Back, inserted between the two global traps/transition guard and
+  the direction/screen switch. Both tags mean re-arm the screen-depth entry
+  the popstate already popped; `"rearm-layer-dismiss"` additionally means
+  dismiss the top layer (the adapter recovers it via `topLayer(layerStack)`).
   `overlayBlocksClose`/`overlayDismissal` are kept, unmodified, for the
   recorder's own two overlays in phase 1 (see the PR split) — they already
   work and are not in the defect corpus, except for the one required fix
@@ -377,23 +404,42 @@ per this repo's "one Back path" rule) and the recorder's commit-close exit
 `src/lib/nav/travel-guard.ts` (new): a pure pair,
 `beginBack(state): {ok: boolean, next: TravelGuardState}` and
 `settleBack(state): TravelGuardState`, operating on `{ goBackOutstanding:
-boolean, commitCloseOutstanding: boolean }`. Because there are only two
-booleans, the full state space is four rows — small enough to enumerate
-completely rather than assert sufficient:
+boolean, commitCloseOutstanding: boolean }`. `goBackOutstanding` and
+`commitCloseOutstanding` still identify WHICH issuer has a call outstanding
+(for `settleBack`'s own bookkeeping — it clears only the settling issuer's
+flag), but as of **2026-09-18 (PR #492 round 4, answers #493)** the rule is
+**any-outstanding, not per-issuer**: a request is refused whenever EITHER
+flag is already set, regardless of which issuer is asking.
 
-| `goBackOutstanding` | `commitCloseOutstanding` | A third request...                                                                                                                          |
-| ------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| false               | false                    | proceeds, sets its own flag                                                                                                                 |
-| true                | false                    | refused if it's another `goBack`; a commit-close request proceeds independently (they are different physical entries)                       |
-| false               | true                     | mirror of the above                                                                                                                         |
-| true                | true                     | refused entirely — this is the narrowest window in the app (a Back landing exactly between the recorder's commit-close re-arm and its exit) |
+| Any flag outstanding?  | A request from either issuer...                                  |
+| ---------------------- | ---------------------------------------------------------------- |
+| no (both false)        | proceeds, sets its own flag                                      |
+| yes (either/both true) | refused, whichever issuer asks — the state is returned unchanged |
+
+> **Superseded by #492 round 4 (2026-09-18, answers #493):** the table this
+> replaces refused an issuer only against its OWN outstanding flag, reasoning
+> that `goBack` and the recorder's commit-close exit target different
+> physical history entries and so "do not contend" — a claim about LOGICAL
+> contention. Frank's review (rounds 1, 2, 4, 5 on PR #492) kept finding that
+> this does not address BROWSER-API contention: two `window.history.back()`
+> calls issued before the first one's `popstate` has landed can coalesce into
+> a single multi-entry traversal in some browsers, independent of which
+> entries they logically target — the same class of hazard the existing
+> `backRequested` double-tap latch already guards against for a single
+> issuer, just not across issuers. The dev lead's decision (PR #492 round 4)
+> is to collapse the matrix to the single any-outstanding rule above rather
+> than defer the question again; the four-row table, and the "different
+> physical entries do not contend" reasoning, are retired. `settleBack` is
+> unchanged — it still requires the caller to name which issuer is settling,
+> and still clears only that issuer's own flag, so `beginBack`'s next caller
+> only unblocks once the actual outstanding call has settled.
 
 This is the exact regression test for R2-G-P2-1/R2-G-P2-2/R3-G-P2-1's
-class, proven for a state space small enough to check exhaustively rather
-than reasoned about — which is precisely what Model 3's attack found Model
-3 could not do for its own three-issuer version. `goBack` and the
-recorder's commit-close exit are rewritten to call `beginBack`/`settleBack`
-instead of touching `backRequested`/`suppressPop` directly.
+class, and — since round 4 — also answers #493's cross-issuer coalescing
+question at the source rather than disclosing it as an open risk. `goBack`
+and the recorder's commit-close exit are rewritten to call
+`beginBack`/`settleBack` instead of touching `backRequested`/`suppressPop`
+directly; that wiring is still PR2, not this PR.
 
 ### Amendment B — reload/bootstrap safety
 
@@ -700,6 +746,16 @@ and none merges without the DRI's explicit permission per workspace
   disclosed simplification this design leaves unchanged; only the _stack
   corruption_ reload could cause (Amendment B) is fixed, not a
   session-restore feature that never existed.
+- **After a reload at depth N, leaving the app takes N extra Backs**
+  (adopt-don't-rewrite, Amendment B, leaves the physical stack below intact
+  rather than flattening it) — George R3 P2-1 on PR #492 traced this
+  concretely: `"exit-app"` in `App.tsx` is a no-op that assumes the browser
+  is already leaving, which holds at real depth 0 but not after an adopted
+  reload baseline `> 0`. **Accepted 2026-09-18** (dev lead decision, PR #492
+  round 4) as UX for now, in preference to (a) flattening the stack on mount
+  (which would contradict adopt-don't-rewrite as written above) or (b) making
+  `"exit-app"` drain the leftover levels itself. PR2 may revisit this with a
+  device in hand.
 - **Android hardware Back remains completely unaddressed by this design's
   core**, and unverified on any device, on any branch, at any point in this
   project. Amendment F names the fix and defers the scheduling call
