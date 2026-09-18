@@ -104,5 +104,17 @@ export default defineConfig({
       testMatch: /failure-log\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
+    {
+      // The system-Back model (#452 PR2, `hooks/use-nav-stack.ts`). Drives the
+      // real Books → Segments → Recorder tree and the browser Back button
+      // against the SHIPPED `dist/` build, because the adapter's DOM paths
+      // (popstate routing, the reload adopt, the commit-close, the #168
+      // double-Back guard) have no renderer in the Node suite and this is the
+      // only automated place they run — same reasoning `failure-log.spec.ts`
+      // documents.
+      name: "chromium-back-navigation",
+      testMatch: /back-navigation\.spec\.ts$/,
+      use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
+    },
   ],
 });
