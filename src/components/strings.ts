@@ -498,6 +498,20 @@ export const strings = {
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
 
+  // ── Storage pressure (#247, the deferred half of #12) ────────────────────
+  // A separate standing condition from the one above: not "the browser has
+  // not promised to keep this" but "this device is genuinely close to full",
+  // read from `navigator.storage.estimate()` and classified by
+  // `lib/storage/pressure.ts`. Never states a byte count — the estimate is
+  // coarse and per-origin (`pressure.ts`'s own docblock), so it can only ever
+  // be honest about which of three bands the device is in, not how much room
+  // is actually left. Says what the translator can DO about it (mark
+  // Finished, share) rather than a mechanism they cannot act on.
+  storageLow:
+    "This phone is running low on space. Mark chapters Finished or share your work to free up room.",
+  storageCritical:
+    "This phone is almost out of space. Mark chapters Finished or share your work now to avoid losing recordings.",
+
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
   // upgrades the database. The mark on the panel carries the meaning; these

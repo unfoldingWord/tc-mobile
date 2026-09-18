@@ -16,8 +16,15 @@
 
 /**
  * A durability state worth showing. A union with one member on purpose: #12's
- * deferred half — a nearly-full `estimate()` — lands beside `"not-persisted"`
- * here rather than at the call sites.
+ * deferred half — a nearly-full `estimate()` — was originally slated to land
+ * beside `"not-persisted"` here. #247 implements it as its own
+ * `StoragePressure` union instead (`lib/storage/pressure.ts`): the two are
+ * independent pure decisions over different inputs (a boolean persistence
+ * answer here vs. a usage/quota threshold there), and merging them into one
+ * type would mean one of the two lib modules importing the other for no
+ * reason but a shared name. Books renders both as separate Notice arms in the
+ * same standing-condition slot — the pattern this file's own `not-persisted`
+ * arm already shares with the encoder-health line (`books-screen.tsx`).
  */
 export type StorageMarker = "not-persisted";
 
