@@ -563,6 +563,20 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
+**Decompose before any post-cap round (decided 2026-09-18).** The DRI's pick
+at the cap is made from a _judgment sheet_, not from the round narrative:
+break "is this PR right?" into atomic yes/no and choice judgments, answer each
+from the strongest evidence reachable — the tree at the head SHA, the primary
+spec, a device log, an issue thread — with a file:line or a URL per answer, and
+include a "cannot tell" outcome. Then compose the options as explicit rules
+over the answers and post the sheet on the PR with the pick. The discriminating
+question is usually one nobody named in four rounds: for #474 it was whether
+each guard's correctness depended on an _unobservable_ recorder state (one did,
+one did not), and forcing a primary-source check per judgment is what caught a
+spec claim in both docblocks that the current spec contradicts. Chain versus
+siblings still gets stated; the sheet is what the pick is made from. The shape
+is in `docs/review/dual-review.md` ("Decompose before the DRI picks").
+
 **Merging.** This repo is solo, so Frank and George _are_ the review: once both
 are clean at the current head SHA and CI is green, merge is an admin merge.
 Documentation and content merge on green alone. Process/meta artifacts —
