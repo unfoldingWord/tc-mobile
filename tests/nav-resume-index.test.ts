@@ -139,13 +139,25 @@ describe("resumeNavIndex + navDirection + popAction composition (pure-core proof
     expect(direction).toBe("back"); // no misfire — correctly read as Back.
     expect(popAction(direction, screenFor(false, false), false, false)).toBe(
       "exit-app"
-    ); // routes normally to the real post-reload root, no trap-forward
+    );
+    // George R3 P2-1 (PR #492), dev lead decision (round 4, 2026-09-18): this
+    // pure `"exit-app"` result is correctly classified, but its LIVE meaning
+    // is a no-op — `App.tsx:378-381`'s `case "exit-app"` assumes the browser
+    // is already leaving, which holds at real depth 0 but not here. Adopt-
+    // don't-rewrite (Amendment B) leaves the physical stack below (`index:0`,
+    // `index:1`) intact rather than flattening it, so this popstate lands at
+    // physical depth 1, not depth 0 — the app does NOT exit on this Back; it
+    // takes one more (the accepted-UX cost of adopt-don't-rewrite; see
+    // `docs/design/back-navigation.md`'s Residual Risks). This test only pins
+    // the pure classification, not that the app has left.
   });
 
   it("IF adopted, the resumed index does not skip a physical level on the FOLLOWING Back either — same pure-composition scope as above", () => {
-    // Continue the hypothesized scenario: after the Back above lands (depth
-    // 1, Segments), navIndex is updated to the landing index (1) exactly as
-    // the real popstate handler already does (`navIndex.current = toIndex`,
+    // Continue the hypothesized scenario: after the Back above lands (still
+    // Books — the reload always resets React state to Books regardless of
+    // history depth, George R1 P3-6; there is no Segments screen to land on
+    // here), navIndex is updated to the landing index (1) exactly as the real
+    // popstate handler already does (`navIndex.current = toIndex`,
     // App.tsx:302, unaffected by this fix). The following Back — landing on
     // the depth-0 entry — must read as a normal "back", not compound any
     // earlier corruption. Still a pure-composition proof, not a live-app
@@ -157,7 +169,15 @@ describe("resumeNavIndex + navDirection + popAction composition (pure-core proof
     expect(direction).toBe("back");
     expect(popAction(direction, screenFor(false, false), false, false)).toBe(
       "exit-app"
-    ); // Books, the correct root — not a skipped level.
+    );
+    // George R3 P2-1 (PR #492), dev lead decision (round 4, 2026-09-18): THIS
+    // is the Back that actually leaves — it lands on physical depth 0, where
+    // `App.tsx:378-381`'s no-op assumption (the browser is already leaving)
+    // is true. Two real system Backs were needed after this reload at depth
+    // 2 (one per leftover physical level below the adopted baseline), not
+    // one — accepted as UX, not a skipped level: nothing was lost, no
+    // misclassification occurred, the user simply pressed Back one extra
+    // time. See the residual-risks note in `docs/design/back-navigation.md`.
   });
 
   /**

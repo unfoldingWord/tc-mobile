@@ -128,11 +128,18 @@ export function navDirection(from: number, to: number): NavDirection {
  * adapter recovers it via `topLayer(stack)`) AND push a fresh entry;
  * `"rearm-layer-busy"` means push a fresh entry only, same as every other
  * re-arm case. Two string tags rather than the object this PR originally
- * shipped (`{kind:"layer", result:...}`) specifically so the obligation is
- * encoded in the type `App.tsx`'s existing string `switch` already consumes,
- * not left to a docblock a reader could miss — the earlier object shape's own
- * prose taught the wrong contract ("nothing on `refused-busy`"), and George's
- * review caught it before PR2 could copy it. This also removes the never-
+ * shipped (`{kind:"layer", result:...}`) so the re-arm obligation is NAMED
+ * by the tag itself, not left to a docblock a reader could miss — the
+ * earlier object shape's own prose taught the wrong contract ("nothing on
+ * `refused-busy`"), and George's review caught it before PR2 could copy it.
+ * **Naming the obligation is not the same as enforcing it (George R3 P3-6,
+ * PR #492): `App.tsx`'s existing string `switch` (`:304-382`) has no case
+ * for either tag today, and nothing currently makes an unhandled tag a type
+ * error — adding the 6th argument without new cases would typecheck and
+ * silently no-op.** PR2's FIRST adapter commit is what closes that gap: it
+ * adds `default: { const _: never = action }` to `App.tsx`'s switch, which
+ * is what actually enforces that every `PopAction` value is handled (see
+ * "Deferred to PR2" in the PR description). This also removes the never-
  * produced `{kind:"layer", result:{kind:"empty"}}` combination entirely
  * (former P3-4): a plain string has no `"empty"` branch to write.
  */
@@ -158,9 +165,11 @@ export type PopAction =
  * stack, specifically so every existing call site (`App.tsx`, untouched by
  * this PR) and every existing test row keeps compiling and keeps producing
  * the identical result it does on `develop` today — an empty stack can never
- * satisfy the new `layerStack.length > 0` check below, so the new `"layer"`
- * case is unreachable unless a caller opts in by passing a non-empty stack,
- * which no caller does yet (that wiring is PR2). Zero behaviour change.
+ * satisfy the new `direction === "back" && layerStack.length > 0` check
+ * below, so the new `"rearm-layer-dismiss"` / `"rearm-layer-busy"` tags are
+ * unreachable unless a caller opts in by passing a non-empty stack on a Back
+ * gesture, which no caller does yet (that wiring is PR2). Zero behaviour
+ * change.
  */
 export function popAction(
   direction: NavDirection,
