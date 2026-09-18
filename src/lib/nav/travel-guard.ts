@@ -67,6 +67,22 @@ export interface BeginBackResult {
  * proceed, and must re-arm instead (this mirrors `routeBackToLayer`'s
  * `"refused-busy"` shape: the pure function only reports the decision, it
  * never mutates anything itself).
+ *
+ * OPEN RISK, not fixed here (tracked: #493, Frank R1 on PR #492): the
+ * "different physical entries do not contend" reasoning above addresses
+ * LOGICAL contention (which entry each call targets), not BROWSER-API
+ * contention — two `window.history.back()` calls issued before the first
+ * one's `popstate` has landed can coalesce into a single multi-entry
+ * traversal in some browsers, independent of which entries they logically
+ * target (the same class of hazard `App.tsx`'s existing `backRequested`
+ * double-tap latch already guards against for a SINGLE issuer). This function
+ * faithfully implements the design document's own stated matrix
+ * (docs/design/back-navigation.md, Amendment A) as written; revising that
+ * matrix — e.g. collapsing both flags into one `anyOutstanding` guard — is a
+ * design decision, not a PR1 implementation bug, and needs DRI review before
+ * PR2 wires this into real `history.back()` calls. Nothing in this PR (#452
+ * PR1) calls `history.back()` at all, so the concrete failure scenario #493
+ * describes cannot occur from this PR's code.
  */
 export function beginBack(
   state: TravelGuardState,

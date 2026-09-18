@@ -252,6 +252,17 @@ export function overlayDismissal(
  * chapter/segment was open). That is an existing, accepted simplification;
  * this fix removes the STACK CORRUPTION a reload could cause, not the
  * "always lands on Books" behavior.
+ *
+ * `index` must be a non-negative SAFE INTEGER, not merely `typeof === "number"`
+ * (Frank R1 P2): every real entry this app ever writes is stamped from
+ * `++nextIndex.current` (`App.tsx:78`), a non-negative integer, so `NaN`,
+ * `Infinity`/`-Infinity`, a negative number, or a fractional value can only
+ * reach here from state this app never wrote — malformed/foreign/legacy
+ * state, exactly the case the docblock above already says must resume to `0`.
+ * Accepting `NaN` silently would be worse than a typo: `navDirection(NaN, 1)`
+ * reads `"same"` (both `<`/`>` comparisons on `NaN` are false), so a REAL Back
+ * gesture would be silently swallowed, and an adopted `NaN`/`Infinity`
+ * baseline can never advance by `++nextIndex.current` again either.
  */
 export function resumeNavIndex(state: unknown): number {
   if (
@@ -260,7 +271,9 @@ export function resumeNavIndex(state: unknown): number {
     "tc" in state &&
     (state as { tc?: unknown }).tc === true &&
     "index" in state &&
-    typeof (state as { index?: unknown }).index === "number"
+    typeof (state as { index?: unknown }).index === "number" &&
+    Number.isSafeInteger((state as { index: number }).index) &&
+    (state as { index: number }).index >= 0
   ) {
     return (state as { index: number }).index;
   }

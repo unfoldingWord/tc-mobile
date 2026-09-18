@@ -49,6 +49,23 @@ describe("resumeNavIndex", () => {
     expect(resumeNavIndex({ tc: true, index: 2 })).toBe(2);
     expect(resumeNavIndex({ tc: true, index: 0 })).toBe(0);
   });
+
+  /**
+   * Frank R1 P2 (PR #492): `typeof x === "number"` alone accepts `NaN` and
+   * `Infinity` as "well-formed" — neither is an integer `++nextIndex.current`
+   * (App.tsx:78) could ever stamp, so both can only arrive here from state
+   * this app never wrote. Adopting `NaN` is actively dangerous, not just
+   * wrong: `navDirection(NaN, x)` reads `"same"` for every `x` (both `<`/`>`
+   * comparisons on `NaN` are false), so a real Back gesture would be silently
+   * swallowed forever once adopted as the baseline.
+   */
+  it("resumes 0 for non-finite or out-of-domain `index` values (Frank R1 P2)", () => {
+    expect(resumeNavIndex({ tc: true, index: NaN })).toBe(0);
+    expect(resumeNavIndex({ tc: true, index: Infinity })).toBe(0);
+    expect(resumeNavIndex({ tc: true, index: -Infinity })).toBe(0);
+    expect(resumeNavIndex({ tc: true, index: -1 })).toBe(0);
+    expect(resumeNavIndex({ tc: true, index: 1.5 })).toBe(0);
+  });
 });
 
 /**
