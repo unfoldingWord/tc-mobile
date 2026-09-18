@@ -6,11 +6,11 @@
  * and a `popstate` is routed to the top of this stack before it is ever
  * allowed to reach a real screen transition (invariant 3).
  *
- * This file owns ONLY the decision. The adapter that will own the actual
- * `Layer[]` ref, call `pushLayer`/`popLayer` imperatively from click handlers
- * (never from an effect — invariant 6), and perform the `dismiss()`/refuse a
- * `routeBackToLayer` result names, is `hooks/use-nav-stack.ts` — PR2 of #452,
- * not this PR. Nothing here touches the DOM, `window`, or React.
+ * This file owns ONLY the decision. The adapter that owns the actual
+ * `Layer[]` ref, calls `pushLayer`/`popLayer` imperatively from click handlers
+ * (never from an effect — invariant 6), and performs the `dismiss()`/refuse a
+ * `routeBackToLayer` result names, is `hooks/use-nav-stack.ts` (#452 PR2).
+ * Nothing here touches the DOM, `window`, or React.
  */
 
 /**
@@ -31,10 +31,7 @@
  * the two shapes apart, because both type-check identically as `() => boolean`
  * at the call site; only the ref-backed one can ever reflect a synchronous
  * flip with no intervening render. See the "busy()-is-a-ref" negative example
- * in `tests/nav-layer-stack.test.ts`.
- *
- * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
- */
+ * in `tests/nav-layer-stack.test.ts`. */
 export interface Layer {
   readonly id: string;
   busy(): boolean;
@@ -42,17 +39,11 @@ export interface Layer {
 }
 
 /**
- * Screen-scoped stack of open overlays, bottom-to-top open order.
- *
- * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
- */
+ * Screen-scoped stack of open overlays, bottom-to-top open order. */
 export type LayerStack = readonly Layer[];
 
 /**
- * The most-recently-opened layer, or `undefined` for an empty stack.
- *
- * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
- */
+ * The most-recently-opened layer, or `undefined` for an empty stack. */
 export function topLayer(stack: LayerStack): Layer | undefined {
   return stack[stack.length - 1];
 }
@@ -67,18 +58,15 @@ export function topLayer(stack: LayerStack): Layer | undefined {
  * earlier version of this docblock claimed the adapter re-arms only on
  * `"refused-busy"` and does nothing on `"dismiss"` — that was backwards. A
  * `popstate` has already popped the screen-depth entry before any of this
- * runs (`App.tsx:301-302`), exactly like every other non-screen intercept in
- * `popAction` (`trap-recovery`/`trap-database-panel`/`rearm-during-commit`
- * all re-arm, `App.tsx:313-336`), so BOTH a `"dismiss"` and a `"refused-busy"`
+ * runs, exactly like every other non-screen intercept in `popAction`
+ * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy` all re-arm),
+ * so BOTH a `"dismiss"` and a `"refused-busy"`
  * outcome require the adapter to re-arm; `"dismiss"` additionally calls
  * `dismiss()` on the named layer. That full, corrected contract is encoded
  * where the adapter actually reads it — `navigation.ts`'s `popAction`, as the
  * string tags `"rearm-layer-dismiss"` / `"rearm-layer-busy"` — not here. This
  * type stays three-way (`empty`/`dismiss`/`refused-busy`) because it is still
- * useful as the narrower, per-layer decision `popAction` builds on.
- *
- * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
- */
+ * useful as the narrower, per-layer decision `popAction` builds on. */
 export type RouteBackToLayerResult =
   | { readonly kind: "empty" }
   | { readonly kind: "refused-busy"; readonly layerId: string }
@@ -99,11 +87,10 @@ export type RouteBackToLayerResult =
  * the named layer) — `navigation.ts`'s `popAction` is where that full
  * contract is encoded, as `"rearm-layer-dismiss"` / `"rearm-layer-busy"`.
  *
- * `navigation.ts`'s `popAction` calls this once `layerStack` is non-empty,
- * but no caller passes a non-empty stack yet — that wiring is PR2.
- *
- * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
- */
+ * `navigation.ts`'s `popAction` calls this once `layerStack` is non-empty.
+ * The adapter (`hooks/use-nav-stack.ts`, #452 PR2) owns the stack, but no
+ * overlay pushes onto it yet — it stays empty until Books'/Segments' overlays
+ * convert to `Layer`s in PR3/PR4, so this routing is inert until then. */
 export function routeBackToLayer(stack: LayerStack): RouteBackToLayerResult {
   const layer = topLayer(stack);
   if (!layer) return { kind: "empty" };

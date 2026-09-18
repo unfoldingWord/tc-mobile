@@ -236,11 +236,14 @@ narrowly enough that it does not reopen a reconciliation problem:
 
 ### Mechanism
 
-One hook, `hooks/use-nav-stack.ts`, owns three refs — `navIndex`,
+One hook, `hooks/use-nav-stack.ts`, owns the three core refs — `navIndex`,
 `nextIndex` (renamed conceptually but kept as the depth-stamping source per
-invariant 9), and a per-screen `layerStack: Layer[]` — and the single
-`window.popstate` listener. `interface Layer { id: string; busy(): boolean;
-dismiss(): void }`. Opening an overlay calls `pushLayer(layer)` directly from
+invariant 9), and a per-screen `layerStack: Layer[]` — plus the guard/flag
+refs the amendments and the kept develop machinery add: `travelGuard`
+(Amendment A), `transitionInFlight` (renamed from `committing`, invariant 7)
+and `suppressPop`, for six refs in all, with a one-slot `pendingCommitClose`
+for the refused-commit-close drain. It also owns the single `window.popstate`
+listener. `interface Layer { id: string; busy(): boolean; dismiss(): void }`. Opening an overlay calls `pushLayer(layer)` directly from
 the same click handler that sets the overlay's own `open` state; closing —
 by the overlay's own Close/Cancel/scrim, or by a Back landing on it — calls
 `popLayer(id)`, also directly, never from an effect.
@@ -401,23 +404,23 @@ real raw-`history.back()` sites: `goBack` (on-screen and system Back, shared
 per this repo's "one Back path" rule) and the recorder's commit-close exit
 (`.then((exited) => { ... window.history.back() })`, `App.tsx:357-361`).
 
-`src/lib/nav/travel-guard.ts` (new): a pure trio,
-`beginBack(state, issuer): {ok: boolean, next: TravelGuardState}`,
-`settleBack(state, issuer): TravelGuardState`, and
+`src/lib/nav/travel-guard.ts`: a pure pair,
+`beginBack(state, issuer): {ok: boolean, next: TravelGuardState}` and
 `settleOutstanding(state): TravelGuardState`, operating on `{ goBackOutstanding:
-boolean, commitCloseOutstanding: boolean }` (the `issuer` parameter is
-required — `travel-guard.ts:149-151`, `:172-174` — and matches the live code;
-#494 item 4). `settleBack` clears one named issuer's flag; `settleOutstanding`
-is the issuer-blind landing settle the adapter runs at the top of every
-`popstate` (the one place `App.tsx`'s live latch clears today), returning the
-guard to `initialTravelGuardState` regardless of which issuer settled — the
-issuer-blind counterpart of the any-issuer `beginBack` refusal (#494 item 2).
-`goBackOutstanding` and
-`commitCloseOutstanding` still identify WHICH issuer has a call outstanding
-(for `settleBack`'s own bookkeeping — it clears only the settling issuer's
-flag), but as of **2026-09-18 (PR #492 round 4, answers #493)** the rule is
-**any-outstanding, not per-issuer**: a request is refused whenever EITHER
-flag is already set, regardless of which issuer is asking.
+boolean, commitCloseOutstanding: boolean }` (the `beginBack` `issuer` parameter
+is required and matches the live code; #494 item 4). `settleOutstanding` is the
+issuer-blind landing settle the adapter runs at the top of every `popstate`
+(the one place `App.tsx`'s live latch cleared), returning the guard to
+`initialTravelGuardState` regardless of which issuer settled — the issuer-blind
+counterpart of the any-issuer `beginBack` refusal (#494 item 2). A per-issuer
+`settleBack` shipped with PR1 but is **deleted in PR2**: the any-issuer refusal
+means the landing settle must be any-issuer too, so `settleBack` had no
+consumer and its `@pivotpending` tag would have been a false claim.
+`goBackOutstanding` and `commitCloseOutstanding` still identify WHICH issuer set
+a flag (that is which flag `beginBack` sets on success), but as of **2026-09-18
+(PR #492 round 4, answers #493)** the refusal rule is **any-outstanding, not
+per-issuer**: a request is refused whenever EITHER flag is already set,
+regardless of which issuer is asking.
 
 | Any flag outstanding?  | A request from either issuer...                                  |
 | ---------------------- | ---------------------------------------------------------------- |
@@ -437,10 +440,10 @@ flag is already set, regardless of which issuer is asking.
 > issuer, just not across issuers. The dev lead's decision (PR #492 round 4)
 > is to collapse the matrix to the single any-outstanding rule above rather
 > than defer the question again; the four-row table, and the "different
-> physical entries do not contend" reasoning, are retired. `settleBack` is
-> unchanged — it still requires the caller to name which issuer is settling,
-> and still clears only that issuer's own flag, so `beginBack`'s next caller
-> only unblocks once the actual outstanding call has settled.
+> physical entries do not contend" reasoning, are retired. (The per-issuer
+> `settleBack` this note originally described was subsequently DELETED in PR2 —
+> once the refusal is any-issuer, the landing settle is any-issuer too
+> (`settleOutstanding`), leaving `settleBack` with no consumer.)
 
 This is the exact regression test for R2-G-P2-1/R2-G-P2-2/R3-G-P2-1's
 class, and — since round 4 — also answers #493's cross-issuer coalescing
@@ -451,13 +454,14 @@ open risk. It does **not** close #493 for `closeRecorder`'s own programmatic
 outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
 the any-outstanding guard cannot see or refuse against it — already disclosed
 at `travel-guard.ts:34-45`. `goBack` and the recorder's commit-close exit are
-rewritten to call `beginBack`/`settleBack` instead of touching **only**
-`backRequested` — **not** `suppressPop`, which stays fully load-bearing at
-`App.tsx:266-268` (programmatic close), `:340-341` (`trap-forward`) and
-`:358-360` (the commit-close consume), per `travel-guard.ts:15-32` (#494 item
+rewritten to call `beginBack` (settling at the next landing with
+`settleOutstanding`) instead of touching **only** `backRequested` — **not**
+`suppressPop`, which stays fully load-bearing in the adapter at the
+programmatic close, `trap-forward`, and the commit-close consume, per
+`travel-guard.ts:15-32` (#494 item
 1, George R4 P2-1). Dropping `suppressPop` would route the commit-close
 consume-back as a real Segments Back → `"to-books"` → `backToBooks()` →
-`setClipboard(null)`. That wiring is still PR2, not this PR.
+`setClipboard(null)`. That wiring landed in PR2 (`hooks/use-nav-stack.ts`).
 
 ### Amendment B — reload/bootstrap safety
 
@@ -722,11 +726,19 @@ inference until it is run on an actual Android device.
 1. **PR1 — pure core only.** `layer-stack.ts`, `travel-guard.ts`,
    `resumeNavIndex`, the extended `popAction`. Zero behavior change to the
    shipped app; fully Vitest-covered including the corpus decision table.
-2. **PR2 — the adapter.** `hooks/use-nav-stack.ts` replaces `App.tsx`'s
-   inline refs/effect wholesale; carries the #168 mutation test forward
-   re-targeted at `transitionInFlight`; wires Amendment B (reload) and
-   Amendment C (unmount safety net). This is the PR that touches the
-   highest-stakes path in the app and should bake before PR3 opens.
+2. **PR2 — the adapter. LANDED (code).** `hooks/use-nav-stack.ts` replaces
+   `App.tsx`'s inline refs/effect wholesale; carries the #168 mutation test
+   forward re-targeted at `transitionInFlight`; wires Amendment B (reload) and
+   Amendment C (unmount safety net); resolves #494's four items; the
+   any-issuer landing settle is `settleOutstanding` (the per-issuer
+   `settleBack` is deleted). The layer stack exists in the adapter and stays
+   EMPTY (no overlay pushes until PR3/PR4), so observable Back behaviour is
+   unchanged except where the design names a fix (Amendments A/B, the refused
+   commit-close drain). "Landed (code)" is a statement of what the tree does;
+   the DOM/reload/commit-close paths are review-only and an on-device (T2)
+   item, NOT claimed verified here (no renderer, no device run). This is the
+   PR that touches the highest-stakes path in the app and should bake before
+   PR3 opens.
 3. **PR3 — Books' overlays.** Builds the missing ref accessors (F4) for
    `savingBookName` and `deleting`; converts Books' five overlays to
    `Layer`s; wires Amendment D for the book ≡ menu's Share status; includes
@@ -786,7 +798,13 @@ and none merges without the DRI's explicit permission per workspace
 
 ## Status
 
-Awaiting DRI review. No code has changed. The next step, on approval, is
-PR1 as scoped above — pure core, zero behavior change — which can start
-independent of any answer to the open questions listed, since none of them
-bear on the pure layer.
+**PR1 (pure core) merged** as #492 (`5252599`), with four residuals carried to
+PR2 as #494. **PR2 (the adapter, `hooks/use-nav-stack.ts`) has landed as code**
+on `feat/452-pr2-nav-adapter`: it extracts App.tsx's inline history machinery
+wholesale, wires Amendments A–C, resolves #494's four items, and deletes the
+per-issuer `settleBack` in favour of `settleOutstanding`. This is a statement
+of what the code does — the routing/guard/reload decisions are Node-tested in
+`src/lib/nav`, but the adapter's DOM paths (popstate, reload adopt, the
+commit-close drain, the Amendment C cleanup) have **no renderer here** and are
+review-only plus an on-device (T2) item; nothing here claims they were run on a
+device or reviewed clean. Next: PR3 (Books' overlays) after PR2 bakes.
