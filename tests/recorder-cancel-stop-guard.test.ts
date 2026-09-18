@@ -90,17 +90,36 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
   }
   const cancelBody = code.slice(braceOpen, braceClose + 1);
 
-  it("wraps the native recorder.stop() call in cancel() inside a try", () => {
-    // Deleting the `try` (leaving a bare `recorder.stop();`) must fail this.
-    expect(cancelBody).toMatch(/try\s*\{\s*recorder\.stop\s*\(\s*\)\s*;/);
+  /**
+   * The ONE pattern every positive assertion below is anchored to: a `try`
+   * wrapping exactly `recorder.stop();`, flowing DIRECTLY (no `finally`, no
+   * intervening statement) into a `catch (cause)` whose body is exactly the
+   * `reportFailure` call. Contiguous, not "a try exists somewhere AND a
+   * matching catch exists somewhere else in the body" — that decomposed
+   * shape is satisfied by a `try { recorder.stop(); } finally {}` sitting
+   * next to an UNRELATED `try { x(); } catch (cause) { reportFailure(cause,
+   * "recorder-cancel-stop"); }`, which lets a throwing `stop()` propagate
+   * uncaught while every assertion still passes (Frank round 5 P2, on the
+   * decomposed version of this gate). Tying try/catch/report into one
+   * contiguous regex closes that: no detached catch, and no unrelated
+   * statement standing in for it, can satisfy this pattern.
+   */
+  const guardPattern =
+    /try\s*\{\s*recorder\.stop\s*\(\s*\)\s*;\s*\}\s*catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-cancel-stop"\s*\);\s*\}/;
+
+  it("wraps the native recorder.stop() call in cancel() inside a try that flows directly into its own catch", () => {
+    // Deleting the `try` (leaving a bare `recorder.stop();`), or detaching
+    // it from its catch (e.g. a `finally` in between), must fail this.
+    expect(cancelBody).toMatch(guardPattern);
   });
 
-  it('the catch binds cause and calls reportFailure(cause, "recorder-cancel-stop")', () => {
-    // Emptying the catch body, or dropping the `cause` binding, or changing
-    // the context string, must fail this.
-    expect(cancelBody).toMatch(
-      /catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-cancel-stop"\s*\);\s*\}/
-    );
+  it('that same try flows into a catch that binds cause and calls reportFailure(cause, "recorder-cancel-stop")', () => {
+    // Emptying the catch body, dropping the `cause` binding, changing the
+    // context string, or — per Frank round 5 P2 — satisfying this from an
+    // UNRELATED try/catch elsewhere in the body while the real try/finally
+    // lets the throw through, must all fail this: the pattern requires the
+    // catch to be the one directly following THIS try.
+    expect(cancelBody).toMatch(guardPattern);
   });
 
   it("releaseStream() follows the try/catch, not the other way around", () => {
@@ -108,9 +127,7 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
     // never compares as "less than" and passes vacuously) before their
     // order is compared. Deleting the releaseStream() call, or moving it
     // above the try/catch, must fail this.
-    const catchAnchor = cancelBody.search(
-      /catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-cancel-stop"\s*\);\s*\}/
-    );
+    const catchAnchor = cancelBody.search(guardPattern);
     const releaseAnchor = cancelBody.indexOf("releaseStream();");
     expect(catchAnchor).toBeGreaterThan(-1);
     expect(releaseAnchor).toBeGreaterThan(-1);
