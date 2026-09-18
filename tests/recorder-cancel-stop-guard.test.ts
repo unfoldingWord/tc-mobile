@@ -170,7 +170,28 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
     expect(releaseAnchor).toBeGreaterThan(catchAnchor);
   });
 
-  it("no try/catch remains around the flush-executor's recorder.stop() — the reverted hunk stays reverted", () => {
+  /**
+   * PINS THE CURRENT DECISION, NOT A PERMANENT BAN. Frank round 5 P2 (3rd
+   * pass) read this as claiming the flush-executor `stop()` must NEVER be
+   * guarded — and objected that a future PR re-adding a guard there, on
+   * real evidence (e.g. #478 showing the still-active interruption arm IS
+   * reached on a device), would go red for a legitimate change.
+   *
+   * That is this repo's established gate shape, not a defect in it:
+   * `tests/precache-manifest.test.ts`'s "matches the intended allowlist
+   * exactly" pins today's decided `INTENDED` set the same way and says so
+   * explicitly — "Changing the precached set is a deliberate act, and
+   * updating INTENDED is how it is recorded" (precache-manifest.test.ts:
+   * 136-138). This test plays the same role for the round-5 cap decision:
+   * it pins that THIS hunk is reverted as of THIS PR, so a silent
+   * reintroduction (a bad rebase, an errant cherry-pick, a merge conflict
+   * resolved the wrong way) fails loudly instead of quietly undoing the
+   * decision — not that the guard can never legitimately return. A future
+   * PR that re-adds it on real evidence updates this test in the same
+   * change, the same way `INTENDED` gets updated when `jpg` legitimately
+   * re-enters the precache.
+   */
+  it("no try/catch remains around the flush-executor's recorder.stop() — the reverted hunk stays reverted (pins the round-5 decision; update this test in the same PR that legitimately re-adds a guard here)", () => {
     /**
      * Isolate the flush executor's own body the same way, so this checks
      * the SPECIFIC call site `stop()`'s bounded flush reverted back to
