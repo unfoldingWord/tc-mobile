@@ -201,12 +201,14 @@ this file will not blur the two.** What reaches the funnel today is: uncaught
 errors and unhandled rejections (`app/install-failure-listeners.ts`), render
 throws (`components/error-boundary.tsx`), encoder health and recovery
 (`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
-share _prepare_ (`hooks/share-flow.ts`), and the log's own share and clear
-paths. What still ends at `console.error` and is therefore **never written
-down** is most of what a translator actually hits: a failed save
-(`hooks/use-save-take.ts`), a failed book delete (`hooks/use-books.ts`), a
-failed erase (`hooks/use-erase-segment.ts`), mic/playback/record-start
-(`hooks/use-audio-session.ts`), the recorder's commit and preview paths, and
+share _prepare_ (`hooks/share-flow.ts`), `cancel()`'s native `stop()` guard
+(`hooks/use-recorder.ts`, context key `"recorder-cancel-stop"`, #474), and
+the log's own share and clear paths. What still ends at `console.error` and
+is therefore **never written down** is most of what a translator actually
+hits: a failed save (`hooks/use-save-take.ts`), a failed book delete
+(`hooks/use-books.ts`), a failed erase (`hooks/use-erase-segment.ts`),
+mic/playback/record-start and `stopRecording`'s commit-path backstop
+(`hooks/use-audio-session.ts`, #480), the recorder's preview path, and
 share _send_ (`hooks/share-flow.ts`). Routing those is follow-up work — and it
 is not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
@@ -562,6 +564,20 @@ wrong, and more rounds will not help) — and **ask the DRI whether to run
 again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
+
+**Decompose before any post-cap round (decided 2026-09-18).** The DRI's pick
+at the cap is made from a _judgment sheet_, not from the round narrative:
+break "is this PR right?" into atomic yes/no and choice judgments, answer each
+from the strongest evidence reachable — the tree at the head SHA, the primary
+spec, a device log, an issue thread — with a file:line or a URL per answer, and
+include a "cannot tell" outcome. Then compose the options as explicit rules
+over the answers and post the sheet on the PR with the pick. The discriminating
+question is usually one nobody named in four rounds: for #474 it was whether
+each guard's correctness depended on an _unobservable_ recorder state (one did,
+one did not), and forcing a primary-source check per judgment is what caught a
+spec claim in both docblocks that the current spec contradicts. Chain versus
+siblings still gets stated; the sheet is what the pick is made from. The shape
+is in `docs/review/dual-review.md` ("Decompose before the DRI picks").
 
 **Merging.** This repo is solo, so Frank and George _are_ the review: once both
 are clean at the current head SHA and CI is green, merge is an admin merge.
