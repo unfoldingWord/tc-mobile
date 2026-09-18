@@ -4,6 +4,7 @@ import {
   beginBack,
   initialTravelGuardState,
   settleBack,
+  settleOutstanding,
   type TravelGuardState,
 } from "@/lib/nav/travel-guard";
 
@@ -151,5 +152,84 @@ describe("settleBack", () => {
     expect(settleBack(begun.next, "commit-close")).toEqual(
       initialTravelGuardState
     );
+  });
+});
+
+/**
+ * `settleOutstanding` (#494 item 2, PR2): the adapter clears the guard at the
+ * ONE place `App.tsx`'s live latch clears today — the top of the `popstate`
+ * handler (`App.tsx:287-291`), which runs on EVERY landing and has no notion
+ * of WHICH issuer settled. `settleBack` is per-issuer; refusal (`beginBack`)
+ * is any-issuer since #492 round 4. A literal port of the old undifferentiated
+ * latch to `settleBack(state, "go-back")` at that site leaves
+ * `commitCloseOutstanding` stuck after the first recorder Back, so every later
+ * `beginBack` — from either issuer — is refused and on-screen Back is dead for
+ * the session. `settleOutstanding` is the landing settle: it clears the whole
+ * guard back to `initialTravelGuardState`, so the next `beginBack` proceeds.
+ *
+ * It is defined TOTAL — it returns `initialTravelGuardState` for ANY input,
+ * including the both-set state — rather than "clear whichever single flag is
+ * set". The both-set state is unreachable THROUGH `beginBack` under the
+ * any-outstanding rule (a second `beginBack` is refused before a second flag
+ * can be set), but it is a legal value of the two-boolean type and the suite
+ * already constructs it (the `both outstanding` rows above), so totality must
+ * not lean on that invariant.
+ */
+describe("settleOutstanding — the any-issuer landing settle (#494 item 2)", () => {
+  it("clears a single outstanding flag, from either issuer, back to the initial state", () => {
+    const goBackOnly: TravelGuardState = {
+      goBackOutstanding: true,
+      commitCloseOutstanding: false,
+    };
+    expect(settleOutstanding(goBackOnly)).toEqual(initialTravelGuardState);
+
+    const commitCloseOnly: TravelGuardState = {
+      goBackOutstanding: false,
+      commitCloseOutstanding: true,
+    };
+    expect(settleOutstanding(commitCloseOnly)).toEqual(initialTravelGuardState);
+  });
+
+  it("is a no-op on the already-clear initial state", () => {
+    expect(settleOutstanding(initialTravelGuardState)).toEqual(
+      initialTravelGuardState
+    );
+  });
+
+  it("clears the both-set state too — totality does not rely on beginBack's any-outstanding invariant", () => {
+    // The both-set state is unreachable through beginBack, but it is a legal
+    // value of the two-boolean type (and the `both outstanding` rows above
+    // construct it), so settleOutstanding must clear it unconditionally rather
+    // than assume at most one flag is ever set.
+    const bothOutstanding: TravelGuardState = {
+      goBackOutstanding: true,
+      commitCloseOutstanding: true,
+    };
+    expect(settleOutstanding(bothOutstanding)).toEqual(initialTravelGuardState);
+  });
+
+  it("#494 item 2 negative pin: the naive settleBack(state,'go-back') port leaves commit-close stuck and refuses every later beginBack; settleOutstanding does not", () => {
+    // The live latch site (App.tsx:287-291) settles on EVERY popstate with no
+    // issuer. After a successful recorder Back, the guard is:
+    const commitCloseOutstanding: TravelGuardState = {
+      goBackOutstanding: false,
+      commitCloseOutstanding: true,
+    };
+
+    // The wrong port — settleBack(state, "go-back") — clears the flag that is
+    // NOT set and leaves commitCloseOutstanding stuck true.
+    const afterNaivePort = settleBack(commitCloseOutstanding, "go-back");
+    expect(afterNaivePort).toEqual(commitCloseOutstanding); // unchanged; still stuck
+    // …so every later beginBack — from EITHER issuer — is refused for the rest
+    // of the session (on-screen Back dead).
+    expect(beginBack(afterNaivePort, "go-back").ok).toBe(false);
+    expect(beginBack(afterNaivePort, "commit-close").ok).toBe(false);
+
+    // settleOutstanding is the fix: it clears the outstanding flag whichever
+    // issuer set it, and the next beginBack proceeds.
+    const afterLandingSettle = settleOutstanding(commitCloseOutstanding);
+    expect(afterLandingSettle).toEqual(initialTravelGuardState);
+    expect(beginBack(afterLandingSettle, "go-back").ok).toBe(true);
+    expect(beginBack(afterLandingSettle, "commit-close").ok).toBe(true);
   });
 });

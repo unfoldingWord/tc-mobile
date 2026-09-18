@@ -177,3 +177,36 @@ export function settleBack(
     ? { ...state, goBackOutstanding: false }
     : { ...state, commitCloseOutstanding: false };
 }
+
+/**
+ * Clear the guard at a `popstate` landing, WITHOUT naming an issuer (#494 item
+ * 2, 2026-09-18). This is the settle the adapter uses at the one place
+ * `App.tsx`'s live latch clears today — the top of the `popstate` handler
+ * (`App.tsx:287-291`, `backRequested.current = false`), which runs on EVERY
+ * landing and knows nothing about WHICH issuer's `history.back()` just
+ * settled.
+ *
+ * `settleBack` is per-issuer; `beginBack`'s refusal is any-issuer (the #492
+ * round 4 / #493 decision). Those two do not compose at an issuer-blind site:
+ * a literal port of the old undifferentiated latch to `settleBack(state,
+ * "go-back")` at the landing clears the WRONG flag whenever the settling call
+ * was the recorder's commit-close exit, leaving `commitCloseOutstanding` stuck
+ * true — after which every later `beginBack`, from either issuer, is refused
+ * and on-screen Back is dead for the rest of the session. `settleOutstanding`
+ * is the issuer-blind counterpart of the any-issuer `beginBack`: it returns
+ * the guard to `initialTravelGuardState` so the next `beginBack` proceeds.
+ *
+ * Defined TOTAL — it clears BOTH flags for ANY input, the both-set state
+ * included (the returned value is deep-equal to `initialTravelGuardState`) —
+ * not "clear whichever single flag is set". The both-set state is unreachable
+ * THROUGH `beginBack` under the any-outstanding rule (a second `beginBack` is
+ * refused before a second flag can be set), but it is a legal value of the
+ * two-boolean `TravelGuardState` type, so this function's correctness must not
+ * depend on that invariant holding elsewhere — hence both flags are set false
+ * unconditionally rather than one conditionally.
+ *
+ * @pivotpending #452 — PR2 (hooks/use-nav-stack.ts) wires it.
+ */
+export function settleOutstanding(state: TravelGuardState): TravelGuardState {
+  return { ...state, goBackOutstanding: false, commitCloseOutstanding: false };
+}

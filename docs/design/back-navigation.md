@@ -401,10 +401,18 @@ real raw-`history.back()` sites: `goBack` (on-screen and system Back, shared
 per this repo's "one Back path" rule) and the recorder's commit-close exit
 (`.then((exited) => { ... window.history.back() })`, `App.tsx:357-361`).
 
-`src/lib/nav/travel-guard.ts` (new): a pure pair,
-`beginBack(state): {ok: boolean, next: TravelGuardState}` and
-`settleBack(state): TravelGuardState`, operating on `{ goBackOutstanding:
-boolean, commitCloseOutstanding: boolean }`. `goBackOutstanding` and
+`src/lib/nav/travel-guard.ts` (new): a pure trio,
+`beginBack(state, issuer): {ok: boolean, next: TravelGuardState}`,
+`settleBack(state, issuer): TravelGuardState`, and
+`settleOutstanding(state): TravelGuardState`, operating on `{ goBackOutstanding:
+boolean, commitCloseOutstanding: boolean }` (the `issuer` parameter is
+required — `travel-guard.ts:149-151`, `:172-174` — and matches the live code;
+#494 item 4). `settleBack` clears one named issuer's flag; `settleOutstanding`
+is the issuer-blind landing settle the adapter runs at the top of every
+`popstate` (the one place `App.tsx`'s live latch clears today), returning the
+guard to `initialTravelGuardState` regardless of which issuer settled — the
+issuer-blind counterpart of the any-issuer `beginBack` refusal (#494 item 2).
+`goBackOutstanding` and
 `commitCloseOutstanding` still identify WHICH issuer has a call outstanding
 (for `settleBack`'s own bookkeeping — it clears only the settling issuer's
 flag), but as of **2026-09-18 (PR #492 round 4, answers #493)** the rule is
@@ -436,10 +444,20 @@ flag is already set, regardless of which issuer is asking.
 
 This is the exact regression test for R2-G-P2-1/R2-G-P2-2/R3-G-P2-1's
 class, and — since round 4 — also answers #493's cross-issuer coalescing
-question at the source rather than disclosing it as an open risk. `goBack`
-and the recorder's commit-close exit are rewritten to call
-`beginBack`/`settleBack` instead of touching `backRequested`/`suppressPop`
-directly; that wiring is still PR2, not this PR.
+question **for the two issuers this guard tracks** (`goBack` and the
+recorder's commit-close exit), at the source rather than disclosing it as an
+open risk. It does **not** close #493 for `closeRecorder`'s own programmatic
+`window.history.back()` (`App.tsx:266-268`): that is a THIRD raw issuer
+outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
+the any-outstanding guard cannot see or refuse against it — already disclosed
+at `travel-guard.ts:34-45`. `goBack` and the recorder's commit-close exit are
+rewritten to call `beginBack`/`settleBack` instead of touching **only**
+`backRequested` — **not** `suppressPop`, which stays fully load-bearing at
+`App.tsx:266-268` (programmatic close), `:340-341` (`trap-forward`) and
+`:358-360` (the commit-close consume), per `travel-guard.ts:15-32` (#494 item
+1, George R4 P2-1). Dropping `suppressPop` would route the commit-close
+consume-back as a real Segments Back → `"to-books"` → `backToBooks()` →
+`setClipboard(null)`. That wiring is still PR2, not this PR.
 
 ### Amendment B — reload/bootstrap safety
 

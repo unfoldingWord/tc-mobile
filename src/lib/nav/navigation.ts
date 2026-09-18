@@ -127,7 +127,13 @@ export function navDirection(from: number, to: number): NavDirection {
  * not just one: `"rearm-layer-dismiss"` means dismiss the top layer (the
  * adapter recovers it via `topLayer(stack)`) AND push a fresh entry;
  * `"rearm-layer-busy"` means push a fresh entry only, same as every other
- * re-arm case. Two string tags rather than the object this PR originally
+ * re-arm case. **On `"rearm-layer-dismiss"` the adapter must also UNREGISTER
+ * that top layer — call `popLayer(id)` — or make `dismiss()` itself the same
+ * Close handler that already pops it (#494 item 3, George R4 P3-3 on PR
+ * #492). If the layer is left on the stack, every later Back re-selects it as
+ * `"rearm-layer-dismiss"` again with a now-no-op `dismiss()`, and the
+ * screen-depth routing beneath it (`"exit-app"` at the Books root) can never
+ * be reached — Back is permanently trapped at that depth. Two string tags rather than the object this PR originally
  * shipped (`{kind:"layer", result:...}`) so the re-arm obligation is NAMED
  * by the tag itself, not left to a docblock a reader could miss — the
  * earlier object shape's own prose taught the wrong contract ("nothing on
