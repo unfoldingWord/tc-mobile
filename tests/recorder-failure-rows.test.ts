@@ -189,6 +189,17 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
       handlerBody.match(/interruptionReported\s*=\s*true/g) ?? []
     ).toHaveLength(1);
   });
+
+  it("(7) reportFailure is the real import from ./report-failure, not a same-named local", () => {
+    // Mirrors the #480 gate's (3): the contiguous pattern in (1) is satisfied
+    // by ANY `reportFailure(` text, so a local no-op declared in this file
+    // (or in `start()`'s closure) would pass (1)-(6) and write no row. The
+    // import must be present and no declaration may shadow it.
+    expect(code).toMatch(
+      /import\s*\{\s*reportFailure\s*\}\s*from\s*"\.\/report-failure"\s*;/
+    );
+    expect(code).not.toMatch(/(?:const|let|function)\s+reportFailure\b/);
+  });
 });
 
 describe("source pins (text shape only): stopRecording()'s backstop catch reports to the funnel (#480)", () => {

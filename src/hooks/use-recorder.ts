@@ -231,6 +231,10 @@ export const RESUME_START_TIMEOUT_MS = 1_000;
  * `RESUME_START_TIMEOUT_MS`. That row fires on EVERY `start()` whose resume
  * overruns the bound; if a phone's resume-from-interrupted is routinely
  * slow it competes for the failure ring, and the constant is the one knob.
+ * The row cannot tell a WebKit `resume()` that hung from a page frozen
+ * mid-wait by background throttling — both elapse the same timer — so which
+ * one a device row records is an inference for the reader, not a fact the
+ * row carries.
  *
  * Built with a manual `Promise` executor and a local `settled` flag rather
  * than `Promise.race`, so a same-tick or early rejection from

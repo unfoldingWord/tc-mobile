@@ -101,12 +101,17 @@ closing and reopening the app. <!-- source: src/lib/storage/db.ts v6 `failures` 
 
 **Read "some" literally — this is the part to get right.** What is written down
 today is: the app crashing or reloading itself, a problem nobody caught,
-failures while making an MP3 or preparing a share, and a few faults inside the
-recorder itself (including a Stop that fails to finish). <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-cancel-stop #474, recorder-start-resume #470, recorder-start-resume-timeout #475, recorder-interrupted-active #478); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480) --> What is **not** written
+failures while making an MP3 or preparing a share, and a few narrow faults
+inside the recorder: an interruption (a call, another app taking the
+microphone) that finds the recorder still running, a microphone wake-up at
+Record that failed or took longer than one second, and a Stop or a Back whose
+teardown threw inside the app. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 and recorder-start-resume-timeout #475 — raceAudioResume's rejection and timer branches; recorder-cancel-stop #474 — cancel()'s native stop() guard); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it) --> What is **not** written
 down today is most of what a translator actually hits: a recording that fails
 to save, a book that fails to delete, an erase that fails, the microphone or
-playback refusing to start, and the share sheet failing at the moment of
-sending. Those show their own message on screen and leave no entry behind. <!-- source: src/hooks/use-save-take.ts:100; src/hooks/use-books.ts:625; src/hooks/use-erase-segment.ts:41; src/hooks/use-audio-session.ts:328/348/384/478/527/607/700 (resume, nothing-to-play, playback, buffer playback, record-start, prime — NOT stopRecording's backstop catch at :654, which reports under recorder-stop-backstop since #480); src/components/recorder.tsx (commit/preview); src/hooks/share-flow.ts:460 — all still end at console.error; gh issue #205 round-2 G2 --> So
+playback refusing to start, a Stop that fails the way you see it — the
+recorder's own notice that no sound was recorded or that the recording could
+not be decoded — and the share sheet failing at the moment of sending. Those
+show their own message on screen and leave no entry behind. <!-- source: src/hooks/use-save-take.ts:100; src/hooks/use-books.ts:625; src/hooks/use-erase-segment.ts:41; src/hooks/use-audio-session.ts — the seven console.error sites that report nothing: audio-context resume before Play (take and buffer, two sites), nothing-to-play, take playback, buffer playback, record-start, and primeAudioContext on sheet open (NOT stopRecording's backstop catch, which reports under recorder-stop-backstop since #480; a Stop that returns its error in the StopResult never enters that catch); src/components/recorder.tsx (commit/preview); src/hooks/share-flow.ts:460 — all still end at console.error; gh issue #205 round-2 G2 --> So
 when a save or a delete fails in front of you, **write it down yourself** (§5.2)
 and do not assume this report carries it. Routing those to the record is
 follow-up work, not something this build does. <!-- source: src/hooks/report-failure.ts:41 -->
