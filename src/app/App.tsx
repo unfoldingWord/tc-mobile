@@ -14,6 +14,7 @@ import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useSaveTake } from "@/hooks/use-save-take";
+import { topLayer, type Layer } from "@/lib/nav/layer-stack";
 import { navDirection, popAction, screenFor } from "@/lib/nav/navigation";
 import {
   holdsUnsavedAudio,
@@ -70,6 +71,16 @@ export function App() {
   // increments; the live stack is strictly increasing in it (see `navDirection`).
   const nextIndex = useRef(0);
   const navIndex = useRef(0);
+  // The screen-scoped layer stack (docs/design/back-navigation.md, invariant
+  // 3): overlays register here instead of pushing history, and a Back routes
+  // to the TOP entry before the screen-level routing. Empty in PR2 — nothing
+  // calls pushLayer until Books'/Segments' overlays convert in PR3/PR4 — so
+  // popAction's two layer tags are unreachable-by-construction here; the ref
+  // exists now so the exhaustive switch below can handle them without the 6th
+  // argument ever changing behaviour (pinned by nav-navigation.test.ts's
+  // empty-stack-equivalence row). PR2's adapter (hooks/use-nav-stack.ts) takes
+  // ownership of this ref in the extraction commit.
+  const layerStack = useRef<Layer[]>([]);
 
   const pushHistoryEntry = useCallback(() => {
     // A marker entry whose only job is to be there for Back to consume, carrying
@@ -301,15 +312,15 @@ export function App() {
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
       const screen = screenFor(chapterId !== null, recorder !== null);
-      switch (
-        popAction(
-          direction,
-          screen,
-          committing.current,
-          recovering,
-          databasePanel !== null
-        )
-      ) {
+      const action = popAction(
+        direction,
+        screen,
+        committing.current,
+        recovering,
+        databasePanel !== null,
+        layerStack.current
+      );
+      switch (action) {
         case "trap-database-panel":
           // The database panel is a modal in the same slot as `SaveFailed`, not
           // a navigation level. Absorb the gesture the same way: a Back from the
@@ -333,6 +344,24 @@ export function App() {
           // entry; re-push it so the recorder stays trapped, and ignore the
           // gesture — the in-flight commit is the only thing that may leave.
           pushHistoryEntry();
+          return;
+        case "rearm-layer-busy":
+          // An open overlay's top layer is busy (a write in flight): refuse the
+          // dismissal and re-arm the screen-depth entry the popstate popped, the
+          // same push every other non-screen intercept above makes. Unreachable
+          // in PR2 (the layer stack is always empty until PR3/PR4 wire overlays),
+          // but handled so the never-default below can prove exhaustiveness.
+          pushHistoryEntry();
+          return;
+        case "rearm-layer-dismiss":
+          // The top layer is not busy: dismiss it AND re-arm the screen-depth
+          // entry (both halves — the popstate already popped it). #494 item 3:
+          // dismiss() must leave the layer unregistered, or a Close handler that
+          // also pops must be the same one — in PR2 the stack is empty, so this
+          // is transitional/inert; the adapter (commit 4) upgrades it to
+          // dismiss()+popLayer(id). Unreachable here (empty stack).
+          pushHistoryEntry();
+          topLayer(layerStack.current)?.dismiss();
           return;
         case "trap-forward":
           // Forward is not a navigation this app redoes; cancel it so the UI
@@ -379,6 +408,16 @@ export function App() {
           // The Books shelf pushed no entry, so this popstate is the browser
           // already leaving. Nothing to do — and nothing is lost at the shelf.
           return;
+        default: {
+          // Exhaustiveness (repo idiom, src/components/share-error-copy.ts:33):
+          // every PopAction member must have a case above, or `action` fails to
+          // narrow to `never` here and tsc rejects the assignment. This is what
+          // actually enforces that a new tag (e.g. the two layer tags PR1 added
+          // to the union) is handled rather than silently no-op'd — the gap
+          // navigation.ts's PopAction docblock names as "Deferred to PR2".
+          const _exhaustive: never = action;
+          return _exhaustive;
+        }
       }
     };
     window.addEventListener("popstate", onPopState);
