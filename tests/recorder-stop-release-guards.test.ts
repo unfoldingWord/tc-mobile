@@ -11,23 +11,30 @@ import { describe, expect, it } from "vitest";
  *      see the PR body and the dev-lead decision comment for the rest of
  *      that reduction).
  *   2. `stop()`'s bounded-flush `await new Promise<Blob>` is wrapped in a
- *      `try { ... } catch { ... } finally { ... }`: the `finally` releases
- *      the stream and the LOCAL tap `stop()` already stole out of the shared
- *      refs, so a throw from the executor cannot leave them stranded (George
- *      R5 P2, round 6); the `catch` — on the AWAIT — returns React state to
- *      `idle` when current, drops the recorder ref when it is still this
- *      recorder, and returns the failure in the `StopResult` instead of
- *      rethrowing, so the sheet is not stuck at `processing` behind a zombie
- *      ref that blocks the next `start()` (#485, George R6). The executor's
+ *      `try { ... } catch (cause) { ... } finally { ... }`: the `finally`
+ *      clears the flush timer and releases the stream and the LOCAL tap
+ *      `stop()` already stole out of the shared refs, so a throw from the
+ *      executor cannot leave them stranded (George R5 P2, round 6); the
+ *      `catch` — on the AWAIT — reports the cause under
+ *      `"recorder-stop-flush"` with `console.error` beside it, drops the
+ *      recorder ref when it is still this recorder, marks `flushThrew`, and
+ *      SEALS the slices MediaRecorder already delivered into `blob` from the
+ *      local `chunks` — the same seal the timeout arm uses — then falls
+ *      through to `stop()`'s ordinary tail (idle when current; empty →
+ *      notice, undecodable → hold with the bytes, decodable → the take)
+ *      instead of returning early with `blob: null`, so a throw cannot
+ *      discard a take whose slices are in hand and cannot leave the sheet
+ *      stuck at `processing` behind a zombie ref that blocks the next
+ *      `start()` (#485, George R6; panel r1 P2 on PR #500). The executor's
  *      OWN `recorder.stop()` call stays bare — guarding it would be the J7
  *      shape (correctness depends on the recorder's post-throw state) that
  *      rounds 3 and 4 oscillated on; the round-5 decision left it out, and
  *      neither round 6 nor #485 reopens it. Both the `finally` and the
  *      `catch` are a different, state-independent property (J6): once the
- *      executor throws, the blob promise is already rejected and the take is
- *      already lost, so nothing here reads `recorder.state` — the catch
- *      reasons only about the generation and the ref this invocation
- *      captured.
+ *      executor throws there is no `onstop` left to await, so nothing here
+ *      reads `recorder.state` — the catch reasons only about the ref this
+ *      invocation captured and the `chunks`/`mimeType` locals the timeout
+ *      arm already relies on.
  *   3. The already-`"inactive"` arm (an interruption ended the recorder on
  *      its own) releases the stream and closes the same LOCAL tap after the
  *      blob is sealed (#485 finding 2).
@@ -44,14 +51,24 @@ import { describe, expect, it } from "vitest";
  *
  * WHAT IT PROVES, EXACTLY: that the source text wraps `cancel()`'s native
  * `stop()` call and reports its failure through the funnel; that `stop()`'s
- * flush await is wrapped in a `try`/`catch`/`finally` whose `catch` sets
- * idle, drops the ref and returns the failure, and whose `finally` releases
- * the stream and the literal local `tap?.close()`; that the flush `try`
- * holds no nested `try` and the catch reads no `recorder.state`; and that
- * the inactive arm closes the same local tap after the blob is sealed. It
- * does NOT prove any catch or finally behaves correctly at runtime, that
- * either call ever throws, or that any device has run this. The PR body says
- * the same.
+ * flush await is wrapped in a `try`/`catch (cause)`/`finally` whose `catch`
+ * reports the cause, drops the ref, marks `flushThrew` and seals `blob` from
+ * `chunks` without returning or throwing, and whose `finally` clears the
+ * timer and releases the stream and the literal local `tap?.close()`; that
+ * the flush `try` holds no nested `try` and the catch reads no
+ * `recorder.state`; that the tail's empty-capture exit picks its sentence on
+ * `flushThrew`; and that the inactive arm closes the same local tap after
+ * the blob is sealed. It does NOT prove any catch or finally behaves
+ * correctly at runtime, that either call ever throws, or that any device has
+ * run this. The PR body says the same.
+ *
+ * THE GATE IS DELIBERATELY LITERAL. Every pattern below pins one canonical
+ * spelling of each statement, not the set of spellings that would also be
+ * correct — a refinement of the catch (a different context key, a differently
+ * ordered body) lands as a source change AND a gate change in the same
+ * commit, and this file going red on correct code is the intended, loud
+ * signal for that, never a silent pass. The PR body for #500 records the
+ * same.
  *
  * WHY THE GUARDS EXIST, so a future reader does not delete them as noise:
  *
@@ -215,10 +232,18 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
  * holding the dead recorder, so the sheet stayed `busy`, every Back stayed,
  * and a later `start()` returned early on the zombie ref. The fix is a
  * `catch` on the AWAIT — not on the executor's own `recorder.stop()`, which
- * stays bare — that sets `idle` (when current), drops the ref (when it is
- * still this recorder) and returns the failure in the `StopResult`. That
- * catch reads no `recorder.state`: once the executor throws the take is
- * already lost, so it reasons only about the generation and the ref this
+ * stays bare. PR #500's first cut had that catch RETURN `{ samples: null,
+ * error, blob: null }` on the premise that "no bytes were sealed, so there
+ * are no bytes to keep"; panel r1 (P2) showed the premise false on any
+ * engine that honours `recorder.start(250)`: the local `chunks` holds every
+ * slice delivered before the throw, and the timeout arm of the SAME
+ * executor already seals exactly that array. So the catch now reports the
+ * cause (`"recorder-stop-flush"`, `console.error` beside it), drops the ref
+ * (when it is still this recorder), marks `flushThrew`, seals `blob` from
+ * `chunks` and falls through to the ordinary tail, which sets `idle` when
+ * current and turns the bytes into a notice, a hold or a take. That catch
+ * reads no `recorder.state`: once the executor throws there is no `onstop`
+ * left to await, so it reasons only about the ref and the locals this
  * invocation captured (J6). What separates J6 from J7 is therefore NOT
  * "catch vs finally" but two properties pinned below instead: the flush
  * `try` contains no nested `try` (the native call inside the executor is
@@ -231,12 +256,15 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
  * tracks stayed live (mutation run at origin/develop's test text: it passed
  * 6/6). And the already-`"inactive"` arm's own `tap?.close()` — the reason the
  * shared close was split in #474 — was not gated at all (deleting it also
- * passed 6/6). Both arms now pin the LOCAL `tap?.close()` literally: `tap` is
- * typed `LevelTap | null`, so `tap?.close()` is the only spelling that
- * typechecks, and `closeTap()` reads the ref `stop()` already nulled — after
- * the steal it is a no-op, and a NEWER recording's tap could be in that ref.
+ * passed 6/6). Both arms now pin the LOCAL `tap?.close()` literally. That is
+ * the one canonical spelling this gate chooses so the match can be literal
+ * (`if (tap) tap.close();` would also typecheck against `LevelTap | null` and
+ * also release the clone; it is simply not the spelling pinned here — panel
+ * r1 on PR #500), and it excludes `closeTap()`, which reads the ref `stop()`
+ * already nulled — after the steal it is a no-op, and a NEWER recording's
+ * tap could be in that ref.
  */
-describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path returns to idle (#59 #474 R6, #485)", () => {
+describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path reports, seals what it has and falls through to idle (#59 #474 R6, #485, panel r1)", () => {
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
   const stripComments = (text: string) =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -314,7 +342,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
 
   /**
    * Within the else branch, find the `try { ... }` that wraps the flush
-   * await, then what follows it. Since #485 that is `catch { ... }` and then
+   * await, then what follows it. Since #485 that is `catch (cause) { ... }` and then
    * `finally { ... }`; each is located from the previous block's matching
    * close so the three are proven CONTIGUOUS, not merely present somewhere
    * in the branch.
@@ -334,27 +362,33 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
   const afterTry = elseBody.slice(tryBraceClose + 1);
 
   /**
-   * The ONE contiguous pattern for the throw path (#485): the try's own
-   * closing brace, flowing DIRECTLY into a `catch {` (no binding — the cause
-   * is not reported on this path; see the source comment) whose body is
-   * exactly, in order: the generation-gated `setState("idle")`, the
-   * identity-gated `recorderRef.current = null`, and the literal three-field
-   * return carrying the same sentence `stopRecording`'s backstop uses. It is
-   * anchored by `search(...) === tryBraceClose` (the technique
+   * The ONE contiguous pattern for the throw path (#485, panel r1 on #500):
+   * the try's own closing brace, flowing DIRECTLY into a `catch (cause) {`
+   * whose body is exactly, in order: the funnel report under
+   * `"recorder-stop-flush"` with `console.error` kept beside it (AGENTS.md
+   * "Errors have a channel", the shape `cancel()`'s guard and
+   * `stopRecording`'s backstop both use), the identity-gated
+   * `recorderRef.current = null`, the `flushThrew = true` mark the tail's
+   * empty-capture exit reads for its sentence, and the seal of `blob` from
+   * the local `chunks` — the same `new Blob(chunks, { type:
+   * recorder.mimeType })` the timeout arm's `finish` builds. No `return`, no
+   * `throw`: the catch falls through to the tail. It is anchored by
+   * `search(...) === tryBraceClose` (the technique
    * `tests/recorder-failure-rows.test.ts` uses), so a detached catch, a
    * `finally` slid in between, or a matching catch on some OTHER try in the
    * branch cannot satisfy it. What it deliberately does NOT allow: a bare
-   * `setState("idle")` (a superseded stop would repaint a newer recording's
-   * screen), a bare `recorderRef.current = null` (accepted by George as
-   * safe today, but the identity form is what stays safe if a future await
-   * lands before the try), or a `throw`/rethrow in place of the return (the
-   * `UseRecorder.stop` contract says the failure is in the result, and
-   * `stopRecording` documents "never rejects").
+   * `catch {` (the throw would be swallowed with no evidence path — the one
+   * event this insurance arm exists to learn about), a bare
+   * `recorderRef.current = null` (the identity form is what stays safe if a
+   * future await lands before the try), an early `return { …, blob: null }`
+   * (discards the slices in hand — the P2 that reshaped this), or a
+   * `throw`/rethrow (the `UseRecorder.stop` contract says the failure is in
+   * the result, and `stopRecording` documents "never rejects").
    */
   const catchPattern =
-    /\}\s*catch\s*\{\s*if\s*\(\s*generation\s*===\s*generationRef\.current\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*return\s*\{\s*samples:\s*null,\s*error:\s*"Could not finish this recording\.",\s*blob:\s*null,?\s*\}\s*;\s*\}/;
+    /\}\s*catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop-flush"\s*\);\s*console\.error\(\s*"Stopping the recorder failed",\s*cause\s*\);\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*flushThrew\s*=\s*true\s*;\s*blob\s*=\s*new\s+Blob\(\s*chunks,\s*\{\s*type:\s*recorder\.mimeType,?\s*\}\s*\)\s*;\s*\}/;
 
-  const catchMatch = /^\s*catch\s*\{/.exec(afterTry);
+  const catchMatch = /^\s*catch\s*\(\s*cause\s*\)\s*\{/.exec(afterTry);
   const catchBraceOpen =
     catchMatch === null
       ? -1
@@ -390,22 +424,53 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     expect(tryBody).toMatch(/recorder\.stop\s*\(\s*\)\s*;/);
   });
 
-  it("that try flows directly into a catch that sets idle when current, drops the recorder ref when it is still this recorder, and returns the failure in the result (#485)", () => {
-    // Deleting the `setState("idle")`, dropping its generation guard,
-    // deleting the ref null or its identity guard, replacing the `return`
-    // with a `throw`, or moving the three statements into the `finally` and
-    // deleting the catch (then `afterTry` starts at `finally`) must all fail
-    // this.
-    expect(afterTry).toMatch(/^\s*catch\s*\{/);
+  it("that try flows directly into a catch (cause) that reports the row, drops the recorder ref when it is still this recorder, marks flushThrew and seals blob from chunks — no return, no throw (#485, panel r1)", () => {
+    // Dropping the `cause` binding, deleting the `reportFailure` or the
+    // `console.error`, deleting the ref null or its identity guard, deleting
+    // the `flushThrew` mark, deleting the seal, returning early with `blob:
+    // null` (the first cut), replacing the seal with a `throw`, or moving the
+    // statements into the `finally` and deleting the catch (then `afterTry`
+    // starts at `finally`) must all fail this.
+    expect(afterTry).toMatch(/^\s*catch\s*\(\s*cause\s*\)\s*\{/);
     expect(elseBody.search(catchPattern)).toBe(tryBraceClose);
+    expect(catchBody).not.toMatch(/\breturn\b/);
+    expect(catchBody).not.toMatch(/\bthrow\b/);
   });
 
-  it("the catch is followed by a finally whose body releases the stream and closes the LOCAL tap, not the ref (#474 R6, #485)", () => {
+  it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its sentence on flushThrew (#485, panel r1)', () => {
+    // One row key, one site: a second site would double-report the same
+    // throw. The sentence: an empty seal after a throw is "Could not finish
+    // this recording." (the engine failed, and the facilitator runbook
+    // names that sentence as written down), not "No sound was recorded"
+    // (which reads as the translator's silence). `flushThrew` is declared
+    // in stop()'s body before the try, so the flag is per invocation.
+    const hits = code.match(/"recorder-stop-flush"/g) ?? [];
+    expect(hits).toHaveLength(1);
+    expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);
+    expect(stopBody.indexOf("let flushThrew")).toBeLessThan(
+      stopBody.indexOf("try {")
+    );
+    const afterElse = stopBody.slice(elseBraceClose + 1);
+    expect(afterElse).toMatch(
+      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
+    );
+  });
+
+  it("the catch is followed by a finally whose body clears the flush timer, releases the stream and closes the LOCAL tap, not the ref (#474 R6, #485, panel r1)", () => {
     // The release stays a `finally`, state-independent (J6): it runs whether
     // the executor threw or resolved normally, after the catch body and
-    // before the catch's return value is delivered.
+    // before the tail runs.
     expect(finallyMatch).not.toBeNull();
     expect(finallyBraceClose).toBeGreaterThan(finallyBraceOpen);
+    // The timer is hoisted out of the executor so the finally can reach it:
+    // on the throw path it would otherwise fire up to five seconds later,
+    // seal a Blob nobody awaits and resolve an already-rejected promise
+    // while holding `chunks` reachable (panel r1 P3). Deleting the hoist or
+    // the clear must fail this.
+    expect(elseBody).toMatch(/\blet\s+timer\s*:\s*number\s*\|\s*undefined\s*;/);
+    expect(elseBody.indexOf("let timer")).toBeLessThan(tryIdx);
+    expect(tryBody).toMatch(/\btimer\s*=\s*window\.setTimeout\(/);
+    expect(finallyBody).toMatch(/\bclearTimeout\(\s*timer\s*\)\s*;/);
     // Deleting either release call, or moving it back out of the finally
     // (reverting to a bare post-await release), must fail this.
     expect(finallyBody).toMatch(/abandonStream\(/);

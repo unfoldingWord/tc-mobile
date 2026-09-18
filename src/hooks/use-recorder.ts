@@ -134,12 +134,18 @@ export interface StopResult {
   readonly samples: Int16Array | null;
   /**
    * A translator-facing reason when `samples` is null and it is worth saying —
-   * an empty capture, an undecodable one, or a teardown that threw (a native
-   * `stop()` throwing inside the flush: `error` is "Could not finish this
-   * recording.", `samples` and `blob` both null — the executor rejected before
-   * any blob was sealed, so there are no bytes to keep — and the recorder is
-   * back at `idle`, free to `start()` again; #485). Null when there is nothing
-   * to say: a superseded stop, whose UI belongs to a newer recording.
+   * an empty capture, an undecodable one, or a teardown that threw. A native
+   * `stop()` throwing inside the flush (#485) is NOT its own outcome: the
+   * slices MediaRecorder delivered before the throw are sealed from the local
+   * `chunks` exactly as on the flush timeout, reported under
+   * `"recorder-stop-flush"`, and classified by the same tail — a decodable
+   * seal is the take, an undecodable one is held in `blob`, and only an EMPTY
+   * seal yields `samples` and `blob` both null with `error` "Could not finish
+   * this recording." (the backstop's sentence, chosen over "No sound" because
+   * the engine failed). The recorder is back at `idle` either way, free to
+   * `start()` again. Null when there is nothing to say: a superseded stop,
+   * whose UI belongs to a newer recording — on every exit, the throw path
+   * included.
    */
   readonly error: string | null;
   /**
@@ -321,9 +327,12 @@ export interface UseRecorder {
    * reason it produced none — an empty capture, an undecodable one, or a
    * teardown that threw. The failure is in the result, not the `error` state
    * — see `StopResult`. A throw inside its own flush does not reject: that
-   * path resolves `{ samples: null, error: "Could not finish this recording.",
-   * blob: null }` (no bytes were sealed) with state back at `idle` and the
-   * recorder ref dropped, so `start()` is free again (#485).
+   * path reports `"recorder-stop-flush"`, seals whatever slices are already in
+   * hand and resolves through the same tail as a flush timeout — the take, a
+   * held `blob`, or (only when the seal is empty) `{ samples: null, error:
+   * "Could not finish this recording.", blob: null }` — with state back at
+   * `idle` when current and the recorder ref dropped, so `start()` is free
+   * again (#485).
    */
   stop: () => Promise<StopResult>;
   /**
@@ -920,6 +929,10 @@ export function useRecorder(): UseRecorder {
     setState("processing");
 
     let blob: Blob;
+    // Set only by the flush arm's catch: the tail's empty-capture exit reads it
+    // to say "could not finish" rather than "no sound" when the seal is empty
+    // because the engine threw, not because the translator was silent.
+    let flushThrew = false;
     if (recorder.state === "inactive") {
       // The recorder ended on its OWN — an interruption took the mic (#59), not
       // a stop we drove. There is no `stop()` flush to await, but the recorder
@@ -940,6 +953,13 @@ export function useRecorder(): UseRecorder {
       // `finally` and needs none.
       tap?.close();
     } else {
+      // Hoisted out of the executor so the `finally` can clear it. Left
+      // scoped to the executor, the timer on the throw path would fire up to
+      // five seconds later, build a Blob nobody awaits and `resolve` an
+      // already-rejected promise (a no-op), holding `chunks` reachable for the
+      // window (panel r1 on #500). `clearTimeout(undefined)` is a no-op, so
+      // the finally can clear it unconditionally.
+      let timer: number | undefined;
       try {
         blob = await new Promise<Blob>((resolve) => {
           // Bounded. On the timeout we take whatever the local array already holds
@@ -955,7 +975,7 @@ export function useRecorder(): UseRecorder {
           // before the decode, so bounding the wait bounds the hot mic too.
           const finish = () =>
             resolve(new Blob(chunks, { type: recorder.mimeType }));
-          const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+          timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
           recorder.onstop = () => {
             clearTimeout(timer);
             finish();
@@ -972,48 +992,69 @@ export function useRecorder(): UseRecorder {
           // unobservable state.
           recorder.stop();
         });
-      } catch {
+      } catch (cause) {
         // The catch is on the AWAIT, not on the executor's `recorder.stop()`
-        // (which stays bare, above): once the executor throws, the blob promise
-        // is already rejected and the take is already lost, so nothing here
-        // depends on the recorder's post-throw state (J6, not J7) — this
-        // branch reasons only about the generation and the recorder ref THIS
-        // invocation captured at the top of `stop()`. Without it the throw
-        // rode out of `stop()` with React state left at "processing" (set
-        // above, never cleared) and `recorderRef` still holding the dead
-        // recorder — so the sheet stayed `busy`, the status Notice read
-        // "Recording finished" over a take that was gone, every Back stayed,
-        // and a later `start()` returned early on the zombie ref without
-        // opening a mic (#485, George R6 on #474). The UI state belongs to the
-        // current generation, as at every other exit; the ref is nulled only
-        // while it is still THIS recorder, mirroring `abandonStream`'s
-        // `streamRef.current === stream` — the executor throws synchronously
-        // inside `new Promise`, so nothing can have installed a newer recorder
-        // in between, but the identity form does not depend on that surviving
-        // a future await. The failure rides the `StopResult`, honouring the
-        // "never rejects" contract `stopRecording` documents, so its backstop
-        // stays a backstop: this path returns its failure in the result and
-        // writes no failure-log row (#485 keeps its scope to the two findings
-        // it names; whether this path should own a row of its own is open,
-        // not decided here — the runbook's §5 list and AGENTS.md say so).
-        if (generation === generationRef.current) setState("idle");
+        // (which stays bare, above): once the executor throws there is no
+        // `onstop` left to await, so nothing here depends on the recorder's
+        // post-throw state (J6, not J7) — this branch reasons only about the
+        // recorder ref THIS invocation captured at the top of `stop()` and the
+        // `chunks`/`mimeType` locals the timeout arm already relies on.
+        // Without it the throw rode out of `stop()` with React state left at
+        // "processing" (set above, never cleared) and `recorderRef` still
+        // holding the dead recorder — so the sheet stayed `busy`, the status
+        // Notice read "Recording finished" over a take that was gone, every
+        // Back stayed, and a later `start()` returned early on the zombie ref
+        // without opening a mic (#485, George R6 on #474).
+        //
+        // What is lost on this path is the `onstop`, NOT the slices: `chunks`
+        // holds every `dataavailable` MediaRecorder delivered before the throw
+        // (`start(250)` requests one per 250 ms on every engine but the WebKit
+        // builds that emit a single blob at stop), and the timeout arm of this
+        // same executor already seals exactly that array when `onstop` never
+        // comes. So the catch seals the same way and FALLS THROUGH to the
+        // ordinary tail below — an empty seal becomes the notice (with the
+        // "could not finish" sentence, via `flushThrew`), an undecodable one
+        // is held with its bytes for the recovery panel, a decodable one is
+        // the take — instead of returning `blob: null` and discarding minutes
+        // of audio that were in this closure (panel r1 P2 on #500). The tail
+        // also owns `setState("idle")`, gated on `current` exactly as at every
+        // other exit, so a superseded throw-path stop paints nothing.
+        //
+        // Timing, precisely: this catch resumes one microtask AFTER the
+        // executor throws (an `await` on an already-rejected promise still
+        // yields), so the caller's synchronous continuation — and a React
+        // sync-lane commit it queued — can run first. Nothing that installs a
+        // recorder can land in that window regardless: `start()` needs two
+        // real awaits (`getUserMedia`, `raceAudioResume`) before it assigns
+        // the ref, and `cancel()` is reached only from a `pagehide` handler
+        // or an unmount commit (macrotasks). The ref is still nulled only
+        // while it is THIS recorder, mirroring `abandonStream`'s
+        // `streamRef.current === stream`, so the guard holds even if a future
+        // await lands before this `try`.
+        //
+        // Reported, not swallowed: this arm exists as insurance against an
+        // engine departing from the spec, and it is the one event that could
+        // turn "unobserved on any device" into observed — a row under
+        // `"recorder-stop-flush"` with `console.error` kept beside it, the
+        // same shape as `cancel()`'s `"recorder-cancel-stop"` guard and
+        // `stopRecording`'s `"recorder-stop-backstop"` (AGENTS.md "Errors have
+        // a channel"). `stopRecording`'s backstop is NOT entered for this
+        // path (the failure rides the `StopResult`, honouring its "never
+        // rejects" contract), so without this report the throw would leave
+        // no evidence anywhere.
+        reportFailure(cause, "recorder-stop-flush");
+        console.error("Stopping the recorder failed", cause);
         if (recorderRef.current === recorder) recorderRef.current = null;
-        return {
-          samples: null,
-          error: "Could not finish this recording.",
-          blob: null, // the executor rejected before any blob was sealed
-        };
+        flushThrew = true;
+        blob = new Blob(chunks, { type: recorder.mimeType });
       } finally {
-        // The `catch` above owns the React state and the recorder ref (idle
-        // only when current; the ref only when it is still this recorder);
-        // this `finally` still owns the stream and the tap, and runs after the
-        // catch body and before the catch's return value is delivered — JS
-        // `try/catch/finally` semantics: the `return` in the catch does not
-        // skip the finally.
+        // The `catch` above owns the recorder ref and the seal; this `finally`
+        // owns the timer, the stream and the tap, and runs after the catch
+        // body and before the tail below — on the normal path, the throw path
+        // and the timeout path alike.
         //
         // A `finally`, not a bare release after the await: once the executor
-        // itself throws, the blob promise is already REJECTED and the take is
-        // already lost — there is no `onstop` left to come, so releasing here
+        // itself throws there is no `onstop` left to come, so releasing here
         // cannot truncate a final slice the way releasing before `onstop`/the
         // timer fires would (the very thing the executor's own bound exists
         // to avoid). What a bare release-after-await would cost instead is a
@@ -1034,6 +1075,7 @@ export function useRecorder(): UseRecorder {
         // Only our own stream. `releaseStream()` reads the shared ref, which
         // by now may hold a NEWER recording's stream — releasing that would
         // cut off a recording in progress.
+        clearTimeout(timer);
         if (stream) abandonStream(stream);
         tap?.close();
       }
@@ -1053,7 +1095,14 @@ export function useRecorder(): UseRecorder {
       if (current) setState("idle");
       return {
         samples: null,
-        error: current ? "No sound was recorded. Try again." : null,
+        // An empty seal after the flush arm threw is the engine's failure,
+        // not the translator's silence — the same sentence `stopRecording`'s
+        // backstop uses, and the one the facilitator runbook names.
+        error: current
+          ? flushThrew
+            ? "Could not finish this recording."
+            : "No sound was recorded. Try again."
+          : null,
         blob: null, // nothing was captured — no bytes to keep
       };
     }
