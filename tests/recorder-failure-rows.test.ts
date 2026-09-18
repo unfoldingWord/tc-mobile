@@ -9,9 +9,13 @@ import { describe, expect, it } from "vitest";
  *   1. `onInterrupted` in `start()` (use-recorder.ts) reports ONE row per
  *      take, context key `"recorder-interrupted-active"`, when an
  *      interruption arrives while the native recorder is still
- *      `"recording"` or `"paused"` — the arm on which the microphone stays
- *      live on the frozen sheet until Back (#478, the #59 residual). The
- *      `"inactive"` arm — the device-verified #59 path — gets no row.
+ *      `"recording"` or `"paused"` — the arm on which the handler releases
+ *      nothing (#478, the #59 residual). The row names the two facts the
+ *      handler can observe: `recorder.state` and `event.type` (`error` from
+ *      the recorder or `ended` from a track). Whether the mic is actually
+ *      still hot on that arm is NOT observable there and the row does not
+ *      claim it. The `"inactive"` arm — the device-verified #59 path — gets
+ *      no row.
  *   2. `stopRecording()`'s backstop `catch` (use-audio-session.ts) reports
  *      the cause under `"recorder-stop-backstop"`, with the existing
  *      `console.error` kept beside it, not replaced (#480; AGENTS.md
@@ -32,7 +36,10 @@ import { describe, expect, it } from "vitest";
  * guard cannot satisfy it).
  *
  * WHAT IT PROVES, EXACTLY: text shape only. That the source text contains
- * each report, on the arm and in the order specified, once. It does NOT
+ * each report, on the arm and in the order specified, once — the #478
+ * handler holds exactly one `reportFailure(` call site (assertion 6) and
+ * its message interpolates `${event.type}` and `${recorder.state}`
+ * (assertion 1's pattern). It does NOT
  * prove either site behaves correctly at runtime, that any phone ever
  * reaches the still-active arm or ever hits the resume bound, or that the
  * row lands in the log on a device — collecting exactly that evidence is
@@ -84,7 +91,7 @@ const bodyAfter = (code: string, declaration: string): string => {
   return code.slice(open, close + 1);
 };
 
-describe("onInterrupted reports the still-active arm once per take (#478)", () => {
+describe("source pins (text shape only): onInterrupted's still-active arm reports once per take (#478)", () => {
   /**
    * Comment strip is safe for `src/hooks/use-recorder.ts`:
    * `tests/recorder-resume-race.test.ts` established it holds no `//` or
@@ -95,18 +102,24 @@ describe("onInterrupted reports the still-active arm once per take (#478)", () =
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
   const startBody = bodyAfter(code, "const start = useCallback");
-  const handlerDecl = "const onInterrupted = () => {";
+  // Both handler slots (`recorder.onerror`, `track.onended`) pass an Event;
+  // the row reads `event.type` from it (#478 Shape).
+  const handlerDecl = "const onInterrupted = (event: Event) => {";
   const handlerBody = bodyAfter(startBody, handlerDecl);
 
   /**
    * The ONE contiguous pattern: the `else if` on the still-active arm, its
    * once-guard, the guard being set, and the report under its own key. A
    * detached `if (!interruptionReported)` elsewhere, or a report with no
-   * guard, cannot satisfy this. `[\s\S]*?` inside `new Error(...)` survives
-   * a Prettier wrap of the message.
+   * guard, cannot satisfy this. The `new Error(...)` segment requires a
+   * template literal that interpolates `${event.type}` and then
+   * `${recorder.state}` — the two facts beyond the key the row exists to
+   * carry (#478 Shape: "the recorder state and which event arrived"). An
+   * earlier `[\s\S]*?` admitted `new Error(``)` (panel r1 mutation M15,
+   * 8/8 green). `[^`]` spans newlines, so a Prettier wrap still matches.
    */
   const reportPattern =
-    /\}\s*else\s+if\s*\(\s*!interruptionReported\s*\)\s*\{\s*interruptionReported\s*=\s*true;\s*reportFailure\(\s*new Error\([\s\S]*?\),\s*"recorder-interrupted-active"\s*\);\s*\}/;
+    /\}\s*else\s+if\s*\(\s*!interruptionReported\s*\)\s*\{\s*interruptionReported\s*=\s*true;\s*reportFailure\(\s*new Error\(\s*`[^`]*\$\{event\.type\}[^`]*\$\{recorder\.state\}[^`]*`\s*\),\s*"recorder-interrupted-active"\s*\);\s*\}/;
 
   it("(1) the handler body carries guard + set + report as one contiguous else-if", () => {
     expect(handlerBody).toMatch(reportPattern);
@@ -162,9 +175,23 @@ describe("onInterrupted reports the still-active arm once per take (#478)", () =
     // A superseded recorder's interruption never reports.
     expect(guardAt).toBeLessThan(reportAt);
   });
+
+  it("(6) the handler holds exactly one report site and sets the once-guard exactly once", () => {
+    // (1)-(3) pin the guarded else-if and its key, but none of them counts
+    // CALLS: a second, unguarded `reportFailure(...)` placed before the arm
+    // split, under any other key, passed all of them (panel r1 mutation:
+    // inserted after `setState("processing")`, 8/8 green). That shape
+    // writes a row per lifecycle event — `error` AND every `ended` — and on
+    // the inactive arm too, breaking both halves of #478 constraint (1).
+    // Counting the handler's call sites is what closes it.
+    expect(handlerBody.match(/reportFailure\s*\(/g) ?? []).toHaveLength(1);
+    expect(
+      handlerBody.match(/interruptionReported\s*=\s*true/g) ?? []
+    ).toHaveLength(1);
+  });
 });
 
-describe("stopRecording()'s backstop catch reaches the funnel (#480)", () => {
+describe("source pins (text shape only): stopRecording()'s backstop catch reports to the funnel (#480)", () => {
   /**
    * Comment strip safety for `src/hooks/use-audio-session.ts` had not been
    * established before this file (the two earlier gates checked only

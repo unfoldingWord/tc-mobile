@@ -252,7 +252,7 @@ export function raceAudioResume(): Promise<void> {
       resolve();
       reportFailure(
         new Error(
-          `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; start() proceeded without it (#108)`
+          `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
         ),
         "recorder-start-resume-timeout"
       );
@@ -668,6 +668,12 @@ export function useRecorder(): UseRecorder {
       // teardown) does NOT fire `ended`, so this only reacts to real losses.
       // The still-active arm (recorder not yet "inactive") is reported once
       // per take so tester phones show whether it is ever reached (#478).
+      // The row carries only what this frame can observe — `recorder.state`
+      // and `event.type`, i.e. which feed fired (`error` from the recorder,
+      // `ended` from a track). Whether the mic is still hot is NOT observable
+      // here: on `ended` the track is already dead, and an `error` at
+      // "recording" may be followed by an `ended` that reaches the inactive
+      // arm and releases everything — so the row must not assert it.
       //
       // Per take, not per call: a fresh binding per start() closure, like
       // `chunks` above. `onInterrupted` is bound to `onerror` AND every
@@ -679,7 +685,7 @@ export function useRecorder(): UseRecorder {
       // per-interruption coincide today. If a take ever continues after an
       // interruption, this boolean would suppress a second, genuine one.
       let interruptionReported = false;
-      const onInterrupted = () => {
+      const onInterrupted = (event: Event) => {
         if (generation !== generationRef.current) return;
         clearTick();
         // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
@@ -709,7 +715,7 @@ export function useRecorder(): UseRecorder {
           interruptionReported = true;
           reportFailure(
             new Error(
-              `Recorder interrupted while still ${recorder.state}: the microphone stays live on the frozen sheet until Back (#59 residual)`
+              `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`
             ),
             "recorder-interrupted-active"
           );
