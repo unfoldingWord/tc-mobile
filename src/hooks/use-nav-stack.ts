@@ -26,7 +26,7 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * one reviewable place (AGENTS.md: no jsdom/renderer here, so this file is
  * review-only + on-device for its DOM paths).
  *
- * What the adapter owns (six refs + one drain slot):
+ * What the adapter owns (six refs):
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
  *     seed from `resumeNavIndex` on mount (Amendment B): a reload mid-stack
  *     ADOPTS the entry already there rather than rewriting it to 0.
@@ -47,20 +47,21 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  *   - `suppressPop` — KEPT verbatim (travel-guard.ts:15-32): the "this popstate
  *     is one WE caused, do not route it" flag, set at three sites — the
  *     programmatic close (`commitCloseRecorder`), `trap-forward`'s cancel, and
- *     the commit-close settle. `commitCloseRecorder`'s own raw `history.back()`
- *     is a THIRD raw issuer OUTSIDE `TravelGuardState`, suppressed rather than
+ *     the commit-close settle. The commit-close settle sets it in BOTH its
+ *     branches: when it issues its own `history.back()` (guard clear), and when
+ *     `beginBack("commit-close")` is REFUSED because a `goBack` is still
+ *     outstanding — there it absorbs that outstanding `goBack`'s own landing
+ *     rather than issue a second traversal (see the popstate handler's
+ *     commit-close case). `commitCloseRecorder`'s own raw `history.back()` is a
+ *     THIRD raw issuer OUTSIDE `TravelGuardState`, suppressed rather than
  *     arbitrated; it is never fed to `beginBack`.
- *   - `pendingCommitClose` — a one-slot drain (invariant 8, latest-wins) for
- *     the rare race where the commit-close settle's `beginBack("commit-close")`
- *     is REFUSED because a `goBack` is still outstanding. See the popstate
- *     handler.
  *
  * Amendment C is a centrally-owned cleanup effect (dep array `[screen,
  * recovering, databasePanel]`, primitives only — invariant 6) that clears the
  * whole layer stack when the screen changes or a global trap engages. Inert in
  * PR2 (empty stack).
  *
- * The re-arm/settle contract, verbatim, so App.tsx does not have to re-derive
+ * The re-arm/settle contract, verbatim, so a reader does not have to re-derive
  * it: every non-screen popstate intercept (`trap-*` / `rearm-*`) re-arms the
  * screen-depth entry the browser already popped; `goBack` proceeds only when
  * the guard is clear and does NOTHING on refusal; `settleOutstanding` clears
@@ -129,9 +130,6 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const transitionInFlight = useRef(false);
   // "This popstate is one WE caused — do not route it" (kept from develop).
   const suppressPop = useRef(false);
-  // One-slot drain for a commit-close settle refused by the any-outstanding
-  // rule (latest-wins, invariant 8). Drained on the next landing.
-  const pendingCommitClose = useRef(false);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -139,13 +137,11 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // and `goBack` MUST NOT churn.
   const onOpenChapterRef = useRef(params.onOpenChapter);
   const onOpenRecorderRef = useRef(params.onOpenRecorder);
-  const onLeaveToBooksRef = useRef(params.onLeaveToBooks);
   const onRecorderClosedRef = useRef(params.onRecorderClosed);
   const getRecorderHandleRef = useRef(params.getRecorderHandle);
   useEffect(() => {
     onOpenChapterRef.current = params.onOpenChapter;
     onOpenRecorderRef.current = params.onOpenRecorder;
-    onLeaveToBooksRef.current = params.onLeaveToBooks;
     onRecorderClosedRef.current = params.onRecorderClosed;
     getRecorderHandleRef.current = params.getRecorderHandle;
   });
@@ -271,32 +267,15 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       travelGuard.current = settleOutstanding(travelGuard.current);
       const state = event.state as { index?: number } | null;
       const toIndex = state?.index ?? 0;
-      // Our own history.back() (programmatic close, trap-forward, commit-close
-      // settle, or the drain below) fired this; the move is already accounted
-      // for. Keep the index truthful and do not route it.
+      // Our own history.back() (programmatic close, trap-forward, or the
+      // commit-close settle) fired this, OR this is the outstanding goBack's
+      // landing that a refused commit-close settle chose to absorb; either way
+      // the move is already accounted for. Keep the index truthful and do not
+      // route it.
       if (suppressPop.current) {
         suppressPop.current = false;
         navIndex.current = toIndex;
         return;
-      }
-      // Drain a refused commit-close consume (the rare race: a goBack was
-      // outstanding when requestClose resolved, so beginBack("commit-close")
-      // was refused rather than issuing its settle back()). The guard is clear
-      // now (settleOutstanding above), so re-validate and re-issue the settle,
-      // reproducing develop's two-traversal end state. This landing is spent on
-      // the drain; the gesture that caused it is the goBack whose settle this
-      // completes. Review-only (no renderer); the beginBack-after-settle
-      // sequence is pinned pure in tests/nav-travel-guard.test.ts.
-      if (pendingCommitClose.current) {
-        pendingCommitClose.current = false;
-        const begun = beginBack(travelGuard.current, "commit-close");
-        if (begun.ok) {
-          travelGuard.current = begun.next;
-          navIndex.current = toIndex;
-          suppressPop.current = true;
-          window.history.back();
-          return;
-        }
       }
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
@@ -353,18 +332,31 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
             .requestClose()
             .then((exited) => {
               if (!exited) return;
-              // The commit-close settle (App.tsx:358-360) now flows through the
-              // any-outstanding guard. If a goBack is outstanding in the rare
-              // window where requestClose resolved before that goBack's popstate
-              // landed, this is REFUSED — record a one-slot pending consume and
-              // drain it on the next landing (above), never drop it.
+              // The commit-close settle now flows through the any-outstanding
+              // guard. Guard clear: issue the consuming back() (suppressPop so
+              // its own landing does not route). REFUSED (a goBack is still
+              // outstanding in the rare window where requestClose resolved before
+              // that goBack's popstate landed): do NOT issue a second traversal.
+              // The outstanding goBack's own history.back() is already consuming
+              // the same protective entry this settle would have; absorb THAT
+              // landing (suppressPop) instead. Issuing a second back() here would
+              // pop a further real level and strand the app one entry below the
+              // screen it is showing (invariant 2's "one entry per screen depth")
+              // — the exact non-root-exit class the whole guard exists to stop.
+              // Absorbing converges the race to the SAME end state as an
+              // un-raced commit-close (the recorder's screen, one level below
+              // it), which is invariant 7's intent: a second Back during an
+              // in-flight commit is absorbed, never escaped. Review-only (no
+              // renderer); reachability of the ms window is inference from the
+              // recorder header Back staying live during close (recorder.tsx:
+              // 2809/2820), the trace is from the code.
               const begun = beginBack(travelGuard.current, "commit-close");
               if (begun.ok) {
                 travelGuard.current = begun.next;
                 suppressPop.current = true;
                 window.history.back();
               } else {
-                pendingCommitClose.current = true;
+                suppressPop.current = true;
               }
             })
             .catch((cause: unknown) => {

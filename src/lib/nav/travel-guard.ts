@@ -29,7 +29,10 @@
  *     `onExit`, which calls `close()` directly with no `popstate` involved):
  *     `suppressPop.current = true; window.history.back();`
  *   - `trap-forward`'s cancelling `back()`.
- *   - the commit-close settle's consuming `back()`.
+ *   - the commit-close settle — whether it issues its own consuming `back()`
+ *     (guard clear) or, when refused because a `goBack` is still outstanding,
+ *     absorbs that outstanding `goBack`'s own landing instead of issuing a
+ *     second traversal.
  * An implementation that drops `suppressPop` because this docblock read as a
  * full replacement would route one of those self-caused `popstate`s through
  * `popAction` for real — e.g. the programmatic close firing `to-books` and
@@ -154,9 +157,10 @@ export function beginBack(
 /**
  * Clear the guard at a `popstate` landing, WITHOUT naming an issuer (#494 item
  * 2, 2026-09-18). This is the settle the adapter uses at the one place
- * `App.tsx`'s live latch cleared today — the top of the `popstate` handler
- * (`backRequested.current = false`), which runs on EVERY landing and knows
- * nothing about WHICH issuer's `history.back()` just settled.
+ * `develop`'s live latch cleared (before PR2) — the top of the `popstate`
+ * handler (`backRequested.current = false`), now `settleOutstanding` at the top
+ * of the adapter's handler (`hooks/use-nav-stack.ts`), which runs on EVERY
+ * landing and knows nothing about WHICH issuer's `history.back()` just settled.
  *
  * `beginBack`'s refusal is any-issuer (the #492 round 4 / #493 decision), so
  * the landing settle must be any-issuer too. A per-issuer settle at an

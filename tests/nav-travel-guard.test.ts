@@ -165,7 +165,7 @@ describe("settleOutstanding — the any-issuer landing settle (#494 item 2)", ()
     expect(settleOutstanding(bothOutstanding)).toEqual(initialTravelGuardState);
   });
 
-  it("#494 item 2 negative pin: a per-issuer go-back settle leaves commit-close stuck and refuses every later beginBack; settleOutstanding does not", () => {
+  it("#494 item 2: a per-issuer go-back settle would leave commit-close stuck and refuse every later beginBack; settleOutstanding does not", () => {
     // The live latch site (top of the popstate handler) settles on EVERY
     // popstate with no issuer. After a successful recorder Back, the guard is:
     const commitCloseOutstanding: TravelGuardState = {
@@ -173,22 +173,26 @@ describe("settleOutstanding — the any-issuer landing settle (#494 item 2)", ()
       commitCloseOutstanding: true,
     };
 
-    // The wrong port — a per-issuer go-back settle (what settleBack(state,
-    // "go-back") did before it was deleted, `{ ...state, goBackOutstanding:
-    // false }`) — clears the flag that is NOT set and leaves
-    // commitCloseOutstanding stuck true.
+    // ILLUSTRATIVE (not a live gate): `settleBack(state, "go-back")` was DELETED
+    // in this PR, so the wrong per-issuer port can no longer be CALLED here — it
+    // is modelled inline as the value it would have produced (`{ ...state,
+    // goBackOutstanding: false }`), which for this input is a tautological no-op.
+    // The line below documents that shape; it cannot go red on its own. The live
+    // gate is the beginBack/settleOutstanding assertions that follow.
     const afterNaivePort: TravelGuardState = {
       ...commitCloseOutstanding,
       goBackOutstanding: false,
     };
-    expect(afterNaivePort).toEqual(commitCloseOutstanding); // unchanged; still stuck
-    // …so every later beginBack — from EITHER issuer — is refused for the rest
-    // of the session (on-screen Back dead).
+    expect(afterNaivePort).toEqual(commitCloseOutstanding); // illustrative: unchanged; still stuck
+    // …so under that wrong port every later beginBack — from EITHER issuer — is
+    // refused for the rest of the session (on-screen Back dead). THESE are live:
+    // a regression in beginBack's any-outstanding rule flips them.
     expect(beginBack(afterNaivePort, "go-back").ok).toBe(false);
     expect(beginBack(afterNaivePort, "commit-close").ok).toBe(false);
 
-    // settleOutstanding is the fix: it clears the outstanding flag whichever
-    // issuer set it, and the next beginBack proceeds.
+    // settleOutstanding is the fix, and this half IS a live gate on the real
+    // function: it clears the outstanding flag whichever issuer set it, and the
+    // next beginBack proceeds.
     const afterLandingSettle = settleOutstanding(commitCloseOutstanding);
     expect(afterLandingSettle).toEqual(initialTravelGuardState);
     expect(beginBack(afterLandingSettle, "go-back").ok).toBe(true);
@@ -196,34 +200,36 @@ describe("settleOutstanding — the any-issuer landing settle (#494 item 2)", ()
   });
 
   /**
-   * The refused-commit-close DRAIN's pure sequence (PR2, objection #11). When
-   * requestClose resolves while a `goBack` is still outstanding,
-   * `beginBack("commit-close")` is REFUSED; the adapter records a one-slot
-   * pending consume and drains it on the NEXT popstate landing — after
-   * `settleOutstanding` has cleared the outstanding flag at the top of the
-   * handler. This row pins the pure half of that drain: settle-then-proceed.
-   * The pending-slot machinery itself is adapter code (hooks/use-nav-stack.ts),
-   * review-only (no renderer), so only this sequence is asserted here.
+   * The refused-commit-close ABSORB (PR2). When `requestClose` resolves while a
+   * `goBack` is still outstanding, `beginBack("commit-close")` is REFUSED. The
+   * adapter does NOT issue a second `history.back()`: the outstanding `goBack`'s
+   * own back() is already consuming the same protective entry the settle would
+   * have, so the adapter sets `suppressPop` to absorb THAT outstanding landing
+   * (hooks/use-nav-stack.ts's commit-close `.then` else-branch), converging the
+   * race to the same end state as an un-raced commit-close (invariant 7: a
+   * second Back during an in-flight commit is absorbed, not escaped).
+   *
+   * The pure half this row can pin is the refusal itself — state returned
+   * UNCHANGED, no second flag set — which is exactly the signal on which the
+   * adapter absorbs rather than re-issues. The suppress/absorb decision is
+   * adapter code (review-only, no renderer). This REPLACES an earlier "drain"
+   * row that asserted a settle-then-re-issue sequence the adapter no longer
+   * performs: that drain issued a SECOND traversal and left the app one physical
+   * level below the screen it was showing (invariant 2's "one entry per screen
+   * depth"), reproducing neither develop's end state nor an un-raced close.
    */
-  it("drain: a commit-close refused while go-back is outstanding proceeds after settleOutstanding", () => {
+  it("refused commit-close: while go-back is outstanding the settle is refused and returns state unchanged — the signal on which the adapter absorbs (suppressPop), not re-issues", () => {
     // A goBack is outstanding when requestClose resolves.
     const goBackOutstanding: TravelGuardState = {
       goBackOutstanding: true,
       commitCloseOutstanding: false,
     };
-    // The settle back() is refused right now (any-outstanding) — this is why
-    // the adapter must NOT drop it but queue it for the drain.
-    expect(beginBack(goBackOutstanding, "commit-close").ok).toBe(false);
-
-    // The goBack's popstate lands: settleOutstanding clears the guard at the
-    // top of the handler. THEN the drain re-issues the commit-close settle,
-    // which now proceeds.
-    const afterLanding = settleOutstanding(goBackOutstanding);
-    const drained = beginBack(afterLanding, "commit-close");
-    expect(drained.ok).toBe(true);
-    expect(drained.next).toEqual({
-      goBackOutstanding: false,
-      commitCloseOutstanding: true,
-    });
+    // Refused right now (any-outstanding), and the state is returned UNCHANGED:
+    // the guard did not move and no second flag was set. That unchanged refusal
+    // is what tells the adapter to set suppressPop and absorb the outstanding
+    // goBack's landing rather than issue a second history.back().
+    const refused = beginBack(goBackOutstanding, "commit-close");
+    expect(refused.ok).toBe(false);
+    expect(refused.next).toEqual(goBackOutstanding);
   });
 });

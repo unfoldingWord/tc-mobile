@@ -237,10 +237,12 @@ function fakeLayer(id: string, busy: boolean): Layer {
 
 describe("popAction — layer routing (#452 PR1)", () => {
   it("an empty layerStack (the default) reproduces every pre-existing row unchanged", () => {
-    // Every existing call site in App.tsx passes no 6th argument at all, so
-    // this is the exact shape `develop`'s only caller uses. Confirm the
-    // omitted-argument form and the explicit-empty-array form agree, and
-    // that both match the pre-existing (5-arg) results already pinned above.
+    // On `develop` before PR2 the only caller (App.tsx's popstate switch)
+    // passed no 6th argument at all; this is that shape. The PR2 adapter now
+    // passes the empty `layerStack` ref as the 6th arg, which the row below
+    // proves equivalent. Confirm the omitted-argument form and the
+    // explicit-empty-array form agree, and that both match the pre-existing
+    // (5-arg) results already pinned above.
     const rows: Array<
       [
         Parameters<typeof popAction>[0],
@@ -294,19 +296,20 @@ describe("popAction — layer routing (#452 PR1)", () => {
 
   /**
    * George R1 P2-1 (PR #492): a `popstate` has already popped the SCREEN-DEPTH
-   * entry before `popAction` runs (`App.tsx:301-302`) — overlays never owned
-   * one of their own (invariant 1). Every existing intercept that is not a
-   * real screen pop re-arms with `pushHistoryEntry()`
-   * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy`,
-   * `App.tsx:313-336`), and so does the recorder's own overlay-absorb path
-   * (`App.tsx:353`, re-arms BEFORE the overlay is even asked to dismiss). The
-   * layer case must match: BOTH a dismiss and a refusal re-arm the entry the
-   * popstate already consumed — `"dismiss"` also tells the adapter to dismiss
-   * the top layer (recovered via `topLayer(stack)`), `"refused-busy"` re-arms
-   * only. Two string tags, not an object, so the obligation is encoded in the
-   * type App.tsx's existing string `switch` already consumes, not left to
-   * prose a reader could miss (the bug this replaces: `tests/nav-layer-
-   * stack.test.ts`'s old comment taught "nothing on refused-busy").
+   * entry before `popAction` runs (the adapter updates `navIndex` from the
+   * landing index just before the call, `hooks/use-nav-stack.ts`) — overlays
+   * never owned one of their own (invariant 1). Every existing intercept that is
+   * not a real screen pop re-arms with `pushHistoryEntry()`
+   * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy`, the adapter's
+   * `switch` cases), and so does the recorder's own commit-close re-arm (it
+   * pushes BEFORE the overlay is even asked to dismiss). The layer case must
+   * match: BOTH a dismiss and a refusal re-arm the entry the popstate already
+   * consumed — `"dismiss"` also tells the adapter to dismiss the top layer
+   * (recovered via `topLayer(stack)`), `"refused-busy"` re-arms only. Two string
+   * tags, not an object, so the obligation is encoded in the type the adapter's
+   * string `switch` already consumes, not left to prose a reader could miss (the
+   * bug this replaces: `tests/nav-layer-stack.test.ts`'s old comment taught
+   * "nothing on refused-busy").
    */
   it("a non-empty stack with a non-busy top layer re-arms AND signals dismiss", () => {
     const stack: LayerStack = [fakeLayer("book-menu", false)];

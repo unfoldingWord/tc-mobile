@@ -241,8 +241,10 @@ One hook, `hooks/use-nav-stack.ts`, owns the three core refs — `navIndex`,
 invariant 9), and a per-screen `layerStack: Layer[]` — plus the guard/flag
 refs the amendments and the kept develop machinery add: `travelGuard`
 (Amendment A), `transitionInFlight` (renamed from `committing`, invariant 7)
-and `suppressPop`, for six refs in all, with a one-slot `pendingCommitClose`
-for the refused-commit-close drain. It also owns the single `window.popstate`
+and `suppressPop`, for six refs in all. A commit-close settle refused because a
+`goBack` is still outstanding does not queue a second traversal: the adapter
+absorbs the outstanding `goBack`'s own landing via `suppressPop` instead (see
+Amendment A). It also owns the single `window.popstate`
 listener. `interface Layer { id: string; busy(): boolean; dismiss(): void }`. Opening an overlay calls `pushLayer(layer)` directly from
 the same click handler that sets the overlay's own `open` state; closing —
 by the overlay's own Close/Cancel/scrim, or by a Back landing on it — calls
@@ -402,7 +404,8 @@ gesture). Model 1 does not have that problem, because invariant 1 already
 removes overlays from the issuer count entirely, leaving **exactly two**
 real raw-`history.back()` sites: `goBack` (on-screen and system Back, shared
 per this repo's "one Back path" rule) and the recorder's commit-close exit
-(`.then((exited) => { ... window.history.back() })`, `App.tsx:357-361`).
+(`.then((exited) => { ... window.history.back() })`, the adapter's commit-close
+case, `hooks/use-nav-stack.ts`).
 
 `src/lib/nav/travel-guard.ts`: a pure pair,
 `beginBack(state, issuer): {ok: boolean, next: TravelGuardState}` and
@@ -410,7 +413,7 @@ per this repo's "one Back path" rule) and the recorder's commit-close exit
 boolean, commitCloseOutstanding: boolean }` (the `beginBack` `issuer` parameter
 is required and matches the live code; #494 item 4). `settleOutstanding` is the
 issuer-blind landing settle the adapter runs at the top of every `popstate`
-(the one place `App.tsx`'s live latch cleared), returning the guard to
+(the one place `develop`'s live latch cleared before PR2), returning the guard to
 `initialTravelGuardState` regardless of which issuer settled — the issuer-blind
 counterpart of the any-issuer `beginBack` refusal (#494 item 2). A per-issuer
 `settleBack` shipped with PR1 but is **deleted in PR2**: the any-issuer refusal
@@ -449,8 +452,9 @@ This is the exact regression test for R2-G-P2-1/R2-G-P2-2/R3-G-P2-1's
 class, and — since round 4 — also answers #493's cross-issuer coalescing
 question **for the two issuers this guard tracks** (`goBack` and the
 recorder's commit-close exit), at the source rather than disclosing it as an
-open risk. It does **not** close #493 for `closeRecorder`'s own programmatic
-`window.history.back()` (`App.tsx:266-268`): that is a THIRD raw issuer
+open risk. It does **not** close #493 for the adapter's own programmatic
+recorder close (`commitCloseRecorder`'s raw `window.history.back()`,
+`hooks/use-nav-stack.ts`): that is a THIRD raw issuer
 outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
 the any-outstanding guard cannot see or refuse against it — already disclosed
 at `travel-guard.ts:34-45`. `goBack` and the recorder's commit-close exit are
@@ -462,6 +466,24 @@ programmatic close, `trap-forward`, and the commit-close consume, per
 1, George R4 P2-1). Dropping `suppressPop` would route the commit-close
 consume-back as a real Segments Back → `"to-books"` → `backToBooks()` →
 `setClipboard(null)`. That wiring landed in PR2 (`hooks/use-nav-stack.ts`).
+
+**The refused commit-close settle absorbs, it does not queue a second
+traversal.** In the rare window where `requestClose` resolves before an
+outstanding `goBack`'s `popstate` has landed, `beginBack("commit-close")` is
+refused (any-outstanding). The adapter does **not** re-issue the settle on a
+later landing: that outstanding `goBack`'s own `history.back()` is already
+consuming the same protective entry the settle would have, so a second
+`history.back()` would pop a further real level and strand the app one entry
+below the screen it is showing — breaking invariant 2. Instead the adapter sets
+`suppressPop` so the outstanding `goBack`'s landing is absorbed, converging the
+race to the same end state as an un-raced commit-close (the recorder's screen,
+one level below it), which is invariant 7's intent — a second Back during an
+in-flight commit is absorbed, not escaped. (An earlier PR2 revision instead
+DRAINED — queued the refused settle and re-issued it on the next landing — but
+the re-issued traversal reproduced neither `develop`'s end state nor an un-raced
+close: it left the app at physical depth 0 while a non-root screen was showing.
+The absorb replaces it. Reachability of the ms window is inference; the trace is
+from the code — no renderer, no device.)
 
 ### Amendment B — reload/bootstrap safety
 
@@ -734,7 +756,7 @@ inference until it is run on an actual Android device.
    `settleBack` is deleted). The layer stack exists in the adapter and stays
    EMPTY (no overlay pushes until PR3/PR4), so observable Back behaviour is
    unchanged except where the design names a fix (Amendments A/B, the refused
-   commit-close drain). "Landed (code)" is a statement of what the tree does;
+   commit-close absorb). "Landed (code)" is a statement of what the tree does;
    the DOM/reload/commit-close paths are review-only and an on-device (T2)
    item, NOT claimed verified here (no renderer, no device run). This is the
    PR that touches the highest-stakes path in the app and should bake before
@@ -805,6 +827,6 @@ wholesale, wires Amendments A–C, resolves #494's four items, and deletes the
 per-issuer `settleBack` in favour of `settleOutstanding`. This is a statement
 of what the code does — the routing/guard/reload decisions are Node-tested in
 `src/lib/nav`, but the adapter's DOM paths (popstate, reload adopt, the
-commit-close drain, the Amendment C cleanup) have **no renderer here** and are
+refused-commit-close absorb, the Amendment C cleanup) have **no renderer here** and are
 review-only plus an on-device (T2) item; nothing here claims they were run on a
 device or reviewed clean. Next: PR3 (Books' overlays) after PR2 bakes.

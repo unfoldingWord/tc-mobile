@@ -35,13 +35,14 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     "F1 (P1): layerStack has no unmount-safety net (Amendment C's fix — a centrally-owned cleanup effect in hooks/use-nav-stack.ts with dependency array [screen, recovering, databasePanel]) is adapter-level, React-lifecycle code. The pure core has no notion of a React unmount at all, so nothing in src/lib/nav can assert it. PR2 scope."
   );
 
-  it("F2 (P2): the adapter's goBack and commit-close settle call beginBack/settleOutstanding (wired in PR2, hooks/use-nav-stack.ts) — a second same-issuer request is refused while the first is outstanding, and — since round 4's any-outstanding guard (answers #493) — so is a DIFFERENT issuer's request, not just the same one", () => {
-    // As of PR2 the live issuers ARE these functions: use-nav-stack.ts's
-    // `goBack` calls `beginBack("go-back")` in place of the old `backRequested`
-    // latch, the commit-close settle calls `beginBack("commit-close")`, and
-    // every popstate landing clears the guard with `settleOutstanding`. This
-    // row pins the pure decision table those call sites compose; the DOM wiring
-    // itself is review-only (no renderer — AGENTS.md).
+  it("F2 (P2): beginBack refuses a second request from EITHER issuer while one is outstanding, and settleOutstanding clears it (answers #493)", () => {
+    // The adapter composes these (review-only, no renderer — AGENTS.md): as of
+    // PR2 use-nav-stack.ts's `goBack` calls `beginBack("go-back")` in place of
+    // the old `backRequested` latch, the commit-close settle calls
+    // `beginBack("commit-close")`, and every popstate landing clears the guard
+    // with `settleOutstanding`. This row pins only the PURE decision table those
+    // call sites compose — the title claims nothing about the adapter's source,
+    // which no gate here reads.
     const firstGoBack = beginBack(initialTravelGuardState, "go-back");
     expect(firstGoBack.ok).toBe(true);
 
@@ -74,7 +75,7 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     expect(commitCloseAfterSettle.ok).toBe(true);
   });
 
-  it("F3 (P2): the adapter adopts the resumed index (wired in PR2, hooks/use-nav-stack.ts) so a reload mid-stack no longer misroutes the first post-reload Back as a phantom Forward, and does not skip a physical level (Amendment B)", () => {
+  it("F3 (P2): adopting the resumed index (instead of forcing 0) makes a reload-mid-stack Back read as back, not a phantom forward, and does not skip a physical level (Amendment B)", () => {
     // Traced concretely in tests/nav-resume-index.test.ts; this row pins the
     // corpus-level claim about the PURE composition: adopting the resumed
     // index (instead of forcing 0) makes the landing read as "back", not
@@ -126,29 +127,26 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     "R1-G-P3-3 (still-possible): a Layer's id/busy() must resolve against the live entity (e.g. the shelf-resolved book), never a stale stored id — this is a documented PR3/PR4 review-checklist discipline (see Residual Risks), not a property the pure Layer/LayerStack type can enforce or that a test can observe without a concrete overlay's own entity-resolution code. PR3/PR4 scope."
   );
 
-  it("R3-G-P3-2: PR2 DRAINS the refused commit-close consume, it does not drop it — the pure settle-then-proceed sequence the adapter composes", () => {
+  it("R3-G-P3-2: a commit-close refused while go-back is outstanding is refused with state unchanged — the adapter ABSORBS the outstanding go-back's landing, it does not re-issue a second traversal", () => {
     // travel-guard.ts's beginBack REFUSES a second request while one is
     // outstanding; it does not queue one. When the recorder's commit-close
     // settle is refused because a goBack is still outstanding, PR2's adapter
-    // (hooks/use-nav-stack.ts) does NOT drop that settle — it records a
-    // one-slot pending consume and DRAINS it on the next popstate landing,
-    // after settleOutstanding clears the guard, reproducing develop's
-    // two-traversal end state. The pending-slot machinery is adapter code
-    // (review-only, no renderer); the pure sequence it composes is pinned here
-    // and in tests/nav-travel-guard.test.ts.
+    // (hooks/use-nav-stack.ts, review-only, no renderer) does NOT issue a second
+    // history.back(): the outstanding goBack's own back() is already consuming
+    // the same protective entry the settle would have, so the adapter sets
+    // suppressPop to absorb that outstanding landing. This converges the race to
+    // the same end state as an un-raced commit-close (invariant 7). An earlier
+    // implementation DRAINED (re-issued the settle on the next landing), which
+    // reproduced neither develop's end state nor an un-raced close and left the
+    // app one physical level below the screen it showed (invariant 2); the
+    // absorb replaces it. The pure fact this row pins is the refusal returning
+    // state unchanged — the signal the adapter absorbs on.
     const goBackOutstanding = beginBack(
       initialTravelGuardState,
       "go-back"
     ).next;
-    // The settle is refused right now — this is the moment the adapter records
-    // the pending consume rather than dropping it.
-    expect(beginBack(goBackOutstanding, "commit-close").ok).toBe(false);
-    // Next landing: settleOutstanding clears the guard, and the drain's
-    // re-issued settle proceeds.
-    const drained = beginBack(
-      settleOutstanding(goBackOutstanding),
-      "commit-close"
-    );
-    expect(drained.ok).toBe(true);
+    const refused = beginBack(goBackOutstanding, "commit-close");
+    expect(refused.ok).toBe(false);
+    expect(refused.next).toEqual(goBackOutstanding); // unchanged — no second flag, no second traversal
   });
 });

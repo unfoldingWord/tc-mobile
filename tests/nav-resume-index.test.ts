@@ -56,7 +56,8 @@ describe("resumeNavIndex", () => {
   /**
    * Frank R1 P2 (PR #492): `typeof x === "number"` alone accepts `NaN` and
    * `Infinity` as "well-formed" — neither is an integer `++nextIndex.current`
-   * (App.tsx:78) could ever stamp, so both can only arrive here from state
+   * (the adapter's `pushHistoryEntry`, `hooks/use-nav-stack.ts`) could ever
+   * stamp, so both can only arrive here from state
    * this app never wrote. Adopting `NaN` is actively dangerous, not just
    * wrong: `navDirection(NaN, x)` reads `"same"` for every `x` (both `<`/`>`
    * comparisons on `NaN` are false), so a real Back gesture would be silently
@@ -105,7 +106,7 @@ describe("resumeNavIndex + navDirection + popAction composition (the pure decisi
     );
   });
 
-  it("with the adapter adopting the resumed index (wired in PR2), the SAME post-reload Back classifies correctly — a pure-composition proof, the DOM path review-only", () => {
+  it("with the resumed index adopted (the pure composition the PR2 adapter performs), the SAME post-reload Back classifies correctly — DOM path review-only", () => {
     // George R1 P3-6 (PR #492): a reload always resets React state to Books
     // (`chapterId` starts `null`) regardless of history depth — the adapter's
     // mount effect runs on every mount, a reload included, and nothing restores
@@ -136,8 +137,9 @@ describe("resumeNavIndex + navDirection + popAction composition (the pure decisi
     );
     // George R3 P2-1 (PR #492), dev lead decision (round 4, 2026-09-18): this
     // pure `"exit-app"` result is correctly classified, but its LIVE meaning
-    // is a no-op — `App.tsx:378-381`'s `case "exit-app"` assumes the browser
-    // is already leaving, which holds at real depth 0 but not here. Adopt-
+    // is a no-op — the adapter's `case "exit-app"` (`hooks/use-nav-stack.ts`)
+    // assumes the browser is already leaving, which holds at real depth 0 but
+    // not here. Adopt-
     // don't-rewrite (Amendment B) leaves the physical stack below (`index:0`,
     // `index:1`) intact rather than flattening it, so this popstate lands at
     // physical depth 1, not depth 0 — the app does NOT exit on this Back; it

@@ -115,17 +115,19 @@ export function navDirection(from: number, to: number): NavDirection {
  * premise below — a `popstate` has already popped the screen-depth entry —
  * is true for Back and FALSE for Forward: Forward RESTORED a previously
  * truncated entry, and the live cancel for it is `trap-forward`'s own extra
- * `history.back()`, not a layer re-arm. Both recorder-close paths
- * (`App.tsx:266-268`, `:345-360`) leave a forward entry behind; if a non-empty
- * stack were allowed to shadow Forward, a Forward swipe over an open overlay
+ * `history.back()`, not a layer re-arm. Both recorder-close paths (the adapter's
+ * programmatic close, `hooks/use-nav-stack.ts`'s `commitCloseRecorder`, and its
+ * `commit-close-recorder` popstate case) leave a forward entry behind; if a
+ * non-empty stack were allowed to shadow Forward, a Forward swipe over an open overlay
  * would dismiss the overlay and re-arm instead of cancelling the Forward, and
  * the user's next Back would fall through past the now-empty stack to
  * `to-books` — an earlier revision of this function had exactly this bug,
  * caught before PR2 could copy it.
  *
  * A `popstate` has ALREADY popped the screen-depth entry before this function
- * runs (`App.tsx:301-302`), exactly the same as every other non-screen
- * intercept above (`trap-recovery`/`trap-database-panel`/
+ * runs (the adapter updates `navIndex` from the landing index just before
+ * calling `popAction`, `hooks/use-nav-stack.ts`), exactly the same as every
+ * other non-screen intercept above (`trap-recovery`/`trap-database-panel`/
  * `rearm-transition-busy`) — so on Back, BOTH outcomes must re-arm that entry,
  * not just one: `"rearm-layer-dismiss"` means dismiss the top layer (the
  * adapter recovers it via `topLayer(stack)`) AND push a fresh entry;
@@ -142,15 +144,14 @@ export function navDirection(from: number, to: number): NavDirection {
  * earlier object shape's own prose taught the wrong contract ("nothing on
  * `refused-busy`"), and George's review caught it before PR2 could copy it.
  * **Naming the obligation is not the same as enforcing it (George R3 P3-6,
- * PR #492): `App.tsx`'s existing string `switch` (`:304-382`) has no case
- * for either tag today, and nothing currently makes an unhandled tag a type
- * error — adding the 6th argument without new cases would typecheck and
- * silently no-op.** PR2's FIRST adapter commit is what closes that gap: it
- * adds `default: { const _: never = action }` to `App.tsx`'s switch, which
- * is what actually enforces that every `PopAction` value is handled (see
- * "Deferred to PR2" in the PR description). This also removes the never-
- * produced `{kind:"layer", result:{kind:"empty"}}` combination entirely
- * (former P3-4): a plain string has no `"empty"` branch to write.
+ * PR #492).** PR2 extracted the `popstate` `switch` out of `App.tsx` into the
+ * adapter (`hooks/use-nav-stack.ts`), which consumes both layer tags and ends
+ * with `default: { const _exhaustive: never = action }` — so a new `PopAction`
+ * member with no case is a `tsc` error there, not a silent no-op. (On `develop`
+ * before PR2 the switch lived in `App.tsx` with no such default; that is the
+ * gap this closed.) The two string tags also remove the never-produced
+ * `{kind:"layer", result:{kind:"empty"}}` combination entirely (former P3-4):
+ * a plain string has no `"empty"` branch to write.
  */
 export type PopAction =
   | "trap-recovery"
@@ -275,7 +276,7 @@ export function overlayDismissal(
 /**
  * Amendment B of docs/design/back-navigation.md — reload/bootstrap safety.
  *
- * `App.tsx`'s mount effect runs `window.history.replaceState({tc:true,
+ * `develop`'s mount effect (before PR2) ran `window.history.replaceState({tc:true,
  * index:0}, ""); navIndex.current = 0; nextIndex.current = 0;`
  * UNCONDITIONALLY on every mount, including a reload mid-stack. `replaceState`
  * only rewrites the CURRENT (top) entry; whatever real entries sit below keep
@@ -286,9 +287,10 @@ export function overlayDismissal(
  * Back lands on the depth-1 entry (`{index:1}`), `navDirection(0, 1)` reads
  * "forward" against the freshly-reset baseline, `popAction` returns
  * `trap-forward`, and the resulting cancelling `history.back()` burns a
- * SECOND physical level the user never asked to skip. This is a pre-existing
- * hazard on `develop` today (confirmed against `App.tsx:85-89` and
- * `:301-302`), not something #452's redesign introduces.
+ * SECOND physical level the user never asked to skip. This was a pre-existing
+ * hazard on `develop` (confirmed against its `App.tsx` mount and popstate
+ * effects), not something #452's redesign introduces; PR2's adapter mount
+ * effect (`hooks/use-nav-stack.ts`) is where the fix below is wired.
  *
  * `resumeNavIndex` is the fix's pure half: given whatever `window.history.state`
  * already holds on mount, decide what `navIndex`/`nextIndex` should ADOPT
@@ -310,7 +312,7 @@ export function overlayDismissal(
  * assign this SAME returned number to both `navIndex.current` AND
  * `nextIndex.current` on mount — adopting only `navIndex` is not enough.
  * `pushHistoryEntry` stamps every pushed entry from `++nextIndex.current`
- * alone (`App.tsx:78`), never from `navIndex`; if `nextIndex` is left at its
+ * alone (`hooks/use-nav-stack.ts`), never from `navIndex`; if `nextIndex` is left at its
  * old value while `navIndex` adopts this one, the very next push stamps a
  * LOWER index on top of the one just adopted, desyncing the strictly-
  * increasing invariant `navDirection` depends on (see above) and
@@ -326,7 +328,7 @@ export function overlayDismissal(
  *
  * `index` must be a non-negative SAFE INTEGER, not merely `typeof === "number"`
  * (Frank R1 P2): every real entry this app ever writes is stamped from
- * `++nextIndex.current` (`App.tsx:78`), a non-negative integer, so `NaN`,
+ * `++nextIndex.current` (`hooks/use-nav-stack.ts`), a non-negative integer, so `NaN`,
  * `Infinity`/`-Infinity`, a negative number, or a fractional value can only
  * reach here from state this app never wrote — malformed/foreign/legacy
  * state, exactly the case the docblock above already says must resume to `0`.
