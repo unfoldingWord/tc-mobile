@@ -3,9 +3,12 @@ import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Headless-Chromium smoke config (#251). `e2e/browser-boundary-smoke.spec.ts`
- * is the one spec file this stands up — what it proves, and deliberately does
- * not, is documented in its header.
+ * Headless-Chromium config, begun as the #251 smoke and now standing up four
+ * spec files in `e2e/`: `browser-boundary-smoke` (#251, the harness build),
+ * `service-worker-precache`, `theme-toggle` (#171) and `failure-log` (#205),
+ * the last three against the shipped build. What each proves, and
+ * deliberately does not, is documented in its own header; the project list
+ * at the bottom is what maps a spec to a build.
  *
  * TWO builds, two previews, two projects — because the two specs need
  * different builds (round-1 George G3):
