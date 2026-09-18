@@ -172,14 +172,17 @@ export type PopAction =
 
 /**
  * `layerStack` is an OPTIONAL trailing parameter, defaulting to an empty
- * stack, specifically so every existing call site (`App.tsx`, untouched by
- * this PR) and every existing test row keeps compiling and keeps producing
- * the identical result it does on `develop` today — an empty stack can never
- * satisfy the new `direction === "back" && layerStack.length > 0` check
- * below, so the new `"rearm-layer-dismiss"` / `"rearm-layer-busy"` tags are
- * unreachable unless a caller opts in by passing a non-empty stack on a Back
- * gesture, which no caller does yet (that wiring is PR2). Zero behaviour
- * change.
+ * stack. As of PR2 the adapter (`hooks/use-nav-stack.ts`) is the sole caller
+ * — `App.tsx` routes every `popstate` through `useNavStack` and no longer
+ * calls `popAction` directly — and it passes its live `layerStack` ref on
+ * every landing. That stack is EMPTY in PR2 (nothing calls `pushLayer` until
+ * Books'/Segments' overlays convert in PR3/PR4), and an empty stack can never
+ * satisfy the `direction === "back" && layerStack.length > 0` check below, so
+ * the `"rearm-layer-dismiss"` / `"rearm-layer-busy"` tags stay
+ * unreachable-by-construction and every Back routes exactly as `develop` does
+ * today. The default keeps the pure test rows that omit the argument
+ * compiling and producing the identical `develop` result. Zero behaviour
+ * change until an overlay conversion first pushes a layer.
  */
 export function popAction(
   direction: NavDirection,

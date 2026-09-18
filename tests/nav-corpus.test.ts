@@ -127,20 +127,20 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     "R1-G-P3-3 (still-possible): a Layer's id/busy() must resolve against the live entity (e.g. the shelf-resolved book), never a stale stored id — this is a documented PR3/PR4 review-checklist discipline (see Residual Risks), not a property the pure Layer/LayerStack type can enforce or that a test can observe without a concrete overlay's own entity-resolution code. PR3/PR4 scope."
   );
 
-  it("R3-G-P3-2: a commit-close refused while go-back is outstanding is refused with state unchanged — the adapter ABSORBS the outstanding go-back's landing, it does not re-issue a second traversal", () => {
+  it("R3-G-P3-2: beginBack refuses a commit-close while a go-back is outstanding and returns the state UNCHANGED (the pure refusal; the adapter's absorb behaviour is carried by e2e/back-navigation.spec.ts)", () => {
     // travel-guard.ts's beginBack REFUSES a second request while one is
-    // outstanding; it does not queue one. When the recorder's commit-close
-    // settle is refused because a goBack is still outstanding, PR2's adapter
-    // (hooks/use-nav-stack.ts, review-only, no renderer) does NOT issue a second
-    // history.back(): the outstanding goBack's own back() is already consuming
-    // the same protective entry the settle would have, so the adapter sets
-    // suppressPop to absorb that outstanding landing. This converges the race to
-    // the same end state as an un-raced commit-close (invariant 7). An earlier
-    // implementation DRAINED (re-issued the settle on the next landing), which
-    // reproduced neither develop's end state nor an un-raced close and left the
-    // app one physical level below the screen it showed (invariant 2); the
-    // absorb replaces it. The pure fact this row pins is the refusal returning
-    // state unchanged — the signal the adapter absorbs on.
+    // outstanding; it does not queue one. This row pins ONLY that pure fact:
+    // the refusal returns state unchanged. The claim about what the adapter
+    // DOES with that signal — set suppressPop and absorb the outstanding
+    // goBack's landing rather than issue a second history.back(), converging
+    // the race to the same end state as an un-raced commit-close (invariant 7)
+    // — is adapter DOM behaviour these Node rows cannot observe, and it is
+    // carried by the real-Chromium spec (e2e/back-navigation.spec.ts, the
+    // rapid-double-Back case), not by this title. An earlier implementation
+    // DRAINED (re-issued the settle on the next landing), which reproduced
+    // neither develop's end state nor an un-raced close and left the app one
+    // physical level below the screen it showed (invariant 2); the absorb
+    // replaces it.
     const goBackOutstanding = beginBack(
       initialTravelGuardState,
       "go-back"

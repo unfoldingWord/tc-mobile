@@ -23,8 +23,14 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * `settleOutstanding`, `routeBackToLayer` via `popAction`) all live, tested, in
  * `src/lib/nav`. Extracting App.tsx's inline refs/effects here is what lets the
  * onion keep the routing logic Node-testable while the browser wiring stays in
- * one reviewable place (AGENTS.md: no jsdom/renderer here, so this file is
- * review-only + on-device for its DOM paths).
+ * one reviewable place. The Vitest suite has no renderer (AGENTS.md: no jsdom),
+ * so it covers only the pure decisions this composes; the DOM paths themselves
+ * — `popstate` routing, the reload adopt, the commit-close, and the
+ * double-Back guard — are exercised in real Chromium by
+ * `e2e/back-navigation.spec.ts` (Playwright, against the shipped `dist/`
+ * build) and remain an on-device item for iOS Safari and Android WebView. The
+ * one path no headless spec reaches is the ms-window commit-close race whose
+ * exact end state stays a device item (see the commit-close case below).
  *
  * What the adapter owns (six refs):
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
