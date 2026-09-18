@@ -863,50 +863,7 @@ export function useRecorder(): UseRecorder {
           clearTimeout(timer);
           finish();
         };
-        // Guarded because of WHERE this call sits, not because a throw has been
-        // seen here. It is the last statement of a Promise executor, so ANY
-        // throw rejects the blob promise — and nothing between here and
-        // `stopRecording()`'s backstop catch handles it, so the take comes back
-        // `{ samples: null, blob: null }` and is gone. Losing a confirmed take
-        // to a failed teardown call is the one outcome this bounded flush
-        // exists to prevent.
-        //
-        // Reachability, honestly: per the MediaStream Recording spec `stop()`
-        // throws `InvalidStateError` only when the recorder is already
-        // `"inactive"`, and that is the branch above, not this one. There is no
-        // evidence in this repo of an engine that throws while still
-        // `"recording"`/`"paused"`. This is cheap insurance against a native
-        // call on a dying audio stack — an interruption is exactly when the
-        // stack is dying — not a fix for an observed failure.
-        try {
-          recorder.stop();
-        } catch (cause) {
-          reportFailure(cause, "recorder-stop");
-          // Catching is not enough on its own: the bound above exists to wait
-          // out a flush that is IN FLIGHT, and a throw may mean there is none.
-          // So the state decides which of the two outcomes this is.
-          //
-          // Still active — the stop did not take. No `dataavailable` is coming
-          // and `onstop` will not fire, so waiting would buy nothing and cost
-          // everything: five seconds of hot microphone AFTER a confirmed stop,
-          // unreachable by `cancel()`/pagehide because this stop already stole
-          // the stream and tap out of the shared refs, and five seconds of
-          // audio the translator never confirmed still appending to `chunks`.
-          // Seal what is already captured and let the continuation release the
-          // microphone. It stops the tracks on the very next line after the
-          // await — a microtask, so no further `dataavailable` task can run in
-          // between — and that track-stop is also what finally ends this
-          // recorder. It cannot re-enter `onInterrupted`: this invocation
-          // detached `recorder.onerror` and every `track.onended` at the top.
-          //
-          // Already inactive — the engine threw but the stop DID take, so a
-          // final slice may still be in flight. Leave the bound alone and let
-          // `onstop` or the timer seal it, exactly as a healthy stop would.
-          if (recorder.state !== "inactive") {
-            clearTimeout(timer);
-            finish();
-          }
-        }
+        recorder.stop();
       });
 
       // Only our own stream. `releaseStream()` reads the shared ref, which by now
@@ -1084,18 +1041,23 @@ export function useRecorder(): UseRecorder {
     // nulls the tap too, but keep the flag consistent with the other exits).
     recordingRef.current = false;
     const recorder = recorderRef.current;
-    // Guarded for the same reason as `stop()`'s, with a different casualty: an
-    // uncaught throw here would skip `releaseStream()` on the next line and
-    // propagate out of `cancel()` into `leave()`, whose whole contract is
-    // "synchronous and total … the microphone has to be released in the same
-    // task as the tap". `cancel()` is what `pagehide`, navigation and unmount
-    // all reach, so a throw would leave a hot microphone on a page that is
-    // going away — and the take is being abandoned regardless, so there is
-    // nothing to weigh against releasing the mic.
+    // Guarded because of the casualty a throw here would cause, not because
+    // one has been observed: an uncaught throw would skip `releaseStream()`
+    // on the next line and propagate out of `cancel()` into `leave()`, whose
+    // whole contract is "synchronous and total … the microphone has to be
+    // released in the same task as the tap". `cancel()` is what `pagehide`,
+    // navigation and unmount all reach, so a throw would leave a hot
+    // microphone on a page that is going away — and the take is being
+    // abandoned regardless, so there is nothing to weigh against releasing
+    // the mic.
     //
-    // Same honest reachability as `stop()`'s: the `state !== "inactive"` test
-    // above already excludes the one case the spec says throws, and no engine
-    // in evidence throws while active. Insurance, not a fix.
+    // Reachability, honestly: the current MediaStream Recording spec's
+    // `stop()` algorithm defines NO throw at all — step 2 is "if state is
+    // inactive, abort these steps", not "throw" (the `state !== "inactive"`
+    // test above already makes that step moot here regardless). No engine in
+    // evidence throws from `stop()` while active or otherwise. This guard is
+    // insurance against an engine departing from the spec, not a fix for a
+    // spec-defined or observed failure.
     if (recorder && recorder.state !== "inactive") {
       try {
         recorder.stop();
