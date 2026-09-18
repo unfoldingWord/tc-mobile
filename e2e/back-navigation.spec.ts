@@ -15,6 +15,15 @@ import { expect, test, type Page } from "@playwright/test";
  * walking the real Books → Segments → Recorder tree and pressing the browser's
  * own Back.
  *
+ * What case (d) witnesses about the #168 double-Back guard is EXACTLY this: two
+ * rapid Close taps in one task issue exactly ONE `window.history.back()` (the
+ * second `goBack` is refused by the any-outstanding guard), asserted by wrapping
+ * and counting the calls — a deterministic, mutation-unique observable. The
+ * end-of-traversal index (rest at Segments depth 1) is a landing check, not that
+ * witness: dropping the guard only reddens the index when Chromium coalesces the
+ * two same-task traversals, whereas the call count reddens on every run (George
+ * R1 P2-1).
+ *
  * NOT covered here, and not claimed:
  *   - No device: iOS Safari and Android WebView produce their own `popstate`
  *     timing and their own standalone-PWA "Back exits the app" semantics, which
@@ -156,7 +165,7 @@ test("(c) after a reload at depth, the adapter adopts the resumed index and Back
   await expect(page).toHaveURL(/\/$/);
 });
 
-test("(d) a rapid double Back from the recorder rests at Segments depth (index 1), not walked to the root (#168 guard)", async ({
+test("(d) a rapid double Back from the recorder issues exactly one history.back() — the second is refused (#168 guard) — and rests at Segments depth (index 1)", async ({
   page,
 }) => {
   await seedToRecorder(page);
@@ -166,23 +175,42 @@ test("(d) a rapid double Back from the recorder rests at Segments depth (index 1
   // Both taps of the recorder's own Back in ONE task, before any `popstate`
   // lands — the double-tap the #168 any-outstanding guard exists for. The
   // recorder's on-screen Back is one `goBack` (`onRequestBack`, the single Back
-  // path #168), so the first sets the guard and issues one `history.back()` and
-  // the second is REFUSED — only ONE traversal is ever outstanding. Drop the
-  // guard and both `goBack`s issue `history.back()` in the same task; the app
-  // then ends at the root (index 0) rather than at Segments depth. The inferred
-  // mechanism is Chromium coalescing the two synchronous traversals into one
-  // multi-entry jump (the #493 browser-API coalescing hazard the any-outstanding
-  // rule exists to remove) — the observable is the end index alone, not the
-  // coalescing itself. That red-first kill is timing-dependent on this
-  // coalescing: observed red on repeated runs (the large majority of N), not
-  // reliably on a single post-build invocation.
-  await page.evaluate(() => {
+  // path #168), which issues `window.history.back()` synchronously (or, when the
+  // guard refuses, nothing). So the first tap sets the guard and issues exactly
+  // one `history.back()`; the second is REFUSED — only ONE traversal is ever
+  // outstanding.
+  //
+  // The UNIQUE, MUTATION-DETERMINISTIC witness of that guard is the COUNT of
+  // `history.back()` calls the two taps issue, wrapped and captured here BEFORE
+  // any `popstate` lands and before the commit-close consume-back() fires — not
+  // the end index below. Delete `if (!begun.ok) return` in `use-nav-stack.ts`'s
+  // `goBack` and both taps issue `history.back()` in the same task, so this count
+  // is 2, on EVERY run, independent of whether Chromium coalesces the two
+  // traversals. (The end-index assertion further down is a landing check, not
+  // the mutation kill: its red state depends on the browser coalescing the two
+  // same-task traversals into one 2→0 jump, which reproduces on repeated runs
+  // rather than on every single one — George R1 P2-1. The count assertion
+  // removes that dependence.)
+  const backCalls = await page.evaluate(() => {
+    const original = window.history.back.bind(window.history);
+    let calls = 0;
+    // Transparent wrapper: it still performs the real traversal (so the
+    // sheet-close-and-land below is unaffected), it only tallies the calls.
+    window.history.back = () => {
+      calls += 1;
+      original();
+    };
     const back = document.querySelector<HTMLButtonElement>(
       '[aria-label="Close recorder"]'
     );
     back?.click();
     back?.click();
+    return calls;
   });
+  // Two Close taps, exactly ONE traversal issued: the second `goBack` was
+  // refused by the any-outstanding guard (`beginBack`). This is the assertion
+  // that goes red — deterministically, every run — when the guard is dropped.
+  expect(backCalls).toBe(1);
 
   // The sheet closed and the chapter's Segments screen is showing — NOT Books
   // and not a torn-down app.
@@ -196,12 +224,8 @@ test("(d) a rapid double Back from the recorder rests at Segments depth (index 1
     page.getByRole("button", { name: "Record segment 1" })
   ).toBeVisible();
   await expect(newBookCta(page)).toHaveCount(0);
-  // The depth signal is what the screen alone cannot show: exactly ONE level was
-  // traversed, so the app rests at Segments depth (index 1) with the shelf entry
-  // still below it — not walked down to the root (index 0) by a second
-  // Back. This is the assertion that goes red when the any-outstanding guard is
-  // dropped (see the mechanism note above — the kill depends on the browser
-  // coalescing two same-task traversals, so it reproduces on repeated runs
-  // rather than on every single one).
+  // Landing check (see the note above — this is NOT the mutation-unique kill):
+  // exactly one level was traversed, so the app rests at Segments depth
+  // (index 1) with the shelf entry still below it — not walked to the root.
   expect(await navIndex(page)).toBe(1);
 });

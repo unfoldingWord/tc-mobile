@@ -764,7 +764,10 @@ inference until it is run on an actual Android device.
    commit-close absorb). "Landed (code)" is a statement of what the tree does;
    the popstate routing, the reload adopt, the idle sheet-close-and-land and
    the double-Back guard run in headless Chromium in
-   `e2e/back-navigation.spec.ts`. The refused-commit-close absorb else-branch
+   `e2e/back-navigation.spec.ts` — the guard witnessed by case (d) asserting two
+   rapid Close taps issue exactly one `history.back()` (the deterministic,
+   mutation-unique observable; the rest-at-depth-1 index is a landing check, not
+   that witness — George R1 P2-1). The refused-commit-close absorb else-branch
    and the Amendment C cleanup are review-only (no headless spec reaches them),
    and iOS Safari / Android WebView remain T2 device items; no on-device run is
    claimed here. This is the PR that touches the highest-stakes path in the app
@@ -835,7 +838,10 @@ wholesale, wires Amendments A–C, resolves #494's four items, and deletes the
 per-issuer `settleBack` in favour of `settleOutstanding`. This is a statement
 of what the code does — the routing/guard/reload decisions are Node-tested in
 `src/lib/nav`, and the adapter's core DOM paths (popstate routing, the reload
-adopt, the idle commit-close/sheet-close-and-land, the double-Back guard) run
+adopt, the idle commit-close/sheet-close-and-land, the double-Back guard —
+witnessed by case (d) asserting two rapid Close taps issue exactly one
+`history.back()`, the deterministic mutation-unique observable, with the
+rest-at-depth-1 index a landing check, not that witness) run
 in headless Chromium in `e2e/back-navigation.spec.ts`. The
 refused-commit-close absorb else-branch and the Amendment C cleanup have **no
 renderer that reaches them** and are review-only; iOS Safari / Android WebView
