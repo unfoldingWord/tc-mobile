@@ -41,6 +41,14 @@ interface MenuProps {
    */
   closeLabel?: string;
   /**
+   * When this changes, the open-edge focus lands again. The About panel (#36)
+   * swaps the drawer body between its list and an in-drawer licence text, and
+   * each swap must re-place focus inside the still-open dialog rather than leave
+   * it orphaned on a control that just unmounted. Defaults undefined, so a menu
+   * that never swaps its body focuses once on open as before.
+   */
+  focusKey?: string | number;
+  /**
    * When true, the header AND every child — Close included — go `inert`:
    * unfocusable, unclickable, and excluded from the accessibility tree as
    * one subtree (#491, the DRI's class-level pick on the judgment sheet,
@@ -73,13 +81,13 @@ interface MenuProps {
   /**
    * The menu's contents.
    *
-   * Never empty on the global menu any more: Books always mounts the theme
-   * toggle here (#171), and ahead of it `FailureLogPanel` while the failure
-   * log has rows (#205) — that panel is deliberately absent on a phone that
-   * has never failed, so a quiet phone's menu holds the toggle alone. The
-   * empty case still exists for callers that pass nothing, but it is no
-   * longer the global menu's normal state. Template Library (B7, #33) is the
-   * other consumer still to come.
+   * Never empty on the global menu any more: Books always mounts the About &
+   * licenses entry (#36) and the theme toggle (#171), and ahead of them
+   * `FailureLogPanel` while the failure log has rows (#205) — that panel is
+   * deliberately absent on a phone that has never failed, so a quiet phone's
+   * menu holds About and the toggle alone. The empty case still exists for
+   * callers that pass nothing, but it is no longer the global menu's normal
+   * state. Template Library (B7, #33) is the other consumer still to come.
    */
   children?: React.ReactNode;
 }
@@ -108,6 +116,7 @@ export function Menu({
   onClose,
   title = strings.menuTitle,
   closeLabel = strings.menuClose,
+  focusKey,
   inert,
   liveRegion,
   children,
@@ -157,7 +166,9 @@ export function Menu({
       focusables.find((el) => !headerRef.current?.contains(el)) ??
       focusables[0];
     target?.focus();
-  }, [open]);
+    // `focusKey` re-lands focus when the caller swaps the body under a still-open
+    // menu (#36): the previous target may have unmounted, so re-run the landing.
+  }, [open, focusKey]);
 
   // The focus trap + Escape, bound once per open; reads `onClose` via the ref.
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import { AboutPanel } from "./about-panel";
 import { Control } from "./control";
 import { shareControlAffordance } from "./control-affordance";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
@@ -97,6 +98,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
+  // About & licenses (#36), opened from the global menu. Kept separate from
+  // `menuOpen` so the two-level surface (menu → About panel) composes: opening
+  // About closes the menu, and the About panel owns its own Menu.
+  const [aboutOpen, setAboutOpen] = useState(false);
   // #171. The global menu is the only place a theme switch belongs: it is a
   // once-per-session decision about the light you are standing in, not a
   // per-screen action, and putting it in the header would spend a header slot
@@ -713,6 +718,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       className="flex h-full flex-col gap-[14px]"
       inert={
         menuOpen ||
+        aboutOpen ||
         shareMenuBook !== null ||
         deleteTargetId !== null ||
         newBookSeed !== null ||
@@ -855,15 +861,21 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
-      {/* The global menu: the failure-log panel, then the theme toggle.
+      {/* The global menu: the failure-log panel, then About & licenses, then
+          the theme toggle.
 
           THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
           focus on its first actionable child on open, and while the log is
           non-empty the ≡ is named "Open menu. N problems recorded." — reaching
           the report is its whole point. So the report is what a switch/AT
-          user must land on, not a control that flips the theme (George R1 P2
-          on #457). The panel is mounted only while the log holds something,
-          so a phone that has never failed opens on the toggle, as before.
+          user must land on, not About or a control that flips the theme
+          (George R1 P2 on #457). The panel is mounted only while the log holds
+          something, so a phone that has never failed opens on About, as the
+          first actionable child.
+
+          About & licenses (#36): the reachable-on-the-phone home for the LGPL
+          notice and the bundled-component attribution. Opening it closes the
+          menu and hands off to the About panel, which owns its own Menu.
 
           The toggle (#171): a complete light theme has existed in
           `2-semantic.css` since the pivot with nothing able to select it,
@@ -886,6 +898,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           />
         )}
         <Control
+          icon="info"
+          label={strings.aboutOpen}
+          variant="quiet"
+          onClick={() => {
+            setMenuOpen(false);
+            setAboutOpen(true);
+          }}
+        />
+        <Control
           icon={theme.theme === "dark" ? "sun" : "moon"}
           label={
             theme.theme === "dark"
@@ -896,6 +917,8 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           onClick={theme.toggle}
         />
       </Menu>
+
+      <AboutPanel open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
       {/* New Book asks for the name before it creates anything (#314). The same
           panel surface the rename uses — so the focus trap, Escape, the scrim

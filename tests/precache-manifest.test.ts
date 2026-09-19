@@ -34,7 +34,8 @@ const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
 
 // The exact allowlist the app shell needs, and nothing more. `jpg` is absent
 // by #177; restoring it is a deliberate edit here plus in vite.config.ts.
-const INTENDED = ["**/*.{js,css,html,svg,png,woff2}"];
+// `txt` is present for the offline licence texts under public/licenses/ (#36).
+const INTENDED = ["**/*.{js,css,html,svg,png,woff2,txt}"];
 
 function globPatterns(): string[] {
   const source = readFileSync(CONFIG, "utf8");
@@ -45,18 +46,21 @@ function globPatterns(): string[] {
   return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
 }
 
-// The `navigateFallbackDenylist` entry, lifted out of vite.config.ts as a live
-// RegExp rather than retyped here — a copy would pass while the config's own
-// pattern regressed, which is exactly the class of bug this pins.
+// The `navigateFallbackDenylist`'s version.json entry, lifted out of
+// vite.config.ts as a live RegExp rather than retyped here — a copy would pass
+// while the config's own pattern regressed, which is exactly the class of bug
+// this pins. The denylist holds a second entry too (`/\.txt$/`, the offline
+// licence texts, #36), so this grabs the FIRST entry (version.json), tolerating
+// a trailing `,` before the next entry rather than requiring the array to end.
 function navigateFallbackDenylist(): RegExp {
   const source = readFileSync(CONFIG, "utf8");
   const match = source.match(
-    /navigateFallbackDenylist:\s*\[\s*\/(.*?)\/[gimsuy]*\s*\]/
+    /navigateFallbackDenylist:\s*\[\s*\/(.*?)\/[gimsuy]*\s*[,\]]/
   );
   const body = match?.[1];
   if (body === undefined)
     throw new Error(
-      "could not find a single-entry navigateFallbackDenylist in vite.config.ts"
+      "could not find the version.json navigateFallbackDenylist entry in vite.config.ts"
     );
   return new RegExp(body);
 }
