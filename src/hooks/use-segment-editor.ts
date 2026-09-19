@@ -1,6 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { clampRange, sliceRange, spansWholeSample } from "@/lib/audio/edit";
+import {
+  clampRange,
+  sliceRange,
+  spansWholeSample,
+  wholeSampleRange,
+} from "@/lib/audio/edit";
 import {
   canRedo as logCanRedo,
   canUndo as logCanUndo,
@@ -55,8 +60,10 @@ export interface SegmentEditor {
   readonly closeSelection: () => void;
   /** Update the picked span as a handle drags. Clamped to the buffer. */
   readonly setSelection: (range: SampleRange) => void;
-  /** Cut the selection to the clipboard, then drop the frame. Returns the range
-   *  removed (normalised) or null if nothing was cut. */
+  /** Cut the selection to the clipboard, then drop the frame. Returns the
+   *  whole-sample range removed — the same truncated bounds `cut`/
+   *  `sliceRange` (`lib/audio/edit.ts`) act on, via `wholeSampleRange`, not
+   *  the raw fractional selection — or null if nothing was cut. */
   readonly cut: () => SampleRange | null;
   /** Paste the clipboard at a sample offset (the centerline). */
   readonly paste: (atSample: number) => void;
@@ -198,12 +205,19 @@ export function useSegmentEditor(
     [clampPoint]
   );
 
-  // Returns the range actually removed (normalised), or null if nothing was cut
-  // or the edit failed — so the recorder can shift the pan left by a cut that
-  // fell before the centerline.
+  // Returns the whole-sample range actually removed, or null if nothing was
+  // cut or the edit failed — so the recorder can shift the pan left by a cut
+  // that fell before the centerline. Normalised through `wholeSampleRange`
+  // (#512 George R1 P3), not just `clampRange`: the buffer edit below
+  // (`sliceRange`/`cut` in `lib/audio/edit.ts`) truncates fractional edges
+  // the way `Int16Array.slice` does, so the range stored on the `EditOp` —
+  // and handed back here — must already be truncated too, or a caller that
+  // does not re-truncate (the mappers in `recorder-stage.ts` do, today, but
+  // `wholeSampleRange`'s own docblock calls itself "the ONE place" this
+  // happens) reads a position `Math.round`ed instead of truncated.
   const cut = useCallback((): SampleRange | null => {
     if (!selection) return null;
-    const range = clampRange(selection, working.length);
+    const range = wholeSampleRange(clampRange(selection, working.length));
     // Nothing picked — and "picked" is the one `spansWholeSample` question the
     // audition asks, so what Play refuses to sound, Cut refuses to remove. The
     // float compare this replaces called a span inside a single sample a real

@@ -240,6 +240,26 @@ describe("replaceRange", () => {
     );
     expect(Array.from(out)).toEqual([0, 9, 4, 5]);
   });
+
+  /**
+   * #512 George R1 P3: `wholeSampleRange` was not actually "the ONE place" —
+   * `replaceRange` still inserted at `clampRange`'s rounded (not truncated)
+   * start after `cut()` had already truncated. `cut([2.6, 5))` removes
+   * indices [2, 5) (`Int16Array.slice` truncates), leaving the replacement's
+   * correct insertion point at 2 — but the pre-fix code inserted at
+   * `Math.round(2.6) = 3`, landing the replacement one sample late.
+   */
+  it("inserts at the cut's TRUNCATED start, not `Math.round` of the raw fractional one (#512 George R1 P3)", () => {
+    // seq(8) = [0,1,2,3,4,5,6,7]. cut([2.6,5)) truncates to [2,5), removing
+    // 2,3,4 and leaving [0,1,5,6,7]. The replacement must land at index 2 —
+    // right after 1, before the surviving 5 — not at index 3 (after 5).
+    const out = replaceRange(
+      seq(8),
+      { start: 2.6, end: 5 },
+      Int16Array.from([90])
+    );
+    expect(Array.from(out)).toEqual([0, 1, 90, 5, 6, 7]);
+  });
 });
 
 describe("concat", () => {

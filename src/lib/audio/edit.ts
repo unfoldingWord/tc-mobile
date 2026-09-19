@@ -118,14 +118,24 @@ export function insertAt(
   return out;
 }
 
-/** Replace `range` with `replacement` — the re-record-this-bit operation. */
+/**
+ * Replace `range` with `replacement` — the re-record-this-bit operation.
+ *
+ * The insertion point is {@link wholeSampleRange}'s truncated start, not
+ * `clampRange`'s still-fractional one (#512 George R1 P3): `cut` above
+ * already removed the truncated bounds (`Int16Array.slice` truncates), so
+ * inserting at the raw fractional start left `Math.round` to pick a
+ * different — and, at the exact `.5` boundary this cut/insert pair can
+ * produce, possibly one-sample-late — position than the one the buffer edit
+ * actually made room at.
+ */
 export function replaceRange(
   samples: Int16Array,
   range: SampleRange,
   replacement: Int16Array
 ): Int16Array {
   const { remaining } = cut(samples, range);
-  const { start } = clampRange(range, samples.length);
+  const { start } = wholeSampleRange(clampRange(range, samples.length));
   return insertAt(remaining, replacement, start);
 }
 
