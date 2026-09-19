@@ -577,6 +577,33 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     expect(modal).not.toMatch(/role="dialog"/);
   });
 
+  /**
+   * Frank round 2 P2: the overlay grabbed focus onto its own panel on the
+   * hidden→visible edge but never gave it back. The menu very often outlives
+   * the overlay (a failed prepare, a "nothing" error, a native `retry` that
+   * quietly re-arms `ready`), so a keyboard/switch user was stranded on
+   * `document.body` once the glyph cleared, outside a menu still visibly
+   * open. Fixed by saving `document.activeElement` at the SAME edge the
+   * panel grabs focus, and restoring it (if still connected) at the
+   * visible→hidden edge.
+   */
+  it("share-progress.tsx saves the prior focus at the same edge it grabs the panel's, and restores it going hidden (Frank round 2 P2)", () => {
+    const modal = read("src/components/share-progress.tsx");
+    const at = modal.indexOf("useEffect(() => {\n    if (visible) {");
+    expect(at).toBeGreaterThan(-1);
+    const effectEnd = modal.indexOf("}, [visible]);", at);
+    const body = modal.slice(at, effectEnd);
+    // Saved BEFORE the panel steals focus, not after.
+    const saveAt = body.indexOf("returnFocusRef.current =");
+    const grabAt = body.indexOf("panelRef.current?.focus();");
+    expect(saveAt).toBeGreaterThan(-1);
+    expect(grabAt).toBeGreaterThan(saveAt);
+    // And handed back once hidden, guarded on the node still being connected
+    // (a stale/superseded run, or an unmount, may have nothing to return to).
+    expect(body).toMatch(/const el = returnFocusRef\.current;/);
+    expect(body).toMatch(/if \(el\?\.isConnected\) el\.focus\(\);/);
+  });
+
   it("the stylesheet inks busy and every settled outcome, with layer-2 roles only", () => {
     const css = read("src/app/styles/3-components.css");
     for (const key of ["busy", ...SHARE_SETTLED]) {

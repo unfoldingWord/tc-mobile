@@ -62,7 +62,12 @@ interface ShareProgressProps {
  * that says the book was just shared. So this component grabs focus onto
  * itself on the hidden→visible edge (there is nothing else IN it to focus —
  * `tabIndex={-1}`, the same "focus a non-interactive node" shape
- * `error-boundary.tsx`'s crash heading already uses) and, in a CAPTURE-phase
+ * `error-boundary.tsx`'s crash heading already uses) — AND HANDS IT BACK on
+ * the visible→hidden edge (Frank round 2 P2): the menu very often outlives
+ * this overlay (a failed prepare, a "nothing" error, a native `retry` that
+ * quietly re-arms `ready`), and grabbing focus without ever returning it
+ * would strand a keyboard user on `document.body`, outside a menu that is
+ * still visibly open. And, in a CAPTURE-phase
  * `window` listener, both `preventDefault` AND `stopPropagation` every Tab
  * and Escape while it is up. `stopPropagation` is the part `EraseConfirm`'s
  * own capture handler does not need and this one does: `menu.tsx`'s Tab-wrap
@@ -106,10 +111,37 @@ export function ShareProgress({
     onDismissRef.current = onDismiss;
   });
 
+  // Where focus was the instant BEFORE this overlay grabbed it — read at the
+  // hidden→visible edge below and restored at the visible→hidden edge, so a
+  // keyboard/switch user lands back where they were rather than on
+  // `document.body` (Frank round 2 P2). The menu behind this overlay very
+  // often OUTLIVES it: a failed prepare, a "nothing" error, and a native
+  // `retry` that quietly re-arms `ready` all leave the menu open with this
+  // overlay the only thing that closes — so restoring focus, not merely
+  // dropping it, is what keeps a keyboard user inside the still-visible
+  // dialog instead of stranding them outside it.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
   // Land focus on the panel itself on the hidden→visible edge — the only
-  // thing here TO focus, since this overlay carries no controls.
+  // thing here TO focus, since this overlay carries no controls — and hand
+  // it back on the visible→hidden edge.
   useEffect(() => {
-    if (visible) panelRef.current?.focus();
+    if (visible) {
+      returnFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      panelRef.current?.focus();
+      return;
+    }
+    const el = returnFocusRef.current;
+    returnFocusRef.current = null;
+    // `isConnected`, not a liveness check on the whole menu: the control that
+    // had focus (Share now / Share chapter / Share book) re-renders in place
+    // as `status` moves, so the SAME node is normally still there — but a
+    // stale run's overlay (superseded by a fresh prepare on a different
+    // book/chapter) or an unmount mid-flow can leave nothing to return to.
+    if (el?.isConnected) el.focus();
   }, [visible]);
 
   // The isolation fix itself (George r1 P2 #1/#2): see the docblock above for
