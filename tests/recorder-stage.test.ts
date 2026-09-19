@@ -1355,6 +1355,83 @@ describe("panAfterUndo / panAfterRedo", () => {
 });
 
 /**
+ * #473 round 3 (Frank r3 P2): round 2 fixed the removed LENGTH
+ * (`removedSampleCount`, now folded into `wholeSampleRange` in
+ * `lib/audio/edit.ts`) but left the POSITION terms reading the raw
+ * fractional cut bounds — `panAfterUndo`'s re-insertion point
+ * (`panAfterInsert`'s `at`, read from `Math.min(range.start, range.end)`) and
+ * `panAfterRedo`'s `panAfterCut(pan, redoneOp.range)` call. `panAfterCutRest`
+ * shares the identical shape (`panAfterCut(pan, removed)` on the raw range),
+ * though Frank r3 named only the undo/redo call sites — the class-level fix
+ * routes every cut-range read in this file through `wholeSampleRange` at
+ * entry, so a fractional cut's effect on the pan matches a cut of its
+ * already-truncated bounds exactly, not just in how much it shortens the
+ * buffer.
+ */
+describe("#473 round 3 — a fractional cut's POSITION terms match its truncated bounds, not just its length (Frank r3 P2)", () => {
+  // Int16Array.slice truncates [4_000.4, 8_000.7) to [4_000, 8_000) — exactly
+  // 4_000 samples removed, not the raw float span (~4_000.3).
+  const fractionalRange = { start: 4_000.4, end: 8_000.7 };
+  const truncatedRange = { start: 4_000, end: 8_000 };
+  const preLength = 12_000; // the buffer's length before the cut/redo
+  const postCutLength = 8_000; // 12_000, minus the truncated 4_000 removed
+  const fractionalOp: EditOp = { kind: "cut", range: fractionalRange };
+  const truncatedOp: EditOp = { kind: "cut", range: truncatedRange };
+
+  const positions: ReadonlyArray<readonly [string, number]> = [
+    ["before the cut", 2_000],
+    ["in the truncation gap at the cut's start", 4_000.2],
+    ["inside the cut", 6_000],
+    ["at the cut's truncated end", 8_000],
+    ["after the cut", 9_000.6],
+  ];
+
+  it.each(positions)(
+    "panAfterCutRest: %s (pan %s) matches a cut of the truncated bounds",
+    (_label, pan) => {
+      expect(panAfterCutRest(pan, fractionalRange, preLength)).toBe(
+        panAfterCutRest(pan, truncatedRange, preLength)
+      );
+    }
+  );
+
+  it.each(positions)(
+    "panAfterUndo: %s (pan %s) — undoing a fractional cut matches undoing the truncated one",
+    (_label, pan) => {
+      expect(panAfterUndo(pan, fractionalOp, postCutLength)).toBe(
+        panAfterUndo(pan, truncatedOp, postCutLength)
+      );
+    }
+  );
+
+  it.each(positions)(
+    "panAfterRedo: %s (pan %s) — redoing a fractional cut matches redoing the truncated one",
+    (_label, pan) => {
+      expect(panAfterRedo(pan, fractionalOp, preLength)).toBe(
+        panAfterRedo(pan, truncatedOp, preLength)
+      );
+    }
+  );
+
+  it("panAfterRedo: Frank r3's own example — 9_000.6 redoes to 5_000.6, not the raw-span 5_000.3", () => {
+    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(5_000.6);
+  });
+
+  it("panAfterCutRest: the same live-cut pan also lands on 5_000.6 — the sibling the class-level fix covers beyond Frank r3's named lines", () => {
+    expect(panAfterCutRest(9_000.6, fractionalRange, preLength)).toBe(5_000.6);
+  });
+
+  it("panAfterUndo: a pan in the truncation gap crosses the reinsertion boundary the raw `lo` comparison put it on the wrong side of", () => {
+    // 4_000.2 sits AFTER the truncated start (4_000, what the buffer edit
+    // used) but BEFORE the raw fractional start (4_000.4, what the pre-fix
+    // code compared against) — so the pre-fix `pan <= lo` branch kept it
+    // unchanged at 4_000.2 instead of shifting it past the re-inserted range
+    // to 8_000.2.
+    expect(panAfterUndo(4_000.2, fractionalOp, postCutLength)).toBe(8_000.2);
+  });
+});
+
+/**
  * Whether the Record control is dead (George R1 P2 #3).
  *
  * Record is the control that LOCKS the insertion offset (#61, F9:

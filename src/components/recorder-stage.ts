@@ -10,7 +10,7 @@
  */
 
 import { panAfterCut } from "@/lib/audio/viewport";
-import { removedSampleCount } from "@/lib/audio/edit";
+import { wholeSampleRange } from "@/lib/audio/edit";
 import type { EditOp } from "@/lib/audio/edit-log";
 
 /** The record-stage inputs this decision reads, all already-derived booleans. */
@@ -503,20 +503,23 @@ export function panAfterDragMove(input: {
  * derived from `removed` rather than re-read from `editor` (whose `working`
  * has not re-rendered into this closure yet either).
  *
- * `removedLength` is `removedSampleCount(removed)`, not a raw
- * `end - start`: selection edges are floats, and the buffer edit
- * (`cut`/`sliceRange` in `lib/audio/edit.ts`) truncates them via
- * `Int16Array.slice`. A fractional-boundary cut whose raw span disagreed
- * with that truncation left the rest clamp a fraction of a sample off the
- * buffer's real post-cut length (#473 round-2 Frank P2).
+ * `removed` is normalised through {@link wholeSampleRange} before EITHER
+ * question it answers — the removed LENGTH and the POSITION `panAfterCut`
+ * maps `pan` through — not just the length: selection edges are floats, and
+ * the buffer edit (`cut`/`sliceRange` in `lib/audio/edit.ts`) truncates them
+ * via `Int16Array.slice`. A fractional-boundary cut whose raw span disagreed
+ * with that truncation left both the rest clamp AND the shifted pan a
+ * fraction of a sample off the buffer's real post-cut shape (#473 round-2
+ * Frank P2 caught the length; round 3 found the position term was still raw).
  */
 export function panAfterCutRest(
   pan: number,
   removed: { readonly start: number; readonly end: number },
   preCutLength: number
 ): number | null {
-  const removedLength = removedSampleCount(removed);
-  return panOrRest(panAfterCut(pan, removed), preCutLength - removedLength);
+  const range = wholeSampleRange(removed);
+  const removedLength = range.end - range.start;
+  return panOrRest(panAfterCut(pan, range), preCutLength - removedLength);
 }
 
 /**
@@ -755,17 +758,20 @@ export function panAfterUndo(
 ): number | null {
   if (pan === null) return null;
   if (undoneOp.kind === "cut") {
-    const lo = Math.min(undoneOp.range.start, undoneOp.range.end);
-    // The truncation the buffer edit actually applies (`removedSampleCount`,
-    // `lib/audio/edit.ts`), not the raw float span: a fractional-boundary
-    // cut's `end - start` disagrees with what `Int16Array.slice` removed,
-    // landing the re-inserted pan a fraction of a sample off the buffer's
-    // real restored index (#473 round-2 Frank P2).
-    const removedLen = removedSampleCount(undoneOp.range);
+    // Normalised ONCE, through the same `wholeSampleRange` the buffer edit
+    // itself is built on (`lib/audio/edit.ts`) — both the length AND the
+    // START position `panAfterInsert` re-inserts at, not just the length:
+    // a fractional-boundary cut's raw `Math.min(start, end)` disagrees with
+    // what `Int16Array.slice` actually removed, landing the re-inserted pan
+    // a fraction of a sample off the buffer's real restored index (#473
+    // round-2 Frank P2 caught the length; round 3 found this position term
+    // was still raw).
+    const range = wholeSampleRange(undoneOp.range);
+    const removedLen = range.end - range.start;
     // Undoing a cut re-inserts what it removed, so the restored buffer is
     // LONGER than the one the undo started from.
     return panOrRest(
-      panAfterInsert(pan, lo, removedLen),
+      panAfterInsert(pan, range.start, removedLen),
       preUndoLength + removedLen
     );
   }
@@ -796,14 +802,14 @@ export function panAfterRedo(
 ): number | null {
   if (pan === null) return null;
   if (redoneOp.kind === "cut") {
-    // Truncated the same way the buffer edit truncates, not a raw float
-    // span — see `panAfterUndo`'s cut branch and `removedSampleCount`
-    // (#473 round-2 Frank P2).
-    const removedLen = removedSampleCount(redoneOp.range);
-    return panOrRest(
-      panAfterCut(pan, redoneOp.range),
-      preRedoLength - removedLen
-    );
+    // Normalised ONCE, through `wholeSampleRange` — both the length AND the
+    // range `panAfterCut` maps `pan` through, not just the length: passing
+    // `redoneOp.range` straight to `panAfterCut` here read the raw fractional
+    // bounds even after round 2 fixed `removedLen` (#473 round-3 Frank P2).
+    // See `panAfterUndo`'s cut branch, same shape, inverse direction.
+    const range = wholeSampleRange(redoneOp.range);
+    const removedLen = range.end - range.start;
+    return panOrRest(panAfterCut(pan, range), preRedoLength - removedLen);
   }
   return panOrRest(
     panAfterInsert(pan, redoneOp.at, redoneOp.clip.length),

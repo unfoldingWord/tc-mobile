@@ -11,6 +11,7 @@ import {
   silence,
   sliceRange,
   spansWholeSample,
+  wholeSampleRange,
 } from "@/lib/audio/edit";
 
 const seq = (n: number, from = 0): Int16Array =>
@@ -72,6 +73,36 @@ describe("spansWholeSample", () => {
   });
 });
 
+/**
+ * The ONE place an `EditOp` cut range (or any other fractional selection)
+ * becomes the whole-sample bounds a buffer edit actually acts on — folding
+ * round 2's `removedSampleCount` (a length) into a range, so `cut`/
+ * `sliceRange` and every position-reading caller (`recorder-stage.ts`'s pan
+ * arithmetic) share one normalisation instead of two (#473 round 3, Frank P2).
+ */
+describe("wholeSampleRange", () => {
+  it("truncates both edges toward zero, matching Int16Array.slice's own coercion", () => {
+    expect(wholeSampleRange({ start: 4_000.4, end: 8_000.7 })).toEqual({
+      start: 4_000,
+      end: 8_000,
+    });
+  });
+
+  it("normalises a reversed range", () => {
+    expect(wholeSampleRange({ start: 8_000.7, end: 4_000.4 })).toEqual({
+      start: 4_000,
+      end: 8_000,
+    });
+  });
+
+  it("is idempotent on an already-integer range", () => {
+    expect(wholeSampleRange({ start: 3, end: 9 })).toEqual({
+      start: 3,
+      end: 9,
+    });
+  });
+});
+
 describe("sliceRange", () => {
   it("copies the samples inside the range", () => {
     expect(Array.from(sliceRange(seq(10), { start: 2, end: 5 }))).toEqual([
@@ -84,6 +115,12 @@ describe("sliceRange", () => {
     const slice = sliceRange(source, { start: 0, end: 3 });
     slice[0] = 999;
     expect(source[0]).toBe(0);
+  });
+
+  it("truncates a fractional range exactly like its already-truncated equivalent — proving the wholeSampleRange refactor is a no-op (#473 round 3)", () => {
+    expect(Array.from(sliceRange(seq(10), { start: 2.9, end: 6.1 }))).toEqual(
+      Array.from(sliceRange(seq(10), { start: 2, end: 6 }))
+    );
   });
 });
 
@@ -103,6 +140,17 @@ describe("cut", () => {
   it("conserves total length", () => {
     const { remaining, removed } = cut(seq(100), { start: 10, end: 90 });
     expect(remaining.length + removed.length).toBe(100);
+  });
+
+  it("truncates a fractional range exactly like its already-truncated equivalent — proving the wholeSampleRange refactor is a no-op (#473 round 3)", () => {
+    const fractional = cut(seq(10), { start: 2.9, end: 6.1 });
+    const truncated = cut(seq(10), { start: 2, end: 6 });
+    expect(Array.from(fractional.remaining)).toEqual(
+      Array.from(truncated.remaining)
+    );
+    expect(Array.from(fractional.removed)).toEqual(
+      Array.from(truncated.removed)
+    );
   });
 });
 

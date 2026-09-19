@@ -43,24 +43,29 @@ export function spansWholeSample(range: SampleRange): boolean {
 }
 
 /**
- * How many samples `cut`/`sliceRange` actually remove for an already-clamped
- * `range` — the same truncation `Int16Array.slice` applies to its own
- * (possibly fractional) arguments, made explicit rather than left implicit
- * inside `.slice`'s own coercion (#473 round-2 Frank P2).
+ * The whole-sample range a cut/sliceRange actually acts on — the ONE place
+ * that turns an `EditOp` cut range (or any other fractional selection) into
+ * the truncated bounds the buffer edit uses, so every caller reasoning about
+ * a cut's effect shares a single rule instead of reimplementing it (#473
+ * round-3 Frank P2).
  *
- * Selection edges are floats (`spansWholeSample`'s docblock above), so a
- * caller predicting a post-cut length WITHOUT slicing — `recorder-stage.ts`'s
- * pan arithmetic, chiefly — must truncate the same way `cut` does or its
- * answer drifts from the buffer that actually sliced by up to one sample per
- * boundary. Takes a range already run through `clampRange` (every stored
- * `EditOp["range"]` and every `cut`/`sliceRange` return value already is), so
- * no length is needed here to re-clamp: truncation is idempotent on a value
- * already inside `[0, length]`.
+ * Selection edges are floats (`spansWholeSample`'s docblock above), while
+ * `Int16Array.slice`/`subarray` TRUNCATE their arguments (`ToIntegerOrInfinity`,
+ * which truncates toward zero — identical to `Math.trunc` for the
+ * non-negative values every range here already is). Round 2 fixed only the
+ * removed LENGTH (`removedSampleCount`, folded into this); round 3's finding
+ * was that a caller predicting a cut's effect WITHOUT slicing —
+ * `recorder-stage.ts`'s pan arithmetic — must truncate every POSITION term
+ * the same way too, or its answer drifts from the buffer that actually
+ * sliced by up to one sample per boundary. `Math.min`/`Math.max` order the
+ * edges the way `clampRange` does, so this composes safely with `clampRange`
+ * in either order and is idempotent on a value already inside `[0, length]`.
  */
-export function removedSampleCount(range: SampleRange): number {
-  const lo = Math.trunc(Math.min(range.start, range.end));
-  const hi = Math.trunc(Math.max(range.start, range.end));
-  return hi - lo;
+export function wholeSampleRange(range: SampleRange): SampleRange {
+  return {
+    start: Math.trunc(Math.min(range.start, range.end)),
+    end: Math.trunc(Math.max(range.start, range.end)),
+  };
 }
 
 /** Copy the samples inside `range`. Used for both copy and the cut clipboard. */
@@ -68,7 +73,7 @@ export function sliceRange(
   samples: Int16Array,
   range: SampleRange
 ): Int16Array {
-  const { start, end } = clampRange(range, samples.length);
+  const { start, end } = wholeSampleRange(clampRange(range, samples.length));
   return samples.slice(start, end);
 }
 
@@ -77,12 +82,18 @@ export function sliceRange(
  *
  * Returns both the shortened buffer and the removed audio, so a cut can feed
  * the clipboard for a later paste without a second pass.
+ *
+ * Routed through {@link wholeSampleRange} rather than handing `clampRange`'s
+ * still-fractional bounds straight to `.slice`/`.subarray` — a no-op refactor
+ * (those two already truncate identically), proved equal to the pre-#473
+ * behaviour by `tests/audio-edit.test.ts`'s fractional-vs-truncated cases
+ * rather than merely asserted here.
  */
 export function cut(
   samples: Int16Array,
   range: SampleRange
 ): { readonly remaining: Int16Array; readonly removed: Int16Array } {
-  const { start, end } = clampRange(range, samples.length);
+  const { start, end } = wholeSampleRange(clampRange(range, samples.length));
   const removed = samples.slice(start, end);
   const remaining = new Int16Array(samples.length - removed.length);
   remaining.set(samples.subarray(0, start), 0);
