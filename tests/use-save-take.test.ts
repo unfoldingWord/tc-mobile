@@ -250,6 +250,43 @@ describe("performSaveTake — a commit that lands", () => {
     off();
     expect(reports).toEqual([]);
   });
+
+  it('keeps a committed write a success, and reports nothing under "save-take", even when a post-commit effect throws (Frank P2, PR #509 round 2)', async () => {
+    // The mirror of the performErase / performClearEditedSegment guard: once
+    // `saveTake` commits, the write itself succeeded. A throwing post-commit
+    // effect (a reload that failed, or a sweep request that threw) must not
+    // be folded back into a "save-take" failure report or re-arm the
+    // recovery screen over a take that is already durably on disk.
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake({ segmentId, clipId });
+    const s = slot(take);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performSaveTake(take, {
+      update: s.update,
+      onSaved: () => {
+        throw new Error("reload failed");
+      },
+      requestSweep: vi.fn(),
+    });
+
+    off();
+    consoleError.mockRestore();
+    expect(ok).toBe(true);
+    // The store op committed — this is the notification-failure site, not
+    // the store-failure one #456 routes. Only the latter reports.
+    expect(reports).toEqual([]);
+    // The slot was still cleared: the write is on disk, so there is nothing
+    // left to hold and no recovery screen to show.
+    expect(s.held()).toBeNull();
+    const stored = await getClip(clipId);
+    expect(stored?.encoding).toBe("pcm");
+  });
 });
 
 describe("performSaveTake — a commit that fails", () => {
@@ -414,6 +451,33 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     off();
     expect(ok).toBe(true);
     expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(reports).toEqual([]);
+  });
+
+  it("keeps a committed clear a success even when onCleared throws (Frank P2, PR #509 round 2)", async () => {
+    // The mirror of performErase's "keeps a committed delete a success even
+    // when onErased throws": the store op is what can genuinely fail, and a
+    // throwing notification (a reload that failed, say) must not turn an
+    // already-committed clear into a false "erase-segment" report or a
+    // "could not clear" message over audio that is already gone.
+    const segmentId = await freshSegment();
+    const onCleared = vi.fn(() => {
+      throw new Error("reload failed");
+    });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performClearEditedSegment(segmentId, onCleared);
+
+    off();
+    consoleError.mockRestore();
+    expect(ok).toBe(true);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    // The store op committed — this is the notification-failure site, not
+    // the store-failure one #456 routes. Only the latter reports.
     expect(reports).toEqual([]);
   });
 });

@@ -85,18 +85,6 @@ export async function performSaveTake(
     await saveTake(take.segmentId, take.clipId, merged, CANONICAL_SAMPLE_RATE, {
       finished: take.finished,
     });
-    // Cleared only here, and only for this attempt. A `finally` would drop
-    // the samples on the failure path, which is the one path they exist for.
-    effects.update((held) => succeedSave(held, take.clipId));
-    // In the same tick as clearing the slot, so there is no frame where the
-    // slot is empty and the reload has not been asked for — the reload is
-    // how the just-recorded row stops reading as never-recorded.
-    effects.onSaved?.();
-    // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
-    // Asked for AFTER the commit and the reload, never on the failure path —
-    // the sweep only ever reads what is durably on disk.
-    if (take.finished) effects.requestSweep();
-    return true;
   } catch (cause) {
     // The failure that produces the `SaveFailed` recovery screen — one row
     // per real failure (#456), console.error kept beside it, as
@@ -111,6 +99,29 @@ export async function performSaveTake(
     );
     return false;
   }
+  // The write has committed: only `mergeTake`/`saveTake` above are the save
+  // itself. Everything below is post-commit notification, so it is guarded
+  // separately and always returns success — a throwing `update`, `onSaved`
+  // or `requestSweep` must not be folded back into a false "save-take"
+  // failure report, nor re-arm the recovery screen over a take that is
+  // already durably on disk (Frank P2, PR #509 round 2 — the mirror of
+  // `performErase`'s `onErased` guard).
+  try {
+    // Cleared only here, and only for this attempt. A `finally` would drop
+    // the samples on the failure path, which is the one path they exist for.
+    effects.update((held) => succeedSave(held, take.clipId));
+    // In the same tick as clearing the slot, so there is no frame where the
+    // slot is empty and the reload has not been asked for — the reload is
+    // how the just-recorded row stops reading as never-recorded.
+    effects.onSaved?.();
+    // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
+    // Asked for AFTER the commit and the reload, never on the failure path —
+    // the sweep only ever reads what is durably on disk.
+    if (take.finished) effects.requestSweep();
+  } catch (cause) {
+    console.error("Post-save notification failed", cause);
+  }
+  return true;
 }
 
 /**
@@ -155,18 +166,29 @@ export async function performClearEditedSegment(
   segmentId: SegmentId,
   onCleared?: () => void
 ): Promise<boolean> {
-  return clearSegmentTake(segmentId)
-    .then(() => {
-      onCleared?.();
-      return true;
-    })
-    .catch((cause: unknown) => {
-      // One row per real failure (#456); console.error kept beside it, as
-      // report-failure.ts's own contract asks — matching `performErase`.
-      console.error("Clearing an edited-to-empty segment failed", cause);
-      reportFailure(cause, "erase-segment");
-      return false;
-    });
+  // Only the STORE op is fallible-and-reportable, same split as
+  // `performErase`: once `clearSegmentTake` commits, the audio is
+  // irreversibly gone, so the result is success no matter what the
+  // notification does afterward — a throwing `onCleared` must NOT report
+  // "could not clear" and invite a retry against a segment that is already
+  // cleared (Frank P2, PR #509 round 2, the mirror of Frank R-B6).
+  try {
+    await clearSegmentTake(segmentId);
+  } catch (cause) {
+    // One row per real failure (#456); console.error kept beside it, as
+    // report-failure.ts's own contract asks — matching `performErase`.
+    console.error("Clearing an edited-to-empty segment failed", cause);
+    reportFailure(cause, "erase-segment");
+    return false;
+  }
+  // The clear has committed. A notification failure is logged, never folded
+  // back into the clear result.
+  try {
+    onCleared?.();
+  } catch (cause) {
+    console.error("Post-clear notification failed", cause);
+  }
+  return true;
 }
 
 /**
