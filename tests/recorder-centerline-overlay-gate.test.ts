@@ -89,12 +89,21 @@ describe("the centerline overlay's JSX gate calls centerlineOverlayShown directl
     expect(recorder[i]).toBe("(");
   });
 
-  it("the call's own arguments carry mode, selectionActive and liveScope — the function's full input", () => {
+  it("the call's arguments are EXACTLY {mode, selectionActive: editor.selectionActive, liveScope} — an exact match, not identifier presence", () => {
+    // Frank round-2 P2 on this file's PREVIOUS version: three
+    // identifier-presence regexes (`/\bmode\b/`, `/selectionActive/`,
+    // `/\bliveScope\b/`) pass on a call site rewritten with wrong VALUES —
+    // `liveScope: false`, `mode: "record"`, `selectionActive: false` — since
+    // the identifier text is still present somewhere in the argument block.
+    // Whitespace-normalize the whole block and compare it to the exact
+    // shorthand-object shape the production call must have, so a wrong
+    // literal on any one property fails this test.
     const parenIdx = callIdx + "centerlineOverlayShown".length;
     const closeParenIdx = matchingClose(recorder, parenIdx);
     const args = recorder.slice(parenIdx + 1, closeParenIdx);
-    expect(args).toMatch(/\bmode\b/);
-    expect(args).toMatch(/selectionActive/);
-    expect(args).toMatch(/\bliveScope\b/);
+    const normalized = args.replace(/\s+/g, "");
+    expect(normalized).toBe(
+      "{mode,selectionActive:editor.selectionActive,liveScope,}"
+    );
   });
 });
