@@ -367,18 +367,22 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
   const afterTry = elseBody.slice(tryBraceClose + 1);
 
   /**
-   * The ONE contiguous pattern for the throw path (#485, panel r1 on #500):
-   * the try's own closing brace, flowing DIRECTLY into a `catch (cause) {`
-   * whose body is exactly, in order: the funnel report under
-   * `"recorder-stop-flush"` with `console.error` kept beside it (AGENTS.md
-   * "Errors have a channel", the shape `cancel()`'s guard and
-   * `stopRecording`'s backstop both use), the identity-gated
-   * `recorderRef.current = null`, the `flushThrew = true` mark the tail's
-   * empty-capture exit reads for its sentence, and the seal of `blob` from
-   * the local `chunks` — the same `new Blob(chunks, { type:
-   * recorder.mimeType })` the timeout arm's `finish` builds. No `return`, no
-   * `throw`: the catch falls through to the tail. It is anchored by
-   * `search(...) === tryBraceClose` (the technique
+   * The ONE contiguous pattern for the throw path (#485, panel r1 on #500;
+   * yield added #485 Frank r2 P2 on #500): the try's own closing brace,
+   * flowing DIRECTLY into a `catch (cause) {` whose body is exactly, in
+   * order: the funnel report under `"recorder-stop-flush"` with
+   * `console.error` kept beside it (AGENTS.md "Errors have a channel", the
+   * shape `cancel()`'s guard and `stopRecording`'s backstop both use), the
+   * identity-gated `recorderRef.current = null`, the `flushThrew = true`
+   * mark the tail's empty-capture exit reads for its sentence, ONE
+   * macrotask yield (`await new Promise((resolve) => setTimeout(resolve,
+   * 0))`) — a synchronous throw does not prove `dataavailable`/`stop` were
+   * not already queued, so this gives a slice already in flight the same
+   * one-tick window the inactive arm yields before it seals — and THEN the
+   * seal of `blob` from the local `chunks`, the same `new Blob(chunks, {
+   * type: recorder.mimeType })` the timeout arm's `finish` builds. No
+   * `return`, no `throw`: the catch falls through to the tail. It is
+   * anchored by `search(...) === tryBraceClose` (the technique
    * `tests/recorder-failure-rows.test.ts` uses), so a detached catch, a
    * `finally` slid in between, or a matching catch on some OTHER try in the
    * branch cannot satisfy it. What it deliberately does NOT allow: a bare
@@ -386,12 +390,15 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
    * event this insurance arm exists to learn about), a bare
    * `recorderRef.current = null` (the identity form is what stays safe if a
    * future await lands before the try), an early `return { …, blob: null }`
-   * (discards the slices in hand — the P2 that reshaped this), or a
+   * (discards the slices in hand — the P2 that reshaped this), a
    * `throw`/rethrow (the `UseRecorder.stop` contract says the failure is in
-   * the result, and `stopRecording` documents "never rejects").
+   * the result, and `stopRecording` documents "never rejects"), or — the
+   * property this round adds — sealing `blob` IMMEDIATELY after
+   * `flushThrew = true` with no yield between them (Frank r2 P2: a queued
+   * final slice that lands after an immediate seal is silently omitted).
    */
   const catchPattern =
-    /\}\s*catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop-flush"\s*\);\s*console\.error\(\s*"Stopping the recorder failed",\s*cause\s*\);\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*flushThrew\s*=\s*true\s*;\s*blob\s*=\s*new\s+Blob\(\s*chunks,\s*\{\s*type:\s*recorder\.mimeType,?\s*\}\s*\)\s*;\s*\}/;
+    /\}\s*catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop-flush"\s*\);\s*console\.error\(\s*"Stopping the recorder failed",\s*cause\s*\);\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*flushThrew\s*=\s*true\s*;\s*await\s+new\s+Promise\(\s*\(\s*resolve\s*\)\s*=>\s*setTimeout\(\s*resolve,\s*0\s*\)\s*\)\s*;\s*blob\s*=\s*new\s+Blob\(\s*chunks,\s*\{\s*type:\s*recorder\.mimeType,?\s*\}\s*\)\s*;\s*\}/;
 
   const catchMatch = /^\s*catch\s*\(\s*cause\s*\)\s*\{/.exec(afterTry);
   const catchBraceOpen =

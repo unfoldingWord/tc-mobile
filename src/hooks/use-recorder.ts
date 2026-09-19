@@ -1006,19 +1006,24 @@ export function useRecorder(): UseRecorder {
         // Back stayed, and a later `start()` returned early on the zombie ref
         // without opening a mic (#485, George R6 on #474).
         //
-        // What is lost on this path is the `onstop`, NOT the slices: `chunks`
-        // holds every `dataavailable` MediaRecorder delivered before the throw
-        // (`start(250)` requests one per 250 ms on every engine but the WebKit
-        // builds that emit a single blob at stop), and the timeout arm of this
-        // same executor already seals exactly that array when `onstop` never
-        // comes. So the catch seals the same way and FALLS THROUGH to the
-        // ordinary tail below — an empty seal becomes the notice (with the
-        // "could not finish" sentence, via `flushThrew`), an undecodable one
-        // is held with its bytes for the recovery panel, a decodable one is
-        // the take — instead of returning `blob: null` and discarding minutes
-        // of audio that were in this closure (panel r1 P2 on #500). The tail
-        // also owns `setState("idle")`, gated on `current` exactly as at every
-        // other exit, so a superseded throw-path stop paints nothing.
+        // What is lost on this path is the `onstop` event itself, NOT
+        // necessarily every slice: `chunks` holds every `dataavailable`
+        // MediaRecorder delivered before the throw (`start(250)` requests one
+        // per 250 ms on every engine but the WebKit builds that emit a single
+        // blob at stop) — plus, after the one-macrotask yield below, a final
+        // slice that was already queued at the moment of the throw. A
+        // synchronous throw does not prove `dataavailable`/`stop` were not
+        // already queued (Frank r2 P2 on #500), so the catch does not seal
+        // immediately; it yields the same one macrotask the inactive arm
+        // above yields, THEN seals — the same seal the timeout arm's `finish`
+        // builds. It then FALLS THROUGH to the ordinary tail below — an empty
+        // seal becomes the notice (with the "could not finish" sentence, via
+        // `flushThrew`), an undecodable one is held with its bytes for the
+        // recovery panel, a decodable one is the take — instead of returning
+        // `blob: null` and discarding minutes of audio that were in this
+        // closure (panel r1 P2 on #500). The tail also owns
+        // `setState("idle")`, gated on `current` exactly as at every other
+        // exit, so a superseded throw-path stop paints nothing.
         //
         // Timing, precisely: this catch resumes one microtask AFTER the
         // executor throws (an `await` on an already-rejected promise still
@@ -1046,6 +1051,12 @@ export function useRecorder(): UseRecorder {
         console.error("Stopping the recorder failed", cause);
         if (recorderRef.current === recorder) recorderRef.current = null;
         flushThrew = true;
+        // An engine that throws after it has queued its final `dataavailable`
+        // still delivers that slice on a later task; yield one macrotask to
+        // let a tail slice already in flight land in `chunks` before we seal
+        // the blob. Same bound as the inactive arm above (Frank r2 P2 on
+        // #500).
+        await new Promise((resolve) => setTimeout(resolve, 0));
         blob = new Blob(chunks, { type: recorder.mimeType });
       } finally {
         // The `catch` above owns the recorder ref and the seal; this `finally`
