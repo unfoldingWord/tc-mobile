@@ -254,6 +254,7 @@ describe("shareProgressText", () => {
     for (const line of [
       strings.shareSent,
       strings.shareDismissed,
+      strings.shareUnproven,
       strings.shareHandingOver,
     ]) {
       expect(line).not.toMatch(/deliver/i);
@@ -261,6 +262,24 @@ describe("shareProgressText", () => {
       expect(line).not.toMatch(/WhatsApp|Drive|Files|Telegram|Signal/i);
     }
     expect(strings.shareSent).toMatch(/share sheet/i);
+  });
+
+  /**
+   * `unproven` (Frank a446708 P2): a resolved native Android send this
+   * platform cannot vouch for. Its own line, distinct from both `sent` (which
+   * would overclaim) and `dismissed` (which would wrongly claim nothing went)
+   * — same wording test both existing outcomes already had to pass.
+   */
+  it("gives an unproven send its own line, distinct from sent and dismissed, on both scopes", () => {
+    expect(shareProgressText(outcome("unproven"), "chapter")).toBe(
+      strings.shareUnproven
+    );
+    expect(shareProgressText(outcome("unproven"), "book")).toBe(
+      strings.shareUnproven
+    );
+    expect(strings.shareUnproven).not.toBe(strings.shareSent);
+    expect(strings.shareUnproven).not.toBe(strings.shareDismissed);
+    expect(strings.shareUnproven).not.toMatch(/could not|failed/i);
   });
 });
 

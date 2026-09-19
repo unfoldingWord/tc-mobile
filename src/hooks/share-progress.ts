@@ -39,7 +39,7 @@ type ShareWork = "prepare" | "send";
 
 /**
  * What the modal can show once work has settled: the hook's three error codes,
- * plus the three send outcomes a translator can act on. `retry` and
+ * plus the four send outcomes a translator can act on. `retry` and
  * `superseded` are absent by construction — see the header.
  *
  * `partial` (P1, this lane's own review round) is `sent` with a gap: the File
@@ -50,8 +50,18 @@ type ShareWork = "prepare" | "send";
  * `share-outcome-glyph.ts`'s own header names for the READY-state gap Notice
  * this reuses the mark from. Reuses the `partial` mark #178 already defined
  * (`shareOutcomeGlyph`), not a fourth glyph.
+ *
+ * `unproven` (Frank a446708 P2, `share-flow.ts`'s `resolveSendOutcome`) is a
+ * RESOLVED send whose route/platform cannot tell a genuine hand-off from the
+ * native Android plugin's documented false-success path (a chooser dismissed
+ * with Back after the activity stopped). Not `dismissed` — that means the
+ * sheet is known to have closed with nothing sent, which this is not — and
+ * not `sent`/`partial` either, for the reason this whole outcome UI exists
+ * (#336): an affirmative tick this platform cannot back up is worse than the
+ * silence that issue reported.
  */
-export type ShareSettled = ShareError | "sent" | "partial" | "dismissed";
+export type ShareSettled =
+  ShareError | "sent" | "partial" | "dismissed" | "unproven";
 
 /**
  * The gap `partial` carries — the same two counts `PreparedShare` and
@@ -77,6 +87,7 @@ const EVERY_SETTLED: Record<ShareSettled, true> = {
   sent: true,
   partial: true,
   dismissed: true,
+  unproven: true,
 };
 export const SHARE_SETTLED = Object.keys(
   EVERY_SETTLED
@@ -282,6 +293,7 @@ export function settledFromOutcome(outcome: ShareOutcome): ShareSettled | null {
   switch (outcome) {
     case "sent":
     case "dismissed":
+    case "unproven":
     case "failed":
       return outcome;
     case "retry":

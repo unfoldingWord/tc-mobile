@@ -288,6 +288,21 @@ describe("the sent and dismissed marks (#491)", () => {
     expect(shareSettledGlyph("failed")).toEqual(shareOutcomeGlyph("failed"));
   });
 
+  it('shareSettledGlyph("unproven") wears the dismissed mark, never the sent tick (Frank a446708 P2)', () => {
+    // A native Android resolve this platform cannot vouch for must not draw
+    // the same affirmative tick a proven send gets — `resolveProvesDelivery`'s
+    // own docblock names the false-success path. Reuses `dismissed`'s neutral,
+    // non-alarming mark rather than a fifth glyph; its OWN text is what tells
+    // it apart from an actual dismissal.
+    expect(shareSettledGlyph("unproven")).toEqual(
+      shareOutcomeGlyph("dismissed")
+    );
+    expect(shareSettledGlyph("unproven").icon).not.toBe(
+      shareSettledGlyph("sent").icon
+    );
+    expect(shareSettledGlyph("unproven").tone).not.toBe("alert");
+  });
+
   it('shareSettledGlyph("partial") is the partial mark, never the plain sent tick (P1, this lane\'s own review round)', () => {
     // A completed-but-incomplete share must not wear the same tick a whole one
     // gets — see `share-progress.ts`'s header on `ShareSettled` for the exact

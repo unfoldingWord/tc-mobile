@@ -123,11 +123,19 @@ export function shareOutcomeGlyph(outcome: ShareOutcome): ShareOutcomeGlyph {
  * The mark AND tone for what the share modal shows once work has settled
  * (#491) — the bridge from `ShareSettled` to the table above.
  *
- * Exhaustive with a `never` default, like `shareErrorGlyph` below. The one
- * choice made here rather than there: `encoder` gets the `failed` entry
- * EXPLICITLY. `shareErrorGlyph` leaves it `undefined` so `Notice` falls back
- * to the alert tone's own triangle; the modal has no tone default to fall
- * back to, so the identical mark is returned by name. Not a fourth mark — the
+ * Exhaustive with a `never` default, like `shareErrorGlyph` below. Two
+ * choices made here rather than there, both reusing an EXISTING table entry
+ * by name instead of widening `ShareOutcome` (#178's own union) for a mark
+ * that is not one of its three outcomes: `encoder` gets the `failed` entry
+ * EXPLICITLY — `shareErrorGlyph` leaves it `undefined` so `Notice` falls back
+ * to the alert tone's own triangle, but the modal has no tone default to fall
+ * back to, so the identical mark is returned by name. `unproven` (Frank
+ * a446708 P2, #491) gets `dismissed`'s entry — the same neutral, non-alarming
+ * `info`-toned mark, on purpose: a resolve this platform cannot vouch for
+ * must not wear `sent`'s success tick, and inventing a fifth mark for one
+ * platform/route combination would widen this lane past what #178 scoped.
+ * What tells `unproven` apart from an actual dismissal is its OWN text
+ * (`shareProgressText`), not the glyph. Not a fourth (or fifth) mark — the
  * same choice #457 made, made visible.
  */
 export function shareSettledGlyph(settled: ShareSettled): ShareOutcomeGlyph {
@@ -140,6 +148,8 @@ export function shareSettledGlyph(settled: ShareSettled): ShareOutcomeGlyph {
       return shareOutcomeGlyph(settled);
     case "encoder":
       return shareOutcomeGlyph("failed");
+    case "unproven":
+      return shareOutcomeGlyph("dismissed");
     default: {
       const unhandled: never = settled;
       return unhandled;

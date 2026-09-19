@@ -127,10 +127,16 @@ export function selectShareRoute(
  * nothing, which is why it is not threaded through this seam.
  *
  * What follows from it depends entirely on what the caller does with the news.
- * Share Chapter and Share Book lose nothing to a false success — the audio is
- * still in IndexedDB. The held-take rescue (#165) holds the ONLY copy of a
- * recording, so it must not offer a one-tap exit that drops it on a signal that
- * can be false (George stand-in R4 P2).
+ * Share Chapter and Share Book lose nothing DATA-wise to a false success — the
+ * audio is still in IndexedDB — but #491's outcome modal now shows an
+ * affirmative tick for whatever `send()` returns, so a caller that ignored
+ * this and reported `sent` unconditionally would turn a false success into a
+ * false CLAIM on screen, not just a silent non-issue (Frank a446708 P2):
+ * `hooks/share-flow.ts`'s `resolveSendOutcome` is where `send()` now consults
+ * it. The held-take rescue (#165) holds the ONLY copy of a recording, so it
+ * must not offer a one-tap exit that drops it on a signal that can be false
+ * (George stand-in R4 P2) — a stricter bar than #491's, which this function
+ * serves both.
  *
  * `platform` is a parameter, not read here, so the decision is a pure function
  * a test can drive; callers pass {@link readSharePlatform}. A `native` route

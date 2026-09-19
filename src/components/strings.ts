@@ -353,6 +353,15 @@ export const strings = {
   shareHandingOver: "Opening the phone's share sheet.",
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
+  // The native Android plugin can resolve on a Back after the chooser's
+  // activity merely stopped — the same resolve a genuine hand-off produces
+  // (`resolveProvesDelivery`, `hooks/share-target.ts`). Neither `shareSent`
+  // (an unbacked success tick) nor `shareDismissed` (claims nothing went,
+  // which this cannot know) is honest here — a third, deliberately uncertain
+  // line, never "sent"/"delivered"/"shared to"/an app's name, same as the two
+  // above (Frank a446708 P2, #491).
+  shareUnproven:
+    "The share sheet closed. This phone can't confirm it went further.",
   shareNothing: "Record a segment before sharing this chapter.",
   shareFailed: "Could not share this chapter. Try again.",
   // Neutral on the cause: `missing` counts every segment whose audio did not

@@ -21,6 +21,8 @@ import {
   type StagedShare,
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
+  resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
 
@@ -125,9 +127,19 @@ export type ShareStatus = "idle" | "preparing" | "ready";
  * The stale send did NOT touch the newer run's File — and callers must not act
  * on it either. A caller that closes-and-resets on `sent`/`dismissed` would
  * otherwise drop the File the new run just prepared (George R-B7-book P2).
+ *
+ * `unproven` (Frank a446708 P2): the native Android route can resolve on a
+ * chooser the translator dismissed with Back after the activity merely
+ * stopped — `resolveProvesDelivery`'s own docblock names the mechanism, and
+ * this outcome is what `send()` now returns instead of `sent` when that
+ * platform/route combination cannot tell the two apart. Deliberately NOT in
+ * the close-on-`sent`/`dismissed` set either screen checks: the File is
+ * already spent either way (nothing to retry), but a caller should not treat
+ * an unproven resolve as confidently as a proven one closing the menu would
+ * imply.
  */
 export type ShareOutcome =
-  "sent" | "dismissed" | "retry" | "failed" | "superseded";
+  "sent" | "dismissed" | "unproven" | "retry" | "failed" | "superseded";
 
 /**
  * The File tap 1 built, plus how many units it had to leave out (segments for a
@@ -228,6 +240,31 @@ export function sentGap(armed: {
   return armed.missing > 0 || armed.partial > 0
     ? { missing: armed.missing, partial: armed.partial }
     : undefined;
+}
+
+/**
+ * What a RESOLVED send settles to (Frank a446708 P2): `sent`/`partial` was
+ * unconditional on any resolve, which on native Android can be the plugin's
+ * documented false-success path (a chooser dismissed with Back after the
+ * activity stopped — `resolveProvesDelivery`'s own docblock). This is the
+ * whole point of #491's outcome UI: a translator now sees an explicit,
+ * affirmative tick for a resolve the platform itself cannot vouch for, which
+ * is worse than the silence #336 reported, not better.
+ *
+ * `proven` is {@link resolveProvesDelivery} for the route/platform this send
+ * actually took — read at the call site so this stays a pure decision table,
+ * the same shape `sentGap` and `classifyShareError` above already use.
+ * `unproven` wins over `partial`: a translator who cannot be told delivery
+ * happened at all gets no benefit from also being told which pieces of it
+ * did, and stacking two counts onto one glyph is not what `partial`'s own
+ * mark was built for.
+ */
+export function resolveSendOutcome(
+  proven: boolean,
+  gap: ShareGap | undefined
+): "sent" | "partial" | "unproven" {
+  if (!proven) return "unproven";
+  return gap ? "partial" : "sent";
 }
 
 export interface UseShareFlow {
@@ -550,29 +587,42 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
-      // Handed to the sheet — which is all a resolve proves (see the R-B7
-      // note above and `resolveProvesDelivery`): the glyph says "handed
-      // over", never "delivered". `sentGap` reads the gap off the ARMED
-      // value, not off `missing`/`partial` state (see its own docblock: the
+      // Handed to the sheet — which is all a resolve proves ON A ROUTE THAT
+      // CAN PROVE IT (see the R-B7 note above and `resolveProvesDelivery`):
+      // the glyph says "handed over", never "delivered". On native Android
+      // a resolve can instead be the plugin's documented false-success path
+      // (Frank a446708 P2), which `resolveSendOutcome` is what tells apart —
+      // `proven` reads the route this send actually took (`armed.staged !==
+      // null` is native, set at `prepare` time and carried unchanged) against
+      // the CURRENT platform. `sentGap` reads the gap off the ARMED value,
+      // not off `missing`/`partial` state (see its own docblock: the
       // `setState`s just above already raced those to 0 as part of this same
       // transition). A gap shows `partial`'s own mark, not the plain tick
       // `sent` wears — the outcome the modal shows must not say "this chapter
       // went out whole" when it did not (`share-outcome-glyph.ts`'s own
       // header names exactly this collision for the ready-state Notice; the
-      // modal must not reintroduce it one screen later). Either way this send
-      // genuinely handed a File to the sheet, so `send()`'s own return value
-      // to the caller stays `"sent"` — only the modal's glyph differs. Then
-      // hold this send open until the flash has cleared, so the caller's
+      // modal must not reintroduce it one screen later) — unless delivery
+      // itself is unproven, which `resolveSendOutcome` prioritizes over the
+      // gap. `send()`'s own return value to the caller stays `"sent"` for
+      // both `sent` and `partial` (only the modal's glyph differs) but is
+      // `"unproven"` on its own, so the screens' close-on-`sent`/`dismissed`
+      // does not fire on a resolve the platform cannot vouch for. Then hold
+      // this send open until the flash has cleared, so the caller's
       // close-on-sent lands after it.
       const gap = sentGap(armed);
+      const proven = resolveProvesDelivery(
+        armed.staged !== null ? "native" : "web",
+        readSharePlatform()
+      );
+      const settled = resolveSendOutcome(proven, gap);
       modal.dispatch({
         type: "settle",
-        settled: gap ? "partial" : "sent",
-        gap,
+        settled,
+        gap: settled === "partial" ? gap : undefined,
         now: modal.now(),
       });
       await modal.hidden();
-      return "sent";
+      return settled === "unproven" ? "unproven" : "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
       if (outcome === "retry" && armed.staged === null) {

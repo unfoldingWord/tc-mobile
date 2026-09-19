@@ -51,6 +51,8 @@ export function shareProgressText(
           return `${strings.shareSent} ${shareGapText(progress.gap, scope)}`;
         case "dismissed":
           return strings.shareDismissed;
+        case "unproven":
+          return strings.shareUnproven;
         case "nothing":
         case "failed":
         case "encoder":

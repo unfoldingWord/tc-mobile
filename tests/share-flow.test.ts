@@ -7,6 +7,7 @@ import {
   type Clock,
   classifyShareError,
   createProgressDriver,
+  resolveSendOutcome,
   sentGap,
 } from "@/hooks/share-flow";
 import {
@@ -115,6 +116,34 @@ describe("sentGap", () => {
 });
 
 /**
+ * `resolveSendOutcome` (Frank a446708 P2, #491) — what a RESOLVED send
+ * settles to once `resolveProvesDelivery` says whether this route/platform
+ * can vouch for it. Before this fix every resolve settled `sent`/`partial`
+ * unconditionally, which on native Android can be the plugin's documented
+ * false-success path (a chooser dismissed with Back after the activity
+ * merely stopped) — the new outcome UI (#491) then drew an affirmative tick
+ * for it, worse than the silence #336 originally reported.
+ */
+describe("resolveSendOutcome", () => {
+  it("a proven send with no gap settles sent", () => {
+    expect(resolveSendOutcome(true, undefined)).toBe("sent");
+  });
+
+  it("a proven send with a gap settles partial", () => {
+    expect(resolveSendOutcome(true, { missing: 1, partial: 0 })).toBe(
+      "partial"
+    );
+  });
+
+  it("an UNPROVEN send settles unproven regardless of any gap — delivery itself is what's in question", () => {
+    expect(resolveSendOutcome(false, undefined)).toBe("unproven");
+    expect(resolveSendOutcome(false, { missing: 2, partial: 1 })).toBe(
+      "unproven"
+    );
+  });
+});
+
+/**
  * The wiring pins the state machine alone cannot prove: that `send()` reads
  * ITS gap off the ARMED value (not off `missing`/`partial` state, which the
  * same transition already zeroes), that a scrim tap cannot discard an
@@ -133,11 +162,34 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
     );
   });
 
-  it("send() decides sent vs partial through sentGap(armed), never a hand-rolled comparison at the call site", () => {
+  it("send() decides sent vs partial vs unproven through resolveSendOutcome(proven, gap), never a hand-rolled comparison at the call site (Frank a446708 P2)", () => {
     const from = flow.indexOf('modal.dispatch({ type: "begin", work: "send"');
     const settleSite = flow.indexOf("const gap = sentGap(armed);", from);
     expect(settleSite).toBeGreaterThan(from);
-    expect(flow).toMatch(/settled: gap \? "partial" : "sent"/);
+    expect(flow).toMatch(/const settled = resolveSendOutcome\(proven, gap\);/);
+  });
+
+  it("the settle site reads proven from resolveProvesDelivery against the route this send actually took and the CURRENT platform, before deciding settled", () => {
+    const settleSiteAt = flow.indexOf("const gap = sentGap(armed);");
+    const provenAt = flow.indexOf(
+      "const proven = resolveProvesDelivery(",
+      settleSiteAt
+    );
+    const settledAt = flow.indexOf(
+      "const settled = resolveSendOutcome(",
+      settleSiteAt
+    );
+    expect(provenAt).toBeGreaterThan(settleSiteAt);
+    expect(settledAt).toBeGreaterThan(provenAt);
+    expect(flow).toMatch(
+      /resolveProvesDelivery\(\s*armed\.staged !== null \? "native" : "web",\s*readSharePlatform\(\)\s*\)/
+    );
+  });
+
+  it("send()'s return value is `unproven` on its own, not folded into `sent` — so the screens' close-on-sent/dismissed does not fire on a resolve the platform cannot vouch for", () => {
+    expect(flow).toMatch(
+      /return settled === "unproven" \? "unproven" : "sent";/
+    );
   });
 
   it("reset() refuses to run while a send is irreversibly in flight (P2)", () => {

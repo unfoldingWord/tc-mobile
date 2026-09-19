@@ -312,6 +312,9 @@ describe("settledFromOutcome — what the hook's send outcome becomes on screen 
   const expected: Record<ShareOutcome, ShareSettled | null> = {
     sent: "sent",
     dismissed: "dismissed",
+    // A native Android resolve this platform cannot vouch for (Frank a446708
+    // P2) — passes through unchanged, same as sent/dismissed/failed above.
+    unproven: "unproven",
     failed: "failed",
     // Activation spent, File put back, still ready: NOT a failure (constraint 2).
     retry: null,

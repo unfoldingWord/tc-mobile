@@ -619,6 +619,13 @@
   .share-scrim[data-outcome="dismissed"] .share-progress-glyph {
     color: var(--s-ink-muted);
   }
+  /* Unproven (Frank a446708 P2, #491): a native Android resolve this platform
+     cannot vouch for. The same muted ink `dismissed` wears above, not the
+     `sent` success ink — `shareSettledGlyph` reuses `dismissed`'s glyph entry
+     for the identical reason. */
+  .share-scrim[data-outcome="unproven"] .share-progress-glyph {
+    color: var(--s-ink-muted);
+  }
   .share-scrim[data-outcome="nothing"] .share-progress-glyph {
     color: var(--s-live);
   }
