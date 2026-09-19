@@ -177,6 +177,18 @@ const BOUNDARY_SYNTAX_SELECTORS = [
   ...NON_HISTORY_SYNTAX_SELECTORS,
 ];
 
+/**
+ * NEVER add `no-restricted-syntax` here, or to any of the three layer blocks
+ * that spread this object (hooks/components/app below). `HISTORY_SYNTAX_BLOCK`
+ * is declared later in the exported config with its own explicit
+ * `no-restricted-syntax` options and an `ignores` for the adapter file, and a
+ * later flat-config block with an explicit option for a rule fully replaces an
+ * earlier block's option for that rule on every file the later block matches —
+ * so anything set here would be silently overwritten for every boundary file
+ * anyway, and the adapter's carve-out (the whole reason `HISTORY_SYNTAX_BLOCK`
+ * exists as its own block) would not apply to it. A new syntax selector goes
+ * in `NON_HISTORY_SYNTAX_SELECTORS` (panel r5 P3).
+ */
 const HISTORY_BOUNDARY_RULES = {
   "no-restricted-globals": [
     "error",
