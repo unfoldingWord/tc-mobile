@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { shareErrorText } from "@/components/share-error-copy";
+import {
+  shareErrorText,
+  shareProgressText,
+} from "@/components/share-error-copy";
 import { strings } from "@/components/strings";
 import { EncoderFailedError, EncoderStalledError } from "@/hooks/mp3-codec";
 import { subscribeToFailures } from "@/hooks/report-failure";
+import {
+  HIDDEN,
+  type ShareProgress,
+  type ShareSettled,
+} from "@/hooks/share-progress";
 import { classifyPrepareError, settlePrepareFailure } from "@/hooks/share-flow";
 
 /**
@@ -113,5 +121,97 @@ describe("shareErrorText", () => {
     expect(shareErrorText("encoder", "book")).toBe(strings.shareEncoderStopped);
     expect(strings.shareEncoderStopped).toMatch(/restart the app/);
     expect(strings.shareEncoderStopped).not.toMatch(/error|encoder|MP3/i);
+  });
+});
+
+/**
+ * The words under the modal's glyph (#491). Secondary by design — the glyph
+ * is the signal — and pinned here because the two new success-side strings
+ * are the ones that could overclaim.
+ */
+describe("shareProgressText", () => {
+  const busy = (work: "prepare" | "send"): ShareProgress => ({
+    phase: "busy",
+    work,
+    since: 0,
+    pending: null,
+  });
+  const outcome = (settled: ShareSettled): ShareProgress => ({
+    phase: "outcome",
+    settled,
+    since: 0,
+  });
+
+  it("says nothing when hidden", () => {
+    expect(shareProgressText(HIDDEN, "chapter")).toBeNull();
+    expect(shareProgressText(HIDDEN, "book")).toBeNull();
+  });
+
+  it("uses the existing preparing copy for each scope while tap 1 works", () => {
+    expect(shareProgressText(busy("prepare"), "chapter")).toBe(
+      strings.sharePreparing
+    );
+    expect(shareProgressText(busy("prepare"), "book")).toBe(
+      strings.shareBookPreparing
+    );
+  });
+
+  it("says the sheet is opening while tap 2 works, on both scopes", () => {
+    expect(shareProgressText(busy("send"), "chapter")).toBe(
+      strings.shareHandingOver
+    );
+    expect(shareProgressText(busy("send"), "book")).toBe(
+      strings.shareHandingOver
+    );
+  });
+
+  it("keeps the existing nothing / failed / encoder copy under the outcome glyph", () => {
+    expect(shareProgressText(outcome("nothing"), "chapter")).toBe(
+      strings.shareNothing
+    );
+    expect(shareProgressText(outcome("nothing"), "book")).toBe(
+      strings.shareBookNothing
+    );
+    expect(shareProgressText(outcome("failed"), "chapter")).toBe(
+      strings.shareFailed
+    );
+    expect(shareProgressText(outcome("failed"), "book")).toBe(
+      strings.shareBookFailed
+    );
+    expect(shareProgressText(outcome("encoder"), "chapter")).toBe(
+      strings.shareEncoderStopped
+    );
+  });
+
+  it("gives sent and dismissed their own lines", () => {
+    expect(shareProgressText(outcome("sent"), "chapter")).toBe(
+      strings.shareSent
+    );
+    expect(shareProgressText(outcome("sent"), "book")).toBe(strings.shareSent);
+    expect(shareProgressText(outcome("dismissed"), "chapter")).toBe(
+      strings.shareDismissed
+    );
+    expect(shareProgressText(outcome("dismissed"), "book")).toBe(
+      strings.shareDismissed
+    );
+    expect(strings.shareSent).not.toBe(strings.shareDismissed);
+  });
+
+  it("the success copy says HANDED OVER, never delivered, and names no destination", () => {
+    // `navigator.share` resolving proves the bytes reached the OS sheet, not
+    // that any app received them — some targets drop the file while `share`
+    // still resolves (the R-B7 comment in `send()`). On Android native the
+    // resolve can even follow a Back after the activity stopped
+    // (`resolveProvesDelivery`). So the words must stop at the sheet.
+    for (const line of [
+      strings.shareSent,
+      strings.shareDismissed,
+      strings.shareHandingOver,
+    ]) {
+      expect(line).not.toMatch(/deliver/i);
+      expect(line).not.toMatch(/sent to|shared to|received/i);
+      expect(line).not.toMatch(/WhatsApp|Drive|Files|Telegram|Signal/i);
+    }
+    expect(strings.shareSent).toMatch(/share sheet/i);
   });
 });

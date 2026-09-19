@@ -51,6 +51,24 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
+- **What the screen shows while sharing, and after.** Share is two taps: the
+  first gets the file ready, the second ("Share now", the big tick) opens the
+  phone's share sheet. While the app is working, and while the sheet is open,
+  a large spinning ring sits over the menu. When the sheet closes the app
+  shows one big picture for about two seconds, then goes back to the list:
+  - a **tray with a tick** means the file was handed to the phone's share
+    sheet. The app cannot see whether the app you chose actually received or
+    sent it — if that matters, check there.
+  - a **tray with a down arrow** means the sheet was closed before anything
+    went out. Nothing was sent; share again when ready.
+  - a **bare tray** (no arrow) means there was nothing recorded to share yet.
+  - a **red triangle** means it failed — try again. The menu keeps the message
+    after the picture goes.
+
+  On Android the Share button itself is Android's own share picture (three
+  joined dots); on iPhone and in the browser it is the box with an arrow. It
+  does the same thing on both. <!-- source: src/components/share-outcome-glyph.ts (the marks), src/hooks/share-progress.ts (MIN_BUSY_MS, OUTCOME_HOLD_MS = 1800 ms), src/components/control-affordance.ts shareControlGlyph (#490, decided 2026-09-19); not device-verified as of 2026-09-19 -->
+
 - **Known problem: Share may fail on the installed Android app right now**,
   with a message like "Could not share this chapter/book. Try again." This
   was seen on 2026-09-14 and a fix is being worked on. <!-- source: gh issue #336, open as of 2026-09-15 --> On the Chrome web

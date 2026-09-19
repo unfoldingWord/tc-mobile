@@ -340,6 +340,19 @@ export const strings = {
   // to the OS share sheet. A distinct, primary action so the tap is deliberate.
   shareSend: "Share now",
   sharePreparing: "Preparing the chapter to share.",
+  // The share modal's text (#491) — SECONDARY, under a glyph that is the
+  // signal; none of these three is what a non-reader is expected to act on.
+  // Chapter and book alike: the sheet is the phone's, not the chapter's.
+  //
+  // `shareSent` says HANDED TO THE SHEET and stops there. A resolved share
+  // proves the bytes reached the OS sheet, not that any app received them —
+  // some targets drop the file while `share` still resolves (the R-B7 note in
+  // `hooks/share-flow.ts`), and on Android native the plugin can resolve a
+  // Back after the activity stopped (`resolveProvesDelivery`). So never
+  // "sent", "delivered", "shared to", or an app's name; a test pins that.
+  shareHandingOver: "Opening the phone's share sheet.",
+  shareSent: "Handed to the phone's share sheet.",
+  shareDismissed: "The share sheet was closed before anything went out.",
   shareNothing: "Record a segment before sharing this chapter.",
   shareFailed: "Could not share this chapter. Try again.",
   // Neutral on the cause: `missing` counts every segment whose audio did not
