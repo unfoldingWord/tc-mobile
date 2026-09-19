@@ -6,7 +6,7 @@ MIT.txt). @breezystack/lamejs is LGPL-3.0 — its full licence texts are
 GNU-LGPL-3.0.txt and GNU-GPL-3.0.txt. Workbox generates the service worker at
 build time and ships as dist/workbox-*.js.
 
-react 19.2.8 — MIT
+react 19.3.0 — MIT
 https://react.dev/
 
 MIT License
@@ -33,7 +33,7 @@ SOFTWARE.
 
 ========================================================================
 
-react-dom 19.2.8 — MIT
+react-dom 19.3.0 — MIT
 https://react.dev/
 
 MIT License
@@ -60,7 +60,7 @@ SOFTWARE.
 
 ========================================================================
 
-scheduler 0.27.0 — MIT
+scheduler 0.28.0 — MIT
 https://react.dev/
 
 MIT License
@@ -114,7 +114,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ========================================================================
 
-tailwind-merge 3.6.0 — MIT
+tailwind-merge 3.7.0 — MIT
 https://github.com/dcastil/tailwind-merge
 
 MIT License

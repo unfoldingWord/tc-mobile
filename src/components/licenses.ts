@@ -76,21 +76,21 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "react",
-    version: "19.2.8",
+    version: "19.3.0",
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
     noticeMarker: "Meta Platforms",
   },
   {
     name: "react-dom",
-    version: "19.2.8",
+    version: "19.3.0",
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
     noticeMarker: "Meta Platforms",
   },
   {
     name: "scheduler",
-    version: "0.27.0",
+    version: "0.28.0",
     spdx: "MIT",
     role: "react-dom's cooperative scheduler (bundled transitively)",
     copyright: "© Meta Platforms, Inc. and affiliates",
@@ -112,7 +112,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "tailwind-merge",
-    version: "3.6.0",
+    version: "3.7.0",
     spdx: "MIT",
     copyright: "© 2021 Dany Castillo",
     noticeMarker: "Dany Castillo",
