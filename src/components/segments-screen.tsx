@@ -16,6 +16,7 @@ import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { shareErrorText as shareErrorCopy } from "./share-error-copy";
+import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { strings } from "./strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -263,6 +264,11 @@ export const SegmentsScreen = forwardRef<
   // (#354) — the same table Share Book and NameEdit's Confirm use.
   const shareAffordance = shareControlAffordance(share.status);
   const shareErrorText = shareErrorCopy(share.error, "chapter");
+  // Hoisted: the same mark for a chapter and a book, from one table.
+  const sharePartial = shareOutcomeGlyph("partial");
+  // Mark and tone for the error line, from the same table (#178); `undefined`
+  // for `encoder` and for no error, which is `Notice`'s own default.
+  const shareErrorMark = shareErrorGlyph(share.error);
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -341,13 +347,16 @@ export const SegmentsScreen = forwardRef<
           variant="quiet"
           onClick={onBack}
         />
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-w-0 flex-1 truncate border-0 bg-transparent p-0 text-left"
-          style={{ color: "var(--s-ink)" }}
-        >
-          {bookName} &gt; {chapterHeading}
+        {/* A control-sized hit area, not a ~20px text run (#164 R-10): its
+            action is Back, the same as the 44px control beside it, and two
+            adjacent ways to do one thing should not be two different sizes to
+            a thumb. Geometry lives in `.breadcrumb` (layer 3) rather than in
+            arbitrary utilities here, so the 44px floor reads the same
+            `--c-control-md` every other control does. */}
+        <button type="button" onClick={onBack} className="breadcrumb">
+          <span>
+            {bookName} &gt; {chapterHeading}
+          </span>
         </button>
         {!showEmpty && (
           <Control
@@ -508,9 +517,23 @@ export const SegmentsScreen = forwardRef<
               <Notice tone="busy">{strings.sharePreparing}</Notice>
             )}
             {share.status === "ready" && share.missing > 0 && (
-              <Notice tone="info">{strings.shareMissing(share.missing)}</Notice>
+              // Its own mark, not `info`'s generic ring-and-i (#178): that
+              // glyph also carries storage durability (#214/#406), so share
+              // would otherwise share a shape with an unrelated condition.
+              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
+                {strings.shareMissing(share.missing)}
+              </Notice>
             )}
-            {shareErrorText && <Notice>{shareErrorText}</Notice>}
+            {shareErrorText && (
+              // `nothing` and `failed` both wear the `alert` tone — that split
+              // is #147's open question — so the mark is the only thing
+              // separating "record a segment first" from "try again" (#178).
+              // The tone comes from the same table as the mark, so a #147
+              // re-tone reaches this line without a second edit (George R3 P3).
+              <Notice tone={shareErrorMark?.tone} icon={shareErrorMark?.icon}>
+                {shareErrorText}
+              </Notice>
+            )}
           </>
         )}
       </Menu>

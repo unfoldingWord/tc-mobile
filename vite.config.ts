@@ -156,8 +156,16 @@ export default defineConfig(({ mode }) => ({
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        background_color: "#0b0f14",
-        theme_color: "#0b0f14",
+        // `--p-cool-950`, which `--s-floor` resolves to in the dark theme.
+        // Was #0b0f14 — a value no token in this app has ever had, so the
+        // install splash and the task-switcher tint were two units off the
+        // floor the body actually paints (#171). A manifest is read at install
+        // time and cannot follow a runtime theme switch, so this necessarily
+        // stays DARK even for a translator who has chosen the light screen;
+        // what does follow them is `meta[name="theme-color"]`, repainted from
+        // the computed token in `hooks/use-theme.ts`.
+        background_color: "#0b1016",
+        theme_color: "#0b1016",
         icons: [
           {
             src: "/icons/icon-192.png",

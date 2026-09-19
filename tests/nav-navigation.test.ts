@@ -6,8 +6,20 @@ import {
   overlayBlocksClose,
   overlayDismissal,
   popAction,
+  type PopAction,
   screenFor,
 } from "@/lib/nav/navigation";
+import type { Layer, LayerStack } from "@/lib/nav/layer-stack";
+
+/**
+ * Invariant 7's rename (docs/design/back-navigation.md:290-291, #452 PR2): the
+ * recorder-commit-in-flight guard's tag is `"rearm-transition-busy"`, not the
+ * PR1 placeholder `"rearm-during-commit"`. Asserted through a typed `PopAction`
+ * const so a future rename of the union member is caught by `tsc` too, not only
+ * at runtime — `@vitest/expect`'s `toBe` is unconstrained, so a stale string
+ * literal would still typecheck and go red only when the test runs.
+ */
+const REARM_TRANSITION_BUSY: PopAction = "rearm-transition-busy";
 
 /**
  * The History wiring in `App.tsx` is browser-only and untestable here (there is
@@ -88,22 +100,25 @@ describe("popAction", () => {
     expect(popAction("same", "segments", false, false)).toBe("ignore");
   });
 
-  it("re-arms every gesture while a recorder commit is in flight (F1)", () => {
-    // The load-bearing F1 row. First Back starts the commit…
+  it("re-arms every gesture while a screen transition is in flight (F1, #168 — re-targeted at transitionInFlight)", () => {
+    // The load-bearing F1 / #168 row, carried forward re-targeted at the
+    // renamed transition-in-flight guard (invariant 7). First Back starts the
+    // commit…
     expect(popAction("back", "recorder", false, false)).toBe(
       "commit-close-recorder"
     );
     // …and a SECOND Back arriving before it settles must re-arm the protective
     // entry, never escape the recorder and drop the uncommitted take (#58).
-    // `committing` wins over direction and screen, so nothing else can leave.
+    // `transitionInFlight` wins over direction and screen, so nothing else can
+    // leave.
     expect(popAction("back", "recorder", true, false)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
     expect(popAction("back", "segments", true, false)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
     expect(popAction("forward", "recorder", true, false)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
   });
 
@@ -200,5 +215,171 @@ describe("overlayDismissal", () => {
       closeMenu: true,
       closeConfirm: false,
     });
+  });
+});
+
+/**
+ * popAction's new layer-routing tags, `"rearm-layer-dismiss"` and
+ * `"rearm-layer-busy"` (#452 PR1, docs/design/back-navigation.md; shape
+ * corrected per George R1 P2-1 on PR #492 — both names say "rearm" on
+ * purpose, since both outcomes re-arm the screen-depth entry the `popstate`
+ * already consumed; only `"rearm-layer-dismiss"` additionally means dismiss
+ * the top layer, recovered by the adapter via `topLayer(stack)`).
+ * `layerStack` is an OPTIONAL trailing parameter defaulting to an empty
+ * stack — a hard PR1 constraint is that this is a ZERO-BEHAVIOUR-CHANGE
+ * addition, so every row above this point (every existing call, all five
+ * positional args or fewer) must keep producing exactly what it does today.
+ * That is asserted directly below, not just assumed.
+ */
+function fakeLayer(id: string, busy: boolean): Layer {
+  return { id, busy: () => busy, dismiss: () => {} };
+}
+
+describe("popAction — layer routing (#452 PR1)", () => {
+  it("an empty layerStack (the default) reproduces every pre-existing row unchanged", () => {
+    // On `develop` before PR2 the only caller (App.tsx's popstate switch)
+    // passed no 6th argument at all; this is that shape. The PR2 adapter now
+    // passes the empty `layerStack` ref as the 6th arg, which the row below
+    // proves equivalent. Confirm the omitted-argument form and the
+    // explicit-empty-array form agree, and that both match the pre-existing
+    // (5-arg) results already pinned above.
+    const rows: Array<
+      [
+        Parameters<typeof popAction>[0],
+        Parameters<typeof popAction>[1],
+        boolean,
+        boolean,
+        boolean?,
+      ]
+    > = [
+      ["back", "recorder", false, false],
+      ["back", "segments", false, false],
+      ["back", "books", false, false],
+      ["forward", "segments", false, false],
+      ["forward", "recorder", false, false],
+      ["same", "segments", false, false],
+      ["back", "recorder", true, false],
+      ["back", "segments", true, false],
+      ["forward", "recorder", true, false],
+      ["back", "segments", false, true],
+      ["back", "books", false, true],
+      ["back", "recorder", false, true],
+      ["back", "books", false, false, true],
+      ["back", "segments", false, false, true],
+      ["back", "recorder", false, false, true],
+    ];
+    for (const [
+      direction,
+      screen,
+      committing,
+      recovering,
+      databasePanel,
+    ] of rows) {
+      const withoutSixthArg =
+        databasePanel === undefined
+          ? popAction(direction, screen, committing, recovering)
+          : popAction(direction, screen, committing, recovering, databasePanel);
+      const withExplicitEmptyStack =
+        databasePanel === undefined
+          ? popAction(direction, screen, committing, recovering, false, [])
+          : popAction(
+              direction,
+              screen,
+              committing,
+              recovering,
+              databasePanel,
+              []
+            );
+      expect(withExplicitEmptyStack).toEqual(withoutSixthArg);
+    }
+  });
+
+  /**
+   * George R1 P2-1 (PR #492): a `popstate` has already popped the SCREEN-DEPTH
+   * entry before `popAction` runs (the adapter updates `navIndex` from the
+   * landing index just before the call, `hooks/use-nav-stack.ts`) — overlays
+   * never owned one of their own (invariant 1). Every existing intercept that is
+   * not a real screen pop re-arms with `pushHistoryEntry()`
+   * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy`, the adapter's
+   * `switch` cases), and so does the recorder's own commit-close re-arm (it
+   * pushes BEFORE the overlay is even asked to dismiss). The layer case must
+   * match: BOTH a dismiss and a refusal re-arm the entry the popstate already
+   * consumed — `"dismiss"` also tells the adapter to dismiss the top layer
+   * (recovered via `topLayer(stack)`), `"refused-busy"` re-arms only. Two string
+   * tags, not an object, so the obligation is encoded in the type the adapter's
+   * string `switch` already consumes, not left to prose a reader could miss (the
+   * bug this replaces: `tests/nav-layer-stack.test.ts`'s old comment taught
+   * "nothing on refused-busy").
+   */
+  it("a non-empty stack with a non-busy top layer re-arms AND signals dismiss", () => {
+    const stack: LayerStack = [fakeLayer("book-menu", false)];
+    expect(popAction("back", "books", false, false, false, stack)).toBe(
+      "rearm-layer-dismiss"
+    );
+  });
+
+  it("a non-empty stack with a busy top layer re-arms only — never the screen-level routing", () => {
+    const stack: LayerStack = [fakeLayer("deleting", true)];
+    expect(popAction("back", "books", false, false, false, stack)).toBe(
+      "rearm-layer-busy"
+    );
+    // Prove it did NOT fall through to backEffectFor("books") = "exit-app".
+    expect(popAction("back", "books", false, false, false, stack)).not.toBe(
+      "exit-app"
+    );
+  });
+
+  it("only the TOP layer is routed — a layer beneath a busy top is never asked (invariant 3)", () => {
+    const stack: LayerStack = [
+      fakeLayer("bottom-menu", false),
+      fakeLayer("top-confirm", true),
+    ];
+    expect(popAction("back", "segments", false, false, false, stack)).toBe(
+      "rearm-layer-busy"
+    );
+  });
+
+  it("the two global traps still outrank a non-empty layer stack", () => {
+    const stack: LayerStack = [fakeLayer("menu", false)];
+    expect(popAction("back", "books", false, true, false, stack)).toBe(
+      "trap-recovery"
+    );
+    expect(popAction("back", "books", false, false, true, stack)).toBe(
+      "trap-database-panel"
+    );
+  });
+
+  it("a screen transition in flight (transitionInFlight) still outranks a non-empty layer stack (invariant 3: 'no screen transition in flight')", () => {
+    const stack: LayerStack = [fakeLayer("menu", false)];
+    expect(popAction("back", "recorder", true, false, false, stack)).toBe(
+      REARM_TRANSITION_BUSY
+    );
+  });
+
+  /**
+   * George R2 P2-1 (PR #492): the layer-routing premise — "a popstate has
+   * ALREADY popped the screen-depth entry" — holds only for Back. Forward
+   * RESTORED a previously truncated entry; its live cancel is `trap-forward`'s
+   * own extra `history.back()`, not a layer re-arm. The F2 row above
+   * (`"traps a Forward instead of misrouting it as a Back"`) uses the
+   * empty-stack default and so CANNOT catch a non-empty stack shadowing it —
+   * these two rows exist specifically because that one does not cover this.
+   */
+  it("a non-empty stack does not shadow Forward — `trap-forward` still cancels it, never a layer re-arm (George R2 P2-1)", () => {
+    const nonBusyStack: LayerStack = [fakeLayer("menu", false)];
+    const busyStack: LayerStack = [fakeLayer("deleting", true)];
+    expect(
+      popAction("forward", "segments", false, false, false, nonBusyStack)
+    ).toBe("trap-forward");
+    expect(
+      popAction("forward", "recorder", false, false, false, busyStack)
+    ).toBe("trap-forward");
+  });
+
+  it("a non-empty stack does not shadow 'same' — `ignore` still wins, never a layer re-arm (George R2 P2-1)", () => {
+    const stack: LayerStack = [fakeLayer("menu", false)];
+    expect(popAction("same", "segments", false, false, false, stack)).toBe(
+      "ignore"
+    );
   });
 });

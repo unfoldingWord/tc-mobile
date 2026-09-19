@@ -51,11 +51,13 @@ interface MenuProps {
   /**
    * The menu's contents.
    *
-   * No longer empty on the global menu: Books mounts the About & licenses entry
-   * (#36) and, while the failure log has rows, `FailureLogPanel` (#205) — the
-   * latter deliberately absent on a phone that has never failed, so the empty
-   * case is still the normal one. Template Library (B7, #33) is the other
-   * consumer still to come.
+   * Never empty on the global menu any more: Books always mounts the About &
+   * licenses entry (#36) and the theme toggle (#171), and ahead of them
+   * `FailureLogPanel` while the failure log has rows (#205) — that panel is
+   * deliberately absent on a phone that has never failed, so a quiet phone's
+   * menu holds About and the toggle alone. The empty case still exists for
+   * callers that pass nothing, but it is no longer the global menu's normal
+   * state. Template Library (B7, #33) is the other consumer still to come.
    */
   children?: React.ReactNode;
 }

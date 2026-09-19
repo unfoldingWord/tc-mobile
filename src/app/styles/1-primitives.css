@@ -21,6 +21,13 @@
     --p-cool-700: #263141;
     --p-cool-600: #384454;
     --p-cool-500: #5f6b7a;
+    /* The faint-ink step. Off the doubling ramp on purpose: it sits between
+       500 and 400 because `--s-ink-faint` paints 11-16px text, and 500 scores
+       2.8:1 on `--s-raised` — under AA, which `tests/contrast.test.ts` now
+       gates (#164 R-9). 400 would have cleared AA too, but using it would
+       have made faint and muted the same value and collapsed the three-role
+       ink ladder into two. */
+    --p-cool-450: #828e9e;
     --p-cool-400: #93a0b1;
     --p-cool-300: #b9c2ce;
     --p-cool-200: #d7dde5;

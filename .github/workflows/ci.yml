@@ -316,26 +316,47 @@ jobs:
       # every spec here would fail on the next PR that did trip the gate
       # (round-2 Frank F2 / George G-3).
       #
-      # It, and the per-directory list around it, are now subsumed by a plain
-      # `src/` (#205). The list was derivable while every spec drove either the
-      # harness or the service worker. `e2e/failure-log.spec.ts` does neither:
-      # it loads `/` from the shipped `dist/` build and asserts the real UI —
-      # the ≡ marker on Books, the menu panel, the log surviving a reload, the
-      # shared File's contents. (It does NOT reach the crash boundary; this
-      # comment claimed it did until George R1 P3-3, and a CI comment is as
-      # capable of claiming a test that does not exist as a docblock is.
-      # Reaching the fallback needs a throw seam inside the shipped tree, which
-      # is product scaffolding this repo has refused before; what covers that
-      # control is `tests/error-boundary.test.ts`, in Node, on the rendered
-      # markup.) The spec's dependency set is nonetheless the whole app graph
-      # reachable from `main.tsx`, not a subdirectory of it, because what it
-      # loads is the built bundle. A
-      # components-only PR that removed the marker (or the panel's mount, which
-      # is one `count > 0` away) would, under the old list, have skipped all
-      # thirteen of its cases and merged green — the "a gate is tested in both
-      # states" failure AGENTS.md names, in the shape where the gate is simply
-      # never reached. Over-running this suite costs a few minutes; under-running
+      # THE SOURCE HALF OF THIS FILTER IS A PLAIN `src/`, and two independent
+      # lanes arrived there within a day of each other — which is the strongest
+      # thing that can be said for it.
+      #
+      # #205's `e2e/failure-log.spec.ts` and #171's `e2e/theme-toggle.spec.ts`
+      # both load `/` from the shipped `dist/` build and assert the real UI, so
+      # neither has a dependency set smaller than the whole app graph reachable
+      # from `main.tsx`. The per-directory list was derivable only while every
+      # spec drove either the harness or the service worker.
+      #
+      # Each lane also has its own worked example of the list failing:
+      #
+      #   - #205: a components-only PR that removed the ≡ marker (or the
+      #     panel's mount, which is one `count > 0` away) would, under the old
+      #     list, have skipped all thirteen of its cases and merged green.
+      #   - #171: an enumerated list was tried and was wrong within one review
+      #     round. It named `src/lib/theme.ts`, `books-screen.tsx`,
+      #     `strings.ts`, `src/app/styles/` and `index.html` — each genuinely a
+      #     dependency — and still returned `smoke=false` for
+      #     `src/app/globals.css` (where the `@theme` colour bridge and the
+      #     `@import` of the whole style layer live), `src/app/App.tsx` (which
+      #     decides whether `BooksScreen` is mounted at all), `menu.tsx` (which
+      #     renders the toggle's children) and `control.tsx` (which IS the
+      #     toggle). That was the second such miss; round-1 Frank C2 was the
+      #     first.
+      #
+      # Both are the "a gate is tested in both states" failure AGENTS.md names,
+      # in the shape where the gate is simply never reached — and the failure
+      # mode is silent, because a skipped browser gate looks exactly like a
+      # passing one. Over-running this suite costs a few minutes; under-running
       # it is the defect. `docs/**` and `*.md` still pay nothing.
+      #
+      # Still enumerated, because these are NOT under `src/` and each is a real
+      # dependency: `index.html` (the `meta[name="theme-color"]` the theme spec
+      # reads, and the viewport policy `tests/touch-policy.test.ts` gates),
+      # `e2e/` and `playwright.config.ts` (the suites and their projects),
+      # `vite.config.ts` (which decides what `dist/` and `dist-e2e/` contain at
+      # all) and the two lockfile/manifest paths.
+      #
+      # `tests/smoke-path-filter.test.ts` reads this exact regex out of this
+      # file and pins BOTH gate states.
       #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
@@ -357,7 +378,7 @@ jobs:
           # then reads a here-string, not a pipe: no pipeline whose exit status
           # could be confused with the match result.
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -qE '^(src/|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+          if grep -qE '^(src/|index\.html$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
             echo "smoke=true" >> "$GITHUB_OUTPUT"
           else
             echo "smoke=false" >> "$GITHUB_OUTPUT"

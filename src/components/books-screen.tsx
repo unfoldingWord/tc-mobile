@@ -19,12 +19,14 @@ import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
 import { shareErrorText } from "./share-error-copy";
+import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
+import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -91,6 +93,11 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // `menuOpen` so the two-level surface (menu → About panel) composes: opening
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
+  // #171. The global menu is the only place a theme switch belongs: it is a
+  // once-per-session decision about the light you are standing in, not a
+  // per-screen action, and putting it in the header would spend a header slot
+  // on a control nobody taps twice a day.
+  const theme = useTheme();
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -469,6 +476,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. Map its error code to copy here.
   const bookShareErrorText = shareErrorText(bookShare.error, "book");
+  const sharePartial = shareOutcomeGlyph("partial");
+  // Mark and tone for the error line, from the same table (#178); `undefined`
+  // for `encoder` and for no error, which is `Notice`'s own default.
+  const bookShareErrorMark = shareErrorGlyph(bookShare.error);
   // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,
@@ -692,11 +703,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           {failureCount > 0 && (
             // Decorative for AT — the count is already in the button's
             // accessible name — so a screen reader hears it once.
-            <span
-              className="control-hint"
-              aria-hidden="true"
-              style={{ color: "var(--s-live)" }}
-            >
+            <span className="control-hint text-live" aria-hidden="true">
               <Icon name="alert" size={12} />
             </span>
           )}
@@ -786,10 +793,42 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         )}
       </div>
 
+      {/* The global menu: the failure-log panel, then About & licenses, then
+          the theme toggle.
+
+          THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
+          focus on its first actionable child on open, and while the log is
+          non-empty the ≡ is named "Open menu. N problems recorded." — reaching
+          the report is its whole point. So the report is what a switch/AT
+          user must land on, not About or a control that flips the theme
+          (George R1 P2 on #457). The panel is mounted only while the log holds
+          something, so a phone that has never failed opens on About, as the
+          first actionable child.
+
+          About & licenses (#36): the reachable-on-the-phone home for the LGPL
+          notice and the bundled-component attribution. Opening it closes the
+          menu and hands off to the About panel, which owns its own Menu.
+
+          The toggle (#171): a complete light theme has existed in
+          `2-semantic.css` since the pivot with nothing able to select it,
+          written for the one condition that makes this app unusable — direct
+          equatorial sun on a dark screen.
+
+          ONE control that flips, not two rows or a three-state cycle: its
+          label names the DESTINATION so AT does not announce the state a user
+          already has, and `nextTheme` is an involution so the only promise a
+          text-free glyph can make — tap twice and you are back — holds. The
+          menu stays OPEN across the tap, so the translator sees the screen
+          change behind the scrim and can tap straight back if they guessed
+          wrong; that is the affordance doing the explaining, which is the
+          `state-in-place` rule this repo prefers over a message. */}
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
-        {/* About & licenses (#36) — the reachable-on-the-phone home for the LGPL
-            notice and the bundled-component attribution. Opening it closes the
-            menu and hands off to the About panel, which owns its own Menu. */}
+        {failureCount > 0 && (
+          <FailureLogPanel
+            count={failureCount}
+            onDone={() => setMenuOpen(false)}
+          />
+        )}
         <Control
           icon="info"
           label={strings.aboutOpen}
@@ -799,14 +838,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             setAboutOpen(true);
           }}
         />
-        {/* The failure log (#205), mounted only while it holds something, so a
-            phone that has never failed opens a menu with just About in it. */}
-        {failureCount > 0 && (
-          <FailureLogPanel
-            count={failureCount}
-            onDone={() => setMenuOpen(false)}
-          />
-        )}
+        <Control
+          icon={theme.theme === "dark" ? "sun" : "moon"}
+          label={
+            theme.theme === "dark"
+              ? strings.useLightTheme
+              : strings.useDarkTheme
+          }
+          variant="quiet"
+          onClick={theme.toggle}
+        />
       </Menu>
 
       <AboutPanel open={aboutOpen} onClose={() => setAboutOpen(false)} />
@@ -921,9 +962,23 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               // A heads-up once the zip is armed, not a wait (#112). Covers
               // both whole chapters left out AND segments missing inside
               // chapters that shipped (#116) — see `bookShareGapText` above.
-              <Notice tone="info">{bookShareGapText}</Notice>
+              // Its own mark since #178, so "some of the book went" does not
+              // wear the same glyph as an unrelated standing condition.
+              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
+                {bookShareGapText}
+              </Notice>
             )}
-            {bookShareErrorText && <Notice>{bookShareErrorText}</Notice>}
+            {bookShareErrorText && (
+              // See the Segments menu: `nothing` and `failed` share the
+              // `alert` tone (#147), so the mark carries the difference (#178);
+              // the tone rides from the same table (George R3 P3).
+              <Notice
+                tone={bookShareErrorMark?.tone}
+                icon={bookShareErrorMark?.icon}
+              >
+                {bookShareErrorText}
+              </Notice>
+            )}
             {/* Destructive, so it sits last — the same place Delete holds in the
                 Segments row menu (#80). It arms the shared two-tap confirm; it
                 never deletes on this tap. */}
@@ -975,10 +1030,7 @@ function BookItem({
   const listId = `chapters-${book.bookId}`;
   return (
     <li ref={(el) => setNode(book.bookId, el)}>
-      <div
-        className="flex items-center gap-[8px] px-[4px]"
-        style={{ borderBottom: "1px solid var(--s-edge)" }}
-      >
+      <div className="border-edge flex items-center gap-[8px] border-b px-[4px]">
         <button
           type="button"
           onClick={onToggle}
@@ -991,18 +1043,13 @@ function BookItem({
           )}
           className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left"
         >
-          <span className="flex-none" style={{ color: "var(--s-ink-muted)" }}>
+          <span className="text-ink-muted flex-none">
             <Icon
               name={expanded ? "chevron-down" : "chevron-right"}
               size={20}
             />
           </span>
-          <span
-            className="t-title min-w-0 truncate"
-            style={{ color: "var(--s-ink)" }}
-          >
-            {book.name}
-          </span>
+          <span className="t-title text-ink min-w-0 truncate">{book.name}</span>
         </button>
         <Control
           icon="plus"
@@ -1060,16 +1107,13 @@ function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
         aria-label={strings.openChapter(heading)}
         className="flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left"
       >
-        <span className="min-w-0 truncate" style={{ color: "var(--s-ink)" }}>
-          {heading}
-        </span>
+        <span className="text-ink min-w-0 truncate">{heading}</span>
         {hasCounter && (
           <span
-            className={cn("t-count", "flex-none")}
             // All finished glows green (--s-done) — the wordless "chapter
             // complete" read, matching the green finished rows. Amber is now
             // "audio exists", not "finished" (George R3 P2).
-            style={allDone ? { color: "var(--s-done)" } : undefined}
+            className={cn("t-count", "flex-none", allDone && "text-done")}
           >
             {finishedCount}/{totalCount}
           </span>

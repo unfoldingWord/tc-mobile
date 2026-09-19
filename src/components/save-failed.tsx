@@ -137,17 +137,15 @@ export function SaveFailed({
       }
       className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: saving ? "var(--s-ink-muted)" : "var(--s-live)" }}>
+      <span className={saving ? "text-ink-muted" : "text-live"}>
         <Icon name={saving ? "retry" : "alert"} size={56} />
       </span>
 
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
+      <p className="t-title text-ink">
         {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
-      <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
-        {stillHere}
-      </p>
+      <p className="text-ink-muted text-[13px]">{stillHere}</p>
 
       {!saving && (
         <>
@@ -166,9 +164,7 @@ export function SaveFailed({
             }
             variant="primary"
             size={30}
-            className={
-              terminal && restartArmed ? "text-[var(--s-live)]" : undefined
-            }
+            className={terminal && restartArmed ? "text-live" : undefined}
             busy={terminal && restarting}
             autoFocus
             onClick={
@@ -191,7 +187,7 @@ export function SaveFailed({
           )}
 
           {terminal && restartArmed && !restarting && (
-            <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+            <p className="text-live text-[12px]">
               {restartConsequence(
                 editOnly ? "changes" : "recording",
                 holdsCutAudio
@@ -200,15 +196,11 @@ export function SaveFailed({
           )}
 
           {safetyLine && (
-            <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
-              {safetyLine}
-            </p>
+            <p className="text-ink-muted text-[13px]">{safetyLine}</p>
           )}
 
           {attemptsLine && (
-            <p className="text-[12px]" style={{ color: "var(--s-ink-faint)" }}>
-              {attemptsLine}
-            </p>
+            <p className="text-ink-faint text-[12px]">{attemptsLine}</p>
           )}
 
           <div className="mt-[10px] flex flex-col items-center gap-[8px]">
@@ -216,11 +208,11 @@ export function SaveFailed({
               icon="trash"
               label={discardLabel}
               variant="quiet"
-              className={armed ? "text-[var(--s-live)]" : undefined}
+              className={armed ? "text-live" : undefined}
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
-              <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+              <p className="text-live text-[12px]">
                 {editOnly
                   ? "Tap again to discard them."
                   : "Tap again to delete it."}

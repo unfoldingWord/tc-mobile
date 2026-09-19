@@ -334,7 +334,7 @@ export class ErrorBoundary extends Component<
           aria-describedby={TEACH_ID}
           className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
         >
-          <span style={{ color: "var(--s-live)" }}>
+          <span className="text-live">
             <Icon name="alert" size={56} />
           </span>
 
@@ -342,17 +342,12 @@ export class ErrorBoundary extends Component<
             id={TITLE_ID}
             ref={focusOnMount}
             tabIndex={-1}
-            className="t-title"
-            style={{ color: "var(--s-ink)" }}
+            className="t-title text-ink"
           >
             {strings.appFailed}
           </p>
 
-          <p
-            id={TEACH_ID}
-            className="text-[13px]"
-            style={{ color: "var(--s-ink-muted)" }}
-          >
+          <p id={TEACH_ID} className="text-ink-muted text-[13px]">
             {strings.appReloadTeach}
           </p>
 

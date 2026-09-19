@@ -137,6 +137,37 @@ new instances of the same defect class) mean the fix approach is wrong and
 another round will not help. The round number cannot tell those apart. A person
 reading the last round's findings can, so the decision is theirs.
 
+### Decompose before the DRI picks
+
+Decided 2026-09-18, after #474 capped on a chain that reversed itself twice.
+The coordinator posts a **judgment sheet** on the PR before asking for the
+pick, and the pick is made from the sheet. The method is borrowed from the
+TypeSafe skill's guidance on typed judgments; no external service is involved —
+every answer comes from the tree, the spec, a device, or an issue.
+
+1. **Name the action.** The options on the table (typically: reduce, one more
+   round, close), stated as what would ship.
+2. **Work backward to the judgments.** Each is one narrow question with a
+   typed answer — yes/no, or one of a fixed set — never "is the PR right?".
+   Split independently useful dimensions: what each unguarded path costs; what
+   state each fix's correctness depends on; whether that state has been
+   observed on a device; whether the suite can simulate it; whether an
+   evidence path exists. Include a "cannot tell" outcome.
+3. **Answer each from the strongest evidence**, one line of evidence per
+   answer: file:line at the head SHA, the primary spec's algorithm text (not a
+   secondary summary), the issue comment, the device log. A judgment answered
+   only from the PR's own comments is marked inferred.
+4. **Compose as rules**, not narrative: "shippable if independent of the
+   unobservable state, or the state is observed, or simulable" is a rule that
+   reads the answers; a paragraph is not.
+5. **State confidence per judgment** and what would change it.
+
+The sheet goes in the round's triage comment or a decision comment stamped
+with the head SHA, with the pick and its stop rule under it. What it produced
+the first time: the question no round had asked (which guard's correctness
+depended on the unobserved state), a false spec claim in two docblocks, and
+the cost of "close" that the escalation had left implicit.
+
 ## Traps, each of which cost a dead run
 
 These are not theoretical. They were paid for across many review rounds on an

@@ -62,10 +62,9 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
           // `min-h-0 flex-1 overflow-auto` contract the licence-text `<pre>`
           // takes — so on a short phone the panel's header Back stays put
           // instead of scrolling off with the content (#36 G1).
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-auto text-[13px] leading-relaxed"
-          style={{ color: "var(--s-ink)" }}
+          className="text-ink flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-auto text-[13px] leading-relaxed"
         >
-          <p style={{ color: "var(--s-ink-muted)" }}>{strings.aboutBlurb}</p>
+          <p className="text-ink-muted">{strings.aboutBlurb}</p>
           <p>{strings.aboutAppLicense}</p>
           {/* The LGPL/GPL written offer for the app's own corresponding source,
               on the shipped copy — the README that also carries it is not in the
@@ -82,8 +81,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
                 type="button"
                 onClick={() => setViewing(text)}
                 aria-label={strings.aboutReadText(text.label)}
-                className="flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
-                style={{ color: "var(--s-ink)" }}
+                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
               >
                 {text.label}
               </button>
@@ -97,15 +95,11 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
                 <span>
                   <span className="t-title">{lib.name}</span> {lib.version}
                 </span>
-                <span style={{ color: "var(--s-ink-muted)" }}>
+                <span className="text-ink-muted">
                   {lib.role ? `${lib.role} · ` : ""}
                   {lib.spdx} · {lib.copyright}
                 </span>
-                {lib.note && (
-                  <span style={{ color: "var(--s-ink-muted)" }}>
-                    {lib.note}
-                  </span>
-                )}
+                {lib.note && <span className="text-ink-muted">{lib.note}</span>}
                 {lib.source && (
                   <ExternalLink
                     href={lib.source.href}
@@ -129,7 +123,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
           <section className="flex flex-col gap-[6px]">
             <h3 className="t-title">{strings.aboutContent}</h3>
             {contentAttribution.map((item) => (
-              <span key={item.what} style={{ color: "var(--s-ink-muted)" }}>
+              <span key={item.what} className="text-ink-muted">
                 {item.what}: {item.holder},{" "}
                 <ExternalLink
                   href={item.href}
@@ -141,7 +135,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
             ))}
           </section>
 
-          <p style={{ color: "var(--s-ink-faint)" }}>
+          <p className="text-ink-faint">
             v{__APP_VERSION__} · {__BUILD_SHA__}
           </p>
         </div>
@@ -196,8 +190,7 @@ function LicenseTextView({ text }: { text: LicenseText }) {
     <pre
       ref={preRef}
       tabIndex={0}
-      className="min-h-0 flex-1 overflow-auto text-[13px] leading-normal whitespace-pre-wrap"
-      style={{ color: "var(--s-ink)" }}
+      className="text-ink min-h-0 flex-1 overflow-auto text-[13px] leading-normal whitespace-pre-wrap"
     >
       {body}
     </pre>
@@ -224,8 +217,7 @@ function ExternalLink({
       // disables pinch-zoom) — the sibling of the round-4 button fix, on the
       // anchors. `min-w` floors the short "LAME" credit; `w-fit` keeps the
       // longer labels from stretching, and the wide ones no-op the floor (#36 F1).
-      className="inline-flex min-h-[40px] w-fit min-w-[40px] items-center underline"
-      style={{ color: "var(--s-ink)" }}
+      className="text-ink inline-flex min-h-[40px] w-fit min-w-[40px] items-center underline"
     >
       {children}
     </a>

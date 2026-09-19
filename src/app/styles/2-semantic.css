@@ -25,15 +25,24 @@
     --s-overlay: var(--p-cool-700);
     --s-edge: #222c39;
 
-    /* Three ink roles. None is pure white. */
+    /* Three ink roles. None is pure white. Every one of them paints small
+       text somewhere, so all three clear AA against the surfaces they are
+       actually used on — gated, with the call sites named, in
+       `tests/contrast.test.ts` (#164 R-9). */
     --s-ink: #e7ecf3;
     --s-ink-muted: var(--p-cool-400);
-    --s-ink-faint: var(--p-cool-500);
+    --s-ink-faint: var(--p-cool-450);
 
     /* The single accent: audio that exists. */
     --s-voice: var(--p-amber-500);
     --s-voice-ink: #1a1206;
     --s-voice-quiet: var(--p-amber-950);
+    /* The accent AS INK on a surface, which is a different question from the
+       accent as a fill. Amber on a dark floor is 8.9:1, so here it is simply
+       the accent; the light theme is where the two must part company (see its
+       own block below). Split into a role rather than hard-coded at the one
+       call site so a third theme has one place to answer it. */
+    --s-voice-text: var(--s-voice);
 
     /* A finished segment. Mirrors the voice role: a fill, its ink, a quiet wash. */
     --s-done: var(--p-green-500);
@@ -60,13 +69,22 @@
 
     --s-ink: #101821;
     --s-ink-muted: #4e5866;
-    --s-ink-faint: #7d8896;
+    /* Was #7d8896, which scored 3.4:1 on `--s-floor` — the same sub-AA gap
+       the dark theme had at 11-16px (#164 R-9). */
+    --s-ink-faint: #626d7b;
 
     /* Amber on white fails contrast as a text colour, so the light theme
        spends the accent as a darker fill and keeps the same role. */
     --s-voice: var(--p-amber-600);
     --s-voice-ink: #ffffff;
     --s-voice-quiet: var(--p-amber-100);
+    /* And this is where "fails contrast as a text colour" stops being only a
+       comment. `.modepill` paints 12px text in the accent on a 15% accent
+       wash: 5.4:1 dark, but 3.0:1 here, because a darker FILL on white is
+       still too light to be INK on a wash of itself. A darker amber again,
+       for the text case only — the fill above is unchanged, so the pill still
+       reads as the edit context. */
+    --s-voice-text: #8a5a12;
 
     /* Darker green fill on white, same as voice does — keeps contrast on light. */
     --s-done: var(--p-green-600);
