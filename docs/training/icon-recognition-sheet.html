@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Icon recognition sheet</title>
+    <!--
+      tC Mobile — icon recognition check, the facilitator's sheet.
+      Protocol: docs/training/icon-recognition-protocol.md
+      Decision: docs/decisions/0010-icon-recognition.md
+
+      Self-contained: no scripts, no fonts, no images. The glyphs are the app's
+      own SVG paths, copied from src/components/icon.tsx (22-unit grid), drawn
+      black on white at about 14 mm. Prints on one A4 or Letter sheet from any
+      phone or laptop browser (Share / Print from the browser menu).
+
+      NO NAMES on this sheet. Site code only.
+    -->
+    <style>
+      @page {
+        size: auto;
+        margin: 10mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        color: #000;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11pt;
+        line-height: 1.2;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      body {
+        padding: 8mm 6mm;
+        max-width: 200mm;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 15pt;
+        margin: 0 0 2mm;
+      }
+      p.lead {
+        margin: 0 0 2.5mm;
+        font-size: 9.5pt;
+      }
+      .fields {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3mm 6mm;
+        margin: 0 0 2.5mm;
+        font-size: 10pt;
+      }
+      .field {
+        display: flex;
+        align-items: baseline;
+        gap: 2mm;
+        white-space: nowrap;
+      }
+      .field .line {
+        display: inline-block;
+        border-bottom: 1px solid #000;
+        min-width: 28mm;
+        height: 5mm;
+      }
+      .field .line.short {
+        min-width: 14mm;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      th,
+      td {
+        border: 1px solid #000;
+        padding: 0.6mm 1.5mm;
+        vertical-align: middle;
+        text-align: left;
+      }
+      th {
+        font-size: 8.5pt;
+        font-weight: bold;
+        padding: 1.5mm;
+      }
+      th.tick,
+      td.tick {
+        text-align: center;
+      }
+      col.num {
+        width: 7mm;
+      }
+      col.glyph {
+        width: 20mm;
+      }
+      col.name {
+        width: 50mm;
+      }
+      col.tick {
+        width: 15mm;
+      }
+      col.notes {
+        width: auto;
+      }
+      td.glyph {
+        text-align: center;
+        padding: 1mm;
+      }
+      td.glyph svg {
+        width: 14mm;
+        height: 14mm;
+        display: block;
+        margin: 0 auto;
+        color: #000;
+      }
+      td.name {
+        font-size: 9.5pt;
+      }
+      td.name b {
+        display: block;
+        font-size: 10.5pt;
+      }
+      td.name small {
+        display: block;
+        font-size: 8pt;
+        color: #333;
+      }
+      .box {
+        display: inline-block;
+        width: 6mm;
+        height: 6mm;
+        border: 1.2px solid #000;
+        vertical-align: middle;
+      }
+      td.notes {
+        font-size: 8pt;
+      }
+      p.foot {
+        margin: 3mm 0 0;
+        font-size: 8pt;
+        color: #333;
+      }
+      @media print {
+        body {
+          padding: 0;
+          max-width: none;
+        }
+        tr {
+          page-break-inside: avoid;
+        }
+      }
+      @media (max-width: 520px) {
+        body {
+          padding: 4mm 3mm;
+        }
+        col.name {
+          width: 30mm;
+        }
+        col.tick {
+          width: 13mm;
+        }
+        td.name small {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Icon recognition check</h1>
+    <p class="lead">
+      Show the control, ask "what do you think this does?", then give the task.
+      Tick one box per row. No names anywhere on this sheet — site code only.
+    </p>
+
+    <div class="fields">
+      <span class="field">Site code <span class="line short"></span></span>
+      <span class="field">Date <span class="line"></span></span>
+      <span class="field"
+        >Participant number today <span class="line short"></span
+      ></span>
+      <span class="field">Phone: Android / iPhone (circle)</span>
+    </div>
+
+    <table>
+      <colgroup>
+        <col class="num" />
+        <col class="glyph" />
+        <col class="name" />
+        <col class="tick" />
+        <col class="tick" />
+        <col class="tick" />
+        <col class="notes" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Control</th>
+          <th>Task (say it in their language)</th>
+          <th class="tick">Knew it</th>
+          <th class="tick">After one try</th>
+          <th class="tick">Did not know</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <circle cx="11" cy="11" r="6" fill="currentColor" />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Record</b>
+            "Make a recording of this sentence."
+            <small>Segments screen, empty row</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path d="M8 5.5 16 11l-8 5.5z" fill="currentColor" />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Play</b>
+            "Listen to what you just recorded."
+            <small>Segments screen, recorded row</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <circle
+                cx="9.5"
+                cy="9.5"
+                r="5.6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <path
+                d="M13.6 13.6 18.4 18.4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+              />
+              <path
+                d="M9.5 6.8v5.4M6.8 9.5h5.4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Zoom</b>
+            "Look closer at one small part of the recording."
+            <small>Recorder, toolbar</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M5 7h12M9 7V5.5h4V7M7 7l.8 9.5h6.4L15 7"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Erase</b>
+            "Throw this recording away."
+            <small>Segment row menu (open it for them)</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M9 5.5H6v11h3M13 5.5h3v11h-3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Select</b>
+            "Choose a piece of the recording to change."
+            <small>Recorder, toolbar</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <circle
+                cx="6.5"
+                cy="7.4"
+                r="2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <circle
+                cx="6.5"
+                cy="14.6"
+                r="2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <path
+                d="M8.3 8.6 17 15M8.3 13.4 17 7"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Cut</b>
+            "Take out the piece you chose."
+            <small>Recorder, under the sound picture</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M11 4v8m-3.5-3.5L11 12l3.5-3.5M6 16h10"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Paste</b>
+            "Put the cut piece back."
+            <small>Recorder, on the sound picture</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M4 7h14M4 11h14M4 15h14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Menu</b>
+            "Show me what else this screen can do."
+            <small>Books or Segments screen, top corner</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M5 11.5 9.2 15.5 17 6.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.1"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Finished</b>
+            "Tell the app this recording is done."
+            <small>Segment row menu</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M11 4 L11 13"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <path
+                d="M7.7 7 L11 3.7 L14.3 7"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Share</b>
+            "Send this chapter to another phone." (stop before it sends)
+            <small>Segments screen menu (open it for them)</small>
+          </td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="tick"><span class="box"></span></td>
+          <td class="notes"></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="foot">
+      Knew it = said what it does before touching it. After one try = tapped
+      once, then could say and do it. Did not know = neither. One sheet per
+      participant. Photograph the filled sheet and send it to the dev lead; no
+      photographs or recordings of the participant. tC Mobile, ADR 0010.
+    </p>
+  </body>
+</html>

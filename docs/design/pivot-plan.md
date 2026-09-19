@@ -271,7 +271,10 @@ PR that added this note).
   that no
   reviewed product achieves a text-free path. Proposed as its own ADR, with a
   ten-minute recognition check at the October training as the evidence that
-  turns it from opinion into a finding.
+  turns it from opinion into a finding. **Written 2026-09-19:**
+  [ADR 0010](../decisions/0010-icon-recognition.md) (Proposed) and the
+  [protocol](../training/icon-recognition-protocol.md) with its printable
+  sheet — [#249](https://github.com/unfoldingWord/tc-mobile/issues/249).
 
 ## Batches
 
