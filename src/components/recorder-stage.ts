@@ -125,10 +125,16 @@ export function liveScopeShown(s: StageState): boolean {
  * A decision that used to live here, `centerlineHidden`, ran from R2
  * (whole-clip playback) through R4 P3 (in-place audition) until #316
  * (requirements owner, 2026-09-16: "having the line always visible is important
- * in segment record/edit mode") retired it — the line is never suppressed, in
- * any state, so there is no longer a decision to derive. Since #415 the line is
- * not painted into the canvas at all: a strip that translates would carry a
- * painted line with it, so it is a fixed element on the stage
+ * in segment record/edit mode") retired it — the line was never suppressed, in
+ * any state. #418 (the requirements owner, via a tester report) reopened it
+ * with exactly one exception: a selection span loaded in edit mode gives the
+ * line no playback role at all (the audition sounds only the picked span —
+ * #284, `recorder.tsx`'s `onPaste`-adjacent audition split), so it is drawn
+ * inside the span it does not describe. {@link centerlineOverlayShown} is
+ * that one exception (plus the unrelated `liveScope` term — see its own
+ * docblock), not a return of the old multi-state hide rule. Since #415 the
+ * line is not painted into the canvas at all: a strip that translates would
+ * carry a painted line with it, so it is a fixed element on the stage
  * (`recorder.tsx`'s centerline overlay), mounted wherever the `Waveform` path
  * is on stage. `LiveScope` still draws its own record head during capture.
  *
@@ -205,10 +211,11 @@ interface StageView {
    *   so the false IMPLICATION goes too);
    * - **Select**: seeds its span from `win.centerlineSample` ± the visible
    *   width — a position that, while sounding, no longer matches what the
-   *   (always-visible, #316) line marks once the view has swapped to the
-   *   whole clip, so it would highlight the insert point rather than the
-   *   audio being heard. Inert in both directions: closing a frame
-   *   mid-audition would also flip the view out from under the sound.
+   *   (visible except for a loaded edit-mode span, #316/#418) line marks once
+   *   the view has swapped to the whole clip, so it would highlight the
+   *   insert point rather than the audio being heard. Inert in both
+   *   directions: closing a frame mid-audition would also flip the view out
+   *   from under the sound.
    *
    * OUT, deliberately — each stays live, and why:
    *
@@ -885,6 +892,68 @@ export function recordDisabled(input: {
  */
 export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
   return dragging || otherwise;
+}
+
+/**
+ * Where the fixed centerline sits across the waveform viewport (F6).
+ *
+ * Centered. Sitting it right-of-centre gave the recorded audio room to the
+ * right to grow into on an append (mockup 3), but the requirements owner's
+ * v0.1.2 review asked for it centered on every screen — that overrides the
+ * append-headroom tradeoff. One constant to retune.
+ *
+ * Lives here, not in `recorder.tsx` or `centerline-overlay.tsx`, because
+ * both read it: `recorder.tsx`'s own pan/zoom arithmetic (`viewportWindow`,
+ * `playbackStrip`, `panForZoom`) and `CenterlineOverlay`'s `left` position
+ * must agree on the same fraction, and a module that both already import
+ * (this one) is the one place that does not make either import the other.
+ */
+export const CENTER_FRACTION = 0.5;
+
+/**
+ * Whether the fixed centerline overlay is drawn — the COMPLETE render
+ * decision for `recorder.tsx`'s centerline `<div>` (#418; folded together
+ * with the `liveScope` term here by George round-1 / Frank round-2 P2 on
+ * #513).
+ *
+ * Before this, the JSX gate composed two separately-derived booleans ad hoc
+ * at the call site — `{!liveScope && centerlineVisible && (` — and only
+ * `centerlineVisible`'s own predicate (then named `centerlineShown`) was
+ * under test. A future edit that dropped or changed the `!liveScope` term
+ * at the call site would leave the centerline visible behind a live-growing
+ * scope, or vice versa, and every existing test would still pass, because
+ * nothing exercised the two terms together. This function is now the WHOLE
+ * gate; `recorder.tsx` calls it directly in the JSX condition with no other
+ * boolean logic at the call site, so a regression in either term has to
+ * break a test here rather than survive as an uncovered call-site edit.
+ *
+ * Two independent reasons to hide, either sufficient on its own:
+ *
+ * - `liveScope`: mounted on the `Waveform` path only — `LiveScope` draws its
+ *   own record head while capturing (see `liveScopeShown`), so if the two
+ *   branches were ever mounted together this line would double that cue.
+ *   Unconditional; not a #418 concern.
+ * - the #418 exception to #316's "always visible": a selection span loaded
+ *   in edit mode has no playback role for the line — with a span picked,
+ *   the audition sounds only the selection (#284), and the line is only the
+ *   audition's start point when nothing is picked. Drawn inside the span it
+ *   does not describe, it is clutter rather than a cue, so it hides for
+ *   that one sub-state and nothing else — record, play, paused preview, and
+ *   edit mode with no span picked all keep it, per the table in #418.
+ *
+ * The #418 half is deliberately NOT keyed off {@link StageRender} or
+ * `playingBuffer`: the hide is about whether a span is loaded, not about
+ * whether the stage is scrolling or something is sounding — a picked-span
+ * audition (`inPlace`) and a picked span sitting idle both hide it, and a
+ * `scroll` playback with no selection keeps it.
+ */
+export function centerlineOverlayShown(input: {
+  readonly mode: "record" | "edit";
+  readonly selectionActive: boolean;
+  readonly liveScope: boolean;
+}): boolean {
+  if (input.liveScope) return false;
+  return !(input.mode === "edit" && input.selectionActive);
 }
 
 export function stageView(input: StageInput): StageView {

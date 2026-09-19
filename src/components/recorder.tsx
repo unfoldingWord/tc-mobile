@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
@@ -18,6 +19,7 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import { resolveProbedPx } from "./recorder-layout";
 import {
+  CENTER_FRACTION,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
@@ -83,16 +85,6 @@ import {
 import { cn, formatDuration } from "@/lib/utils";
 import type { Peaks, SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
-
-/**
- * Where the fixed centerline sits across the waveform viewport (F6).
- *
- * Centered. Sitting it right-of-centre gave the recorded audio room to the
- * right to grow into on an append (mockup 3), but the requirements owner's v0.1.2 review asked for
- * it centered on every screen — that overrides the append-headroom tradeoff.
- * One constant to retune.
- */
-const CENTER_FRACTION = 0.5;
 
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
@@ -3339,35 +3331,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       />
                     </WaveformScroller>
                   )}
-                  {!liveScope && (
-                    // The fixed centerline (#110/#316), a DOM element rather
-                    // than a bar in the canvas (#415). The canvas is what
-                    // MOVES during playback, so a painted line would travel
-                    // with it — exactly the thing this line is defined by not
-                    // doing ("the waveform pans under a FIXED centerline; the
-                    // line never travels"). Same shape as `PlayheadOverlay`:
-                    // absolute, 2px, `z-[1]` so it paints over the selection
-                    // band, `pointer-events-none` so it never takes the stage's
-                    // pan. `translateX(-1px)` centres it on the fraction, which
-                    // is what the canvas' `round(cf * w) - 1` did.
-                    //
-                    // Mounted on the `Waveform` path only — `LiveScope` draws
-                    // its own record head while capturing — so WHEN the line
-                    // shows is unchanged by this move: every record/edit state,
-                    // per #316.
-                    <div
-                      aria-hidden="true"
-                      className="bg-live pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
-                      // `left` stays inline: it is computed from
-                      // `CENTER_FRACTION`, a module constant the stage's own
-                      // arithmetic reads, so it is data rather than a colour
-                      // bypassing the component layer (#164 L-14).
-                      style={{
-                        left: `${CENTER_FRACTION * 100}%`,
-                        transform: "translateX(-1px)",
-                      }}
-                    />
-                  )}
+                  {/* The fixed centerline (#110/#316, #418) — extracted into
+                    its own component (#513, dev lead's cap pick,
+                    issuecomment-5742347381) so the gate
+                    (`centerlineOverlayShown`, `recorder-stage.ts`) and the
+                    element it gates cannot drift apart the way a JSX `&&`
+                    condition and its child could. See
+                    `centerline-overlay.tsx`'s own docblock for the full
+                    history. */}
+                  <CenterlineOverlay
+                    mode={mode}
+                    selectionActive={editor.selectionActive}
+                    liveScope={liveScope}
+                  />
                   {/* The playback playhead, a pull-model DOM overlay (#102): it
                     polls `readPlaybackPosition` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
@@ -3701,20 +3677,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
                     // A window control, and the one this class was found through
-                    // (George R4 P2-1). The reason has CHANGED shape since #415
-                    // and #316, and the old wording — "the centerline is hidden
-                    // while a buffer sounds" — is now false in a way that
-                    // invites someone to delete this gate (George R4 P3): the
-                    // line is never hidden any more. What is true is that
-                    // `openSelection` seeds from `win.centerlineSample`, which
-                    // is `panState` — and while the stage SCROLLS the drawn
-                    // line is the sounding sample while `panState` is still the
-                    // pre-play value, stale until the freeze. Seeding from it
-                    // would put the span where the take was parked (at the F7
-                    // rest, the END) while the translator is hearing the middle.
-                    // Inert in BOTH directions: closing an open frame
-                    // mid-audition would also flip the view out from under the
-                    // sound, since a picked span is what keeps the pan window.
+                    // (George R4 P2-1). The reason has CHANGED shape again since
+                    // #418 (George round-1 P3): the line now hides for a loaded
+                    // edit-mode span, and is always visible otherwise
+                    // (`centerlineOverlayShown` in `recorder-stage.ts`) — it is
+                    // not true any more that "the line is never hidden". Select
+                    // stays inert regardless, in BOTH directions: (a) opening
+                    // seeds from `win.centerlineSample`, which is `panState` —
+                    // and while the stage SCROLLS the drawn line is the
+                    // sounding sample while `panState` is still the pre-play
+                    // value, stale until the freeze. Seeding from it would put
+                    // the span where the take was parked (at the F7 rest, the
+                    // END) while the translator is hearing the middle. (b)
+                    // closing an open frame mid-`inPlace` audition flips
+                    // `render` out from under the sound, since a picked span is
+                    // what keeps the pan window.
                     disabled={
                       !idleEditable || !hasAudio || stage.windowControlsInert
                     }
