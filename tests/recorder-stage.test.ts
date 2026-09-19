@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  centerlineShown,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
@@ -1234,5 +1235,36 @@ describe("heldByDrag", () => {
 
   it("never re-enables a control its own gate already killed", () => {
     expect(heldByDrag(true, true)).toBe(true);
+  });
+});
+
+/**
+ * #418: the one exception to #316's "always visible" — a selection span
+ * loaded in edit mode gives the line no playback role, so it hides for that
+ * one sub-state and nothing else.
+ */
+describe("centerlineShown", () => {
+  it("hides only in edit mode with a span loaded", () => {
+    expect(centerlineShown({ mode: "edit", selectionActive: true })).toBe(
+      false
+    );
+  });
+
+  it("stays visible in edit mode with nothing picked — the audition start point", () => {
+    expect(centerlineShown({ mode: "edit", selectionActive: false })).toBe(
+      true
+    );
+  });
+
+  it("stays visible in record mode regardless of a stray selectionActive", () => {
+    // `selectionActive` is a `SegmentEditor` concept that should not exist in
+    // record mode, but the function is total over its inputs rather than
+    // trusting the caller never to pass this combination.
+    expect(centerlineShown({ mode: "record", selectionActive: true })).toBe(
+      true
+    );
+    expect(centerlineShown({ mode: "record", selectionActive: false })).toBe(
+      true
+    );
   });
 });

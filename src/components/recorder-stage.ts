@@ -121,10 +121,15 @@ export function liveScopeShown(s: StageState): boolean {
  * A decision that used to live here, `centerlineHidden`, ran from R2
  * (whole-clip playback) through R4 P3 (in-place audition) until #316
  * (requirements owner, 2026-09-16: "having the line always visible is important
- * in segment record/edit mode") retired it — the line is never suppressed, in
- * any state, so there is no longer a decision to derive. Since #415 the line is
- * not painted into the canvas at all: a strip that translates would carry a
- * painted line with it, so it is a fixed element on the stage
+ * in segment record/edit mode") retired it — the line was never suppressed, in
+ * any state. #418 (the requirements owner, via a tester report) reopened it
+ * with exactly one exception: a selection span loaded in edit mode gives the
+ * line no playback role at all (the audition sounds only the picked span —
+ * #284, `recorder.tsx`'s `onPaste`-adjacent audition split), so it is drawn
+ * inside the span it does not describe. {@link centerlineShown} is that one
+ * exception, not a return of the old multi-state hide rule. Since #415 the
+ * line is not painted into the canvas at all: a strip that translates would
+ * carry a painted line with it, so it is a fixed element on the stage
  * (`recorder.tsx`'s centerline overlay), mounted wherever the `Waveform` path
  * is on stage. `LiveScope` still draws its own record head during capture.
  *
@@ -705,6 +710,30 @@ export function recordDisabled(input: {
  */
 export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
   return dragging || otherwise;
+}
+
+/**
+ * Whether the fixed centerline is drawn (#418).
+ *
+ * The one exception to #316's "always visible": a selection span loaded in
+ * edit mode has no playback role for the line — with a span picked, the
+ * audition sounds only the selection (#284), and the line is only the
+ * audition's start point when nothing is picked. Drawn inside the span it
+ * does not describe, it is clutter rather than a cue, so it hides for that
+ * one sub-state and nothing else — record, play, paused preview, and edit
+ * mode with no span picked all keep it, per the table in #418.
+ *
+ * Deliberately NOT keyed off {@link StageRender} or `playingBuffer`: the
+ * hide is about whether a span is loaded, not about whether the stage is
+ * scrolling or something is sounding — a picked-span audition (`inPlace`)
+ * and a picked span sitting idle both hide it, and a `scroll` playback with
+ * no selection keeps it.
+ */
+export function centerlineShown(input: {
+  readonly mode: "record" | "edit";
+  readonly selectionActive: boolean;
+}): boolean {
+  return !(input.mode === "edit" && input.selectionActive);
 }
 
 export function stageView(input: StageInput): StageView {
