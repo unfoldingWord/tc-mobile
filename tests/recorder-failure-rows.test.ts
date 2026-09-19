@@ -223,7 +223,7 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
   });
 });
 
-describe("source pins (text shape only): start() writes the resume-timeout row itself, after its generation check (#475, George R1 P2)", () => {
+describe("source pins (text shape only): start() writes the resume-timeout row itself, after its generation check (#475, George R1 P2; raceAudioResume moved to audio-io.ts for #469)", () => {
   /**
    * WHY THE ROW MOVED OUT OF `raceAudioResume` (George R1 P2). The helper's
    * timer used to call `reportFailure` directly. `cancel()` bumps
@@ -246,15 +246,27 @@ describe("source pins (text shape only): start() writes the resume-timeout row i
    * boolean, the report sitting CONTIGUOUSLY after the generation check
    * (not before it, not elsewhere), the message naming the bound, and the
    * key being one site in the file that is NOT inside `raceAudioResume`.
+   *
+   * MOVED (#469): `raceAudioResume` now lives in `audio-io.ts` (playSamples
+   * needs the identical bound), generalized to take a
+   * `rejectionContextKey` argument instead of hardcoding
+   * `"recorder-start-resume"` — so its own body no longer contains that
+   * literal at all, and assertion (3) below checks the parameterized shape
+   * (`reportFailure(cause, rejectionContextKey)`) against `audio-io.ts`
+   * rather than the old hardcoded string against `use-recorder.ts`.
    */
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
+  const audioIoSourceUrl = new URL("../src/hooks/audio-io.ts", import.meta.url);
+  const raceBody = bodyAfter(
+    stripComments(readFileSync(audioIoSourceUrl, "utf8")),
+    "function raceAudioResume"
+  );
 
   const startBody = bodyAfter(code, "const start = useCallback");
-  const raceBody = bodyAfter(code, "function raceAudioResume");
 
   const awaitPattern =
-    /const\s+resumeTimedOut\s*=\s*await\s+raceAudioResume\s*\(\s*\)\s*;/;
+    /const\s+resumeTimedOut\s*=\s*await\s+raceAudioResume\s*\(\s*"recorder-start-resume"\s*\)\s*;/;
 
   /**
    * ONE contiguous pattern: the generation check that follows the await
@@ -264,9 +276,9 @@ describe("source pins (text shape only): start() writes the resume-timeout row i
    * detaching it from the check, or dropping it cannot satisfy this.
    */
   const gatedReportPattern =
-    /if\s*\(\s*generation\s*!==\s*generationRef\.current\s*\)\s*\{\s*abandonStream\(\s*stream\s*\)\s*;\s*return\s+false\s*;\s*\}\s*if\s*\(\s*resumeTimedOut\s*\)\s*\{\s*reportFailure\(\s*new Error\(\s*`[^`]*\$\{RESUME_START_TIMEOUT_MS\}[^`]*`\s*\),\s*"recorder-start-resume-timeout"\s*\)\s*;\s*\}/;
+    /if\s*\(\s*generation\s*!==\s*generationRef\.current\s*\)\s*\{\s*abandonStream\(\s*stream\s*\)\s*;\s*return\s+false\s*;\s*\}\s*if\s*\(\s*resumeTimedOut\s*\)\s*\{\s*reportFailure\(\s*new Error\(\s*`[^`]*\$\{RESUME_TIMEOUT_MS\}[^`]*`\s*\),\s*"recorder-start-resume-timeout"\s*\)\s*;\s*\}/;
 
-  it("(1) start() captures raceAudioResume()'s boolean from its one awaited call", () => {
+  it("(1) start() captures raceAudioResume()'s boolean from its one awaited call, passing its own rejection-context key", () => {
     expect(startBody).toMatch(awaitPattern);
     expect(startBody.match(/await\s+raceAudioResume\s*\(/g) ?? []).toHaveLength(
       1
@@ -286,17 +298,19 @@ describe("source pins (text shape only): start() writes the resume-timeout row i
     expect(startBody.slice(awaitEnd, reportAt)).toMatch(/^\s*$/);
   });
 
-  it('(3) "recorder-start-resume-timeout" is one site in the file, inside start(), and raceAudioResume holds only its rejection-branch report', () => {
+  it('(3) "recorder-start-resume-timeout" is one site in the file, inside start(), and is NEVER inside raceAudioResume\'s own (audio-io.ts) body', () => {
     expect(code.match(/"recorder-start-resume-timeout"/g) ?? []).toHaveLength(
       1
     );
     expect(startBody).toMatch(/"recorder-start-resume-timeout"/);
     expect(raceBody).not.toMatch(/recorder-start-resume-timeout/);
     // The timer branch reports nothing: the helper's single report site is
-    // the rejection branch under its own key (#470).
+    // the rejection branch, under the CALLER'S key — a parameter, not a
+    // hardcoded literal, since playSamples (#469) passes its own
+    // ("playback-resume").
     expect(raceBody.match(/reportFailure\s*\(/g) ?? []).toHaveLength(1);
     expect(raceBody).toMatch(
-      /reportFailure\(\s*cause\s*,\s*"recorder-start-resume"\s*\)/
+      /reportFailure\(\s*cause\s*,\s*rejectionContextKey\s*\)/
     );
   });
 });
