@@ -107,7 +107,15 @@ export function selectShareRoute(
  * On the web route, yes: `navigator.share` rejects a dismissed sheet with
  * `AbortError`, so a resolve means the translator picked a target.
  *
- * On the native route, **no**, and the gap is not closeable from here.
+ * On the native route it depends on the platform (#381).
+ *
+ * **iOS: yes.** `SharePlugin.swift`'s `completionWithItemsHandler` resolves
+ * only when `completed` is true and rejects "Share canceled" otherwise
+ * (lines 52-63 of the plugin in this checkout) — there is no "the activity
+ * merely stopped" ambiguity, so a resolve proves a target was picked the way
+ * a web resolve does.
+ *
+ * **Android: no**, and the gap is not closeable from here.
  * `SharePlugin.java`'s `activityResult` rejects a `RESULT_CANCELED` chooser
  * only while `stopped` is false, and `handleOnStop` sets `stopped` the moment
  * the activity stops — a notification, a call, any trip away and back. So a
@@ -123,9 +131,48 @@ export function selectShareRoute(
  * still in IndexedDB. The held-take rescue (#165) holds the ONLY copy of a
  * recording, so it must not offer a one-tap exit that drops it on a signal that
  * can be false (George stand-in R4 P2).
+ *
+ * `platform` is a parameter, not read here, so the decision is a pure function
+ * a test can drive; callers pass {@link readSharePlatform}. A `native` route
+ * on a `web` platform cannot happen (the route is chosen from
+ * `isNativePlatform()`), and reads as the cautious answer if it ever does.
  */
-export function resolveProvesDelivery(route: ShareRoute): boolean {
-  return route === "web";
+export function resolveProvesDelivery(
+  route: ShareRoute,
+  platform: SharePlatform
+): boolean {
+  if (route === "web") return true;
+  return route === "native" && platform === "ios";
+}
+
+/**
+ * The three builds this app ships as. `web` is the PWA in any browser; the two
+ * native ids are the Capacitor shells.
+ */
+export type SharePlatform = "android" | "ios" | "web";
+
+/**
+ * Narrow Capacitor's platform id to the three this app knows. Anything else —
+ * a custom platform name, an empty string — is `web`: guessing a native
+ * platform would draw that platform's share glyph on a build nobody has
+ * checked it on, and would trust a native resolve where none has been proven.
+ */
+export function sharePlatformFrom(id: string): SharePlatform {
+  return id === "android" || id === "ios" ? id : "web";
+}
+
+/**
+ * Which build this is, read from the runtime (#490, decided 2026-09-19).
+ *
+ * `Capacitor.getPlatform()` — the bridge the shell itself installs — and
+ * NEVER the user-agent string: a UA is spoofable, differs between the WebView
+ * and the browser on the same phone, and would call a Chrome-on-Android PWA
+ * "android" when the decision is about the BUILD (the APK draws Android's
+ * share glyph; the PWA in Chrome keeps the tray). In plain Node this reads
+ * `"web"`, which is what lets the callers' tables be tested without a mock.
+ */
+export function readSharePlatform(): SharePlatform {
+  return sharePlatformFrom(Capacitor.getPlatform());
 }
 
 /**

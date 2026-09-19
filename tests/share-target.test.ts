@@ -9,6 +9,7 @@ import {
   createNativeShareSession,
   resolveProvesDelivery,
   selectShareRoute,
+  sharePlatformFrom,
 } from "@/hooks/share-target";
 
 /**
@@ -184,7 +185,7 @@ describe("selectShareRoute", () => {
 
 describe("resolveProvesDelivery", () => {
   it("trusts a web resolve — navigator.share rejects a dismissal", () => {
-    expect(resolveProvesDelivery("web")).toBe(true);
+    expect(resolveProvesDelivery("web", "web")).toBe(true);
   });
 
   it("does NOT trust a native resolve, so nothing destructive may hang off it", () => {
@@ -194,11 +195,11 @@ describe("resolveProvesDelivery", () => {
     // dismissed with Back can resolve as success. The held-take rescue (#165)
     // holds the only copy of a recording and offers a SINGLE-tap Done off this
     // signal, which is why it must read false here.
-    expect(resolveProvesDelivery("native")).toBe(false);
+    expect(resolveProvesDelivery("native", "android")).toBe(false);
   });
 
   it("does not treat an unsupported route as delivery either", () => {
-    expect(resolveProvesDelivery("unsupported")).toBe(false);
+    expect(resolveProvesDelivery("unsupported", "ios")).toBe(false);
   });
 });
 
@@ -548,5 +549,57 @@ describe("the native share session", () => {
     const own = dirOf(calls.find((call) => call.op === "write"));
     // Attempted, and its failure swallowed rather than surfaced.
     expect(calls.at(-1)).toEqual({ op: "rmdir", path: own, recursive: true });
+  });
+});
+
+/**
+ * #381: iOS does not have Android's hole. `SharePlugin.swift`'s completion
+ * handler resolves only when `completed` is true and rejects "Share canceled"
+ * otherwise, so a resolve on native iOS proves a target was picked the way a
+ * web resolve does. Android's `stopped` flag is unchanged and still untrusted.
+ */
+describe("resolveProvesDelivery is platform-aware (#381)", () => {
+  const PLATFORMS = ["android", "ios", "web"] as const;
+
+  it("trusts a web resolve on every platform", () => {
+    for (const p of PLATFORMS)
+      expect(resolveProvesDelivery("web", p)).toBe(true);
+  });
+
+  it("trusts a native resolve on iOS", () => {
+    expect(resolveProvesDelivery("native", "ios")).toBe(true);
+  });
+
+  it("does NOT trust a native resolve on Android — the stopped-flag hole is real and unchanged", () => {
+    expect(resolveProvesDelivery("native", "android")).toBe(false);
+  });
+
+  it("does not trust a native resolve on a platform that is not a native shell at all", () => {
+    // `native` with `web` cannot happen (the route is chosen from
+    // `isNativePlatform()`), but the answer for it must still be the cautious
+    // one rather than an accident of the ios test.
+    expect(resolveProvesDelivery("native", "web")).toBe(false);
+  });
+
+  it("never treats an unsupported route as delivery", () => {
+    for (const p of PLATFORMS)
+      expect(resolveProvesDelivery("unsupported", p)).toBe(false);
+  });
+});
+
+describe("sharePlatformFrom — Capacitor's platform id, narrowed (#490)", () => {
+  it("maps the two native ids and web", () => {
+    expect(sharePlatformFrom("android")).toBe("android");
+    expect(sharePlatformFrom("ios")).toBe("ios");
+    expect(sharePlatformFrom("web")).toBe("web");
+  });
+
+  it("treats anything else — a custom platform, an empty id — as web, never as a native shell", () => {
+    // Guessing "android" for an unknown id would draw the Android glyph on a
+    // build nobody has checked it on, and would trust a native resolve
+    // nowhere it has been proven.
+    expect(sharePlatformFrom("electron")).toBe("web");
+    expect(sharePlatformFrom("")).toBe("web");
+    expect(sharePlatformFrom("Android")).toBe("web");
   });
 });
