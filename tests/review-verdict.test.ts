@@ -54,6 +54,23 @@ interface Result {
   stderr: string;
 }
 
+// Strips GIT_* environment variables (GIT_DIR, GIT_WORK_TREE,
+// GIT_INDEX_FILE, ...) before spawning git or a review script against a
+// throwaway temp repo. These tests are spawned by `npm test` itself, which
+// runs inside `.husky/pre-push` when this suite runs via a real `git push`
+// — git sets those vars for hook scripts so they operate on the repo being
+// pushed, and without stripping them a child `git`/`frank.sh`/etc. run
+// against an unrelated temp repo inherits them and fails with "Current
+// directory is not a git directory!" — a real interaction this suite would
+// otherwise be flaky under pre-push and pass everywhere else.
+function cleanEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.startsWith("GIT_")) env[key] = value;
+  }
+  return { ...env, ...overrides };
+}
+
 function runBash(
   args: string[],
   opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
@@ -62,7 +79,7 @@ function runBash(
     const stdout = execFileSync("bash", args, {
       encoding: "utf8",
       cwd: opts.cwd,
-      env: opts.env,
+      env: opts.env ?? cleanEnv(),
       timeout: 15_000,
     });
     return { status: 0, stdout, stderr: "" };
@@ -191,19 +208,22 @@ describe("verdict_token (scripts/review/_verdict.sh)", () => {
 
 function makeTempRepo(): string {
   const dir = mktemp("triage-entry-");
-  execFileSync("git", ["init", "-q"], { cwd: dir });
+  const env = cleanEnv();
+  execFileSync("git", ["init", "-q"], { cwd: dir, env });
   execFileSync("git", ["config", "user.email", "test@example.com"], {
     cwd: dir,
+    env,
   });
-  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir, env });
   // .review/ must be ignored, matching the real repo — otherwise
   // assert_tree_unchanged() (scripts/review/_preamble.sh) sees the report
   // files the scripts themselves write as an untracked-tree mutation and
   // fails the run for a reason that has nothing to do with this test.
   writeFileSync(path.join(dir, ".gitignore"), ".review/\n");
-  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir, env });
   execFileSync("git", ["commit", "-q", "-m", "init"], {
     cwd: dir,
+    env,
   });
   // triage.sh sources `scripts/review/_*.sh` relative to the repo toplevel
   // it `cd`s into — real helper files, copied verbatim, not reimplemented.
@@ -339,24 +359,30 @@ function makeStubBin(scripts: Record<string, string>): string {
 
 function makeReviewRepo(): { dir: string; baseSha: string } {
   const dir = mktemp("review-entry-");
-  execFileSync("git", ["init", "-q"], { cwd: dir });
+  const env = cleanEnv();
+  execFileSync("git", ["init", "-q"], { cwd: dir, env });
   execFileSync("git", ["config", "user.email", "test@example.com"], {
     cwd: dir,
+    env,
   });
-  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir, env });
   writeFileSync(path.join(dir, "README.md"), "base\n");
   // See makeTempRepo()'s comment: .review/ must be ignored so the scripts'
   // own report-writing isn't misread as a working-tree mutation.
   writeFileSync(path.join(dir, ".gitignore"), ".review/\n");
-  execFileSync("git", ["add", "-A"], { cwd: dir });
-  execFileSync("git", ["commit", "-q", "-m", "base"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir, env });
+  execFileSync("git", ["commit", "-q", "-m", "base"], { cwd: dir, env });
   const baseSha = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: dir,
+    env,
     encoding: "utf8",
   }).trim();
   writeFileSync(path.join(dir, "feature.txt"), "change\n");
-  execFileSync("git", ["add", "-A"], { cwd: dir });
-  execFileSync("git", ["commit", "-q", "-m", "feature change"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir, env });
+  execFileSync("git", ["commit", "-q", "-m", "feature change"], {
+    cwd: dir,
+    env,
+  });
 
   // frank.sh/george.sh `source scripts/review/_*.sh` relative to the repo
   // toplevel they `cd` into — real helper files, copied verbatim, not
@@ -392,7 +418,7 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([FRANK_SH, baseSha], {
           cwd: dir,
-          env: { ...process.env, PATH: `${stubBin}:${process.env.PATH}` },
+          env: cleanEnv({ PATH: `${stubBin}:${process.env.PATH}` }),
         });
         expect(result.status).toBe(3);
         expect(result.stderr).toContain(
@@ -408,11 +434,10 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([FRANK_SH, baseSha], {
           cwd: dir,
-          env: {
-            ...process.env,
+          env: cleanEnv({
             PATH: `${stubBin}:${process.env.PATH}`,
             STUB_CODEX_VERDICT: "APPROVE",
-          },
+          }),
         });
         expect(result.status).toBe(0);
         expect(result.stdout).toContain("Report: ");
@@ -428,11 +453,10 @@ describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([GEORGE_SH, baseSha], {
           cwd: dir,
-          env: {
-            ...process.env,
+          env: cleanEnv({
             PATH: `${stubBin}:${process.env.PATH}`,
             STUB_GROK_PROSE_ONLY: "1",
-          },
+          }),
         });
         expect(result.status).toBe(3);
         expect(result.stderr).toContain(
@@ -448,11 +472,10 @@ describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([GEORGE_SH, baseSha], {
           cwd: dir,
-          env: {
-            ...process.env,
+          env: cleanEnv({
             PATH: `${stubBin}:${process.env.PATH}`,
             STUB_GROK_VERDICT: "REQUEST_CHANGES",
-          },
+          }),
         });
         expect(result.status).toBe(0);
         expect(result.stdout).toContain("Report: ");
