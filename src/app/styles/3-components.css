@@ -1,8 +1,23 @@
 /**
  * LAYER 3 — COMPONENTS
  *
- * Component-scoped tokens and the primitives-into-roles wiring for each part.
- * A component may reference layer 2 and this layer, never layer 1 directly.
+ * Component-scoped tokens and the part styling that consumes them.
+ *
+ * The layer boundary this enforces is about COLOUR — the thing a theme swaps.
+ * Colour, surface and ink reach a component only through layer 2's semantic
+ * roles (`--s-*`), never a layer-1 colour primitive (`--p-amber-*`, `--p-cool-*`,
+ * `--p-green-*`, `--p-red-*`, `--p-warn-*`) directly: a rule that read a raw
+ * colour is the leak that makes a theme unswitchable later (AGENTS.md).
+ * Structural primitives carry no theme meaning, so a component rule MAY read
+ * them directly — spacing (`--p-space-*`), radius (`--p-radius-*`), type
+ * (`--p-text-*`, `--p-weight-*`, `--p-font-*`) and motion (`--p-dur-*`,
+ * `--p-ease`) — and the rules below do. Wiring a colour primitive to a role is
+ * layer 2's `:root`, not this file's; this layer's `:root` (below) only
+ * consumes those roles (`--s-focus`, `--s-voice`) and reads structural
+ * primitives straight (`--p-space-*`, `--p-radius-*`). Nothing lints CSS
+ * (AGENTS.md), and building a check for this rule is deliberately deferred —
+ * not pending an owner — under the same "do not ramp up before it is needed"
+ * bar; it is a convention that is read, not enforced.
  *
  * Numbers here come from `ui-craft`: control padding is about half the control
  * height, radius is related to height, spacing sits on named relationship
