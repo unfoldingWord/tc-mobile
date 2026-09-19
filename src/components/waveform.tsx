@@ -130,8 +130,10 @@ export function Waveform({
     // whenever a recorder `view` was present (#316). But the recorder now
     // translates this canvas under a line that must not move with it, so the
     // line is a fixed element on the stage instead — see `recorder.tsx`'s
-    // centerline overlay, and `recorder-stage.ts` for the history. Nothing
-    // about WHEN it shows changed.
+    // centerline overlay, and `recorder-stage.ts` for the history. That #415
+    // change was only about WHERE it paints. WHEN it shows changed later, with
+    // #418: the overlay now hides for a loaded edit-mode span, and stays
+    // visible otherwise (`centerlineShown` in `recorder-stage.ts`).
 
     if (!peaks || !recorded) {
       // Not "an empty waveform" — a distinct dotted rule, so an unrecorded

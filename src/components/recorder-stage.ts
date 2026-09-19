@@ -210,10 +210,11 @@ interface StageView {
    *   so the false IMPLICATION goes too);
    * - **Select**: seeds its span from `win.centerlineSample` ± the visible
    *   width — a position that, while sounding, no longer matches what the
-   *   (always-visible, #316) line marks once the view has swapped to the
-   *   whole clip, so it would highlight the insert point rather than the
-   *   audio being heard. Inert in both directions: closing a frame
-   *   mid-audition would also flip the view out from under the sound.
+   *   (visible except for a loaded edit-mode span, #316/#418) line marks once
+   *   the view has swapped to the whole clip, so it would highlight the
+   *   insert point rather than the audio being heard. Inert in both
+   *   directions: closing a frame mid-audition would also flip the view out
+   *   from under the sound.
    *
    * OUT, deliberately — each stays live, and why:
    *

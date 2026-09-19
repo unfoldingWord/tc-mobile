@@ -3710,20 +3710,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
                     // A window control, and the one this class was found through
-                    // (George R4 P2-1). The reason has CHANGED shape since #415
-                    // and #316, and the old wording — "the centerline is hidden
-                    // while a buffer sounds" — is now false in a way that
-                    // invites someone to delete this gate (George R4 P3): the
-                    // line is never hidden any more. What is true is that
-                    // `openSelection` seeds from `win.centerlineSample`, which
-                    // is `panState` — and while the stage SCROLLS the drawn
-                    // line is the sounding sample while `panState` is still the
-                    // pre-play value, stale until the freeze. Seeding from it
-                    // would put the span where the take was parked (at the F7
-                    // rest, the END) while the translator is hearing the middle.
-                    // Inert in BOTH directions: closing an open frame
-                    // mid-audition would also flip the view out from under the
-                    // sound, since a picked span is what keeps the pan window.
+                    // (George R4 P2-1). The reason has CHANGED shape again since
+                    // #418 (George round-1 P3): the line now hides for a loaded
+                    // edit-mode span, and is always visible otherwise
+                    // (`centerlineShown` in `recorder-stage.ts`) — it is not
+                    // true any more that "the line is never hidden". Select
+                    // stays inert regardless, in BOTH directions: (a) opening
+                    // seeds from `win.centerlineSample`, which is `panState` —
+                    // and while the stage SCROLLS the drawn line is the
+                    // sounding sample while `panState` is still the pre-play
+                    // value, stale until the freeze. Seeding from it would put
+                    // the span where the take was parked (at the F7 rest, the
+                    // END) while the translator is hearing the middle. (b)
+                    // closing an open frame mid-`inPlace` audition flips
+                    // `render` out from under the sound, since a picked span is
+                    // what keeps the pan window.
                     disabled={
                       !idleEditable || !hasAudio || stage.windowControlsInert
                     }

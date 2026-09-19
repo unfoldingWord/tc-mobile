@@ -145,9 +145,11 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * booleans that could disagree with each other (#415).
  *
  * A fourth decision, `centerlineHidden`, lived in this table from R2 through
- * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the line is never
- * suppressed, in any state, so there is nothing left for this pure module to
- * decide — see the module docblock above `stageView`.
+ * R4 P3. #316 (requirements owner, 2026-09-16) retired it as a decision made
+ * HERE: the line is always visible in this table's terms, with one exception
+ * carved out later and kept in its own pure function instead — `centerlineShown`,
+ * below, hides the line only for a selection span loaded in edit mode (#418) —
+ * see the module docblock above `stageView`.
  *
  * Since #415 the line is not painted into the canvas AT ALL. A strip that
  * translates would carry a painted line with it — the travelling second
