@@ -76,6 +76,57 @@ describe('deleteBook reports its catch to the funnel under "book-delete" (#456)'
   }
   const catchBody = deleteBookBody.slice(catchStart);
 
+  /**
+   * Walks `text` up to `callIndex` tracking brace depth, and for every `{`
+   * opened along the way decides whether it opens a function/arrow BODY
+   * (as opposed to an `if`/`try`/block `{`) by inspecting the text
+   * immediately before it — `=>` for an arrow, or a `function` keyword
+   * (optionally named) followed by a parameter list for a function
+   * expression/declaration. Returns true when, at `callIndex`, at least one
+   * still-open brace on the stack is such a closure, OR when the call is
+   * itself the (brace-less) expression body of an arrow — `=>` immediately
+   * before it with nothing else in between, as in
+   * `.then(() => reportFailure(cause, "book-delete"))`. Either shape means
+   * the call sits inside a nested function, not directly in `text`'s own
+   * top-level flow.
+   *
+   * This replaces a single non-greedy regex
+   * (`[^}]*(?:=>|function)[^}]*cause[^}]*reportFailure\(...\)`), which
+   * could never match: `[^}]*` cannot cross the `}` that closes a
+   * single-statement closure body right after the call, and the only
+   * `cause` token available to satisfy the regex's own `cause` requirement
+   * was the one already consumed inside `reportFailure(cause, ...)` itself,
+   * leaving no second `cause` for the earlier `[^}]*cause[^}]*` to match —
+   * so the negative assertion passed on every input, including a
+   * `setTimeout(() => { reportFailure(cause, "book-delete"); }, 0)` mutation
+   * (verified: it stayed green against that mutation before this fix).
+   *
+   * The brace-less-arrow check exists because a first pass at this fix
+   * (brace-depth tracking alone) was itself verified to miss
+   * `Promise.resolve().then(() => reportFailure(cause, "book-delete"))` — no
+   * `{` is ever opened for an expression-bodied arrow, so there was nothing
+   * on the closure stack to find, and eslint (checked directly, with a
+   * render-time canary ref write added to `useBooks()`) confirmed the
+   * react-hooks/refs bail-out fires for that shape too.
+   */
+  function isInsideClosure(text: string, callIndex: number): boolean {
+    const closureStack: boolean[] = [];
+    for (let i = 0; i < callIndex; i++) {
+      const ch = text[i];
+      if (ch === "{") {
+        const prefix = text.slice(0, i);
+        const isArrowBody = /=>\s*$/.test(prefix);
+        const isFunctionBody =
+          /\bfunction\b\s*[A-Za-z0-9_$]*\s*\([^()]*\)\s*$/.test(prefix);
+        closureStack.push(isArrowBody || isFunctionBody);
+      } else if (ch === "}") {
+        closureStack.pop();
+      }
+    }
+    const isArrowExpressionBody = /=>\s*$/.test(text.slice(0, callIndex));
+    return closureStack.some(Boolean) || isArrowExpressionBody;
+  }
+
   it("calls console.error in the catch, unchanged", () => {
     expect(catchBody).toMatch(/console\.error\(\s*"Deleting a book failed"/);
   });
@@ -85,7 +136,9 @@ describe('deleteBook reports its catch to the funnel under "book-delete" (#456)'
     // this and only this. `reportFailure` called elsewhere in the file (the
     // load effect's own catch, a sibling hook) does not satisfy it — the
     // match is anchored to `deleteBook`'s own catch body above.
-    expect(catchBody).toMatch(/reportFailure\(\s*cause,\s*"book-delete"\s*\)/);
+    const callPattern = /reportFailure\(\s*cause,\s*"book-delete"\s*\)/;
+    const callMatch = catchBody.match(callPattern);
+    expect(callMatch).not.toBeNull();
 
     // The react-hooks/refs catch-block bail-out shape AGENTS.md documents:
     // ANY nested function defined inside `catch (cause) { ... }` that
@@ -94,9 +147,9 @@ describe('deleteBook reports its catch to the funnel under "book-delete" (#456)'
     // catch body is not that shape; a `.then(...)`, `setTimeout(...)`, or any
     // other closure wrapping the call, still referencing `cause`, would be —
     // so this fails on that shape specifically, not just on the call's
-    // absence.
-    expect(catchBody).not.toMatch(
-      /catch\s*\(\s*cause\s*\)\s*\{[^}]*(?:=>|function)[^}]*cause[^}]*reportFailure\(\s*cause,\s*"book-delete"\s*\)/
-    );
+    // absence. Detected structurally (brace-depth walk to the call site)
+    // rather than by a single regex, which could not express "still open"
+    // across an intervening `}` — see `isInsideClosure` above.
+    expect(isInsideClosure(catchBody, callMatch!.index!)).toBe(false);
   });
 });
