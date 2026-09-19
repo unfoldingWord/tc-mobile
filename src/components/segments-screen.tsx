@@ -159,11 +159,23 @@ export const SegmentsScreen = forwardRef<
   // system Back too, tracked at #393 (with #374, the same gap for Books' other
   // menus) rather than shipped as a partial fix here.
   const onCloseChapterMenu = useCallback(() => {
-    // The share overlay owns the screen while it is up (George r1 P2 #1/#2,
-    // #491) — this close must not tear the menu down under it. The overlay's
-    // OWN scrim/Escape still cancel a genuinely cancelable busy-prepare phase,
-    // wired straight to `share.reset` (see `<ShareProgress>` below) rather
-    // than through this function, so that path is unaffected by this guard.
+    // KEPT deliberately (#491, the DRI's option-A pick): every OTHER guard
+    // this menu's controls carried was removed once `<Menu>`'s own `inert`
+    // prop (below) started covering them — this one is not, because `inert`
+    // only reaches the DOM subtree it is applied to, and this function is
+    // still reachable from TWO places outside that subtree while the
+    // overlay is up: Menu's own `window` Escape listener (`menu.tsx`'s
+    // `onKeyDown`), and its scrim `onClick` — both call `onClose` directly,
+    // neither is inside the panel. `<ShareProgress>`'s own capture-phase
+    // Escape (with `stopPropagation`) is expected to swallow the Escape
+    // before Menu's bubble-phase listener ever sees it, and the overlay's
+    // own scrim (`z-index: 90`, over the menu scrim's 80) is expected to
+    // swallow the click — but neither of those is `inert`, so this guard is
+    // the belt for both, not a redundant copy of the primitive. The
+    // overlay's OWN scrim/Escape still cancel a genuinely cancelable
+    // busy-prepare phase, wired straight to `share.reset` (see
+    // `<ShareProgress>` below) rather than through this function, so that
+    // path is unaffected by this guard.
     if (shareOverlayOwnsScreen(share.progress)) return;
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
@@ -471,6 +483,27 @@ export const SegmentsScreen = forwardRef<
         open={chapterMenuOpen}
         onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
+        // The class-level isolation primitive (#491, the DRI's option-A pick
+        // on the judgment sheet): while the overlay owns the screen, the
+        // WHOLE panel below — Rename, Share/Send, Close, the rename field —
+        // goes `inert` as one subtree, rather than each control carrying its
+        // own `shareOverlayOwnsScreen` guard. See `menu.tsx`'s own docblock
+        // on the prop for why this replaced four rounds of per-handler
+        // patches, the last of which (Frank at `ec2a148`) found Share/Send
+        // themselves still unguarded.
+        inert={shareOverlayOwnsScreen(share.progress)}
+        // The live region moves here, OUTSIDE the inert subtree above but
+        // still inside this panel's `aria-modal` boundary — see `menu.tsx`'s
+        // `liveRegion` docblock for why it cannot live inside `children`
+        // any more, and why `<ShareProgress>`'s own sibling portal still
+        // cannot carry it (George r1 P2 #3).
+        liveRegion={
+          share.progress.phase === "outcome" && (
+            <span className="sr-only" role="status" aria-live="polite">
+              {shareProgressText(share.progress, "chapter")}
+            </span>
+          )
+        }
       >
         {renamingChapter ? (
           <>
@@ -502,17 +535,13 @@ export const SegmentsScreen = forwardRef<
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"
-              // Guarded, not just reachability-blocked (George r1 P2 #1/#2):
-              // this control sits in the SAME menu as Share and stays mounted
-              // through the busy phase and the outcome hold, so an activation
-              // that somehow still lands here — the click handler is the
-              // belt behind `listInert`/the overlay's own Tab freeze, not a
-              // dead check — must not switch the menu into rename mode under
-              // the overlay.
-              onClick={() => {
-                if (!shareOverlayOwnsScreen(share.progress))
-                  setRenamingChapter(true);
-              }}
+              // No `shareOverlayOwnsScreen` guard here any more (#491): this
+              // control sits inside the panel's `inert` subtree above (see
+              // `<Menu>`'s own `inert` prop), so it is unreachable by click,
+              // keyboard or AT activation for the whole time the guard used
+              // to check — the primitive covers it now, not a per-handler
+              // check.
+              onClick={() => setRenamingChapter(true)}
             />
             {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once
                 armed it becomes a primary "Share now" that hands the File to the
@@ -575,20 +604,6 @@ export const SegmentsScreen = forwardRef<
               </Notice>
             )}
           </>
-        )}
-        {/* The outcome half of #491's success/dismissed glyphs mirrored INSIDE
-            this `aria-modal` dialog (George r1 P2 #3): `<ShareProgress>`
-            below is a SIBLING portal, which Chromium/WebKit hide from AT
-            focused inside a DIFFERENT `aria-modal` dialog — the same reason
-            `EraseConfirm` has to bind Escape in capture so Menu does not eat
-            it first. The busy phase already has its own Notice above (the
-            preparing/handing-over wait); this is only the gap the outcome
-            hold left. Visually hidden — sighted users already see the
-            overlay's own glyph and text. */}
-        {share.progress.phase === "outcome" && (
-          <span className="sr-only" role="status" aria-live="polite">
-            {shareProgressText(share.progress, "chapter")}
-          </span>
         )}
       </Menu>
 

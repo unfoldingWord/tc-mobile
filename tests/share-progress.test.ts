@@ -465,32 +465,24 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   }
 
   /**
-   * The isolation fix itself (George r1 P2 #1/#2, #491): while the overlay is
-   * up, the menu behind it must not close or arm anything, and the
-   * surrounding list/shelf must go `inert`. Red-first: before this round's
-   * fix, `onCloseChapterMenu`/`onCloseShareMenu` unconditionally tore the
-   * menu down (no guard existed at all), `listInert`/the shelf's `inert`
-   * never mentioned the overlay, and the book menu's Rename/`onArmDelete` ran
-   * unconditionally — every assertion below failed with "match, but did not"
-   * against the pre-fix source.
+   * The CLOSE guard — kept (#491, the DRI's option-A pick on the judgment
+   * sheet, issuecomment-5739827376 / issuecomment-5741730440). Every OTHER
+   * per-handler `shareOverlayOwnsScreen` guard this menu's controls carried
+   * (Rename, `onArmDelete`) was REMOVED in this round, replaced by
+   * `<Menu>`'s own `inert` prop — see the block below. This one stays,
+   * because `onCloseChapterMenu`/`onCloseShareMenu` are reachable from TWO
+   * places `inert` cannot reach: `menu.tsx`'s own `window` Escape listener,
+   * and its scrim `onClick` — neither is inside the panel's `inert`
+   * subtree, since `inert` scopes to a DOM subtree, not to a global
+   * listener or a sibling backdrop.
    */
-  for (const [screen, hook, closeFn, renameSetter] of [
-    [
-      "src/components/segments-screen.tsx",
-      "share",
-      "onCloseChapterMenu",
-      "setRenamingChapter(true)",
-    ],
-    [
-      "src/components/books-screen.tsx",
-      "bookShare",
-      "onCloseShareMenu",
-      "setRenamingBook(true)",
-    ],
+  for (const [screen, hook, closeFn] of [
+    ["src/components/segments-screen.tsx", "share", "onCloseChapterMenu"],
+    ["src/components/books-screen.tsx", "bookShare", "onCloseShareMenu"],
   ] as const) {
     const name = screen.split("/").pop();
 
-    it(`${name}: ${closeFn} refuses to run while the overlay owns the screen, as its FIRST statement`, () => {
+    it(`${name}: ${closeFn} refuses to run while the overlay owns the screen, as its FIRST statement (kept — inert cannot reach Menu's window Escape listener or its scrim click)`, () => {
       const source = read(screen);
       const at = source.indexOf(`const ${closeFn} = useCallback(() => {`);
       expect(at).toBeGreaterThan(-1);
@@ -508,39 +500,151 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       expect(firstStateWrite).toBeGreaterThan(guardAt);
     });
 
-    it(`${name}: listInert / the shelf's inert includes shareOverlayOwnsScreen(${hook}.progress)`, () => {
+    it(`${name}: listInert / the shelf's inert includes shareOverlayOwnsScreen(${hook}.progress) — the BACKGROUND list/shelf, a separate concern from the menu panel's own inert below`, () => {
       const source = read(screen);
       expect(source).toMatch(
         new RegExp(`shareOverlayOwnsScreen\\(${hook}\\.progress\\)`)
       );
     });
+  }
 
-    it(`${name}: Rename is guarded by shareOverlayOwnsScreen before ${renameSetter}`, () => {
+  /**
+   * The class-level primitive itself (#491, DRI option A): while the overlay
+   * owns the screen, `<Menu>`'s own `inert` prop takes over the panel — the
+   * header (Close) AND every child, Rename/Delete/Share/Send/the rename
+   * field included — as ONE subtree, replacing the per-handler guards those
+   * controls carried one round at a time (George r1 P2 #2 for Rename/Delete;
+   * Frank at `ec2a148`, still open going into this round, for Share/Send,
+   * which had never been guarded at all). Red-first: with `<Menu>`'s own
+   * `inert={inert || undefined}` deleted from `menu.tsx`, the first
+   * assertion below fails to even find it (`expected -1 to be greater
+   * than -1`); with either screen's own `inert={shareOverlayOwnsScreen(...)}`
+   * prop deleted from its `<Menu>` call, the corresponding wiring assertion
+   * fails the same way.
+   */
+  it("menu.tsx: `inert` covers the header (Close) AND every child as ONE subtree, positioned inside the aria-modal panel but around neither `liveRegion` (mutation: delete `inert={inert || undefined}` and this test dies)", () => {
+    const source = read("src/components/menu.tsx");
+    const panelAt = source.indexOf('className="menu-panel"');
+    expect(panelAt).toBeGreaterThan(-1);
+    const liveRegionAt = source.indexOf("{liveRegion}", panelAt);
+    const wrapperAt = source.indexOf("inert={inert || undefined}", panelAt);
+    const headerAt = source.indexOf("ref={headerRef}", panelAt);
+    const closeControlAt = source.indexOf('icon="back"', panelAt);
+    const childrenAt = source.indexOf("{children}", panelAt);
+    expect(liveRegionAt).toBeGreaterThan(panelAt);
+    // `liveRegion` renders BEFORE (outside) the inert wrapper — deleting the
+    // wrapper collapses this to -1, which is not greater than a real index.
+    expect(wrapperAt).toBeGreaterThan(liveRegionAt);
+    // The header — Close included — opens AFTER (inside) the wrapper.
+    expect(headerAt).toBeGreaterThan(wrapperAt);
+    expect(closeControlAt).toBeGreaterThan(headerAt);
+    // `children` (Rename, Share/Send, Delete, the rename field) closes the
+    // same wrapper, after the header.
+    expect(childrenAt).toBeGreaterThan(closeControlAt);
+  });
+
+  for (const [screen, hook] of [
+    ["src/components/segments-screen.tsx", "share"],
+    ["src/components/books-screen.tsx", "bookShare"],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: the share ≡ Menu is inert from shareOverlayOwnsScreen(${hook}.progress) — wiring the primitive, not a per-handler guard`, () => {
       const source = read(screen);
-      const at = source.indexOf(renameSetter);
-      expect(at).toBeGreaterThan(-1);
-      // The guard must appear in the same onClick, before the setter call —
-      // scanning backward from the setter to the nearest `onClick={() => {`.
-      const onClickAt = source.lastIndexOf("onClick={() => {", at);
-      expect(onClickAt).toBeGreaterThan(-1);
-      const body = source.slice(onClickAt, at);
-      expect(body).toMatch(
-        new RegExp(`shareOverlayOwnsScreen\\(${hook}\\.progress\\)`)
+      expect(source).toMatch(
+        new RegExp(`inert=\\{shareOverlayOwnsScreen\\(${hook}\\.progress\\)\\}`)
       );
     });
   }
 
-  it("books-screen.tsx: onArmDelete refuses to arm the delete confirm while the overlay owns the screen, as its FIRST statement", () => {
+  /**
+   * Frank's open P2 at `ec2a148`: the Share control itself (`onPrepareShare`/
+   * `onSendShare` and their book equivalents) was never guarded by
+   * `shareOverlayOwnsScreen` at all — AT gesture navigation could activate it
+   * during the outcome hold and start a fresh gather/encode behind the
+   * visible glyph. The DRI's fix is that it STAYS unguarded — Share/Send get
+   * no fifth per-handler patch — because the panel's `inert` (above) already
+   * makes them unreachable for the whole window the guard would have
+   * checked. This pins BOTH halves of that claim: no guard was added, and
+   * the controls are structurally inside the SAME `<Menu>` that carries
+   * `inert`.
+   */
+  for (const [screen, hook, prepareFn, sendFn, prepareClick, sendClick] of [
+    [
+      "src/components/segments-screen.tsx",
+      "share",
+      "onPrepareShare",
+      "onSendShare",
+      "onClick={onPrepareShare}",
+      "onClick={onSendShare}",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "bookShare",
+      "onPrepareBookShare",
+      "onSendBookShare",
+      "onClick={onPrepareBookShare}",
+      "onClick={onSendBookShare}",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: ${prepareFn}/${sendFn} carry no shareOverlayOwnsScreen guard of their own (Frank ec2a148 P2 — closed by the primitive)`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      expect(prepareAt).toBeGreaterThan(-1);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).not.toMatch(/shareOverlayOwnsScreen/);
+      const sendAt = source.indexOf(`const ${sendFn} = useCallback`);
+      expect(sendAt).toBeGreaterThan(-1);
+      const sendBody = source.slice(sendAt, source.indexOf("}, [", sendAt));
+      expect(sendBody).not.toMatch(/shareOverlayOwnsScreen/);
+    });
+
+    it(`${name}: Share/Send render inside the SAME <Menu> that carries inert={shareOverlayOwnsScreen(${hook}.progress)}`, () => {
+      const source = read(screen);
+      const menuInertAt = source.indexOf(
+        `inert={shareOverlayOwnsScreen(${hook}.progress)}`
+      );
+      expect(menuInertAt).toBeGreaterThan(-1);
+      const menuCloseAt = source.indexOf("</Menu>", menuInertAt);
+      const prepareUseAt = source.indexOf(prepareClick, menuInertAt);
+      const sendUseAt = source.indexOf(sendClick, menuInertAt);
+      expect(prepareUseAt).toBeGreaterThan(menuInertAt);
+      expect(prepareUseAt).toBeLessThan(menuCloseAt);
+      expect(sendUseAt).toBeGreaterThan(menuInertAt);
+      expect(sendUseAt).toBeLessThan(menuCloseAt);
+    });
+  }
+
+  /**
+   * The two guards George r1 P2 #2 added (Rename's `onClick`, books'
+   * `onArmDelete`) are REMOVED in this round, not just left in place beside
+   * `inert` — a per-handler check that can silently drift out of sync with
+   * the primitive is worse than no check at all (it looks like coverage
+   * without proving it). Both controls are inside the SAME `inert` subtree
+   * pinned above, so removing the guard does not reopen George r1 P2 #2.
+   */
+  it("segments-screen.tsx: Rename's onClick carries no shareOverlayOwnsScreen guard of its own any more", () => {
+    const source = read("src/components/segments-screen.tsx");
+    expect(source).toMatch(/onClick=\{\(\) => setRenamingChapter\(true\)\}/);
+  });
+
+  it("books-screen.tsx: Rename's onClick and onArmDelete carry no shareOverlayOwnsScreen guard of their own any more", () => {
     const source = read("src/components/books-screen.tsx");
-    const at = source.indexOf("const onArmDelete = useCallback(() => {");
-    expect(at).toBeGreaterThan(-1);
-    const body = source.slice(at, source.indexOf("}, [", at));
-    const guardRe =
-      /if \(shareOverlayOwnsScreen\(bookShare\.progress\)\) return;/;
-    expect(body).toMatch(guardRe);
-    const guardAt = body.search(guardRe);
-    const armAt = body.indexOf("setDeleteTargetId(bookId);");
-    expect(armAt).toBeGreaterThan(guardAt);
+    expect(source).toMatch(/onClick=\{\(\) => setRenamingBook\(true\)\}/);
+    const armAt = source.indexOf("const onArmDelete = useCallback(() => {");
+    expect(armAt).toBeGreaterThan(-1);
+    const armBody = source.slice(armAt, source.indexOf("}, [", armAt));
+    // Checks for the GUARD CALL specifically, not a bare substring match —
+    // the surrounding comment names `shareOverlayOwnsScreen` on purpose, to
+    // say a guard call is no longer there.
+    expect(armBody).not.toMatch(
+      /if \(shareOverlayOwnsScreen\(bookShare\.progress\)\) return;/
+    );
   });
 
   /**
@@ -548,29 +652,38 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * descends from the `Menu`'s own `aria-modal` dialog, since `<ShareProgress
    * >` itself is a sibling portal Chromium/WebKit hide from AT focused inside
    * a DIFFERENT `aria-modal`. Only the outcome hold — the busy phase already
-   * has its own Notices.
+   * has its own Notices. Moved from a `children` entry to `<Menu>`'s own
+   * `liveRegion` PROP in this round (#491, DRI option A): `inert` removes a
+   * subtree from the accessibility tree entirely, so a live region nested
+   * inside the now-inert `children` would go silent exactly when it needs to
+   * speak — see `menu.tsx`'s `liveRegion` docblock.
    */
   for (const [screen, hook, scope] of [
     ["src/components/segments-screen.tsx", "share", "chapter"],
     ["src/components/books-screen.tsx", "bookShare", "book"],
   ] as const) {
-    it(`${screen.split("/").pop()}: mirrors shareProgressText in a polite live region inside the menu for the outcome hold`, () => {
+    it(`${screen.split("/").pop()}: passes shareProgressText as <Menu>'s liveRegion PROP, not a child — outside inert, inside the aria-modal panel`, () => {
       const source = read(screen);
-      const liveRegionRe = new RegExp(
-        `\\{${hook}\\.progress\\.phase === "outcome" && \\(\\s*<span className="sr-only" role="status" aria-live="polite">\\s*\\{shareProgressText\\(${hook}\\.progress, "${scope}"\\)\\}`
+      const liveRegionPropRe = new RegExp(
+        `liveRegion=\\{\\s*${hook}\\.progress\\.phase === "outcome" && \\(\\s*<span className="sr-only" role="status" aria-live="polite">\\s*\\{shareProgressText\\(${hook}\\.progress, "${scope}"\\)\\}`
       );
-      expect(source).toMatch(liveRegionRe);
-      // Inside the SAME <Menu>...</Menu> the share controls render in — found
-      // by locating the live region's own opening `{` and confirming it
-      // falls before that Menu's closing tag but after its opening one.
+      expect(source).toMatch(liveRegionPropRe);
+      // A PROP of <Menu ...>, so it appears before `children` starts —
+      // found by the ternary that opens the rename-vs-action-list split.
       const menuOpenAt = source.indexOf(
         `title={strings.${scope === "chapter" ? "chapterMenuTitle" : "bookMenuTitle"}}`
       );
       expect(menuOpenAt).toBeGreaterThan(-1);
-      const menuCloseAt = source.indexOf("</Menu>", menuOpenAt);
-      const liveRegionAt = source.search(liveRegionRe);
+      const childrenStartAt = source.indexOf(
+        scope === "chapter"
+          ? "{renamingChapter ? ("
+          : "{renamingBook && shareMenuBook ? (",
+        menuOpenAt
+      );
+      expect(childrenStartAt).toBeGreaterThan(-1);
+      const liveRegionAt = source.search(liveRegionPropRe);
       expect(liveRegionAt).toBeGreaterThan(menuOpenAt);
-      expect(liveRegionAt).toBeLessThan(menuCloseAt);
+      expect(liveRegionAt).toBeLessThan(childrenStartAt);
     });
   }
 

@@ -41,6 +41,36 @@ interface MenuProps {
    */
   closeLabel?: string;
   /**
+   * When true, the header AND every child — Close included — go `inert`:
+   * unfocusable, unclickable, and excluded from the accessibility tree as
+   * one subtree (#491, the DRI's class-level pick on the judgment sheet,
+   * issuecomment-5739827376 / issuecomment-5741730440).
+   *
+   * Four review rounds each found a different live control reachable in the
+   * Segments/Books ≡ menu while the share-progress overlay was showing on
+   * top of it — the menu close, then Rename/Delete, then the Share control
+   * itself (Frank at `ec2a148`) — because each round guarded only the
+   * control it was shown. This prop is the one primitive that covers all of
+   * them, INCLUDING any future control this menu grows, without a
+   * per-handler list to keep in sync: a caller sets it from
+   * `shareOverlayOwnsScreen(progress)` and every per-handler
+   * `shareOverlayOwnsScreen` guard those controls carried becomes provably
+   * redundant, not merely `undefined` for the default case.
+   */
+  inert?: boolean;
+  /**
+   * Rendered inside the panel — inside its `aria-modal` boundary — but
+   * OUTSIDE the `inert` subtree above, so it keeps reaching assistive
+   * technology even while `inert` is true. `inert` removes its whole
+   * subtree from the accessibility tree (not just from focus), so a live
+   * region nested inside the inert header/children would go silent exactly
+   * when `inert` is true — the one time #491's outcome text needs it.
+   * `ShareProgress` itself is a SIBLING portal, not a descendant of this
+   * `aria-modal` dialog, so it cannot carry this region either (George r1
+   * P2 #3's original finding). Absent for every other caller.
+   */
+  liveRegion?: React.ReactNode;
+  /**
    * The menu's contents.
    *
    * Never empty on the global menu any more: Books always mounts the theme
@@ -67,12 +97,19 @@ interface MenuProps {
  * Clear confirm does). `EraseConfirm` captures Escape and marks it handled for
  * that reason, and the `defaultPrevented` check below is what honours it — the
  * same contract the rename field already relied on.
+ *
+ * A caller can also go further and cede the whole panel — see `inert` and
+ * `liveRegion` above — to a DIFFERENT overlay that has taken over the screen
+ * without unmounting this one (#491's share-progress modal is the first
+ * caller; every other caller leaves both props unset).
  */
 export function Menu({
   open,
   onClose,
   title = strings.menuTitle,
   closeLabel = strings.menuClose,
+  inert,
+  liveRegion,
   children,
 }: MenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -178,16 +215,23 @@ export function Menu({
         aria-label={title}
         className="menu-panel"
       >
-        <div ref={headerRef} className="flex items-center justify-between">
-          <span className="t-title">{title}</span>
-          <Control
-            icon="back"
-            label={closeLabel}
-            variant="quiet"
-            onClick={onClose}
-          />
+        {liveRegion}
+        {/* `display: contents` (Tailwind `contents`): this node carries
+            `inert` without owning a box of its own, so the header and
+            `children` stay direct flex items of `.menu-panel` above —
+            `inert` changes reachability, never layout. */}
+        <div className="contents" inert={inert || undefined}>
+          <div ref={headerRef} className="flex items-center justify-between">
+            <span className="t-title">{title}</span>
+            <Control
+              icon="back"
+              label={closeLabel}
+              variant="quiet"
+              onClick={onClose}
+            />
+          </div>
+          {children}
         </div>
-        {children}
       </div>
     </div>,
     document.body

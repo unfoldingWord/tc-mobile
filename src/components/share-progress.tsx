@@ -59,33 +59,55 @@ interface ShareProgressProps {
  * fixed`, `z-index: 90` over the menu's 80) a keyboard/switch user's Tab was
  * the one path still reaching it — landing on the book menu's Rename or
  * Delete during the outcome hold, arming a destructive confirm under a glyph
- * that says the book was just shared. So this component grabs focus onto
- * itself on the hidden→visible edge (there is nothing else IN it to focus —
- * `tabIndex={-1}`, the same "focus a non-interactive node" shape
- * `error-boundary.tsx`'s crash heading already uses) — AND HANDS IT BACK on
- * the visible→hidden edge (Frank round 2 P2): the menu very often outlives
- * this overlay (a failed prepare, a "nothing" error, a native `retry` that
- * quietly re-arms `ready`), and grabbing focus without ever returning it
- * would strand a keyboard user on `document.body`, outside a menu that is
- * still visibly open. And, in a CAPTURE-phase
- * `window` listener, both `preventDefault` AND `stopPropagation` every Tab
- * and Escape while it is up. `stopPropagation` is the part `EraseConfirm`'s
- * own capture handler does not need and this one does: `menu.tsx`'s Tab-wrap
- * does not consult `defaultPrevented` at all (only its Escape handler does),
- * so without stopping propagation Menu's own bubble-phase listener would
- * still run afterward and wrap focus back into Rename/Delete regardless.
- * Escape mirrors the click handler's own busy/outcome split below rather
- * than being a bare no-op, so keyboard and pointer agree: `onCancel` while
- * busy is the same "swallowed during send, genuine during prepare" contract
- * the prop doc gives, `onDismiss` while an outcome is showing ends the flash
- * early the same as a tap.
+ * that says the book was just shared.
+ *
+ * Four review rounds each found a different control still reachable this
+ * way — the menu close, then Rename/Delete, then (Frank at `ec2a148`) Share
+ * itself — because each round guarded only the one control it was shown.
+ * The DRI's class-level fix (option A on the judgment sheet,
+ * issuecomment-5739827376 / issuecomment-5741730440) replaced every one of
+ * those per-handler guards with `<Menu>`'s own `inert` prop: each screen sets
+ * it from `shareOverlayOwnsScreen(progress)`, so the WHOLE menu panel — every
+ * control it holds today, and any it grows later — goes unreachable as one
+ * subtree rather than one name at a time. This component's OWN job stays
+ * what it already was, and is what makes that primitive safe rather than
+ * merely blunt: it grabs focus onto itself on the hidden→visible edge (there
+ * is nothing else IN it to focus — `tabIndex={-1}`, the same "focus a
+ * non-interactive node" shape `error-boundary.tsx`'s crash heading already
+ * uses — this is the initial focus target inside the overlay) — AND HANDS IT
+ * BACK on the visible→hidden edge (Frank round 2 P2): the menu very often
+ * outlives this overlay (a failed prepare, a "nothing" error, a native
+ * `retry` that quietly re-arms `ready`), and grabbing focus without ever
+ * returning it would strand a keyboard user on `document.body`, outside a
+ * menu that is still visibly open (and, now, still inert — a user cannot Tab
+ * back INTO it either, so losing the return trip would leave nowhere for
+ * focus to land at all). And, in a CAPTURE-phase `window` listener, both
+ * `preventDefault` AND `stopPropagation` every Tab and Escape while it is up
+ * — SWALLOWED, not forwarded: `inert` already makes Menu's own bubble-phase
+ * Tab-wrap and Escape listeners no-ops against anything inside the panel (an
+ * inert element can never become `document.activeElement`, so Menu's
+ * `first`/`last` comparisons never match), but `inert` cannot stop the KEY
+ * EVENT from reaching Menu's `window` listener in the first place — `inert`
+ * scopes to a DOM subtree, not to global listeners — so without capture +
+ * `stopPropagation` here, Menu's own Escape branch would still run and call
+ * the screen's close function on a menu the overlay is still covering (the
+ * exact George r1 P2 #1 shape, reopened one layer down). `menu.tsx`'s
+ * Tab-wrap does not consult `defaultPrevented` at all (only its Escape
+ * handler does), so `stopPropagation`, not just `preventDefault`, is what
+ * this needs and `EraseConfirm`'s own capture handler does not. Escape
+ * mirrors the click handler's own busy/outcome split below rather than being
+ * a bare no-op, so keyboard and pointer agree: `onCancel` while busy is the
+ * same "swallowed during send, genuine during prepare" contract the prop doc
+ * gives, `onDismiss` while an outcome is showing ends the flash early the
+ * same as a tap.
  *
  * This still does not fully close the gap alone: a screen reader's own
  * gesture navigation (a VoiceOver/TalkBack swipe or rotor move) does not
  * dispatch a `Tab` `KeyboardEvent` at all, so it is `listInert`/the shelf's
- * `inert` and the book menu's guarded Rename/Delete — not this — that keep
- * THAT path from reaching the menu underneath. All three derive from the one
- * `shareOverlayOwnsScreen` predicate for that reason.
+ * `inert` (the BACKGROUND list/shelf, a separate concern from the menu
+ * panel's own `inert` above) and `<Menu>`'s own `inert` prop — not this —
+ * that keep THAT path from reaching the menu underneath. Both derive from
+ * the one `shareOverlayOwnsScreen` predicate for that reason.
  */
 export function ShareProgress({
   progress,
