@@ -17,12 +17,17 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
-import { shareErrorText } from "./share-error-copy";
+import {
+  shareErrorText,
+  shareGapText,
+  shareProgressText,
+} from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
+import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
@@ -404,6 +409,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // system Back too, tracked at #393 (with #374, the same gap for Books' other
   // menus) rather than shipped as a partial fix here.
   const onCloseShareMenu = useCallback(() => {
+    // The share overlay owns the screen while it is up (George r1 P2 #1/#2,
+    // #491) — this close must not tear the menu down under it. The overlay's
+    // OWN scrim/Escape still cancel a genuinely cancelable busy-prepare
+    // phase, wired straight to `bookShare.reset` (see `<ShareProgress>`
+    // below) rather than through this function, so that path is unaffected
+    // by this guard.
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
@@ -481,17 +493,18 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,
   // not two — the copy combines when both are present rather than stacking.
-  const bookShareGapText =
-    bookShare.missing > 0 && bookShare.partialSegments > 0
-      ? strings.shareBookMissingAndPartial(
-          bookShare.missing,
-          bookShare.partialSegments
-        )
-      : bookShare.missing > 0
-        ? strings.shareBookMissing(bookShare.missing)
-        : bookShare.partialSegments > 0
-          ? strings.shareBookPartial(bookShare.partialSegments)
-          : null;
+  //
+  // The WORDING is `shareGapText` (George r1 P3-5, #491) — the same function
+  // the outcome glyph's `partial` settle calls, so a later tightening of the
+  // copy cannot land in one and not the other. `shareGapText` always returns
+  // a string (even "0 …" for an empty gap), so whether to show the Notice at
+  // all stays this screen's own boolean, separate from the text.
+  const bookShareHasGap =
+    bookShare.missing > 0 || bookShare.partialSegments > 0;
+  const bookShareGapText = shareGapText(
+    { missing: bookShare.missing, partial: bookShare.partialSegments },
+    "book"
+  );
   // The Share Control's glyph/variant/busy across idle → preparing → ready
   // (#354) — the same table Share Chapter and NameEdit's Confirm use, so
   // "busy" and "ready" never borrow each other's mark or Confirm's. Its idle
@@ -576,6 +589,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // which is what would make R4 P2-3 safely fixable — is #363, its own change to
   // its own unchanged code.
   const onArmDelete = useCallback(() => {
+    // Guarded explicitly, not just left to `onCloseShareMenu`'s own new
+    // no-op (George r1 P2 #2, #491): Delete sits in the SAME menu as Share
+    // and stays mounted through the outcome hold, so an activation that
+    // still lands here — the belt behind `inert`/the overlay's own Tab
+    // freeze, not a dead check — must not arm the destructive confirm for a
+    // book the overlay is saying was just (or is still being) shared.
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
     const bookId = shareMenuBookId;
     onCloseShareMenu();
     // Captured NOW, while the row this confirm targets is still on screen —
@@ -583,7 +603,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // time it detects the vanish, `books` has already moved on without it.
     armedShelf.current = books.map((b) => b.bookId);
     setDeleteTargetId(bookId);
-  }, [books, onCloseShareMenu, shareMenuBookId]);
+  }, [books, bookShare.progress, onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // The shelf order as it is right now, captured while the row is still on
@@ -660,6 +680,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         shareMenuBook !== null ||
         deleteTargetId !== null ||
         newBookSeed !== null ||
+        // The share overlay joins the shelf's inert conditions (George r1 P2
+        // #1/#2, #491): AT gesture navigation does not dispatch the `Tab`
+        // keydowns `<ShareProgress>` intercepts, so this is what keeps that
+        // path off the shelf/New Book while the overlay is up — including
+        // through the outcome hold, after `shareMenuBook` may already be null.
+        shareOverlayOwnsScreen(bookShare.progress) ||
         undefined
       }
     >
@@ -908,7 +934,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               icon="edit"
               label={strings.renameBook}
               variant="quiet"
-              onClick={() => setRenamingBook(true)}
+              // Guarded like Segments' Rename chapter (George r1 P2 #1/#2,
+              // #491): this control sits in the same menu as Share and
+              // Delete and stays mounted through the outcome hold.
+              onClick={() => {
+                if (!shareOverlayOwnsScreen(bookShare.progress))
+                  setRenamingBook(true);
+              }}
             />
             {bookShare.status === "ready" ? (
               <Control
@@ -941,7 +973,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             {bookShare.status === "preparing" && (
               <Notice tone="busy">{strings.shareBookPreparing}</Notice>
             )}
-            {bookShare.status === "ready" && bookShareGapText && (
+            {bookShare.status === "ready" && bookShareHasGap && (
               // A heads-up once the zip is armed, not a wait (#112). Covers
               // both whole chapters left out AND segments missing inside
               // chapters that shipped (#116) — see `bookShareGapText` above.
@@ -973,6 +1005,15 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             />
           </>
         )}
+        {/* The outcome half of #491's success/dismissed glyphs mirrored INSIDE
+            this `aria-modal` dialog (George r1 P2 #3) — see the Segments
+            screen's own comment for why a sibling portal is not enough.
+            Visually hidden — sighted users already see the overlay. */}
+        {bookShare.progress.phase === "outcome" && (
+          <span className="sr-only" role="status" aria-live="polite">
+            {shareProgressText(bookShare.progress, "book")}
+          </span>
+        )}
       </Menu>
 
       {/* The SAME confirm the segment Erase uses — one dialog, parameterised by
@@ -990,11 +1031,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
 
       {/* The share modal (#491), a sibling of the book menu — see the Segments
           screen for why: it outlives the menu's close, and `send()` resolves
-          only after its outcome glyph has cleared. */}
+          only after its outcome glyph has cleared. `onCancel` is wired to
+          `bookShare.reset` directly, not `onCloseShareMenu` (George r1 P2
+          #1/#2) — see `onCloseShareMenu`'s own comment. */}
       <ShareProgress
         progress={bookShare.progress}
         scope="book"
-        onCancel={onCloseShareMenu}
+        onCancel={bookShare.reset}
         onDismiss={bookShare.dismissProgress}
       />
     </div>

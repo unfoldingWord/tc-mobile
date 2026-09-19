@@ -252,6 +252,27 @@ export function shareProgressWakeAt(state: ShareProgress): number | null {
 }
 
 /**
+ * Whether the share overlay is showing and therefore OWNS the screen (George
+ * r1 P2 #1/#2, `#491`). While true, the menu it covers must not close or arm
+ * anything — Escape/a scrim tap can no longer reach the menu behind the
+ * overlay, and the outcome hold keeps the menu mounted for up to
+ * {@link OUTCOME_HOLD_MS} after a send resolves, long enough for a keyboard,
+ * switch, or screen-reader user to reach a control the pointer-only scrim
+ * cannot: George found this window let Escape close the menu mid-send (the
+ * `reset()` it calls already no-ops, but closing the menu around it does not)
+ * and let Tab reach the book menu's Delete during the flash, arming a confirm
+ * under an overlay saying the book had just been shared.
+ *
+ * ONE predicate, so every site that used to assume `hidden` was the only
+ * resting phase — `onCloseChapterMenu`/`onCloseShareMenu`, `listInert`/the
+ * shelf's `inert`, the book menu's Rename and Delete — derives its guard from
+ * this rather than repeating `progress.phase !== "hidden"` at each call site.
+ */
+export function shareOverlayOwnsScreen(progress: ShareProgress): boolean {
+  return progress.phase !== "hidden";
+}
+
+/**
  * What a `send()` outcome becomes on screen. Exhaustive over the hook's
  * union with a `never` default, so a new outcome cannot fall into a display
  * by accident: `retry` and `superseded` are `null` — the busy phase ends and

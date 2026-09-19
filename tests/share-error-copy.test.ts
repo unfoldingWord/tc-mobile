@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   shareErrorText,
+  shareGapText,
   shareProgressText,
 } from "@/components/share-error-copy";
 import { strings } from "@/components/strings";
@@ -13,6 +17,10 @@ import {
   type ShareSettled,
 } from "@/hooks/share-progress";
 import { classifyPrepareError, settlePrepareFailure } from "@/hooks/share-flow";
+
+/** Source-shape reads, because there is no renderer here (#197). */
+const read = (rel: string) =>
+  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
 /**
  * A stalled or failing encoder during Share says so where the translator is
@@ -253,5 +261,53 @@ describe("shareProgressText", () => {
       expect(line).not.toMatch(/WhatsApp|Drive|Files|Telegram|Signal/i);
     }
     expect(strings.shareSent).toMatch(/share sheet/i);
+  });
+});
+
+/**
+ * `shareGapText` (George r1 P3-5, #491): the ready-state gap Notice each
+ * screen shows once a share is armed used to compose the SAME words the
+ * outcome glyph's `partial` settle already builds through this function —
+ * inline, at each call site, duplicating exactly the drift `strings.ts`'s own
+ * header on `shareBookPartial` warns against. Exported so both screens (and
+ * `shareProgressText` above) call the one function.
+ */
+describe("shareGapText", () => {
+  it("chapter scope always reads the plain missing count — the finer grain never applies", () => {
+    expect(shareGapText({ missing: 1, partial: 0 }, "chapter")).toBe(
+      strings.shareMissing(1)
+    );
+    // Chapter share never sets `partial` (see `share-flow.ts`'s
+    // `PreparedShare`), but the function still must not read it if it did.
+    expect(shareGapText({ missing: 1, partial: 5 }, "chapter")).toBe(
+      strings.shareMissing(1)
+    );
+  });
+
+  it("book scope combines both grains when both are non-zero", () => {
+    expect(shareGapText({ missing: 2, partial: 0 }, "book")).toBe(
+      strings.shareBookMissing(2)
+    );
+    expect(shareGapText({ missing: 0, partial: 3 }, "book")).toBe(
+      strings.shareBookPartial(3)
+    );
+    expect(shareGapText({ missing: 1, partial: 2 }, "book")).toBe(
+      strings.shareBookMissingAndPartial(1, 2)
+    );
+  });
+
+  it("an undefined gap reads as all-zero", () => {
+    expect(shareGapText(undefined, "chapter")).toBe(strings.shareMissing(0));
+  });
+
+  it("both screens call this function for their own ready-state gap Notice, not a hand-rolled composition (George r1 P3-5)", () => {
+    const segments = read("src/components/segments-screen.tsx");
+    const books = read("src/components/books-screen.tsx");
+    expect(segments).toMatch(
+      /shareGapText\(\s*\{ missing: share\.missing, partial: 0 \},\s*"chapter"\s*\)/
+    );
+    expect(books).toMatch(
+      /shareGapText\(\s*\{ missing: bookShare\.missing, partial: bookShare\.partialSegments \},\s*"book"\s*\)/
+    );
   });
 });

@@ -13,6 +13,7 @@ import {
   type ShareSettled,
   reduceShareProgress,
   settledFromOutcome,
+  shareOverlayOwnsScreen,
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
@@ -340,6 +341,56 @@ describe("settledFromOutcome — what the hook's send outcome becomes on screen 
   });
 });
 
+/**
+ * `shareOverlayOwnsScreen` — the ONE predicate both screens derive their
+ * isolation guards from (George r1 P2 #1/#2). It is deliberately just
+ * `phase !== "hidden"`, but pinned by name rather than inlined at every call
+ * site: a screen that drifted to checking `phase === "busy"` alone (missing
+ * the outcome hold) would reintroduce exactly the window George found —
+ * Delete reachable while the outcome glyph is still up.
+ */
+describe("shareOverlayOwnsScreen (George r1 P2 #1/#2, #491)", () => {
+  it("is false only at rest", () => {
+    expect(shareOverlayOwnsScreen(HIDDEN)).toBe(false);
+  });
+
+  it("is true for the whole busy phase, pending settle or not", () => {
+    expect(
+      shareOverlayOwnsScreen({
+        phase: "busy",
+        work: "prepare",
+        since: 0,
+        pending: null,
+      })
+    ).toBe(true);
+    expect(
+      shareOverlayOwnsScreen({
+        phase: "busy",
+        work: "send",
+        since: 0,
+        pending: { settled: "sent" },
+      })
+    ).toBe(true);
+  });
+
+  it("is true for the whole outcome hold — the window George found Delete reachable in", () => {
+    expect(
+      shareOverlayOwnsScreen({
+        phase: "outcome",
+        settled: "sent",
+        since: 0,
+      })
+    ).toBe(true);
+    expect(
+      shareOverlayOwnsScreen({
+        phase: "outcome",
+        settled: "failed",
+        since: 0,
+      })
+    ).toBe(true);
+  });
+});
+
 /** Source-shape reads, because there is no renderer here (#197). */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
@@ -388,18 +439,135 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     ["src/components/segments-screen.tsx", "share"],
     ["src/components/books-screen.tsx", "bookShare"],
   ] as const) {
-    it(`${screen.split("/").pop()} renders <ShareProgress> from ${hook}.progress, with both taps wired`, () => {
+    it(`${screen.split("/").pop()} renders <ShareProgress> from ${hook}.progress, wired to ${hook}.reset directly (George r1 P2 #1/#2)`, () => {
       const source = read(screen);
       expect(source).toMatch(
         new RegExp(`<ShareProgress[\\s\\S]*?progress=\\{${hook}\\.progress\\}`)
       );
-      // A long book encode with no pointer cancel is the risk the plan names:
-      // the modal scrim now covers the menu scrim, so the cancel must be
-      // re-wired onto the modal.
-      expect(source).toMatch(/onCancel=\{onClose(Share|Chapter)Menu\}/);
+      // A long book encode with no pointer cancel is the risk the ORIGINAL
+      // plan named — but wiring the modal's cancel to the SCREEN's full menu
+      // close (`onCloseChapterMenu`/`onCloseShareMenu`) was itself George r1's
+      // finding: that close now refuses to run at all while this overlay is
+      // up (see the `shareOverlayOwnsScreen` assertions below), so it can no
+      // longer be what a busy-phase cancel goes through. `${hook}.reset`
+      // itself already refuses while `handoff.sending` (this lane's prior
+      // round), so wiring straight to it keeps the cancel working during
+      // PREPARE while still being inert during SEND.
+      expect(source).toMatch(new RegExp(`onCancel=\\{${hook}\\.reset\\}`));
+      expect(source).not.toMatch(/onCancel=\{onClose(Share|Chapter)Menu\}/);
       expect(source).toMatch(
         new RegExp(`onDismiss=\\{${hook}\\.dismissProgress\\}`)
       );
+    });
+  }
+
+  /**
+   * The isolation fix itself (George r1 P2 #1/#2, #491): while the overlay is
+   * up, the menu behind it must not close or arm anything, and the
+   * surrounding list/shelf must go `inert`. Red-first: before this round's
+   * fix, `onCloseChapterMenu`/`onCloseShareMenu` unconditionally tore the
+   * menu down (no guard existed at all), `listInert`/the shelf's `inert`
+   * never mentioned the overlay, and the book menu's Rename/`onArmDelete` ran
+   * unconditionally — every assertion below failed with "match, but did not"
+   * against the pre-fix source.
+   */
+  for (const [screen, hook, closeFn, renameSetter] of [
+    [
+      "src/components/segments-screen.tsx",
+      "share",
+      "onCloseChapterMenu",
+      "setRenamingChapter(true)",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "bookShare",
+      "onCloseShareMenu",
+      "setRenamingBook(true)",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: ${closeFn} refuses to run while the overlay owns the screen, as its FIRST statement`, () => {
+      const source = read(screen);
+      const at = source.indexOf(`const ${closeFn} = useCallback(() => {`);
+      expect(at).toBeGreaterThan(-1);
+      const body = source.slice(at, source.indexOf("}, [", at));
+      const guardRe = new RegExp(
+        `if \\(shareOverlayOwnsScreen\\(${hook}\\.progress\\)\\) return;`
+      );
+      expect(body).toMatch(guardRe);
+      // FIRST statement in the body (skipping only its own leading comment
+      // lines) — before any of the teardown it exists to prevent.
+      const guardAt = body.search(guardRe);
+      const firstStateWrite = body.search(
+        /set(ChapterMenuOpen|ShareMenuBookId|RenamingChapter|RenamingBook)\(/
+      );
+      expect(firstStateWrite).toBeGreaterThan(guardAt);
+    });
+
+    it(`${name}: listInert / the shelf's inert includes shareOverlayOwnsScreen(${hook}.progress)`, () => {
+      const source = read(screen);
+      expect(source).toMatch(
+        new RegExp(`shareOverlayOwnsScreen\\(${hook}\\.progress\\)`)
+      );
+    });
+
+    it(`${name}: Rename is guarded by shareOverlayOwnsScreen before ${renameSetter}`, () => {
+      const source = read(screen);
+      const at = source.indexOf(renameSetter);
+      expect(at).toBeGreaterThan(-1);
+      // The guard must appear in the same onClick, before the setter call —
+      // scanning backward from the setter to the nearest `onClick={() => {`.
+      const onClickAt = source.lastIndexOf("onClick={() => {", at);
+      expect(onClickAt).toBeGreaterThan(-1);
+      const body = source.slice(onClickAt, at);
+      expect(body).toMatch(
+        new RegExp(`shareOverlayOwnsScreen\\(${hook}\\.progress\\)`)
+      );
+    });
+  }
+
+  it("books-screen.tsx: onArmDelete refuses to arm the delete confirm while the overlay owns the screen, as its FIRST statement", () => {
+    const source = read("src/components/books-screen.tsx");
+    const at = source.indexOf("const onArmDelete = useCallback(() => {");
+    expect(at).toBeGreaterThan(-1);
+    const body = source.slice(at, source.indexOf("}, [", at));
+    const guardRe =
+      /if \(shareOverlayOwnsScreen\(bookShare\.progress\)\) return;/;
+    expect(body).toMatch(guardRe);
+    const guardAt = body.search(guardRe);
+    const armAt = body.indexOf("setDeleteTargetId(bookId);");
+    expect(armAt).toBeGreaterThan(guardAt);
+  });
+
+  /**
+   * George r1 P2 #3: the outcome text mirrored in a live region that
+   * descends from the `Menu`'s own `aria-modal` dialog, since `<ShareProgress
+   * >` itself is a sibling portal Chromium/WebKit hide from AT focused inside
+   * a DIFFERENT `aria-modal`. Only the outcome hold — the busy phase already
+   * has its own Notices.
+   */
+  for (const [screen, hook, scope] of [
+    ["src/components/segments-screen.tsx", "share", "chapter"],
+    ["src/components/books-screen.tsx", "bookShare", "book"],
+  ] as const) {
+    it(`${screen.split("/").pop()}: mirrors shareProgressText in a polite live region inside the menu for the outcome hold`, () => {
+      const source = read(screen);
+      const liveRegionRe = new RegExp(
+        `\\{${hook}\\.progress\\.phase === "outcome" && \\(\\s*<span className="sr-only" role="status" aria-live="polite">\\s*\\{shareProgressText\\(${hook}\\.progress, "${scope}"\\)\\}`
+      );
+      expect(source).toMatch(liveRegionRe);
+      // Inside the SAME <Menu>...</Menu> the share controls render in — found
+      // by locating the live region's own opening `{` and confirming it
+      // falls before that Menu's closing tag but after its opening one.
+      const menuOpenAt = source.indexOf(
+        `title={strings.${scope === "chapter" ? "chapterMenuTitle" : "bookMenuTitle"}}`
+      );
+      expect(menuOpenAt).toBeGreaterThan(-1);
+      const menuCloseAt = source.indexOf("</Menu>", menuOpenAt);
+      const liveRegionAt = source.search(liveRegionRe);
+      expect(liveRegionAt).toBeGreaterThan(menuOpenAt);
+      expect(liveRegionAt).toBeLessThan(menuCloseAt);
     });
   }
 

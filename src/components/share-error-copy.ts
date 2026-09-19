@@ -68,17 +68,16 @@ export function shareProgressText(
 }
 
 /**
- * The `partial` outcome's gap sentence — the exact same composition the
- * ready-state gap Notice already builds (`books-screen.tsx`'s
- * `bookShareGapText`, `segments-screen.tsx`'s chapter-scope equivalent), read
- * off the counts `send()` captured on the armed value rather than recomputed.
- * One wording, called from both places, so a later tightening of the copy
- * cannot land in one and not the other (the exact drift `strings.ts`'s own
- * header on `shareBookPartial` warns against). Chapter scope has only the one
- * grain (`PreparedShare.partial` is never set there — see `share-flow.ts`), so
- * it never reads the finer count.
+ * The gap sentence — for the outcome glyph's `partial` settle AND for the
+ * ready-state gap Notice each screen shows once a share is armed (George r1
+ * P3-5, #491): the two used to compose the SAME words twice, inline at each
+ * call site, which is exactly the drift `strings.ts`'s own header on
+ * `shareBookPartial` warns against — a later tightening of the copy landing
+ * in one and not the other. Now genuinely one function, called from both.
+ * Chapter scope has only the one grain (`PreparedShare.partial` is never set
+ * there — see `share-flow.ts`), so it never reads the finer count.
  */
-function shareGapText(
+export function shareGapText(
   gap: { readonly missing: number; readonly partial: number } | undefined,
   scope: "chapter" | "book"
 ): string {

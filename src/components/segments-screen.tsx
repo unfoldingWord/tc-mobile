@@ -15,10 +15,15 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
-import { shareErrorText as shareErrorCopy } from "./share-error-copy";
+import {
+  shareErrorText as shareErrorCopy,
+  shareGapText,
+  shareProgressText,
+} from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
+import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -154,6 +159,12 @@ export const SegmentsScreen = forwardRef<
   // system Back too, tracked at #393 (with #374, the same gap for Books' other
   // menus) rather than shipped as a partial fix here.
   const onCloseChapterMenu = useCallback(() => {
+    // The share overlay owns the screen while it is up (George r1 P2 #1/#2,
+    // #491) — this close must not tear the menu down under it. The overlay's
+    // OWN scrim/Escape still cancel a genuinely cancelable busy-prepare phase,
+    // wired straight to `share.reset` (see `<ShareProgress>` below) rather
+    // than through this function, so that path is unaffected by this guard.
+    if (shareOverlayOwnsScreen(share.progress)) return;
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
@@ -238,8 +249,17 @@ export const SegmentsScreen = forwardRef<
     })();
   }, [audio, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
-  // sheet (G8: aria-modal alone is not trusted to hide the background).
-  const listInert = eraseTarget !== null || rowMenuOpen || chapterMenuOpen;
+  // sheet (G8: aria-modal alone is not trusted to hide the background). The
+  // share overlay joins the list (George r1 P2 #1/#2, #491): a screen
+  // reader's own gesture navigation does not dispatch the `Tab` keydowns
+  // `<ShareProgress>` intercepts, so `inert` is what keeps THAT path off the
+  // header/list while the overlay is up — including through the outcome
+  // hold, after `chapterMenuOpen` itself may already have gone false.
+  const listInert =
+    eraseTarget !== null ||
+    rowMenuOpen ||
+    chapterMenuOpen ||
+    shareOverlayOwnsScreen(share.progress);
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -482,7 +502,17 @@ export const SegmentsScreen = forwardRef<
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"
-              onClick={() => setRenamingChapter(true)}
+              // Guarded, not just reachability-blocked (George r1 P2 #1/#2):
+              // this control sits in the SAME menu as Share and stays mounted
+              // through the busy phase and the outcome hold, so an activation
+              // that somehow still lands here — the click handler is the
+              // belt behind `listInert`/the overlay's own Tab freeze, not a
+              // dead check — must not switch the menu into rename mode under
+              // the overlay.
+              onClick={() => {
+                if (!shareOverlayOwnsScreen(share.progress))
+                  setRenamingChapter(true);
+              }}
             />
             {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once
                 armed it becomes a primary "Share now" that hands the File to the
@@ -528,7 +558,10 @@ export const SegmentsScreen = forwardRef<
               // glyph also carries storage durability (#214/#406), so share
               // would otherwise share a shape with an unrelated condition.
               <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
-                {strings.shareMissing(share.missing)}
+                {shareGapText(
+                  { missing: share.missing, partial: 0 },
+                  "chapter"
+                )}
               </Notice>
             )}
             {shareErrorText && (
@@ -543,17 +576,35 @@ export const SegmentsScreen = forwardRef<
             )}
           </>
         )}
+        {/* The outcome half of #491's success/dismissed glyphs mirrored INSIDE
+            this `aria-modal` dialog (George r1 P2 #3): `<ShareProgress>`
+            below is a SIBLING portal, which Chromium/WebKit hide from AT
+            focused inside a DIFFERENT `aria-modal` dialog — the same reason
+            `EraseConfirm` has to bind Escape in capture so Menu does not eat
+            it first. The busy phase already has its own Notice above (the
+            preparing/handing-over wait); this is only the gap the outcome
+            hold left. Visually hidden — sighted users already see the
+            overlay's own glyph and text. */}
+        {share.progress.phase === "outcome" && (
+          <span className="sr-only" role="status" aria-live="polite">
+            {shareProgressText(share.progress, "chapter")}
+          </span>
+        )}
       </Menu>
 
       {/* The share modal (#491): the busy hold and the outcome glyph, over the
           menu. A sibling of the Menu, not a child, so it survives the menu
           closing — `send()` resolves only after the flash, so the close above
-          lands after the glyph, not under it. A busy-scrim tap is the same
-          cancel the menu scrim gave before this covered it. */}
+          lands after the glyph, not under it. `onCancel` is wired to
+          `share.reset` directly, not `onCloseChapterMenu` (George r1 P2
+          #1/#2): that close now refuses to run at all while this overlay is
+          up, so the busy-phase cancel — still needed for a long encode, and
+          a no-op during send since `reset()` itself already refuses then —
+          has to go through the flow's own reset rather than the menu's. */}
       <ShareProgress
         progress={share.progress}
         scope="chapter"
-        onCancel={onCloseChapterMenu}
+        onCancel={share.reset}
         onDismiss={share.dismissProgress}
       />
     </div>

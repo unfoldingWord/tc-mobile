@@ -1,9 +1,17 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   confirmControlAffordance,
   shareControlAffordance,
+  shareControlGlyph,
 } from "@/components/control-affordance";
+
+/** Source-shape reads, because there is no renderer here (#197). */
+const read = (rel: string) =>
+  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
 /**
  * #354 / #383 — a busy `Control` and a ready `Control` must each look and
@@ -115,5 +123,36 @@ describe("shareControlAffordance is platform-native at idle only (#490)", () => 
     expect(Object.keys(affordance).sort()).toEqual(
       ["busy", "className", "icon", "variant"].sort()
     );
+  });
+
+  /**
+   * `shareControlGlyph`'s own header names three callers that must share the
+   * platform mark: "the two menus, the failure log's Send, the held-take
+   * rescue". `recorder.tsx` (the held-take rescue) already reads
+   * `shareControlGlyph(readSharePlatform())`; `send-log-control.tsx` (the
+   * failure log's Send, on the crash and save-failed screens) hardcoded
+   * `icon="share"` on both its prepare and send Controls instead (George r1
+   * P3-4, #491) — the Android APK would have shown the tray there while
+   * every ≡ menu showed three dots.
+   */
+  it("every named Share control caller reads the platform's own glyph, not a hardcoded tray (George r1 P3-4)", () => {
+    for (const file of [
+      "src/components/send-log-control.tsx",
+      "src/components/recorder.tsx",
+    ]) {
+      const source = read(file);
+      expect(source, `${file} hardcodes icon="share"`).not.toMatch(
+        /icon="share"/
+      );
+      expect(source, `${file} never reads the platform`).toMatch(
+        /shareControlGlyph\(readSharePlatform\(\)\)/
+      );
+    }
+  });
+
+  it("shareControlGlyph itself: android draws the three dots, everything else the tray", () => {
+    expect(shareControlGlyph("android")).toBe("share-android");
+    expect(shareControlGlyph("ios")).toBe("share");
+    expect(shareControlGlyph("web")).toBe("share");
   });
 });
