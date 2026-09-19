@@ -161,7 +161,37 @@ export function reduceShareProgress(
 ): ShareProgress {
   switch (event.type) {
     case "begin":
-      if (state.phase === "busy") return state;
+      if (state.phase === "busy") {
+        // The only way a fresh `begin` reaches an ALREADY-busy state: every
+        // other overlap is ruled out elsewhere (`prepare`'s own re-entry
+        // guard, `send`'s `handoff.sending` check) except one (P2, this
+        // lane's own review round — Frank). `prepare` finishes fast, settles
+        // to `null` (ready, nothing to show) and is still holding out the
+        // rest of MIN_BUSY_MS; the screen has already put `status: "ready"`
+        // on `share`, and `share-progress.tsx` deliberately leaves focus on
+        // the control the busy phase started on rather than moving it under
+        // the scrim. A translator on Enter, or anyone driving "Share now" by
+        // assistive technology, can activate it before that hold ends — a
+        // real `send` begin, landing on a state this switch would otherwise
+        // just discard. Treat it as a FRESH busy phase for the new work: the
+        // alternative is silently absorbing the tap here and then, a moment
+        // later, discarding the send's own settle too (the `pending !== null`
+        // guard below), which drops send's real outcome with no glyph at
+        // all — the exact silent-success defect (#336/#491) this whole modal
+        // exists to fix.
+        if (
+          state.work === "prepare" &&
+          event.work === "send" &&
+          state.pending?.settled === null
+        )
+          return {
+            phase: "busy",
+            work: "send",
+            since: event.now,
+            pending: null,
+          };
+        return state;
+      }
       return {
         phase: "busy",
         work: event.work,

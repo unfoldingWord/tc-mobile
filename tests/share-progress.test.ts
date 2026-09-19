@@ -114,6 +114,18 @@ describe("the busy hold (#491)", () => {
     expect(begin("send", T0 + 300, busy)).toBe(busy);
   });
 
+  it("a send begin is ALSO ignored while prepare's own encode is still running (pending is null, not yet settled)", () => {
+    // Distinguishes the still-encoding case above from the completed-hold
+    // case below: only a prepare that has ALREADY settled (to nothing-to-show)
+    // and is merely waiting out the remainder of the hold makes room for a
+    // send tap. `status` cannot read "ready" — and so "Share now" cannot be
+    // focused — before that settle has happened, so this shape stays a no-op.
+    const stillEncoding = begin("prepare");
+    expect(stillEncoding.phase).toBe("busy");
+    expect((stillEncoding as { pending: unknown }).pending).toBeNull();
+    expect(begin("send", T0 + 10, stillEncoding)).toBe(stillEncoding);
+  });
+
   it("a tick while busy with nothing pending is identity, and nothing is scheduled", () => {
     const busy = begin("prepare");
     expect(tick(busy, T0 + MIN_BUSY_MS + 1)).toBe(busy);
@@ -194,6 +206,64 @@ describe("the partial outcome carries its gap (P1, this lane's own review round)
   it("partial is in SHARE_SETTLED, distinct from sent", () => {
     expect(SHARE_SETTLED).toContain("partial");
     expect(SHARE_SETTLED).toContain("sent");
+  });
+});
+
+describe("a send tap landing during prepare's own completed hold (P2, this lane's own review round — Frank)", () => {
+  // A fast prepare settles to `null` (ready, nothing to show) well before
+  // MIN_BUSY_MS, and is left HELD for the remainder of the hold — see "the
+  // busy hold" above. `share-progress.tsx` deliberately leaves focus on the
+  // control the busy phase started on rather than moving it under the scrim,
+  // and the screen has already put `status: "ready"` on `share` the moment
+  // that settle landed — so a translator on Enter, or anyone driving
+  // "Share now" by assistive technology, CAN activate it before the hold
+  // ends. Before this fix, that real `send` begin was silently discarded
+  // (the plain "ignored while busy" rule), and the send's own settle a
+  // moment later was ALSO discarded (busy with something already pending) —
+  // dropping a genuine send outcome with no glyph, no Notice: the exact
+  // silent-success defect (#336/#491) this whole modal exists to close.
+  const readyHeld = settle(begin("prepare"), null, T0 + 10);
+
+  it("prepare settling to null before the hold elapses leaves busy/prepare HELD, not hidden", () => {
+    expect(readyHeld).toMatchObject({
+      phase: "busy",
+      work: "prepare",
+      since: T0,
+      pending: { settled: null },
+    });
+  });
+
+  it("a send begin during that hold starts a FRESH busy phase for send, at the send tap's own time", () => {
+    const sendBusy = begin("send", T0 + 20, readyHeld);
+    expect(sendBusy).toEqual({
+      phase: "busy",
+      work: "send",
+      since: T0 + 20,
+      pending: null,
+    });
+  });
+
+  it("the send's own outcome now settles normally — held or shown — instead of being swallowed", () => {
+    const sendBusy = begin("send", T0 + 20, readyHeld);
+    // Held: the fresh hold has its own MIN_BUSY_MS, measured from the send
+    // tap's own `since`, not the stale prepare timestamp.
+    const held = settle(sendBusy, "sent", T0 + 20 + 5, {
+      missing: 0,
+      partial: 0,
+    });
+    expect(held).toMatchObject({ phase: "busy", pending: { settled: "sent" } });
+    expect(tick(held, T0 + 20 + MIN_BUSY_MS)).toEqual({
+      phase: "outcome",
+      settled: "sent",
+      since: T0 + 20 + MIN_BUSY_MS,
+      gap: { missing: 0, partial: 0 },
+    });
+  });
+
+  it("a fresh send begin is still ignored once a REAL send is already busy — no restarting an in-flight send", () => {
+    const sendBusy = begin("send", T0 + 20, readyHeld);
+    expect(begin("send", T0 + 25, sendBusy)).toBe(sendBusy);
+    expect(begin("prepare", T0 + 25, sendBusy)).toBe(sendBusy);
   });
 });
 
