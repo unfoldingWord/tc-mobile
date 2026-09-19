@@ -2,7 +2,11 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { performDiscardTake, performSaveTake } from "@/hooks/use-save-take";
+import {
+  performClearEditedSegment,
+  performDiscardTake,
+  performSaveTake,
+} from "@/hooks/use-save-take";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
@@ -12,6 +16,10 @@ import {
 } from "@/lib/storage/books";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
+import {
+  subscribeToFailures,
+  type FailureReport,
+} from "@/hooks/report-failure";
 import { startSave, type PendingTake } from "@/lib/takes/pending-take";
 import type { ClipId, SegmentId } from "@/types/domain";
 
@@ -229,6 +237,66 @@ describe("performSaveTake — a commit that lands", () => {
     expect(ok).toBe(true);
     expect(s.held()).toBe(newer);
   });
+
+  it("reports nothing to the funnel on a successful commit (#456)", async () => {
+    const segmentId = await freshSegment();
+    const take = heldTake({ segmentId, clipId: newClipId() });
+    const s = slot(take);
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    await performSaveTake(take, { update: s.update, requestSweep: vi.fn() });
+
+    off();
+    expect(reports).toEqual([]);
+  });
+
+  it('keeps a committed write a success, and reports nothing under "save-take", even when a post-commit effect throws (Frank P2, PR #509 round 2)', async () => {
+    // The mirror of the performErase / performClearEditedSegment guard: once
+    // `saveTake` commits, the write itself succeeded. A throwing post-commit
+    // effect (a reload that failed, or a sweep request that threw) must not
+    // be folded back into a "save-take" failure report or re-arm the
+    // recovery screen over a take that is already durably on disk.
+    //
+    // `finished: true` on purpose (Frank round 2, PR #509): the FIRST fix
+    // for this finding put `update`, `onSaved` and `requestSweep` behind one
+    // shared try, which meant `onSaved` throwing skipped `requestSweep`
+    // entirely and left Finished PCM without the transcode request it is
+    // owed (D3) — this assertion is what pins that each effect is
+    // independent, not just that the function as a whole returns true.
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake({ segmentId, clipId, finished: true });
+    const s = slot(take);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+    const requestSweep = vi.fn();
+
+    const ok = await performSaveTake(take, {
+      update: s.update,
+      onSaved: () => {
+        throw new Error("reload failed");
+      },
+      requestSweep,
+    });
+
+    off();
+    consoleError.mockRestore();
+    expect(ok).toBe(true);
+    // The store op committed — this is the notification-failure site, not
+    // the store-failure one #456 routes. Only the latter reports.
+    expect(reports).toEqual([]);
+    // The slot was still cleared: the write is on disk, so there is nothing
+    // left to hold and no recovery screen to show.
+    expect(s.held()).toBeNull();
+    const stored = await getClip(clipId);
+    expect(stored?.encoding).toBe("pcm");
+    // The Finished mark still owes a sweep, independent of onSaved's throw.
+    expect(requestSweep).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("performSaveTake — a commit that fails", () => {
@@ -291,6 +359,23 @@ describe("performSaveTake — a commit that fails", () => {
     consoleError.mockRestore();
   });
 
+  it('reports the failure to the funnel once, under "save-take" (#456)', async () => {
+    const take = heldTake({ segmentId: bogusSegment(), clipId: newClipId() });
+    const s = slot(take);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    await performSaveTake(take, { update: s.update, requestSweep: vi.fn() });
+
+    off();
+    consoleError.mockRestore();
+    expect(reports.map((r) => r.context)).toEqual(["save-take"]);
+    expect(reports[0]?.cause).toBeInstanceOf(Error);
+  });
+
   it("does not mark a slot that has moved on to another take", async () => {
     // The mirror of the success case: a late failure must not turn a newer
     // `saving` take into a `failed` one and offer Retry over the wrong audio.
@@ -342,5 +427,67 @@ describe("performDiscardTake", () => {
     expect(s.held()).toBeNull();
     expect(await getClipMeta(other)).toBeDefined();
     expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
+  });
+});
+
+describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
+  /** A segment id with no row: `clearSegmentTake` throws "No such segment: …". */
+  const bogusSegment = () => newClipId() as unknown as SegmentId;
+
+  it('reports a store rejection to the funnel once, under "erase-segment" (George R1 P3-3)', async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performClearEditedSegment(bogusSegment());
+
+    off();
+    consoleError.mockRestore();
+    expect(ok).toBe(false);
+    expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
+    expect(reports[0]?.cause).toBeInstanceOf(Error);
+  });
+
+  it("reports nothing to the funnel, and fires onCleared, on a successful clear", async () => {
+    const segmentId = await freshSegment();
+    const onCleared = vi.fn();
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performClearEditedSegment(segmentId, onCleared);
+
+    off();
+    expect(ok).toBe(true);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(reports).toEqual([]);
+  });
+
+  it("keeps a committed clear a success even when onCleared throws (Frank P2, PR #509 round 2)", async () => {
+    // The mirror of performErase's "keeps a committed delete a success even
+    // when onErased throws": the store op is what can genuinely fail, and a
+    // throwing notification (a reload that failed, say) must not turn an
+    // already-committed clear into a false "erase-segment" report or a
+    // "could not clear" message over audio that is already gone.
+    const segmentId = await freshSegment();
+    const onCleared = vi.fn(() => {
+      throw new Error("reload failed");
+    });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performClearEditedSegment(segmentId, onCleared);
+
+    off();
+    consoleError.mockRestore();
+    expect(ok).toBe(true);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    // The store op committed — this is the notification-failure site, not
+    // the store-failure one #456 routes. Only the latter reports.
+    expect(reports).toEqual([]);
   });
 });

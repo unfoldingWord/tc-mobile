@@ -101,20 +101,20 @@ closing and reopening the app. <!-- source: src/lib/storage/db.ts v6 `failures` 
 
 **Read "some" literally — this is the part to get right.** What is written down
 today is: the app crashing or reloading itself, a problem nobody caught,
-failures while making an MP3 or preparing a share, and a few narrow faults
-inside the recorder: an interruption (a call, another app taking the
+failures while making an MP3 or preparing a share, a recording that fails to
+save, a book that fails to delete, an erase that fails, and a few narrow
+faults inside the recorder: an interruption (a call, another app taking the
 microphone) that finds the recorder still running, a microphone wake-up at
 Record that failed or took longer than one second, and a Stop or a Back whose
-teardown threw inside the app. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it) --> What is **not** written
-down today is most of what a translator actually hits: a recording that fails
-to save, a book that fails to delete, an erase that fails, the microphone or
-playback refusing to start, a Stop that fails the way you see it — the
-recorder's own notice that no sound was recorded or that the recording could
-not be decoded — and the share sheet failing at the moment of sending. Those
-show their own message on screen and leave no entry behind. <!-- source: src/hooks/use-save-take.ts:100; src/hooks/use-books.ts:625; src/hooks/use-erase-segment.ts:41; src/hooks/use-audio-session.ts — the seven console.error sites that report nothing: audio-context resume before Play (take and buffer, two sites), nothing-to-play, take playback, buffer playback, record-start, and primeAudioContext on sheet open (NOT stopRecording's backstop catch, which reports under recorder-stop-backstop since #480; a Stop that returns its error in the StopResult never enters that catch — and "Could not finish this recording." is deliberately NOT in this list: both of its sources, the backstop and use-recorder.ts's flush catch (recorder-stop-flush #485), write a row); src/components/recorder.tsx (commit/preview); src/hooks/share-flow.ts:460 — all still end at console.error; gh issue #205 round-2 G2 --> So
-when a save or a delete fails in front of you, **write it down yourself** (§5.2)
-and do not assume this report carries it. Routing those to the record is
-follow-up work, not something this build does. <!-- source: src/hooks/report-failure.ts:41 -->
+teardown threw inside the app. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:105 (save-take, #456); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one) --> What is **not** written
+down today is the microphone or playback refusing to start, a Stop that fails
+the way you see it — the recorder's own notice that no sound was recorded or
+that the recording could not be decoded — and the share sheet failing at the
+moment of sending. Those show their own message on screen and leave no entry
+behind. <!-- source: src/hooks/use-audio-session.ts — the seven console.error sites that report nothing: audio-context resume before Play (take and buffer, two sites), nothing-to-play, take playback, buffer playback, record-start, and primeAudioContext on sheet open (NOT stopRecording's backstop catch, which reports under recorder-stop-backstop since #480; a Stop that returns its error in the StopResult never enters that catch — and "Could not finish this recording." is deliberately NOT in this list: both of its sources, the backstop and use-recorder.ts's flush catch (recorder-stop-flush #485), write a row); src/components/recorder.tsx (commit/preview); src/hooks/share-flow.ts:460 — all still end at console.error; gh issue #205 round-2 G2 --> So
+when the microphone, playback, or the share sheet fails in front of you,
+**write it down yourself** (§5.2) and do not assume this report carries it.
+Routing those to the record is follow-up work, not something this build does. <!-- source: src/hooks/report-failure.ts:41 -->
 
 1. On the **Books** screen (the first screen), look at the **≡** button in the
    top corner. If something has gone wrong, it carries a small red mark. <!-- source: src/components/books-screen.tsx -->
@@ -133,11 +133,24 @@ follow-up work, not something this build does. <!-- source: src/hooks/report-fai
 
 If the app itself fails and shows the restart screen, that screen has its own
 smaller **share** icon underneath the big restart button — use it before
-tapping restart. <!-- source: src/components/error-boundary.tsx (SendLogControl, variant "quiet", rendered after the primary Restart) -->
+tapping restart. The screen that appears when a recording will not save has
+the same small **share** icon in the same place, for the same reason: it
+also takes over the whole screen and blocks the way back to **≡**, so this is
+its own door to the same report. <!-- source: src/components/send-log-control.tsx (SendLogControl, shared by both screens since #456); src/components/error-boundary.tsx (rendered after the primary Restart); src/components/save-failed.tsx (rendered after the primary Retry/Restart, hidden while a save attempt is in flight); DatabasePanel does NOT carry this control — #456 calls that a design call -->
 
 Two things to know honestly: the mark appears on the Books screen only, so you
 will see it when you go back there; <!-- source: src/components/books-screen.tsx; gh issue #205 round-1 G7, accepted as product intent --> and sending has not yet been tried on a
 real phone's share sheet, so tell us if it does not open. <!-- source: gh PR for #205, "not device-verified" -->
+
+A third thing, specifically about the **save-failed** screen's share icon: the
+app keeps converting already-finished recordings to a smaller file in the
+background, and that work does not pause just because the save-failed screen
+is up. If that background work is itself failing at the same time as your
+save, it can overwrite the report you just armed before your second tap sends
+it — so on that screen only, a share that will not "stick" (turns quiet again
+on its own, or needs more than two taps) is a known limit, not something you
+did wrong. Retry the save first; if the save then succeeds, the background
+work settles and the share behaves normally again. <!-- source: src/hooks/finish-transcode.ts (module-scoped transcode sweep, no pause on SaveFailed mount); src/components/error-boundary.tsx quiesceTranscodeSweep() (the crash screen's screen-only fix, not available here because its quiesce is one-way and this screen's exit is Retry on the same page); AGENTS.md "Errors have a channel before they have copy" (SaveFailed paragraph); George R1 P2-2 on #509 -->
 
 ### Write down what the app cannot know
 
