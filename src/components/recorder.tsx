@@ -2943,7 +2943,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // recovery exists to prevent. The panel's Try again / Share / two-tap
               // discard are the only ways out until the take is recovered or rescued.
               // (The system Back is refused in `close()` for the same reason.)
-              disabled={heldTake !== null}
+              // Also frozen through the close window (`isClosing`), matching the
+              // record-mode menu opener (:disabled ... || isClosing) and the Editing
+              // pill: while `close()`'s stop -> decode -> save is in flight the sheet
+              // is still up, and a second Close tap here is the only ON-SCREEN issuer
+              // of a `goBack` during `requestClose` — the ms-window that would force
+              // the commit-close settle's refused-re-arm absorb (use-nav-stack.ts,
+              // the `beginBack("commit-close")` else-branch). Removing that on-screen
+              // trigger is the belt to that branch's suspenders (George R2 P2-1).
+              disabled={heldTake !== null || isClosing}
               onClick={onRequestBack}
             />
             <span className="text-ink min-w-0 flex-1 truncate">
