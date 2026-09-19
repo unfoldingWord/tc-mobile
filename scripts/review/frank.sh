@@ -25,6 +25,10 @@ source scripts/review/_verdict.sh
 SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/frank-$SHA.md"
 DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
+# The isolated final-message file (#348 round 2) — deliberately NOT matching
+# the "frank-*.md" glob triage.sh's `ls -t .review/frank-*.md` uses to find
+# the latest report, so it is never picked up as if it were one.
+LAST_MSG="$OUT_DIR/frank-$SHA.final-message.txt"
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
 read -r -d '' PROMPT_TEMPLATE <<'PROMPT_EOF' || true
@@ -107,6 +111,7 @@ echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
 TREE_BEFORE="$(snapshot_tree)"
 
 codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
+  -o "$LAST_MSG" \
   "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
 
 assert_tree_unchanged "$TREE_BEFORE"
@@ -115,16 +120,27 @@ assert_tree_unchanged "$TREE_BEFORE"
 # assessed. That is a failed run, not a review — fail loudly rather than let it
 # be mistaken for signal.
 #
-# Detect it by the REPORT's own shape, never by scanning for error strings: the
-# transcript echoes the diff (and the prompt), and when this script is itself
-# under review a substring match finds its own source — #348: the prompt's own
+# Detect it by the model's own FINAL message, never by scanning the streamed
+# transcript for error strings or verdict-shaped lines: the transcript echoes
+# the diff (and the prompt), and when this script is itself under review a
+# substring match finds its own source — #348 round 1: the prompt's own
 # "End with a verdict line: APPROVE or REQUEST_CHANGES." instruction, echoed
-# back by Codex, used to satisfy this exact grep with nothing ever reviewed.
-# verdict_token() (scripts/review/_verdict.sh) anchors to a standalone verdict
-# LINE instead, which the instruction sentence never is. ("P1: Not assessed"
-# is the dud signature checked separately below; a real review says "No P1
-# findings".)
-if ! verdict_token "$REPORT" >/dev/null; then
+# back by Codex, used to satisfy a bare grep with nothing ever reviewed.
+# #348 round 2 (Frank at c7b46e3, P1): even a transcript-wide anchored-LINE
+# search is not enough — the LAST anchored line anywhere in a long transcript
+# can be a premature draft verdict the model wrote before continuing to
+# investigate, if the run then stalls or dies before a genuine final answer.
+# `-o "$LAST_MSG"` above makes Codex write ONLY its actual last message to a
+# file of its own (`codex exec --help`: "Specifies file where the last
+# message from the agent should be written"); verdict_token()
+# (scripts/review/_verdict.sh) now reads THAT file, not the transcript. A run
+# that stalls before a real final message should never populate it, so a
+# missing or empty $LAST_MSG reads as "no verdict" rather than falling back to
+# whatever the transcript happens to contain. ("P1: Not assessed" is the dud
+# signature checked separately below, against the full transcript on purpose
+# — that phrase does not appear in this script's own prompt, so it carries
+# none of the #348 self-match risk; a real review says "No P1 findings".)
+if ! verdict_token "$LAST_MSG" >/dev/null; then
   echo >&2
   echo "FAILED RUN: Frank produced no verdict — stalled or cancelled." >&2
   exit 3

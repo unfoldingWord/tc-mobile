@@ -101,6 +101,21 @@ assert_tree_unchanged "$TREE_BEFORE"
 # substring match — #220's prose shape ("whether to APPROVE or
 # REQUEST_CHANGES") cannot satisfy it, and neither could a future George CLI
 # version that starts echoing its prompt back the way Codex's does (#348).
+#
+# #348 round 2: an anchored line is not enough either — a premature draft
+# verdict followed by more investigation, with the run then stalling before a
+# real final answer, is a single anchored line sitting earlier in the file,
+# and a whole-file search would still find it. Unlike Frank/codex, grok has no
+# flag that isolates just the model's own last message into its own file
+# (`grok --output-format json` does — probed directly, one JSON object with a
+# "text" field holding the model's own final content once the run truly ends
+# — but only once, at the very end, with none of today's live streaming to
+# stdout; losing that live view breaks the stall-watching workflow this
+# harness is run under, so it is not adopted here). verdict_token() instead
+# bounds its own search to the tail of whatever file it is given
+# (VERDICT_TAIL_LINES non-blank lines from the end, scripts/review/
+# _verdict.sh) — a draft-then-more-investigation transcript runs well past
+# that window before it stalls, in every archived report read for this fix.
 if ! verdict_token "$REPORT" >/dev/null; then
   echo >&2
   echo "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass." >&2

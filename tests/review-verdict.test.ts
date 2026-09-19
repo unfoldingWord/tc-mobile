@@ -230,6 +230,44 @@ describe("verdict_token (scripts/review/_verdict.sh)", () => {
     expect(result.status).toBe(1);
     expect(result.stdout.trim()).toBe("");
   });
+
+  // -------------------------------------------------------------------------
+  // #348 round 2 (Frank at c7b46e3, P1 — overruling round 1's REFUTE): the
+  // old verdict_token() took the LAST anchored verdict line found ANYWHERE in
+  // the file. A model that writes a premature/draft "Verdict: APPROVE" line,
+  // then keeps investigating, then stalls or dies before a real final answer,
+  // produces a file whose ONLY anchored line is that draft — the old
+  // whole-file search read it as a clean pass. The fix bounds the search to
+  // the tail (VERDICT_TAIL_LINES non-blank lines from the end,
+  // scripts/review/_verdict.sh) so a draft followed by real further
+  // investigation — which runs to many more lines than that in every
+  // archived report read for this fix — falls outside the window.
+  it("REJECTS an early anchored verdict line that is followed by many more lines of investigation (#348 round 2's exact mechanism — a draft verdict, not a final one)", () => {
+    const lines = ["Some initial findings.", "", "Verdict: APPROVE", ""];
+    for (let i = 1; i <= 15; i++) {
+      lines.push(`Actually, let me keep investigating point ${i} further.`);
+    }
+    const result = verdictTokenOf(lines.join("\n") + "\n");
+    expect(result.status).toBe(1);
+    expect(result.stdout.trim()).toBe("");
+  });
+
+  // George's own reports are NOT guaranteed to end on the verdict line
+  // itself — confirmed directly (not guessed) in two archived reports under
+  // /workspace/temp/tc-mobile-review/, reproduced here as a synthetic
+  // fixture rather than verbatim (per this file's header note): both
+  // george-492-r1-c21a6aa.md:128-132 and george-457-r5-25ea428.md:77-81 put
+  // exactly one trailing wrap-up sentence after the verdict line. A tail
+  // WINDOW (not a strict "last non-blank line" rule, which was tried first
+  // here and rejected precisely because it would misread both of those real
+  // reports as "no verdict") is what accepts this real shape.
+  it("ACCEPTS a real verdict line with one short trailing wrap-up sentence after it (real George report shape, not a bare last-line rule)", () => {
+    const result = verdictTokenOf(
+      "## Verdict\n\n**REQUEST_CHANGES**\n\nP2-1 is a real contract bug; P3s can go to issues.\n"
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("REQUEST_CHANGES");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -352,14 +390,42 @@ describe("triage.sh entry path (real subprocess)", () => {
 // ---------------------------------------------------------------------------
 
 const STUB_CODEX = `#!/usr/bin/env bash
-# Test stub for codex exec. Mirrors the one behaviour that matters here: the
-# real Codex CLI echoes its prompt argument back into the transcript it
-# streams to stdout. Invocation shape (frank.sh):
-#   codex exec -c sandbox_mode="..." --skip-git-repo-check "<prompt>"
+# Test stub for codex exec. Mirrors two real Codex CLI behaviours:
+#  1. It echoes its prompt argument back into the transcript it streams to
+#     stdout. Invocation shape (frank.sh):
+#       codex exec -c sandbox_mode="..." --skip-git-repo-check \\
+#         -o <file> "<prompt>"
+#  2. -o/--output-last-message writes ONLY the agent's own last message to
+#     that file, never the streamed transcript (#348 round 2). This stub
+#     locates the value following -o in "$@" the same way a real flag parser
+#     would, rather than assuming its position.
 last="\${@: -1}"
 printf '%s\\n' "$last"
+
+out_file=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then
+    out_file="$arg"
+  fi
+  prev="$arg"
+done
+
 if [ -n "\${STUB_CODEX_VERDICT:-}" ]; then
   printf '\\nVerdict: %s\\n' "$STUB_CODEX_VERDICT"
+  if [ -n "$out_file" ]; then
+    printf 'Verdict: %s\\n' "$STUB_CODEX_VERDICT" > "$out_file"
+  fi
+fi
+
+if [ -n "\${STUB_CODEX_DRAFT_THEN_STALL:-}" ]; then
+  # #348 round 2's exact failure shape: a premature/draft verdict, then more
+  # investigation, then the run stalls before a genuine final answer. The
+  # transcript (stdout, tee'd to $REPORT) carries the draft verdict; the -o
+  # file is deliberately never written here, because a real codex only
+  # writes it on a genuine completion (codex exec --help) and this run does
+  # not reach one.
+  printf '\\nVerdict: APPROVE\\n\\nActually, let me keep investigating this further before concluding.\\n\\nChecking the error paths again...\\n\\nStill reviewing the edge cases here...\\n'
 fi
 `;
 
@@ -374,6 +440,19 @@ if [ -n "\${STUB_GROK_PROSE_ONLY:-}" ]; then
 fi
 if [ -n "\${STUB_GROK_VERDICT:-}" ]; then
   printf 'Some findings here.\\n\\n**Verdict:** %s\\n' "$STUB_GROK_VERDICT"
+fi
+if [ -n "\${STUB_GROK_DRAFT_THEN_STALL:-}" ]; then
+  # #348 round 2's exact failure shape, George's side: a premature/draft
+  # verdict, then more investigation, then the run stalls before a genuine
+  # final answer — with grok's own streaming transcript (there is no
+  # separate final-message file for grok, george.sh's REPORT captures the
+  # only output) as the sole record. verdict_token()'s tail window
+  # (scripts/review/_verdict.sh) must not reach back past real further
+  # investigation to find the earlier draft.
+  printf '**Verdict:** APPROVE\\n\\n'
+  for i in $(seq 1 15); do
+    printf 'Continuing investigation, line %s of further analysis...\\n' "$i"
+  done
 fi
 `;
 
@@ -475,6 +554,30 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
       { codex: STUB_CODEX }
     );
   });
+
+  it("FAILS the run when codex writes a premature draft verdict, keeps investigating, then stalls before a real final answer (#348 round 2, P1 — overrules round 1's REFUTE)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const result = runBash([FRANK_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_CODEX_DRAFT_THEN_STALL: "1",
+          }),
+        });
+        // The streamed transcript ($REPORT) DOES contain an anchored
+        // "Verdict: APPROVE" line — the draft — proving this is not just
+        // the #348-round-1 "no verdict at all" shape. The run must still
+        // fail, because the -o last-message file (what verdict_token() now
+        // reads) was never written.
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: Frank produced no verdict — stalled or cancelled."
+        );
+      },
+      { codex: STUB_CODEX }
+    );
+  });
 });
 
 describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
@@ -509,6 +612,29 @@ describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
         });
         expect(result.status).toBe(0);
         expect(result.stdout).toContain("Report: ");
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  it("FAILS the run when grok writes a premature draft verdict, keeps investigating, then stalls before a real final answer (#348 round 2, P1 — overrules round 1's REFUTE)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_GROK_DRAFT_THEN_STALL: "1",
+          }),
+        });
+        // The transcript's ONLY anchored line is the draft "**Verdict:**
+        // APPROVE" — the old whole-file verdict_token() would have found
+        // it. It must now fall outside the tail window (15 more non-blank
+        // lines of "investigation" follow it) and the run must fail.
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass."
+        );
       },
       { grok: STUB_GROK }
     );
