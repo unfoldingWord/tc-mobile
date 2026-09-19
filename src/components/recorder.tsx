@@ -24,8 +24,10 @@ import {
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterCutRest,
   panAfterDragMove,
-  panAfterRematerialize,
+  panAfterRedo,
+  panAfterUndo,
   panGesture,
   recordDisabled,
   stageView,
@@ -65,7 +67,6 @@ import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   effectivePan,
-  panAfterCut,
   panForZoom,
   playbackStrip,
   viewportWindow,
@@ -896,11 +897,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * buffer that was playing names different audio in the one that comes back:
      * undo a cut of the first 2 000 samples and the position the line was on
      * moves 2 000 samples deeper into the speech, where the next Record would
-     * splice. Unlike `onCut`, which repairs the index through `panAfterCut`,
-     * there is no mapping for an arbitrary history jump — so the honest answer
-     * is to keep no frozen position at all and leave the pan exactly as the
-     * translator last set it (the F7 rest, usually), which is what these
-     * controls did before playback ever wrote the pan.
+     * splice.
+     *
+     * This function only drops the ONE-SHOT, not-yet-committed play position a
+     * frame loop was observing — a value that was never written into
+     * `panState` at all, so there is nothing there for `onUndo`/`onRedo` to
+     * map (#449's `panAfterUndo`/`panAfterRedo` map a pan that IS already in
+     * `panState` through the undone/redone op instead of dropping it; see
+     * those two below). Dropping the in-flight observation and leaving
+     * `panState` exactly as the translator last set it is what these controls
+     * did before playback ever wrote it, and is still correct here: freezing
+     * an unsettled rAF position into `panState` would invent a pan the
+     * translator never asked for, which is a different defect from #449's.
      *
      * Clearing the one-shot is what makes it a drop rather than a deferral: the
      * layout effect must not freeze this play either, a commit later, against
@@ -1760,40 +1768,52 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // playback WITHOUT freezing a position in it (George R1 P2 #2): a sample
     // index measured in the buffer that was sounding names different audio in
     // the one that comes back, and unlike a cut there is no mapping to repair
-    // it with.
+    // it with in that stop path — the mapping happens below instead.
     //
-    // ...and they drop the pan that is ALREADY there, which is the half round 2
-    // missed (George R3 P1-1). Dropping the in-flight freeze only covers an undo
-    // tapped while a buffer sounds. Pause at sample 4 000 first and the freeze
-    // has committed: `panState` is 4 000, nothing is sounding, the stop above is
-    // a no-op on the pan, and 4 000 is left naming different speech in the
-    // restored buffer — where the next Record locks `insertionOffset` and
-    // punches into the middle of a word. `panAfterRematerialize` carries the
-    // reasoning and returns the F7 rest, so the line follows whatever comes back
-    // and Record appends. Functional, so neither callback has to close over the
-    // pan (and `onCut`'s own `setPanState` still composes with it).
+    // ...and they used to drop the pan that was ALREADY there unconditionally
+    // (George R3 P1-1, then #449): a hand-set pan whose audio did not move
+    // under the undone/redone op is lost the same way a playback freeze's was.
+    // `editor.undo()`/`editor.redo()` now return the op they stepped over, and
+    // `panAfterUndo`/`panAfterRedo` map the pan through its inverse/forward
+    // effect rather than dropping it — see their docblocks in
+    // `recorder-stage.ts` for why this subsumes the round-3 P1 case too.
+    // `length` is the PRE-step closure value (#473's same note): the mappers
+    // derive the restored length from the op rather than needing the caller
+    // to re-read `editor.workingLength`, which has not advanced yet inside
+    // this same callback.
     const onUndo = useCallback(() => {
       stopPlaybackDroppingPan();
-      editor.undo();
-      setPanState(panAfterRematerialize);
-    }, [editor, stopPlaybackDroppingPan]);
+      const undoneOp = editor.undo();
+      if (undoneOp !== null) {
+        setPanState((p) => panAfterUndo(p, undoneOp, length));
+      }
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
-      editor.redo();
-      setPanState(panAfterRematerialize);
-    }, [editor, stopPlaybackDroppingPan]);
+      const redoneOp = editor.redo();
+      if (redoneOp !== null) {
+        setPanState((p) => panAfterRedo(p, redoneOp, length));
+      }
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onCut = useCallback(() => {
       stopPlayback();
       const removed = editor.cut();
-      // Keep the centerline on the same audio: a cut before it shortens the buffer
-      // to its left, so shift an absolute pan by what was removed (George R5). A
-      // null/resting pan already follows the new end.
+      // Keep the centerline on the same audio: a cut before it shortens the
+      // buffer to its left, so shift an absolute pan by what was removed
+      // (George R5), through the rest rule (#473) — a cut that runs to the
+      // end must not leave `panState` holding the number `newLength` instead
+      // of the F7 rest, or a later Paste/Record punches into the pasted
+      // audio. A null/resting pan already follows the new end. `length` is
+      // the PRE-cut closure value; `panAfterCutRest` derives the post-cut
+      // length from `removed` itself.
       if (removed !== null) {
-        setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
+        setPanState((p) =>
+          p === null ? null : panAfterCutRest(p, removed, length)
+        );
       }
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlayback, length]);
 
     // Paste at the drawn centerline — which is ALSO the record insertion offset,
     // and that is not a coincidence to leave unstated (George stand-in P3).
