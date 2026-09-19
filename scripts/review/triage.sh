@@ -12,6 +12,7 @@
 # statement invalidates BOTH reviewers until each re-posts.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+source scripts/review/_verdict.sh
 
 ROUND="${1:?usage: triage.sh <round> [pr-number]}"
 PR="${2:-}"
@@ -26,7 +27,14 @@ george_report="$(ls -t .review/george-*.md 2>/dev/null | head -1 || true)"
 # "## P1" heading. Pull whichever shape is present rather than assuming one.
 extract() {
   local file="$1" lens="$2"
-  [ -f "$file" ] || { echo "- _no report found for $lens_"; return; }
+  # $lens (was $lens_, a typo — #220 item 4, fixed here alongside the verdict
+  # anchor because it aborts this exact branch under `set -u` whenever a
+  # reviewer's report is missing, the "not run" default this file's Verdicts
+  # table below also has to handle). #220's other items (the pipefail-abort
+  # inside this function's grep/sed/awk pipe on a clean round with zero
+  # findings, and quarantine-on-every-failure-path) are NOT fixed here — left
+  # for #220.
+  [ -f "$file" ] || { echo "- _no report found for $lens"; return; }
   # awk dedupe: codex echoes its final report twice (once streamed, once as the
   # final message), so every Frank finding otherwise appears in duplicate.
   grep -hoE '^(###[[:space:]]+[0-9]+\.[[:space:]]+.*|[0-9]+\.[[:space:]]+\*\*P[123][^*]*\*\*.*)$' "$file" \
@@ -56,10 +64,15 @@ extract() {
   echo
   echo "### Verdicts"
   echo
+  # #220's "line-anchored verdict" item + #348: verdict_token()
+  # (scripts/review/_verdict.sh) matches a standalone verdict LINE, not a bare
+  # substring — a report whose only mention of the words is prose (#220's
+  # "whether to APPROVE or REQUEST_CHANGES" example) reads as "not run" here,
+  # not as a false verdict pulled from that prose.
   echo "| Reviewer | Verdict @ \`${SHA}\` |"
   echo "| --- | --- |"
-  printf "| Frank  | %s |\n" "$(grep -hoE 'APPROVE|REQUEST_CHANGES' "${frank_report:-/dev/null}" 2>/dev/null | tail -1 || echo 'not run')"
-  printf "| George | %s |\n" "$(grep -hoE 'APPROVE|REQUEST_CHANGES' "${george_report:-/dev/null}" 2>/dev/null | tail -1 || echo 'not run')"
+  printf "| Frank  | %s |\n" "$(verdict_token "${frank_report:-/dev/null}" 2>/dev/null || echo 'not run')"
+  printf "| George | %s |\n" "$(verdict_token "${george_report:-/dev/null}" 2>/dev/null || echo 'not run')"
   echo
   echo "> A round is clean only when **both** reviewers post a clean statement"
   echo "> naming this SHA. Hitting the round cap with findings open is an"

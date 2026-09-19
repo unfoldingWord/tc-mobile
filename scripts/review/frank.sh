@@ -20,6 +20,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/review/_preamble.sh "${1:-origin/develop}"
+source scripts/review/_verdict.sh
 
 SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/frank-$SHA.md"
@@ -115,10 +116,15 @@ assert_tree_unchanged "$TREE_BEFORE"
 # be mistaken for signal.
 #
 # Detect it by the REPORT's own shape, never by scanning for error strings: the
-# transcript echoes the diff, and when this script is itself under review a
-# substring match finds its own source. ("P1: Not assessed" is the dud
-# signature; a real review says "No P1 findings".)
-if ! grep -qE "APPROVE|REQUEST_CHANGES" "$REPORT"; then
+# transcript echoes the diff (and the prompt), and when this script is itself
+# under review a substring match finds its own source — #348: the prompt's own
+# "End with a verdict line: APPROVE or REQUEST_CHANGES." instruction, echoed
+# back by Codex, used to satisfy this exact grep with nothing ever reviewed.
+# verdict_token() (scripts/review/_verdict.sh) anchors to a standalone verdict
+# LINE instead, which the instruction sentence never is. ("P1: Not assessed"
+# is the dud signature checked separately below; a real review says "No P1
+# findings".)
+if ! verdict_token "$REPORT" >/dev/null; then
   echo >&2
   echo "FAILED RUN: Frank produced no verdict — stalled or cancelled." >&2
   exit 3

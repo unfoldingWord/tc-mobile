@@ -19,6 +19,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/review/_preamble.sh "${1:-origin/develop}"
+source scripts/review/_verdict.sh
 
 SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/george-$SHA.md"
@@ -95,8 +96,12 @@ grok --prompt-file "$PROMPT_FILE" \
 assert_tree_unchanged "$TREE_BEFORE"
 
 # Narration-only output means the session stalled or was cancelled. It is not
-# an approval, and it must not be read as one.
-if ! grep -qiE "APPROVE|REQUEST_CHANGES" "$REPORT"; then
+# an approval, and it must not be read as one. verdict_token()
+# (scripts/review/_verdict.sh) anchors to a standalone verdict LINE, not a
+# substring match — #220's prose shape ("whether to APPROVE or
+# REQUEST_CHANGES") cannot satisfy it, and neither could a future George CLI
+# version that starts echoing its prompt back the way Codex's does (#348).
+if ! verdict_token "$REPORT" >/dev/null; then
   echo >&2
   echo "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass." >&2
   exit 3
