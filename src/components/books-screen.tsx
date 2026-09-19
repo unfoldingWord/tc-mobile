@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -31,6 +32,7 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
@@ -470,11 +472,21 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     setRenamingBook(false);
     setSavingBookName(false);
   }, []);
+  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491) —
+  // see `segments-screen.tsx`'s own copy of this comment for why capture must
+  // happen synchronously in the tap handlers below, never from an effect.
+  const focusRestore = useFocusRestore();
+  // Whichever of "Share book"/"Preparing…"/"Share now" is currently rendered
+  // — attached to every branch of the ternary below, so it survives that
+  // remount and always names a live, non-destructive landmark for
+  // `restore()`'s `fallback`. See `segments-screen.tsx`'s `shareControlRef`.
+  const shareControlRef = useRef<HTMLButtonElement | null>(null);
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
   // menu stays open across both gestures (the shelf is `inert` behind it), so the
   // panel is what the translator is looking at.
   const onPrepareBookShare = useCallback(() => {
     if (!shareMenuBook) return;
+    focusRestore.capture();
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
@@ -484,15 +496,29 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       strings.shareBookFilename(shareMenuBook.name),
       (n) => strings.shareFilename(shareMenuBook.name, n)
     );
-  }, [bookShare, shareMenuBook]);
+  }, [focusRestore, bookShare, shareMenuBook]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).
+  //
+  // `capture()` here is re-entrant-safe the same way `segments-screen.tsx`'s
+  // is: tap 1's capture is already consumed by the restore effect below by
+  // the time this control is reachable.
   const onSendBookShare = useCallback(() => {
+    focusRestore.capture();
     void bookShare.send().then((outcome) => {
       if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
     });
-  }, [bookShare, onCloseShareMenu]);
+  }, [focusRestore, bookShare, onCloseShareMenu]);
+  // Hand focus back once `inert` has lifted — mirrors
+  // `segments-screen.tsx`'s own effect.
+  useLayoutEffect(() => {
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
+    focusRestore.restore({
+      suppressed: false,
+      fallback: shareControlRef.current,
+    });
+  }, [bookShare.progress, focusRestore]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. Map its error code to copy here.
   const bookShareErrorText = shareErrorText(bookShare.error, "book");
@@ -522,7 +548,8 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // mark is the platform's own (#490), read from the Capacitor runtime.
   const bookShareAffordance = shareControlAffordance(
     bookShare.status,
-    readSharePlatform()
+    readSharePlatform(),
+    bookShare.sendUnconfirmed
   );
 
   // ── Delete a book (#337) ──────────────────────────────────────────────────
@@ -970,6 +997,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
             />
             {bookShare.status === "ready" ? (
               <Control
+                ref={shareControlRef}
                 icon={bookShareAffordance.icon}
                 label={strings.shareSend}
                 variant={bookShareAffordance.variant}
@@ -985,11 +1013,14 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
               // and now also paints and reads that wait (#354; see
               // `control-affordance.ts`).
               <Control
+                ref={shareControlRef}
                 icon={bookShareAffordance.icon}
                 label={
                   bookShare.status === "preparing"
                     ? strings.shareBookPreparing
-                    : strings.shareBook
+                    : bookShare.sendUnconfirmed
+                      ? strings.shareBookUnconfirmed
+                      : strings.shareBook
                 }
                 variant={bookShareAffordance.variant}
                 busy={bookShareAffordance.busy}

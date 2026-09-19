@@ -221,6 +221,74 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
 });
 
 /**
+ * `sendUnconfirmed` (George r2 P2-2, #491): before this, an `unproven` send's
+ * success branch returned `status` to `idle` and cleared `missing`/`partial`
+ * exactly like a confirmed one, and once the outcome glyph's own hold
+ * ({@link OUTCOME_HOLD_MS} in `share-progress.ts`) ended, an idle Share
+ * control read exactly like a fresh, never-tried one — risking a genuine
+ * duplicate send if a translator, unable to tell the two states apart,
+ * tapped Share again.
+ *
+ * Red-first: with `setSendUnconfirmed(true)` removed from the `unproven`
+ * branch of `send()`'s success path, `sendUnconfirmed` never becomes true, so
+ * the control-affordance/label wiring tests in `control-affordance.test.ts`
+ * and the screens (`share-progress.test.ts`) would show a plain idle Share
+ * control after an unconfirmed send — this block pins the wiring that feeds
+ * them, at the source.
+ */
+describe("sendUnconfirmed (George r2 P2-2, #491)", () => {
+  const flow = read("src/hooks/share-flow.ts");
+
+  it("UseShareFlow exposes sendUnconfirmed", () => {
+    expect(flow).toMatch(/readonly sendUnconfirmed: boolean;/);
+  });
+
+  it("send()'s success branch sets it true ONLY on an unproven settle, right beside where `settled` is decided", () => {
+    const settledAt = flow.indexOf("const settled = resolveSendOutcome(");
+    expect(settledAt).toBeGreaterThan(-1);
+    const setAt = flow.indexOf(
+      'if (settled === "unproven") setSendUnconfirmed(true);',
+      settledAt
+    );
+    const dispatchAt = flow.indexOf("modal.dispatch({", settledAt);
+    expect(setAt).toBeGreaterThan(settledAt);
+    // Set BEFORE the modal dispatch — not that ordering matters for
+    // correctness (both are synchronous state writes in the same tick), but
+    // it documents that this is decided alongside `settled`, not bolted on
+    // after the fact.
+    expect(setAt).toBeLessThan(dispatchAt);
+  });
+
+  it("prepare() clears it at the start of a fresh attempt — a new attempt is itself the acknowledgment", () => {
+    const prepareAt = flow.indexOf("const prepare = useCallback(");
+    expect(prepareAt).toBeGreaterThan(-1);
+    const statusAt = flow.indexOf('setStatus("preparing");', prepareAt);
+    expect(statusAt).toBeGreaterThan(prepareAt);
+    const clearAt = flow.lastIndexOf("setSendUnconfirmed(false);", statusAt);
+    expect(clearAt).toBeGreaterThan(prepareAt);
+    expect(clearAt).toBeLessThan(statusAt);
+  });
+
+  it("reset() also clears it — useBookShare shares ONE hook instance across every row's ≡ menu, so a flag that survived reset() would leak an unconfirmed send from one book onto another book's freshly opened, never-tried Share control", () => {
+    const resetAt = flow.indexOf("const reset = useCallback(() => {");
+    expect(resetAt).toBeGreaterThan(-1);
+    const resetEnd = flow.indexOf("}, [handoff, modal]);", resetAt);
+    const resetBody = flow.slice(resetAt, resetEnd);
+    expect(resetBody).toMatch(/setSendUnconfirmed\(false\);/);
+  });
+
+  it("the returned object carries sendUnconfirmed through", () => {
+    // Anchored on `status,` — the return object's own first field — rather
+    // than a bare `return {`, which also matches `createProgressDriver`'s
+    // unrelated return further down this file.
+    const returnAt = flow.indexOf("return {\n    status,");
+    expect(returnAt).toBeGreaterThan(-1);
+    const returnEnd = flow.indexOf("};", returnAt);
+    expect(flow.slice(returnAt, returnEnd)).toMatch(/sendUnconfirmed,/);
+  });
+});
+
+/**
  * `createProgressDriver` — the clock-monotonicity fix (Frank round 2, P2 at
  * `e915d05`: `share-flow.ts:704`).
  *

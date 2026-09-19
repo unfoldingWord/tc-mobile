@@ -74,14 +74,19 @@ interface ShareProgressProps {
  * merely blunt: it grabs focus onto itself on the hidden→visible edge (there
  * is nothing else IN it to focus — `tabIndex={-1}`, the same "focus a
  * non-interactive node" shape `error-boundary.tsx`'s crash heading already
- * uses — this is the initial focus target inside the overlay) — AND HANDS IT
- * BACK on the visible→hidden edge (Frank round 2 P2): the menu very often
+ * uses — this is the initial focus target inside the overlay). Handing focus
+ * BACK on the visible→hidden edge (Frank round 2 P2) USED to also live here,
+ * but moved to the calling screens (George r2 P2-1, #491) — see the
+ * `useEffect` below for why a passive effect in THIS component can never
+ * satisfy the #96/#97 contract once `inert` is involved. The menu very often
  * outlives this overlay (a failed prepare, a "nothing" error, a native
- * `retry` that quietly re-arms `ready`), and grabbing focus without ever
- * returning it would strand a keyboard user on `document.body`, outside a
- * menu that is still visibly open (and, now, still inert — a user cannot Tab
- * back INTO it either, so losing the return trip would leave nowhere for
- * focus to land at all). And, in a CAPTURE-phase `window` listener, both
+ * `retry` that quietly re-arms `ready`), and the screens still restore focus
+ * rather than merely dropping it, for the same reason this paragraph always
+ * gave: grabbing focus without ever returning it would strand a keyboard
+ * user on `document.body`, outside a menu that is still visibly open (and,
+ * now, still inert — a user cannot Tab back INTO it either, so losing the
+ * return trip would leave nowhere for focus to land at all). And, in a
+ * CAPTURE-phase `window` listener, both
  * `preventDefault` AND `stopPropagation` every Tab and Escape while it is up
  * — SWALLOWED, not forwarded: `inert` already makes Menu's own bubble-phase
  * Tab-wrap and Escape listeners no-ops against anything inside the panel (an
@@ -147,37 +152,33 @@ export function ShareProgress({
     onDismissRef.current = onDismiss;
   });
 
-  // Where focus was the instant BEFORE this overlay grabbed it — read at the
-  // hidden→visible edge below and restored at the visible→hidden edge, so a
-  // keyboard/switch user lands back where they were rather than on
-  // `document.body` (Frank round 2 P2). The menu behind this overlay very
-  // often OUTLIVES it: a failed prepare, a "nothing" error, and a native
-  // `retry` that quietly re-arms `ready` all leave the menu open with this
-  // overlay the only thing that closes — so restoring focus, not merely
-  // dropping it, is what keeps a keyboard user inside the still-visible
-  // dialog instead of stranding them outside it.
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-
   // Land focus on the panel itself on the hidden→visible edge — the only
-  // thing here TO focus, since this overlay carries no controls — and hand
-  // it back on the visible→hidden edge.
+  // thing here TO focus, since this overlay carries no controls.
+  //
+  // This USED to also capture-on-open and restore-on-close the trigger that
+  // was focused before the overlay grabbed it (Frank round 2 P2) — removed
+  // (George r2 P2-1, #491): that capture read `document.activeElement` from
+  // a PASSIVE `useEffect` keyed on `visible`, but this same round's `inert`
+  // primitive (`<Menu inert={shareOverlayOwnsScreen(progress)}>`) now applies
+  // in the SAME commit the overlay becomes visible, and `inert` blurs
+  // whatever was focused inside the about-to-go-inert subtree to
+  // `document.body` during React's MUTATION phase — BEFORE any passive
+  // effect can run. So the capture here was reading `body`, not the real
+  // trigger, reopening the exact #96/#97 hole `lib/a11y/focus-restore.ts` and
+  // `hooks/use-focus-restore.ts` already exist to close. Capture and restore
+  // now go through that established contract instead, from the SCREENS
+  // (`segments-screen.tsx`, `books-screen.tsx`) rather than from here:
+  // `capture()` runs synchronously inside `onPrepareShare`/`onSendShare`
+  // (and the book equivalents) — the opening gesture's own handler, before
+  // `inert` is applied by the same render — and `restore()` runs from a
+  // `useLayoutEffect` keyed on `!shareOverlayOwnsScreen(progress)`, after
+  // `inert` has lifted. The screens, not this component, own the trigger DOM
+  // nodes (Share chapter / Share now, Share book / Share now), so they are
+  // also what can hand `restore()` a stable fallback landmark when the
+  // status-driven ternary has remounted the originally-captured node out
+  // from under it.
   useEffect(() => {
-    if (visible) {
-      returnFocusRef.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
-      panelRef.current?.focus();
-      return;
-    }
-    const el = returnFocusRef.current;
-    returnFocusRef.current = null;
-    // `isConnected`, not a liveness check on the whole menu: the control that
-    // had focus (Share now / Share chapter / Share book) re-renders in place
-    // as `status` moves, so the SAME node is normally still there — but a
-    // stale run's overlay (superseded by a fresh prepare on a different
-    // book/chapter) or an unmount mid-flow can leave nothing to return to.
-    if (el?.isConnected) el.focus();
+    if (visible) panelRef.current?.focus();
   }, [visible]);
 
   // The isolation fix itself (George r1 P2 #1/#2): see the docblock above for

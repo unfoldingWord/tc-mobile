@@ -336,6 +336,14 @@ export const strings = {
   chapterMenuOpen: "More actions for this chapter",
   chapterMenuTitle: "Chapter",
   shareChapter: "Share chapter",
+  // The idle Share control's own label once `sendUnconfirmed` is true (George
+  // r2 P2-2, #491) — state-in-place, read together with the control's own
+  // changed icon (`control-affordance.ts`). Never "sent"/"delivered"/"failed"
+  // (same rule `shareUnproven` follows): the control is enabled, a second tap
+  // starts a genuine new attempt, and this label is what tells that attempt
+  // apart from a first one, not a verdict on the last one.
+  shareChapterUnconfirmed:
+    "Share chapter. The last attempt wasn't confirmed — tap to try again.",
   // Tap 2 of the two-gesture flow: the File is encoded and armed, this hands it
   // to the OS share sheet. A distinct, primary action so the tap is deliberate.
   shareSend: "Share now",
@@ -380,6 +388,9 @@ export const strings = {
   bookMenuOpen: (book: string): string => `More actions for ${book}`,
   bookMenuTitle: "Book",
   shareBook: "Share book",
+  // See `shareChapterUnconfirmed`'s own comment — the book-menu equivalent.
+  shareBookUnconfirmed:
+    "Share book. The last attempt wasn't confirmed — tap to try again.",
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",

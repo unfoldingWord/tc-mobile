@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
+
+/** Source-shape reads, because there is no renderer here (#197). */
+const read = (rel: string) =>
+  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
 /**
  * #205 — which shape the durable failure log leaves the phone in.
@@ -145,5 +152,72 @@ describe("selectLogShareShape", () => {
     // Web Share present but refusing both shapes is a standing refusal that no
     // retry clears, so it belongs on screen rather than in a loop.
     expect(selectLogShareShape(LEVEL_2(false, false))).toBe("unsupported");
+  });
+});
+
+/**
+ * George r2 P2-3 (#491): `send()`'s success branch reported EVERY resolve as
+ * `"sent"`, including on the native route, with a comment arguing that is
+ * "safe HERE for the reason it is safe for Share Chapter" — a reason Share
+ * Chapter/Book's OWN `unproven` work (`resolveSendOutcome`,
+ * `resolveProvesDelivery`, `ec2a148`) has since inverted: on native Android a
+ * resolve does NOT prove the sheet was used, and both share menus now say so
+ * with a distinct, non-closing outcome instead of the plain success tick.
+ * This hook kept reporting the unconditional tick, and — because
+ * `FailureLogPanel.onSend` closes the panel on `outcome === "sent"` — an
+ * unconfirmed native resolve closed the panel exactly as confidently as a
+ * proven one, the same defect the Share menus already fixed one layer up.
+ *
+ * The two-gesture flow itself is React + browser glue this repo has no
+ * renderer to exercise (this file's own header). What IS pinned here, at the
+ * source, is that the fix reuses the SAME policy function
+ * (`resolveSendOutcome`) Share Chapter/Book already use, rather than a second,
+ * hand-rolled comparison — and that the stale comment is gone.
+ *
+ * Red-first: reverting this hook's `send()` to the old `return "sent";` — no
+ * `resolveProvesDelivery`/`resolveSendOutcome` call at all — makes every
+ * assertion below fail; confirmed with `git stash` against the pre-fix
+ * source.
+ */
+describe("use-failure-log-share.ts: an unconfirmed native resolve settles unproven, not sent (George r2 P2-3, #491)", () => {
+  const hook = read("src/hooks/use-failure-log-share.ts");
+
+  it("imports the same policy Share Chapter/Book use — resolveSendOutcome and resolveProvesDelivery — not a hand-rolled comparison", () => {
+    expect(hook).toMatch(/resolveSendOutcome,?\s*\n?\s*type ShareError/);
+    expect(hook).toMatch(/resolveProvesDelivery,/);
+    expect(hook).toMatch(/readSharePlatform,/);
+  });
+
+  it("send()'s success branch decides proven from the route this send actually took (native vs. web) against the CURRENT platform, before deciding the outcome", () => {
+    const sendAt = hook.indexOf("const send = useCallback(async ()");
+    expect(sendAt).toBeGreaterThan(-1);
+    const successAt = hook.indexOf(
+      'if (!current()) return "superseded";',
+      sendAt
+    );
+    expect(successAt).toBeGreaterThan(sendAt);
+    const returnAt = hook.indexOf(
+      'return settled === "unproven" ? "unproven" : "sent";',
+      successAt
+    );
+    expect(returnAt).toBeGreaterThan(successAt);
+    const body = hook.slice(successAt, returnAt);
+    expect(body).toMatch(
+      /const proven = resolveProvesDelivery\(\s*payload\.kind === "native" \? "native" : "web",\s*readSharePlatform\(\)\s*\);/
+    );
+    expect(body).toMatch(
+      /const settled = resolveSendOutcome\(proven, undefined\);/
+    );
+  });
+
+  it('never unconditionally returns "sent" from the success branch any more', () => {
+    const sendAt = hook.indexOf("const send = useCallback(async ()");
+    const catchAt = hook.indexOf("} catch (cause) {", sendAt);
+    const successBody = hook.slice(sendAt, catchAt);
+    expect(successBody).not.toMatch(/\n\s*return "sent";\s*\n/);
+  });
+
+  it("the stale comment claiming this is unconditionally safe 'for the reason it is safe for Share Chapter' is gone", () => {
+    expect(hook).not.toMatch(/that is safe HERE for the reason it is safe/);
   });
 });

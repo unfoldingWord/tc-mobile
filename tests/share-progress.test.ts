@@ -694,31 +694,197 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   });
 
   /**
-   * Frank round 2 P2: the overlay grabbed focus onto its own panel on the
-   * hidden→visible edge but never gave it back. The menu very often outlives
-   * the overlay (a failed prepare, a "nothing" error, a native `retry` that
-   * quietly re-arms `ready`), so a keyboard/switch user was stranded on
-   * `document.body` once the glyph cleared, outside a menu still visibly
-   * open. Fixed by saving `document.activeElement` at the SAME edge the
-   * panel grabs focus, and restoring it (if still connected) at the
-   * visible→hidden edge.
+   * Frank round 2 P2 gave `share-progress.tsx` its own capture/restore pair:
+   * save `document.activeElement` at the same edge the panel grabs focus,
+   * restore it (if still connected) going hidden. George r2 P2-1 (#491)
+   * found that this component-local version raced `inert`: the capture ran
+   * in a PASSIVE `useEffect` keyed on `visible`, but this round's `inert`
+   * primitive now applies in the SAME commit the overlay becomes visible,
+   * and `inert` blurs the real trigger to `document.body` during React's
+   * mutation phase — before any passive effect can read
+   * `document.activeElement`. So the capture here read `body`, not the
+   * trigger. Removed, in favour of the #96/#97 contract
+   * (`lib/a11y/focus-restore.ts`/`hooks/use-focus-restore.ts`) wired from the
+   * SCREENS instead — see the "focus-restore wiring" describe block below.
+   * This component's OWN remaining job is grabbing focus onto its own panel
+   * only; it must not resurrect a capture/restore pair of its own.
    */
-  it("share-progress.tsx saves the prior focus at the same edge it grabs the panel's, and restores it going hidden (Frank round 2 P2)", () => {
+  it("share-progress.tsx no longer captures/restores the trigger itself — that moved to the screens (George r2 P2-1)", () => {
     const modal = read("src/components/share-progress.tsx");
-    const at = modal.indexOf("useEffect(() => {\n    if (visible) {");
+    expect(modal).not.toMatch(/returnFocusRef/);
+    const at = modal.indexOf("useEffect(() => {\n    if (visible)");
     expect(at).toBeGreaterThan(-1);
     const effectEnd = modal.indexOf("}, [visible]);", at);
     const body = modal.slice(at, effectEnd);
-    // Saved BEFORE the panel steals focus, not after.
-    const saveAt = body.indexOf("returnFocusRef.current =");
-    const grabAt = body.indexOf("panelRef.current?.focus();");
-    expect(saveAt).toBeGreaterThan(-1);
-    expect(grabAt).toBeGreaterThan(saveAt);
-    // And handed back once hidden, guarded on the node still being connected
-    // (a stale/superseded run, or an unmount, may have nothing to return to).
-    expect(body).toMatch(/const el = returnFocusRef\.current;/);
-    expect(body).toMatch(/if \(el\?\.isConnected\) el\.focus\(\);/);
+    expect(body).toMatch(/panelRef\.current\?\.focus\(\);/);
+    // The old shape captured `document.activeElement` in this same effect —
+    // confirms the capture, not just the ref name, is gone from it.
+    expect(body).not.toMatch(/document\.activeElement/);
   });
+
+  /**
+   * The #96/#97 contract (`lib/a11y/focus-restore.ts`,
+   * `hooks/use-focus-restore.ts`), wired from the screens (George r2 P2-1,
+   * #491): `capture()` must run SYNCHRONOUSLY inside the opening gesture's
+   * own handler — before `<Menu inert={...}>` can apply `inert` in the same
+   * render, never from an effect — and `restore()` must run from a
+   * `useLayoutEffect` keyed on the overlay no longer owning the screen, after
+   * `inert` has lifted. A `fallback` ref is attached to EVERY branch of the
+   * status-driven Share/Send ternary, so it survives that ternary remounting
+   * the originally captured trigger out from under it — e.g. "Share
+   * chapter"/"Share book" swapping for "Share now" before the overlay has
+   * shown anything.
+   */
+  for (const [screen, hook, prepareFn, sendFn, controlRefName] of [
+    [
+      "src/components/segments-screen.tsx",
+      "share",
+      "onPrepareShare",
+      "onSendShare",
+      "shareControlRef",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "bookShare",
+      "onPrepareBookShare",
+      "onSendBookShare",
+      "shareControlRef",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: calls useFocusRestore() and captures synchronously before any other work in ${prepareFn}/${sendFn}`, () => {
+      const source = read(screen);
+      expect(source).toMatch(
+        /import \{ useFocusRestore \} from "@\/hooks\/use-focus-restore";/
+      );
+      expect(source).toMatch(/const focusRestore = useFocusRestore\(\);/);
+      for (const fn of [prepareFn, sendFn]) {
+        const fnAt = source.indexOf(`const ${fn} = useCallback(() => {`);
+        expect(fnAt, `${fn} not found`).toBeGreaterThan(-1);
+        const bodyStart = source.indexOf("{", fnAt) + 1;
+        const statements = source
+          .slice(bodyStart, bodyStart + 300)
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        // At most ONE leading statement is tolerated ahead of the capture,
+        // and only a pure early-return bail (books-screen's "no book, no
+        // menu to arm a share for") — never a mutation, never audio
+        // teardown, never a session bump: those still must not outrun the
+        // capture, which is the property this test exists to pin.
+        const [first, second] = statements;
+        const captureAt = first === "focusRestore.capture();" ? first : second;
+        expect(
+          captureAt,
+          `${fn}'s statements began with ${JSON.stringify(statements.slice(0, 2))}`
+        ).toBe("focusRestore.capture();");
+        if (first !== "focusRestore.capture();") {
+          expect(first, `${fn}'s leading statement before capture`).toMatch(
+            /^if \([^)]+\) return;$/
+          );
+        }
+      }
+    });
+
+    it(`${name}: restores focus from a useLayoutEffect keyed on the overlay no longer owning the screen`, () => {
+      const source = read(screen);
+      expect(source).toMatch(/useLayoutEffect,/); // imported from "react"
+      const restoreAt = source.indexOf("useLayoutEffect(() => {");
+      expect(restoreAt).toBeGreaterThan(-1);
+      const effectEnd = source.indexOf("}, [", restoreAt);
+      const body = source.slice(restoreAt, effectEnd);
+      expect(body).toMatch(
+        new RegExp(
+          `if \\(shareOverlayOwnsScreen\\(${hook}\\.progress\\)\\) return;`
+        )
+      );
+      expect(body).toMatch(/focusRestore\.restore\(\{/);
+      expect(body).toMatch(/suppressed: false,/);
+      expect(body).toMatch(
+        new RegExp(`fallback: ${controlRefName}\\.current,`)
+      );
+    });
+
+    it(`${name}: the ${controlRefName} is attached to every branch of the Share/Send ternary`, () => {
+      const source = read(screen);
+      const refDeclAt = source.indexOf(
+        `const ${controlRefName} = useRef<HTMLButtonElement | null>(null);`
+      );
+      expect(refDeclAt).toBeGreaterThan(-1);
+      const occurrences = source.split(`ref={${controlRefName}}`).length - 1;
+      // Exactly two: the "ready" (Share now) branch and the "not ready"
+      // (Share chapter/book, including preparing) branch of the ternary.
+      expect(occurrences).toBe(2);
+    });
+  }
+
+  it("control.tsx forwards its ref to the underlying <button> (#491, focus-restore's fallback landmark)", () => {
+    const source = read("src/components/control.tsx");
+    expect(source).toMatch(/import \{ forwardRef \} from "react";/);
+    expect(source).toMatch(
+      /export const Control = forwardRef<HTMLButtonElement, ControlProps>\(/
+    );
+    // The real JSX open tag, not the `` `<button>` `` mention in this file's
+    // own docblock a plain `indexOf("<button")` would match first — the JSX
+    // tag is always followed by whitespace before its first attribute, the
+    // prose mention never is.
+    const buttonAt = source.search(/<button\s/);
+    expect(buttonAt).toBeGreaterThan(-1);
+    const buttonTagEnd = source.indexOf(">", buttonAt);
+    expect(source.slice(buttonAt, buttonTagEnd)).toMatch(/ref=\{ref\}/);
+  });
+
+  /**
+   * George r2 P2-2 (#491): the screens must actually READ `sendUnconfirmed`
+   * and feed it to `shareControlAffordance` and the idle label — the state
+   * this field exists to carry is invisible unless both wire it through.
+   */
+  for (const [screen, hook, affordanceVar, unconfirmedString] of [
+    [
+      "src/components/segments-screen.tsx",
+      "share",
+      "shareAffordance",
+      "shareChapterUnconfirmed",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "bookShare",
+      "bookShareAffordance",
+      "shareBookUnconfirmed",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: passes ${hook}.sendUnconfirmed as shareControlAffordance's third argument`, () => {
+      const source = read(screen);
+      const at = source.indexOf(
+        `const ${affordanceVar} = shareControlAffordance(`
+      );
+      expect(at).toBeGreaterThan(-1);
+      const callEnd = source.indexOf(");", at);
+      const call = source.slice(at, callEnd);
+      expect(call).toMatch(new RegExp(`${hook}\\.sendUnconfirmed`));
+    });
+
+    it(`${name}: the idle Share control's label switches to the unconfirmed string when ${hook}.sendUnconfirmed is true, never disabling the control`, () => {
+      const source = read(screen);
+      const labelAt = source.indexOf(`strings.${unconfirmedString}`);
+      expect(labelAt).toBeGreaterThan(-1);
+      const ternaryStart = source.lastIndexOf("label={", labelAt);
+      const ternaryEnd = source.indexOf(
+        "}",
+        source.indexOf(unconfirmedString, labelAt) + 40
+      );
+      const ternary = source.slice(ternaryStart, ternaryEnd);
+      expect(ternary).toMatch(new RegExp(`${hook}\\.sendUnconfirmed`));
+      // Not disabled — a second Share must remain genuinely possible (the
+      // brief's own constraint), never gated behind `disabled`.
+      const controlStart = source.lastIndexOf("<Control", labelAt);
+      const controlEnd = source.indexOf("/>", labelAt);
+      expect(source.slice(controlStart, controlEnd)).not.toMatch(/disabled/);
+    });
+  }
 
   /**
    * Frank at `9832a8b` P2: the ref-sync effect that feeds the capture-phase

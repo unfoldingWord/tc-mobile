@@ -270,6 +270,36 @@ export function resolveSendOutcome(
 export interface UseShareFlow {
   readonly status: ShareStatus;
   readonly error: ShareError | null;
+  /**
+   * The most recent `send()` settled `unproven` (George r2 P2-1, #491) and
+   * nothing has re-armed since. `status` alone cannot carry this: the
+   * success branch returns it to `idle` exactly the same as a genuinely
+   * confirmed send, and the modal's own glyph is gone {@link OUTCOME_HOLD_MS}
+   * after the fact — so once both have cleared, an idle Share control read
+   * exactly like a fresh, never-tried one. A translator who tapped Share,
+   * watched the sheet close, and cannot tell if it worked would see the SAME
+   * quiet tray glyph either way and, worse, could tap it again believing
+   * nothing had happened yet — a genuine duplicate send, not a harmless retry.
+   *
+   * State-in-place, not a toast (AGENTS.md): the caller reads this to change
+   * the IDLE Share control's own icon and label (never `disabled` — a second
+   * Share must stay possible, the user may truly need to re-send) rather
+   * than showing a message that scrolls away. Cleared the moment a fresh
+   * `prepare()` begins (see its own reset block) — starting a new attempt is
+   * itself the acknowledgment, the same way `error` clears there today — and
+   * also by `reset()` (menu close), alongside `error`/`missing`/`partial`.
+   *
+   * `reset()` clears it, not just `prepare()`, for a reason specific to
+   * Share Book: `useBookShare` is ONE hook instance shared by every row's ≡
+   * menu (`shareMenuBookId` just tracks which book is open), so a flag that
+   * survived `reset()` would leak an unconfirmed send from book A onto book
+   * B's freshly opened, never-tried Share control the moment the shelf moves
+   * on — a false positive, which is its own dishonesty. What this field
+   * exists to survive is narrower and still fully covered: the SAME menu
+   * session, outcome hold ending with the menu still open (an `unproven`
+   * settle does not close it), through to the next tap in that session.
+   */
+  readonly sendUnconfirmed: boolean;
   /** Units left out of the prepared File (segments or chapters). 0 until ready. */
   readonly missing: number;
   /**
@@ -318,6 +348,9 @@ export function useShareFlow(): UseShareFlow {
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
   const [partial, setPartial] = useState(0);
+  // See `UseShareFlow.sendUnconfirmed`'s own docblock: set on an `unproven`
+  // settle, cleared only when a fresh `prepare()` begins.
+  const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
   // What tap 1 prepared, waiting for the send gesture, and whether tap 2 owns
   // it right now. Extracted into `share-handoff.ts` (#365) rather than a ref
   // pair: `send` still takes ownership SYNCHRONOUSLY inside the gesture —
@@ -404,6 +437,9 @@ export function useShareFlow(): UseShareFlow {
       setError(null);
       setMissing(0);
       setPartial(0);
+      // A fresh attempt is itself the acknowledgment of any prior unconfirmed
+      // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
+      setSendUnconfirmed(false);
       setStatus("preparing");
       // The modal goes up with the busy status (#491). Not before the
       // unsupported gate above: a browser with no Web Share gets the error
@@ -615,6 +651,10 @@ export function useShareFlow(): UseShareFlow {
         readSharePlatform()
       );
       const settled = resolveSendOutcome(proven, gap);
+      // George r2 P2-2 (#491): flag the one outcome this platform cannot
+      // vouch for so the IDLE Share control still shows it once the modal's
+      // own glyph is gone — see `UseShareFlow.sendUnconfirmed`.
+      if (settled === "unproven") setSendUnconfirmed(true);
       modal.dispatch({
         type: "settle",
         settled,
@@ -710,6 +750,9 @@ export function useShareFlow(): UseShareFlow {
     setError(null);
     setMissing(0);
     setPartial(0);
+    // See `UseShareFlow.sendUnconfirmed`'s own docblock for why this clears
+    // here too, not just at the start of `prepare()`.
+    setSendUnconfirmed(false);
     // The menu is closing: the modal goes with it, whatever phase it is in,
     // and any `send()` waiting on the flash resolves now rather than after a
     // hold nobody is looking at.
@@ -719,6 +762,7 @@ export function useShareFlow(): UseShareFlow {
   return {
     status,
     error,
+    sendUnconfirmed,
     missing,
     partial,
     prepare,

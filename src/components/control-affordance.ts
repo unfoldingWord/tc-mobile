@@ -61,15 +61,29 @@ export interface ShareControlAffordance {
  * `is-done`/`is-on` already wear — on the existing primary/XL variant. Only
  * `idle` varies by platform: the wait and the "yes" are the same on every
  * phone.
+ *
+ * `unconfirmed` (George r2 P2-2, #491) — {@link UseShareFlow.sendUnconfirmed}
+ * — overrides the `idle` cell only: `preparing` and `ready` already speak for
+ * themselves (a fresh attempt is underway or armed), and a translator only
+ * needs telling apart "never tried" from "tried, unconfirmed" at the resting
+ * state a plain tray glyph would otherwise show for both. Reuses the
+ * `dismissed` outcome's own arrow-back-down mark (`share-outcome-glyph.ts`'s
+ * `shareSettledGlyph` makes the identical choice for the modal's own glyph,
+ * for the identical reason: not a fourth mark, and not `sent`'s tick, which
+ * this resolve did not earn) rather than inventing a new one — the caller
+ * pairs it with a distinct accessible label (the "unconfirmed" strings), so
+ * the control is not silently mistaken for the plain `idle` cell by a reader
+ * relying on the label alone.
  */
 export function shareControlAffordance(
   status: ShareStatus,
-  platform: SharePlatform
+  platform: SharePlatform,
+  unconfirmed = false
 ): ShareControlAffordance {
   switch (status) {
     case "idle":
       return {
-        icon: shareControlGlyph(platform),
+        icon: unconfirmed ? "share-closed" : shareControlGlyph(platform),
         variant: "quiet",
         busy: false,
         className: undefined,

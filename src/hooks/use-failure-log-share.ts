@@ -9,6 +9,7 @@ import {
 import { reportFailure } from "./report-failure";
 import {
   classifyShareError,
+  resolveSendOutcome,
   type ShareError,
   type ShareOutcome,
   type ShareStatus,
@@ -19,6 +20,8 @@ import {
   isNativeShell,
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
+  resolveProvesDelivery,
 } from "./share-target";
 
 /**
@@ -459,11 +462,28 @@ export function useFailureLogShare(): UseFailureLogShare {
       setStatus("idle");
       // On the native route a resolve does NOT prove the sheet was used —
       // `resolveProvesDelivery` documents why the plugin cannot tell a
-      // dismissed chooser from a used one. It is reported as `sent` anyway, and
-      // that is safe HERE for the reason it is safe for Share Chapter: nothing
-      // is consumed by sending. The log is still on the phone, the count is
-      // unchanged, and Clear is a separate deliberate gesture.
-      return "sent";
+      // dismissed chooser from a used one (the Android false-success path,
+      // Frank a446708 P2). This USED to report `sent` unconditionally, on the
+      // reasoning that nothing is consumed by sending: the log is still on
+      // the phone, the count is unchanged, and Clear is a separate deliberate
+      // gesture. That reasoning is true and beside the point (George r2 P2-3,
+      // #491) — it argues sending twice is cheap, not that reporting an
+      // unconfirmed resolve as a confirmed one is honest, and Share
+      // Chapter/Book's own `unproven` outcome (`resolveSendOutcome`) exists
+      // for exactly this platform/route combination, not a chapter-specific
+      // one. Same policy here: `unproven` when this platform cannot vouch for
+      // the resolve, `sent` otherwise — and `unproven` is NOT in
+      // `FailureLogPanel`'s close-on-`sent`/`dismissed` set, so an unconfirmed
+      // native resolve leaves the panel open the same way it leaves the
+      // Share menus open. No gap to carry here (a failure-log payload has no
+      // `missing`/`partial` count), so `partial` can never come back — only
+      // `sent` or `unproven`.
+      const proven = resolveProvesDelivery(
+        payload.kind === "native" ? "native" : "web",
+        readSharePlatform()
+      );
+      const settled = resolveSendOutcome(proven, undefined);
+      return settled === "unproven" ? "unproven" : "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
       // Activation was spent — keep the payload armed and stay `ready` so

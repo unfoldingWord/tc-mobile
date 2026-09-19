@@ -14,6 +14,8 @@ import type { ChapterId } from "@/types/domain";
 export interface UseChapterShare {
   readonly status: ShareStatus;
   readonly error: ShareError | null;
+  /** See {@link UseShareFlow.sendUnconfirmed}. */
+  readonly sendUnconfirmed: boolean;
   /**
    * Segments with no resolvable audio, left out of the file prepared by tap 1.
    * Zero until a prepare succeeds. Surfaced so a chapter with gaps does not
@@ -50,6 +52,7 @@ export function useChapterShare(): UseChapterShare {
   const {
     status,
     error,
+    sendUnconfirmed,
     missing,
     prepare: run,
     send,
@@ -79,6 +82,7 @@ export function useChapterShare(): UseChapterShare {
   return {
     status,
     error,
+    sendUnconfirmed,
     missing,
     prepare,
     send,

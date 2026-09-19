@@ -156,3 +156,45 @@ describe("shareControlAffordance is platform-native at idle only (#490)", () => 
     expect(shareControlGlyph("web")).toBe("share");
   });
 });
+
+/**
+ * `unconfirmed` (George r2 P2-2, #491) — {@link UseShareFlow.sendUnconfirmed}
+ * — overrides the IDLE cell only, on every platform: `preparing` and `ready`
+ * already speak for themselves and must not change. Defaults to `false`, so
+ * every existing call site (and every test above, none of which pass a third
+ * argument) is unaffected — the whole point of adding a parameter here rather
+ * than a fourth `ShareStatus`.
+ */
+describe("shareControlAffordance's unconfirmed idle override (George r2 P2-2, #491)", () => {
+  it("defaults to false — omitting the argument reads exactly like passing false", () => {
+    for (const platform of ["android", "ios", "web"] as const) {
+      expect(shareControlAffordance("idle", platform)).toEqual(
+        shareControlAffordance("idle", platform, false)
+      );
+    }
+  });
+
+  it("idle + unconfirmed wears the dismissed outcome's own arrow-back-down mark, on every platform — not the platform's own idle tray/dots, and not a new glyph", () => {
+    for (const platform of ["android", "ios", "web"] as const) {
+      expect(shareControlAffordance("idle", platform, true).icon).toBe(
+        "share-closed"
+      );
+    }
+  });
+
+  it("unconfirmed does not change idle's variant, busy or className — only the icon", () => {
+    const plain = shareControlAffordance("idle", "web", false);
+    const unconfirmed = shareControlAffordance("idle", "web", true);
+    expect(unconfirmed.variant).toBe(plain.variant);
+    expect(unconfirmed.busy).toBe(plain.busy);
+    expect(unconfirmed.className).toBe(plain.className);
+  });
+
+  it("unconfirmed has NO effect on preparing or ready — only the idle cell reads it", () => {
+    for (const status of ["preparing", "ready"] as const) {
+      expect(shareControlAffordance(status, "web", true)).toEqual(
+        shareControlAffordance(status, "web", false)
+      );
+    }
+  });
+});

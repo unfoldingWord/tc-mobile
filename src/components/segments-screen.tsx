@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -29,6 +30,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useFocusRestore } from "@/hooks/use-focus-restore";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
@@ -116,12 +118,29 @@ export const SegmentsScreen = forwardRef<
   // matches. A ref, read at resolution time, so it sees the live value.
   const chapterMenuSession = useRef(0);
   const share = useChapterShare();
+  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491):
+  // `capture()` runs synchronously in `onPrepareShare`/`onSendShare` below —
+  // the opening gesture's own handler, before `<Menu inert={...}>` (below)
+  // can apply `inert` in the same render — never from an effect. See
+  // `share-progress.tsx`'s docblock for why a passive effect there could
+  // never get this ordering right once `inert` is involved.
+  const focusRestore = useFocusRestore();
+  // Whichever of "Share chapter"/"Preparing…"/"Share now" is CURRENTLY
+  // rendered (the ternary below swaps the mounted `Control` as `share.status`
+  // moves) — attached to every branch, so it survives that remount and always
+  // names a live, non-destructive landmark for `restore()`'s `fallback`: the
+  // originally captured trigger can be gone by the time the overlay hides
+  // (prepare alone can swap "Share chapter" for "Share now" before the
+  // overlay ever shows anything), and Share/Send is the control that owns
+  // this flow, never an exiting or destructive one.
+  const shareControlRef = useRef<HTMLButtonElement | null>(null);
   // Tap 1 — encode the chapter and arm the send gesture. Free the audio floor
   // first: a clip may be sounding when the menu opens, and the encode has taken
   // over the chapter's PCM. The menu stays open across both gestures, so the
   // header and list stay `inert` (see listInert) for the whole flow — that is
   // what keeps Record, append, and erase out of an in-flight share.
   const onPrepareShare = useCallback(() => {
+    focusRestore.capture();
     audio.leave();
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
@@ -131,7 +150,7 @@ export const SegmentsScreen = forwardRef<
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
     );
-  }, [audio, share, chapterId, bookName, chapterNumber]);
+  }, [focusRestore, audio, share, chapterId, bookName, chapterNumber]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
   // as its first call inside this gesture (`navigator.share` in a browser, the
   // Share plugin in the native shell, whose file tap 1 already wrote to the
@@ -139,12 +158,31 @@ export const SegmentsScreen = forwardRef<
   // menu once the flow is done, but NOT on `retry`
   // (the File is still armed for another tap) or `failed` (the error Notice
   // lives in the menu and must stay visible).
+  //
+  // `focusRestore.capture()` here is re-entrant-safe even though tap 1 already
+  // called it once: by the time `status` is `"ready"` and this control is
+  // reachable, the earlier capture has already been consumed by the restore
+  // effect below (prepare's own settle drives `progress` back to `hidden`
+  // well before a translator can tap again), so this captures the live tap on
+  // "Share now" fresh, not a stale one from tap 1.
   const onSendShare = useCallback(() => {
+    focusRestore.capture();
     void share.send().then((outcome) => {
       if (outcome === "sent" || outcome === "dismissed")
         setChapterMenuOpen(false);
     });
-  }, [share]);
+  }, [focusRestore, share]);
+  // Hand focus back once `inert` has lifted (`useLayoutEffect`, not
+  // `useEffect`: it must run before paint, right after the mutation that
+  // clears `inert`). Fires on every render where the overlay is not showing —
+  // `restore()` is a safe no-op when nothing is held (`captured: false`).
+  useLayoutEffect(() => {
+    if (shareOverlayOwnsScreen(share.progress)) return;
+    focusRestore.restore({
+      suppressed: false,
+      fallback: shareControlRef.current,
+    });
+  }, [share.progress, focusRestore]);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File and clear state so a stale "ready" cannot linger behind a closed menu.
   //
@@ -300,7 +338,8 @@ export const SegmentsScreen = forwardRef<
   // render — a constant, cheap read — never from the user agent.
   const shareAffordance = shareControlAffordance(
     share.status,
-    readSharePlatform()
+    readSharePlatform(),
+    share.sendUnconfirmed
   );
   const shareErrorText = shareErrorCopy(share.error, "chapter");
   // Hoisted: the same mark for a chapter and a book, from one table.
@@ -549,6 +588,7 @@ export const SegmentsScreen = forwardRef<
                 as it appears, since the Menu only lands focus on its open edge. */}
             {share.status === "ready" ? (
               <Control
+                ref={shareControlRef}
                 icon={shareAffordance.icon}
                 label={strings.shareSend}
                 variant={shareAffordance.variant}
@@ -564,11 +604,14 @@ export const SegmentsScreen = forwardRef<
               // portal (George R-B7). `busy` (not disabled) is what now paints
               // and reads that wait state (#354; `control-affordance.ts`).
               <Control
+                ref={shareControlRef}
                 icon={shareAffordance.icon}
                 label={
                   share.status === "preparing"
                     ? strings.sharePreparing
-                    : strings.shareChapter
+                    : share.sendUnconfirmed
+                      ? strings.shareChapterUnconfirmed
+                      : strings.shareChapter
                 }
                 variant={shareAffordance.variant}
                 busy={shareAffordance.busy}

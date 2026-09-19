@@ -14,6 +14,8 @@ import type { BookId } from "@/types/domain";
 export interface UseBookShare {
   readonly status: ShareStatus;
   readonly error: ShareError | null;
+  /** See {@link UseShareFlow.sendUnconfirmed}. */
+  readonly sendUnconfirmed: boolean;
   /**
    * Chapters with no resolvable audio, left out of the zip prepared by tap 1.
    * Zero until a prepare succeeds. Surfaced so a book with empty chapters does
@@ -62,6 +64,7 @@ export function useBookShare(): UseBookShare {
   const {
     status,
     error,
+    sendUnconfirmed,
     missing,
     partial: partialSegments,
     prepare: run,
@@ -109,6 +112,7 @@ export function useBookShare(): UseBookShare {
   return {
     status,
     error,
+    sendUnconfirmed,
     missing,
     partialSegments,
     prepare,

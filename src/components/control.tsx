@@ -1,3 +1,5 @@
+import { forwardRef } from "react";
+
 import { cn } from "@/lib/utils";
 import { Icon, type IconName } from "./icon";
 
@@ -82,78 +84,93 @@ const VARIANT_CLASS: Record<ControlVariant, string> = {
   primary: "control--primary",
 };
 
-export function Control({
-  icon,
-  label,
-  onClick,
-  variant = "default",
-  disabled,
-  size,
-  className,
-  autoFocus,
-  busy,
-  hint,
-  pressed,
-}: ControlProps) {
-  const shownHint = disabled && hint ? hint : null;
-  const name = shownHint ? `${label}. ${shownHint.label}` : label;
-  // A hinted control is inert via `aria-disabled` so it keeps its place in the
-  // tab order and speaks its reason; everything else keeps the native attribute.
-  const softDisabled = Boolean(disabled && hint);
-  const button = (
-    <button
-      type="button"
-      // The activation guard that makes both soft-disable states honest: a
-      // `busy` control (work in flight, #137) and a hinted `aria-disabled` one
-      // (#135) each stay focusable but must not fire. Without this an
-      // aria-disabled row would be focusable AND clickable — worse than either
-      // state alone.
-      onClick={busy || softDisabled ? undefined : onClick}
-      // `busy` never sets the native attribute even when `disabled` is also
-      // true — a busy control must keep focus (an AT/switch user stranded behind
-      // the scrim otherwise). Native `disabled` is only for the hard-disabled,
-      // non-hinted, non-busy case (#137 F1: the busy × disabled cell is
-      // unreachable today, but the prop's whole point is this guarantee).
-      disabled={Boolean(disabled && !softDisabled && !busy)}
-      aria-disabled={softDisabled || undefined}
-      aria-busy={busy || undefined}
-      // `false` is meaningful here — it says "this is a toggle and it is off" —
-      // so only an ABSENT `pressed` drops the attribute.
-      aria-pressed={pressed}
-      autoFocus={autoFocus}
-      aria-label={name}
-      title={name}
-      className={cn(
-        "control",
-        VARIANT_CLASS[variant],
-        pressed ? "is-on" : undefined,
-        className
-      )}
-    >
-      <Icon name={icon} size={size} />
-    </button>
-  );
-  // The wrapper is keyed on whether this control CAN carry a hint (the prop was
-  // passed at all), never on whether it currently does. Switching the rendered
-  // root between <button> and <span> as a row gains a badge would remount the
-  // button and DESTROY it while focused — and with the sheet and list both
-  // `inert` and the menu's focus grab bound to `[open]`, focus would land
-  // nowhere behind the scrim. Reachable: ≡ open mid-take, a #59 interruption
-  // flips `busy`, and the focused Mark row gains its badge (George, round 3).
-  // With a stable root, gaining a badge adds an inner sibling and mutates
-  // attributes on the same button.
-  if (hint === undefined) return button;
-  return (
-    <span className="control-hinted">
-      {button}
-      {/* Decorative for AT — the reason is already in the accessible name — and
+/**
+ * Forwards its ref to the underlying `<button>` (#491, focus-restore's
+ * "fallback" landmark): a caller that needs to hand this control's live DOM
+ * node to `useFocusRestore().restore({ fallback })` — because the control it
+ * captured on open has since unmounted under a status-driven ternary, e.g.
+ * "Share chapter" swapping for "Share now" — needs a ref that survives that
+ * swap. Optional everywhere else; every existing call site that does not
+ * pass one is unaffected.
+ */
+export const Control = forwardRef<HTMLButtonElement, ControlProps>(
+  function Control(
+    {
+      icon,
+      label,
+      onClick,
+      variant = "default",
+      disabled,
+      size,
+      className,
+      autoFocus,
+      busy,
+      hint,
+      pressed,
+    },
+    ref
+  ) {
+    const shownHint = disabled && hint ? hint : null;
+    const name = shownHint ? `${label}. ${shownHint.label}` : label;
+    // A hinted control is inert via `aria-disabled` so it keeps its place in the
+    // tab order and speaks its reason; everything else keeps the native attribute.
+    const softDisabled = Boolean(disabled && hint);
+    const button = (
+      <button
+        ref={ref}
+        type="button"
+        // The activation guard that makes both soft-disable states honest: a
+        // `busy` control (work in flight, #137) and a hinted `aria-disabled` one
+        // (#135) each stay focusable but must not fire. Without this an
+        // aria-disabled row would be focusable AND clickable — worse than either
+        // state alone.
+        onClick={busy || softDisabled ? undefined : onClick}
+        // `busy` never sets the native attribute even when `disabled` is also
+        // true — a busy control must keep focus (an AT/switch user stranded behind
+        // the scrim otherwise). Native `disabled` is only for the hard-disabled,
+        // non-hinted, non-busy case (#137 F1: the busy × disabled cell is
+        // unreachable today, but the prop's whole point is this guarantee).
+        disabled={Boolean(disabled && !softDisabled && !busy)}
+        aria-disabled={softDisabled || undefined}
+        aria-busy={busy || undefined}
+        // `false` is meaningful here — it says "this is a toggle and it is off" —
+        // so only an ABSENT `pressed` drops the attribute.
+        aria-pressed={pressed}
+        autoFocus={autoFocus}
+        aria-label={name}
+        title={name}
+        className={cn(
+          "control",
+          VARIANT_CLASS[variant],
+          pressed ? "is-on" : undefined,
+          className
+        )}
+      >
+        <Icon name={icon} size={size} />
+      </button>
+    );
+    // The wrapper is keyed on whether this control CAN carry a hint (the prop was
+    // passed at all), never on whether it currently does. Switching the rendered
+    // root between <button> and <span> as a row gains a badge would remount the
+    // button and DESTROY it while focused — and with the sheet and list both
+    // `inert` and the menu's focus grab bound to `[open]`, focus would land
+    // nowhere behind the scrim. Reachable: ≡ open mid-take, a #59 interruption
+    // flips `busy`, and the focused Mark row gains its badge (George, round 3).
+    // With a stable root, gaining a badge adds an inner sibling and mutates
+    // attributes on the same button.
+    if (hint === undefined) return button;
+    return (
+      <span className="control-hinted">
+        {button}
+        {/* Decorative for AT — the reason is already in the accessible name — and
           a SIBLING of the button, so the dimming that marks the control inert
           does not also dim the mark explaining it. */}
-      {shownHint?.icon ? (
-        <span className="control-hint" aria-hidden="true">
-          <Icon name={shownHint.icon} size={12} />
-        </span>
-      ) : null}
-    </span>
-  );
-}
+        {shownHint?.icon ? (
+          <span className="control-hint" aria-hidden="true">
+            <Icon name={shownHint.icon} size={12} />
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+);
