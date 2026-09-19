@@ -576,7 +576,7 @@ export async function playSamples(
     return { stop: () => {}, elapsed: () => 0, duration: 0 };
   }
 
-  if (resumeTimedOut) {
+  if (audioContextNeedsResume()) {
     // Still current, so this IS a #469 event worth a row — and, unlike the
     // supersession bail above, nothing else will ever release the caller's
     // optimistic "playing" state for a claim that is still current unless
@@ -595,10 +595,25 @@ export async function playSamples(
     // proceeding anyway could start a source on a context that is still
     // `"interrupted"`, which plays silently with no error (the iOS
     // silent-playback shape `contextNeedsResume` exists to avoid).
+    //
+    // Gated on the AUDIBILITY predicate, not `resumeTimedOut` (George R1
+    // P1): `raceAudioResume` also resolves `false` — "timer did not win" —
+    // when `resume()` REJECTS before the bound, and a rejection is not a
+    // success. Checking only the timer flag let that case fall through to
+    // `source.start()` on a context that still needs resume: the iOS
+    // silent-playback shape above, with no error and no rejection ever
+    // reaching `playTake`/`playBuffer`'s `catch`. Re-reading the live state
+    // here (rather than trusting `resumeTimedOut`) closes that path for
+    // BOTH causes — timeout and early rejection — with one check.
     const cause = new Error(
-      `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in playSamples elapsed (#469)`
+      resumeTimedOut
+        ? `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in playSamples elapsed (#469)`
+        : `resumeAudioContext() settled but the shared context still needs resume; playSamples refusing a silent start (#469)`
     );
-    reportFailure(cause, "playback-resume-timeout");
+    reportFailure(
+      cause,
+      resumeTimedOut ? "playback-resume-timeout" : "playback-resume-unusable"
+    );
     throw cause;
   }
 

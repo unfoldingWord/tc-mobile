@@ -311,6 +311,46 @@ describe("playSamples — resume bound (#469)", () => {
     expect(ctx.sourcesCreated).toHaveLength(0);
   });
 
+  it("a resume that REJECTS before the bound still fails closed — playSamples rejects, onEnded does not fire, no source is created (George round-2 P1)", async () => {
+    // The regression the timer-flag-only gate let through: raceAudioResume
+    // resolves `false` ("timer did not win") on EITHER an early rejection
+    // OR a settled-but-still-needs-resume state, not only on a timeout. The
+    // pre-fix `if (resumeTimedOut)` gate skipped this branch entirely for a
+    // rejection that arrives before the 1000ms bound, and `playSamples` fell
+    // through to `source.start()` on a context that still needed resume —
+    // the iOS silent-playback shape, with the row's optimistic "playing"
+    // state never cleared because neither `onEnded` nor a thrown rejection
+    // ever fired.
+    const ctx = new HangingAudioContext("interrupted");
+    const { playSamples } = await loadAudioIo(ctx);
+    let ended = false;
+
+    const handlePromise = playSamples(samples, {
+      isStillCurrent: () => true,
+      onEnded: () => {
+        ended = true;
+      },
+    });
+    const outcome = handlePromise.then(
+      () => ({ rejected: false }),
+      () => ({ rejected: true })
+    );
+
+    // Reject the gate WELL BEFORE the 1000ms bound — the timer must not win.
+    ctx.settleResumeWithRejection(new Error("resume rejected early"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const result = await outcome;
+
+    expect(result.rejected).toBe(true);
+    expect(ended).toBe(false);
+    expect(ctx.sourcesCreated).toHaveLength(0);
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(Error),
+      "playback-resume-unusable"
+    );
+  });
+
   it("reports exactly one row, under its own key, distinct from the recorder's timeout key", async () => {
     const ctx = new HangingAudioContext("interrupted");
     const { playSamples } = await loadAudioIo(ctx);
