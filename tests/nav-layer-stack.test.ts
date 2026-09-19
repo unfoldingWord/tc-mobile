@@ -11,9 +11,10 @@ import { routeBackToLayer, topLayer, type Layer } from "@/lib/nav/layer-stack";
  * George R1 P2-1 (PR #492): the FULL adapter obligation is NOT "call
  * `dismiss()` on a `"dismiss"` outcome, and nothing on `"refused-busy"` or
  * `"empty"`" — that was this file's own bug. A `popstate` has already popped
- * the screen-depth entry before `popAction` runs (`App.tsx:301-302`), and
- * every existing non-screen intercept re-arms it (`App.tsx:313-336`, and the
- * recorder overlay-absorb path at `:353`). So the real contract is: a
+ * the screen-depth entry before `popAction` runs (the adapter updates `navIndex`
+ * from the landing index first, `hooks/use-nav-stack.ts`), and every existing
+ * non-screen intercept re-arms it (the adapter's `switch` cases, and the
+ * recorder commit-close re-arm). So the real contract is: a
  * `"dismiss"` outcome means dismiss the layer AND re-arm; a `"refused-busy"`
  * outcome means re-arm only. That full contract is encoded where the adapter
  * actually reads it — `navigation.ts`'s `popAction`, as the string tags
