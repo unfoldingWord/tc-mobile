@@ -674,6 +674,26 @@ export function liftOutcome(input: {
  * rather than inventing one — not an accident of the boundary condition
  * above, and it is why `panAfterUndo`'s "inverse" is a best-effort mapping,
  * not a guaranteed round trip, for every pan that a cut collapsed.
+ *
+ * **Why START and not END** (a panel review round asked the opposite
+ * question: shouldn't undo track "the surviving sample this pan currently
+ * denotes," landing at the cut's END instead?). `panAfterCut`'s own
+ * docblock already answers this for the LIVE cut, independent of undo: "a
+ * cut straddling it lands the line at the cut's start" — a pan the cut
+ * collapses is, by this codebase's pre-existing convention, DEFINED to sit
+ * at the cut's start, not treated as still attached to whatever survivor
+ * happens to be numerically adjacent. That convention predates #473/#449
+ * and governs every live cut, not just the undo path. Undoing with `pan <=
+ * at` unchanged is the identity map on exactly that boundary value, so it
+ * is the one choice that keeps a collapsed pan's meaning consistent
+ * whether a cut is live or being undone. Shifting `pan >= at` forward
+ * instead would resolve the boundary the other way ONLY for undo, leaving
+ * a live cut and an undone cut disagreeing about which side of the gap a
+ * collapsed pan belongs to — a new inconsistency, not a fix — and would
+ * still be wrong for the mirror case (a pan that started the cut sitting
+ * exactly at its START, `describe("a pan exactly at a cut's START
+ * boundary...")` below), since the two pre-cut origins are equally
+ * plausible and, once collapsed, equally unrecoverable either way.
  */
 export function panAfterInsert(pan: number, at: number, len: number): number {
   return pan <= at ? pan : pan + len;
