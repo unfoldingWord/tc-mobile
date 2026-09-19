@@ -102,7 +102,16 @@ function runBash(
       encoding: "utf8",
       cwd: opts.cwd,
       env: opts.env ?? cleanEnv(),
-      timeout: 15_000,
+      // 30s, not 15s: these are real subprocess spawns (git, bash, and a
+      // stub codex/grok), and under this suite's full concurrent run (106
+      // files, several spawning tsc/eslint child processes of their own) a
+      // scheduling delay before this child even starts executing its first
+      // line is a false-negative risk distinct from anything under test —
+      // observed once as a handful of round-4 entry-path tests reporting a
+      // pre-seeded fixture's stale content as if untouched, which is what a
+      // process that never got CPU time to reach its own truncate-at-entry
+      // line would also look like from the outside.
+      timeout: 30_000,
     });
     return { status: 0, stdout, stderr: "" };
   } catch (err) {
