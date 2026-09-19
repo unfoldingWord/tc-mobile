@@ -1,9 +1,19 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { classifyShareError, sentGap } from "@/hooks/share-flow";
+import {
+  type Clock,
+  classifyShareError,
+  createProgressDriver,
+  sentGap,
+} from "@/hooks/share-flow";
+import {
+  MIN_BUSY_MS,
+  OUTCOME_HOLD_MS,
+  type ShareProgress,
+} from "@/hooks/share-progress";
 
 /** Source-shape reads, because there is no renderer here (#197). */
 const read = (rel: string) =>
@@ -155,5 +165,151 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
     const hole = flow.slice(holeAt, holeEnd);
     expect(hole).toMatch(/type: "begin",\s*work: "send"/);
     expect(hole).toMatch(/type: "settle",\s*settled: "failed"/);
+  });
+});
+
+/**
+ * `createProgressDriver` — the clock-monotonicity fix (Frank round 2, P2 at
+ * `e915d05`: `share-flow.ts:704`).
+ *
+ * The driver scheduled every busy/outcome wake off the wall clock and only
+ * rescheduled `if (next !== state)` — the branch guarding the ENTIRE
+ * reschedule. If the clock moved BACKWARD between a wake being scheduled and
+ * its timer firing, `reduceShareProgress` correctly saw `now` short of the
+ * deadline and left the SAME timed state in place, but nothing then replaced
+ * the wake that had just fired and nulled itself — so a busy or outcome modal
+ * could be stranded on screen forever. Fixed two ways: `createProgressDriver`
+ * now takes an injectable `Clock` (production default `performance.now()`,
+ * monotonic by spec, so `share-flow.ts`'s own callers can no longer FEED it a
+ * backward step) — the reducer's own arithmetic is unchanged, it already took
+ * `now` as relative data — and, as a belt for any clock source, a `tick` that
+ * leaves the state unchanged now reschedules from the state's OWN wake time
+ * (`shareProgressWakeAt`) instead of leaving `wake` at `null`.
+ *
+ * This block tests the belt directly, with an injected clock this suite steps
+ * backward on purpose — the shape that struck the driver at `e915d05`,
+ * reproduced here without depending on the real wall clock or on
+ * `performance.now()`'s own monotonicity guarantee. Fake timers stand in for
+ * the driver's `setTimeout`, and this suite drives both explicitly, one tick
+ * at a time, rather than letting the fake clock free-run.
+ *
+ * Red-first: with the belt's `else if (event.type === "tick") scheduleWake
+ * (state);` branch removed, `createProgressDriver` reschedules a wake ONLY
+ * when a dispatch changes state — exactly `e915d05`'s own shape, the
+ * clock-source difference aside. Run that way, both cases below failed:
+ *
+ *   - busy hold: `expect(last.phase).toBe("outcome")` — `AssertionError:
+ *     expected 'busy' to be 'outcome'`. The driver never recovered: once the
+ *     backward-stepped tick fired and found nothing to reschedule it, no
+ *     further timer ever ran, and the busy modal stayed up regardless of how
+ *     far the clock (or the fake timers) were then advanced.
+ *   - outcome hold: `expect(last.phase).toBe("hidden")` — `AssertionError:
+ *     expected 'outcome' to be 'hidden'`, and the `driver.hidden()` promise
+ *     awaited at the end of that case never settled (the assertion that
+ *     follows it never ran) — the exact shape of a `send()` caller left
+ *     waiting on a flash that will never clear.
+ *
+ * Restoring the belt line made both pass. Mutation-confirmed the same way:
+ * removing only that one line (leaving everything else in this PR's fix, the
+ * injected `Clock`, `performance.now()` default, included) reproduces both
+ * failures above; the line is what these tests are pinning.
+ */
+describe("createProgressDriver — the clock-monotonicity fix (Frank e915d05 P2)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A `Clock` this suite can step by hand — including backward. */
+  function fakeClock(start: number): Clock & { set: (t: number) => void } {
+    let now = start;
+    return {
+      now: () => now,
+      set: (t: number) => {
+        now = t;
+      },
+    };
+  }
+
+  it("a clock that steps backward between schedule and fire still clears the busy hold", async () => {
+    const clock = fakeClock(0);
+    const states: ShareProgress[] = [];
+    const driver = createProgressDriver((next) => states.push(next), clock);
+
+    // `prepare`'s own `begin` — busy, nothing pending, nothing to wake for yet.
+    driver.dispatch({ type: "begin", work: "prepare", now: clock.now() });
+
+    // A settle lands well before MIN_BUSY_MS (600) has elapsed, so it is HELD:
+    // the driver schedules a wake for `since (0) + MIN_BUSY_MS`, 500ms out from
+    // `now` (100).
+    clock.set(100);
+    driver.dispatch({ type: "settle", settled: "sent", now: clock.now() });
+    expect(states.at(-1)?.phase).toBe("busy");
+
+    // The clock steps BACKWARD before that wake fires.
+    clock.set(50);
+    await vi.advanceTimersByTimeAsync(500);
+
+    // The reducer correctly left the busy+pending phase in place (50 - 0 =
+    // 50 < 600) — but with the belt removed, nothing replaces the wake that
+    // timer just fired and nulled, and the modal is stuck here permanently.
+    expect(states.at(-1)?.phase).toBe("busy");
+
+    // The clock recovers, past the ORIGINAL deadline (since 0 + 600 = 600).
+    // The belt rescheduled the wake for `600 - 50 = 550`ms out from the
+    // backward-stepped fire above, so a further 550ms — with the clock now
+    // past the deadline — is what proves the belt: nothing beyond it is
+    // required to clear the hold.
+    clock.set(650);
+    await vi.advanceTimersByTimeAsync(550);
+
+    const last = states.at(-1);
+    expect(last?.phase).toBe("outcome");
+    if (last?.phase === "outcome") expect(last.settled).toBe("sent");
+  });
+
+  it("a clock that steps backward between schedule and fire still clears the outcome hold", async () => {
+    const clock = fakeClock(0);
+    const states: ShareProgress[] = [];
+    const driver = createProgressDriver((next) => states.push(next), clock);
+
+    driver.dispatch({ type: "begin", work: "send", now: clock.now() });
+    // The hold has already elapsed by the time this settle lands, so it
+    // releases AT ONCE into the outcome phase, `since` = 700 — and the driver
+    // schedules a wake for `since (700) + OUTCOME_HOLD_MS (1800)` = 2500,
+    // 1800ms out from `now` (700).
+    clock.set(700);
+    driver.dispatch({ type: "settle", settled: "dismissed", now: clock.now() });
+    expect(states.at(-1)?.phase).toBe("outcome");
+    const hidden = driver.hidden();
+
+    // The clock steps BACKWARD before that wake fires.
+    clock.set(650);
+    await vi.advanceTimersByTimeAsync(1800);
+
+    // The reducer correctly left the outcome phase in place
+    // (650 - 700 = -50 < OUTCOME_HOLD_MS) — with the belt removed, the
+    // modal is now stuck here, and `hidden` above would never resolve.
+    expect(states.at(-1)?.phase).toBe("outcome");
+
+    // The clock recovers, past the ORIGINAL deadline (2500). The belt
+    // rescheduled the wake for `2500 - 650 = 1850`ms out from the
+    // backward-stepped fire above.
+    clock.set(2600);
+    await vi.advanceTimersByTimeAsync(1850);
+
+    expect(states.at(-1)?.phase).toBe("hidden");
+    await hidden; // resolves only because the phase above actually cleared.
+  });
+
+  it("MIN_BUSY_MS and OUTCOME_HOLD_MS are the holds these cases exercise", () => {
+    // Pins the constants the arithmetic above is written against, so a
+    // change to either constant is a visible diff here rather than a silent
+    // mismatch between this file's comments and `share-progress.ts`.
+    expect(MIN_BUSY_MS).toBe(600);
+    expect(OUTCOME_HOLD_MS).toBe(1800);
   });
 });

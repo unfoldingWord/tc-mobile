@@ -371,7 +371,7 @@ export function useShareFlow(): UseShareFlow {
       // The modal goes up with the busy status (#491). Not before the
       // unsupported gate above: a browser with no Web Share gets the error
       // Notice, not a busy flash for work that never starts.
-      modal.dispatch({ type: "begin", work: "prepare", now: Date.now() });
+      modal.dispatch({ type: "begin", work: "prepare", now: modal.now() });
       // Yield once so `preparing` paints before the gather starts (its awaits
       // also yield, but a tiny share can return before the browser paints).
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -395,7 +395,7 @@ export function useShareFlow(): UseShareFlow {
           modal.dispatch({
             type: "settle",
             settled: prepared === "nothing" ? "nothing" : null,
-            now: Date.now(),
+            now: modal.now(),
           });
           return;
         }
@@ -410,7 +410,7 @@ export function useShareFlow(): UseShareFlow {
           modal.dispatch({
             type: "settle",
             settled: "failed",
-            now: Date.now(),
+            now: modal.now(),
           });
           return;
         }
@@ -444,7 +444,7 @@ export function useShareFlow(): UseShareFlow {
         setStatus("ready");
         // Ready is not an outcome: the busy phase ends (after its minimum
         // hold) and the primary "Share now" control is what the person sees.
-        modal.dispatch({ type: "settle", settled: null, now: Date.now() });
+        modal.dispatch({ type: "settle", settled: null, now: modal.now() });
       } catch (cause) {
         // A stale run's rejection — including the AbortError its own cancel
         // produced — is not this screen's news.
@@ -452,7 +452,7 @@ export function useShareFlow(): UseShareFlow {
         const settled = settlePrepareFailure(cause);
         setError(settled);
         setStatus("idle");
-        modal.dispatch({ type: "settle", settled, now: Date.now() });
+        modal.dispatch({ type: "settle", settled, now: modal.now() });
       } finally {
         // Only clear the guard for the run that still owns it. A stale run whose
         // token was bumped by `reset` must NOT release a newer run's guard, or a
@@ -486,10 +486,10 @@ export function useShareFlow(): UseShareFlow {
       // lane's own review round) so the modal's invariant — every `send()`
       // outcome ends in exactly one glyph — holds on this path too, instead of
       // silently falling back to the menu's inline error Notice alone.
-      modal.dispatch({ type: "begin", work: "send", now: Date.now() });
+      modal.dispatch({ type: "begin", work: "send", now: modal.now() });
       setError("failed");
       setStatus("idle");
-      modal.dispatch({ type: "settle", settled: "failed", now: Date.now() });
+      modal.dispatch({ type: "settle", settled: "failed", now: modal.now() });
       return "failed";
     }
     // A reset/unmount while the sheet is open must not write state afterwards.
@@ -498,7 +498,7 @@ export function useShareFlow(): UseShareFlow {
     // The modal goes up NOW, before the sheet call (#491). A synchronous state
     // write, not an await, so the activation contract below still holds: the
     // sheet call is still the first await in this gesture.
-    modal.dispatch({ type: "begin", work: "send", now: Date.now() });
+    modal.dispatch({ type: "begin", work: "send", now: modal.now() });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
@@ -569,7 +569,7 @@ export function useShareFlow(): UseShareFlow {
         type: "settle",
         settled: gap ? "partial" : "sent",
         gap,
-        now: Date.now(),
+        now: modal.now(),
       });
       await modal.hidden();
       return "sent";
@@ -584,7 +584,7 @@ export function useShareFlow(): UseShareFlow {
         // File is nobody's and is simply dropped.
         if (current()) {
           handoff.restore(armed);
-          modal.dispatch({ type: "settle", settled: null, now: Date.now() });
+          modal.dispatch({ type: "settle", settled: null, now: modal.now() });
           await modal.hidden();
         }
         return "retry";
@@ -615,7 +615,7 @@ export function useShareFlow(): UseShareFlow {
       modal.dispatch({
         type: "settle",
         settled: settledFromOutcome(outcome),
-        now: Date.now(),
+        now: modal.now(),
       });
       await modal.hidden();
       return outcome;
@@ -680,40 +680,92 @@ export function useShareFlow(): UseShareFlow {
 }
 
 /**
+ * A time source for the progress driver. `now()` need not be wall-clock time —
+ * the reducer's own arithmetic is entirely relative (`event.now - state.since`)
+ * — only monotonic: it must never report a smaller value than an earlier call
+ * (Frank e915d05 P2, see {@link monotonicClock}). Injectable so a test can
+ * drive it explicitly instead of trusting real elapsed time.
+ */
+export interface Clock {
+  readonly now: () => number;
+}
+
+/**
+ * The production clock. `Date.now()` can jump — an NTP correction or a manual
+ * clock change moves it, forward or back, with no bound — and a backward jump
+ * between a `settle`'s hold being scheduled and its timer firing made
+ * `reduceShareProgress` see `now` short of the deadline it was told to wait
+ * for, so it correctly left the timed phase in place (see the `tick` case in
+ * `share-progress.ts`) — but nothing then rescheduled a wake for it, and the
+ * busy or outcome modal stayed on screen indefinitely (Frank e915d05 P2:
+ * `share-flow.ts:704` in that revision). `performance.now()` is monotonic by
+ * spec (High Resolution Time), so this driver's own scheduling arithmetic can
+ * no longer see time run backward. Belt: see the `tick`-with-no-change branch
+ * in `createProgressDriver` below, which covers a driver fed some OTHER
+ * non-monotonic clock (a test, or a future caller) the same way.
+ */
+const monotonicClock: Clock = { now: () => performance.now() };
+
+/**
  * The browser glue around `share-progress.ts`'s machine (#491), and nothing
  * more: it owns the current state (a dispatch must know the NEXT state
  * synchronously, to schedule the wake and to release `send()`), ONE timer for
  * the next tick, and the `send()` calls waiting for the outcome flash to
- * clear. `Date.now()` and `setTimeout` appear here only — the machine takes
- * `now` as data, which is what makes the hold provable in Node
+ * clear. `clock` and `setTimeout` appear here only — the machine takes `now`
+ * as data, which is what makes the hold provable in Node
  * (`tests/share-progress.test.ts`); this driver is review-only, like the rest
- * of this file's React glue.
+ * of this file's React glue. Defaults to {@link monotonicClock}; a test
+ * passes its own so the clock-anomaly shape below is provable without a real
+ * clock.
  *
  * A closure rather than a `useCallback`, because the tick it schedules calls
  * back into itself, and `react-hooks/immutability` (rightly) refuses a hook
  * callback that reads its own binding before it is declared. Created once
  * per hook instance through a ref, the way `createShareHandoff` is.
  */
-function createProgressDriver(onChange: (next: ShareProgress) => void) {
+export function createProgressDriver(
+  onChange: (next: ShareProgress) => void,
+  clock: Clock = monotonicClock
+) {
   let state: ShareProgress = HIDDEN;
   let wake: ReturnType<typeof setTimeout> | null = null;
   let waiters: (() => void)[] = [];
+  // (Re)schedules the ONE pending wake for `s`'s own deadline, replacing
+  // whatever was there. Called both when a dispatch actually changes state
+  // (the ordinary path) and, as the belt below, when a `tick` did not — so a
+  // wake this driver owes is never simply dropped.
+  const scheduleWake = (s: ShareProgress): void => {
+    if (wake !== null) clearTimeout(wake);
+    wake = null;
+    const wakeAt = shareProgressWakeAt(s);
+    if (wakeAt !== null)
+      wake = setTimeout(
+        () => {
+          wake = null;
+          dispatch({ type: "tick", now: clock.now() });
+        },
+        Math.max(0, wakeAt - clock.now())
+      );
+  };
   const dispatch = (event: ShareProgressEvent): void => {
     const next = reduceShareProgress(state, event);
     if (next !== state) {
       state = next;
       onChange(next);
-      if (wake !== null) clearTimeout(wake);
-      wake = null;
-      const wakeAt = shareProgressWakeAt(next);
-      if (wakeAt !== null)
-        wake = setTimeout(
-          () => {
-            wake = null;
-            dispatch({ type: "tick", now: Date.now() });
-          },
-          Math.max(0, wakeAt - Date.now())
-        );
+      scheduleWake(next);
+    } else if (event.type === "tick") {
+      // Belt: a real `tick` only ever arrives here because a wake was
+      // scheduled for it, so an unchanged result means the reducer left that
+      // SAME timed phase in place rather than releasing it (the deadline in
+      // `since` had not actually passed at `event.now`) — reachable if
+      // whatever clock this driver was given is not monotonic. Reschedule
+      // from the state's own wake time — computed from `since`, set when the
+      // phase began, so it is unaffected by whatever made `event.now` short
+      // this time — rather than leaving `wake` at the `null` the fired timer
+      // already set it to above. `scheduleWake` itself is the no-op for the
+      // (unreachable via a real timer, but harmless) case of a directly
+      // dispatched `tick` against a state with nothing to wake for.
+      scheduleWake(state);
     }
     // Hidden again — by the tick, a dismiss, or a settle with nothing to show:
     // let every `send()` waiting on the flash resolve. Checked on every
@@ -727,6 +779,10 @@ function createProgressDriver(onChange: (next: ShareProgress) => void) {
   };
   return {
     dispatch,
+    /** The clock this driver reads, for callers that stamp their own events
+     * (`begin`/`settle`) from the same time source the driver schedules
+     * against. */
+    now: (): number => clock.now(),
     /** Resolves once the modal is hidden — at once if it already is. */
     hidden: (): Promise<void> =>
       state.phase === "hidden"

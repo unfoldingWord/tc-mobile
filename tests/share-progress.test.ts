@@ -30,7 +30,10 @@ import type { ShareOutcome } from "@/hooks/share-flow";
  * The machine takes `now` as DATA. No fake timers here: every transition is a
  * pure function of (state, event), so the hold and the release are pinned to
  * the millisecond without a scheduler in the loop. The hook's `setTimeout`
- * glue is browser boundary and is not covered (#197).
+ * glue is browser boundary and mostly not covered (#197) — `tests/share-flow
+ * .test.ts`'s `createProgressDriver` block is the one exception, pinning the
+ * clock-monotonicity fix (Frank e915d05 P2) with fake timers and an injected
+ * clock.
  */
 const T0 = 10_000;
 

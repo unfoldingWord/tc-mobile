@@ -16,7 +16,9 @@ import type { ShareError, ShareOutcome } from "./share-flow";
  * display time to live in the hook, testable in Node — and a hold is a
  * property of TIME, which a hook with `setTimeout` in it cannot prove. So this
  * module takes `now` as data: every transition is a pure function of (state,
- * event), the hook's only job is to feed it `Date.now()` and to schedule one
+ * event), the hook's only job is to feed it a monotonic clock reading (not
+ * `Date.now()` — see `createProgressDriver`'s own `Clock`/`monotonicClock` in
+ * `share-flow.ts`, Frank e915d05 P2) and to schedule one
  * `tick` at {@link shareProgressWakeAt}. The same split `share-handoff.ts`
  * made for the staged-file ownership (#365), for the same reason — in `hooks/`
  * because it serves one hook's protocol, not `lib/`, and with no React, no
