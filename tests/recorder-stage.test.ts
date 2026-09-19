@@ -19,7 +19,11 @@ import {
   type StageState,
 } from "@/components/recorder-stage";
 import type { EditOp } from "@/lib/audio/edit-log";
-import { effectivePan, viewportWindow } from "@/lib/audio/viewport";
+import {
+  effectivePan,
+  panAfterCut,
+  viewportWindow,
+} from "@/lib/audio/viewport";
 
 /**
  * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
@@ -1219,6 +1223,40 @@ describe("panAfterUndo / panAfterRedo", () => {
     expect(panAfterUndo(6_000, cutMiddle, 8_000)).toBe(10_000);
   });
 
+  it("a pan exactly at a cut's START boundary is the one case panAfterInsert truly inverts (panel P1)", () => {
+    // 12 000-sample buffer, cut removes [4 000, 8 000). A pan sitting
+    // exactly at the cut's start survives the cut untouched
+    // (`removedBeforePan === 0`), and panAfterInsert's `pan <= at` hands it
+    // straight back on undo — the one boundary where the "inverse" claim in
+    // panAfterInsert's docblock actually holds.
+    const cutFromFour: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    const postCutPan = panAfterCut(4_000, cutFromFour.range);
+    expect(postCutPan).toBe(4_000);
+    expect(panAfterUndo(postCutPan, cutFromFour, 8_000)).toBe(4_000);
+  });
+
+  it("a pan exactly at a cut's END boundary does NOT round-trip — it restores to the cut's START (panel P1)", () => {
+    // Same cut, [4 000, 8 000) out of a 12 000-sample buffer, but the pan
+    // sat at the cut's END instead of its start. panAfterCut collapses
+    // both boundaries to the same post-cut value — `panAfterCut(8_000, ...)`
+    // and `panAfterCut(4_000, ...)` both return 4_000 — so the information
+    // that this pan started at 8 000 is already gone before undo ever runs.
+    // panAfterUndo can only hand back 4 000, never the original 8 000. This
+    // pins the honest, deliberate convention panAfterInsert's docblock now
+    // names, rather than the "inverts at the boundary" claim a panel review
+    // found false here.
+    const cutFromFour: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    const postCutPan = panAfterCut(8_000, cutFromFour.range);
+    expect(postCutPan).toBe(4_000); // already collapsed to the cut's start
+    expect(panAfterUndo(postCutPan, cutFromFour, 8_000)).toBe(4_000); // not 8_000
+  });
+
   it("undoing a paste removes what it inserted, mapping through panAfterCut", () => {
     // A 6 000-sample buffer had a 3 000-sample clip pasted at 2 000,
     // growing it to 9 000. Playback froze at 7 000 — inside the audio that
@@ -1249,6 +1287,21 @@ describe("panAfterUndo / panAfterRedo", () => {
     const preRedoLength = 6_000;
     expect(panAfterRedo(1_000, pasteOp, preRedoLength)).toBe(1_000);
     expect(panAfterRedo(4_000, pasteOp, preRedoLength)).toBe(7_000);
+  });
+
+  it("redoing a cut collapses both its START and END boundary pans to the same value (panel P1, forward direction)", () => {
+    // The forward direction is `panAfterCut` directly, so this is the same
+    // collapse the two undo boundary cases above pin, shown from the other
+    // side: a pan at the cut's start and a pan at the cut's end both land
+    // on the cut's start once the cut (re-)applies. Nothing about Redo
+    // recovers the distinction Undo cannot either.
+    const cutFromFour: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    const preRedoLength = 12_000;
+    expect(panAfterRedo(4_000, cutFromFour, preRedoLength)).toBe(4_000);
+    expect(panAfterRedo(8_000, cutFromFour, preRedoLength)).toBe(4_000);
   });
 
   it("leaves the F7 rest resting through both directions — no op has anything to map it through", () => {

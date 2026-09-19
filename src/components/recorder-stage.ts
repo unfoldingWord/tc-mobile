@@ -646,18 +646,34 @@ export function liftOutcome(input: {
 }
 
 /**
- * Where an absolute pan sits after `len` samples are INSERTED at `at` —
- * `panAfterCut`'s inverse (#449), and the general shape of what a paste does
- * to every position to its right.
+ * Where an absolute pan sits after `len` samples are INSERTED at `at` — the
+ * general shape of what a paste does to every position to its right, and
+ * what {@link panAfterUndo} applies to re-insert a cut's removed range.
  *
  * `pan <= at` is deliberately `<=`, not `<`: an insertion AT the pan is
  * exactly `onPaste`'s own case (`recorder.tsx`'s `onPaste` — "nothing to the
  * line's left moves"), where the pan is a boundary between the old audio and
  * the new, and stays the numeric value it already was so it keeps pointing
- * at the start of what was just inserted. Matching `panAfterCut`'s own
- * boundary (a pan exactly at a cut's start is left unchanged, not swept into
- * the removed range) is what makes the two invert each other at the
- * boundary as well as everywhere else.
+ * at the start of what was just inserted.
+ *
+ * **This is `panAfterCut`'s inverse only at the cut's START boundary, not
+ * at its end — named here deliberately rather than left for a reader to
+ * discover.** A pan exactly at a cut's start is left unchanged by
+ * `panAfterCut` (`removedBeforePan === 0`), and re-inserting there with
+ * `pan <= at` returns that same value: a true round trip. But `panAfterCut`
+ * maps EVERY pan inside the removed range — including one that sat exactly
+ * at the cut's END — to that same start value
+ * (`panAfterCut(8_000, {4_000, 8_000})` and `panAfterCut(4_000, {4_000, 8_000})`
+ * both return `4_000`; pinned by the boundary cases in
+ * `describe("panAfterUndo / panAfterRedo")`, `tests/recorder-stage.test.ts`).
+ * Once collapsed, a pan carries no memory of where inside the removed range
+ * it started, so nothing downstream — this function or {@link panAfterUndo},
+ * which calls it — can recover a pan that had sat at the cut's end; undo
+ * restores it to the cut's START instead. That is the deliberate, honest
+ * convention picked here — the simplest one that names an actual position
+ * rather than inventing one — not an accident of the boundary condition
+ * above, and it is why `panAfterUndo`'s "inverse" is a best-effort mapping,
+ * not a guaranteed round trip, for every pan that a cut collapsed.
  */
 export function panAfterInsert(pan: number, at: number, len: number): number {
   return pan <= at ? pan : pan + len;
@@ -669,8 +685,8 @@ export function panAfterInsert(pan: number, at: number, len: number): number {
  *
  * `panState` is an absolute sample index measured in the buffer the undone
  * op produced. Undoing it re-materialises the buffer as it was one op
- * earlier, and — like a cut or a paste happening live — that has an exact
- * inverse: undoing a `cut` re-INSERTS the range it removed
+ * earlier, and — like a cut or a paste happening live — that has an inverse
+ * mapping: undoing a `cut` re-INSERTS the range it removed
  * ({@link panAfterInsert}), and undoing a `paste` removes the clip it
  * inserted ({@link panAfterCut} over the pasted span). Applying it is what
  * lets a hand-set pan whose audio did not move under the undone op survive
@@ -678,6 +694,11 @@ export function panAfterInsert(pan: number, at: number, len: number): number {
  * the way a Cut/Paste/Undo/Redo three-policy split used to (round-3 P1's own
  * finding: three different rules answering the same "does this index still
  * name the same audio" question).
+ *
+ * It is a mapping, not a guaranteed round trip: {@link panAfterInsert}'s own
+ * docblock names the one case where it cannot be, at a cut's end boundary —
+ * a pan the cut had already collapsed comes back at the cut's START, never
+ * at wherever it originally sat inside the removed range.
  *
  * This SUBSUMES round-3 P1 rather than special-casing it: a frozen index
  * (`panState` written by a completed playback, per {@link frozenPan}) is no
