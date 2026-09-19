@@ -336,17 +336,19 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           const handle = getRecorderHandleRef.current();
           if (!handle) {
             // No recorder handle even though `screenFor` returned "recorder":
-            // a mount the adapter expected is gone. Not reachable in PR2's App
-            // tree (the App early-returns for recovering/databasePanel re-arm
-            // via trap-recovery/trap-database-panel first, and
-            // panelWouldLoseAudio withholds the panel while recorder !== null),
-            // but a future caller — a PR3 overlay conversion, an inner error
-            // boundary, a recorderOpen render that does not mount Recorder —
-            // could produce it. The browser has ALREADY popped the screen-depth
-            // entry, so re-arm it here like every other non-screen intercept in
-            // this switch (George R1 P2-2): returning without the re-arm would
-            // strand the app one physical level below the screen it is showing
-            // (invariant 2). Surface the missed mount — it should never happen.
+            // a mount the adapter expected is gone. The one known path to it is
+            // the commit-to-passive-effect gap during a recorder UNMOUNT
+            // (inference, never observed): `screen` is derived synchronously
+            // from `params.recorderOpen`, but the recorder clears its imperative
+            // handle in a passive cleanup effect, so a Back that lands after that
+            // cleanup has run but before this effect's `screen`/deps re-resolve
+            // can see `screenFor` still "recorder" with the handle already null.
+            // The re-arm below is the intended ABSORB for that gap — the browser
+            // has ALREADY popped the screen-depth entry, so re-arm it here like
+            // every other non-screen intercept in this switch (George R1 P2-2):
+            // returning without the re-arm would strand the app one physical
+            // level below the screen it is showing (invariant 2). Surface the
+            // missed mount — it should be vanishingly rare, never nominal.
             console.error("commit-close-recorder: no recorder handle on Back");
             pushHistoryEntry();
             return;

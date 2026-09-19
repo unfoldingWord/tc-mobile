@@ -22,8 +22,9 @@ import { describe, expect, it } from "vitest";
  * repo green (the pure `src/lib/nav` tests never load the adapter, and the
  * Playwright spec's idle path always HAS a handle). That is the
  * mutation-survives case AGENTS.md says to close with a gate rather than leave
- * to a reviewer's memory; this mirrors `tests/recorder-stop-release-guards.ts`'s
- * comment-stripping, brace-counting source-shape idiom.
+ * to a reviewer's memory; this mirrors
+ * `tests/recorder-stop-release-guards.test.ts`'s comment-stripping,
+ * brace-counting source-shape idiom.
  *
  * WHAT IT PROVES, EXACTLY: that the source text's `commit-close-recorder` case
  * has a braced `if (!handle) { ... }` branch whose body calls
