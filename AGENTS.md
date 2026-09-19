@@ -210,19 +210,22 @@ recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below), `stopRecording`'s commit-path backstop
-(`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), and the
-log's own share and clear paths.
+(`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
+save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
+(`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
+(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), and the log's own
+share and clear paths. `SaveFailed` now carries the same `SendLogControl` the
+crash screen does (#456, moved into its own module,
+`components/send-log-control.tsx`, so both screens share one implementation)
+— `DatabasePanel` still does not: #456 itself calls that a design call,
+since an unreachable database cannot read its own log either, and that is
+different work from wiring the funnel.
 What still ends at `console.error` and is therefore **never written down** is
-most of what a translator actually hits: a failed save
-(`hooks/use-save-take.ts`), a failed book delete (`hooks/use-books.ts`), a
-failed erase (`hooks/use-erase-segment.ts`), mic/playback/record-start
-(`hooks/use-audio-session.ts`), the recorder's preview path, and share _send_
-(`hooks/share-flow.ts`). Routing those is follow-up work — and it
-is not a one-line change, because `SaveFailed` replaces the tree the way the
-crash screen does, so that screen needs the Send control the boundary grew.
-Until it lands, do not describe the log as holding "anything that went wrong":
-`docs/training/facilitator-runbook.md` §5 names both halves for facilitators
-and this paragraph is the engineering copy of the same list.
+mic/playback/record-start (`hooks/use-audio-session.ts`), the recorder's
+preview path, and share _send_ (`hooks/share-flow.ts`). Routing those is
+follow-up work. Until it lands, do not describe the log as holding "anything
+that went wrong": `docs/training/facilitator-runbook.md` §5 names both halves
+for facilitators and this paragraph is the engineering copy of the same list.
 
 The _presentation_ stays deliberately thin, and that is the standing rule, not
 a gap: this UI is for people who may not read, so a text toast is close to
