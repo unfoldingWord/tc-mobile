@@ -895,6 +895,22 @@ export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
 }
 
 /**
+ * Where the fixed centerline sits across the waveform viewport (F6).
+ *
+ * Centered. Sitting it right-of-centre gave the recorded audio room to the
+ * right to grow into on an append (mockup 3), but the requirements owner's
+ * v0.1.2 review asked for it centered on every screen — that overrides the
+ * append-headroom tradeoff. One constant to retune.
+ *
+ * Lives here, not in `recorder.tsx` or `centerline-overlay.tsx`, because
+ * both read it: `recorder.tsx`'s own pan/zoom arithmetic (`viewportWindow`,
+ * `playbackStrip`, `panForZoom`) and `CenterlineOverlay`'s `left` position
+ * must agree on the same fraction, and a module that both already import
+ * (this one) is the one place that does not make either import the other.
+ */
+export const CENTER_FRACTION = 0.5;
+
+/**
  * Whether the fixed centerline overlay is drawn — the COMPLETE render
  * decision for `recorder.tsx`'s centerline `<div>` (#418; folded together
  * with the `liveScope` term here by George round-1 / Frank round-2 P2 on
