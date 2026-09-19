@@ -106,17 +106,32 @@ export async function performSaveTake(
   // failure report, nor re-arm the recovery screen over a take that is
   // already durably on disk (Frank P2, PR #509 round 2 — the mirror of
   // `performErase`'s `onErased` guard).
+  //
+  // Each effect gets its OWN try, not one shared try around all three
+  // (Frank round 2 on the same finding): a shared try means one throwing
+  // effect skips every effect after it, and `onSaved` throwing must not
+  // suppress `requestSweep` — a Finished take is owed a transcode request
+  // (D3) whether or not the reload notification that follows succeeds.
+  //
+  // Cleared only here, and only for this attempt. A `finally` would drop
+  // the samples on the failure path, which is the one path they exist for.
   try {
-    // Cleared only here, and only for this attempt. A `finally` would drop
-    // the samples on the failure path, which is the one path they exist for.
     effects.update((held) => succeedSave(held, take.clipId));
-    // In the same tick as clearing the slot, so there is no frame where the
-    // slot is empty and the reload has not been asked for — the reload is
-    // how the just-recorded row stops reading as never-recorded.
+  } catch (cause) {
+    console.error("Post-save notification failed", cause);
+  }
+  // In the same tick as clearing the slot, so there is no frame where the
+  // slot is empty and the reload has not been asked for — the reload is
+  // how the just-recorded row stops reading as never-recorded.
+  try {
     effects.onSaved?.();
-    // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
-    // Asked for AFTER the commit and the reload, never on the failure path —
-    // the sweep only ever reads what is durably on disk.
+  } catch (cause) {
+    console.error("Post-save notification failed", cause);
+  }
+  // A take saved with the Finished mark is finished PCM (D3): owed an MP3.
+  // Asked for AFTER the commit and the reload, never on the failure path —
+  // the sweep only ever reads what is durably on disk.
+  try {
     if (take.finished) effects.requestSweep();
   } catch (cause) {
     console.error("Post-save notification failed", cause);

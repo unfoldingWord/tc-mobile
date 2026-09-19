@@ -257,22 +257,30 @@ describe("performSaveTake — a commit that lands", () => {
     // effect (a reload that failed, or a sweep request that threw) must not
     // be folded back into a "save-take" failure report or re-arm the
     // recovery screen over a take that is already durably on disk.
+    //
+    // `finished: true` on purpose (Frank round 2, PR #509): the FIRST fix
+    // for this finding put `update`, `onSaved` and `requestSweep` behind one
+    // shared try, which meant `onSaved` throwing skipped `requestSweep`
+    // entirely and left Finished PCM without the transcode request it is
+    // owed (D3) — this assertion is what pins that each effect is
+    // independent, not just that the function as a whole returns true.
     const segmentId = await freshSegment();
     const clipId = newClipId();
-    const take = heldTake({ segmentId, clipId });
+    const take = heldTake({ segmentId, clipId, finished: true });
     const s = slot(take);
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
+    const requestSweep = vi.fn();
 
     const ok = await performSaveTake(take, {
       update: s.update,
       onSaved: () => {
         throw new Error("reload failed");
       },
-      requestSweep: vi.fn(),
+      requestSweep,
     });
 
     off();
@@ -286,6 +294,8 @@ describe("performSaveTake — a commit that lands", () => {
     expect(s.held()).toBeNull();
     const stored = await getClip(clipId);
     expect(stored?.encoding).toBe("pcm");
+    // The Finished mark still owes a sweep, independent of onSaved's throw.
+    expect(requestSweep).toHaveBeenCalledTimes(1);
   });
 });
 
