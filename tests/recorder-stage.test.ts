@@ -6,8 +6,11 @@ import {
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterCutRest,
   panAfterDragMove,
-  panAfterRematerialize,
+  panAfterInsert,
+  panAfterRedo,
+  panAfterUndo,
   panOrRest,
   panGesture,
   recordDisabled,
@@ -15,6 +18,7 @@ import {
   stageView,
   type StageState,
 } from "@/components/recorder-stage";
+import type { EditOp } from "@/lib/audio/edit-log";
 import { effectivePan, viewportWindow } from "@/lib/audio/viewport";
 
 /**
@@ -1117,33 +1121,139 @@ describe("#442 — drag to the end, then Paste grows the buffer", () => {
   });
 });
 
-describe("panAfterRematerialize", () => {
-  it("drops an absolute index — there is no mapping for a history jump", () => {
-    expect(panAfterRematerialize(4000)).toBeNull();
-    expect(panAfterRematerialize(0)).toBeNull();
+/**
+ * #473: `onCut`'s writer, run through the rest rule — the one numeric
+ * `panState` writer #442 did not touch.
+ */
+describe("panAfterCutRest", () => {
+  it("rests, not the number newLength, when a cut to the end starts exactly on the pan", () => {
+    // The issue's own repro: drag the line into the tail, select from there
+    // to the end, Cut. The pan sits at the cut's own `start`, so
+    // `panAfterCut` alone clamps it to `removed.start` — which, for a cut
+    // reaching the old end, IS the new length exactly (#473's finding).
+    const preCutLength = 10_000;
+    const removed = { start: 8_000, end: 10_000 };
+    expect(panAfterCutRest(8_000, removed, preCutLength)).toBeNull();
   });
 
-  it("leaves a resting line resting", () => {
-    expect(panAfterRematerialize(null)).toBeNull();
-  });
-
-  it("puts the line at the end of whatever comes back", () => {
-    // The composition that matters, on the length that actually exposes the
-    // defect: undoing a CUT makes the buffer longer (8 000 samples back to
-    // 12 000), and `effectivePan` clamps to `length`, so a shorter restored
-    // buffer would have hidden the stale index behind the clamp. Here the rest
-    // is not "no pan" but F7's "the end, whatever the end becomes", so the line
-    // is at 12 000 and Record APPENDS. Mutation: hand the old index back and
-    // this reads 4 000, inside audio the translator never pointed at, where the
-    // next take punches in.
+  it("composes with a later Paste the way #442's drag fix does", () => {
+    // Same shape as the `panAfterDragMove` "keeps Record appending after a
+    // paste" case above: a rested pan must still track a GROWN buffer's new
+    // end, not the length as it stood mid-cut.
+    const preCutLength = 10_000;
+    const removed = { start: 8_000, end: 10_000 };
+    const rested = panAfterCutRest(8_000, removed, preCutLength);
+    const grownLength = 14_000; // a Paste after the cut
     const pan = effectivePan({
       mode: "record",
       selectionActive: false,
       zoomPan: null,
-      panState: panAfterRematerialize(4000),
-      length: 12_000,
+      panState: rested,
+      length: grownLength,
     });
-    expect(pan).toBe(12_000);
+    expect(pan).toBe(grownLength);
+  });
+
+  it("leaves a pan entirely before the removed span untouched", () => {
+    // Nothing about the rest rule should disturb the ordinary case #416/#317
+    // already cover: a cut entirely after the pan.
+    expect(panAfterCutRest(2_000, { start: 8_000, end: 10_000 }, 10_000)).toBe(
+      2_000
+    );
+  });
+});
+
+/**
+ * #449: `panAfterInsert`, `panAfterCut`'s structural inverse — what a paste
+ * (live, or an undone cut re-inserting what it removed) does to a position.
+ */
+describe("panAfterInsert", () => {
+  it("leaves a pan strictly before the insertion point untouched", () => {
+    expect(panAfterInsert(1_000, 5_000, 3_000)).toBe(1_000);
+  });
+
+  it("leaves a pan EXACTLY at the insertion point untouched — onPaste's own case", () => {
+    // `recorder.tsx`'s `onPaste`: "nothing to the line's left moves". The
+    // pan is a boundary, not audio; it keeps pointing at the start of what
+    // was just inserted rather than being pushed past it.
+    expect(panAfterInsert(5_000, 5_000, 3_000)).toBe(5_000);
+  });
+
+  it("shifts a pan after the insertion point by the inserted length", () => {
+    expect(panAfterInsert(6_000, 5_000, 3_000)).toBe(9_000);
+  });
+});
+
+/**
+ * #449: Undo/Redo map the centerline through the inverse/forward effect of
+ * the op they step over, instead of unconditionally dropping it to the F7
+ * rest (the round-3 P1 fix this replaces).
+ */
+describe("panAfterUndo / panAfterRedo", () => {
+  const cutAtEnd: EditOp = {
+    kind: "cut",
+    range: { start: 9_000, end: 10_000 },
+  };
+
+  it("#449's own scenario: a hand-set pan survives undoing a cut that never touched it", () => {
+    // 10s buffer, pan dragged to 3s, a mistake cut from 9s to the end. The
+    // cut removes nothing before the pan (`removedBeforePan === 0`), so the
+    // pan is unaffected by the cut in either direction — Undo must leave it
+    // at 3 000, not reset it to the append rest.
+    const preUndoLength = 9_000; // post-cut length
+    expect(panAfterUndo(3_000, cutAtEnd, preUndoLength)).toBe(3_000);
+  });
+
+  it("subsumes the round-3 P1: a frozen index past the undone span is repaired, not dropped", () => {
+    // The buffer was 12 000 samples; the last op cut [4 000, 8 000), leaving
+    // 8 000. Playback froze the pan at 6 000 in the POST-cut buffer — audio
+    // that was originally at 10 000 pre-cut (everything from the old 8 000
+    // on shifted down by the removed 4 000). Undoing the cut must restore
+    // that mapping — 10 000, not the audio at the OLD 6 000 (a different
+    // word, still inside the surviving head) and not the F7 rest (12 000)
+    // the old blanket-drop fix used to answer with regardless.
+    const cutMiddle: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    expect(panAfterUndo(6_000, cutMiddle, 8_000)).toBe(10_000);
+  });
+
+  it("undoing a paste removes what it inserted, mapping through panAfterCut", () => {
+    // A 6 000-sample buffer had a 3 000-sample clip pasted at 2 000,
+    // growing it to 9 000. Playback froze at 7 000 — inside the audio that
+    // was pushed right by the paste (originally at 4 000). Undo must land
+    // back on 4 000.
+    const pasteOp: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(panAfterUndo(7_000, pasteOp, 9_000)).toBe(4_000);
+  });
+
+  it("redoing maps forward the same way the live writers do", () => {
+    // Redoing the same cut reproduces `panAfterCutRest`'s own forward
+    // mapping (minus the rest clamp, which `panAfterRedo` also applies).
+    const preRedoLength = 10_000; // the buffer as it stands before the redo
+    expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBe(2_000); // before the cut
+    expect(panAfterRedo(9_500, cutAtEnd, preRedoLength)).toBeNull(); // inside/after -> rests
+  });
+
+  it("redoing a paste shifts a pan at or after the insertion point", () => {
+    const pasteOp: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    const preRedoLength = 6_000;
+    expect(panAfterRedo(1_000, pasteOp, preRedoLength)).toBe(1_000);
+    expect(panAfterRedo(4_000, pasteOp, preRedoLength)).toBe(7_000);
+  });
+
+  it("leaves the F7 rest resting through both directions — no op has anything to map it through", () => {
+    expect(panAfterUndo(null, cutAtEnd, 9_000)).toBeNull();
+    expect(panAfterRedo(null, cutAtEnd, 10_000)).toBeNull();
   });
 });
 

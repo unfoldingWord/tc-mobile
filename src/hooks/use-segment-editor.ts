@@ -10,6 +10,7 @@ import {
   redo as logRedo,
   undo as logUndo,
   type EditLog,
+  type EditOp,
 } from "@/lib/audio/edit-log";
 import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
@@ -59,8 +60,13 @@ export interface SegmentEditor {
   readonly cut: () => SampleRange | null;
   /** Paste the clipboard at a sample offset (the centerline). */
   readonly paste: (atSample: number) => void;
-  readonly undo: () => void;
-  readonly redo: () => void;
+  /** Step history back one op. Returns the op that was undone (so the
+   *  recorder can map the centerline through its inverse, #449), or null if
+   *  there was nothing to undo or the rematerialise failed. */
+  readonly undo: () => EditOp | null;
+  /** Step history forward one op. Returns the op that was (re-)applied, or
+   *  null if there was nothing to redo or the rematerialise failed. */
+  readonly redo: () => EditOp | null;
 }
 
 /** The base buffer, the current edited buffer, and the history that maps between. */
@@ -239,15 +245,30 @@ export function useSegmentEditor(
 
   // Undo/redo re-materialise from base and clear any open selection, whose
   // sample range was measured against a buffer the history has just changed.
-  const undo = useCallback(
-    () => applyLog(logUndo(log), clearSelection),
-    [log, applyLog, clearSelection]
-  );
+  //
+  // Each returns the op it stepped over — the one being undone, or the one
+  // being (re-)applied — so the recorder can map the centerline through its
+  // inverse (#449) rather than dropping it unconditionally. Read BEFORE
+  // `applyLog` runs (the cursor this closes over is the pre-step one); `null`
+  // when there was nothing to step to, or when `applyLog`'s guard reports the
+  // rematerialise failed, mirroring `cut()`'s own `applied ? range : null`.
+  const undo = useCallback((): EditOp | null => {
+    if (!logCanUndo(log)) return null;
+    // `logCanUndo` just confirmed `cursor > 0`, so this index is in bounds —
+    // `noUncheckedIndexedAccess` cannot see that from here.
+    const undoneOp = log.ops[log.cursor - 1]!;
+    const applied = applyLog(logUndo(log), clearSelection);
+    return applied ? undoneOp : null;
+  }, [log, applyLog, clearSelection]);
 
-  const redo = useCallback(
-    () => applyLog(logRedo(log), clearSelection),
-    [log, applyLog, clearSelection]
-  );
+  const redo = useCallback((): EditOp | null => {
+    if (!logCanRedo(log)) return null;
+    // `logCanRedo` just confirmed `cursor < ops.length`, so this index is in
+    // bounds — same `noUncheckedIndexedAccess` gap as `undo`, above.
+    const redoneOp = log.ops[log.cursor]!;
+    const applied = applyLog(logRedo(log), clearSelection);
+    return applied ? redoneOp : null;
+  }, [log, applyLog, clearSelection]);
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)
