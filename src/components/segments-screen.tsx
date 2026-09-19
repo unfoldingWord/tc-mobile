@@ -536,8 +536,17 @@ export const SegmentsScreen = forwardRef<
         // `liveRegion` docblock for why it cannot live inside `children`
         // any more, and why `<ShareProgress>`'s own sibling portal still
         // cannot carry it (George r1 P2 #3).
+        //
+        // Mounted for the WHOLE overlay, busy included — not `phase ===
+        // "outcome"` alone (George r3 P2-1, #491): the in-menu `tone="busy"`
+        // Notice that used to be the busy-phase AT announcement is now
+        // `children`, so it goes `inert` for the entire encode, and a book
+        // share's encode is not short. `shareOverlayOwnsScreen` is exactly
+        // `phase !== "hidden"`, so this covers busy and outcome alike, and
+        // `shareProgressText` already has copy for both (`share-error-copy
+        // .ts`) — busy said nothing here only because nobody asked it to.
         liveRegion={
-          share.progress.phase === "outcome" && (
+          shareOverlayOwnsScreen(share.progress) && (
             <span className="sr-only" role="status" aria-live="polite">
               {shareProgressText(share.progress, "chapter")}
             </span>

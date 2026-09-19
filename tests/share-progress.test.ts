@@ -651,12 +651,18 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * George r1 P2 #3: the outcome text mirrored in a live region that
    * descends from the `Menu`'s own `aria-modal` dialog, since `<ShareProgress
    * >` itself is a sibling portal Chromium/WebKit hide from AT focused inside
-   * a DIFFERENT `aria-modal`. Only the outcome hold — the busy phase already
-   * has its own Notices. Moved from a `children` entry to `<Menu>`'s own
-   * `liveRegion` PROP in this round (#491, DRI option A): `inert` removes a
-   * subtree from the accessibility tree entirely, so a live region nested
-   * inside the now-inert `children` would go silent exactly when it needs to
-   * speak — see `menu.tsx`'s `liveRegion` docblock.
+   * a DIFFERENT `aria-modal`. Moved from a `children` entry to `<Menu>`'s own
+   * `liveRegion` PROP in an earlier round (#491, DRI option A): `inert`
+   * removes a subtree from the accessibility tree entirely, so a live region
+   * nested inside the now-inert `children` would go silent exactly when it
+   * needs to speak — see `menu.tsx`'s `liveRegion` docblock.
+   *
+   * George r3 P2-1 (#491): that earlier round mounted `liveRegion` only on
+   * `phase === "outcome"`, but the in-menu `tone="busy"` Notice — the busy
+   * phase's OWN announcement — is `children`, so it goes `inert` for the
+   * whole encode too. The DRI's one-line pick (issuecomment-5742423578)
+   * widens the guard to `shareOverlayOwnsScreen(progress)`
+   * (`phase !== "hidden"`), covering busy and outcome alike.
    */
   for (const [screen, hook, scope] of [
     ["src/components/segments-screen.tsx", "share", "chapter"],
@@ -665,7 +671,7 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     it(`${screen.split("/").pop()}: passes shareProgressText as <Menu>'s liveRegion PROP, not a child — outside inert, inside the aria-modal panel`, () => {
       const source = read(screen);
       const liveRegionPropRe = new RegExp(
-        `liveRegion=\\{\\s*${hook}\\.progress\\.phase === "outcome" && \\(\\s*<span className="sr-only" role="status" aria-live="polite">\\s*\\{shareProgressText\\(${hook}\\.progress, "${scope}"\\)\\}`
+        `liveRegion=\\{\\s*shareOverlayOwnsScreen\\(${hook}\\.progress\\) && \\(\\s*<span className="sr-only" role="status" aria-live="polite">\\s*\\{shareProgressText\\(${hook}\\.progress, "${scope}"\\)\\}`
       );
       expect(source).toMatch(liveRegionPropRe);
       // A PROP of <Menu ...>, so it appears before `children` starts —
@@ -684,6 +690,53 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       const liveRegionAt = source.search(liveRegionPropRe);
       expect(liveRegionAt).toBeGreaterThan(menuOpenAt);
       expect(liveRegionAt).toBeLessThan(childrenStartAt);
+    });
+  }
+
+  /**
+   * George r3 P2-1 (#491), the DRI's fix itself: during the BUSY phase —
+   * while the panel's `children` (including the in-menu `tone="busy"`
+   * Notice) are `inert` and therefore invisible to the accessibility tree —
+   * the `liveRegion` prop must still exist, sit outside the `inert` wrapper,
+   * inside the `aria-modal` panel, and carry the busy-phase text
+   * (`shareProgressText`'s `"busy"` case: `sharePreparing`/
+   * `shareBookPreparing` for prepare-work, `shareHandingOver` for
+   * send-work) — not just the outcome text. Before the fix, `liveRegion`
+   * was gated on `phase === "outcome"` alone, so this assertion is false on
+   * that source (verified red: `git stash` of just the two screen files,
+   * this test run against the stashed-out fix, observed failing) and true
+   * once `shareOverlayOwnsScreen` (`phase !== "hidden"`) replaces it.
+   * Mutation: reverting the guard back to `phase === "outcome"` kills this
+   * test (verified).
+   */
+  for (const [screen, hook, scope] of [
+    ["src/components/segments-screen.tsx", "share", "chapter"],
+    ["src/components/books-screen.tsx", "bookShare", "book"],
+  ] as const) {
+    it(`${screen.split("/").pop()}: liveRegion mounts during the BUSY phase too, not just outcome — the in-menu busy Notice goes inert for the whole encode`, () => {
+      const source = read(screen);
+      // The guard must be the class-level `shareOverlayOwnsScreen` primitive
+      // (phase !== "hidden"), not a phase === "outcome" comparison — a
+      // narrower guard (even `phase === "busy" || phase === "outcome"`)
+      // would still pass the OLD test above accidentally if written
+      // carelessly, so this pins the exact primitive DRI picked.
+      const liveRegionPropRe = new RegExp(
+        `liveRegion=\\{\\s*shareOverlayOwnsScreen\\(${hook}\\.progress\\) && \\(\\s*<span className="sr-only" role="status" aria-live="polite">\\s*\\{shareProgressText\\(${hook}\\.progress, "${scope}"\\)\\}`
+      );
+      expect(source).toMatch(liveRegionPropRe);
+      expect(source).not.toMatch(
+        new RegExp(`liveRegion=\\{\\s*${hook}\\.progress\\.phase === "outcome"`)
+      );
+      // Structural placement holds for the busy phase exactly as it does for
+      // outcome: outside `inert`, inside the `aria-modal` panel (the `inert`
+      // prop itself — same guard, `shareOverlayOwnsScreen` — is what makes
+      // `children` (the busy Notice) go inert; `liveRegion` sits before it).
+      const inertPropAt = source.indexOf(
+        `inert={shareOverlayOwnsScreen(${hook}.progress)}`
+      );
+      expect(inertPropAt).toBeGreaterThan(-1);
+      const liveRegionAt = source.search(liveRegionPropRe);
+      expect(liveRegionAt).toBeGreaterThan(inertPropAt);
     });
   }
 

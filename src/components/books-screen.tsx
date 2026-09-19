@@ -942,8 +942,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         inert={shareOverlayOwnsScreen(bookShare.progress)}
         // OUTSIDE the inert subtree above but still inside this panel's
         // `aria-modal` boundary — see `menu.tsx`'s `liveRegion` docblock.
+        //
+        // Mounted for the WHOLE overlay, busy included — not `phase ===
+        // "outcome"` alone (George r3 P2-1, #491): see the identical comment
+        // in `segments-screen.tsx`. A book's zip-of-chapters encode is the
+        // long case this matters most for.
         liveRegion={
-          bookShare.progress.phase === "outcome" && (
+          shareOverlayOwnsScreen(bookShare.progress) && (
             <span className="sr-only" role="status" aria-live="polite">
               {shareProgressText(bookShare.progress, "book")}
             </span>
