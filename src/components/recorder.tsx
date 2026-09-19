@@ -18,7 +18,7 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import { resolveProbedPx } from "./recorder-layout";
 import {
-  centerlineShown,
+  centerlineOverlayShown,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
@@ -628,13 +628,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // stops playback BEFORE the drag begins, so `playingBuffer` is already
       // false while the finger is still down and the pan is still moving.
       dragging,
-    });
-    // #418: the one exception to #316's "always visible" — a selection span
-    // loaded in edit mode gives the line no playback role (the audition
-    // sounds only the picked span, #284), so it hides while one is loaded.
-    const centerlineVisible = centerlineShown({
-      mode,
-      selectionActive: editor.selectionActive,
     });
     const wholeView = stage.render === "whole";
     // The waveform scrolls under the fixed centerline (#415/#416/#417). While
@@ -3347,7 +3340,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       />
                     </WaveformScroller>
                   )}
-                  {!liveScope && centerlineVisible && (
+                  {centerlineOverlayShown({
+                    mode,
+                    selectionActive: editor.selectionActive,
+                    liveScope,
+                  }) && (
                     // The fixed centerline (#110/#316), a DOM element rather
                     // than a bar in the canvas (#415). The canvas is what
                     // MOVES during playback, so a painted line would travel
@@ -3359,11 +3356,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // pan. `translateX(-1px)` centres it on the fraction, which
                     // is what the canvas' `round(cf * w) - 1` did.
                     //
-                    // Mounted on the `Waveform` path only — `LiveScope` draws
-                    // its own record head while capturing — so WHEN the line
-                    // shows is unchanged by this move except for `centerlineVisible`
-                    // (#418): every record/edit state per #316, minus the one
-                    // exception a selection span loaded in edit mode now makes.
+                    // `centerlineOverlayShown` is the COMPLETE gate (#418,
+                    // George R1 / Frank R2 P2 on #513) — both the `liveScope`
+                    // term (mounted on the `Waveform` path only; `LiveScope`
+                    // draws its own record head while capturing) and the #418
+                    // selection exception live in that one tested function,
+                    // not composed here.
                     <div
                       aria-hidden="true"
                       className="bg-live pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
@@ -3713,8 +3711,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // (George R4 P2-1). The reason has CHANGED shape again since
                     // #418 (George round-1 P3): the line now hides for a loaded
                     // edit-mode span, and is always visible otherwise
-                    // (`centerlineShown` in `recorder-stage.ts`) — it is not
-                    // true any more that "the line is never hidden". Select
+                    // (`centerlineOverlayShown` in `recorder-stage.ts`) — it is
+                    // not true any more that "the line is never hidden". Select
                     // stays inert regardless, in BOTH directions: (a) opening
                     // seeds from `win.centerlineSample`, which is `panState` —
                     // and while the stage SCROLLS the drawn line is the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  centerlineShown,
+  centerlineOverlayShown,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
@@ -147,9 +147,10 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * A fourth decision, `centerlineHidden`, lived in this table from R2 through
  * R4 P3. #316 (requirements owner, 2026-09-16) retired it as a decision made
  * HERE: the line is always visible in this table's terms, with one exception
- * carved out later and kept in its own pure function instead — `centerlineShown`,
- * below, hides the line only for a selection span loaded in edit mode (#418) —
- * see the module docblock above `stageView`.
+ * carved out later and kept in its own pure function instead —
+ * `centerlineOverlayShown`, below, hides the line for a selection span
+ * loaded in edit mode (#418) or while `liveScope` owns the stage — see the
+ * module docblock above `stageView`.
  *
  * Since #415 the line is not painted into the canvas AT ALL. A strip that
  * translates would carry a painted line with it — the travelling second
@@ -1616,32 +1617,93 @@ describe("heldByDrag", () => {
 });
 
 /**
- * #418: the one exception to #316's "always visible" — a selection span
- * loaded in edit mode gives the line no playback role, so it hides for that
- * one sub-state and nothing else.
+ * #418 / #513 (George round-1 P3, Frank round-2 P2): the COMPLETE
+ * centerline-overlay render decision, not just the #418 selection
+ * exception. Before this function existed, `recorder.tsx`'s JSX composed
+ * `!liveScope && centerlineShown(...)` ad hoc at the call site, and only
+ * the `centerlineShown` half was under test — a regression in the
+ * `liveScope` term, or in how the two were combined, could not have been
+ * caught here. `centerlineOverlayShown` is now the whole gate, so this
+ * table exhausts all eight `mode` x `selectionActive` x `liveScope`
+ * combinations rather than treating `liveScope` as a separate axis nobody
+ * pins.
  */
-describe("centerlineShown", () => {
-  it("hides only in edit mode with a span loaded", () => {
-    expect(centerlineShown({ mode: "edit", selectionActive: true })).toBe(
-      false
-    );
+describe("centerlineOverlayShown", () => {
+  it("hides in edit mode with a span loaded", () => {
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: true,
+        liveScope: false,
+      })
+    ).toBe(false);
   });
 
   it("stays visible in edit mode with nothing picked — the audition start point", () => {
-    expect(centerlineShown({ mode: "edit", selectionActive: false })).toBe(
-      true
-    );
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: false,
+        liveScope: false,
+      })
+    ).toBe(true);
   });
 
   it("stays visible in record mode regardless of a stray selectionActive", () => {
     // `selectionActive` is a `SegmentEditor` concept that should not exist in
     // record mode, but the function is total over its inputs rather than
     // trusting the caller never to pass this combination.
-    expect(centerlineShown({ mode: "record", selectionActive: true })).toBe(
-      true
-    );
-    expect(centerlineShown({ mode: "record", selectionActive: false })).toBe(
-      true
-    );
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: true,
+        liveScope: false,
+      })
+    ).toBe(true);
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: false,
+        liveScope: false,
+      })
+    ).toBe(true);
+  });
+
+  it("hides whenever liveScope owns the stage, even in every state the #418 half would otherwise show", () => {
+    // The exact regression class #513 Frank R2 P2 named: before this
+    // function existed, `!liveScope` was composed with the #418 predicate
+    // only at the JSX call site, untested together. Cross every #418-shown
+    // state with `liveScope: true` to prove liveScope wins regardless.
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: false,
+        liveScope: true,
+      })
+    ).toBe(false);
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: false,
+        liveScope: true,
+      })
+    ).toBe(false);
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: true,
+        liveScope: true,
+      })
+    ).toBe(false);
+  });
+
+  it("agrees with the #418 half when both reasons to hide are present at once", () => {
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: true,
+        liveScope: true,
+      })
+    ).toBe(false);
   });
 });

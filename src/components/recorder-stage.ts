@@ -130,8 +130,9 @@ export function liveScopeShown(s: StageState): boolean {
  * with exactly one exception: a selection span loaded in edit mode gives the
  * line no playback role at all (the audition sounds only the picked span —
  * #284, `recorder.tsx`'s `onPaste`-adjacent audition split), so it is drawn
- * inside the span it does not describe. {@link centerlineShown} is that one
- * exception, not a return of the old multi-state hide rule. Since #415 the
+ * inside the span it does not describe. {@link centerlineOverlayShown} is
+ * that one exception (plus the unrelated `liveScope` term — see its own
+ * docblock), not a return of the old multi-state hide rule. Since #415 the
  * line is not painted into the canvas at all: a strip that translates would
  * carry a painted line with it, so it is a fixed element on the stage
  * (`recorder.tsx`'s centerline overlay), mounted wherever the `Waveform` path
@@ -894,26 +895,48 @@ export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
 }
 
 /**
- * Whether the fixed centerline is drawn (#418).
+ * Whether the fixed centerline overlay is drawn — the COMPLETE render
+ * decision for `recorder.tsx`'s centerline `<div>` (#418; folded together
+ * with the `liveScope` term here by George round-1 / Frank round-2 P2 on
+ * #513).
  *
- * The one exception to #316's "always visible": a selection span loaded in
- * edit mode has no playback role for the line — with a span picked, the
- * audition sounds only the selection (#284), and the line is only the
- * audition's start point when nothing is picked. Drawn inside the span it
- * does not describe, it is clutter rather than a cue, so it hides for that
- * one sub-state and nothing else — record, play, paused preview, and edit
- * mode with no span picked all keep it, per the table in #418.
+ * Before this, the JSX gate composed two separately-derived booleans ad hoc
+ * at the call site — `{!liveScope && centerlineVisible && (` — and only
+ * `centerlineVisible`'s own predicate (then named `centerlineShown`) was
+ * under test. A future edit that dropped or changed the `!liveScope` term
+ * at the call site would leave the centerline visible behind a live-growing
+ * scope, or vice versa, and every existing test would still pass, because
+ * nothing exercised the two terms together. This function is now the WHOLE
+ * gate; `recorder.tsx` calls it directly in the JSX condition with no other
+ * boolean logic at the call site, so a regression in either term has to
+ * break a test here rather than survive as an uncovered call-site edit.
  *
- * Deliberately NOT keyed off {@link StageRender} or `playingBuffer`: the
- * hide is about whether a span is loaded, not about whether the stage is
- * scrolling or something is sounding — a picked-span audition (`inPlace`)
- * and a picked span sitting idle both hide it, and a `scroll` playback with
- * no selection keeps it.
+ * Two independent reasons to hide, either sufficient on its own:
+ *
+ * - `liveScope`: mounted on the `Waveform` path only — `LiveScope` draws its
+ *   own record head while capturing (see `liveScopeShown`), so if the two
+ *   branches were ever mounted together this line would double that cue.
+ *   Unconditional; not a #418 concern.
+ * - the #418 exception to #316's "always visible": a selection span loaded
+ *   in edit mode has no playback role for the line — with a span picked,
+ *   the audition sounds only the selection (#284), and the line is only the
+ *   audition's start point when nothing is picked. Drawn inside the span it
+ *   does not describe, it is clutter rather than a cue, so it hides for
+ *   that one sub-state and nothing else — record, play, paused preview, and
+ *   edit mode with no span picked all keep it, per the table in #418.
+ *
+ * The #418 half is deliberately NOT keyed off {@link StageRender} or
+ * `playingBuffer`: the hide is about whether a span is loaded, not about
+ * whether the stage is scrolling or something is sounding — a picked-span
+ * audition (`inPlace`) and a picked span sitting idle both hide it, and a
+ * `scroll` playback with no selection keeps it.
  */
-export function centerlineShown(input: {
+export function centerlineOverlayShown(input: {
   readonly mode: "record" | "edit";
   readonly selectionActive: boolean;
+  readonly liveScope: boolean;
 }): boolean {
+  if (input.liveScope) return false;
   return !(input.mode === "edit" && input.selectionActive);
 }
 
