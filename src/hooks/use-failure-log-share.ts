@@ -9,6 +9,7 @@ import {
 import { reportFailure } from "./report-failure";
 import {
   classifyShareError,
+  resolveSendOutcome,
   type ShareError,
   type ShareOutcome,
   type ShareStatus,
@@ -19,6 +20,8 @@ import {
   isNativeShell,
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
+  resolveProvesDelivery,
 } from "./share-target";
 
 /**
@@ -101,6 +104,19 @@ export interface UseFailureLogShare {
   readonly status: ShareStatus;
   readonly error: ShareError | null;
   /**
+   * See {@link UseShareFlow.sendUnconfirmed} — the identical field, on the
+   * identical policy, for this hook's own `send()` (Frank at `238820a` P2,
+   * #491): fixing `send()` to return `"unproven"` on an unconfirmed native
+   * resolve (rather than an unconditional `"sent"`) closed George r2 P2-3's
+   * hole in the RETURN VALUE, but neither caller — `FailureLogPanel`,
+   * `SendLogControl` — read that return value for anything but whether to
+   * close, so an unproven send still redrew a plain idle control with
+   * nothing telling it apart from one that was never tried. Wired the same
+   * way as chapter/book: true after an `unproven` settle, cleared at the
+   * start of a fresh `prepare()` and by `reset()`.
+   */
+  readonly sendUnconfirmed: boolean;
+  /**
    * Tap 1: read the log, render it, and arm the send gesture. Never rejects —
    * a reason surfaces through `error`.
    */
@@ -164,6 +180,8 @@ export interface UseFailureLogShare {
 export function useFailureLogShare(): UseFailureLogShare {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [error, setError] = useState<ShareError | null>(null);
+  // See UseFailureLogShare.sendUnconfirmed's own docblock.
+  const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
   /**
    * What tap 1 armed. A ref, not state, so `send` reads it synchronously inside
    * the gesture — before any render — and the `navigator.share` call keeps the
@@ -236,6 +254,9 @@ export function useFailureLogShare(): UseFailureLogShare {
     const controller = new AbortController();
     aborter.current = controller;
     setError(null);
+    // A fresh attempt is itself the acknowledgment of any prior unconfirmed
+    // one — see `UseFailureLogShare.sendUnconfirmed`'s own docblock.
+    setSendUnconfirmed(false);
     try {
       // INSIDE the try, probes included (Frank, takeover round 3). This function
       // promises never to reject — the panel and the crash screen both call it
@@ -380,6 +401,7 @@ export function useFailureLogShare(): UseFailureLogShare {
     if (stale?.kind === "native") void nativeShare.discard(stale.staged);
     setStatus("idle");
     setError(null);
+    setSendUnconfirmed(false);
   }, []);
 
   const send = useCallback(async (): Promise<ShareOutcome> => {
@@ -459,11 +481,32 @@ export function useFailureLogShare(): UseFailureLogShare {
       setStatus("idle");
       // On the native route a resolve does NOT prove the sheet was used —
       // `resolveProvesDelivery` documents why the plugin cannot tell a
-      // dismissed chooser from a used one. It is reported as `sent` anyway, and
-      // that is safe HERE for the reason it is safe for Share Chapter: nothing
-      // is consumed by sending. The log is still on the phone, the count is
-      // unchanged, and Clear is a separate deliberate gesture.
-      return "sent";
+      // dismissed chooser from a used one (the Android false-success path,
+      // Frank a446708 P2). This USED to report `sent` unconditionally, on the
+      // reasoning that nothing is consumed by sending: the log is still on
+      // the phone, the count is unchanged, and Clear is a separate deliberate
+      // gesture. That reasoning is true and beside the point (George r2 P2-3,
+      // #491) — it argues sending twice is cheap, not that reporting an
+      // unconfirmed resolve as a confirmed one is honest, and Share
+      // Chapter/Book's own `unproven` outcome (`resolveSendOutcome`) exists
+      // for exactly this platform/route combination, not a chapter-specific
+      // one. Same policy here: `unproven` when this platform cannot vouch for
+      // the resolve, `sent` otherwise — and `unproven` is NOT in
+      // `FailureLogPanel`'s close-on-`sent`/`dismissed` set, so an unconfirmed
+      // native resolve leaves the panel open the same way it leaves the
+      // Share menus open. No gap to carry here (a failure-log payload has no
+      // `missing`/`partial` count), so `partial` can never come back — only
+      // `sent` or `unproven`.
+      const proven = resolveProvesDelivery(
+        payload.kind === "native" ? "native" : "web",
+        readSharePlatform()
+      );
+      const settled = resolveSendOutcome(proven, undefined);
+      // Frank at `238820a` P2 (#491): flag it the same way chapter/book do,
+      // so the idle Send control still shows it once `status` returns to
+      // idle — see `UseFailureLogShare.sendUnconfirmed`.
+      if (settled === "unproven") setSendUnconfirmed(true);
+      return settled === "unproven" ? "unproven" : "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
       // Activation was spent — keep the payload armed and stay `ready` so
@@ -563,7 +606,7 @@ export function useFailureLogShare(): UseFailureLogShare {
     reset();
   }, [generation, status, reset]);
 
-  return { status, error, prepare, send, reset };
+  return { status, error, sendUnconfirmed, prepare, send, reset };
 }
 
 /**

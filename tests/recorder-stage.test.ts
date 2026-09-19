@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  centerlineOverlayShown,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterCutRest,
   panAfterDragMove,
-  panAfterRematerialize,
+  panAfterInsert,
+  panAfterRedo,
+  panAfterUndo,
   panOrRest,
   panGesture,
   recordDisabled,
@@ -15,7 +19,20 @@ import {
   stageView,
   type StageState,
 } from "@/components/recorder-stage";
-import { effectivePan, viewportWindow } from "@/lib/audio/viewport";
+import {
+  emptyLog,
+  materialize,
+  opRedone,
+  opUndone,
+  pushOp,
+  undo as logUndo,
+  type EditOp,
+} from "@/lib/audio/edit-log";
+import {
+  effectivePan,
+  panAfterCut,
+  viewportWindow,
+} from "@/lib/audio/viewport";
 
 /**
  * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
@@ -128,9 +145,12 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * booleans that could disagree with each other (#415).
  *
  * A fourth decision, `centerlineHidden`, lived in this table from R2 through
- * R4 P3. #316 (requirements owner, 2026-09-16) retired it: the line is never
- * suppressed, in any state, so there is nothing left for this pure module to
- * decide — see the module docblock above `stageView`.
+ * R4 P3. #316 (requirements owner, 2026-09-16) retired it as a decision made
+ * HERE: the line is always visible in this table's terms, with one exception
+ * carved out later and kept in its own pure function instead —
+ * `centerlineOverlayShown`, below, hides the line for a selection span
+ * loaded in edit mode (#418) or while `liveScope` owns the stage — see the
+ * module docblock above `stageView`.
  *
  * Since #415 the line is not painted into the canvas AT ALL. A strip that
  * translates would carry a painted line with it — the travelling second
@@ -1117,33 +1137,392 @@ describe("#442 — drag to the end, then Paste grows the buffer", () => {
   });
 });
 
-describe("panAfterRematerialize", () => {
-  it("drops an absolute index — there is no mapping for a history jump", () => {
-    expect(panAfterRematerialize(4000)).toBeNull();
-    expect(panAfterRematerialize(0)).toBeNull();
+/**
+ * #473: `onCut`'s writer, run through the rest rule — the one numeric
+ * `panState` writer #442 did not touch.
+ */
+describe("panAfterCutRest", () => {
+  it("rests, not the number newLength, when a cut to the end starts exactly on the pan", () => {
+    // The issue's own repro: drag the line into the tail, select from there
+    // to the end, Cut. The pan sits at the cut's own `start`, so
+    // `panAfterCut` alone clamps it to `removed.start` — which, for a cut
+    // reaching the old end, IS the new length exactly (#473's finding).
+    const preCutLength = 10_000;
+    const removed = { start: 8_000, end: 10_000 };
+    expect(panAfterCutRest(8_000, removed, preCutLength)).toBeNull();
   });
 
-  it("leaves a resting line resting", () => {
-    expect(panAfterRematerialize(null)).toBeNull();
-  });
-
-  it("puts the line at the end of whatever comes back", () => {
-    // The composition that matters, on the length that actually exposes the
-    // defect: undoing a CUT makes the buffer longer (8 000 samples back to
-    // 12 000), and `effectivePan` clamps to `length`, so a shorter restored
-    // buffer would have hidden the stale index behind the clamp. Here the rest
-    // is not "no pan" but F7's "the end, whatever the end becomes", so the line
-    // is at 12 000 and Record APPENDS. Mutation: hand the old index back and
-    // this reads 4 000, inside audio the translator never pointed at, where the
-    // next take punches in.
+  it("composes with a later Paste the way #442's drag fix does", () => {
+    // Same shape as the `panAfterDragMove` "keeps Record appending after a
+    // paste" case above: a rested pan must still track a GROWN buffer's new
+    // end, not the length as it stood mid-cut.
+    const preCutLength = 10_000;
+    const removed = { start: 8_000, end: 10_000 };
+    const rested = panAfterCutRest(8_000, removed, preCutLength);
+    const grownLength = 14_000; // a Paste after the cut
     const pan = effectivePan({
       mode: "record",
       selectionActive: false,
       zoomPan: null,
-      panState: panAfterRematerialize(4000),
-      length: 12_000,
+      panState: rested,
+      length: grownLength,
     });
-    expect(pan).toBe(12_000);
+    expect(pan).toBe(grownLength);
+  });
+
+  it("leaves a pan entirely before the removed span untouched", () => {
+    // Nothing about the rest rule should disturb the ordinary case #416/#317
+    // already cover: a cut entirely after the pan.
+    expect(panAfterCutRest(2_000, { start: 8_000, end: 10_000 }, 10_000)).toBe(
+      2_000
+    );
+  });
+
+  it("rests at a fractional-boundary cut's TRUNCATED end, not a few tenths short of it (#473 round-2 Frank P2)", () => {
+    // Selection edges are floats. The buffer edit (`cut`/`sliceRange` in
+    // `lib/audio/edit.ts`) truncates `8_000.4` to `8_000` via
+    // `Int16Array.slice`, removing exactly 2_000 samples and landing the
+    // real post-cut length on `8_000` — the same "cut to the end starts
+    // exactly on the pan" shape as the integer-boundary case above, but
+    // through the truncating boundary instead of an already-integer one.
+    // A pan AT 8_000 must rest, not come back as the live number `8_000`
+    // that a raw float removed-length of `1_999.6` (`10_000 - 8_000.4`)
+    // would leave behind.
+    const preCutLength = 10_000;
+    const removed = { start: 8_000.4, end: 10_000 };
+    expect(panAfterCutRest(8_000, removed, preCutLength)).toBeNull();
+  });
+});
+
+/**
+ * #449: `panAfterInsert`, `panAfterCut`'s structural inverse — what a paste
+ * (live, or an undone cut re-inserting what it removed) does to a position.
+ */
+describe("panAfterInsert", () => {
+  it("leaves a pan strictly before the insertion point untouched", () => {
+    expect(panAfterInsert(1_000, 5_000, 3_000)).toBe(1_000);
+  });
+
+  it("leaves a pan EXACTLY at the insertion point untouched — onPaste's own case", () => {
+    // `recorder.tsx`'s `onPaste`: "nothing to the line's left moves". The
+    // pan is a boundary, not audio; it keeps pointing at the start of what
+    // was just inserted rather than being pushed past it.
+    expect(panAfterInsert(5_000, 5_000, 3_000)).toBe(5_000);
+  });
+
+  it("shifts a pan after the insertion point by the inserted length", () => {
+    expect(panAfterInsert(6_000, 5_000, 3_000)).toBe(9_000);
+  });
+});
+
+/**
+ * #449: Undo/Redo map the centerline through the inverse/forward effect of
+ * the op they step over, instead of unconditionally dropping it to the F7
+ * rest (the round-3 P1 fix this replaces).
+ */
+describe("panAfterUndo / panAfterRedo", () => {
+  const cutAtEnd: EditOp = {
+    kind: "cut",
+    range: { start: 9_000, end: 10_000 },
+  };
+
+  it("#449's own scenario: a hand-set pan survives undoing a cut that never touched it", () => {
+    // 10s buffer, pan dragged to 3s, a mistake cut from 9s to the end. The
+    // cut removes nothing before the pan (`removedBeforePan === 0`), so the
+    // pan is unaffected by the cut in either direction — Undo must leave it
+    // at 3 000, not reset it to the append rest.
+    const preUndoLength = 9_000; // post-cut length
+    expect(panAfterUndo(3_000, cutAtEnd, preUndoLength)).toBe(3_000);
+  });
+
+  it("subsumes the round-3 P1: a frozen index past the undone span is repaired, not dropped", () => {
+    // The buffer was 12 000 samples; the last op cut [4 000, 8 000), leaving
+    // 8 000. Playback froze the pan at 6 000 in the POST-cut buffer — audio
+    // that was originally at 10 000 pre-cut (everything from the old 8 000
+    // on shifted down by the removed 4 000). Undoing the cut must restore
+    // that mapping — 10 000, not the audio at the OLD 6 000 (a different
+    // word, still inside the surviving head) and not the F7 rest (12 000)
+    // the old blanket-drop fix used to answer with regardless.
+    const cutMiddle: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    expect(panAfterUndo(6_000, cutMiddle, 8_000)).toBe(10_000);
+  });
+
+  it("a pan exactly at a cut's START boundary is the one case panAfterInsert truly inverts (panel P1)", () => {
+    // 12 000-sample buffer, cut removes [4 000, 8 000). A pan sitting
+    // exactly at the cut's start survives the cut untouched
+    // (`removedBeforePan === 0`), and panAfterInsert's `pan <= at` hands it
+    // straight back on undo — the one boundary where the "inverse" claim in
+    // panAfterInsert's docblock actually holds.
+    const cutFromFour: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    const postCutPan = panAfterCut(4_000, cutFromFour.range);
+    expect(postCutPan).toBe(4_000);
+    expect(panAfterUndo(postCutPan, cutFromFour, 8_000)).toBe(4_000);
+  });
+
+  it("a pan exactly at a cut's END boundary does NOT round-trip — it restores to the cut's START (panel P1)", () => {
+    // Same cut, [4 000, 8 000) out of a 12 000-sample buffer, but the pan
+    // sat at the cut's END instead of its start. panAfterCut collapses
+    // both boundaries to the same post-cut value — `panAfterCut(8_000, ...)`
+    // and `panAfterCut(4_000, ...)` both return 4_000 — so the information
+    // that this pan started at 8 000 is already gone before undo ever runs.
+    // panAfterUndo can only hand back 4 000, never the original 8 000. This
+    // pins the honest, deliberate convention panAfterInsert's docblock now
+    // names, rather than the "inverts at the boundary" claim a panel review
+    // found false here.
+    const cutFromFour: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    const postCutPan = panAfterCut(8_000, cutFromFour.range);
+    expect(postCutPan).toBe(4_000); // already collapsed to the cut's start
+    expect(panAfterUndo(postCutPan, cutFromFour, 8_000)).toBe(4_000); // not 8_000
+  });
+
+  it("undoing a paste removes what it inserted, mapping through panAfterCut", () => {
+    // A 6 000-sample buffer had a 3 000-sample clip pasted at 2 000,
+    // growing it to 9 000. Playback froze at 7 000 — inside the audio that
+    // was pushed right by the paste (originally at 4 000). Undo must land
+    // back on 4 000.
+    const pasteOp: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(panAfterUndo(7_000, pasteOp, 9_000)).toBe(4_000);
+  });
+
+  it("redoing maps forward the same way the live writers do", () => {
+    // Redoing the same cut reproduces `panAfterCutRest`'s own forward
+    // mapping (minus the rest clamp, which `panAfterRedo` also applies).
+    const preRedoLength = 10_000; // the buffer as it stands before the redo
+    expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBe(2_000); // before the cut
+    expect(panAfterRedo(9_500, cutAtEnd, preRedoLength)).toBeNull(); // inside/after -> rests
+  });
+
+  it("redoing a paste shifts a pan at or after the insertion point", () => {
+    const pasteOp: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    const preRedoLength = 6_000;
+    expect(panAfterRedo(1_000, pasteOp, preRedoLength)).toBe(1_000);
+    expect(panAfterRedo(4_000, pasteOp, preRedoLength)).toBe(7_000);
+  });
+
+  it("redoing a cut collapses both its START and END boundary pans to the same value (panel P1, forward direction)", () => {
+    // The forward direction is `panAfterCut` directly, so this is the same
+    // collapse the two undo boundary cases above pin, shown from the other
+    // side: a pan at the cut's start and a pan at the cut's end both land
+    // on the cut's start once the cut (re-)applies. Nothing about Redo
+    // recovers the distinction Undo cannot either.
+    const cutFromFour: EditOp = {
+      kind: "cut",
+      range: { start: 4_000, end: 8_000 },
+    };
+    const preRedoLength = 12_000;
+    expect(panAfterRedo(4_000, cutFromFour, preRedoLength)).toBe(4_000);
+    expect(panAfterRedo(8_000, cutFromFour, preRedoLength)).toBe(4_000);
+  });
+
+  it("panAfterUndo re-inserts the buffer edit's TRUNCATED removed length, not the raw float one (#473 round-2 Frank P2)", () => {
+    // 12_000-sample buffer, cut [4_000.4, 8_000.7). `Int16Array.slice`
+    // truncates both edges, so the buffer edit removes exactly 4_000
+    // samples (8_000 - 4_000), leaving 8_000 — `preUndoLength` here. A
+    // frozen pan at 6_000 sat in the post-cut buffer's surviving tail
+    // (past the cut's truncated start), so undoing must re-insert exactly
+    // 4_000 samples ahead of it: 10_000, matching what the buffer edit
+    // actually restores. The raw float span (`8_000.7 - 4_000.4`, ~4_000.3)
+    // instead lands the pan on `10_000.3`.
+    const fractionalCut: EditOp = {
+      kind: "cut",
+      range: { start: 4_000.4, end: 8_000.7 },
+    };
+    expect(panAfterUndo(6_000, fractionalCut, 8_000)).toBe(10_000);
+  });
+
+  it("panAfterRedo rests at the buffer edit's TRUNCATED post-cut length (#473 round-2 Frank P2)", () => {
+    // Same shape as the panAfterCutRest fractional-boundary case: a cut to
+    // the end with a fractional start truncates to removing exactly 2_000
+    // samples, so the real post-redo length is 8_000 and a pan AT the
+    // cut's truncated start (8_000) must rest — not come back as the live
+    // number `8_000` a raw float removed-length of `1_999.6` would leave.
+    const fractionalCutToEnd: EditOp = {
+      kind: "cut",
+      range: { start: 8_000.4, end: 10_000 },
+    };
+    expect(panAfterRedo(8_000, fractionalCutToEnd, 10_000)).toBeNull();
+  });
+
+  it("leaves the F7 rest resting through both directions — no op has anything to map it through", () => {
+    expect(panAfterUndo(null, cutAtEnd, 9_000)).toBeNull();
+    expect(panAfterRedo(null, cutAtEnd, 10_000)).toBeNull();
+  });
+});
+
+/**
+ * #473 round 3 (Frank r3 P2): round 2 fixed the removed LENGTH
+ * (`removedSampleCount`, now folded into `wholeSampleRange` in
+ * `lib/audio/edit.ts`) but left the POSITION terms reading the raw
+ * fractional cut bounds — `panAfterUndo`'s re-insertion point
+ * (`panAfterInsert`'s `at`, read from `Math.min(range.start, range.end)`) and
+ * `panAfterRedo`'s `panAfterCut(pan, redoneOp.range)` call. `panAfterCutRest`
+ * shares the identical shape (`panAfterCut(pan, removed)` on the raw range),
+ * though Frank r3 named only the undo/redo call sites — the class-level fix
+ * routes every cut-range read in this file through `wholeSampleRange` at
+ * entry, so a fractional cut's effect on the pan matches a cut of its
+ * already-truncated bounds exactly, not just in how much it shortens the
+ * buffer.
+ */
+describe("#473 round 3 — a fractional cut's POSITION terms match its truncated bounds, not just its length (Frank r3 P2)", () => {
+  // Int16Array.slice truncates [4_000.4, 8_000.7) to [4_000, 8_000) — exactly
+  // 4_000 samples removed, not the raw float span (~4_000.3).
+  const fractionalRange = { start: 4_000.4, end: 8_000.7 };
+  const truncatedRange = { start: 4_000, end: 8_000 };
+  const preLength = 12_000; // the buffer's length before the cut/redo
+  const postCutLength = 8_000; // 12_000, minus the truncated 4_000 removed
+  const fractionalOp: EditOp = { kind: "cut", range: fractionalRange };
+  const truncatedOp: EditOp = { kind: "cut", range: truncatedRange };
+
+  const positions: ReadonlyArray<readonly [string, number]> = [
+    ["before the cut", 2_000],
+    ["in the truncation gap at the cut's start", 4_000.2],
+    ["inside the cut", 6_000],
+    ["at the cut's truncated end", 8_000],
+    ["after the cut", 9_000.6],
+  ];
+
+  it.each(positions)(
+    "panAfterCutRest: %s (pan %s) matches a cut of the truncated bounds",
+    (_label, pan) => {
+      expect(panAfterCutRest(pan, fractionalRange, preLength)).toBe(
+        panAfterCutRest(pan, truncatedRange, preLength)
+      );
+    }
+  );
+
+  it.each(positions)(
+    "panAfterUndo: %s (pan %s) — undoing a fractional cut matches undoing the truncated one",
+    (_label, pan) => {
+      expect(panAfterUndo(pan, fractionalOp, postCutLength)).toBe(
+        panAfterUndo(pan, truncatedOp, postCutLength)
+      );
+    }
+  );
+
+  it.each(positions)(
+    "panAfterRedo: %s (pan %s) — redoing a fractional cut matches redoing the truncated one",
+    (_label, pan) => {
+      expect(panAfterRedo(pan, fractionalOp, preLength)).toBe(
+        panAfterRedo(pan, truncatedOp, preLength)
+      );
+    }
+  );
+
+  it("panAfterRedo: Frank r3's own example — 9_000.6 redoes to 5_000.6, not the raw-span 5_000.3", () => {
+    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(5_000.6);
+  });
+
+  it("panAfterCutRest: the same live-cut pan also lands on 5_000.6 — the sibling the class-level fix covers beyond Frank r3's named lines", () => {
+    expect(panAfterCutRest(9_000.6, fractionalRange, preLength)).toBe(5_000.6);
+  });
+
+  it("panAfterUndo: a pan in the truncation gap crosses the reinsertion boundary the raw `lo` comparison put it on the wrong side of", () => {
+    // 4_000.2 sits AFTER the truncated start (4_000, what the buffer edit
+    // used) but BEFORE the raw fractional start (4_000.4, what the pre-fix
+    // code compared against) — so the pre-fix `pan <= lo` branch kept it
+    // unchanged at 4_000.2 instead of shifting it past the re-inserted range
+    // to 8_000.2.
+    expect(panAfterUndo(4_000.2, fractionalOp, postCutLength)).toBe(8_000.2);
+  });
+});
+
+/**
+ * #512 George R1 P2-2: the full seam, end to end — `useSegmentEditor.undo`/
+ * `.redo` return `EditLog`'s `opUndone`/`opRedone` (this is now the hook's
+ * whole implementation, so exercising the pure pair through `edit-log.ts`
+ * pins the same contract), and the op that comes back is what
+ * `panAfterUndo`/`panAfterRedo` are handed. This closes the loop George's
+ * finding named as untested: cut → undo → the returned op maps pan through
+ * exactly the length `materialize` actually restores, not a hand-picked
+ * number that happens to agree today.
+ */
+describe("opUndone/opRedone feed panAfterUndo/panAfterRedo with an op that agrees with materialize (#512 George R1 P2-2)", () => {
+  const original = new Int16Array(10_000); // 10_000-sample take
+
+  it("cut [2,5) then undo: opUndone's op maps pan through the length materialize actually restores", () => {
+    const cutLog = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    // 9_997 samples survive the 3-sample cut.
+    const postCutLength = materialize(original, cutLog).length;
+    expect(postCutLength).toBe(9_997);
+
+    const undoneOp = opUndone(cutLog);
+    expect(undoneOp).toEqual({ kind: "cut", range: { start: 2, end: 5 } });
+
+    const restored = materialize(original, logUndo(cutLog));
+    expect(restored.length).toBe(original.length);
+
+    // A pan well inside the surviving tail (past the cut's truncated start,
+    // short of the end) must shift right by exactly the 3 samples
+    // `materialize` just proved the undo re-inserts — landing inside the
+    // restored 10_000-length buffer, not at its rest boundary.
+    expect(panAfterUndo(6_000, undoneOp!, postCutLength)).toBe(6_003);
+  });
+
+  it("cut [2,5), then paste, then undo the paste: opUndone names the paste, and pan maps through ITS inverse, not the cut's", () => {
+    const clip = new Int16Array(50);
+    const cutLog = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    const pasteLog = pushOp(cutLog, { kind: "paste", at: 100, clip });
+    const preUndoLength = materialize(original, pasteLog).length; // 9_997 + 50
+
+    const undoneOp = opUndone(pasteLog);
+    expect(undoneOp).toEqual({ kind: "paste", at: 100, clip });
+
+    const restored = materialize(original, logUndo(pasteLog));
+    // Undoing the paste alone restores the post-cut (not the original)
+    // length — the cut is still applied.
+    expect(restored.length).toBe(preUndoLength - clip.length);
+
+    // A pan sitting past the pasted clip must shift back by exactly what the
+    // paste inserted.
+    const pan = 200;
+    expect(panAfterUndo(pan, undoneOp!, preUndoLength)).toBe(pan - clip.length);
+  });
+
+  it("redo after that undo: opRedone names the SAME paste, and pan maps forward through it", () => {
+    const clip = new Int16Array(50);
+    const cutLog = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    const pasteLog = pushOp(cutLog, { kind: "paste", at: 100, clip });
+    const undone = logUndo(pasteLog);
+    const preRedoLength = materialize(original, undone).length;
+
+    const redoneOp = opRedone(undone);
+    expect(redoneOp).toEqual({ kind: "paste", at: 100, clip });
+
+    const reapplied = materialize(original, pasteLog);
+    expect(reapplied.length).toBe(preRedoLength + clip.length);
+
+    const pan = 150;
+    expect(panAfterRedo(pan, redoneOp!, preRedoLength)).toBe(pan + clip.length);
+  });
+
+  it("opUndone at the start of history is null and pan is never mapped", () => {
+    expect(opUndone(emptyLog())).toBeNull();
   });
 });
 
@@ -1234,5 +1613,97 @@ describe("heldByDrag", () => {
 
   it("never re-enables a control its own gate already killed", () => {
     expect(heldByDrag(true, true)).toBe(true);
+  });
+});
+
+/**
+ * #418 / #513 (George round-1 P3, Frank round-2 P2): the COMPLETE
+ * centerline-overlay render decision, not just the #418 selection
+ * exception. Before this function existed, `recorder.tsx`'s JSX composed
+ * `!liveScope && centerlineShown(...)` ad hoc at the call site, and only
+ * the `centerlineShown` half was under test — a regression in the
+ * `liveScope` term, or in how the two were combined, could not have been
+ * caught here. `centerlineOverlayShown` is now the whole gate, so this
+ * table exhausts all eight `mode` x `selectionActive` x `liveScope`
+ * combinations rather than treating `liveScope` as a separate axis nobody
+ * pins.
+ */
+describe("centerlineOverlayShown", () => {
+  it("hides in edit mode with a span loaded", () => {
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: true,
+        liveScope: false,
+      })
+    ).toBe(false);
+  });
+
+  it("stays visible in edit mode with nothing picked — the audition start point", () => {
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: false,
+        liveScope: false,
+      })
+    ).toBe(true);
+  });
+
+  it("stays visible in record mode regardless of a stray selectionActive", () => {
+    // `selectionActive` is a `SegmentEditor` concept that should not exist in
+    // record mode, but the function is total over its inputs rather than
+    // trusting the caller never to pass this combination.
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: true,
+        liveScope: false,
+      })
+    ).toBe(true);
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: false,
+        liveScope: false,
+      })
+    ).toBe(true);
+  });
+
+  it("hides whenever liveScope owns the stage, even in every state the #418 half would otherwise show", () => {
+    // The exact regression class #513 Frank R2 P2 named: before this
+    // function existed, `!liveScope` was composed with the #418 predicate
+    // only at the JSX call site, untested together. Cross every #418-shown
+    // state with `liveScope: true` to prove liveScope wins regardless.
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: false,
+        liveScope: true,
+      })
+    ).toBe(false);
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: false,
+        liveScope: true,
+      })
+    ).toBe(false);
+    expect(
+      centerlineOverlayShown({
+        mode: "record",
+        selectionActive: true,
+        liveScope: true,
+      })
+    ).toBe(false);
+  });
+
+  it("agrees with the #418 half when both reasons to hide are present at once", () => {
+    expect(
+      centerlineOverlayShown({
+        mode: "edit",
+        selectionActive: true,
+        liveScope: true,
+      })
+    ).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 # Design pass: the history-stack model for system-Back (#452)
 
-**Status:** Draft design, awaiting DRI review · **Date:** 2026-09-17 ·
+**Status:** PR1 merged (#492); PR2 in review (#499), DRI decisions 1–4 recorded on the PR · **Date:** 2026-09-18 ·
 **Tracking:** [#452](https://github.com/unfoldingWord/tc-mobile/issues/452),
 supersedes [#430](https://github.com/unfoldingWord/tc-mobile/pull/430)
 (parked as a draft at `36e10fd`, never merged)
@@ -67,10 +67,12 @@ Each model was scored on four axes:
   2026-09-30 production gate and under three to the first-week-of-October
   training on Android phones;
 - **(d)** how much of the mechanism is Node-testable in `src/lib/nav`, the
-  only layer this repo can red-first test at all — there is no jsdom or
-  renderer here (`AGENTS.md`), so `App.tsx`, `books-screen.tsx`,
-  `segments-screen.tsx` and `recorder.tsx`'s wiring code stays review-only no
-  matter which model wins.
+  layer Vitest can red-first cover (there is no jsdom or renderer here,
+  `AGENTS.md`). The nav adapter's own DOM paths (`use-nav-stack.ts`) are
+  covered by Playwright against the shipped build
+  (`e2e/back-navigation.spec.ts`), not by Vitest; `App.tsx`,
+  `books-screen.tsx`, `segments-screen.tsx` and `recorder.tsx`'s broader wiring
+  code stays review-only no matter which model wins.
 
 I re-verified, myself, in this worktree, the load-bearing facts the scoring
 turns on, rather than trusting the models' own citations at face value:
@@ -236,11 +238,16 @@ narrowly enough that it does not reopen a reconciliation problem:
 
 ### Mechanism
 
-One hook, `hooks/use-nav-stack.ts`, owns three refs — `navIndex`,
+One hook, `hooks/use-nav-stack.ts`, owns the three core refs — `navIndex`,
 `nextIndex` (renamed conceptually but kept as the depth-stamping source per
-invariant 9), and a per-screen `layerStack: Layer[]` — and the single
-`window.popstate` listener. `interface Layer { id: string; busy(): boolean;
-dismiss(): void }`. Opening an overlay calls `pushLayer(layer)` directly from
+invariant 9), and a per-screen `layerStack: Layer[]` — plus the guard/flag
+refs the amendments and the kept develop machinery add: `travelGuard`
+(Amendment A), `transitionInFlight` (renamed from `committing`, invariant 7)
+and `suppressPop`, for six refs in all. A commit-close settle refused because a
+`goBack` is still outstanding does not queue a second traversal: the adapter
+absorbs the outstanding `goBack`'s own landing via `suppressPop` instead (see
+Amendment A). It also owns the single `window.popstate`
+listener. `interface Layer { id: string; busy(): boolean; dismiss(): void }`. Opening an overlay calls `pushLayer(layer)` directly from
 the same click handler that sets the overlay's own `open` state; closing —
 by the overlay's own Close/Cancel/scrim, or by a Back landing on it — calls
 `popLayer(id)`, also directly, never from an effect.
@@ -399,17 +406,26 @@ gesture). Model 1 does not have that problem, because invariant 1 already
 removes overlays from the issuer count entirely, leaving **exactly two**
 real raw-`history.back()` sites: `goBack` (on-screen and system Back, shared
 per this repo's "one Back path" rule) and the recorder's commit-close exit
-(`.then((exited) => { ... window.history.back() })`, `App.tsx:357-361`).
+(`.then((exited) => { ... window.history.back() })`, the adapter's commit-close
+case, `hooks/use-nav-stack.ts`).
 
-`src/lib/nav/travel-guard.ts` (new): a pure pair,
-`beginBack(state): {ok: boolean, next: TravelGuardState}` and
-`settleBack(state): TravelGuardState`, operating on `{ goBackOutstanding:
-boolean, commitCloseOutstanding: boolean }`. `goBackOutstanding` and
-`commitCloseOutstanding` still identify WHICH issuer has a call outstanding
-(for `settleBack`'s own bookkeeping — it clears only the settling issuer's
-flag), but as of **2026-09-18 (PR #492 round 4, answers #493)** the rule is
-**any-outstanding, not per-issuer**: a request is refused whenever EITHER
-flag is already set, regardless of which issuer is asking.
+`src/lib/nav/travel-guard.ts`: a pure pair,
+`beginBack(state, issuer): {ok: boolean, next: TravelGuardState}` and
+`settleOutstanding(state): TravelGuardState`, operating on `{ goBackOutstanding:
+boolean, commitCloseOutstanding: boolean }` (the `beginBack` `issuer` parameter
+is required and matches the live code; #494 item 4). `settleOutstanding` is the
+issuer-blind landing settle the adapter runs at the top of every `popstate`
+(the one place `develop`'s live latch cleared before PR2), returning the guard to
+`initialTravelGuardState` regardless of which issuer settled — the issuer-blind
+counterpart of the any-issuer `beginBack` refusal (#494 item 2). A per-issuer
+`settleBack` shipped with PR1 but is **deleted in PR2**: the any-issuer refusal
+means the landing settle must be any-issuer too, so `settleBack` had no
+consumer and its `@pivotpending` tag would have been a false claim.
+`goBackOutstanding` and `commitCloseOutstanding` still identify WHICH issuer set
+a flag (that is which flag `beginBack` sets on success), but as of **2026-09-18
+(PR #492 round 4, answers #493)** the refusal rule is **any-outstanding, not
+per-issuer**: a request is refused whenever EITHER flag is already set,
+regardless of which issuer is asking.
 
 | Any flag outstanding?  | A request from either issuer...                                  |
 | ---------------------- | ---------------------------------------------------------------- |
@@ -429,17 +445,47 @@ flag is already set, regardless of which issuer is asking.
 > issuer, just not across issuers. The dev lead's decision (PR #492 round 4)
 > is to collapse the matrix to the single any-outstanding rule above rather
 > than defer the question again; the four-row table, and the "different
-> physical entries do not contend" reasoning, are retired. `settleBack` is
-> unchanged — it still requires the caller to name which issuer is settling,
-> and still clears only that issuer's own flag, so `beginBack`'s next caller
-> only unblocks once the actual outstanding call has settled.
+> physical entries do not contend" reasoning, are retired. (The per-issuer
+> `settleBack` this note originally described was subsequently DELETED in PR2 —
+> once the refusal is any-issuer, the landing settle is any-issuer too
+> (`settleOutstanding`), leaving `settleBack` with no consumer.)
 
 This is the exact regression test for R2-G-P2-1/R2-G-P2-2/R3-G-P2-1's
 class, and — since round 4 — also answers #493's cross-issuer coalescing
-question at the source rather than disclosing it as an open risk. `goBack`
-and the recorder's commit-close exit are rewritten to call
-`beginBack`/`settleBack` instead of touching `backRequested`/`suppressPop`
-directly; that wiring is still PR2, not this PR.
+question **for the two issuers this guard tracks** (`goBack` and the
+recorder's commit-close exit), at the source rather than disclosing it as an
+open risk. It does **not** close #493 for the adapter's own programmatic
+recorder close (`commitCloseRecorder`'s raw `window.history.back()`,
+`hooks/use-nav-stack.ts`): that is a THIRD raw issuer
+outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
+the any-outstanding guard cannot see or refuse against it — already disclosed
+at `travel-guard.ts` (the THIRD raw issuer paragraph). `goBack` and the recorder's commit-close exit are
+rewritten to call `beginBack` (settling at the next landing with
+`settleOutstanding`) instead of touching **only** `backRequested` — **not**
+`suppressPop`, which stays fully load-bearing in the adapter at the
+programmatic close, `trap-forward`, and the commit-close consume, per
+`travel-guard.ts` (the CORRECTED (George R1 P2-3) paragraph) (#494 item
+1, George R4 P2-1). Dropping `suppressPop` would route the commit-close
+consume-back as a real Segments Back → `"to-books"` → `backToBooks()` →
+`setClipboard(null)`. That wiring landed in PR2 (`hooks/use-nav-stack.ts`).
+
+**The refused commit-close settle absorbs, it does not queue a second
+traversal.** In the rare window where `requestClose` resolves before an
+outstanding `goBack`'s `popstate` has landed, `beginBack("commit-close")` is
+refused (any-outstanding). The adapter does **not** re-issue the settle on a
+later landing: that outstanding `goBack`'s own `history.back()` is already
+consuming the same protective entry the settle would have, so a second
+`history.back()` would pop a further real level and strand the app one entry
+below the screen it is showing — breaking invariant 2. Instead the adapter sets
+`suppressPop` so the outstanding `goBack`'s landing is absorbed, converging the
+race to the same end state as an un-raced commit-close (the recorder's screen,
+one level below it), which is invariant 7's intent — a second Back during an
+in-flight commit is absorbed, not escaped. (An earlier PR2 revision instead
+DRAINED — queued the refused settle and re-issued it on the next landing — but
+the re-issued traversal reproduced neither `develop`'s end state nor an un-raced
+close: it left the app at physical depth 0 while a non-root screen was showing.
+The absorb replaces it. Reachability of the ms window is inference; the trace is
+from the code — no renderer, no device.)
 
 ### Amendment B — reload/bootstrap safety
 
@@ -634,7 +680,10 @@ inference until it is run on an actual Android device.
 - No jsdom/renderer exists in this repo; `App.tsx`, `books-screen.tsx`,
   `segments-screen.tsx`, `recorder.tsx` stay review-only regardless of this
   document. Only the pure decisions in `src/lib/nav` are Vitest-covered —
-  which is why this design pushes as much as possible into that layer.
+  which is why this design pushes as much as possible into that layer. The nav
+  adapter's DOM wiring (`use-nav-stack.ts`) has no Vitest coverage either, but
+  is exercised by Playwright against the shipped build
+  (`e2e/back-navigation.spec.ts`).
 - On-screen Back and system Back must continue to share exactly one code
   path (`goBack` → `history.back()` → the one `popstate` listener), per this
   repo's own stated "one Back path" design rationale from the original #168/#259
@@ -704,11 +753,25 @@ inference until it is run on an actual Android device.
 1. **PR1 — pure core only.** `layer-stack.ts`, `travel-guard.ts`,
    `resumeNavIndex`, the extended `popAction`. Zero behavior change to the
    shipped app; fully Vitest-covered including the corpus decision table.
-2. **PR2 — the adapter.** `hooks/use-nav-stack.ts` replaces `App.tsx`'s
-   inline refs/effect wholesale; carries the #168 mutation test forward
-   re-targeted at `transitionInFlight`; wires Amendment B (reload) and
-   Amendment C (unmount safety net). This is the PR that touches the
-   highest-stakes path in the app and should bake before PR3 opens.
+2. **PR2 — the adapter. LANDED (code).** `hooks/use-nav-stack.ts` replaces
+   `App.tsx`'s inline refs/effect wholesale; carries the #168 mutation test
+   forward re-targeted at `transitionInFlight`; wires Amendment B (reload) and
+   Amendment C (unmount safety net); resolves #494's four items; the
+   any-issuer landing settle is `settleOutstanding` (the per-issuer
+   `settleBack` is deleted). The layer stack exists in the adapter and stays
+   EMPTY (no overlay pushes until PR3/PR4), so observable Back behaviour is
+   unchanged except where the design names a fix (Amendments A/B, the refused
+   commit-close absorb). "Landed (code)" is a statement of what the tree does;
+   the popstate routing, the reload adopt, the idle sheet-close-and-land and
+   the double-Back guard run in headless Chromium in
+   `e2e/back-navigation.spec.ts` — the guard witnessed by case (d) asserting two
+   rapid Close taps issue exactly one `history.back()` (the deterministic,
+   mutation-unique observable; the rest-at-depth-1 index is a landing check, not
+   that witness — George R1 P2-1). The refused-commit-close absorb else-branch
+   and the Amendment C cleanup are review-only (no headless spec reaches them),
+   and iOS Safari / Android WebView remain T2 device items; no on-device run is
+   claimed here. This is the PR that touches the highest-stakes path in the app
+   and should bake before PR3 opens.
 3. **PR3 — Books' overlays.** Builds the missing ref accessors (F4) for
    `savingBookName` and `deleting`; converts Books' five overlays to
    `Layer`s; wires Amendment D for the book ≡ menu's Share status; includes
@@ -768,7 +831,20 @@ and none merges without the DRI's explicit permission per workspace
 
 ## Status
 
-Awaiting DRI review. No code has changed. The next step, on approval, is
-PR1 as scoped above — pure core, zero behavior change — which can start
-independent of any answer to the open questions listed, since none of them
-bear on the pure layer.
+**PR1 (pure core) merged** as #492 (`5252599`), with four residuals carried to
+PR2 as #494. **PR2 (the adapter, `hooks/use-nav-stack.ts`) has landed as code**
+on `feat/452-pr2-nav-adapter`: it extracts App.tsx's inline history machinery
+wholesale, wires Amendments A–C, resolves #494's four items, and deletes the
+per-issuer `settleBack` in favour of `settleOutstanding`. This is a statement
+of what the code does — the routing/guard/reload decisions are Node-tested in
+`src/lib/nav`, and the adapter's core DOM paths (popstate routing, the reload
+adopt, the idle commit-close/sheet-close-and-land, the double-Back guard —
+witnessed by case (d) asserting two rapid Close taps issue exactly one
+`history.back()`, the deterministic mutation-unique observable, with the
+rest-at-depth-1 index a landing check, not that witness) run
+in headless Chromium in `e2e/back-navigation.spec.ts`. The
+refused-commit-close absorb else-branch and the Amendment C cleanup have **no
+renderer that reaches them** and are review-only; iOS Safari / Android WebView
+remain an on-device (T2) item; nothing here claims a device run. PR2 is in
+review as #499 with DRI decisions 1–4 recorded on the PR. Next: PR3 (Books'
+overlays) after PR2 bakes.

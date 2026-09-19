@@ -9,8 +9,16 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "@/components/error-boundary";
+import { installStoredTheme } from "@/hooks/use-theme";
 import { App } from "./App";
 import "./globals.css";
+
+// Before `createRoot`, not in an effect (#171). An effect runs after the first
+// paint, so a translator who chose the light screen would see one dark frame on
+// every launch. See `installStoredTheme`'s docblock for the residual this still
+// leaves — the stylesheet has already painted its dark default by the time any
+// module body runs, and closing that last gap means an inline script.
+installStoredTheme();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Missing #root element");

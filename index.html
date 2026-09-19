@@ -6,12 +6,31 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <!-- viewport-fit=cover + safe-area padding: this app is used one-handed on
          a phone, often installed to the home screen where there is no browser
-         chrome to absorb the notch/home indicator. -->
+         chrome to absorb the notch/home indicator.
+
+         NO user-scalable=no (#164 R-11). It was here to protect the drag
+         gestures, but it never did that job: iOS Safari has ignored the
+         attribute since iOS 10, so the only platform it actually restricted
+         is Android — the one this app has never been run on (#245), and the
+         one whose testers report capture so quiet they are squinting at the
+         screen (#359). What does protect the gesture surfaces is each
+         declaring its own `touch-action` (3-components.css: `pan-y` on the
+         scrub track, `none` on the two drag surfaces), which is scoped to
+         those elements instead of disabling pinch for the whole app. Keeping
+         it would have blocked the one accommodation a low-vision translator
+         can reach without anybody's help.
+
+         This makes the 16px floor on `.name-input` load-bearing everywhere
+         rather than only on iOS — see that rule's own comment. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0b0f14" />
+    <!-- `--p-cool-950`, the dark floor (`src/app/styles/1-primitives.css`):
+         what the OS chrome shows until `installStoredTheme` repaints it from
+         the computed token. Pinned to the primitive by `tests/theme.test.ts`;
+         the old `#0b0f14` was a value no token ever had. -->
+    <meta name="theme-color" content="#0b1016" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta

@@ -6,9 +6,20 @@ import {
   overlayBlocksClose,
   overlayDismissal,
   popAction,
+  type PopAction,
   screenFor,
 } from "@/lib/nav/navigation";
 import type { Layer, LayerStack } from "@/lib/nav/layer-stack";
+
+/**
+ * Invariant 7's rename (docs/design/back-navigation.md:290-291, #452 PR2): the
+ * recorder-commit-in-flight guard's tag is `"rearm-transition-busy"`, not the
+ * PR1 placeholder `"rearm-during-commit"`. Asserted through a typed `PopAction`
+ * const so a future rename of the union member is caught by `tsc` too, not only
+ * at runtime — `@vitest/expect`'s `toBe` is unconstrained, so a stale string
+ * literal would still typecheck and go red only when the test runs.
+ */
+const REARM_TRANSITION_BUSY: PopAction = "rearm-transition-busy";
 
 /**
  * The History wiring in `App.tsx` is browser-only and untestable here (there is
@@ -89,22 +100,25 @@ describe("popAction", () => {
     expect(popAction("same", "segments", false, false)).toBe("ignore");
   });
 
-  it("re-arms every gesture while a recorder commit is in flight (F1)", () => {
-    // The load-bearing F1 row. First Back starts the commit…
+  it("re-arms every gesture while a screen transition is in flight (F1, #168 — re-targeted at transitionInFlight)", () => {
+    // The load-bearing F1 / #168 row, carried forward re-targeted at the
+    // renamed transition-in-flight guard (invariant 7). First Back starts the
+    // commit…
     expect(popAction("back", "recorder", false, false)).toBe(
       "commit-close-recorder"
     );
     // …and a SECOND Back arriving before it settles must re-arm the protective
     // entry, never escape the recorder and drop the uncommitted take (#58).
-    // `committing` wins over direction and screen, so nothing else can leave.
+    // `transitionInFlight` wins over direction and screen, so nothing else can
+    // leave.
     expect(popAction("back", "recorder", true, false)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
     expect(popAction("back", "segments", true, false)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
     expect(popAction("forward", "recorder", true, false)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
   });
 
@@ -223,10 +237,12 @@ function fakeLayer(id: string, busy: boolean): Layer {
 
 describe("popAction — layer routing (#452 PR1)", () => {
   it("an empty layerStack (the default) reproduces every pre-existing row unchanged", () => {
-    // Every existing call site in App.tsx passes no 6th argument at all, so
-    // this is the exact shape `develop`'s only caller uses. Confirm the
-    // omitted-argument form and the explicit-empty-array form agree, and
-    // that both match the pre-existing (5-arg) results already pinned above.
+    // On `develop` before PR2 the only caller (App.tsx's popstate switch)
+    // passed no 6th argument at all; this is that shape. The PR2 adapter now
+    // passes the empty `layerStack` ref as the 6th arg, which the row below
+    // proves equivalent. Confirm the omitted-argument form and the
+    // explicit-empty-array form agree, and that both match the pre-existing
+    // (5-arg) results already pinned above.
     const rows: Array<
       [
         Parameters<typeof popAction>[0],
@@ -280,19 +296,20 @@ describe("popAction — layer routing (#452 PR1)", () => {
 
   /**
    * George R1 P2-1 (PR #492): a `popstate` has already popped the SCREEN-DEPTH
-   * entry before `popAction` runs (`App.tsx:301-302`) — overlays never owned
-   * one of their own (invariant 1). Every existing intercept that is not a
-   * real screen pop re-arms with `pushHistoryEntry()`
-   * (`trap-recovery`/`trap-database-panel`/`rearm-during-commit`,
-   * `App.tsx:313-336`), and so does the recorder's own overlay-absorb path
-   * (`App.tsx:353`, re-arms BEFORE the overlay is even asked to dismiss). The
-   * layer case must match: BOTH a dismiss and a refusal re-arm the entry the
-   * popstate already consumed — `"dismiss"` also tells the adapter to dismiss
-   * the top layer (recovered via `topLayer(stack)`), `"refused-busy"` re-arms
-   * only. Two string tags, not an object, so the obligation is encoded in the
-   * type App.tsx's existing string `switch` already consumes, not left to
-   * prose a reader could miss (the bug this replaces: `tests/nav-layer-
-   * stack.test.ts`'s old comment taught "nothing on refused-busy").
+   * entry before `popAction` runs (the adapter updates `navIndex` from the
+   * landing index just before the call, `hooks/use-nav-stack.ts`) — overlays
+   * never owned one of their own (invariant 1). Every existing intercept that is
+   * not a real screen pop re-arms with `pushHistoryEntry()`
+   * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy`, the adapter's
+   * `switch` cases), and so does the recorder's own commit-close re-arm (it
+   * pushes BEFORE the overlay is even asked to dismiss). The layer case must
+   * match: BOTH a dismiss and a refusal re-arm the entry the popstate already
+   * consumed — `"dismiss"` also tells the adapter to dismiss the top layer
+   * (recovered via `topLayer(stack)`), `"refused-busy"` re-arms only. Two string
+   * tags, not an object, so the obligation is encoded in the type the adapter's
+   * string `switch` already consumes, not left to prose a reader could miss (the
+   * bug this replaces: `tests/nav-layer-stack.test.ts`'s old comment taught
+   * "nothing on refused-busy").
    */
   it("a non-empty stack with a non-busy top layer re-arms AND signals dismiss", () => {
     const stack: LayerStack = [fakeLayer("book-menu", false)];
@@ -332,10 +349,10 @@ describe("popAction — layer routing (#452 PR1)", () => {
     );
   });
 
-  it("a screen transition in flight (committing) still outranks a non-empty layer stack (invariant 3: 'no screen transition in flight')", () => {
+  it("a screen transition in flight (transitionInFlight) still outranks a non-empty layer stack (invariant 3: 'no screen transition in flight')", () => {
     const stack: LayerStack = [fakeLayer("menu", false)];
     expect(popAction("back", "recorder", true, false, false, stack)).toBe(
-      "rearm-during-commit"
+      REARM_TRANSITION_BUSY
     );
   });
 

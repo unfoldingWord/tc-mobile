@@ -12,6 +12,7 @@ import {
   nextBookName,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
+import { reportFailure } from "./report-failure";
 import type { Book, BookId, Chapter } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -634,6 +635,13 @@ export function useBooks() {
         // in the delete's own words. `console.error` is the sink, as in
         // `performErase`.
         console.error("Deleting a book failed", cause);
+        // One row per real failure (#456); console.error kept beside it.
+        // `cause` passed straight through, called directly here — not inside
+        // a nested closure, which would silence eslint-plugin-react-hooks's
+        // analysis for this whole hook (the catch-block shape #212 and
+        // `tests/react-hooks-refs-gate.test.ts` pin; `message` below is
+        // extracted the same defensive way for the same reason).
+        reportFailure(cause, "book-delete");
         report(cause, true);
         // Re-arm the read even though nothing was deleted. A load that started
         // before this attempt is now invalidated by `reload()`'s generation

@@ -9,7 +9,9 @@ import {
   useState,
 } from "react";
 
+import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
+import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
@@ -18,13 +20,16 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import { resolveProbedPx } from "./recorder-layout";
 import {
+  CENTER_FRACTION,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterCutRest,
   panAfterDragMove,
-  panAfterRematerialize,
+  panAfterRedo,
+  panAfterUndo,
   panGesture,
   recordDisabled,
   stageView,
@@ -47,6 +52,7 @@ import { classifyShareError } from "@/hooks/share-flow";
 import {
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
@@ -56,6 +62,7 @@ import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
+import { panelRecoveryFocus } from "@/lib/a11y/panel-recovery";
 import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
@@ -63,7 +70,6 @@ import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   effectivePan,
-  panAfterCut,
   panForZoom,
   playbackStrip,
   viewportWindow,
@@ -78,19 +84,9 @@ import {
   type CaptureOutcome,
   type TailPlan,
 } from "@/lib/takes/close-plan";
-import { formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import type { Peaks, SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
-
-/**
- * Where the fixed centerline sits across the waveform viewport (F6).
- *
- * Centered. Sitting it right-of-centre gave the recorded audio room to the
- * right to grow into on an append (mockup 3), but the requirements owner's v0.1.2 review asked for
- * it centered on every screen — that overrides the append-headroom tradeoff.
- * One constant to retune.
- */
-const CENTER_FRACTION = 0.5;
 
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
@@ -887,11 +883,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * buffer that was playing names different audio in the one that comes back:
      * undo a cut of the first 2 000 samples and the position the line was on
      * moves 2 000 samples deeper into the speech, where the next Record would
-     * splice. Unlike `onCut`, which repairs the index through `panAfterCut`,
-     * there is no mapping for an arbitrary history jump — so the honest answer
-     * is to keep no frozen position at all and leave the pan exactly as the
-     * translator last set it (the F7 rest, usually), which is what these
-     * controls did before playback ever wrote the pan.
+     * splice.
+     *
+     * This function only drops the ONE-SHOT, not-yet-committed play position a
+     * frame loop was observing — a value that was never written into
+     * `panState` at all, so there is nothing there for `onUndo`/`onRedo` to
+     * map (#449's `panAfterUndo`/`panAfterRedo` map a pan that IS already in
+     * `panState` through the undone/redone op instead of dropping it; see
+     * those two below). Dropping the in-flight observation and leaving
+     * `panState` exactly as the translator last set it is what these controls
+     * did before playback ever wrote it, and is still correct here: freezing
+     * an unsettled rAF position into `panState` would invent a pan the
+     * translator never asked for, which is a different defect from #449's.
      *
      * Clearing the one-shot is what makes it a drop rather than a deferral: the
      * layout effect must not freeze this play either, a commit later, against
@@ -1751,40 +1754,52 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // playback WITHOUT freezing a position in it (George R1 P2 #2): a sample
     // index measured in the buffer that was sounding names different audio in
     // the one that comes back, and unlike a cut there is no mapping to repair
-    // it with.
+    // it with in that stop path — the mapping happens below instead.
     //
-    // ...and they drop the pan that is ALREADY there, which is the half round 2
-    // missed (George R3 P1-1). Dropping the in-flight freeze only covers an undo
-    // tapped while a buffer sounds. Pause at sample 4 000 first and the freeze
-    // has committed: `panState` is 4 000, nothing is sounding, the stop above is
-    // a no-op on the pan, and 4 000 is left naming different speech in the
-    // restored buffer — where the next Record locks `insertionOffset` and
-    // punches into the middle of a word. `panAfterRematerialize` carries the
-    // reasoning and returns the F7 rest, so the line follows whatever comes back
-    // and Record appends. Functional, so neither callback has to close over the
-    // pan (and `onCut`'s own `setPanState` still composes with it).
+    // ...and they used to drop the pan that was ALREADY there unconditionally
+    // (George R3 P1-1, then #449): a hand-set pan whose audio did not move
+    // under the undone/redone op is lost the same way a playback freeze's was.
+    // `editor.undo()`/`editor.redo()` now return the op they stepped over, and
+    // `panAfterUndo`/`panAfterRedo` map the pan through its inverse/forward
+    // effect rather than dropping it — see their docblocks in
+    // `recorder-stage.ts` for why this subsumes the round-3 P1 case too.
+    // `length` is the PRE-step closure value (#473's same note): the mappers
+    // derive the restored length from the op rather than needing the caller
+    // to re-read `editor.workingLength`, which has not advanced yet inside
+    // this same callback.
     const onUndo = useCallback(() => {
       stopPlaybackDroppingPan();
-      editor.undo();
-      setPanState(panAfterRematerialize);
-    }, [editor, stopPlaybackDroppingPan]);
+      const undoneOp = editor.undo();
+      if (undoneOp !== null) {
+        setPanState((p) => panAfterUndo(p, undoneOp, length));
+      }
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
-      editor.redo();
-      setPanState(panAfterRematerialize);
-    }, [editor, stopPlaybackDroppingPan]);
+      const redoneOp = editor.redo();
+      if (redoneOp !== null) {
+        setPanState((p) => panAfterRedo(p, redoneOp, length));
+      }
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onCut = useCallback(() => {
       stopPlayback();
       const removed = editor.cut();
-      // Keep the centerline on the same audio: a cut before it shortens the buffer
-      // to its left, so shift an absolute pan by what was removed (George R5). A
-      // null/resting pan already follows the new end.
+      // Keep the centerline on the same audio: a cut before it shortens the
+      // buffer to its left, so shift an absolute pan by what was removed
+      // (George R5), through the rest rule (#473) — a cut that runs to the
+      // end must not leave `panState` holding the number `newLength` instead
+      // of the F7 rest, or a later Paste/Record punches into the pasted
+      // audio. A null/resting pan already follows the new end. `length` is
+      // the PRE-cut closure value; `panAfterCutRest` derives the post-cut
+      // length from `removed` itself.
       if (removed !== null) {
-        setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
+        setPanState((p) =>
+          p === null ? null : panAfterCutRest(p, removed, length)
+        );
       }
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlayback, length]);
 
     // Paste at the drawn centerline — which is ALSO the record insertion offset,
     // and that is not a coincidence to leave unstated (George stand-in P3).
@@ -2402,14 +2417,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // Rescued off the phone. Offer a Done exit even though the decode never
           // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
           //
-          // ONLY where the resolve proves it, which on the native route it does
+          // ONLY where the resolve proves it, which on native ANDROID it does
           // not (George stand-in R4 P2, see `resolveProvesDelivery`): a chooser
           // dismissed with Back after the activity stopped resolves as success,
           // and `Done` is a SINGLE tap that drops the only copy of this
-          // recording. So on native the panel stays "held", the two-tap Discard
+          // recording. So there the panel stays "held", the two-tap Discard
           // stays the only exit, and the share sheet itself was the feedback.
-          // Losing an exit is recoverable; losing the take is not.
-          setHeldShared(resolveProvesDelivery(route));
+          // Native iOS resolves only on a completed share (#381), so it gets
+          // Done like the web does. Losing an exit is recoverable; losing the
+          // take is not.
+          setHeldShared(resolveProvesDelivery(route, readSharePlatform()));
           setHeldShareError(null);
         },
         (cause: unknown) => {
@@ -2472,13 +2489,57 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       void executeTail(planPendingWork(pendingWork()));
     }, [executeTail, pendingWork]);
 
-    // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
-    // user is not stranded on the now-`inert` list behind the modal. Mount-only —
-    // App keys the sheet on segmentId, so it remounts per open and per segment.
-    // The permission panel autofocuses its own Retry when it later appears, which
-    // is after this has run.
-    useEffect(() => {
+    // The sheet's landing on OPEN: its first focusable, which is the header
+    // Back. Open-edge ONLY. An earlier draft shared this with the recovery
+    // edge (#199) on the argument that a resolved panel leaves the sheet in
+    // the state a fresh open does — but the two edges are not alike: open is
+    // not mid-task, recovery is. A keyboard/switch user whose "Try again" had
+    // just succeeded was landed on "Close recorder", with the very next
+    // Space/Enter/switch-activate armed to `close()` — which SAVES. That is
+    // the #97 hazard `use-focus-restore.ts`'s contract forbids ("the landmark
+    // must never be a destructive or exiting control"), reintroduced on
+    // exactly the users #199 exists for (George R1 P2 on #457).
+    const focusSheet = useCallback(() => {
       sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
+    }, []);
+
+    // The safe landmark for every mid-task hand-off: the "More actions" (≡)
+    // control, resolved by its accessible NAME through `overlayFallbackLabel`
+    // (`lib/a11y/focus-restore.ts`) and never by position — so it can only
+    // ever resolve to the ≡ or to nothing, never to Back or the "Editing"
+    // pill. Shared by the overlay restore and the panel recovery below, which
+    // are the two edges that hand focus back into a sheet the translator is
+    // still working in. `null` when the ≡ is not rendered, AND `null` when it
+    // is natively `disabled` — an earlier draft promised the second half in
+    // this comment and returned the disabled node anyway (George R3 P2-2 on
+    // #457): `.focus()` on a disabled button is a silent no-op, and
+    // `use-focus-restore.ts`'s `hasFallback` checks connectivity, not
+    // `disabled`, so both callers "succeeded" with focus on <body> and the
+    // next Tab on header Back. Both `null`s leave focus alone, the contract's
+    // own "prefer `null` over anything dangerous". Native `disabled` only,
+    // the same idiom that hook uses for the trigger: an `aria-disabled`
+    // control keeps its place in the Tab order (#135), and the ≡ has no
+    // `hint`, so `Control` sets the native attribute for it. The ≡'s
+    // `disabled` expression is `!view || isClosing || denied ||
+    // heldTake !== null`; a panel resolving clears `denied` / `heldTake`, and
+    // the recovery effect below is what copes when the rest has not cleared
+    // on the same commit.
+    const menuLandmark = useCallback((): HTMLElement | null => {
+      const sheet = sheetRef.current;
+      if (!sheet) return null;
+      const buttons = Array.from(sheet.querySelectorAll<HTMLElement>("button"));
+      const labels = buttons.map(
+        (button) => button.getAttribute("aria-label") ?? ""
+      );
+      const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
+      if (target === null) return null;
+      const menu =
+        buttons.find(
+          (button) => button.getAttribute("aria-label") === target
+        ) ?? null;
+      if (menu === null) return null;
+      if (menu.hasAttribute("disabled")) return null;
+      return menu;
     }, []);
 
     // A mic permission/start failure, at idle (distinct from a decode failure,
@@ -2621,6 +2682,36 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const editToolbarHint =
       editReason !== null ? toolbarEditHint(editReason) : null;
 
+    // A full-body panel owns the sheet body — the permission panel, the
+    // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
+    // its own control. Read by all three focus effects below.
+    const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
+
+    // Land focus inside the sheet on open (mirror Menu), so a keyboard/switch/AT
+    // user is not stranded on the now-`inert` list behind the modal. Mount-only —
+    // App keys the sheet on segmentId, so it remounts per open and per segment.
+    //
+    // UNLESS a panel already owns the first commit. An earlier comment here
+    // said the permission panel "autofocuses its own Retry when it later
+    // appears, which is after this has run" — true for the async mic path
+    // (Record is gated on `view`), false for `!audio.supported`:
+    // `isRecordingSupported()` is a synchronous first-render fact, so on a
+    // WebView with no `MediaRecorder` the first paint IS `PermissionPanel`.
+    // React's commit focused its Retry, then this passive effect ran
+    // `focusSheet()` — the sheet's first `button`, header Back — and the next
+    // Space/Enter/switch-activate was armed to `close()`: the #97 hazard the
+    // recovery effect keeps off its edge, applied on the open edge to the users
+    // the panel is for (George R3 P2-1 on #457). So the open edge yields when a
+    // panel owns the FIRST commit, read through a `useRef` snapshot of that
+    // render's value: `panelOwnsFocus` is deliberately NOT a dependency, since
+    // re-running on the panel resolving would land on Back — the recovery
+    // defect round 1 closed. The recovery edge stays `menuLandmark`'s.
+    const panelOwnsFocusAtMount = useRef(panelOwnsFocus);
+    useEffect(() => {
+      if (panelOwnsFocusAtMount.current) return;
+      focusSheet();
+    }, [focusSheet]);
+
     // Put focus back where the overlay took it from, AFTER `inert` has lifted
     // (#97). A layout effect, not the close handler and not a passive one: React
     // removes the `inert` attribute in the mutation phase, layout effects run
@@ -2636,7 +2727,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // its own control in the same commit, and stealing that back would strand a
     // screen-reader user off the Retry they were just handed. The capture is
     // consumed either way, so it can never fire late.
-    const panelOwnsFocus = denied || loadError !== null || heldTake !== null;
     useLayoutEffect(() => {
       if (overlayUp) return;
       // HOLD the capture through the commit window rather than spending it
@@ -2660,28 +2750,69 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // The ≡ is safe in every mode: it reopens the very overlay that just
         // closed, and this app renders it under the same accessible name in
         // both places it lives (the header in record mode, the toolbar in
-        // edit mode). `overlayFallbackLabel` (`lib/a11y/focus-restore.ts`)
-        // picks it by that name, never by position, so it can only ever
-        // resolve to the ≡ or to nothing — never to Back or the pill.
-        fallback: (() => {
-          const sheet = sheetRef.current;
-          if (!sheet) return null;
-          const buttons = Array.from(
-            sheet.querySelectorAll<HTMLElement>("button")
-          );
-          const labels = buttons.map(
-            (button) => button.getAttribute("aria-label") ?? ""
-          );
-          const target = overlayFallbackLabel(labels, strings.recorderMenuOpen);
-          if (target === null) return null;
-          return (
-            buttons.find(
-              (button) => button.getAttribute("aria-label") === target
-            ) ?? null
-          );
-        })(),
+        // edit mode). `menuLandmark` above resolves it by that name, never by
+        // position, so it can only ever resolve to the ≡ or to nothing —
+        // never to Back or the pill.
+        fallback: menuLandmark(),
       });
-    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore]);
+    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore, menuLandmark]);
+
+    // The OTHER half of `panelOwnsFocus` (#199). The effect above suppresses
+    // itself while a full-body panel is up, because each panel `autoFocus`es
+    // its own control — correct, but it leaves the SUCCESS edge unowned: a
+    // "Try again" that works unmounts `LoadErrorPanel` with focus on the
+    // control that has just gone away, and the mount effect above cannot help
+    // because it is mount-only (App keys the sheet on segmentId). The Segments
+    // list behind is `inert`, so focus fell to <body> and the next Tab reached
+    // the header Back.
+    //
+    // A LAYOUT effect, for the ordering reason `lib/a11y/focus-restore.ts`
+    // documents: React removes the unmounted panel in the mutation phase, and
+    // an element cannot take focus until its ancestors are out of an inert
+    // subtree — a passive effect would also work here (the sheet itself is
+    // never inert on this edge) but the two focus effects in this file should
+    // not run in different phases for no reason.
+    //
+    // The previous-commit value lives in a ref written INSIDE the effect, never
+    // at render time: a render-time `ref.current = x` is exactly what
+    // `react-hooks/refs` exists to catch, and AGENTS.md records that this
+    // file's own `catch (cause)` shapes can silence that rule (#212).
+    const panelOwnedFocus = useRef(false);
+    useLayoutEffect(() => {
+      const action = panelRecoveryFocus({
+        ownedLastCommit: panelOwnedFocus.current,
+        ownsNow: panelOwnsFocus,
+        closing: isClosing,
+      });
+      // `hold` changes NOTHING — not focus, and not the history below. That is
+      // the whole point of the third value (QA review P2 on #457): a close can
+      // fail and leave this sheet mounted (`leaveHeldTake` → `executeTail` →
+      // `stayOpen` resets `isClosing`), and writing the ref on the closing
+      // commit would spend the pending recovery before that landed, stranding
+      // focus on <body> — the #199 defect reached through the failure path.
+      // Same lesson, and the same wording, as the overlay restore above: hold
+      // through the commit window rather than spending it. A sheet that really
+      // does exit never renders again, so unmounting consumes the hold and
+      // nothing has to spend it explicitly.
+      if (action === "hold") return;
+      // The ≡, NOT `focusSheet()`: that is header Back, and Back is `close()`
+      // — see `menuLandmark` for why the open edge may land there and this
+      // edge may not (George R1 P2 on #457).
+      if (action === "focus") {
+        const landmark = menuLandmark();
+        // No landmark — the ≡ is not rendered, or is still natively
+        // `disabled` on this commit (`!view` or `isClosing` may outlast the
+        // panel; `menuLandmark` returns `null` rather than an unfocusable
+        // node, George R3 P2-2 on #457). Same lesson as `hold`: do nothing
+        // AND remember nothing, so `ownedLastCommit` stays true and a later
+        // commit on which the ≡ is enabled can still recover. Writing the
+        // ref here would spend the recovery on a landing that never
+        // happened, with focus left on <body>.
+        if (landmark === null) return;
+        landmark.focus();
+      }
+      panelOwnedFocus.current = panelOwnsFocus;
+    }, [panelOwnsFocus, isClosing, menuLandmark]);
 
     const markReason = markRowReason({
       hasView: view !== null,
@@ -2707,7 +2838,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
 
     return (
-      <div className="recorder-scrim" role="dialog" aria-modal="true">
+      <div
+        className="recorder-scrim"
+        role="dialog"
+        aria-modal="true"
+        // #198 / #164 R-19. Every sibling dialog (menu, erase confirm, save
+        // failed, the database panel, the error boundary) carries a name; this
+        // one did not, so it announced as an unnamed dialog. A static label,
+        // not `aria-labelledby` pointing at the breadcrumb below: the
+        // breadcrumb renders "" until `view` resolves, and a name that is
+        // sometimes empty is the same gap with an extra step.
+        aria-label={strings.recorderDialog}
+      >
         {/* THE INERT RULE (#75). An overlay inerts the sheet because nested
           aria-modal dialogs do not reliably hide the background for AT/switch
           users — G8 already refused to trust that on the Segments list — and
@@ -2817,13 +2959,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // recovery exists to prevent. The panel's Try again / Share / two-tap
               // discard are the only ways out until the take is recovered or rescued.
               // (The system Back is refused in `close()` for the same reason.)
-              disabled={heldTake !== null}
+              // Also frozen through the close window (`isClosing`), matching the
+              // record-mode menu opener (:disabled ... || isClosing) and the Editing
+              // pill: while `close()`'s stop -> decode -> save is in flight the sheet
+              // is still up, and a second Close tap here is the only issuer in the
+              // HEADER of a `goBack` during `requestClose`; LoadErrorPanel's and
+              // PermissionPanel's Back stay live through the close window and are
+              // covered by the absorb branch. This is the ms-window that would force
+              // the commit-close settle's refused-re-arm absorb (use-nav-stack.ts,
+              // the `beginBack("commit-close")` else-branch). Removing this HEADER
+              // trigger is the belt to that branch's suspenders (George R2 P2-1).
+              disabled={heldTake !== null || isClosing}
               onClick={onRequestBack}
             />
-            <span
-              className="min-w-0 flex-1 truncate"
-              style={{ color: "var(--s-ink)" }}
-            >
+            <span className="text-ink min-w-0 flex-1 truncate">
               {view
                 ? strings.recorderBreadcrumb(
                     view.bookName,
@@ -3186,32 +3335,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       />
                     </WaveformScroller>
                   )}
-                  {!liveScope && (
-                    // The fixed centerline (#110/#316), a DOM element rather
-                    // than a bar in the canvas (#415). The canvas is what
-                    // MOVES during playback, so a painted line would travel
-                    // with it — exactly the thing this line is defined by not
-                    // doing ("the waveform pans under a FIXED centerline; the
-                    // line never travels"). Same shape as `PlayheadOverlay`:
-                    // absolute, 2px, `z-[1]` so it paints over the selection
-                    // band, `pointer-events-none` so it never takes the stage's
-                    // pan. `translateX(-1px)` centres it on the fraction, which
-                    // is what the canvas' `round(cf * w) - 1` did.
-                    //
-                    // Mounted on the `Waveform` path only — `LiveScope` draws
-                    // its own record head while capturing — so WHEN the line
-                    // shows is unchanged by this move: every record/edit state,
-                    // per #316.
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
-                      style={{
-                        left: `${CENTER_FRACTION * 100}%`,
-                        transform: "translateX(-1px)",
-                        background: "var(--s-live)",
-                      }}
-                    />
-                  )}
+                  {/* The fixed centerline (#110/#316, #418) — extracted into
+                    its own component (#513, dev lead's cap pick,
+                    issuecomment-5742347381) so the gate
+                    (`centerlineOverlayShown`, `recorder-stage.ts`) and the
+                    element it gates cannot drift apart the way a JSX `&&`
+                    condition and its child could. See
+                    `centerline-overlay.tsx`'s own docblock for the full
+                    history. */}
+                  <CenterlineOverlay
+                    mode={mode}
+                    selectionActive={editor.selectionActive}
+                    liveScope={liveScope}
+                  />
                   {/* The playback playhead, a pull-model DOM overlay (#102): it
                     polls `readPlaybackPosition` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
@@ -3263,13 +3399,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       still `disabled` on the same `idleEditable` safety: without
                       it a Cut tapped during the async close would mutate the
                       working buffer after close() already captured the pre-cut
-                      one — a silently dropped edit. */}
+                      one — a silently dropped edit.
+
+                      `heldByDrag` is the same #317 stage lock Undo/Redo carry
+                      (#512 George R1 P2-1): `onCut` writes `panAfterCutRest`
+                      into `panState`, and a finger still down from a stage
+                      drag keeps writing `onPointerMove`'s
+                      `panAfterDragMove(panAtDragStart, …)` afterwards — a
+                      PRE-cut origin against the POST-cut length, clobbering
+                      the cut's own write. Cut does not clear `dragging` on
+                      its own, so the gate is what has to. */}
                     <Control
                       icon="scissors"
                       label={strings.cut}
                       variant="quiet"
                       size={26}
-                      disabled={!idleEditable || !editor.canCut}
+                      disabled={heldByDrag(
+                        dragging,
+                        !idleEditable || !editor.canCut
+                      )}
                       onClick={onCut}
                     />
                   </div>
@@ -3279,10 +3427,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     className="recorder-status flex items-center gap-[8px]"
                     role="status"
                   >
-                    <span
-                      className={recording ? "rec-dot" : undefined}
-                      style={{ color: "var(--s-live)" }}
-                    >
+                    <span className={cn("text-live", recording && "rec-dot")}>
                       <Icon name="record" size={14} />
                     </span>
                     <span className="t-timer">
@@ -3536,20 +3681,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
                     // A window control, and the one this class was found through
-                    // (George R4 P2-1). The reason has CHANGED shape since #415
-                    // and #316, and the old wording — "the centerline is hidden
-                    // while a buffer sounds" — is now false in a way that
-                    // invites someone to delete this gate (George R4 P3): the
-                    // line is never hidden any more. What is true is that
-                    // `openSelection` seeds from `win.centerlineSample`, which
-                    // is `panState` — and while the stage SCROLLS the drawn
-                    // line is the sounding sample while `panState` is still the
-                    // pre-play value, stale until the freeze. Seeding from it
-                    // would put the span where the take was parked (at the F7
-                    // rest, the END) while the translator is hearing the middle.
-                    // Inert in BOTH directions: closing an open frame
-                    // mid-audition would also flip the view out from under the
-                    // sound, since a picked span is what keeps the pan window.
+                    // (George R4 P2-1). The reason has CHANGED shape again since
+                    // #418 (George round-1 P3): the line now hides for a loaded
+                    // edit-mode span, and is always visible otherwise
+                    // (`centerlineOverlayShown` in `recorder-stage.ts`) — it is
+                    // not true any more that "the line is never hidden". Select
+                    // stays inert regardless, in BOTH directions: (a) opening
+                    // seeds from `win.centerlineSample`, which is `panState` —
+                    // and while the stage SCROLLS the drawn line is the
+                    // sounding sample while `panState` is still the pre-play
+                    // value, stale until the freeze. Seeding from it would put
+                    // the span where the take was parked (at the F7 rest, the
+                    // END) while the translator is hearing the middle. (b)
+                    // closing an open frame mid-`inPlace` audition flips
+                    // `render` out from under the sound, since a picked span is
+                    // what keeps the pan window.
                     disabled={
                       !idleEditable || !hasAudio || stage.windowControlsInert
                     }
@@ -3735,12 +3881,10 @@ function PermissionPanel({
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {message ?? strings.micNeededTitle}
-      </p>
+      <p className="t-title text-ink">{message ?? strings.micNeededTitle}</p>
       <Control
         icon="retry"
         label={strings.micRetry}
@@ -3798,13 +3942,11 @@ function LoadErrorPanel({
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.loadFailedTitle}
-      </p>
-      <p style={{ color: "var(--s-ink-muted)" }}>{strings.loadFailedBody}</p>
+      <p className="t-title text-ink">{strings.loadFailedTitle}</p>
+      <p className="text-ink-muted">{strings.loadFailedBody}</p>
       <Control
         icon="retry"
         label={retrying ? strings.loadRetrying : strings.loadRetry}
@@ -3881,13 +4023,11 @@ function SaveDecodeFailedPanel({
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: "var(--s-live)" }}>
+      <span className="text-live">
         <Icon name="alert" size={52} />
       </span>
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {strings.takeRecoverTitle}
-      </p>
-      <p style={{ color: "var(--s-ink-muted)" }}>{strings.takeRecoverBody}</p>
+      <p className="t-title text-ink">{strings.takeRecoverTitle}</p>
+      <p className="text-ink-muted">{strings.takeRecoverBody}</p>
       <Control
         icon="retry"
         label={
@@ -3916,8 +4056,9 @@ function SaveDecodeFailedPanel({
         // OTHER busy `Control` in the app now spins under the shared
         // `[aria-busy="true"]` CSS rule #384 added, and the retry mark is the
         // one that rule's motion is meant to animate — spinning the idle share
-        // glyph instead reads as a stuck tray, not a wait.
-        icon={sharing ? "retry" : "share"}
+        // glyph instead reads as a stuck tray, not a wait. The idle mark is
+        // the platform's own (#490), the same one the share menus draw.
+        icon={sharing ? "retry" : shareControlGlyph(readSharePlatform())}
         label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt
@@ -3965,12 +4106,12 @@ function SaveDecodeFailedPanel({
               : strings.takeRecoverDiscard
           }
           variant="quiet"
-          className={showArmed ? "text-[var(--s-live)]" : undefined}
+          className={showArmed ? "text-live" : undefined}
           disabled={busy}
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (
-          <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+          <p className="text-live text-[12px]">
             {strings.takeRecoverDiscardHint}
           </p>
         ) : null}

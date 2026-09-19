@@ -121,6 +121,22 @@ export const strings = {
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
 
   // ── Recorder sheet (B4) ──────────────────────────────────────────────────
+  // The recorder sheet's own accessible name (#198). It matched no name at all
+  // before: `role="dialog" aria-modal="true"` with nothing to announce, on the
+  // one surface a translator spends the whole session inside. Deliberately the
+  // noun of `closeRecorder` above rather than an invented title, so AT says
+  // "Recorder, dialog" and its dismiss says "Close recorder" — the same rule
+  // `blockedByTake` below already follows: name the control, do not invent.
+  // NOT the breadcrumb: that is empty until the segment loads, and a name that
+  // is sometimes absent is the gap this closes.
+  recorderDialog: "Recorder",
+  // The theme toggle (#171). Names the DESTINATION, not the current state: a
+  // control labelled "Dark theme" while the screen is dark tells a
+  // screen-reader user what they already have. These are what AT reads; the
+  // sun/moon glyph is what a non-reader sees, and #249's recognition check at
+  // the training is where that glyph is tested rather than assumed.
+  useLightTheme: "Switch to the light screen, for bright sunlight",
+  useDarkTheme: "Switch to the dark screen, for low light",
   closeRecorder: "Close recorder",
   recorderBreadcrumb: (
     book: string,
@@ -320,10 +336,40 @@ export const strings = {
   chapterMenuOpen: "More actions for this chapter",
   chapterMenuTitle: "Chapter",
   shareChapter: "Share chapter",
+  // The idle Share control's own label once `sendUnconfirmed` is true (George
+  // r2 P2-2, #491) — state-in-place, read together with the control's own
+  // changed icon (`control-affordance.ts`). Never "sent"/"delivered"/"failed"
+  // (same rule `shareUnproven` follows): the control is enabled, a second tap
+  // starts a genuine new attempt, and this label is what tells that attempt
+  // apart from a first one, not a verdict on the last one.
+  shareChapterUnconfirmed:
+    "Share chapter. The last attempt wasn't confirmed — tap to try again.",
   // Tap 2 of the two-gesture flow: the File is encoded and armed, this hands it
   // to the OS share sheet. A distinct, primary action so the tap is deliberate.
   shareSend: "Share now",
   sharePreparing: "Preparing the chapter to share.",
+  // The share modal's text (#491) — SECONDARY, under a glyph that is the
+  // signal; none of these three is what a non-reader is expected to act on.
+  // Chapter and book alike: the sheet is the phone's, not the chapter's.
+  //
+  // `shareSent` says HANDED TO THE SHEET and stops there. A resolved share
+  // proves the bytes reached the OS sheet, not that any app received them —
+  // some targets drop the file while `share` still resolves (the R-B7 note in
+  // `hooks/share-flow.ts`), and on Android native the plugin can resolve a
+  // Back after the activity stopped (`resolveProvesDelivery`). So never
+  // "sent", "delivered", "shared to", or an app's name; a test pins that.
+  shareHandingOver: "Opening the phone's share sheet.",
+  shareSent: "Handed to the phone's share sheet.",
+  shareDismissed: "The share sheet was closed before anything went out.",
+  // The native Android plugin can resolve on a Back after the chooser's
+  // activity merely stopped — the same resolve a genuine hand-off produces
+  // (`resolveProvesDelivery`, `hooks/share-target.ts`). Neither `shareSent`
+  // (an unbacked success tick) nor `shareDismissed` (claims nothing went,
+  // which this cannot know) is honest here — a third, deliberately uncertain
+  // line, never "sent"/"delivered"/"shared to"/an app's name, same as the two
+  // above (Frank a446708 P2, #491).
+  shareUnproven:
+    "The share sheet closed. This phone can't confirm it went further.",
   shareNothing: "Record a segment before sharing this chapter.",
   shareFailed: "Could not share this chapter. Try again.",
   // Neutral on the cause: `missing` counts every segment whose audio did not
@@ -342,6 +388,9 @@ export const strings = {
   bookMenuOpen: (book: string): string => `More actions for ${book}`,
   bookMenuTitle: "Book",
   shareBook: "Share book",
+  // See `shareChapterUnconfirmed`'s own comment — the book-menu equivalent.
+  shareBookUnconfirmed:
+    "Share book. The last attempt wasn't confirmed — tap to try again.",
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
@@ -535,6 +584,11 @@ export const strings = {
   // and alarming a person about work that is still on the phone is its own harm.
   failuresTeach: "Send this to your helper if something is not working.",
   shareFailureLog: "Send problem report",
+  // See `shareChapterUnconfirmed`'s own comment (`control-affordance.ts`
+  // wiring) — the failure-log-panel equivalent (Frank at `238820a` P2, #491):
+  // the idle Send control's own label once `sendUnconfirmed` is true.
+  shareFailureLogUnconfirmed:
+    "Send problem report. The last attempt wasn't confirmed — tap to try again.",
   shareFailureLogPreparing: "Preparing the problem report.",
   // The log emptied between the render that offered Share and the tap.
   shareFailureLogNothing: "There is nothing to send now.",

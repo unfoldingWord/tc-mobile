@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { clearSegmentTake } from "@/lib/storage/books";
+import { reportFailure } from "./report-failure";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -38,7 +39,9 @@ export async function performErase(
   try {
     await clearSegmentTake(segmentId);
   } catch (cause) {
+    // One row per real failure (#456); console.error kept beside it.
     console.error("Erasing a segment failed", cause);
+    reportFailure(cause, "erase-segment");
     return {
       ok: false,
       error: cause instanceof Error ? cause.message : String(cause),

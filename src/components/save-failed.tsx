@@ -10,6 +10,7 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { SendLogControl } from "./send-log-control";
 import { strings } from "./strings";
 import { flushFailureLog } from "@/hooks/failure-log";
 import type { SaveFailureKind } from "@/hooks/save-failure";
@@ -137,17 +138,15 @@ export function SaveFailed({
       }
       className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
-      <span style={{ color: saving ? "var(--s-ink-muted)" : "var(--s-live)" }}>
+      <span className={saving ? "text-ink-muted" : "text-live"}>
         <Icon name={saving ? "retry" : "alert"} size={56} />
       </span>
 
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
+      <p className="t-title text-ink">
         {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
-      <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
-        {stillHere}
-      </p>
+      <p className="text-ink-muted text-[13px]">{stillHere}</p>
 
       {!saving && (
         <>
@@ -166,9 +165,7 @@ export function SaveFailed({
             }
             variant="primary"
             size={30}
-            className={
-              terminal && restartArmed ? "text-[var(--s-live)]" : undefined
-            }
+            className={terminal && restartArmed ? "text-live" : undefined}
             busy={terminal && restarting}
             autoFocus
             onClick={
@@ -191,7 +188,7 @@ export function SaveFailed({
           )}
 
           {terminal && restartArmed && !restarting && (
-            <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+            <p className="text-live text-[12px]">
               {restartConsequence(
                 editOnly ? "changes" : "recording",
                 holdsCutAudio
@@ -199,16 +196,42 @@ export function SaveFailed({
             </p>
           )}
 
+          {/* The log's other door (#456): this screen REPLACES the tree the
+              same way `ErrorBoundary`'s does — a held take blocks the way
+              back to Books' `≡` menu — and a facilitator whose save just
+              failed is in exactly the moment the problem report is worth
+              sending. Same order as `ErrorBoundary`: primary action first,
+              this one quiet, right after it. `DatabasePanel` does not get
+              this — #456 calls that a design call, not this PR's scope.
+
+              Withheld on the terminal (downgrade) arm, same condition that
+              already swaps Retry for Restart: a `DatabaseDowngradeError` has
+              latched `getDb()` for the life of the page, so
+              `prepare()` -> `readFailureLog()` -> `getDb()` would reject on
+              every tap here too, offering a door that can never open
+              (George R1 P2-1). This is the same reason `DatabasePanel`
+              carries no Send control.
+
+              KNOWN HOLE (George R1 P2-2, unfoldingWord/tc-mobile#514): unlike
+              `ErrorBoundary`, which calls `quiesceTranscodeSweep()` before
+              ever reaching its own `SendLogControl`, this screen does NOT
+              stop `App`'s module-scoped transcode sweep (`finish-transcode.ts`)
+              — `App` stays mounted underneath `SaveFailed`. A live failing
+              sweep can churn the armed share and prune the 50-row ring before
+              a tap here lands. Not fixed here: `ErrorBoundary`'s quiesce is
+              one-way, and its only exit is a reload, while this screen's
+              primary exit is Retry on the SAME page — a one-way quiesce would
+              silently skip the post-retry sweep a successful Finished retry
+              still owes (D3). Needs an explicit pause/resume, tracked in the
+              linked issue; documented, not silently reused. */}
+          {!terminal && <SendLogControl />}
+
           {safetyLine && (
-            <p className="text-[13px]" style={{ color: "var(--s-ink-muted)" }}>
-              {safetyLine}
-            </p>
+            <p className="text-ink-muted text-[13px]">{safetyLine}</p>
           )}
 
           {attemptsLine && (
-            <p className="text-[12px]" style={{ color: "var(--s-ink-faint)" }}>
-              {attemptsLine}
-            </p>
+            <p className="text-ink-faint text-[12px]">{attemptsLine}</p>
           )}
 
           <div className="mt-[10px] flex flex-col items-center gap-[8px]">
@@ -216,11 +239,11 @@ export function SaveFailed({
               icon="trash"
               label={discardLabel}
               variant="quiet"
-              className={armed ? "text-[var(--s-live)]" : undefined}
+              className={armed ? "text-live" : undefined}
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
-              <p className="text-[12px]" style={{ color: "var(--s-live)" }}>
+              <p className="text-live text-[12px]">
                 {editOnly
                   ? "Tap again to discard them."
                   : "Tap again to delete it."}

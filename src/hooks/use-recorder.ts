@@ -21,6 +21,8 @@ import {
   isRecordingSupported,
   type LevelTap,
   pickMimeType,
+  raceAudioResume,
+  RESUME_TIMEOUT_MS,
   resumeAudioContext,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
@@ -134,8 +136,18 @@ export interface StopResult {
   readonly samples: Int16Array | null;
   /**
    * A translator-facing reason when `samples` is null and it is worth saying —
-   * an empty capture or an undecodable one. Null when there is nothing to say:
-   * a superseded stop, whose UI belongs to a newer recording.
+   * an empty capture, an undecodable one, or a teardown that threw. A native
+   * `stop()` throwing inside the flush (#485) is NOT its own outcome: the
+   * slices MediaRecorder delivered before the throw are sealed from the local
+   * `chunks` exactly as on the flush timeout, reported under
+   * `"recorder-stop-flush"`, and classified by the same tail — a decodable
+   * seal is the take, an undecodable one is held in `blob`, and only an EMPTY
+   * seal yields `samples` and `blob` both null with `error` "Could not finish
+   * this recording." (the backstop's sentence, chosen over "No sound" because
+   * the engine failed). The recorder is back at `idle` either way, free to
+   * `start()` again. Null when there is nothing to say: a superseded stop,
+   * whose UI belongs to a newer recording — on every exit, the throw path
+   * included.
    */
   readonly error: string | null;
   /**
@@ -178,94 +190,18 @@ export interface RetryDecodeResult {
 const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
 /**
- * How long `start()` waits for `resumeAudioContext()` before proceeding
- * anyway (#108).
- *
- * WebKit's `resume()` from an `"interrupted"` `AudioContext` state has been
- * observed to hang indefinitely. An unbounded `await` on that promise between
- * `getUserMedia` and `new MediaRecorder` left the recorder stuck in
- * `"requesting"` forever, with the microphone already hot and no way out of
- * the sheet.
- *
- * 1000ms is a PROVISIONAL ASSUMPTION, not a measured value — the real
- * distribution of WebKit's resume-from-interrupted latency is unmeasured on
- * any device, which is exactly the open question issue #108 itself poses.
- * This constant is the one place to correct it once an on-device pass
- * answers that question, the same way `STOP_FLUSH_TIMEOUT_MS` above and
- * `SCOPE_CAPACITY` below are each a single named knob for their own
- * provisional value.
+ * `raceAudioResume` and its `RESUME_TIMEOUT_MS` bound moved to `audio-io.ts`
+ * (#469): `playSamples` needs the identical #108 bound on its own
+ * `resumeAudioContext()` await, and `audio-io.ts` — where
+ * `resumeAudioContext` itself already lives — is the shared home both
+ * callers can reach without a circular import back into this higher-level
+ * hook. `start()` below now imports both and passes its own
+ * `"recorder-start-resume"` rejection key at the call site, which is the
+ * only change to this file's own behavior; `raceAudioResume`'s full history
+ * and design rationale (the #108 regression, the #475/#498 George R1 P2
+ * "the helper has no generation to check" reasoning) now lives on the
+ * moved docblock in `audio-io.ts`.
  */
-export const RESUME_START_TIMEOUT_MS = 1_000;
-
-/**
- * Call `resumeAudioContext()` but never let it block `start()` for longer
- * than `RESUME_START_TIMEOUT_MS` (#108).
- *
- * `resumeAudioContext()` is invoked SYNCHRONOUSLY as the first statement,
- * before the timer or the race promise are even constructed — `start()` is
- * still inside the user gesture that opened the microphone at this point
- * (the same timing the comments at its call site, at `resume()`, at
- * `retryDecode()` and at `previewCapture()` all rely on), and queuing the
- * real call behind a `.then` or a microtask would push it a tick later than
- * today's bare `await resumeAudioContext()`.
- *
- * NEVER rejects. A `resume()` that fails fast is treated exactly like one
- * that hangs — swallowed, and the caller proceeds — matching every other
- * `resumeAudioContext()` call site in this file (`armForegroundResume`,
- * `resume()`, `retryDecode()`, `previewCapture()`), all of which are already
- * `void resumeAudioContext().catch(...)` with no propagation. A rejection,
- * whether it arrives before or after the timer has already resolved the
- * race, is reported through `reportFailure` rather than swallowed outright —
- * closer to AGENTS.md's "errors have a channel before they have copy" bar —
- * but it never reaches this function's own caller. This report is
- * unconditional, not generation-gated: this function touches no React state,
- * so there is no stale-generation state a late report could corrupt.
- *
- * A late RESOLVE (no error) after the timeout reports nothing — nothing went
- * wrong, the shared context is simply "running" now, and whichever
- * generation is current benefits silently through the existing #76
- * per-frame `contextNeedsResume`/`available()` check.
- *
- * Built with a manual `Promise` executor and a local `settled` flag rather
- * than `Promise.race`, so a same-tick or early rejection from
- * `resumeAudioContext()` can never propagate as this function's own
- * rejection before the `.then(resolve, reject)` handler below converts it —
- * `raceAudioResume` must never reject. The timer uses the bare global
- * `setTimeout`/`clearTimeout` (never `window.*`): this file already has that
- * precedent (the `await new Promise((resolve) => setTimeout(resolve, 0))`
- * calls in `stop()`), it needs no DOM global, and — unlike `window.setTimeout`
- * — it is directly exercisable with `vi.useFakeTimers()` in this repo's
- * jsdom-free, Node-only vitest suite.
- */
-export function raceAudioResume(): Promise<void> {
-  const resumePromise = resumeAudioContext();
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      settled = true;
-      resolve();
-    }, RESUME_START_TIMEOUT_MS);
-    resumePromise.then(
-      () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve();
-      },
-      (cause: unknown) => {
-        // A rejection never bounds the race's own outcome — only resolve it
-        // if the timer has not already done so — but is always reported,
-        // whichever branch wins.
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          resolve();
-        }
-        reportFailure(cause, "recorder-start-resume");
-      }
-    );
-  });
-}
 
 export interface UseRecorder {
   readonly state: RecorderState;
@@ -294,8 +230,15 @@ export interface UseRecorder {
   resume: () => void;
   /**
    * Stop and return the captured audio as canonical mono 16-bit PCM, or the
-   * reason it produced none. The failure is in the result, not the `error`
-   * state — see `StopResult`.
+   * reason it produced none — an empty capture, an undecodable one, or a
+   * teardown that threw. The failure is in the result, not the `error` state
+   * — see `StopResult`. A throw inside its own flush does not reject: that
+   * path reports `"recorder-stop-flush"`, seals whatever slices are already in
+   * hand and resolves through the same tail as a flush timeout — the take, a
+   * held `blob`, or (only when the seal is empty) `{ samples: null, error:
+   * "Could not finish this recording.", blob: null }` — with state back at
+   * `idle` when current and the recorder ref dropped, so `start()` is free
+   * again (#485).
    */
   stop: () => Promise<StopResult>;
   /**
@@ -602,8 +545,10 @@ export function useRecorder(): UseRecorder {
       // this recording — iOS will not resume the context later without one.
       // Bounded (#108): WebKit's resume() from "interrupted" has been
       // observed to hang, and an unbounded await here left the recorder
-      // stuck in "requesting" forever with the mic already hot.
-      await raceAudioResume();
+      // stuck in "requesting" forever with the mic already hot. `true` when
+      // the bound elapsed before resume() settled — reported below, behind
+      // the generation check, never by the helper (George R1 P2 on #498).
+      const resumeTimedOut = await raceAudioResume("recorder-start-resume");
 
       // The resume is a real await on the first recording of a session — iOS
       // starts the context suspended — so a `cancel()` from navigation, the
@@ -617,6 +562,27 @@ export function useRecorder(): UseRecorder {
       if (generation !== generationRef.current) {
         abandonStream(stream);
         return false;
+      }
+      // The bound firing on a start that is STILL CURRENT is the #108 fact
+      // the log exists to carry (#475): every tester phone becomes a
+      // measurement of how often resume() takes longer than
+      // `RESUME_TIMEOUT_MS`. Placed after the generation check on
+      // purpose — a start() that cancel() discarded during the wait (Back
+      // or pagehide while "requesting") is not a #108 event and must not
+      // light the Books `≡`. This row fires on EVERY live start() whose
+      // resume overruns the bound; if a phone's resume-from-interrupted is
+      // routinely slow it competes for the failure ring, and the constant is
+      // the one knob. The row cannot tell a WebKit resume() that hung from a
+      // page frozen mid-wait by background throttling — both elapse the same
+      // timer — so which one a device row records is an inference for the
+      // reader, not a fact the row carries.
+      if (resumeTimedOut) {
+        reportFailure(
+          new Error(
+            `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
+          ),
+          "recorder-start-resume-timeout"
+        );
       }
 
       const mimeType = pickMimeType();
@@ -654,7 +620,26 @@ export function useRecorder(): UseRecorder {
       // the take. Guarded by generation so an interruption on a superseded
       // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
       // teardown) does NOT fire `ended`, so this only reacts to real losses.
-      const onInterrupted = () => {
+      // The still-active arm (recorder not yet "inactive") is reported once
+      // per take so tester phones show whether it is ever reached (#478).
+      // The row carries only what this frame can observe — `recorder.state`
+      // and `event.type`, i.e. which feed fired (`error` from the recorder,
+      // `ended` from a track). Whether the mic is still hot is NOT observable
+      // here: on `ended` the track is already dead, and an `error` at
+      // "recording" may be followed by an `ended` that reaches the inactive
+      // arm and releases everything — so the row must not assert it.
+      //
+      // Per take, not per call: a fresh binding per start() closure, like
+      // `chunks` above. `onInterrupted` is bound to `onerror` AND every
+      // track's `onended`, so one interruption can invoke it more than once,
+      // in different tasks — and the funnel's own dedup collapses only the
+      // same Error identity within one microtask, which a synthesized Error
+      // per call is not. Never reset: a take that hits the still-active arm
+      // is frozen at "processing" and cannot resume, so per-take and
+      // per-interruption coincide today. If a take ever continues after an
+      // interruption, this boolean would suppress a second, genuine one.
+      let interruptionReported = false;
+      const onInterrupted = (event: Event) => {
         if (generation !== generationRef.current) return;
         clearTick();
         // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
@@ -680,6 +665,24 @@ export function useRecorder(): UseRecorder {
           // truncate the slice stop() will recover.
           stream?.getTracks().forEach((track) => track.stop());
           closeTap();
+        } else if (!interruptionReported) {
+          interruptionReported = true;
+          reportFailure(
+            new Error(
+              `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`,
+              // The `error` feed's event carries the native failure as
+              // `.error` (lib.dom types `MediaRecorder.onerror`'s event as
+              // `ErrorEvent`; `MediaRecorderErrorEvent` is not declared at
+              // TypeScript 5.9.3, so this narrows structurally rather than
+              // by that name). `describeCause` walks `.cause`, so the durable
+              // row names the DOMException — `NotReadableError`,
+              // `InvalidStateError` — instead of only that an error arrived
+              // (George R1 P3 on #498). The `ended` feed has no such field:
+              // `undefined` keeps that row's shape unchanged.
+              { cause: "error" in event ? event.error : undefined }
+            ),
+            "recorder-interrupted-active"
+          );
         }
       };
       recorder.onerror = onInterrupted;
@@ -832,6 +835,10 @@ export function useRecorder(): UseRecorder {
     setState("processing");
 
     let blob: Blob;
+    // Set only by the flush arm's catch: the tail's empty-capture exit reads it
+    // to say "could not finish" rather than "no sound" when the seal is empty
+    // because the engine threw, not because the translator was silent.
+    let flushThrew = false;
     if (recorder.state === "inactive") {
       // The recorder ended on its OWN — an interruption took the mic (#59), not
       // a stop we drove. There is no `stop()` flush to await, but the recorder
@@ -852,6 +859,13 @@ export function useRecorder(): UseRecorder {
       // `finally` and needs none.
       tap?.close();
     } else {
+      // Hoisted out of the executor so the `finally` can clear it. Left
+      // scoped to the executor, the timer on the throw path would fire up to
+      // five seconds later, build a Blob nobody awaits and `resolve` an
+      // already-rejected promise (a no-op), holding `chunks` reachable for the
+      // window (panel r1 on #500). `clearTimeout(undefined)` is a no-op, so
+      // the finally can clear it unconditionally.
+      let timer: number | undefined;
       try {
         blob = await new Promise<Blob>((resolve) => {
           // Bounded. On the timeout we take whatever the local array already holds
@@ -867,7 +881,7 @@ export function useRecorder(): UseRecorder {
           // before the decode, so bounding the wait bounds the hot mic too.
           const finish = () =>
             resolve(new Blob(chunks, { type: recorder.mimeType }));
-          const timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
+          timer = window.setTimeout(finish, STOP_FLUSH_TIMEOUT_MS);
           recorder.onstop = () => {
             clearTimeout(timer);
             finish();
@@ -884,10 +898,86 @@ export function useRecorder(): UseRecorder {
           // unobservable state.
           recorder.stop();
         });
+      } catch (cause) {
+        // The catch is on the AWAIT, not on the executor's `recorder.stop()`
+        // (which stays bare, above): once the executor throws there is no
+        // `onstop` left to await, so nothing here depends on the recorder's
+        // post-throw state (J6, not J7) — this branch reasons only about the
+        // recorder ref THIS invocation captured at the top of `stop()` and the
+        // `chunks`/`mimeType` locals the timeout arm already relies on.
+        // Without it the throw rode out of `stop()` with React state left at
+        // "processing" (set above, never cleared) and `recorderRef` still
+        // holding the dead recorder — so the sheet stayed `busy`, the status
+        // Notice read "Recording finished" over a take that was gone, every
+        // Back stayed, and a later `start()` returned early on the zombie ref
+        // without opening a mic (#485, George R6 on #474).
+        //
+        // What is lost on this path is the `onstop` event itself, NOT
+        // necessarily every slice: `chunks` holds every `dataavailable`
+        // MediaRecorder delivered before the throw (`start(250)` requests one
+        // per 250 ms on every engine but the WebKit builds that emit a single
+        // blob at stop) — plus, after the one-macrotask yield below, a final
+        // slice that was already queued at the moment of the throw. A
+        // synchronous throw does not prove `dataavailable`/`stop` were not
+        // already queued (Frank r2 P2 on #500), so the catch does not seal
+        // immediately; it yields the same one macrotask the inactive arm
+        // above yields, THEN seals — the same seal the timeout arm's `finish`
+        // builds. It then FALLS THROUGH to the ordinary tail below — an empty
+        // seal becomes the notice (with the "could not finish" sentence, via
+        // `flushThrew`), an undecodable one is held with its bytes for the
+        // recovery panel, a decodable one is the take — instead of returning
+        // `blob: null` and discarding minutes of audio that were in this
+        // closure (panel r1 P2 on #500). The tail also owns
+        // `setState("idle")`, gated on `current` exactly as at every other
+        // exit, so a superseded throw-path stop paints nothing.
+        //
+        // Timing, precisely: this catch resumes one microtask AFTER the
+        // executor throws (an `await` on an already-rejected promise still
+        // yields), so the caller's synchronous continuation — and a React
+        // sync-lane commit it queued — can run first. Nothing that installs a
+        // recorder can land in that window regardless: `start()` needs two
+        // real awaits (`getUserMedia`, `raceAudioResume`) before it assigns
+        // the ref, and `cancel()` is reached only from a `pagehide` handler
+        // or an unmount commit (macrotasks). The ref is still nulled only
+        // while it is THIS recorder, mirroring `abandonStream`'s
+        // `streamRef.current === stream`, so the guard holds even if a future
+        // await lands before this `try`.
+        //
+        // Reported, not swallowed: this arm exists as insurance against an
+        // engine departing from the spec, and it is the one event that could
+        // turn "unobserved on any device" into observed — a row under
+        // `"recorder-stop-flush"` with `console.error` kept beside it, the
+        // same shape as `cancel()`'s `"recorder-cancel-stop"` guard and
+        // `stopRecording`'s `"recorder-stop-backstop"` (AGENTS.md "Errors have
+        // a channel"). `stopRecording`'s backstop is NOT entered for this
+        // path (the failure rides the `StopResult`, honouring its "never
+        // rejects" contract), so without this report the throw would leave
+        // no evidence anywhere.
+        reportFailure(cause, "recorder-stop-flush");
+        console.error("Stopping the recorder failed", cause);
+        if (recorderRef.current === recorder) recorderRef.current = null;
+        flushThrew = true;
+        // Same order as the inactive arm above: stop the stolen tracks, yield
+        // one macrotask, seal; the tap closes after the seal, in `finally`
+        // below (George r2 on #500, G-R2-P2-1; DRI decision 2026-09-19,
+        // option A — this order, no new theory). `abandonStream` is safe to
+        // call again from `finally`: `track.stop()` on an already-stopped
+        // track is a spec no-op, and the ref check is identity-gated, so the
+        // second call is inert.
+        if (stream) abandonStream(stream);
+        // One macrotask, same bound as the inactive arm and the timeout arm's
+        // `finish`, so a slice already queued at the moment of the throw has
+        // a window to land in `chunks` before the seal (Frank r2 P2 on #500).
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        blob = new Blob(chunks, { type: recorder.mimeType });
       } finally {
+        // The `catch` above owns the recorder ref and the seal; this `finally`
+        // owns the timer, the stream and the tap, and runs after the catch
+        // body and before the tail below — on the normal path, the throw path
+        // and the timeout path alike.
+        //
         // A `finally`, not a bare release after the await: once the executor
-        // itself throws, the blob promise is already REJECTED and the take is
-        // already lost — there is no `onstop` left to come, so releasing here
+        // itself throws there is no `onstop` left to come, so releasing here
         // cannot truncate a final slice the way releasing before `onstop`/the
         // timer fires would (the very thing the executor's own bound exists
         // to avoid). What a bare release-after-await would cost instead is a
@@ -908,6 +998,7 @@ export function useRecorder(): UseRecorder {
         // Only our own stream. `releaseStream()` reads the shared ref, which
         // by now may hold a NEWER recording's stream — releasing that would
         // cut off a recording in progress.
+        clearTimeout(timer);
         if (stream) abandonStream(stream);
         tap?.close();
       }
@@ -927,7 +1018,14 @@ export function useRecorder(): UseRecorder {
       if (current) setState("idle");
       return {
         samples: null,
-        error: current ? "No sound was recorded. Try again." : null,
+        // An empty seal after the flush arm threw is the engine's failure,
+        // not the translator's silence — the same sentence `stopRecording`'s
+        // backstop uses, and the one the facilitator runbook names.
+        error: current
+          ? flushThrew
+            ? "Could not finish this recording."
+            : "No sound was recorded. Try again."
+          : null,
         blob: null, // nothing was captured — no bytes to keep
       };
     }
