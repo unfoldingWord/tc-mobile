@@ -11,8 +11,15 @@
 
       Self-contained: no scripts, no fonts, no images. The glyphs are the app's
       own SVG paths, copied from src/components/icon.tsx (22-unit grid), drawn
-      black on white at about 14 mm. Prints on one A4 or Letter sheet from any
-      phone or laptop browser (Share / Print from the browser menu).
+      black on white at about 14 mm. Designed to print on one A4 or Letter
+      sheet from a phone or laptop browser (Share / Print from the browser
+      menu); not yet printed from a device — ADR 0010 says when it has been.
+      It can also be filled on the screen: the tick boxes are real checkboxes
+      and the Notes cells take typing, so a phone browser can be marked up and
+      screenshotted.
+
+      The row order matches the protocol and matters: each control is asked
+      about before it is first tapped in front of the participant.
 
       NO NAMES on this sheet. Site code only.
     -->
@@ -130,15 +137,31 @@
         font-size: 8pt;
         color: #333;
       }
+      /* A real checkbox drawn as the same 6 mm square a pen would tick, so
+         the sheet reads identically printed and on a screen. Ticked = filled;
+         print-color-adjust above keeps the fill on paper. */
       .box {
+        appearance: none;
+        -webkit-appearance: none;
         display: inline-block;
         width: 6mm;
         height: 6mm;
+        margin: 0;
         border: 1.2px solid #000;
+        border-radius: 0;
+        background: #fff;
         vertical-align: middle;
+      }
+      .box:checked {
+        background: #000;
       }
       td.notes {
         font-size: 8pt;
+        min-height: 12mm;
+      }
+      td.notes:focus {
+        outline: 1px dashed #333;
+        outline-offset: -1px;
       }
       p.foot {
         margin: 3mm 0 0;
@@ -153,8 +176,13 @@
         tr {
           page-break-inside: avoid;
         }
+        td.notes:focus {
+          outline: none;
+        }
       }
-      @media (max-width: 520px) {
+      /* Screen only, never print: a narrow phone screen trades the location
+         hint for room, but the printed sheet always keeps it. */
+      @media screen and (max-width: 520px) {
         body {
           padding: 4mm 3mm;
         }
@@ -174,14 +202,15 @@
     <h1>Icon recognition check</h1>
     <p class="lead">
       Show the control, ask "what do you think this does?", then give the task.
-      Tick one box per row. No names anywhere on this sheet — site code only.
+      Tick one box per row. Keep the row order. No names anywhere on this sheet
+      — site code only.
     </p>
 
     <div class="fields">
       <span class="field">Site code <span class="line short"></span></span>
       <span class="field">Date <span class="line"></span></span>
       <span class="field"
-        >Participant number today <span class="line short"></span
+        >Participant number today (1, 2, 3 …) <span class="line short"></span
       ></span>
       <span class="field">Phone: Android / iPhone (circle)</span>
     </div>
@@ -218,12 +247,28 @@
           <td class="name">
             <b>Record</b>
             "Make a recording of this sentence."
-            <small>Segments screen, empty row</small>
+            <small
+              >Segments screen, empty row. Pause, then Back, saves it.</small
+            >
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Record: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Record: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Record: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
         </tr>
         <tr>
           <td>2</td>
@@ -235,15 +280,187 @@
           <td class="name">
             <b>Play</b>
             "Listen to what you just recorded."
-            <small>Segments screen, recorded row</small>
+            <small>Segments screen, the row they just recorded</small>
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Play: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Play: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Play: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
         </tr>
         <tr>
           <td>3</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M4 7h14M4 11h14M4 15h14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Menu</b>
+            "Show me what else this screen can do."
+            <small>Segments screen, top corner</small>
+          </td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Menu: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Menu: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Menu: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M5 11.5 9.2 15.5 17 6.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.1"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Finished</b>
+            "Tell the app this recording is done."
+            <small>Segment 1's row menu (you open it)</small>
+          </td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Finished: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Finished: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Finished: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M5 7h12M9 7V5.5h4V7M7 7l.8 9.5h6.4L15 7"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Erase</b>
+            "Throw this recording away."
+            <small
+              >Segment 2's row menu (you open it), last entry; the confirm
+              panel's bin does not count as a second try</small
+            >
+          </td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Erase: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Erase: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Erase: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td class="glyph">
+            <svg viewBox="0 0 22 22" aria-hidden="true">
+              <path
+                d="M9 5.5H6v11h3M13 5.5h3v11h-3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </td>
+          <td class="name">
+            <b>Select</b>
+            "Change part of this recording — choose the piece you want to
+            change."
+            <small
+              >Recorder, first toolbar (disc, triangle, brackets); "opens
+              editing" or "picks a piece" both count</small
+            >
+          </td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Select: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Select: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Select: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
+        </tr>
+        <tr>
+          <td>7</td>
           <td class="glyph">
             <svg viewBox="0 0 22 22" aria-hidden="true">
               <circle
@@ -273,63 +490,29 @@
           <td class="name">
             <b>Zoom</b>
             "Look closer at one small part of the recording."
-            <small>Recorder, toolbar</small>
+            <small>Recorder, editing toolbar</small>
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Zoom: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Zoom: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Zoom: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
         </tr>
         <tr>
-          <td>4</td>
-          <td class="glyph">
-            <svg viewBox="0 0 22 22" aria-hidden="true">
-              <path
-                d="M5 7h12M9 7V5.5h4V7M7 7l.8 9.5h6.4L15 7"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </td>
-          <td class="name">
-            <b>Erase</b>
-            "Throw this recording away."
-            <small>Segment row menu (open it for them)</small>
-          </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
-        </tr>
-        <tr>
-          <td>5</td>
-          <td class="glyph">
-            <svg viewBox="0 0 22 22" aria-hidden="true">
-              <path
-                d="M9 5.5H6v11h3M13 5.5h3v11h-3"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </td>
-          <td class="name">
-            <b>Select</b>
-            "Choose a piece of the recording to change."
-            <small>Recorder, toolbar</small>
-          </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
-        </tr>
-        <tr>
-          <td>6</td>
+          <td>8</td>
           <td class="glyph">
             <svg viewBox="0 0 22 22" aria-hidden="true">
               <circle
@@ -360,15 +543,27 @@
           <td class="name">
             <b>Cut</b>
             "Take out the piece you chose."
-            <small>Recorder, under the sound picture</small>
+            <small
+              >Recorder, under the sound picture, once a piece is chosen</small
+            >
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Cut: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Cut: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Cut: did not know" />
+          </td>
+          <td class="notes" contenteditable="true"></td>
         </tr>
         <tr>
-          <td>7</td>
+          <td>9</td>
           <td class="glyph">
             <svg viewBox="0 0 22 22" aria-hidden="true">
               <path
@@ -384,59 +579,29 @@
           <td class="name">
             <b>Paste</b>
             "Put the cut piece back."
-            <small>Recorder, on the sound picture</small>
+            <small
+              >Recorder, just above the sound picture, once something is
+              cut</small
+            >
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
-        </tr>
-        <tr>
-          <td>8</td>
-          <td class="glyph">
-            <svg viewBox="0 0 22 22" aria-hidden="true">
-              <path
-                d="M4 7h14M4 11h14M4 15h14"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-              />
-            </svg>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Paste: knew it" />
           </td>
-          <td class="name">
-            <b>Menu</b>
-            "Show me what else this screen can do."
-            <small>Books or Segments screen, top corner</small>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Paste: after one try"
+            />
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
-        </tr>
-        <tr>
-          <td>9</td>
-          <td class="glyph">
-            <svg viewBox="0 0 22 22" aria-hidden="true">
-              <path
-                d="M5 11.5 9.2 15.5 17 6.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.1"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Paste: did not know"
+            />
           </td>
-          <td class="name">
-            <b>Finished</b>
-            "Tell the app this recording is done."
-            <small>Segment row menu</small>
-          </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
+          <td class="notes" contenteditable="true"></td>
         </tr>
         <tr>
           <td>10</td>
@@ -469,13 +634,31 @@
           </td>
           <td class="name">
             <b>Share</b>
-            "Send this chapter to another phone." (stop before it sends)
-            <small>Segments screen menu (open it for them)</small>
+            "Get the app ready to send this chapter to another phone." Done when
+            the phone's own share screen appears; you cancel it.
+            <small
+              >Chapter 2, Segments screen menu (you open it). Two taps: prepare,
+              then send. Phone showed: tray / three joined dots (circle)</small
+            >
           </td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="tick"><span class="box"></span></td>
-          <td class="notes"></td>
+          <td class="tick">
+            <input type="checkbox" class="box" aria-label="Share: knew it" />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Share: after one try"
+            />
+          </td>
+          <td class="tick">
+            <input
+              type="checkbox"
+              class="box"
+              aria-label="Share: did not know"
+            />
+          </td>
+          <td class="notes" contenteditable="true"></td>
         </tr>
       </tbody>
     </table>
@@ -483,8 +666,9 @@
     <p class="foot">
       Knew it = said what it does before touching it. After one try = tapped
       once, then could say and do it. Did not know = neither. One sheet per
-      participant. Photograph the filled sheet and send it to the dev lead; no
-      photographs or recordings of the participant. tC Mobile, ADR 0010.
+      participant. Photograph or screenshot the filled sheet and send it to the
+      dev lead; no photographs or recordings of the participant. tC Mobile, ADR
+      0010.
     </p>
   </body>
 </html>
