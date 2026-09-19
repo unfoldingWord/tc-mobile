@@ -101,6 +101,18 @@ VERDICT_LINE_RE='^[[:space:]]*\*{0,2}(Verdict:?[[:space:]]*\*{0,2}[[:space:]]*)?
 # example), so the line anchor stays; only the distance-based tail window is
 # gone.
 #
+# #348 round 4 (PR #510 round 3 triage): the five findings across rounds 1-3
+# were all one class — "the gate reads an artifact this run did not provably
+# write, for this SHA" — closed by generalizing THE ONE RULE above rather
+# than patching another call site: every artifact frank.sh/george.sh write is
+# now keyed by SHA **and** a per-run id, truncated at entry (before anything
+# in either script can abort), and triage.sh picks a run's own paired
+# report+verdict deterministically by that id, scoped to one SHA, never via
+# `ls -t` across every SHA a checkout has ever reviewed. verdict_token()
+# itself is unchanged by round 4 — it still just requires an anchored verdict
+# LINE in whatever (already-isolated) file it is handed; the naming and
+# clearing discipline lives entirely in the three callers.
+#
 # Prints the LAST anchored verdict token in FILE (case preserved from the
 # file), or prints nothing and returns 1 when FILE is missing, empty, or has
 # no anchored verdict line — including a final answer that only echoes the

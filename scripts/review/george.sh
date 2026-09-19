@@ -21,24 +21,62 @@ cd "$(git rev-parse --show-toplevel)"
 source scripts/review/_preamble.sh "${1:-origin/develop}"
 source scripts/review/_verdict.sh
 
-SHA="$(git rev-parse --short HEAD)"
-REPORT="$OUT_DIR/george-$SHA.md"
-DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
-PROMPT_FILE="$OUT_DIR/george-prompt-$SHA.txt"
+# #348 round 4 (PR #510 round 3 triage — five prior findings, each fixed at
+# its own call site, were all one class: "the gate reads an artifact this run
+# did not provably write, for this SHA"). THE ONE RULE generalized:
+#   1. Every artifact this run writes is keyed by the head SHA AND a per-run
+#      id (RUN_ID below) — never a fixed "george-$SHA.*" name a later rerun
+#      could reuse.
+#   2. Every one of those paths is removed/truncated HERE, at entry, before
+#      anything else in this script can abort.
+# SHA now uses --short=9 (was unqualified --short — git's variable default
+# length) to match triage.sh's own SHA length; Frank's round-3 P1 #2 named
+# the mismatch as part of the same defect.
+SHA="$(git rev-parse --short=9 HEAD)"
+# RUN_ID: a nanosecond epoch timestamp plus this script's own PID, generated
+# ONCE, here. Lexically sortable, so triage.sh can pick "the latest run for
+# this SHA" with `sort`, never `ls -t` (mtime order). REVIEW_RUN_ID lets a
+# test pin this to an exact, predictable value; unset in real use.
+RUN_ID="${REVIEW_RUN_ID:-$(date +%s%N)-$$}"
+REPORT="$OUT_DIR/george-$SHA-$RUN_ID.md"
+DIFF_FILE="$OUT_DIR/diff-$SHA-$RUN_ID.patch"
+PROMPT_FILE="$OUT_DIR/george-prompt-$SHA-$RUN_ID.txt"
 # The completion artifact (#348 round 3) — grok's own `--output-format json`
 # object, George's equivalent of Frank's -o/--output-last-message file. Never
-# matches the "george-*.md" glob triage.sh's `ls -t .review/george-*.md` uses
-# to find the latest report, so it is never picked up as if it were one.
-JSON_OUT="$OUT_DIR/george-$SHA.completion.json"
+# matches the "george-$SHA-*.md" glob triage.sh uses to find the latest
+# report, so it is never picked up as if it were one.
+JSON_OUT="$OUT_DIR/george-$SHA-$RUN_ID.completion.json"
 # The model's own final answer, extracted from JSON_OUT's "text" field —
 # what verdict_token() below reads, and ONLY what it reads. Same non-".md"
 # naming reasoning as JSON_OUT.
-FINAL_MSG="$OUT_DIR/george-$SHA.final-message.txt"
+FINAL_MSG="$OUT_DIR/george-$SHA-$RUN_ID.final-message.txt"
 # grok's stderr for this run — diagnostic only (whatever logging or
 # tool-call chatter it writes there), archived in $REPORT for a human to read
 # on a failed run, but NEVER consulted for a verdict. See the invocation
 # below for why that separation matters.
-STDERR_LOG="$OUT_DIR/george-$SHA.stderr.log"
+STDERR_LOG="$OUT_DIR/george-$SHA-$RUN_ID.stderr.log"
+
+# Rule 2 (#348 round 4 — closes Frank's round-3 P1 #1): every path this run
+# will later read as its own output is truncated HERE, before `git diff` or
+# the prompt substitutions below get a chance to fail first and exit (via
+# `set -e`) with these paths untouched. Round 3 cleared only $JSON_OUT, and
+# only right before the grok invocation — Frank's exact scenario: George is
+# rerun at the same SHA and is killed WHILE grok is running, before the
+# node -e extraction step further down is ever reached; $FINAL_MSG (what
+# verdict_token() actually reads) was never touched, so a PRIOR run's stale
+# "Verdict: APPROVE" survived and a later triage.sh read it as this run's
+# own. Every artifact is now keyed by SHA+RUN_ID (so a stale file can only
+# ever be a genuinely different run's, never this one's own path reused) AND
+# truncated at entry (defense in depth against a RUN_ID collision, and what
+# makes "these paths exist and are empty" true from this script's first line
+# onward, for every run it starts — including one grok kills a moment later).
+: > "$REPORT"
+: > "$DIFF_FILE"
+: > "$PROMPT_FILE"
+: > "$JSON_OUT"
+: > "$FINAL_MSG"
+: > "$STDERR_LOG"
+
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
 read -r -d '' PROMPT_TEMPLATE <<'PROMPT_EOF' || true
@@ -118,9 +156,14 @@ TREE_BEFORE="$(snapshot_tree)"
 # confirmed for the flag itself but not yet observed end-to-end through this
 # exact invocation shape.
 #
-# $JSON_OUT is removed before every invocation, same reasoning as Frank's
-# $LAST_MSG (frank.sh) — a stale completion object from an earlier run at
-# this SHA must never be mistaken for this run's own answer.
+# #348 round 4: $JSON_OUT and $FINAL_MSG (and $REPORT, $DIFF_FILE,
+# $PROMPT_FILE, $STDERR_LOG) were already truncated at entry, above — see the
+# rule-2 comment there. Nothing left to clear here; grok writes into paths
+# that are already empty and already keyed to this exact run (SHA + RUN_ID).
+# If grok is killed or crashes anywhere in the next few lines — including
+# between this invocation and the node -e extraction step below, exactly
+# Frank's round-3 P1 #1 scenario — $FINAL_MSG stays exactly what it already
+# is here: empty, not a leftover approval from any other run.
 #
 # Losing today's live-streamed stdout costs nothing: per the coordinator
 # (2026-09-19), the George runners that watch for a stall already watch
@@ -129,7 +172,6 @@ TREE_BEFORE="$(snapshot_tree)"
 # liveness signal this harness actually depends on is lost here. stderr is
 # still captured, to $STDERR_LOG, for a human to read on a failed run — but,
 # per THE ONE RULE, never for a verdict (see the extraction step below).
-rm -f "$JSON_OUT"
 grok --prompt-file "$PROMPT_FILE" --output-format json \
   --allow read_file --allow grep --allow list_dir \
   --cwd "$(pwd)" </dev/null >"$JSON_OUT" 2>"$STDERR_LOG"

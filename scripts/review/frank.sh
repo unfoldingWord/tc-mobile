@@ -22,13 +22,49 @@ cd "$(git rev-parse --show-toplevel)"
 source scripts/review/_preamble.sh "${1:-origin/develop}"
 source scripts/review/_verdict.sh
 
-SHA="$(git rev-parse --short HEAD)"
-REPORT="$OUT_DIR/frank-$SHA.md"
-DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
+# #348 round 4 (PR #510 round 3 triage — five prior findings, each fixed at
+# its own call site, were all one class: "the gate reads an artifact this run
+# did not provably write, for this SHA"). THE ONE RULE generalized:
+#   1. Every artifact this run writes is keyed by the head SHA AND a per-run
+#      id (RUN_ID below) — never a fixed "frank-$SHA.*" name a later rerun
+#      could reuse.
+#   2. Every one of those paths is removed/truncated HERE, at entry, before
+#      anything else in this script can abort.
+# SHA now uses --short=9 (was unqualified --short — git's variable default
+# length) to match triage.sh's own SHA length; Frank's round-3 P1 #2 named
+# the mismatch as part of the same defect: two scripts computing
+# different-length short SHAs for what has to be the same lookup key.
+SHA="$(git rev-parse --short=9 HEAD)"
+# RUN_ID: a nanosecond epoch timestamp plus this script's own PID, generated
+# ONCE, here. Lexically sortable (fixed-width numeric prefix), so triage.sh
+# can pick "the latest run for this SHA" with `sort`, never `ls -t` (mtime
+# order, which is what let round 3's P1 #2 show one run's report beside a
+# DIFFERENT run's verdict). REVIEW_RUN_ID lets a test pin this to an exact,
+# predictable value; unset in real use, where it is always freshly
+# generated, so two runs can never collide on it by construction.
+RUN_ID="${REVIEW_RUN_ID:-$(date +%s%N)-$$}"
+REPORT="$OUT_DIR/frank-$SHA-$RUN_ID.md"
+DIFF_FILE="$OUT_DIR/diff-$SHA-$RUN_ID.patch"
 # The isolated final-message file (#348 round 2) — deliberately NOT matching
-# the "frank-*.md" glob triage.sh's `ls -t .review/frank-*.md` uses to find
-# the latest report, so it is never picked up as if it were one.
-LAST_MSG="$OUT_DIR/frank-$SHA.final-message.txt"
+# the "frank-$SHA-*.md" glob triage.sh uses to find the latest report, so it
+# is never picked up as if it were one.
+LAST_MSG="$OUT_DIR/frank-$SHA-$RUN_ID.final-message.txt"
+
+# Rule 2: truncate every path this run will later read as its own output,
+# now, before `git diff` or the prompt substitutions below get a chance to
+# fail first and exit (via `set -e`) with these paths left at whatever a
+# prior run — or, vanishingly unlikely, a colliding RUN_ID — left them in.
+# Because RUN_ID is fresh every real run this is normally a no-op; its job is
+# defense in depth, and it is what makes "these paths exist and are empty"
+# true from this script's very first line onward, for every run it starts,
+# including one that dies one line later — round 3's P1 #1 was exactly a gap
+# in that guarantee (the clear sat right before the codex invocation, not at
+# entry) for the file frank.sh itself writes; round 3's P1 #2 was the same
+# gap surfacing at george.sh's second artifact (see george.sh).
+: > "$REPORT"
+: > "$DIFF_FILE"
+: > "$LAST_MSG"
+
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
 read -r -d '' PROMPT_TEMPLATE <<'PROMPT_EOF' || true
@@ -110,17 +146,11 @@ PROMPT="${PROMPT//@@SEVERITY_RULES@@/$SEVERITY_RULES}"
 echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
 TREE_BEFORE="$(snapshot_tree)"
 
-# #348 round 3 (Frank at 0fa4d99, P1 #1): $LAST_MSG is reused across reruns at
-# the same SHA. Without clearing it first, a successful earlier run's
-# "Verdict: APPROVE" survives on disk, and a later rerun where codex produces
-# no final message (a real stall — codex only writes -o on genuine
-# completion, per `codex exec --help`) leaves that stale file untouched;
-# verdict_token() below would then read the stale approval as this run's own.
-# Clear it immediately before invoking codex exec — and before any future
-# retry of this same call — so a run that stalls always leaves the artifact
-# either absent or freshly (non-)written by THIS run, never a leftover from a
-# previous one.
-rm -f "$LAST_MSG"
+# #348 round 4: $LAST_MSG (and $REPORT, $DIFF_FILE) were already truncated at
+# entry, above — see the rule-2 comment there. Nothing left to clear here;
+# codex writes into paths that are already empty and already keyed to this
+# exact run (SHA + RUN_ID), so a stale artifact from any other run — earlier
+# or, if one somehow raced, concurrent — cannot be mistaken for this run's.
 codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
   -o "$LAST_MSG" \
   "$PROMPT" </dev/null 2>&1 | tee "$REPORT"

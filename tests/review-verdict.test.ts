@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -50,6 +51,17 @@ import { describe, expect, it } from "vitest";
 // live-streamed transcript window George previously relied on). triage.sh
 // was updated to match: its Verdicts table reads from the same isolated
 // *.final-message.txt artifacts, not the .md report/transcript files.
+//
+// #348 round 4 (PR #510 round 3 triage) generalized this into ONE RULE
+// rather than patching a sixth call site: every artifact frank.sh/george.sh
+// write is now keyed by the head SHA AND a per-run id (RUN_ID — a lexically
+// sortable timestamp+pid, generated once at entry, overridable via
+// $REVIEW_RUN_ID so a test can pin the exact path a run will use), and every
+// one of those paths is truncated at entry, before anything in either
+// script can abort. triage.sh's lookups are scoped to `frank-$SHA-*` /
+// `george-$SHA-*` — never a bare `frank-*.md` spanning every SHA ever
+// reviewed — sorted (not `ls -t`), and a run's verdict file is derived from
+// the SAME run id as its own picked report, never chosen independently.
 
 const REPO_ROOT = path.join(import.meta.dirname, "..");
 const REVIEW_DIR = path.join(REPO_ROOT, "scripts", "review");
@@ -318,6 +330,13 @@ function runTriage(dir: string, round: string): Result {
   return runBash([TRIAGE_SH, round], { cwd: dir });
 }
 
+function headShaOf(dir: string): string {
+  return execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
+    cwd: dir,
+    encoding: "utf8",
+  }).trim();
+}
+
 describe("triage.sh entry path (real subprocess)", () => {
   it("defaults both reviewers to 'not run' when no report exists (entry default, no crash — also regression-covers the $lens_ typo, #220 item 4, fixed alongside this because it otherwise aborts this exact default under set -u)", () => {
     const dir = makeTempRepo();
@@ -338,9 +357,10 @@ describe("triage.sh entry path (real subprocess)", () => {
     }
   });
 
-  it("reads a real anchored verdict for one reviewer and 'not run' for the missing other (#348 round 3: verdict read from the isolated *.final-message.txt artifact, not the .md report)", () => {
+  it("reads a real anchored verdict for one reviewer and 'not run' for the missing other (#348 round 3: verdict read from the isolated *.final-message.txt artifact, not the .md report; #348 round 4: both are now looked up by a SHA-scoped, run-id-suffixed filename — 'frank-$SHA-$RUN_ID.*' — not a fixed 'frank-$SHA.*' name)", () => {
     const dir = makeTempRepo();
     try {
+      const sha = headShaOf(dir);
       mkdirSync(path.join(dir, ".review"), { recursive: true });
       // The finding line matches extract()'s existing frank-shape regex so
       // this fixture doesn't trip the separate, out-of-scope #220 item 1
@@ -350,11 +370,15 @@ describe("triage.sh entry path (real subprocess)", () => {
       // a separate final-message file, matching frank.sh's/george.sh's own
       // gate exactly.
       writeFileSync(
-        path.join(dir, ".review", "frank-test0001.md"),
+        path.join(dir, ".review", `frank-${sha}-1000000000000000000-1.md`),
         "1. **P1** — none.\n\nVerdict: APPROVE\n"
       );
       writeFileSync(
-        path.join(dir, ".review", "frank-test0001.final-message.txt"),
+        path.join(
+          dir,
+          ".review",
+          `frank-${sha}-1000000000000000000-1.final-message.txt`
+        ),
         "1. **P1** — none.\n\nVerdict: APPROVE\n"
       );
       const result = runTriage(dir, "2");
@@ -376,17 +400,22 @@ describe("triage.sh entry path (real subprocess)", () => {
   it("does NOT let trailing prose in a report override the real verdict in the triage table (#220's prose shape)", () => {
     const dir = makeTempRepo();
     try {
+      const sha = headShaOf(dir);
       mkdirSync(path.join(dir, ".review"), { recursive: true });
       // A real APPROVE, followed by prose that mentions REQUEST_CHANGES.
       // The pre-fix `grep -hoE ... | tail -1` picks the LAST bare
       // occurrence anywhere in the file, which is the prose word, not the
       // real verdict — a wrong entry in the triage table.
       writeFileSync(
-        path.join(dir, ".review", "frank-test0002.md"),
+        path.join(dir, ".review", `frank-${sha}-1000000000000000000-2.md`),
         "1. **P1** — none.\n\nVerdict: APPROVE\n\nFollow-up note: the team can decide later whether to APPROVE or REQUEST_CHANGES the deferred item.\n"
       );
       writeFileSync(
-        path.join(dir, ".review", "frank-test0002.final-message.txt"),
+        path.join(
+          dir,
+          ".review",
+          `frank-${sha}-1000000000000000000-2.final-message.txt`
+        ),
         "1. **P1** — none.\n\nVerdict: APPROVE\n\nFollow-up note: the team can decide later whether to APPROVE or REQUEST_CHANGES the deferred item.\n"
       );
       const result = runTriage(dir, "3");
@@ -407,6 +436,7 @@ describe("triage.sh entry path (real subprocess)", () => {
   it("reads 'not run' when a reviewer's .md report exists but its final-message artifact does not (a failed/stalled run leaves a transcript behind but never a completion artifact — #348 round 3)", () => {
     const dir = makeTempRepo();
     try {
+      const sha = headShaOf(dir);
       mkdirSync(path.join(dir, ".review"), { recursive: true });
       // Models the exact shape a FAILED frank.sh/george.sh run leaves on
       // disk: the tee'd/report file contains a draft verdict followed by
@@ -416,7 +446,7 @@ describe("triage.sh entry path (real subprocess)", () => {
       // must agree with the reviewer's own exit code (3, a failure) and say
       // "not run" — not resurrect a verdict from the leftover transcript.
       writeFileSync(
-        path.join(dir, ".review", "frank-test0003.md"),
+        path.join(dir, ".review", `frank-${sha}-1000000000000000000-3.md`),
         "1. **P1** — none.\n\nVerdict: APPROVE\n\nActually, let me keep investigating this further.\n"
       );
       const result = runTriage(dir, "4");
@@ -429,6 +459,126 @@ describe("triage.sh entry path (real subprocess)", () => {
         encoding: "utf8",
       });
       expect(body).toContain("| Frank  | not run |");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // #348 round 4 (PR #510 round 3 triage, Frank's P1 #2). Both new tests
+  // below are written to go RED against the round-3 code at `afcbf16`
+  // (confirmed manually, see the PR triage comment): round-3 triage.sh does
+  // `ls -t .review/frank-*.md | head -1` and, independently,
+  // `ls -t .review/frank-*.final-message.txt | head -1` — two globs across
+  // EVERY sha ever reviewed in the checkout, by mtime, not scoped to the
+  // current head and not paired to each other's run.
+  // ---------------------------------------------------------------------
+
+  it("shows only the head SHA's report and verdict when a DIFFERENT SHA's artifacts are also present on disk, with a NEWER mtime and a clean APPROVE (#348 round 4 rule 4 — never `ls -t` across SHAs)", () => {
+    const dir = makeTempRepo();
+    try {
+      const headSha = headShaOf(dir);
+      // Deliberately not the real head sha of this temp repo — a
+      // plausible-looking but unrelated 9-char short sha.
+      const otherSha = "0ffff00ff";
+      mkdirSync(path.join(dir, ".review"), { recursive: true });
+
+      // The HEAD sha's own real finding, REQUEST_CHANGES — written FIRST,
+      // so its mtime is OLDER than the other SHA's files below.
+      writeFileSync(
+        path.join(dir, ".review", `frank-${headSha}-1000000000000000000-1.md`),
+        "1. **P1** — a real finding at the head sha.\n\nVerdict: REQUEST_CHANGES\n"
+      );
+      writeFileSync(
+        path.join(
+          dir,
+          ".review",
+          `frank-${headSha}-1000000000000000000-1.final-message.txt`
+        ),
+        "1. **P1** — a real finding at the head sha.\n\nVerdict: REQUEST_CHANGES\n"
+      );
+
+      // A DIFFERENT sha's artifacts — written SECOND, so `ls -t` (mtime,
+      // newest-first) would pick these over the head sha's own files above,
+      // reproducing the round-3 bug. Must never surface in the head SHA's
+      // triage table.
+      writeFileSync(
+        path.join(dir, ".review", `frank-${otherSha}-9999999999999999999-1.md`),
+        "1. **P1** — a finding that belongs to a different commit entirely.\n\nVerdict: APPROVE\n"
+      );
+      writeFileSync(
+        path.join(
+          dir,
+          ".review",
+          `frank-${otherSha}-9999999999999999999-1.final-message.txt`
+        ),
+        "Verdict: APPROVE\n"
+      );
+
+      const result = runTriage(dir, "5");
+      expect(result.status).toBe(0);
+      const outFile = result.stdout.match(
+        /Triage skeleton: (\S+)/
+      )?.[1] as string;
+      const body = execFileSync("cat", [outFile], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+      expect(body).toContain("| Frank  | REQUEST_CHANGES |");
+      expect(body).toContain("a real finding at the head sha");
+      expect(body).not.toContain("APPROVE");
+      expect(body).not.toContain(otherSha);
+      expect(body).not.toContain("belongs to a different commit");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("picks the LATEST run id's report for the head SHA, and requires that SAME run's own verdict artifact — a newer (aborted) run must not inherit an OLDER run's approval at the same SHA (#348 round 3 P1 #2's exact shape)", () => {
+    const dir = makeTempRepo();
+    try {
+      const sha = headShaOf(dir);
+      mkdirSync(path.join(dir, ".review"), { recursive: true });
+
+      // An older, genuinely completed run — real APPROVE, report and
+      // verdict artifact paired at the same run id.
+      writeFileSync(
+        path.join(dir, ".review", `frank-${sha}-1000000000000000000-1.md`),
+        "1. **P1** — none.\n\nVerdict: APPROVE\n"
+      );
+      writeFileSync(
+        path.join(
+          dir,
+          ".review",
+          `frank-${sha}-1000000000000000000-1.final-message.txt`
+        ),
+        "Verdict: APPROVE\n"
+      );
+
+      // A NEWER run (higher run id) at the SAME sha — its report exists
+      // (frank.sh/george.sh's entry-point truncate, #348 round 4 rule 2,
+      // "reserves" this run id even if the run then crashes) but is empty,
+      // because this run never got further than that truncate. Deliberately
+      // no matching final-message.txt for run 2000...-2 — the run stalled
+      // or was killed before ever reaching completion.
+      writeFileSync(
+        path.join(dir, ".review", `frank-${sha}-2000000000000000000-2.md`),
+        ""
+      );
+
+      const result = runTriage(dir, "6");
+      expect(result.status).toBe(0);
+      const outFile = result.stdout.match(
+        /Triage skeleton: (\S+)/
+      )?.[1] as string;
+      const body = execFileSync("cat", [outFile], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+      // Must read as "not run" for the latest attempt — never fall back to
+      // the older run's real APPROVE.
+      expect(body).toContain("| Frank  | not run |");
+      expect(body).not.toContain("APPROVE");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -449,6 +599,18 @@ const STUB_CODEX = `#!/usr/bin/env bash
 #     that file, never the streamed transcript (#348 round 2). This stub
 #     locates the value following -o in "$@" the same way a real flag parser
 #     would, rather than assuming its position.
+if [ -n "\${STUB_CODEX_CRASH:-}" ]; then
+  # #348 round 4: models codex being killed/crashing before it produces
+  # ANYTHING — not even the prompt echo below — the same shape Frank's
+  # round-3 P1 #1 named for grok ("killed while running, before the
+  # completion artifact is ever (re)written"). frank.sh's own entry-point
+  # truncation (rule 2) is what this scenario tests: \$LAST_MSG must already
+  # be empty from before this stub ever ran, never a leftover from a prior
+  # run at a different run id.
+  echo "simulated crash: codex killed mid-run" >&2
+  exit 1
+fi
+
 last="\${@: -1}"
 printf '%s\\n' "$last"
 
@@ -492,6 +654,17 @@ fi
 // by a small embedded node call rather than hand-escaped in bash, since a
 // real reviewer's final answer routinely contains quotes and backticks.
 const STUB_GROK = `#!/usr/bin/env bash
+if [ -n "\${STUB_GROK_CRASH:-}" ]; then
+  # #348 round 4 (Frank's round-3 P1 #1, concrete scenario): grok is killed
+  # or crashes WHILE RUNNING, before it ever writes a completion object —
+  # so george.sh's node -e extraction step is never reached. george.sh's own
+  # entry-point truncation (rule 2) is what this scenario proves: \$JSON_OUT
+  # and \$FINAL_MSG must already be empty from before this stub ever ran,
+  # never a leftover from a prior run at a different run id.
+  echo "simulated crash: grok killed mid-run" >&2
+  exit 1
+fi
+
 if [ -n "\${STUB_GROK_STDERR_DRAFT:-}" ]; then
   # #348 round 3 (Frank at 0fa4d99, P1 #2)'s "streamed part": a
   # verdict-shaped line landing somewhere OTHER than the completion object's
@@ -648,28 +821,82 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
     );
   });
 
-  it("FAILS a rerun at the SAME sha when codex writes no final message, even though a stale APPROVE from an earlier run at this exact sha is still on disk (#348 round 3, P1 #1 — the stale-artifact false PASS)", () => {
+  // ---------------------------------------------------------------------
+  // #348 round 4 (PR #510 round 3 triage). Filenames are now keyed by SHA
+  // AND a per-run id (RUN_ID) — frank.sh reads $REVIEW_RUN_ID when set, so
+  // these tests can pin the exact artifact path a run will use instead of
+  // guessing the freshly-generated one. Both tests below are new this
+  // round and are written to go RED against the round-3 code at `afcbf16`
+  // (confirmed manually, see the PR triage comment): round-3 frank.sh names
+  // its artifacts "frank-$SHA.*" (no run id, no $REVIEW_RUN_ID override), so
+  // a stale same-SHA artifact planted at that fixed name — from what round 4
+  // treats as "a different run" — is the SAME file a round-3 rerun would
+  // read, and round 3's `rm -f "$LAST_MSG"` sits AFTER prompt/diff
+  // construction, not at entry, so the crash case below (which dies before
+  // that line is ever reached) leaves the stale approval untouched.
+  // ---------------------------------------------------------------------
+
+  it("FAILS a rerun at the SAME sha AND the SAME run id when codex writes no final message, even though a stale APPROVE at that exact path is still on disk (#348 round 3 P1 #1, defense in depth under round 4's SHA+RUN_ID keying — rule 2's entry-point truncate)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
-        const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+        const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
           cwd: dir,
           encoding: "utf8",
         }).trim();
+        const runId = "1000000000000000000-11111";
         const lastMsgPath = path.join(
           dir,
           ".review",
-          `frank-${sha}.final-message.txt`
+          `frank-${sha}-${runId}.final-message.txt`
         );
         mkdirSync(path.dirname(lastMsgPath), { recursive: true });
-        // Pre-seed a stale artifact from an earlier, successful run at this
-        // exact sha — the concrete scenario Frank's own P1 named: a rerun
-        // whose codex produces no final message must not silently inherit
-        // this leftover approval.
+        // Pre-seed a stale artifact at the EXACT path this run will use
+        // (pinned via REVIEW_RUN_ID) — the residual gap rule 2 defends
+        // against even though RUN_ID makes a real collision vanishingly
+        // unlikely: a rerun whose codex produces no final message must not
+        // silently inherit this leftover approval.
         writeFileSync(lastMsgPath, "Verdict: APPROVE\n");
 
         // This run's stub codex only echoes the prompt back (no
         // STUB_CODEX_VERDICT set), so it never (re)writes the -o file —
-        // modeling a genuine stall on the same sha as the stale file above.
+        // modeling a genuine stall at the same sha+run id as the stale file.
+        const result = runBash([FRANK_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            REVIEW_RUN_ID: runId,
+          }),
+        });
+
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: Frank produced no verdict — stalled or cancelled."
+        );
+        expect(readFileSync(lastMsgPath, "utf8")).toBe("");
+      },
+      { codex: STUB_CODEX }
+    );
+  });
+
+  it("does NOT inherit a stale APPROVE left by a DIFFERENT, earlier run at the same SHA (#348 round 4 — every artifact is keyed by SHA and a per-run id, so a different run's file can never be mistaken for this run's own)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
+          cwd: dir,
+          encoding: "utf8",
+        }).trim();
+        const staleRunId = "0000000000000000001-99999";
+        const staleLastMsgPath = path.join(
+          dir,
+          ".review",
+          `frank-${sha}-${staleRunId}.final-message.txt`
+        );
+        mkdirSync(path.dirname(staleLastMsgPath), { recursive: true });
+        writeFileSync(staleLastMsgPath, "Verdict: APPROVE\n");
+
+        // This run gets its own, different, auto-generated RUN_ID (no
+        // override) and its stub codex never writes -o — a genuine stall,
+        // at the same SHA as the older run above but a different run id.
         const result = runBash([FRANK_SH, baseSha], {
           cwd: dir,
           env: cleanEnv({ PATH: `${stubBin}:${process.env.PATH}` }),
@@ -679,6 +906,48 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
         expect(result.stderr).toContain(
           "FAILED RUN: Frank produced no verdict — stalled or cancelled."
         );
+        // The older run's own artifact is untouched — round 4 isolates by
+        // naming, it does not go hunting for other runs' files to clear.
+        expect(readFileSync(staleLastMsgPath, "utf8")).toBe(
+          "Verdict: APPROVE\n"
+        );
+      },
+      { codex: STUB_CODEX }
+    );
+  });
+
+  it("a run that aborts before codex ever writes anything (crashed/killed) still leaves no usable verdict, even at a path pre-seeded with a stale APPROVE (#348 round 4 rule 2 — truncated at entry, before ANYTHING in the script, including the codex invocation itself, can abort)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
+          cwd: dir,
+          encoding: "utf8",
+        }).trim();
+        const runId = "2000000000000000000-22222";
+        const lastMsgPath = path.join(
+          dir,
+          ".review",
+          `frank-${sha}-${runId}.final-message.txt`
+        );
+        mkdirSync(path.dirname(lastMsgPath), { recursive: true });
+        writeFileSync(lastMsgPath, "Verdict: APPROVE\n");
+
+        const result = runBash([FRANK_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            REVIEW_RUN_ID: runId,
+            STUB_CODEX_CRASH: "1",
+          }),
+        });
+
+        // The script itself dies (via `set -e`+`pipefail` on codex's
+        // nonzero exit) rather than reaching its own "FAILED RUN" message —
+        // that is fine; the property under test is the ARTIFACT, which a
+        // LATER triage.sh read would trust. It must never still say APPROVE.
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).not.toContain("Report: ");
+        expect(readFileSync(lastMsgPath, "utf8")).toBe("");
       },
       { codex: STUB_CODEX }
     );
@@ -820,6 +1089,99 @@ describe("george.sh entry path (real subprocess, stub grok --output-format json 
         });
         expect(result.status).toBe(0);
         expect(result.stdout).toContain("Report: ");
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // #348 round 4 (PR #510 round 3 triage, Frank's P1 #1). Round 3 cleared
+  // $JSON_OUT before every grok invocation but NOT $FINAL_MSG — the file
+  // verdict_token() actually reads — so a run killed WHILE grok is running
+  // (before the node -e extraction step further down is ever reached) left
+  // a prior run's stale approval untouched. Filenames are now keyed by SHA
+  // AND a per-run id; george.sh reads $REVIEW_RUN_ID when set, so these
+  // tests can pin the exact artifact path a run will use. Both tests below
+  // are new this round and are written to go RED against the round-3 code
+  // at `afcbf16` (confirmed manually, see the PR triage comment): round-3
+  // george.sh names its artifacts "george-$SHA.*" (no run id, no
+  // $REVIEW_RUN_ID override, no entry-point truncate of $FINAL_MSG), so a
+  // stale same-SHA artifact planted at that fixed name is exactly what a
+  // round-3 rerun killed mid-grok leaves behind.
+  // ---------------------------------------------------------------------
+
+  it("a run killed WHILE grok is running (before the completion JSON, let alone the extraction step, is ever produced) still leaves no usable verdict, even at a path pre-seeded with a stale APPROVE (#348 round 3 P1 #1 — the exact scenario; round 4 rule 2 truncates at entry, before ANYTHING in the script, including the grok invocation itself, can abort)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
+          cwd: dir,
+          encoding: "utf8",
+        }).trim();
+        const runId = "3000000000000000000-33333";
+        const finalMsgPath = path.join(
+          dir,
+          ".review",
+          `george-${sha}-${runId}.final-message.txt`
+        );
+        mkdirSync(path.dirname(finalMsgPath), { recursive: true });
+        writeFileSync(finalMsgPath, "Verdict: APPROVE\n");
+
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            REVIEW_RUN_ID: runId,
+            STUB_GROK_CRASH: "1",
+          }),
+        });
+
+        // The script itself dies (via `set -e` on grok's nonzero exit)
+        // rather than reaching its own "FAILED RUN" message — that is fine;
+        // the property under test is the ARTIFACT, which a LATER triage.sh
+        // read would trust. It must never still say APPROVE.
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).not.toContain("Report: ");
+        expect(readFileSync(finalMsgPath, "utf8")).toBe("");
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  it("does NOT inherit a stale APPROVE left by a DIFFERENT, earlier run at the same SHA (#348 round 4 — every artifact is keyed by SHA and a per-run id, so a different run's file can never be mistaken for this run's own)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
+          cwd: dir,
+          encoding: "utf8",
+        }).trim();
+        const staleRunId = "0000000000000000002-88888";
+        const staleFinalMsgPath = path.join(
+          dir,
+          ".review",
+          `george-${sha}-${staleRunId}.final-message.txt`
+        );
+        mkdirSync(path.dirname(staleFinalMsgPath), { recursive: true });
+        writeFileSync(staleFinalMsgPath, "Verdict: APPROVE\n");
+
+        // This run gets its own, different, auto-generated RUN_ID (no
+        // override) and its stub grok crashes immediately — modeling a
+        // genuine kill mid-run, at the same SHA as the older run above but
+        // a different run id.
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_GROK_CRASH: "1",
+          }),
+        });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).not.toContain("Report: ");
+        // The older run's own artifact is untouched — round 4 isolates by
+        // naming, it does not go hunting for other runs' files to clear.
+        expect(readFileSync(staleFinalMsgPath, "utf8")).toBe(
+          "Verdict: APPROVE\n"
+        );
       },
       { grok: STUB_GROK }
     );

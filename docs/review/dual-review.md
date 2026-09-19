@@ -254,6 +254,25 @@ Two guards exist, and both were wrong on the first attempt:
    before the run — Frank's `-o/--output-last-message` file, George's
    extracted `--output-format json` "text" field — never from `$REPORT`
    itself.
+3. **Artifact identity** (#348 round 4). Rounds 1-3 each closed one call
+   site of the same class — "the gate reads an artifact this run did not
+   provably write, for this SHA" — and round 3's own fix left two more open
+   at once: `george.sh` cleared `$JSON_OUT` before every run but not
+   `$FINAL_MSG` (a run killed mid-`grok` before the extraction step left a
+   prior run's approval untouched), and `triage.sh`'s report and verdict
+   lookups were two independent `ls -t` globs across **every SHA ever
+   reviewed**, not scoped to the current head — a newer, stalled run's
+   report could be shown beside an older commit's stale approval. The fix
+   generalizes rather than patching a sixth site: every artifact
+   `frank.sh`/`george.sh` write is keyed by the head SHA **and** a per-run id
+   (a lexically sortable timestamp+pid, generated once at entry), and every
+   one of those paths is truncated at entry — before `git diff`, prompt
+   construction, or anything else in either script gets a chance to abort
+   first. `triage.sh` globs are scoped to `frank-$SHA-*`/`george-$SHA-*`
+   only, sorted (not `ls -t`), and the verdict file is derived from the
+   **same** run id as the picked report — never chosen independently — so a
+   run that aborted before writing its own completion artifact reads as
+   "not run," never as an inherited pass from a different run.
 
 ## Provenance
 
