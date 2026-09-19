@@ -50,10 +50,17 @@ export interface CaptureOutcome<TBytes = unknown> {
   /**
    * A translator-facing reason when `samples` is null and it is worth saying.
    * Null when there is nothing to say — a superseded stop, whose UI belongs to
-   * a newer recording. Never the empty string: `use-recorder.ts` produces this
-   * from `stopDecodeMessage`, which returns either null or a whole sentence, so
-   * `!== null` here and the component's former truthiness test agree on every
-   * value that can actually arrive.
+   * a newer recording. Never the empty string. Three producers write it, and
+   * each writes either null or a whole sentence: `use-recorder.ts`'s
+   * `stopDecodeMessage` for the two decode exits of `stop()`; `stop()`'s
+   * empty-seal exit directly ("No sound was recorded. Try again.", or after
+   * the flush executor threw, "Could not finish this recording." — #485,
+   * George R1 P3 on #500); and `stopRecording`'s backstop in
+   * `use-audio-session.ts`, which returns that same "could not finish"
+   * sentence directly. `stopDecodeMessage`'s union is therefore NOT the
+   * closed set of stop errors — a `lib/` change or test that treats it as
+   * one is wrong. `!== null` here and the component's former truthiness test
+   * agree on every value that can actually arrive.
    */
   readonly error: string | null;
 }

@@ -27,6 +27,12 @@ import { describe, expect, it } from "vitest";
  *      `console.error` kept beside it, not replaced (#480; AGENTS.md
  *      "Errors have a channel before they have copy").
  *
+ * A fourth, `"recorder-stop-flush"` (#485) — `stop()`'s own catch on its
+ * bounded flush in use-recorder.ts — is pinned by
+ * `tests/recorder-stop-release-guards.test.ts`, whose contiguous
+ * catch-pattern already carries the report and the `console.error` beside
+ * it, plus a one-site check on the key; it is not repeated here.
+ *
  * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. `start()` is a
  * `useCallback` inside `useRecorder()` and `onInterrupted` is created inside
  * `start()`; `stopRecording` is a `useCallback` inside `useAudioSession()`.

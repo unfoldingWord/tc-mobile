@@ -417,8 +417,8 @@ export function useAudioSession(): UseAudioSession {
     // fresher: writing it during render is what `react-hooks` forbids, and
     // `resumeRecording`'s eager write already covers the resume edge. The claim
     // that leaves behind is bounded and inert: EVERY route out of `processing`
-    // clears it — `endRecording` (use-recorder.ts, all three `setState("idle")`
-    // exits) runs under `stopRecording`, whose `finally` stops the floor when its
+    // clears it — `endRecording` (use-recorder.ts, every `setState("idle")`
+    // exit) runs under `stopRecording`, whose `finally` stops the floor when its
     // token is current, and `cancel()` is reached only through `leave()`, which
     // nulls the token and calls `stopAll()`. In between, `processing` is `busy`,
     // so Play is disabled, and the Segments list is `inert` behind the sheet —
