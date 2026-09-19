@@ -10,6 +10,7 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { SendLogControl } from "./send-log-control";
 import { strings } from "./strings";
 import { flushFailureLog } from "@/hooks/failure-log";
 import type { SaveFailureKind } from "@/hooks/save-failure";
@@ -194,6 +195,15 @@ export function SaveFailed({
               )}
             </p>
           )}
+
+          {/* The log's other door (#456): this screen REPLACES the tree the
+              same way `ErrorBoundary`'s does — a held take blocks the way
+              back to Books' `≡` menu — and a facilitator whose save just
+              failed is in exactly the moment the problem report is worth
+              sending. Same order as `ErrorBoundary`: primary action first,
+              this one quiet, right after it. `DatabasePanel` does not get
+              this — #456 calls that a design call, not this PR's scope. */}
+          <SendLogControl />
 
           {safetyLine && (
             <p className="text-ink-muted text-[13px]">{safetyLine}</p>
