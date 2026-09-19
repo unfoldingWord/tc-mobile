@@ -5,8 +5,11 @@
  * has no jsdom coverage (George R3 G-3).
  *
  * The load-bearing rule: when the decode THREW, the captured container bytes are
- * KEPT even if the stop was superseded. A `leave()`/pagehide bumping the
- * recorder generation mid-decode is the very #106 interruption most likely to
+ * KEPT even if the stop was superseded. A `leave()` bumping the recorder
+ * generation mid-decode — navigation, unmount, or a DISCARDING pagehide
+ * (`event.persisted === false`; since #58 a persisted one leaves a stop in
+ * flight alone, so it is not a supersession route) — is the very #106
+ * interruption most likely to
  * fail the decode, so gating the bytes on "still current" drops the take on
  * exactly the case #165 exists to recover. Re-gate `keepBlob` on `current` and
  * the superseded-throw test dies — that is the mutation this file exists to fail.

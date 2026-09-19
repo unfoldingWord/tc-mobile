@@ -90,8 +90,11 @@ export type CaptureVerdict<TBytes = unknown> =
   /** No audio and nothing kept, but something worth saying — an empty capture. */
   | { readonly kind: "notice"; readonly error: string }
   /**
-   * Nothing at all: a `leave()`/pagehide bumped the generation mid-flush, so a
-   * newer owner speaks for the screen and this stop has no UI of its own.
+   * Nothing at all: a `leave()` bumped the generation mid-flush — navigation,
+   * unmount, a newer recording, or a DISCARDING pagehide (`persisted === false`;
+   * since #58 a persisted one does NOT supersede a stop in flight, so a restored
+   * page reaches the `take` arm and saves normally) — so a newer owner speaks for
+   * the screen and this stop has no UI of its own.
    */
   | { readonly kind: "superseded" };
 
@@ -219,8 +222,13 @@ export type ClosePlan<TBytes = unknown> =
  * the two together: `recorder.tsx` passes a `RecorderState`, so a state added
  * there and not here fails typecheck at that call rather than silently reading
  * as "no capture in play".
+ *
+ * Exported because `lib/audio/pagehide.ts` asks the same question of the same
+ * five states (#58) — ONE union, shared, rather than a second copy that a sixth
+ * state could be added to only half of. The reason above is about reaching into
+ * `hooks/`; it says nothing against two `lib/` modules sharing this.
  */
-type CaptureState =
+export type CaptureState =
   "idle" | "requesting" | "recording" | "paused" | "processing";
 
 /**

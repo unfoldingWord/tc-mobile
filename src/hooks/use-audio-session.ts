@@ -16,6 +16,7 @@ import {
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
+import { pageHideAction } from "@/lib/audio/pagehide";
 import {
   preemptPausedMic,
   reclaimAfterPreview,
@@ -114,8 +115,14 @@ export interface UseAudioSession {
    */
   audioNeedsGesture: () => boolean;
   startRecording: () => void;
-  /** Pause the in-progress recording without ending the take. */
-  pauseRecording: () => void;
+  /**
+   * Pause the in-progress recording without ending the take. Returns whether
+   * it actually froze — false when there is no recorder to pause or a #59
+   * interruption already claimed the take (`pausePlan`'s "ignore" cells).
+   * The `pagehide` handler's instrumentation reads this so its report never
+   * claims a freeze that did not happen (#478, #58 George R3 P2-3, Frank R4).
+   */
+  pauseRecording: () => boolean;
   /** Resume a paused recording into the same take. */
   resumeRecording: () => void;
   /**
@@ -218,6 +225,7 @@ export function useAudioSession(): UseAudioSession {
     elapsedMs,
     supported,
     readLevel,
+    nativeState,
     readMeterAvailable,
     readScope,
     peekScope,
@@ -594,7 +602,26 @@ export function useAudioSession(): UseAudioSession {
     // task as the tap, or iOS treats the prompt as unprompted.
     void beginRecording()
       .then((started) => {
-        if (started || token === null) return;
+        if (started) {
+          // Mirror "recording" in THIS turn, not one commit later (George R1
+          // P3-3). The `:238-241` effect lags a commit, and the `pagehide`
+          // handler reads the ref: inside that window it would see "idle" or
+          // "requesting", answer "none", and leave a live microphone capturing
+          // unpaused into a suspended page. The symmetric write already exists
+          // on `resumeRecording` for the same reason (#101 R2).
+          //
+          // Guarded on the floor token, which is this hook's existing test for
+          // "is this attempt still the current one": a `leave()` during the
+          // await calls `session.stopAll()`, which invalidates every token, and
+          // a newer `startRecording` supersedes this one and writes the mirror
+          // from its own completion. Either way a cancelled start must not
+          // claim "recording".
+          if (token !== null && session.isCurrent(token)) {
+            recorderStateRef.current = "recording";
+          }
+          return;
+        }
+        if (token === null) return;
         // The floor is handed back HERE, on the completion path, rather than
         // left to the effect below. A denied permission takes the recorder
         // idle -> requesting -> idle, and nothing guarantees a consumer ever
@@ -611,7 +638,21 @@ export function useAudioSession(): UseAudioSession {
   // Pause keeps the same take and the same floor: the microphone still owns the
   // floor while paused, so there is nothing to release here — only the capture is
   // suspended.
-  const pauseRecording = useCallback(() => pauseCapture(), [pauseCapture]);
+  //
+  // The mirror is written in the SAME turn, and only when `pause()` reports that
+  // it actually froze — the symmetric half of `resumeRecording`'s eager write
+  // below, and for the same reason it exists (George R1 P2-1). A page frozen
+  // after `MediaRecorder.pause()` but before the `:238-241` effect would
+  // otherwise restore with `recorderStateRef` still reading "recording" over a
+  // paused recorder, and `preemptPausedMic`/`reclaimAfterPreview` gate on exactly
+  // that value. Mirroring unconditionally would be the opposite bug: a refused
+  // pause (no recorder, or a #59 interruption already took it inactive) would
+  // claim "paused" while React stayed elsewhere.
+  const pauseRecording = useCallback((): boolean => {
+    const frozen = pauseCapture();
+    if (frozen) recorderStateRef.current = "paused";
+    return frozen;
+  }, [pauseCapture]);
   // Resume must RECLAIM the floor, because a preview (#101, approach B) may have
   // released the mic's claim to sound the paused take — so the floor is then held
   // by that "take", or by nothing once the preview ended. `claim("mic")` stops a
@@ -709,13 +750,168 @@ export function useAudioSession(): UseAudioSession {
     if (recorderState === "idle" && session.live === "mic") session.stopAll();
   }, [recorderState, session]);
 
+  // Set the instant a persisted pagehide freezes a live take to "paused"
+  // (below), cleared on the next `pageshow`. This is the ONLY thing that flag
+  // exists for: gating the `pageshow` report so it fires at most once per
+  // pagehide-pause, never on a `pageshow` that follows a hide this session
+  // never paused anything for (#478, #58 George R3 P2-3).
+  const pagehidePauseReportedRef = useRef(false);
+
   useEffect(() => {
     // The page may be discarded without ever unmounting. A hot microphone on a
-    // page that is going away is not arguable.
-    const onPageHide = () => leave();
+    // page that is going away is not arguable — but a page the browser only
+    // SUSPENDED is not going away, and tearing the take down there is #58: under
+    // commit-on-close nothing is written yet, so `leave()` → `cancel()` dropped
+    // the whole recording and left no pending slot to recover from. What each
+    // state owes is the pure `pageHideAction`, so all ten cells are proven in
+    // Node; this is only the wiring.
+    const onPageHide = (event: PageTransitionEvent) => {
+      // `recorderStateRef`, not the render closure: the mirror is what every
+      // other imperative read in this hook uses, and it keeps this effect's
+      // dependencies free of `recorderState` — a dep that changes on every
+      // transport tap would tear down and re-add the listener through the whole
+      // take.
+      //
+      // Its `:238-241` effect lags a commit, so every transport that moves the
+      // recorder writes the ref eagerly as well, and all three windows are now
+      // closed: `startRecording`'s completion writes "recording" (George R1
+      // P3-3), `pauseRecording` writes "paused" when the pause actually froze
+      // (P2-1), and `resumeRecording` writes "recording" (#101 R2). A `pagehide`
+      // landing between any transport and its commit therefore reads the state
+      // that transport just produced, not the one before it.
+      const action = pageHideAction(recorderStateRef.current, event.persisted);
+      if (action === "release") {
+        leave();
+        return;
+      }
+
+      // The capture first: it is the only thing here that can lose audio, and a
+      // hidden page may be frozen at any point in this handler.
+      if (action === "pause") {
+        // Instrument, do not redesign (#478, #58 George R3 P2-3). This is the
+        // ONE cell of `pageHideAction`'s table whose platform premise nobody
+        // has observed on a device — that a `pagehide` really does land while
+        // `MediaRecorder` is still natively "recording", and that freezing it
+        // here really does survive to a `pageshow` restore. `nativeState()` is
+        // read BEFORE `pauseRecording()` runs, so the row carries what the
+        // browser believed at the moment of the hide, not what this call just
+        // did to it. Never gates behaviour — `reportFailure` never throws (see
+        // its docblock) and nothing here depends on its result.
+        //
+        // `frozen` is the pause's ACTUAL outcome, not assumed from having
+        // reached this branch: a #59 interruption can race this same hide and
+        // leave `pausePlan` refusing to freeze — `recordingRef` already false,
+        // the native recorder possibly still "recording" — because
+        // `onInterrupted` owns that transition and this branch deliberately
+        // does not fight it (see below). Reporting "frozen=true" there would
+        // manufacture false field evidence for the very premise this exists to
+        // measure (Frank round 4), and it must not arm the `pageshow` pairing
+        // below, which promises "a paused take was restored" — nothing was
+        // paused.
+        const priorNativeState = nativeState();
+        let frozen = false;
+        try {
+          // Holds the recorder, the stream and the chunks; the restored page
+          // finds a "paused" take that Resume continues and that a close still
+          // runs `stop()` on — committing when the decode succeeds, and holding
+          // the bytes for the #165 panel when a freeze left the shared context
+          // interrupted (George R2 P2-2; `stop()` now spends the closing tap on
+          // `resumeAudioContext()` to make the first outcome likelier). It
+          // freezes even if the user agent got there first and already paused
+          // the recorder (`pausePlan`), so the restored UI cannot claim a live
+          // take over a recorder that stopped capturing.
+          //
+          // It REFUSES, without freezing, when the recorder has gone inactive
+          // OR when another exit has already claimed the take — both are the #59
+          // interruption, whose `onerror` arm leaves the recorder natively
+          // "recording" while it takes React to "processing" (George R2 P2-1).
+          // That is legitimate and deliberately not handled here: `onInterrupted`
+          // owns the transition, and "processing" is where `stop()` still
+          // recovers the chunks. Freezing to "paused" instead would paint a
+          // Resume the recorder cannot honour, and — because both write the same
+          // React state — the later `setState` would simply win.
+          frozen = pauseRecording();
+        } catch (cause) {
+          // Not silent, and not fatal: a pause that throws leaves the capture
+          // running, which is still better than the discard this replaced.
+          console.error("Could not pause the recorder for pagehide", cause);
+          // Routed to the durable channel too, and under its OWN context so it
+          // is never collapsed into or confused with the measurement row below
+          // (Frank R4): AGENTS.md's channel-before-copy rule means the REAL
+          // `cause` belongs in the log, not a constructed message that would
+          // drop its name and stack. A third row in the rare throw case is a
+          // deliberate exception to the "two rows per lifecycle" budget below
+          // — a genuine unhandled exception outranks that budget.
+          reportFailure(cause, "pagehide-pause-threw");
+        }
+        reportFailure(
+          new Error(
+            `pagehide pause: persisted=${event.persisted}, native state=${priorNativeState}, frozen=${frozen}`
+          ),
+          "pagehide-pause"
+        );
+        if (frozen) pagehidePauseReportedRef.current = true;
+      }
+
+      // Nothing should keep SOUNDING into a hidden page, whichever way the
+      // capture went — so playback is silenced on both non-release branches,
+      // exactly as the old unconditional `leave()` did. Not `session.stopAll()`
+      // plus the flags, which is what `leave()` uses: that would take the floor
+      // away from a mic this branch is deliberately keeping paused-alive. These
+      // are the two existing per-source stops instead, each a no-op when its
+      // source is not sounding (`stopBuffer` early-returns at :402; the
+      // `playingIdRef` guard mirrors `playTake`'s own toggle-off at :310-316),
+      // and `stopBuffer` hands the floor back to a still-paused mic on its way
+      // out (`reclaimAfterPreview`). A buffer can be sounding at `paused` (a
+      // #101 preview) and at `idle` (recorder.tsx's edit audition); a list take
+      // only at `idle`. Neither can sound while recording — `claim("take")` is
+      // refused under a live mic (session.ts:88) — so on the "pause" branch both
+      // are defence.
+      stopBuffer();
+      if (playingIdRef.current !== null) {
+        if (session.live === "take") session.stopAll();
+        setPlaying(null);
+      }
+      // As `leave()` does: a stale "Could not play this recording." must not be
+      // the first thing on screen when the page comes back.
+      setPlaybackError(null);
+    };
+    // Beside `onPageHide`, not a separate effect (#478, #58 George R3 P2-3):
+    // same lifecycle, same cleanup, and the ref flag it reads is only ever
+    // written by `onPageHide` above, so the two belong in one place. Fires
+    // ONLY when a "pagehide-pause" row was written for an ACTUAL freeze since
+    // the last `pageshow` — a restore that follows a hide nobody paused for
+    // (release/none), or one whose pause was refused/threw, writes nothing —
+    // keeping this at two rows for the ordinary case: the pause, and whether
+    // the restore that answers it ever arrived. (A pause that THROWS adds a
+    // third, separate row — see `reportFailure(cause, "pagehide-pause-threw")`
+    // above — a deliberate exception, not a miscount.) The flag is cleared
+    // here regardless, so a page that is shown without ever being hidden again
+    // (impossible) or shown twice cannot double-report.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!pagehidePauseReportedRef.current) return;
+      pagehidePauseReportedRef.current = false;
+      reportFailure(
+        new Error(`pageshow: persisted=${event.persisted}`),
+        "pageshow"
+      );
+    };
     window.addEventListener("pagehide", onPageHide);
-    return () => window.removeEventListener("pagehide", onPageHide);
-  }, [leave]);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+    // Every one of these is referentially stable for the hook's life — `session`
+    // is a lazy `useState` (:201), `setPlaying` a `useCallback([])` (:262),
+    // `stopBuffer` a `useCallback` over two stable values (:398), `pauseRecording`
+    // a `useCallback` over `use-recorder`'s `pause`, itself `useCallback([clearTick])`
+    // with `clearTick` `useCallback([])`, `nativeState` a `useCallback([])` off
+    // `recorderRef` (added #478/#58 George R3 P2-3), and `leave` a `useCallback`
+    // over four stable values (:668) — so the widened list still attaches exactly
+    // ONE `pagehide` and ONE `pageshow` listener for the hook's lifetime, as
+    // `[leave]` alone once did.
+  }, [leave, pauseRecording, stopBuffer, session, setPlaying, nativeState]);
 
   useEffect(() => () => leave(), [leave]);
 

@@ -1,0 +1,147 @@
+/**
+ * What a `pagehide` owes an in-progress capture (#58).
+ *
+ * The handler in `hooks/use-audio-session.ts` used to be
+ * `const onPageHide = () => leave();` — an unconditional teardown that reaches
+ * `cancel()` and empties the chunk array. Under the F8 commit-on-close model
+ * nothing has been written to the database until the recorder sheet closes, so
+ * that discarded the WHOLE take, and the pending slot stayed empty: no recovery
+ * screen, nothing to record over, nothing to say. A `pagehide` that the browser
+ * only SUSPENDED the page for — `event.persisted === true`, the bfcache case
+ * that a `pageshow` restores with every ref, stream and `MediaRecorder` intact —
+ * lost a multi-minute recording to a navigation the page came straight back
+ * from.
+ *
+ * The decision is here, pure, so all ten cells are proven in plain Node rather
+ * than only on a device. The hook keeps the browser wiring — the sibling of
+ * `floor-transitions.ts`, and consumed by the same hook.
+ *
+ * `CaptureState` is imported from `lib/takes/close-plan.ts` rather than
+ * re-declared. That file's own note explains why it is a local union and not an
+ * import of `RecorderState`: `lib/` may not reach `hooks/`. Nothing there argues
+ * against two `lib/` modules sharing ONE union, and two copies of a five-member
+ * state list is how a sixth state gets added to one of them. The import is
+ * type-only, so it is erased and adds no runtime edge.
+ */
+
+import type { CaptureState } from "@/lib/takes/close-plan";
+
+/**
+ * What the session does with the capture:
+ *
+ *   release  the full `leave()` — floor, microphone, take and all.
+ *   pause    suspend capture and HOLD the chunks; the take survives a restore.
+ *   none     leave the capture exactly as it is.
+ *
+ * Playback is silenced on all three: nothing should keep sounding into a hidden
+ * page, whatever happens to the microphone. That is the hook's job, not this
+ * table's — see the handler.
+ */
+type PageHideAction = "release" | "pause" | "none";
+
+/**
+ * Decide it.
+ *
+ * `persisted === false` is a real teardown: the page is going away and may never
+ * come back, so everything is released. That is byte-identical to the pre-#58
+ * behaviour, deliberately — nothing regresses on this path even if every
+ * assumption below about the bfcache turns out to be wrong on a real device.
+ * Committing the take instead is NOT an option here and is not a gap this
+ * function leaves open: `leave()`'s own comment gives the reason (`addTake`
+ * makes every new take the active one, so writing a fragment would quietly
+ * replace a good recording with a truncated one), and there is no guarantee an
+ * async stop → decode → write started inside a `pagehide` handler ever finishes.
+ *
+ * `persisted === true` is a suspend, and each state owes something different:
+ *
+ *   recording   pause. `pause()` banks the elapsed span, stops the tick and
+ *               freezes the scope before `setState("paused")`, so the take is
+ *               whole and the timer cannot jump on resume — and "paused" is an
+ *               already-existing, already-reviewed state the recorder renders
+ *               Resume and a close from. It does NOT bet on the mic surviving
+ *               the freeze: if the stream dies, the track's `ended` fires the
+ *               #59 interruption path into `processing`, where `stop()` still
+ *               recovers the chunks.
+ *
+ *               "Renders a close from" is deliberately weaker than "commits"
+ *               (George R2 P2-2). Closing from `paused` runs `stop()`, and that
+ *               COMMITS when the decode succeeds and HOLDS the container bytes
+ *               for the #165 recovery panel when it does not — which a page
+ *               freeze makes likelier, because it can leave the shared audio
+ *               context suspended or interrupted (the #76/#106/#184 class).
+ *               `stop()` now spends the closing tap on `resumeAudioContext()`
+ *               before it yields, which is the best this layer can do; whether
+ *               that is enough on a real device is unverified, and the hold
+ *               panel is the backstop when it is not. Either way the take is not
+ *               lost, which is the whole of #58.
+ *   paused      nothing. The mic is already suspended-but-held and still owns
+ *               the floor; there is no capture to stop and releasing would be
+ *               the very discard this fixes.
+ *   processing  nothing, and emphatically not "release". A #59 mic interruption
+ *               freezes a REAL take here whose chunks `stop()` recovers; so does
+ *               a stop already in flight. Cancelling either loses audio.
+ *
+ *               This is the one cell that changes a CONTRACT the unchanged tree
+ *               was written against (George R1 P2-2): `stop()` steals the chunks,
+ *               stream and tap into locals before its first await precisely
+ *               because a `pagehide` used to mean `cancel()`. It still does, on
+ *               `persisted === false`. On `persisted === true` the stop stays
+ *               CURRENT, and every consumer of supersession — `classifyCapture`,
+ *               `classifyStopDecode`, `planClose` — treats it as a case it
+ *               handles, never an invariant it requires, so none of them breaks;
+ *               supersession still arrives from a newer `start()`, from `cancel()`
+ *               on unmount, and from every `leave()`. The outcomes both ways:
+ *               RESTORED, the in-flight stop resumes and `close()` reaches
+ *               `save-take` instead of the superseded arm, which drops the take
+ *               and its pending edits — strictly better. DISCARDED, nothing
+ *               further runs in EITHER design: `cancel()` only mutated heap refs,
+ *               so the old teardown persisted nothing a discard now loses. The
+ *               #165 held blob is produced after those awaits and is in memory
+ *               too, so it is equally unreachable. Nothing that was kept before
+ *               is lost now.
+ *   requesting  release (George R3 P2-1). This state spans TWO different
+ *               windows inside `start()`, and `release` is correct in both:
+ *
+ *               Before the permission resolves, no stream exists yet.
+ *               `cancel()`'s `releaseStream()` has nothing to act on, so what
+ *               protects this window is `cancel()`'s generation bump alone: a
+ *               `getUserMedia` resolve that lands after the hide checks that
+ *               bump against `start()`'s FIRST generation guard (right after
+ *               the await, before `streamRef` is assigned) and abandons the
+ *               stream it just opened rather than hand it to a recorder
+ *               nobody is looking at.
+ *
+ *               After the permission resolves but before the recorder exists
+ *               — `streamRef` is already assigned, and `start()` is inside
+ *               its `await raceAudioResume()` — `cancel()`'s
+ *               `releaseStream()` stops the live stream synchronously, in the
+ *               same pagehide-handler tick that decides "release"; the same
+ *               generation bump then also makes the SECOND guard (right after
+ *               `raceAudioResume()`) abandon the stream, so a `start()` that
+ *               resumes after the freeze cannot open a recorder onto a stream
+ *               that no longer belongs to any live generation.
+ *
+ *               Either window, "none" would leave a granted, hot microphone
+ *               with nothing in the UI able to close it. `release` is the
+ *               pre-#58 behaviour, unchanged, for both.
+ *   idle        nothing. Nothing has been captured.
+ *
+ * No `default:` arm on purpose: a sixth state added to `CaptureState` fails
+ * `npm run typecheck:lib` here instead of silently reading as "nothing to do".
+ */
+export function pageHideAction(
+  state: CaptureState,
+  persisted: boolean
+): PageHideAction {
+  if (!persisted) return "release";
+  switch (state) {
+    case "recording":
+      return "pause";
+    case "requesting":
+      return "release";
+    case "paused":
+    case "processing":
+    case "idle":
+      return "none";
+  }
+}
