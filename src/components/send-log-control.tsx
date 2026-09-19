@@ -71,8 +71,12 @@ export function SendLogControl() {
   // The platform's own mark (#490), not a hardcoded tray — `control-affordance
   // .ts`'s own header names this control as one of the three that must share
   // it (George r1 P3-4, #491): on the Android APK a crash/save-failed screen
-  // showed the tray here while every ≡ menu showed three dots.
-  const glyph = shareControlGlyph(readSharePlatform());
+  // showed the tray here while every ≡ menu showed three dots. Overridden the
+  // same way `failure-log-panel.tsx` is (Frank at `238820a` P2, #491) when
+  // the last send was unconfirmed.
+  const glyph = share.sendUnconfirmed
+    ? "share-closed"
+    : shareControlGlyph(readSharePlatform());
 
   return (
     <>
@@ -81,7 +85,11 @@ export function SendLogControl() {
       ) : (
         <Control
           icon={glyph}
-          label={strings.shareFailureLog}
+          label={
+            share.sendUnconfirmed
+              ? strings.shareFailureLogUnconfirmed
+              : strings.shareFailureLog
+          }
           variant="quiet"
           onClick={onPrepare}
         />

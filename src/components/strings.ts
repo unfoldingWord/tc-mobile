@@ -584,6 +584,11 @@ export const strings = {
   // and alarming a person about work that is still on the phone is its own harm.
   failuresTeach: "Send this to your helper if something is not working.",
   shareFailureLog: "Send problem report",
+  // See `shareChapterUnconfirmed`'s own comment (`control-affordance.ts`
+  // wiring) — the failure-log-panel equivalent (Frank at `238820a` P2, #491):
+  // the idle Send control's own label once `sendUnconfirmed` is true.
+  shareFailureLogUnconfirmed:
+    "Send problem report. The last attempt wasn't confirmed — tap to try again.",
   shareFailureLogPreparing: "Preparing the problem report.",
   // The log emptied between the render that offered Share and the tap.
   shareFailureLogNothing: "There is nothing to send now.",

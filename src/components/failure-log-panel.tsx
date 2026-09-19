@@ -115,8 +115,14 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         ? strings.shareFailureLogFailed
         : null;
   // The platform's own share mark (#490), so this build never shows a
-  // different share glyph here than on the chapter and book menus.
-  const shareGlyph = shareControlGlyph(readSharePlatform());
+  // different share glyph here than on the chapter and book menus — unless
+  // the last send was unconfirmed (Frank at `238820a` P2, #491), which
+  // overrides it the same way `shareControlAffordance`'s idle cell does for
+  // chapter/book: `share-closed`, the dismissed outcome's own mark, not a
+  // new glyph.
+  const shareGlyph = share.sendUnconfirmed
+    ? "share-closed"
+    : shareControlGlyph(readSharePlatform());
 
   return (
     <>
@@ -138,7 +144,11 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
       ) : (
         <Control
           icon={shareGlyph}
-          label={strings.shareFailureLog}
+          label={
+            share.sendUnconfirmed
+              ? strings.shareFailureLogUnconfirmed
+              : strings.shareFailureLog
+          }
           variant="quiet"
           onClick={onPrepare}
         />

@@ -221,3 +221,95 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
     expect(hook).not.toMatch(/that is safe HERE for the reason it is safe/);
   });
 });
+
+/**
+ * Frank at `238820a` P2 (#491, this round's own review): fixing `send()` to
+ * RETURN `"unproven"` (the describe block above) closed George r2 P2-3's
+ * hole in the return value, but neither `FailureLogPanel` nor
+ * `SendLogControl` read that return value for anything but whether to close
+ * — so an unproven send still redrew a plain idle "Send problem report"
+ * control with nothing telling it apart from one never tried, the identical
+ * defect George r2 P2-2 found (and this round fixed) for Share Chapter/Book.
+ * Wired the same way: `sendUnconfirmed` on the hook, read by BOTH callers to
+ * swap the idle control's icon (`share-closed`, not a new glyph) and label,
+ * never `disabled`.
+ *
+ * Red-first: removing `setSendUnconfirmed(true)` from `send()`'s success
+ * branch, or the `sendUnconfirmed` reads in either caller, makes the
+ * corresponding assertion below fail; confirmed with `git stash`.
+ */
+describe("use-failure-log-share.ts: sendUnconfirmed reaches both idle Send controls (Frank 238820a P2, #491)", () => {
+  const hook = read("src/hooks/use-failure-log-share.ts");
+
+  it("UseFailureLogShare exposes sendUnconfirmed", () => {
+    expect(hook).toMatch(/readonly sendUnconfirmed: boolean;/);
+  });
+
+  it("send()'s success branch sets it true ONLY on an unproven settle", () => {
+    const settledAt = hook.indexOf("const settled = resolveSendOutcome(");
+    expect(settledAt).toBeGreaterThan(-1);
+    const setAt = hook.indexOf(
+      'if (settled === "unproven") setSendUnconfirmed(true);',
+      settledAt
+    );
+    const returnAt = hook.indexOf(
+      'return settled === "unproven" ? "unproven" : "sent";',
+      settledAt
+    );
+    expect(setAt).toBeGreaterThan(settledAt);
+    expect(setAt).toBeLessThan(returnAt);
+  });
+
+  it("prepare() and reset() both clear it — a fresh attempt or a panel close is the acknowledgment", () => {
+    const prepareAt = hook.indexOf("const prepare = useCallback(async ()");
+    const prepareStatusAt = hook.indexOf('setStatus("preparing");', prepareAt);
+    const prepareClearAt = hook.lastIndexOf(
+      "setSendUnconfirmed(false);",
+      prepareStatusAt
+    );
+    expect(prepareClearAt).toBeGreaterThan(prepareAt);
+    expect(prepareClearAt).toBeLessThan(prepareStatusAt);
+
+    const resetAt = hook.indexOf("const reset = useCallback(() => {");
+    const resetEnd = hook.indexOf("}, []);", resetAt);
+    expect(hook.slice(resetAt, resetEnd)).toMatch(
+      /setSendUnconfirmed\(false\);/
+    );
+  });
+
+  it("the returned object carries sendUnconfirmed through", () => {
+    expect(hook).toMatch(
+      /return \{ status, error, sendUnconfirmed, prepare, send, reset \};/
+    );
+  });
+});
+
+describe("failure-log-panel.tsx and send-log-control.tsx: the idle Send control shows sendUnconfirmed, never disabled (Frank 238820a P2, #491)", () => {
+  for (const [file, glyphVar] of [
+    ["src/components/failure-log-panel.tsx", "shareGlyph"],
+    ["src/components/send-log-control.tsx", "glyph"],
+  ] as const) {
+    const name = file.split("/").pop();
+
+    it(`${name}: overrides the idle glyph to share-closed when sendUnconfirmed is true`, () => {
+      const source = read(file);
+      const glyphAt = source.indexOf(
+        `const ${glyphVar} = share.sendUnconfirmed`
+      );
+      expect(glyphAt).toBeGreaterThan(-1);
+      const glyphEnd = source.indexOf(";", glyphAt);
+      expect(source.slice(glyphAt, glyphEnd)).toMatch(/"share-closed"/);
+    });
+
+    it(`${name}: the idle control's label switches on sendUnconfirmed and the control is never disabled`, () => {
+      const source = read(file);
+      const labelAt = source.indexOf("shareFailureLogUnconfirmed");
+      expect(labelAt).toBeGreaterThan(-1);
+      const controlStart = source.lastIndexOf("<Control", labelAt);
+      const controlEnd = source.indexOf("/>", labelAt);
+      const control = source.slice(controlStart, controlEnd);
+      expect(control).toMatch(/share\.sendUnconfirmed/);
+      expect(control).not.toMatch(/disabled/);
+    });
+  }
+});
