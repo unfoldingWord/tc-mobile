@@ -269,9 +269,12 @@ PR that added this note).
 - **Icon recognition.** More than half the controls the mockups draw are
   software convention rather than hardware-derived, and `ui-patterns.md` records
   that no
-  reviewed product achieves a text-free path. Proposed as its own ADR, with a
+  reviewed screen achieves a text-free path. Proposed as its own ADR, with a
   ten-minute recognition check at the October training as the evidence that
-  turns it from opinion into a finding.
+  turns it from opinion into a finding. **Written 2026-09-19:**
+  [ADR 0010](../decisions/0010-icon-recognition.md) (Proposed) and the
+  [protocol](../training/icon-recognition-protocol.md) with its printable
+  sheet — [#249](https://github.com/unfoldingWord/tc-mobile/issues/249).
 
 ## Batches
 
