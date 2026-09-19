@@ -170,33 +170,49 @@ export const RESUME_TIMEOUT_MS = 1_000;
  * that hangs — swallowed, and the caller proceeds — matching every
  * fire-and-forget `resumeAudioContext()` call site elsewhere in this repo
  * (`void resumeAudioContext().catch(...)`, several in `use-recorder.ts` and
- * `use-audio-session.ts`). A rejection, whether it arrives before or after
- * the timer has already resolved the race, is reported through
+ * `use-audio-session.ts`). A rejection that DECIDES the race's own outcome
+ * (arrives before the timer and before any resolve) is reported through
  * `reportFailure` under the CALLER-SUPPLIED `rejectionContextKey` — unless
- * the caller passes `reportRejection = false` (default `true`) AND this
- * particular rejection is the one DECIDING the race's own outcome — rather
- * than swallowed outright or left as an unhandled rejection — closer to
- * AGENTS.md's "errors have a channel before they have copy" bar — but it
- * never reaches this function's own caller as a rejection.
+ * the caller passes `onEarlyRejection`, in which case THAT is called with
+ * the cause instead, and reporting it becomes the caller's job. A LATE
+ * rejection — arriving after the timer already won the race — is always
+ * reported directly through `reportFailure`, regardless of
+ * `onEarlyRejection`: nothing else observes it, since the caller
+ * (`playSamples`) already threw under the timeout key by the time it lands.
+ * Either way this is closer to AGENTS.md's "errors have a channel before
+ * they have copy" bar than swallowing it outright or leaving it as an
+ * unhandled rejection — but it never reaches this function's own caller as
+ * a rejection of `raceAudioResume` itself.
  *
- * `reportRejection = false` exists for `playSamples` alone (George round-2
- * P3): an early rejection there used to write TWO durable rows for one
- * failed Play — this helper's own unconditional "playback-resume" row, then
- * `playSamples`'s fail-closed gate's "playback-resume-unusable" row for the
- * same cause, since the gate's own `audioContextNeedsResume()` re-read is
- * `true` after any rejection (the context never reached `"running"`). It
- * only suppresses a rejection that DECIDES the race (arrives before the
- * timer and before any resolve) — a LATE rejection, arriving after the
- * timer already won, is always reported regardless of this flag: nothing
- * else observes it, since the caller (`playSamples`) already threw under the
- * timeout key by the time it lands, exactly as before this flag existed.
+ * `onEarlyRejection` exists for `playSamples` alone. First cut (George
+ * round-2 P3): an early rejection there used to write TWO durable rows for
+ * one failed Play — this helper's own unconditional "playback-resume" row,
+ * then `playSamples`'s fail-closed gate's "playback-resume-unusable" row for
+ * the same cause, since the gate's own `audioContextNeedsResume()` re-read is
+ * `true` after any rejection (the context never reached `"running"`). A flat
+ * "never report from here" flag fixed that, but broke a DIFFERENT case
+ * (Frank round-3 P2): `playTake`/`playBuffer` ALSO fire their own
+ * fire-and-forget `resumeAudioContext()` call before `playSamples` even
+ * runs (the in-gesture unlock, `use-audio-session.ts`) — a SEPARATE
+ * `ctx.resume()` invocation on the same shared context. If THAT one wins
+ * and leaves the context `"running"` before this claim's own (later)
+ * `raceAudioResume` call observes its rejection, `audioContextNeedsResume()`
+ * reads `false` and the gate never fires — the rejection was real but ended
+ * up silently dropped, with playback proceeding fine. `onEarlyRejection`
+ * lets `playSamples` capture the cause instead of swallowing or
+ * unconditionally reporting it, and decide once it knows the live context
+ * state: fold it into the SAME row as the fail-closed gate when the context
+ * is still unusable (one row, not two), or report it on its own,
+ * non-throwing, when a concurrent resume elsewhere already made the context
+ * usable (so the fact is not lost just because it turned out harmless).
  * `start()` (`use-recorder.ts`) does not pass it, so its own
  * "recorder-start-resume" row on rejection is UNCHANGED in every case. A
- * plain trailing boolean, not an options object — an inline `{ ... }` type
- * or default here would put a brace before the function's own body opens,
- * which breaks this repo's text-shape gates that brace-match a declaration's
- * body from its first `{` (`tests/recorder-resume-race.test.ts`,
- * `tests/recorder-failure-rows.test.ts`'s `bodyAfter`).
+ * plain callback, not an options object — an inline `{ ... }` type here
+ * would put a brace before the function's own body opens, which breaks this
+ * repo's text-shape gates that brace-match a declaration's body from its
+ * first `{` (`tests/recorder-resume-race.test.ts`,
+ * `tests/recorder-failure-rows.test.ts`'s `bodyAfter`); a bare arrow-function
+ * TYPE (`(cause: unknown) => void`) has no such brace.
  *
  * RESOLVES `true` WHEN THE TIMER WON, `false` when `resume()` settled first
  * (either way, resolve or reject). Writes NO row for a timer win: the timer
@@ -220,7 +236,7 @@ export const RESUME_TIMEOUT_MS = 1_000;
  */
 export function raceAudioResume(
   rejectionContextKey: string,
-  reportRejection = true
+  onEarlyRejection?: (cause: unknown) => void
 ): Promise<boolean> {
   const resumePromise = resumeAudioContext();
   return new Promise<boolean>((resolve) => {
@@ -241,19 +257,21 @@ export function raceAudioResume(
       (cause: unknown) => {
         // A rejection never bounds the race's own outcome — only resolve it
         // if the timer has not already done so. Whether THIS rejection is
-        // the one deciding the race matters for `reportRejection: false`
-        // (below): a rejection that arrives once the timer has ALREADY won
-        // is a LATE rejection nothing else will ever see — the caller's own
-        // flow moved on when the timer settled the race, under the timeout
-        // key, not this one — so it is always reported regardless of
-        // `reportRejection`, exactly as before this option existed.
+        // the one deciding the race matters for `onEarlyRejection` (below):
+        // a rejection that arrives once the timer has ALREADY won is a LATE
+        // rejection nothing else will ever see — the caller's own flow moved
+        // on when the timer settled the race, under the timeout key, not
+        // this one — so it is always reported directly, regardless of
+        // `onEarlyRejection`, exactly as before that callback existed.
         const decidesTheRace = !settled;
         if (decidesTheRace) {
           settled = true;
           clearTimeout(timer);
           resolve(false);
         }
-        if (reportRejection || !decidesTheRace) {
+        if (decidesTheRace && onEarlyRejection) {
+          onEarlyRejection(cause);
+        } else {
           reportFailure(cause, rejectionContextKey);
         }
       }
@@ -587,12 +605,15 @@ function nextTask(): Promise<void> {
  * as "playback-resume-unusable", the same key an early rejection reports
  * under at the first call site (George R1 P1's fix; see the docblock there).
  *
- * Reports through this ONE call site (not `raceAudioResume`'s own rejection
- * handler) so a single failed Play writes exactly one row: `playSamples`
- * passes `reportRejection: false` to `raceAudioResume`, so an early
- * rejection is silent there and is instead caught by THIS gate re-reading
- * `audioContextNeedsResume()` — true after any rejection, since the context
- * never reached `"running"` (George round-2 P3).
+ * Only called when the context is STILL unusable, so it is not the sole
+ * writer for an early rejection any more (Frank round-3 P2): `playSamples`
+ * passes `onEarlyRejection` to `raceAudioResume` to CAPTURE, not report, an
+ * early rejection, then calls this gate first — if the context is still
+ * unusable, the captured cause is folded into this ONE row rather than
+ * reported separately (George round-2 P3's fix); if the context turned out
+ * usable anyway (a concurrent resume elsewhere won), `playSamples` reports
+ * the captured cause itself, on its own, since this gate never fires for a
+ * usable context.
  */
 function failClosedIfResumeUnusable(resumeTimedOut: boolean): void {
   if (!audioContextNeedsResume()) return;
@@ -648,10 +669,16 @@ export async function playSamples(
   // from "interrupted" has been observed to hang, and an unbounded await
   // here left a play tap stuck "playing" forever with nothing sounding and
   // no floor ever released. `true` when the bound elapsed before resume()
-  // settled. `reportRejection = false` — this call site's own gate below is
-  // the single writer of a row for an early rejection (George round-2 P3);
-  // see `failClosedIfResumeUnusable`.
-  const resumeTimedOut = await raceAudioResume("playback-resume", false);
+  // settled. `onEarlyRejection` captures rather than reports an early
+  // rejection — this call site decides how to report it below, once it
+  // knows the live context state (George round-2 P3, Frank round-3 P2; see
+  // `raceAudioResume`'s own docblock for why a flat suppression was wrong).
+  let earlyRejectionCause: unknown;
+  let hadEarlyRejection = false;
+  const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
+    hadEarlyRejection = true;
+    earlyRejectionCause = cause;
+  });
 
   if (!options.isStillCurrent()) {
     // Superseded during the resume await. Return an inert handle before building
@@ -664,9 +691,27 @@ export async function playSamples(
     return { stop: () => {}, elapsed: () => 0, duration: 0 };
   }
 
-  // Still current, so an unusable context here IS a #469 event worth a row —
-  // see `failClosedIfResumeUnusable` for the full contract.
-  failClosedIfResumeUnusable(resumeTimedOut);
+  if (audioContextNeedsResume()) {
+    // Still current, so an unusable context here IS a #469 event worth a
+    // row — see `failClosedIfResumeUnusable` for the full contract. Any
+    // captured early rejection is folded into THIS same row (not reported
+    // separately): the gate's own message already covers "the context still
+    // needs resume, whether that is because of a rejection or a timeout".
+    failClosedIfResumeUnusable(resumeTimedOut);
+  } else if (hadEarlyRejection) {
+    // The context is usable NOW, so playback may proceed — but this claim's
+    // OWN resumeAudioContext() call genuinely rejected, and it must not be
+    // silently dropped just because it turned out harmless (Frank round-3
+    // P2). This happens when a DIFFERENT, concurrent resumeAudioContext()
+    // call elsewhere — `playTake`/`playBuffer`'s own fire-and-forget
+    // in-gesture unlock, `use-audio-session.ts` — wins first and leaves the
+    // shared context "running" before this claim's own (later) resume
+    // promise is observed here. One row, no throw: the fact is worth
+    // logging, but nothing about it should stop this play. Reports the
+    // ORIGINAL cause under "playback-resume" — the same key `raceAudioResume`
+    // would have used on its own, had this call site not opted to capture it.
+    reportFailure(earlyRejectionCause, "playback-resume");
+  }
 
   const ctx = getAudioContext();
   const buffer = toAudioBuffer(samples);

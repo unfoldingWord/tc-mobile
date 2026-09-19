@@ -475,6 +475,49 @@ describe("playSamples — resume bound (#469)", () => {
     expect(reportFailure).not.toHaveBeenCalled();
   });
 
+  it("an early REJECTION whose OWN resume() call failed is still reported when a CONCURRENT resume elsewhere already left the context usable (Frank round-3 P2)", async () => {
+    // playTake/playBuffer fire their own fire-and-forget resumeAudioContext()
+    // call (the in-gesture unlock, use-audio-session.ts) BEFORE playSamples
+    // runs — a SEPARATE ctx.resume() invocation on the shared context. If
+    // THAT one wins first and leaves the context "running", the first cut of
+    // this fix (a flat "never report from here" suppression) let this
+    // claim's own later rejection vanish with zero rows: audioContextNeedsResume()
+    // read false by the time the gate ran, so nothing wrote it down. Modelled
+    // here by flipping the context to "running" directly, then rejecting
+    // THIS claim's own still-pending resume gate — the state change and the
+    // rejection are independent, exactly as two separate resume() calls
+    // would be.
+    const ctx = new HangingAudioContext("interrupted");
+    const { playSamples } = await loadAudioIo(ctx);
+
+    const handlePromise = playSamples(samples, {
+      isStillCurrent: () => true,
+    });
+    const outcome = handlePromise.then(
+      () => ({ rejected: false }),
+      () => ({ rejected: true })
+    );
+
+    const cause = new Error("resume rejected, but the context is running now");
+    ctx.state = "running";
+    ctx.settleResumeWithRejection(cause);
+    await vi.runAllTimersAsync();
+
+    const result = await outcome;
+
+    // Harmless to the LISTENER: the context is usable, so playback proceeds
+    // rather than throwing a false fail-closed error for a claim that can
+    // actually sound.
+    expect(result.rejected).toBe(false);
+    expect(ctx.sourcesCreated).toHaveLength(1);
+    expect(ctx.sourcesCreated[0]!.started).toBe(1);
+    // But NOT harmless to the failure log: the rejection itself is a real
+    // fact and must not be silently dropped just because it turned out
+    // harmless.
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenCalledWith(cause, "playback-resume");
+  });
+
   it("a late REJECTION after the timeout still reaches reportFailure, under the caller's rejection key, and adds no second row", async () => {
     const ctx = new HangingAudioContext("interrupted");
     const { playSamples } = await loadAudioIo(ctx);
