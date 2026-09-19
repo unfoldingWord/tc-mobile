@@ -184,15 +184,24 @@ describe("playSamples — supersession guard (#104)", () => {
  * sounding — the same #108 shape, on the playback path, with a wrinkle the
  * recorder side does not have: `playTake`/`playBuffer`
  * (`use-audio-session.ts`) set optimistic UI state BEFORE awaiting this
- * function and clear it only from `onEnded` or a caught rejection. A bare
- * inert-handle return on timeout (mirroring the EXISTING supersession bail)
- * would leave that state stuck, because — unlike a superseded claim — a
- * timed-out claim is still CURRENT, so nothing else will ever call
- * `onEnded` for it. So the timeout branch must itself invoke
- * `options.onEnded?.()` before returning, and must create no source at all
- * (an audible click or, worse, an interrupted-context SILENT start firing
- * after the caller was already told "ended" would be a second dishonesty on
- * top of the first).
+ * function and clear it only from `onEnded` — which means "the clip RAN
+ * OUT" and nothing else — or from a caught rejection, which their `catch`
+ * already treats as "playback failed to start". A bare inert-handle return
+ * on timeout (mirroring the EXISTING supersession bail) would leave that
+ * state stuck, because — unlike a superseded claim — a timed-out claim is
+ * still CURRENT, so nothing else will ever release it. The FIRST cut of
+ * this fix called `options.onEnded?.()` from the timeout branch to release
+ * it — which is wrong, and was Frank round-1's P1: a timed-out resume is a
+ * failed START, not a clip that ran to its end, and `recorder.tsx`'s
+ * frozen-pan logic keys specifically on `onEnded` to mean "played to the
+ * end" (#416) — calling it on a start that never sounded moved the edit pan
+ * to the end of a range the translator never heard. The timeout branch
+ * THROWS instead, which both call sites' existing `catch` already handles
+ * correctly (release the floor, clear the optimistic flag, surface
+ * `setPlaybackError`) — and, same as before, it must create no source at
+ * all (an audible click or, worse, an interrupted-context SILENT start
+ * firing after the caller was already told the claim had failed would be a
+ * second dishonesty on top of the first).
  *
  * `HangingAudioContext.resume()` awaits an externally-held gate instead of
  * settling immediately, so the bound can be raced with `vi.useFakeTimers()`
@@ -250,10 +259,14 @@ describe("playSamples — resume bound (#469)", () => {
     let settled = false;
     const handlePromise = playSamples(samples, {
       isStillCurrent: () => true,
-    }).then((handle) => {
-      settled = true;
-      return handle;
-    });
+    }).then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
 
     // Flush microtasks without advancing the clock: must still be pending —
     // this is the exact shape of the pre-fix bug (an unbounded await never
@@ -263,14 +276,13 @@ describe("playSamples — resume bound (#469)", () => {
     expect(settled).toBe(false);
 
     await vi.advanceTimersByTimeAsync(RESUME_TIMEOUT_MS);
-    const handle = await handlePromise;
+    await handlePromise;
 
     expect(settled).toBe(true);
-    expect(handle.duration).toBe(0);
     expect(ctx.sourcesCreated).toHaveLength(0);
   });
 
-  it("on timeout, ends the claim HONESTLY: onEnded fires, no source is ever created, the returned handle reports zero duration/elapsed", async () => {
+  it("on timeout, the claim ends by REJECTING — onEnded means 'ran out', not 'never started', so it must NOT fire; no source is ever created (Frank round-1 P1)", async () => {
     const ctx = new HangingAudioContext("interrupted");
     const { playSamples } = await loadAudioIo(ctx);
     let ended = false;
@@ -281,15 +293,22 @@ describe("playSamples — resume bound (#469)", () => {
         ended = true;
       },
     });
+    // Observe the outcome without letting an unhandled rejection escape the
+    // test before the assertion below gets to it.
+    const outcome = handlePromise.then(
+      () => ({ rejected: false }),
+      () => ({ rejected: true })
+    );
     await vi.advanceTimersByTimeAsync(1000);
-    const handle = await handlePromise;
+    const result = await outcome;
 
-    expect(ended).toBe(true);
-    expect(handle.duration).toBe(0);
-    expect(handle.elapsed()).toBe(0);
+    expect(result.rejected).toBe(true);
+    // The regression itself: a failed start is not a completed clip.
+    // `recorder.tsx`'s frozen-pan logic reads `onEnded` as "played to the
+    // end" (#416) — firing it here would move the edit pan to the end of a
+    // range the translator never heard.
+    expect(ended).toBe(false);
     expect(ctx.sourcesCreated).toHaveLength(0);
-    // Calling stop() on the inert handle must not throw.
-    expect(() => handle.stop()).not.toThrow();
   });
 
   it("reports exactly one row, under its own key, distinct from the recorder's timeout key", async () => {
@@ -298,8 +317,16 @@ describe("playSamples — resume bound (#469)", () => {
 
     await vi.advanceTimersByTimeAsync(0); // no-op; timer starts inside the call below
     const handlePromise = playSamples(samples, { isStillCurrent: () => true });
+    // Attach the rejection assertion BEFORE advancing the timer: `.rejects`
+    // registers its handler synchronously, so the promise is never briefly
+    // unobserved between the fake-timer tick that rejects it and this line —
+    // an unattached rejection there is flagged as an unhandled rejection even
+    // though the test goes on to handle it.
+    const expectation = expect(handlePromise).rejects.toThrow(
+      /did not settle within 1000 ms/
+    );
     await vi.advanceTimersByTimeAsync(1000);
-    await handlePromise;
+    await expectation;
 
     expect(reportFailure).toHaveBeenCalledTimes(1);
     expect(reportFailure).toHaveBeenCalledWith(
@@ -355,8 +382,10 @@ describe("playSamples — resume bound (#469)", () => {
     const { playSamples } = await loadAudioIo(ctx);
 
     const handlePromise = playSamples(samples, { isStillCurrent: () => true });
+    // Same reason as the test above: attach before advancing.
+    const timeoutExpectation = expect(handlePromise).rejects.toThrow();
     await vi.advanceTimersByTimeAsync(1000);
-    await handlePromise;
+    await timeoutExpectation;
     reportFailure.mockClear();
 
     const cause = new Error("resume rejected late");

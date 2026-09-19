@@ -578,26 +578,28 @@ export async function playSamples(
 
   if (resumeTimedOut) {
     // Still current, so this IS a #469 event worth a row — and, unlike the
-    // supersession bail above, nothing else will ever call `onEnded` for a
-    // claim that is still current: the caller (`playTake`/`playBuffer` in
-    // `use-audio-session.ts`) set optimistic "playing" state before this
-    // call and clears it only from `onEnded` or a thrown rejection. Ending
-    // the claim honestly here — rather than leaving it stuck "playing" with
-    // nothing sounding — means calling `onEnded` ourselves AND never
-    // building a source: proceeding anyway could start a source on a
-    // context that is still `"interrupted"`, which plays silently with no
-    // error (the iOS silent-playback shape `contextNeedsResume` exists to
-    // avoid), i.e. a playhead moving over silence after the caller was
-    // already told the claim had ended — a second dishonesty on top of the
-    // first.
-    reportFailure(
-      new Error(
-        `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in playSamples elapsed (#469)`
-      ),
-      "playback-resume-timeout"
+    // supersession bail above, nothing else will ever release the caller's
+    // optimistic "playing" state for a claim that is still current unless
+    // this function does it: the caller (`playTake`/`playBuffer` in
+    // `use-audio-session.ts`) sets that state before this call and clears it
+    // only from `onEnded` — which means "the clip RAN OUT" and nothing else
+    // (`use-audio-session.ts`'s own `playBuffer` doc, `recorder.tsx`'s
+    // frozen-pan use of it) — or from a THROWN rejection, which their
+    // existing `catch` already treats as "playback failed to start": release
+    // the floor, clear the optimistic flag, surface `setPlaybackError`. A
+    // timed-out resume is a failed start, not a completed clip — calling
+    // `onEnded` here told `recorder.tsx`'s frozen-pan logic the unheard range
+    // had played to its end and moved the edit pan there (Frank round-1 P1:
+    // `tests/audio-context-resume.test.ts`'s own regression test pinned the
+    // wrong contract). So this throws instead, and never builds a source:
+    // proceeding anyway could start a source on a context that is still
+    // `"interrupted"`, which plays silently with no error (the iOS
+    // silent-playback shape `contextNeedsResume` exists to avoid).
+    const cause = new Error(
+      `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in playSamples elapsed (#469)`
     );
-    options.onEnded?.();
-    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+    reportFailure(cause, "playback-resume-timeout");
+    throw cause;
   }
 
   const ctx = getAudioContext();
