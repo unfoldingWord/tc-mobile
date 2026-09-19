@@ -65,8 +65,16 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
     Share menu already shows before you tap Share now. The words under the
     picture say what was left out. Check the recording before treating it as
     complete.
-  - a **tray with a down arrow** means the sheet was closed before anything
-    went out. Nothing was sent; share again when ready.
+  - a **tray with a down arrow** means one of two things, and the words under
+    the picture say which: on iPhone, in the browser, or when it says the
+    sheet was closed, it means exactly that — nothing was sent, share again
+    when ready. **On the installed Android app**, the same picture can also
+    mean the app could not tell whether the sheet was actually dismissed or
+    the file went out — Android's own share screen does not always report
+    back which happened. If the words say the app could not confirm what
+    happened, do not assume nothing was sent: check the app you meant to send
+    it to (WhatsApp, Drive, whichever was chosen) before sharing again, so the
+    same chapter or book is not sent twice. <!-- source: src/hooks/share-target.ts resolveProvesDelivery, src/hooks/share-flow.ts resolveSendOutcome, src/components/strings.ts shareUnproven (Frank a446708 P2, #491); not device-verified as of 2026-09-19 -->
   - a **bare tray** (no arrow) means there was nothing recorded to share yet.
   - a **red triangle** means it failed — try again. The menu keeps the message
     after the picture goes.

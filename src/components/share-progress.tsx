@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
@@ -124,10 +124,24 @@ export function ShareProgress({
   // so a parent re-render (the recorder's own 60 ms playback tick is the
   // documented case elsewhere in this repo) never re-attaches it or re-grabs
   // focus mid-flow.
+  //
+  // `useLayoutEffect`, not `useEffect` (Frank at 9832a8b P2): a PASSIVE
+  // effect is scheduled to run in a macrotask after the browser paints, so a
+  // keydown queued in that same window can fire against STALE refs — the
+  // exact busy→outcome edge this component exists to get right. A prepare
+  // failing renders the outcome in the same commit that would otherwise
+  // flip `busyRef` to `false`; a passive effect leaves a window where
+  // `busyRef.current` still reads `true` after that paint, so an Escape
+  // landing in it calls `onCancel` (`reset()`) instead of `onDismiss`,
+  // clearing the very error Notice the outcome exists to hold up. A layout
+  // effect runs synchronously right after the DOM mutation, before the
+  // browser paints or dispatches any queued event, so the refs are already
+  // current by the time a human — or a fast synthetic keydown in a test —
+  // could possibly react to what just rendered.
   const busyRef = useRef(busy);
   const onCancelRef = useRef(onCancel);
   const onDismissRef = useRef(onDismiss);
-  useEffect(() => {
+  useLayoutEffect(() => {
     busyRef.current = busy;
     onCancelRef.current = onCancel;
     onDismissRef.current = onDismiss;

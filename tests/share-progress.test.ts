@@ -720,6 +720,37 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     expect(body).toMatch(/if \(el\?\.isConnected\) el\.focus\(\);/);
   });
 
+  /**
+   * Frank at `9832a8b` P2: the ref-sync effect that feeds the capture-phase
+   * keydown listener (`busyRef`/`onCancelRef`/`onDismissRef`) was a PASSIVE
+   * `useEffect`, scheduled to run in a macrotask after the browser paints —
+   * a keydown queued in that window could fire against stale refs, reading
+   * the PREVIOUS phase's `busy`/`onCancel`/`onDismiss` values. Concretely: a
+   * prepare failing renders the outcome in the same commit that would
+   * otherwise flip `busyRef` to `false`; an Escape landing before the
+   * passive effect runs would still call `onCancel` (`reset()`), clearing
+   * the failure Notice the outcome exists to hold up. `useLayoutEffect`
+   * closes it: it runs synchronously right after the DOM mutation, before
+   * the browser paints or dispatches any queued event.
+   */
+  it("share-progress.tsx syncs busyRef/onCancelRef/onDismissRef in a LAYOUT effect, not a passive one (Frank 9832a8b P2)", () => {
+    const modal = read("src/components/share-progress.tsx");
+    expect(modal).toMatch(/import \{ useEffect, useLayoutEffect, useRef \}/);
+    const at = modal.indexOf("const busyRef = useRef(busy);");
+    expect(at).toBeGreaterThan(-1);
+    const effectAt = modal.indexOf("useLayoutEffect(() => {", at);
+    expect(effectAt).toBeGreaterThan(at);
+    const effectEnd = modal.indexOf("});", effectAt);
+    const body = modal.slice(effectAt, effectEnd);
+    expect(body).toMatch(/busyRef\.current = busy;/);
+    expect(body).toMatch(/onCancelRef\.current = onCancel;/);
+    expect(body).toMatch(/onDismissRef\.current = onDismiss;/);
+    // Not the OTHER shape — a plain `useEffect` immediately after the refs.
+    expect(modal).not.toMatch(
+      /const onDismissRef = useRef\(onDismiss\);\s*useEffect\(\(\) => \{/
+    );
+  });
+
   it("the stylesheet inks busy and every settled outcome, with layer-2 roles only", () => {
     const css = read("src/app/styles/3-components.css");
     for (const key of ["busy", ...SHARE_SETTLED]) {
