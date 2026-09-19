@@ -1,10 +1,12 @@
 import { useCallback, useState } from "react";
 
 import { Control } from "./control";
+import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
 import { strings } from "./strings";
 import { clearFailureLog } from "@/hooks/failure-log";
+import { readSharePlatform } from "@/hooks/share-target";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 
 interface FailureLogPanelProps {
@@ -112,6 +114,9 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
       : share.error === "failed"
         ? strings.shareFailureLogFailed
         : null;
+  // The platform's own share mark (#490), so this build never shows a
+  // different share glyph here than on the chapter and book menus.
+  const shareGlyph = shareControlGlyph(readSharePlatform());
 
   return (
     <>
@@ -124,7 +129,7 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
 
       {share.status === "ready" ? (
         <Control
-          icon="share"
+          icon={shareGlyph}
           label={strings.shareSend}
           variant="primary"
           autoFocus
@@ -132,7 +137,7 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         />
       ) : (
         <Control
-          icon="share"
+          icon={shareGlyph}
           label={strings.shareFailureLog}
           variant="quiet"
           onClick={onPrepare}

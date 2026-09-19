@@ -17,7 +17,9 @@ import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { shareErrorText as shareErrorCopy } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
+import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
+import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
@@ -261,8 +263,13 @@ export const SegmentsScreen = forwardRef<
   // what the translator is looking at. Its error code is mapped to copy here and
   // rendered in the menu below.
   // The Share Control's glyph/variant/busy across idle → preparing → ready
-  // (#354) — the same table Share Book and NameEdit's Confirm use.
-  const shareAffordance = shareControlAffordance(share.status);
+  // (#354) — the same table Share Book and NameEdit's Confirm use. Its idle
+  // mark is the platform's own (#490): read from the Capacitor runtime each
+  // render — a constant, cheap read — never from the user agent.
+  const shareAffordance = shareControlAffordance(
+    share.status,
+    readSharePlatform()
+  );
   const shareErrorText = shareErrorCopy(share.error, "chapter");
   // Hoisted: the same mark for a chapter and a book, from one table.
   const sharePartial = shareOutcomeGlyph("partial");
@@ -537,6 +544,18 @@ export const SegmentsScreen = forwardRef<
           </>
         )}
       </Menu>
+
+      {/* The share modal (#491): the busy hold and the outcome glyph, over the
+          menu. A sibling of the Menu, not a child, so it survives the menu
+          closing — `send()` resolves only after the flash, so the close above
+          lands after the glyph, not under it. A busy-scrim tap is the same
+          cancel the menu scrim gave before this covered it. */}
+      <ShareProgress
+        progress={share.progress}
+        scope="chapter"
+        onCancel={onCloseChapterMenu}
+        onDismiss={share.dismissProgress}
+      />
     </div>
   );
 });

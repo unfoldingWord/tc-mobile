@@ -564,6 +564,72 @@
     justify-content: center;
     gap: var(--c-gap-items);
   }
+
+  /* --- the share progress modal (#491) ----------------------------------- */
+  /* The same centred sheet as the confirm above — the same tier (z 90), the
+     same box recipe — because it is raised over the same menu (z 80). Kept as
+     its own rule rather than reusing `.confirm-*`: the confirm's glyph is
+     tinted destructive by class, and this one is inked per OUTCOME below. The
+     glyph is the signal; the line under it is secondary by size and ink. */
+  .share-scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--s-scrim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--p-space-5);
+    z-index: 90;
+  }
+  .share-progress {
+    width: min(320px, 84vw);
+    background: var(--s-surface);
+    border: 1px solid var(--s-edge);
+    border-radius: var(--p-radius-lg);
+    padding: var(--p-space-6) var(--p-space-5);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--c-gap-items);
+    text-align: center;
+  }
+  .share-progress-text {
+    color: var(--s-ink-muted);
+    font-size: var(--c-notice-text);
+  }
+  /* The glyph's ink, keyed on the OUTCOME, not the tone: the wait is the same
+     muted ink `.notice[data-tone="busy"]` wears; handed-over is the "yes, this
+     is so" ink `.control-ready` already uses; a dismissed sheet is not news
+     and not a failure, so it is muted too; the three error codes wear the
+     live edge every alert Notice does. Layer-2 roles only. */
+  .share-scrim[data-outcome="busy"] .share-progress-glyph {
+    color: var(--s-ink-muted);
+  }
+  .share-scrim[data-outcome="sent"] .share-progress-glyph {
+    color: var(--s-done);
+  }
+  .share-scrim[data-outcome="dismissed"] .share-progress-glyph {
+    color: var(--s-ink-muted);
+  }
+  .share-scrim[data-outcome="nothing"] .share-progress-glyph {
+    color: var(--s-live);
+  }
+  .share-scrim[data-outcome="failed"] .share-progress-glyph {
+    color: var(--s-live);
+  }
+  .share-scrim[data-outcome="encoder"] .share-progress-glyph {
+    color: var(--s-live);
+  }
+  /* The wait spins, on the same keyframes the busy Control uses, and stops
+     under reduced motion the same way. */
+  .share-scrim[data-outcome="busy"] .share-progress-glyph {
+    animation: control-spin 900ms linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .share-scrim[data-outcome="busy"] .share-progress-glyph {
+      animation: none;
+    }
+  }
 }
 
 @layer components {

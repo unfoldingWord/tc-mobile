@@ -19,9 +19,11 @@ import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
 import { shareErrorText } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
+import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
+import { readSharePlatform } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
@@ -492,8 +494,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           : null;
   // The Share Control's glyph/variant/busy across idle → preparing → ready
   // (#354) — the same table Share Chapter and NameEdit's Confirm use, so
-  // "busy" and "ready" never borrow each other's mark or Confirm's.
-  const bookShareAffordance = shareControlAffordance(bookShare.status);
+  // "busy" and "ready" never borrow each other's mark or Confirm's. Its idle
+  // mark is the platform's own (#490), read from the Capacitor runtime.
+  const bookShareAffordance = shareControlAffordance(
+    bookShare.status,
+    readSharePlatform()
+  );
 
   // ── Delete a book (#337) ──────────────────────────────────────────────────
   // The book the confirm names, resolved from the shelf each render. `open`
@@ -980,6 +986,16 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         busy={deleting}
         onConfirm={onConfirmDelete}
         onCancel={closeDeleteConfirm}
+      />
+
+      {/* The share modal (#491), a sibling of the book menu — see the Segments
+          screen for why: it outlives the menu's close, and `send()` resolves
+          only after its outcome glyph has cleared. */}
+      <ShareProgress
+        progress={bookShare.progress}
+        scope="book"
+        onCancel={onCloseShareMenu}
+        onDismiss={bookShare.dismissProgress}
       />
     </div>
   );
