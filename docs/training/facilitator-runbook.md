@@ -59,6 +59,12 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   - a **tray with a tick** means the file was handed to the phone's share
     sheet. The app cannot see whether the app you chose actually received or
     sent it — if that matters, check there.
+  - a **tray with a broken rim** means the file WAS handed to the phone's
+    share sheet, but some of the chapter or book was left out (a segment with
+    no recording, or a whole missing chapter in a book) — the same picture the
+    Share menu already shows before you tap Share now. The words under the
+    picture say what was left out. Check the recording before treating it as
+    complete.
   - a **tray with a down arrow** means the sheet was closed before anything
     went out. Nothing was sent; share again when ready.
   - a **bare tray** (no arrow) means there was nothing recorded to share yet.
@@ -67,7 +73,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
   On Android the Share button itself is Android's own share picture (three
   joined dots); on iPhone and in the browser it is the box with an arrow. It
-  does the same thing on both. <!-- source: src/components/share-outcome-glyph.ts (the marks), src/hooks/share-progress.ts (MIN_BUSY_MS, OUTCOME_HOLD_MS = 1800 ms), src/components/control-affordance.ts shareControlGlyph (#490, decided 2026-09-19); not device-verified as of 2026-09-19 -->
+  does the same thing on both. <!-- source: src/components/share-outcome-glyph.ts (the marks), src/hooks/share-progress.ts (MIN_BUSY_MS, OUTCOME_HOLD_MS = 1800 ms, ShareSettled's "partial" outcome), src/components/control-affordance.ts shareControlGlyph (#490, decided 2026-09-19); not device-verified as of 2026-09-19 -->
 
 - **Known problem: Share may fail on the installed Android app right now**,
   with a message like "Could not share this chapter/book. Try again." This
