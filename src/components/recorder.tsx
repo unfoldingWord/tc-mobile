@@ -18,6 +18,7 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import { resolveProbedPx } from "./recorder-layout";
 import {
+  centerlineShown,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
@@ -627,6 +628,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // stops playback BEFORE the drag begins, so `playingBuffer` is already
       // false while the finger is still down and the pan is still moving.
       dragging,
+    });
+    // #418: the one exception to #316's "always visible" — a selection span
+    // loaded in edit mode gives the line no playback role (the audition
+    // sounds only the picked span, #284), so it hides while one is loaded.
+    const centerlineVisible = centerlineShown({
+      mode,
+      selectionActive: editor.selectionActive,
     });
     const wholeView = stage.render === "whole";
     // The waveform scrolls under the fixed centerline (#415/#416/#417). While
@@ -3339,7 +3347,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       />
                     </WaveformScroller>
                   )}
-                  {!liveScope && (
+                  {!liveScope && centerlineVisible && (
                     // The fixed centerline (#110/#316), a DOM element rather
                     // than a bar in the canvas (#415). The canvas is what
                     // MOVES during playback, so a painted line would travel
@@ -3353,8 +3361,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     //
                     // Mounted on the `Waveform` path only — `LiveScope` draws
                     // its own record head while capturing — so WHEN the line
-                    // shows is unchanged by this move: every record/edit state,
-                    // per #316.
+                    // shows is unchanged by this move except for `centerlineVisible`
+                    // (#418): every record/edit state per #316, minus the one
+                    // exception a selection span loaded in edit mode now makes.
                     <div
                       aria-hidden="true"
                       className="bg-live pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
