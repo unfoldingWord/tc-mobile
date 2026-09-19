@@ -48,6 +48,20 @@
     --c-tile-sm: 48px;
     --c-tile-lg: 56px;
 
+    /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
+       two parts this file gained in #457. Their geometry is named here, not
+       read from layer 1 inside the rules, so a primitive-scale revision has one
+       place per part to be inspected or held (Frank R3 P2 on #457). The notice
+       gap is `--p-space-3`, not `--c-gap-parts` (`--p-space-2`): reusing the
+       relationship token would have moved a reviewed 8px to 6px, which is a
+       design call and not this boundary fix. */
+    --c-notice-gap: var(--p-space-3);
+    --c-notice-pad: var(--p-space-4);
+    --c-notice-radius: var(--p-radius-md);
+    --c-notice-text: var(--p-text-md);
+    --c-breadcrumb-inset: var(--p-space-2);
+    --c-breadcrumb-radius: var(--p-radius-md);
+
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
 
@@ -228,6 +242,105 @@
     pointer-events: none;
   }
 
+  /* --- the notice line (#164 L-14) ---------------------------------------- */
+
+  /* `Notice` painted itself with four inline `style` declarations — background,
+     border, ink, and the glyph's colour. That is not a stylistic preference:
+     an inline `style` beats every `@layer`, so while it was there this
+     component could not HAVE a rule in layer 3 at all. Anything written here
+     would have lost to the element. #164 (L-14) asked for one bridge, and this
+     is the component that could not cross either.
+
+     The tone is a `data-tone` attribute rather than three classes, so the
+     three variants read as one vocabulary with one axis — which is what
+     `notice-tone.ts` says they are.
+
+     THE GLYPH COLOUR IS THE SAME TOKEN `notice-tone.ts` NAMES. It is stated in
+     both places on purpose: the table's value is the reviewed semantic claim,
+     pinned by `tests/notice-tone.test.ts` because for a translator who cannot
+     read the colour is the second half of what tells the three marks apart
+     (George G3). Two statements of one fact can drift, so
+     `tests/notice-bridge.test.ts` reads this file and the table and fails if
+     they ever disagree. */
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: var(--c-notice-gap);
+    padding: var(--c-notice-pad);
+    border-radius: var(--c-notice-radius);
+    font-size: var(--c-notice-text);
+    background: var(--s-surface);
+    border: 1px solid var(--s-edge);
+    color: var(--s-ink);
+  }
+  /* A failure wears the live edge. The other two keep the neutral one. */
+  .notice[data-tone="alert"] {
+    border-color: var(--s-live);
+  }
+  /* A wait is muted ink — it is not news, and it must not read as loudly as
+     the thing the translator is waiting for. */
+  .notice[data-tone="busy"] {
+    color: var(--s-ink-muted);
+  }
+  .notice-glyph {
+    flex-shrink: 0;
+    display: inline-flex;
+  }
+  .notice[data-tone="alert"] .notice-glyph {
+    color: var(--s-live);
+  }
+  .notice[data-tone="busy"] .notice-glyph {
+    color: var(--s-ink-muted);
+  }
+  .notice[data-tone="info"] .notice-glyph {
+    color: var(--s-warn);
+  }
+
+  /* --- the screen breadcrumb (#164 R-10) ---------------------------------- */
+
+  /* The Segments header's "Book > Chapter n" line is a BUTTON whose action is
+     Back — the same action as the real Back control sitting immediately to its
+     left. It was `p-0` with no minimum height, so the hit area was the text's
+     own ~20px line box: a second, smaller Back beside a 44px one.
+
+     Kept interactive rather than made inert, because a breadcrumb that looks
+     like a path and does nothing is its own defect; given the height of a
+     control instead, so the two adjacent ways Back are the same size to a
+     thumb. `--c-control-md` (44px), never `--c-control-sm` — the 40px
+     exception named in this file's token block is scoped to
+     `.control--quiet`'s toolbar row and #362, and does not extend here.
+
+     Text-left and truncating: this is a path, not a centred label, and the
+     book name is arbitrary-length user data. */
+  .breadcrumb {
+    min-width: 0;
+    flex: 1 1 auto;
+    min-height: var(--c-control-md);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--c-breadcrumb-inset);
+    border: none;
+    background: transparent;
+    color: var(--s-ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--c-breadcrumb-radius);
+  }
+  .breadcrumb > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .breadcrumb:hover {
+    background: var(--s-raised);
+  }
+  .breadcrumb:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+  }
+
   /* --- rows ------------------------------------------------------------- */
   .row {
     display: flex;
@@ -393,11 +506,18 @@
     border-radius: var(--p-radius-md);
     font-family: inherit;
     /* 16px, not --p-text-md (13px): iOS Safari auto-zooms a focused <input>
-       under 16px and ignores index.html's user-scalable=no for it, so a smaller
-       field zooms the sheet on focus and does not reset cleanly (G5). This is the
-       app's first text field, so the viewport policy never had to coexist with
-       one. No token is exactly 16px (--p-text-lg is 21px, too large for a field),
-       so the floor is set here on the input itself. */
+       under 16px, so a smaller field zooms the sheet on focus and does not
+       reset cleanly (G5). This is the app's first text field, so the viewport
+       policy never had to coexist with one. No token is exactly 16px
+       (--p-text-lg is 21px, too large for a field), so the floor is set here
+       on the input itself.
+
+       This used to read "and ignores index.html's user-scalable=no for it",
+       which implied the attribute was otherwise holding the zoom off. It was
+       not — iOS has ignored it since iOS 10, for fields and for pinch alike —
+       and it is gone now (#164 R-11), so this floor is the ONLY thing
+       standing between a focused rename field and a zoomed sheet. Do not
+       lower it. */
     font-size: 16px;
   }
   .name-input::placeholder {
@@ -786,7 +906,12 @@
     font-weight: var(--p-weight-strong);
     letter-spacing: 0.01em;
     cursor: pointer;
-    color: var(--s-voice);
+    /* `--s-voice-text`, not `--s-voice`: this is 12px text on a wash of the
+       accent itself, and in the light theme the fill value is only 3.0:1
+       against that wash (#164 R-9). The BACKGROUND below stays `--s-voice`,
+       so the pill's colour identity is unchanged — only its ink darkens,
+       and only on light. */
+    color: var(--s-voice-text);
     background: color-mix(in srgb, var(--s-voice) 15%, transparent);
     transition: filter var(--p-dur-base) var(--p-ease);
   }

@@ -3,9 +3,12 @@ import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Headless-Chromium smoke config (#251). `e2e/browser-boundary-smoke.spec.ts`
- * is the one spec file this stands up — what it proves, and deliberately does
- * not, is documented in its header.
+ * Headless-Chromium config, begun as the #251 smoke and now standing up four
+ * spec files in `e2e/`: `browser-boundary-smoke` (#251, the harness build),
+ * `service-worker-precache`, `theme-toggle` (#171) and `failure-log` (#205),
+ * the last three against the shipped build. What each proves, and
+ * deliberately does not, is documented in its own header; the project list
+ * at the bottom is what maps a spec to a build.
  *
  * TWO builds, two previews, two projects — because the two specs need
  * different builds (round-1 George G3):
@@ -83,7 +86,13 @@ export default defineConfig({
     },
     {
       name: "chromium-shipped-build",
-      testMatch: /service-worker-precache\.spec\.ts$/,
+      // Both specs that assert what USERS get, against the real build. The
+      // theme spec belongs here and not in the harness project for exactly the
+      // reason the comment above gives: `dist-e2e/` carries an extra chunk, so
+      // its cascade is not the one anyone installs, and a light theme dropped
+      // by the production minifier or by Tailwind's layer ordering would pass
+      // there (#171).
+      testMatch: /(service-worker-precache|theme-toggle)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

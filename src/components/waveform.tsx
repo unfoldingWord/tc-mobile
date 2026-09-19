@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 
+import { useLiveTheme } from "@/hooks/use-theme";
 import { clampUnit, displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,10 @@ interface WaveformProps {
    * still comes from the inherited `--c-wave-stroke` (remapped by
    * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
    * finished toggles — a canvas painted once cannot observe a CSS-variable
-   * change on its own (Frank/George R1 P2, the converged finding).
+   * change on its own (Frank/George R1 P2, the converged finding). A
+   * `data-theme` switch is a CSS-variable change of the same class, which is
+   * why the draw effect also subscribes to the live theme (George R2 P2 on
+   * #457).
    */
   finished?: boolean;
 }
@@ -78,6 +82,13 @@ export function Waveform({
   fitFrom,
 }: WaveformProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
+  // Read for its subscription only: a `data-theme` switch remaps every token
+  // this draw reads (`--c-wave-stroke`, `--s-voice`, `--s-ink-faint`), and a
+  // painted canvas cannot see that on its own — so the draw effect lists it.
+  // Today `useTheme` is Books-only and a toggle unmounts every canvas; the
+  // moment the toggle is reachable with a row mounted (#149) this is what keeps
+  // the bars from holding the previous theme's colours (George R2 P2 on #457).
+  const theme = useLiveTheme();
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
   // the browser paints a freshly-mounted canvas — the same reasoning
@@ -203,6 +214,8 @@ export function Waveform({
     // `finished` is in the deps for its side effect only: it changes with the
     // `.row--finished` class, so listing it re-runs this draw (which re-reads
     // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
+    // `theme` is the same shape for the same reason: a `data-theme` switch
+    // remaps the tokens read above, and only a re-run re-reads them.
     // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on
     // the Record and Back edges without `peaks` changing — the whole point of
     // the flag is that the same peaks draw at a different scale either side of
@@ -211,7 +224,16 @@ export function Waveform({
     // too: it can change (preview shown/cleared) while `peaks` also changes,
     // and a stale value would fit the previous stage's committed clip to the
     // current one's preview.
-  }, [peaks, recorded, height, view, finished, firstTakeInFlight, fitFrom]);
+  }, [
+    peaks,
+    recorded,
+    height,
+    view,
+    finished,
+    firstTakeInFlight,
+    fitFrom,
+    theme,
+  ]);
 
   return (
     <canvas

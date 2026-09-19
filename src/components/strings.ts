@@ -121,6 +121,22 @@ export const strings = {
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
 
   // ── Recorder sheet (B4) ──────────────────────────────────────────────────
+  // The recorder sheet's own accessible name (#198). It matched no name at all
+  // before: `role="dialog" aria-modal="true"` with nothing to announce, on the
+  // one surface a translator spends the whole session inside. Deliberately the
+  // noun of `closeRecorder` above rather than an invented title, so AT says
+  // "Recorder, dialog" and its dismiss says "Close recorder" — the same rule
+  // `blockedByTake` below already follows: name the control, do not invent.
+  // NOT the breadcrumb: that is empty until the segment loads, and a name that
+  // is sometimes absent is the gap this closes.
+  recorderDialog: "Recorder",
+  // The theme toggle (#171). Names the DESTINATION, not the current state: a
+  // control labelled "Dark theme" while the screen is dark tells a
+  // screen-reader user what they already have. These are what AT reads; the
+  // sun/moon glyph is what a non-reader sees, and #249's recognition check at
+  // the training is where that glyph is tested rather than assumed.
+  useLightTheme: "Switch to the light screen, for bright sunlight",
+  useDarkTheme: "Switch to the dark screen, for low light",
   closeRecorder: "Close recorder",
   recorderBreadcrumb: (
     book: string,
