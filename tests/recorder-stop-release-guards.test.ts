@@ -368,21 +368,29 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
 
   /**
    * The ONE contiguous pattern for the throw path (#485, panel r1 on #500;
-   * yield added #485 Frank r2 P2 on #500): the try's own closing brace,
-   * flowing DIRECTLY into a `catch (cause) {` whose body is exactly, in
-   * order: the funnel report under `"recorder-stop-flush"` with
-   * `console.error` kept beside it (AGENTS.md "Errors have a channel", the
-   * shape `cancel()`'s guard and `stopRecording`'s backstop both use), the
-   * identity-gated `recorderRef.current = null`, the `flushThrew = true`
-   * mark the tail's empty-capture exit reads for its sentence, ONE
-   * macrotask yield (`await new Promise((resolve) => setTimeout(resolve,
-   * 0))`) — a synchronous throw does not prove `dataavailable`/`stop` were
-   * not already queued, so this gives a slice already in flight the same
-   * one-tick window the inactive arm yields before it seals — and THEN the
-   * seal of `blob` from the local `chunks`, the same `new Blob(chunks, {
-   * type: recorder.mimeType })` the timeout arm's `finish` builds. No
-   * `return`, no `throw`: the catch falls through to the tail. It is
-   * anchored by `search(...) === tryBraceClose` (the technique
+   * yield added #485 Frank r2 P2 on #500; ORDER pinned to match the
+   * inactive arm above, #500 round 3, George r2 G-R2-P2-1, DRI decision
+   * 2026-09-19 option A): the try's own closing brace, flowing DIRECTLY into
+   * a `catch (cause) {` whose body is exactly, in order: the funnel report
+   * under `"recorder-stop-flush"` with `console.error` kept beside it
+   * (AGENTS.md "Errors have a channel", the shape `cancel()`'s guard and
+   * `stopRecording`'s backstop both use), the identity-gated
+   * `recorderRef.current = null`, the `flushThrew = true` mark the tail's
+   * empty-capture exit reads for its sentence, `if (stream)
+   * abandonStream(stream);` — stopping the stolen tracks BEFORE the yield,
+   * not after the seal, is what makes this arm's release order identical to
+   * the already-`"inactive"` arm a few lines above it in `stop()` (that arm:
+   * abandon the stream, yield, seal, close the tap — see the "already-inactive
+   * arm" test above) — ONE macrotask yield (`await new Promise((resolve) =>
+   * setTimeout(resolve, 0))`) — a synchronous throw does not prove
+   * `dataavailable`/`stop` were not already queued, so this gives a slice
+   * already in flight the same one-tick window the inactive arm yields
+   * before it seals — and THEN the seal of `blob` from the local `chunks`,
+   * the same `new Blob(chunks, { type: recorder.mimeType })` the timeout
+   * arm's `finish` builds. The tap is NOT closed in this arm at all — it
+   * closes after the seal, in `finally`, same as every other exit from this
+   * `else` branch. No `return`, no `throw`: the catch falls through to the
+   * tail. It is anchored by `search(...) === tryBraceClose` (the technique
    * `tests/recorder-failure-rows.test.ts` uses), so a detached catch, a
    * `finally` slid in between, or a matching catch on some OTHER try in the
    * branch cannot satisfy it. What it deliberately does NOT allow: a bare
@@ -392,13 +400,20 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
    * future await lands before the try), an early `return { …, blob: null }`
    * (discards the slices in hand — the P2 that reshaped this), a
    * `throw`/rethrow (the `UseRecorder.stop` contract says the failure is in
-   * the result, and `stopRecording` documents "never rejects"), or — the
-   * property this round adds — sealing `blob` IMMEDIATELY after
-   * `flushThrew = true` with no yield between them (Frank r2 P2: a queued
-   * final slice that lands after an immediate seal is silently omitted).
+   * the result, and `stopRecording` documents "never rejects"), sealing
+   * `blob` IMMEDIATELY after `flushThrew = true` with no yield between them
+   * (Frank r2 P2: a queued final slice that lands after an immediate seal is
+   * silently omitted), or — the property THIS round adds — abandoning the
+   * stream AFTER the yield/seal instead of before them (George r2 G-R2-P2-1:
+   * on an engine where the stolen tracks stopping is itself what flushes a
+   * still-pending final blob, releasing them only after the seal would seal
+   * `[]`). This gate pins the shape George's finding names, not a new rule of
+   * its own; it makes no claim about what any engine does after `stop()`
+   * throws — the current spec defines no throw at all, and no engine in
+   * evidence departs from that.
    */
   const catchPattern =
-    /\}\s*catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop-flush"\s*\);\s*console\.error\(\s*"Stopping the recorder failed",\s*cause\s*\);\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*flushThrew\s*=\s*true\s*;\s*await\s+new\s+Promise\(\s*\(\s*resolve\s*\)\s*=>\s*setTimeout\(\s*resolve,\s*0\s*\)\s*\)\s*;\s*blob\s*=\s*new\s+Blob\(\s*chunks,\s*\{\s*type:\s*recorder\.mimeType,?\s*\}\s*\)\s*;\s*\}/;
+    /\}\s*catch\s*\(\s*cause\s*\)\s*\{\s*reportFailure\(\s*cause,\s*"recorder-stop-flush"\s*\);\s*console\.error\(\s*"Stopping the recorder failed",\s*cause\s*\);\s*if\s*\(\s*recorderRef\.current\s*===\s*recorder\s*\)\s*recorderRef\.current\s*=\s*null\s*;\s*flushThrew\s*=\s*true\s*;\s*if\s*\(\s*stream\s*\)\s*abandonStream\(\s*stream\s*\)\s*;\s*await\s+new\s+Promise\(\s*\(\s*resolve\s*\)\s*=>\s*setTimeout\(\s*resolve,\s*0\s*\)\s*\)\s*;\s*blob\s*=\s*new\s+Blob\(\s*chunks,\s*\{\s*type:\s*recorder\.mimeType,?\s*\}\s*\)\s*;\s*\}/;
 
   const catchMatch = /^\s*catch\s*\(\s*cause\s*\)\s*\{/.exec(afterTry);
   const catchBraceOpen =
@@ -436,13 +451,15 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     expect(tryBody).toMatch(/recorder\.stop\s*\(\s*\)\s*;/);
   });
 
-  it("that try flows directly into a catch (cause) that reports the row, drops the recorder ref when it is still this recorder, marks flushThrew and seals blob from chunks — no return, no throw (#485, panel r1)", () => {
+  it("that try flows directly into a catch (cause) that reports the row, drops the recorder ref when it is still this recorder, marks flushThrew, abandons the stream, yields, and seals blob from chunks in that order — no return, no throw (#485, panel r1; order #500 round 3)", () => {
     // Dropping the `cause` binding, deleting the `reportFailure` or the
     // `console.error`, deleting the ref null or its identity guard, deleting
-    // the `flushThrew` mark, deleting the seal, returning early with `blob:
-    // null` (the first cut), replacing the seal with a `throw`, or moving the
-    // statements into the `finally` and deleting the catch (then `afterTry`
-    // starts at `finally`) must all fail this.
+    // the `flushThrew` mark, deleting the `abandonStream` call or moving it
+    // to after the yield/seal (George r2 G-R2-P2-1), deleting the seal,
+    // returning early with `blob: null` (the first cut), replacing the seal
+    // with a `throw`, or moving the statements into the `finally` and
+    // deleting the catch (then `afterTry` starts at `finally`) must all fail
+    // this.
     expect(afterTry).toMatch(/^\s*catch\s*\(\s*cause\s*\)\s*\{/);
     expect(elseBody.search(catchPattern)).toBe(tryBraceClose);
     expect(catchBody).not.toMatch(/\breturn\b/);
@@ -575,5 +592,26 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     const sealIdx = ifArmBody.indexOf("blob = new Blob(");
     expect(sealIdx).toBeGreaterThan(-1);
     expect(ifArmBody.search(/\btap\?\.close\(\)/)).toBeGreaterThan(sealIdx);
+  });
+
+  it("the inactive arm's own abandon -> yield -> seal order is pinned too, so it and the throw arm's catch cannot drift apart silently (#500 round 3)", () => {
+    // `catchPattern` above pins the throw arm TO this order; this test pins
+    // the order in the arm it is pinned to. Without both, an edit to the
+    // inactive arm alone could change what "the same order" means without
+    // either gate noticing.
+    const abandonIdx = ifArmBody.search(
+      /\bif\s*\(\s*stream\s*\)\s*abandonStream\(\s*stream\s*\)\s*;/
+    );
+    const yieldIdx = ifArmBody.indexOf(
+      "await new Promise((resolve) => setTimeout(resolve, 0));"
+    );
+    const sealIdx = ifArmBody.indexOf(
+      "blob = new Blob(chunks, { type: recorder.mimeType });"
+    );
+    expect(abandonIdx).toBeGreaterThan(-1);
+    expect(yieldIdx).toBeGreaterThan(-1);
+    expect(sealIdx).toBeGreaterThan(-1);
+    expect(abandonIdx).toBeLessThan(yieldIdx);
+    expect(yieldIdx).toBeLessThan(sealIdx);
   });
 });

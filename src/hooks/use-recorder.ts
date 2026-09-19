@@ -1051,11 +1051,17 @@ export function useRecorder(): UseRecorder {
         console.error("Stopping the recorder failed", cause);
         if (recorderRef.current === recorder) recorderRef.current = null;
         flushThrew = true;
-        // An engine that throws after it has queued its final `dataavailable`
-        // still delivers that slice on a later task; yield one macrotask to
-        // let a tail slice already in flight land in `chunks` before we seal
-        // the blob. Same bound as the inactive arm above (Frank r2 P2 on
-        // #500).
+        // Same order as the inactive arm above: stop the stolen tracks, yield
+        // one macrotask, seal; the tap closes after the seal, in `finally`
+        // below (George r2 on #500, G-R2-P2-1; DRI decision 2026-09-19,
+        // option A — this order, no new theory). `abandonStream` is safe to
+        // call again from `finally`: `track.stop()` on an already-stopped
+        // track is a spec no-op, and the ref check is identity-gated, so the
+        // second call is inert.
+        if (stream) abandonStream(stream);
+        // One macrotask, same bound as the inactive arm and the timeout arm's
+        // `finish`, so a slice already queued at the moment of the throw has
+        // a window to land in `chunks` before the seal (Frank r2 P2 on #500).
         await new Promise((resolve) => setTimeout(resolve, 0));
         blob = new Blob(chunks, { type: recorder.mimeType });
       } finally {
