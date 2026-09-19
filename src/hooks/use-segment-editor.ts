@@ -1,15 +1,23 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { clampRange, sliceRange, spansWholeSample } from "@/lib/audio/edit";
+import {
+  clampRange,
+  sliceRange,
+  spansWholeSample,
+  wholeSampleRange,
+} from "@/lib/audio/edit";
 import {
   canRedo as logCanRedo,
   canUndo as logCanUndo,
   emptyLog,
   materialize,
+  opRedone,
+  opUndone,
   pushOp,
   redo as logRedo,
   undo as logUndo,
   type EditLog,
+  type EditOp,
 } from "@/lib/audio/edit-log";
 import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
@@ -54,13 +62,20 @@ export interface SegmentEditor {
   readonly closeSelection: () => void;
   /** Update the picked span as a handle drags. Clamped to the buffer. */
   readonly setSelection: (range: SampleRange) => void;
-  /** Cut the selection to the clipboard, then drop the frame. Returns the range
-   *  removed (normalised) or null if nothing was cut. */
+  /** Cut the selection to the clipboard, then drop the frame. Returns the
+   *  whole-sample range removed — the same truncated bounds `cut`/
+   *  `sliceRange` (`lib/audio/edit.ts`) act on, via `wholeSampleRange`, not
+   *  the raw fractional selection — or null if nothing was cut. */
   readonly cut: () => SampleRange | null;
   /** Paste the clipboard at a sample offset (the centerline). */
   readonly paste: (atSample: number) => void;
-  readonly undo: () => void;
-  readonly redo: () => void;
+  /** Step history back one op. Returns the op that was undone (so the
+   *  recorder can map the centerline through its inverse, #449), or null if
+   *  there was nothing to undo or the rematerialise failed. */
+  readonly undo: () => EditOp | null;
+  /** Step history forward one op. Returns the op that was (re-)applied, or
+   *  null if there was nothing to redo or the rematerialise failed. */
+  readonly redo: () => EditOp | null;
 }
 
 /** The base buffer, the current edited buffer, and the history that maps between. */
@@ -192,12 +207,19 @@ export function useSegmentEditor(
     [clampPoint]
   );
 
-  // Returns the range actually removed (normalised), or null if nothing was cut
-  // or the edit failed — so the recorder can shift the pan left by a cut that
-  // fell before the centerline.
+  // Returns the whole-sample range actually removed, or null if nothing was
+  // cut or the edit failed — so the recorder can shift the pan left by a cut
+  // that fell before the centerline. Normalised through `wholeSampleRange`
+  // (#512 George R1 P3), not just `clampRange`: the buffer edit below
+  // (`sliceRange`/`cut` in `lib/audio/edit.ts`) truncates fractional edges
+  // the way `Int16Array.slice` does, so the range stored on the `EditOp` —
+  // and handed back here — must already be truncated too, or a caller that
+  // does not re-truncate (the mappers in `recorder-stage.ts` do, today, but
+  // `wholeSampleRange`'s own docblock calls itself "the ONE place" this
+  // happens) reads a position `Math.round`ed instead of truncated.
   const cut = useCallback((): SampleRange | null => {
     if (!selection) return null;
-    const range = clampRange(selection, working.length);
+    const range = wholeSampleRange(clampRange(selection, working.length));
     // Nothing picked — and "picked" is the one `spansWholeSample` question the
     // audition asks, so what Play refuses to sound, Cut refuses to remove. The
     // float compare this replaces called a span inside a single sample a real
@@ -239,15 +261,30 @@ export function useSegmentEditor(
 
   // Undo/redo re-materialise from base and clear any open selection, whose
   // sample range was measured against a buffer the history has just changed.
-  const undo = useCallback(
-    () => applyLog(logUndo(log), clearSelection),
-    [log, applyLog, clearSelection]
-  );
+  //
+  // Each returns the op it stepped over — the one being undone, or the one
+  // being (re-)applied — so the recorder can map the centerline through its
+  // inverse (#449) rather than dropping it unconditionally, through the
+  // shared `opUndone`/`opRedone` pair (`lib/audio/edit-log.ts`, #512 George
+  // R1 P2-2) rather than an inline index read — this hook has no DOM runner
+  // to exercise it directly, so the "which op did this step pass over"
+  // choice is pulled out to where it IS testable. Read BEFORE `applyLog`
+  // runs (the cursor this closes over is the pre-step one); `null` when
+  // there was nothing to step to, or when `applyLog`'s guard reports the
+  // rematerialise failed, mirroring `cut()`'s own `applied ? range : null`.
+  const undo = useCallback((): EditOp | null => {
+    const undoneOp = opUndone(log);
+    if (undoneOp === null) return null;
+    const applied = applyLog(logUndo(log), clearSelection);
+    return applied ? undoneOp : null;
+  }, [log, applyLog, clearSelection]);
 
-  const redo = useCallback(
-    () => applyLog(logRedo(log), clearSelection),
-    [log, applyLog, clearSelection]
-  );
+  const redo = useCallback((): EditOp | null => {
+    const redoneOp = opRedone(log);
+    if (redoneOp === null) return null;
+    const applied = applyLog(logRedo(log), clearSelection);
+    return applied ? redoneOp : null;
+  }, [log, applyLog, clearSelection]);
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)

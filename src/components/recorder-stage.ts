@@ -9,6 +9,10 @@
  * the whole reason the two coexist.
  */
 
+import { panAfterCut } from "@/lib/audio/viewport";
+import { wholeSampleRange } from "@/lib/audio/edit";
+import type { EditOp } from "@/lib/audio/edit-log";
+
 /** The record-stage inputs this decision reads, all already-derived booleans. */
 export interface StageState {
   /** `state === "recording"` — the mic is actively capturing. */
@@ -476,6 +480,49 @@ export function panAfterDragMove(input: {
 }
 
 /**
+ * What `onCut` writes into `panState` — #442's sibling, on the ONE `panState`
+ * writer #442 did not touch (#473).
+ *
+ * `onCut`'s own `panAfterCut(p, removed)` shifts an absolute pan left by
+ * whatever the cut removed before it, which is correct on its own — but it
+ * is `viewport.ts`'s general clamp-free geometry, not `panState`'s rest rule.
+ * A cut that runs all the way to the end leaves `panAfterCut` returning the
+ * post-cut length EXACTLY (a cut entirely after the pan leaves it at the old
+ * length; a cut that reaches the pan itself clamps it to the cut's start,
+ * which — for a cut to the end — is also the new length), and #442 already
+ * established what a bare numeric `length` in `panState` means: a stale
+ * absolute index the moment anything is pasted or appended, where the next
+ * Record punches into the new audio instead of following it. This is that
+ * defect by the cut path rather than the drag path.
+ *
+ * `preCutLength` is the working buffer's length BEFORE this cut — the
+ * caller's own `length` closure, which #473 flags as the one easy thing to
+ * get wrong here: `onCut` reads it from a render before `editor.cut()` ran,
+ * so it is still the PRE-cut value at the point this runs, and the post-cut
+ * length this needs for the rest clamp is `preCutLength - removedLength`,
+ * derived from `removed` rather than re-read from `editor` (whose `working`
+ * has not re-rendered into this closure yet either).
+ *
+ * `removed` is normalised through {@link wholeSampleRange} before EITHER
+ * question it answers — the removed LENGTH and the POSITION `panAfterCut`
+ * maps `pan` through — not just the length: selection edges are floats, and
+ * the buffer edit (`cut`/`sliceRange` in `lib/audio/edit.ts`) truncates them
+ * via `Int16Array.slice`. A fractional-boundary cut whose raw span disagreed
+ * with that truncation left both the rest clamp AND the shifted pan a
+ * fraction of a sample off the buffer's real post-cut shape (#473 round-2
+ * Frank P2 caught the length; round 3 found the position term was still raw).
+ */
+export function panAfterCutRest(
+  pan: number,
+  removed: { readonly start: number; readonly end: number },
+  preCutLength: number
+): number | null {
+  const range = wholeSampleRange(removed);
+  const removedLength = range.end - range.start;
+  return panOrRest(panAfterCut(pan, range), preCutLength - removedLength);
+}
+
+/**
  * Where a #317 drag starts when the touch interrupted playback (George R5 P1).
  *
  * The touch pauses playback and the drag continues from where the audio had
@@ -610,31 +657,164 @@ export function liftOutcome(input: {
 }
 
 /**
- * Where the centerline goes when the edit log REPLACES the working buffer —
- * Undo and Redo (George R3 P1-1).
+ * Where an absolute pan sits after `len` samples are INSERTED at `at` — the
+ * general shape of what a paste does to every position to its right, and
+ * what {@link panAfterUndo} applies to re-insert a cut's removed range.
  *
- * The answer does not depend on where the line was, and that is the finding:
- * `panState` is an absolute sample index measured in the buffer that has just
- * been thrown away, and an arbitrary history jump has no mapping for it. (A cut
- * does — `panAfterCut` shifts the index by what was removed to its left — which
- * is exactly why undo/redo needing one is easy to assume and wrong.)
+ * `pan <= at` is deliberately `<=`, not `<`: an insertion AT the pan is
+ * exactly `onPaste`'s own case (`recorder.tsx`'s `onPaste` — "nothing to the
+ * line's left moves"), where the pan is a boundary between the old audio and
+ * the new, and stays the numeric value it already was so it keeps pointing
+ * at the start of what was just inserted.
  *
- * Round 2 already dropped the pan of an IN-FLIGHT play before a rematerialiser
- * ran (`stopPlaybackDroppingPan`). What survived was a freeze that had already
- * committed: scroll-play, pause at sample 4 000 so `panState` is 4 000, then
- * tap Undo — nothing is sounding, so the dropping stop is a no-op, and 4 000 is
- * left naming different speech in the restored buffer. The next Record locks
- * `insertionOffset` there (#61, F9) and punches into the middle of a word.
+ * **This is `panAfterCut`'s inverse only at the cut's START boundary, not
+ * at its end — named here deliberately rather than left for a reader to
+ * discover.** A pan exactly at a cut's start is left unchanged by
+ * `panAfterCut` (`removedBeforePan === 0`), and re-inserting there with
+ * `pan <= at` returns that same value: a true round trip. But `panAfterCut`
+ * maps EVERY pan inside the removed range — including one that sat exactly
+ * at the cut's END — to that same start value
+ * (`panAfterCut(8_000, {4_000, 8_000})` and `panAfterCut(4_000, {4_000, 8_000})`
+ * both return `4_000`; pinned by the boundary cases in
+ * `describe("panAfterUndo / panAfterRedo")`, `tests/recorder-stage.test.ts`).
+ * Once collapsed, a pan carries no memory of where inside the removed range
+ * it started, so nothing downstream — this function or {@link panAfterUndo},
+ * which calls it — can recover a pan that had sat at the cut's end; undo
+ * restores it to the cut's START instead. That is the deliberate, honest
+ * convention picked here — the simplest one that names an actual position
+ * rather than inventing one — not an accident of the boundary condition
+ * above, and it is why `panAfterUndo`'s "inverse" is a best-effort mapping,
+ * not a guaranteed round trip, for every pan that a cut collapsed.
  *
- * So the line returns to the F7 REST. `null` is not "no pan": `effectivePan`
- * reads it as "the end, whatever the end turns out to be", so the line follows
- * the restored buffer and Record appends — which is what these controls did
- * before playback ever wrote the pan, and the only position that is honest
- * about a buffer nobody has looked at yet.
+ * **Why START and not END** (a panel review round asked the opposite
+ * question: shouldn't undo track "the surviving sample this pan currently
+ * denotes," landing at the cut's END instead?). `panAfterCut`'s own
+ * docblock already answers this for the LIVE cut, independent of undo: "a
+ * cut straddling it lands the line at the cut's start" — a pan the cut
+ * collapses is, by this codebase's pre-existing convention, DEFINED to sit
+ * at the cut's start, not treated as still attached to whatever survivor
+ * happens to be numerically adjacent. That convention predates #473/#449
+ * and governs every live cut, not just the undo path. Undoing with `pan <=
+ * at` unchanged is the identity map on exactly that boundary value, so it
+ * is the one choice that keeps a collapsed pan's meaning consistent
+ * whether a cut is live or being undone. Shifting `pan >= at` forward
+ * instead would resolve the boundary the other way ONLY for undo, leaving
+ * a live cut and an undone cut disagreeing about which side of the gap a
+ * collapsed pan belongs to — a new inconsistency, not a fix — and would
+ * still be wrong for the mirror case (a pan that started the cut sitting
+ * exactly at its START, `describe("a pan exactly at a cut's START
+ * boundary...")` below), since the two pre-cut origins are equally
+ * plausible and, once collapsed, equally unrecoverable either way.
  */
-export function panAfterRematerialize(pan: number | null): number | null {
-  if (pan === null) return null; // already the rest; nothing to drop
-  return null; // an absolute index has no meaning in the new buffer
+export function panAfterInsert(pan: number, at: number, len: number): number {
+  return pan <= at ? pan : pan + len;
+}
+
+/**
+ * Where the centerline goes when an op is UNDONE — the inverse-op mapping
+ * #449 asks for, in place of the round-3 P1's blanket "drop to the rest".
+ *
+ * `panState` is an absolute sample index measured in the buffer the undone
+ * op produced. Undoing it re-materialises the buffer as it was one op
+ * earlier, and — like a cut or a paste happening live — that has an inverse
+ * mapping: undoing a `cut` re-INSERTS the range it removed
+ * ({@link panAfterInsert}), and undoing a `paste` removes the clip it
+ * inserted ({@link panAfterCut} over the pasted span). Applying it is what
+ * lets a hand-set pan whose audio did not move under the undone op survive
+ * the undo — #449's acceptance — rather than being dropped unconditionally
+ * the way a Cut/Paste/Undo/Redo three-policy split used to (round-3 P1's own
+ * finding: three different rules answering the same "does this index still
+ * name the same audio" question).
+ *
+ * It is a mapping, not a guaranteed round trip: {@link panAfterInsert}'s own
+ * docblock names the one case where it cannot be, at a cut's end boundary —
+ * a pan the cut had already collapsed comes back at the cut's START, never
+ * at wherever it originally sat inside the removed range.
+ *
+ * This SUBSUMES round-3 P1 rather than special-casing it: a frozen index
+ * (`panState` written by a completed playback, per {@link frozenPan}) is no
+ * more and no less valid than a hand-set one once mapped through the actual
+ * inverse — provenance was never the right question (#449's own text). An
+ * index the mapping cannot place inside the restored buffer collapses
+ * through {@link panOrRest} against the restored length exactly as a stale
+ * post-cut index already does everywhere else `panState` is written.
+ *
+ * `null` (the F7 rest) passes straight through in both directions: the rest
+ * is not a position in any particular buffer, it is "the end, whatever the
+ * end becomes", so no history op has anything to map it through.
+ *
+ * `preUndoLength` is `editor.workingLength` AS READ IN THE CALLER'S RENDER
+ * CLOSURE, i.e. the length BEFORE this undo runs — matching #473's
+ * `panAfterCutRest`, the length the restored (post-undo) buffer will have is
+ * derived from the op rather than re-read from `editor`, because `editor` is
+ * a React object whose own `workingLength` has not advanced yet inside the
+ * same callback that just called `editor.undo()` (the `setHist` it triggers
+ * is not visible until the next render).
+ */
+export function panAfterUndo(
+  pan: number | null,
+  undoneOp: EditOp,
+  preUndoLength: number
+): number | null {
+  if (pan === null) return null;
+  if (undoneOp.kind === "cut") {
+    // Normalised ONCE, through the same `wholeSampleRange` the buffer edit
+    // itself is built on (`lib/audio/edit.ts`) — both the length AND the
+    // START position `panAfterInsert` re-inserts at, not just the length:
+    // a fractional-boundary cut's raw `Math.min(start, end)` disagrees with
+    // what `Int16Array.slice` actually removed, landing the re-inserted pan
+    // a fraction of a sample off the buffer's real restored index (#473
+    // round-2 Frank P2 caught the length; round 3 found this position term
+    // was still raw).
+    const range = wholeSampleRange(undoneOp.range);
+    const removedLen = range.end - range.start;
+    // Undoing a cut re-inserts what it removed, so the restored buffer is
+    // LONGER than the one the undo started from.
+    return panOrRest(
+      panAfterInsert(pan, range.start, removedLen),
+      preUndoLength + removedLen
+    );
+  }
+  // Undoing a paste removes what it inserted, so the restored buffer is
+  // SHORTER than the one the undo started from.
+  return panOrRest(
+    panAfterCut(pan, {
+      start: undoneOp.at,
+      end: undoneOp.at + undoneOp.clip.length,
+    }),
+    preUndoLength - undoneOp.clip.length
+  );
+}
+
+/**
+ * Where the centerline goes when an op is REDONE — the forward half of
+ * {@link panAfterUndo}'s mapping: re-applying a `cut` maps the pan the same
+ * way the live cut writer does ({@link panAfterCut}), onto a buffer SHORTER
+ * by what the cut removes; re-applying a `paste` maps it the way a live
+ * insert does ({@link panAfterInsert}), onto a buffer LONGER by the pasted
+ * clip. `preRedoLength` is the same kind of pre-op closure value
+ * {@link panAfterUndo} takes, read before this redo runs.
+ */
+export function panAfterRedo(
+  pan: number | null,
+  redoneOp: EditOp,
+  preRedoLength: number
+): number | null {
+  if (pan === null) return null;
+  if (redoneOp.kind === "cut") {
+    // Normalised ONCE, through `wholeSampleRange` — both the length AND the
+    // range `panAfterCut` maps `pan` through, not just the length: passing
+    // `redoneOp.range` straight to `panAfterCut` here read the raw fractional
+    // bounds even after round 2 fixed `removedLen` (#473 round-3 Frank P2).
+    // See `panAfterUndo`'s cut branch, same shape, inverse direction.
+    const range = wholeSampleRange(redoneOp.range);
+    const removedLen = range.end - range.start;
+    return panOrRest(panAfterCut(pan, range), preRedoLength - removedLen);
+  }
+  return panOrRest(
+    panAfterInsert(pan, redoneOp.at, redoneOp.clip.length),
+    preRedoLength + redoneOp.clip.length
+  );
 }
 
 /**
