@@ -18,7 +18,15 @@ import {
   stageView,
   type StageState,
 } from "@/components/recorder-stage";
-import type { EditOp } from "@/lib/audio/edit-log";
+import {
+  emptyLog,
+  materialize,
+  opRedone,
+  opUndone,
+  pushOp,
+  undo as logUndo,
+  type EditOp,
+} from "@/lib/audio/edit-log";
 import {
   effectivePan,
   panAfterCut,
@@ -1428,6 +1436,89 @@ describe("#473 round 3 — a fractional cut's POSITION terms match its truncated
     // unchanged at 4_000.2 instead of shifting it past the re-inserted range
     // to 8_000.2.
     expect(panAfterUndo(4_000.2, fractionalOp, postCutLength)).toBe(8_000.2);
+  });
+});
+
+/**
+ * #512 George R1 P2-2: the full seam, end to end — `useSegmentEditor.undo`/
+ * `.redo` return `EditLog`'s `opUndone`/`opRedone` (this is now the hook's
+ * whole implementation, so exercising the pure pair through `edit-log.ts`
+ * pins the same contract), and the op that comes back is what
+ * `panAfterUndo`/`panAfterRedo` are handed. This closes the loop George's
+ * finding named as untested: cut → undo → the returned op maps pan through
+ * exactly the length `materialize` actually restores, not a hand-picked
+ * number that happens to agree today.
+ */
+describe("opUndone/opRedone feed panAfterUndo/panAfterRedo with an op that agrees with materialize (#512 George R1 P2-2)", () => {
+  const original = new Int16Array(10_000); // 10_000-sample take
+
+  it("cut [2,5) then undo: opUndone's op maps pan through the length materialize actually restores", () => {
+    const cutLog = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    // 9_997 samples survive the 3-sample cut.
+    const postCutLength = materialize(original, cutLog).length;
+    expect(postCutLength).toBe(9_997);
+
+    const undoneOp = opUndone(cutLog);
+    expect(undoneOp).toEqual({ kind: "cut", range: { start: 2, end: 5 } });
+
+    const restored = materialize(original, logUndo(cutLog));
+    expect(restored.length).toBe(original.length);
+
+    // A pan well inside the surviving tail (past the cut's truncated start,
+    // short of the end) must shift right by exactly the 3 samples
+    // `materialize` just proved the undo re-inserts — landing inside the
+    // restored 10_000-length buffer, not at its rest boundary.
+    expect(panAfterUndo(6_000, undoneOp!, postCutLength)).toBe(6_003);
+  });
+
+  it("cut [2,5), then paste, then undo the paste: opUndone names the paste, and pan maps through ITS inverse, not the cut's", () => {
+    const clip = new Int16Array(50);
+    const cutLog = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    const pasteLog = pushOp(cutLog, { kind: "paste", at: 100, clip });
+    const preUndoLength = materialize(original, pasteLog).length; // 9_997 + 50
+
+    const undoneOp = opUndone(pasteLog);
+    expect(undoneOp).toEqual({ kind: "paste", at: 100, clip });
+
+    const restored = materialize(original, logUndo(pasteLog));
+    // Undoing the paste alone restores the post-cut (not the original)
+    // length — the cut is still applied.
+    expect(restored.length).toBe(preUndoLength - clip.length);
+
+    // A pan sitting past the pasted clip must shift back by exactly what the
+    // paste inserted.
+    const pan = 200;
+    expect(panAfterUndo(pan, undoneOp!, preUndoLength)).toBe(pan - clip.length);
+  });
+
+  it("redo after that undo: opRedone names the SAME paste, and pan maps forward through it", () => {
+    const clip = new Int16Array(50);
+    const cutLog = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    const pasteLog = pushOp(cutLog, { kind: "paste", at: 100, clip });
+    const undone = logUndo(pasteLog);
+    const preRedoLength = materialize(original, undone).length;
+
+    const redoneOp = opRedone(undone);
+    expect(redoneOp).toEqual({ kind: "paste", at: 100, clip });
+
+    const reapplied = materialize(original, pasteLog);
+    expect(reapplied.length).toBe(preRedoLength + clip.length);
+
+    const pan = 150;
+    expect(panAfterRedo(pan, redoneOp!, preRedoLength)).toBe(pan + clip.length);
+  });
+
+  it("opUndone at the start of history is null and pan is never mapped", () => {
+    expect(opUndone(emptyLog())).toBeNull();
   });
 });
 
