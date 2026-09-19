@@ -74,6 +74,30 @@ Every one carries the reviewer's fix.
 - **The CVD desk check** on the Mac. The brief is at `/workspace/temp/tc-mobile-cvd-desk-check-brief.md`.
 - **Dependabot majors** stay held until after October: #501 fastlane, #503 lint-staged 17, #504 vitest 5, #505 vite 8.
 
+### Native builds and tester handoff
+
+- The dev lead approved `release-signing` on both lanes, and both runs succeeded.
+- **Android:** `app-release.apk` is attached to the pre-release **`android-release-v0.2.7`**, tagged at staging `71a3bc7`. Its signing certificate, SHA-256 `eed23e1b…34baf2`, was read from the APK signing block. It matches v0.2.3 and v0.2.4, so it installs in place.
+- **iOS:** uploaded to TestFlight.
+- **Testers:** a static tester checklist page was shared with them.
+
+### Open-PR triage (end of session)
+
+A read-only sweep checked every open PR against `develop` at `a8222d9`.
+
+**Closed:**
+
+- **#230** (a contributor PR) was superseded by #509's `use-save-take.ts`. It was closed with a courtesy note, and **#210** closed as fixed by #509.
+- **#430** was superseded by the #452 core (#492) and adapter (#499). #393 and #374 stay open for **#452 PR3**.
+
+**Kept:**
+
+- **Stale but wanted:** #464, #239, #218, #191, #231, #217, #216, #235 and #237, all by the contributor `deferredreward`. Each still fixes a gap `develop` has, checked file by file. All conflict with `develop` except **#231**, which merges cleanly.
+- **Ready but idle:** **#156** (Jesse) merges cleanly and is still correct.
+- **Stale plan:** **#422** needs its preconditions refreshed: #215 merged as #436, #243 is closed, and 9 v1-required issues are open.
+- **Active:** **#144** (Jesse), updated today by its author.
+- **Parked by DRI decisions:** #257 and #261 (reviving them needs schema v7) and #471 (waits on #484).
+
 ### Next session, in order
 
 1. `/sod`.
@@ -86,6 +110,51 @@ Every one carries the reviewer's fix.
 3. **#452 PR3**, the layer stack. It overlaps #517's Android Back item and #393.
 4. **#220**: finish the harness verdict from `82bef77`, starting with the success marker.
 5. **#516 and #517**, small residual PRs.
+6. **The stale PRs, batched:** see the plan below.
+
+### Batching plan for the open PRs (dev lead's ask, 2026-09-19)
+
+**Where they sit.**
+
+- None of the stale contributor PRs is `v1-required`.
+- The V1 blockers are **#374**, which is #452 PR3, and the device-evidence items #58, #59, #108, #269, #336, #413 and #245. The v0.2.7 device run feeds those.
+- Four PRs are v0.3.0 `v1-desired`: #464 (#247), #235 (#172), #239 (#211) and #144 (#36).
+- The rest are v1.0.0, post-training.
+
+**#211 is decided** (issuecomment-5742999677): write nothing after a superseded capture.
+
+**Rules for speed:**
+
+- At most **three code lanes** at once, because George runs serialized and Frank has a quota.
+- Every lane gets a pre-set stop rule, and a judgment sheet at the cap.
+- Contributor PRs more than two weeks behind are **re-cut from develop with author credit** under the takeover policy. We do not wait for a rebase: a courtesy comment goes up first, and theirs closes when ours merges.
+- Merge one at a time and re-check the other lanes after each merge.
+- **Hot files:** `books-screen.tsx` (PR3, #464, #235), `segments-screen.tsx` (PR3, #235) and `strings.ts` (#464, #235, #191, #144).
+
+**Wave 1, next session. V1 first, and parallel only where files do not overlap:**
+
+| Lane | Work                                                                                                         | Files                              | Starts |
+| ---- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ------ |
+| A    | **#452 PR3**: Books/Segments overlays on the layer stack (#374 is `v1-required`, #393, and #517's Back item) | books-screen, segments-screen, nav | first  |
+| D    | **#211** via a re-cut of #239: close-plan writes nothing after a superseded capture. Flip the pinned test.   | `lib/takes/close-plan.ts` (T1)     | with A |
+| Q    | Quick wins: **#156** (docs, merges on green) and **#231** (small T1 refactor, conflict-free)                 | CSS header, `audio-io.ts`          | with A |
+
+**Wave 2, as soon as PR3 merges.** These share Books with it:
+
+| Lane | Work                                                                           | Note                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| B    | **#247** via a re-cut of #464: the storage-pressure marker                     | Never reviewed. The lib half (`pressure.ts`, `use-storage-estimate.ts`) can start early. The Books wiring goes after PR3. |
+| C    | **#172** via a re-cut of #235: no raw exception text, and quota on every write | Scope first. #509 has since changed `use-save-take`, `use-books` and erase, so part of #235 may be moot.                  |
+| —    | **#144** (Jesse, #36): review when Jesse marks it ready                        | It collides with the other lanes only in `strings.ts`.                                                                    |
+
+**Wave 3, after the October 9 training (v1.0.0):**
+
+- #218 and #191 (T1 storage and export);
+- #217, #216 and #237 (tooling);
+- the Dependabot majors #501, #503, #504 and #505;
+- #257 and #261 (the Template Library needs schema v7).
+
+**Before the next staging to main promotion:** refresh #422's preconditions.
 
 ## 2026-09-18 (day) — the judgment-sheet rule born on #474 and applied four times: #474 and #452 PR1 merged at their caps on accepted residuals, #471 parked for device evidence, v0.2.5 and v0.2.6 promoted and verified, and the tester's first Android notes filed
 
