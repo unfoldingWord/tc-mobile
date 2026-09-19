@@ -202,8 +202,29 @@ export function SaveFailed({
               failed is in exactly the moment the problem report is worth
               sending. Same order as `ErrorBoundary`: primary action first,
               this one quiet, right after it. `DatabasePanel` does not get
-              this — #456 calls that a design call, not this PR's scope. */}
-          <SendLogControl />
+              this — #456 calls that a design call, not this PR's scope.
+
+              Withheld on the terminal (downgrade) arm, same condition that
+              already swaps Retry for Restart: a `DatabaseDowngradeError` has
+              latched `getDb()` for the life of the page, so
+              `prepare()` -> `readFailureLog()` -> `getDb()` would reject on
+              every tap here too, offering a door that can never open
+              (George R1 P2-1). This is the same reason `DatabasePanel`
+              carries no Send control.
+
+              KNOWN HOLE (George R1 P2-2, unfoldingWord/tc-mobile#514): unlike
+              `ErrorBoundary`, which calls `quiesceTranscodeSweep()` before
+              ever reaching its own `SendLogControl`, this screen does NOT
+              stop `App`'s module-scoped transcode sweep (`finish-transcode.ts`)
+              — `App` stays mounted underneath `SaveFailed`. A live failing
+              sweep can churn the armed share and prune the 50-row ring before
+              a tap here lands. Not fixed here: `ErrorBoundary`'s quiesce is
+              one-way, and its only exit is a reload, while this screen's
+              primary exit is Retry on the SAME page — a one-way quiesce would
+              silently skip the post-retry sweep a successful Finished retry
+              still owes (D3). Needs an explicit pause/resume, tracked in the
+              linked issue; documented, not silently reused. */}
+          {!terminal && <SendLogControl />}
 
           {safetyLine && (
             <p className="text-ink-muted text-[13px]">{safetyLine}</p>

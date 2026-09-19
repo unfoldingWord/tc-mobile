@@ -2,7 +2,11 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { performDiscardTake, performSaveTake } from "@/hooks/use-save-take";
+import {
+  performClearEditedSegment,
+  performDiscardTake,
+  performSaveTake,
+} from "@/hooks/use-save-take";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
@@ -376,5 +380,40 @@ describe("performDiscardTake", () => {
     expect(s.held()).toBeNull();
     expect(await getClipMeta(other)).toBeDefined();
     expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
+  });
+});
+
+describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
+  /** A segment id with no row: `clearSegmentTake` throws "No such segment: …". */
+  const bogusSegment = () => newClipId() as unknown as SegmentId;
+
+  it('reports a store rejection to the funnel once, under "erase-segment" (George R1 P3-3)', async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performClearEditedSegment(bogusSegment());
+
+    off();
+    consoleError.mockRestore();
+    expect(ok).toBe(false);
+    expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
+    expect(reports[0]?.cause).toBeInstanceOf(Error);
+  });
+
+  it("reports nothing to the funnel, and fires onCleared, on a successful clear", async () => {
+    const segmentId = await freshSegment();
+    const onCleared = vi.fn();
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const ok = await performClearEditedSegment(segmentId, onCleared);
+
+    off();
+    expect(ok).toBe(true);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(reports).toEqual([]);
   });
 });

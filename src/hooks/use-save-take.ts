@@ -100,7 +100,10 @@ export async function performSaveTake(
   } catch (cause) {
     // The failure that produces the `SaveFailed` recovery screen — one row
     // per real failure (#456), console.error kept beside it, as
-    // report-failure.ts's own contract asks.
+    // report-failure.ts's own contract asks. That includes a Retry that
+    // fails again: each attempt is a real failure by this policy, so
+    // repeated taps each write their own row rather than coalescing
+    // (George R1 P3-4 — accepted as a trade, not a gap).
     console.error("Saving a take failed", cause);
     reportFailure(cause, "save-take");
     effects.update((held) =>
@@ -133,6 +136,37 @@ export async function performDiscardTake(
   } catch (cause) {
     console.error("An unsaved clip could not be removed", cause);
   }
+}
+
+/**
+ * Persist a segment cut down to silence — the store half of
+ * `saveEditedSegment`'s empty-buffer branch, extracted for the same reason
+ * `performSaveTake` and `performDiscardTake` are: plain-Node testability
+ * against `fake-indexeddb`, rather than the hook's `useCallback` closure.
+ *
+ * A clear failure leaves the original take in place (no loss); it is
+ * reported under `"erase-segment"`, the same context `performErase` uses for
+ * the sibling erase path (#456) — a cut-to-empty close IS an erase, just
+ * reached from the edit sheet rather than the overflow menu (George R1 P3-3).
+ * Never rejects: the caller is a tap handler where a rejection is an
+ * unhandled promise that leaves the sheet stuck.
+ */
+export async function performClearEditedSegment(
+  segmentId: SegmentId,
+  onCleared?: () => void
+): Promise<boolean> {
+  return clearSegmentTake(segmentId)
+    .then(() => {
+      onCleared?.();
+      return true;
+    })
+    .catch((cause: unknown) => {
+      // One row per real failure (#456); console.error kept beside it, as
+      // report-failure.ts's own contract asks — matching `performErase`.
+      console.error("Clearing an edited-to-empty segment failed", cause);
+      reportFailure(cause, "erase-segment");
+      return false;
+    });
 }
 
 /**
@@ -283,15 +317,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       finished: boolean
     ): Promise<boolean> => {
       if (buffer.length === 0) {
-        return clearSegmentTake(segmentId)
-          .then(() => {
-            onSavedRef.current?.();
-            return true;
-          })
-          .catch((cause: unknown) => {
-            console.error("Clearing an edited-to-empty segment failed", cause);
-            return false;
-          });
+        return performClearEditedSegment(segmentId, () =>
+          onSavedRef.current?.()
+        );
       }
       return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
     },

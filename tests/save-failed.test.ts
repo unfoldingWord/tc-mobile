@@ -51,4 +51,17 @@ describe("SaveFailed — the Send-log control (#456)", () => {
 
     expect(html).not.toContain(`aria-label="${strings.shareFailureLog}"`);
   });
+
+  it("is withheld on the terminal downgrade arm — an unreachable database cannot read its own log (George R1 P2-1)", () => {
+    const html = renderToStaticMarkup(
+      createElement(SaveFailed, { ...props, kind: "downgrade" })
+    );
+
+    // Same reasoning `DatabasePanel` already carries (AGENTS.md): a
+    // `DatabaseDowngradeError` latches `getDb()` for the life of the page, so
+    // `prepare()` -> `readFailureLog()` -> `getDb()` would reject on every
+    // tap. This is the terminal arm — the same `terminal` condition that
+    // swaps Retry for Restart — so Send must not render here either.
+    expect(html).not.toContain(`aria-label="${strings.shareFailureLog}"`);
+  });
 });
