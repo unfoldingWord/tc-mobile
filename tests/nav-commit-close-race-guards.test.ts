@@ -151,10 +151,11 @@ describe("recorder header Close is disabled through the close window (George R2 
   /**
    * The on-screen belt to the absorb branch's suspenders: the header Close
    * control must be `disabled` while `isClosing`, matching its record-mode menu
-   * and Editing-pill siblings, so it is not the on-screen issuer of a `goBack`
-   * during `requestClose`. Isolate the Close control by its unique
-   * `label={strings.closeRecorder}` and read the `disabled={...}` expression
-   * that follows it.
+   * and Editing-pill siblings, so it is not the issuer in the HEADER of a
+   * `goBack` during `requestClose` (LoadErrorPanel's and PermissionPanel's Back
+   * stay live through the close window and are covered by the absorb branch).
+   * Isolate the Close control by its unique `label={strings.closeRecorder}` and
+   * read the `disabled={...}` expression that follows it.
    */
   const recorderSource = stripComments(
     readFileSync(

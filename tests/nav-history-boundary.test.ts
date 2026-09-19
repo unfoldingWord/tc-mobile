@@ -28,8 +28,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *     in a comment (AST-invisible) and touches other browser APIs
  *     (`localStorage`), never `history`.
  *   - the file-identity exemption is checked with `--print-config`, not by
- *     linting `src/` for violations: the three rules resolve to `off` for
- *     `src/hooks/use-nav-stack.ts` and to `error` for another hook.
+ *     linting `src/` for violations: the two history-OBJECT rules
+ *     (`no-restricted-globals` / `no-restricted-properties`) resolve to `off`
+ *     for `src/hooks/use-nav-stack.ts` and to `error` for another hook, while
+ *     `no-restricted-syntax` stays ENABLED there with its popstate selector
+ *     narrowed out (George R3 P3-4) — so it reads `error` for both.
  *
  * The exemption's LOAD-BEARINGNESS (that removing the override flags the real
  * adapter) is proven by mutation in the PR body and by `npm run verify` staying
@@ -181,16 +184,27 @@ export function useThing(): string | null {
     expect(rules).not.toContain("no-restricted-syntax");
   }, 15000);
 
-  it("EXEMPTS src/hooks/use-nav-stack.ts by file identity — the three rules resolve off there and error in another hook", () => {
+  it("EXEMPTS src/hooks/use-nav-stack.ts by file identity — the history-OBJECT rules resolve off there and error in another hook; no-restricted-syntax stays enabled, its popstate selector narrowed out (George R3 P3-4)", () => {
     const adapter = "src/hooks/use-nav-stack.ts";
     const otherHook = "src/hooks/use-recorder.ts";
+    // The history OBJECT bans (`history` global, `window.history`,
+    // `onpopstate`) are turned fully off for the adapter — it owns them.
     for (const ruleId of [
       "no-restricted-globals",
       "no-restricted-properties",
-      "no-restricted-syntax",
     ]) {
       expect(ruleLevelFor(adapter, ruleId)).toBe(0); // off for the adapter
       expect(ruleLevelFor(otherHook, ruleId)).toBe(2); // error for other hooks
     }
+    // no-restricted-syntax is NOT blanket-off for the adapter (George R3 P3-4):
+    // the rule stays enabled with only the history popstate selector subtracted,
+    // so a future non-history hooks selector still reaches this file.
+    // `--print-config` reports only the level, not the selector set, so it reads
+    // `error` (2) here just as for any other hook; that the popstate selector
+    // ITSELF is exempted for the adapter is proven by the FIRES-popstate probe
+    // above (it fires in the hooks layer) together with `npm run verify` staying
+    // green on the adapter's own `addEventListener("popstate", …)`.
+    expect(ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
+    expect(ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
   }, 15000);
 });

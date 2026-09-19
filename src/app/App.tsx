@@ -46,12 +46,13 @@ export function App() {
   } | null>(null);
 
   const segmentsRef = useRef<SegmentsScreenHandle>(null);
-  // System-Back handling (#168) lives in the `useNavStack` adapter below: the
-  // recorder sheet, Segments and Books each push one history entry, so a
-  // standalone-PWA Back is a `popstate` the adapter routes in-app instead of
-  // leaving the app — which on the recorder fired `pagehide` → `leave()` and
-  // dropped the in-progress take (#58). App keeps only the recorder handle the
-  // adapter's commit-close path reaches.
+  // System-Back handling (#168) lives in the `useNavStack` adapter below:
+  // opening a chapter (→ Segments) and opening the recorder sheet each push one
+  // history entry, while Books pushes NOTHING — it is the floor, and a Back
+  // there is `exit-app`. So a standalone-PWA Back is a `popstate` the adapter
+  // routes in-app instead of leaving the app — which on the recorder fired
+  // `pagehide` → `leave()` and dropped the in-progress take (#58). App keeps
+  // only the recorder handle the adapter's commit-close path reaches.
   const recorderRef = useRef<RecorderHandle>(null);
   // Which segment a held take belongs to, for the recovery screen — captured
   // when the recorder opened, so it survives the sheet closing on a failed

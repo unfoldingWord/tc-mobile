@@ -140,6 +140,43 @@ const HISTORY_BOUNDARY_MESSAGE =
   "(#452, docs/design/back-navigation.md invariant 1). Route Back/Forward " +
   "through that adapter, never a raw history call here.";
 
+/**
+ * The ONE history `no-restricted-syntax` selector:
+ * `foo.addEventListener("popstate", …)` — any object, first arg the string
+ * literal "popstate" (esquery indexes call arguments positionally).
+ */
+const HISTORY_POPSTATE_SELECTOR = {
+  selector:
+    "CallExpression[callee.property.name='addEventListener'][arguments.0.value='popstate']",
+  message: HISTORY_BOUNDARY_MESSAGE,
+};
+
+/**
+ * Non-history `no-restricted-syntax` selectors for the boundary layers
+ * (app/components/hooks). EMPTY today. A selector added here reaches EVERY
+ * boundary file, INCLUDING the adapter (`use-nav-stack.ts`) — the adapter's
+ * override below spreads this same list — so a future onion/safety syntax rule
+ * is not silently dropped for the adapter the way a blanket
+ * `no-restricted-syntax: "off"` would drop it (George R3 P3-4).
+ */
+const NON_HISTORY_SYNTAX_SELECTORS = [];
+
+/**
+ * The full boundary-layer `no-restricted-syntax` set: the history popstate ban
+ * plus any non-history selectors. Applied to app/components/hooks EXCEPT the
+ * adapter (which owns `addEventListener("popstate", …)`) via the dedicated
+ * block below — NOT via `HISTORY_BOUNDARY_RULES`, because the adapter cannot
+ * carry the popstate selector and then subtract it: ESLint flat config's
+ * severity-only `["error"]` override RETAINS the prior selector list, so a
+ * per-file "drop just this selector" is impossible; the file must never receive
+ * it. `HISTORY_BOUNDARY_RULES` therefore holds only the history OBJECT bans,
+ * which the adapter CAN turn fully off.
+ */
+const BOUNDARY_SYNTAX_SELECTORS = [
+  HISTORY_POPSTATE_SELECTOR,
+  ...NON_HISTORY_SYNTAX_SELECTORS,
+];
+
 const HISTORY_BOUNDARY_RULES = {
   "no-restricted-globals": [
     "error",
@@ -168,16 +205,26 @@ const HISTORY_BOUNDARY_RULES = {
       message: HISTORY_BOUNDARY_MESSAGE,
     },
   ],
-  "no-restricted-syntax": [
-    "error",
-    {
-      // `foo.addEventListener("popstate", …)` — any object, first arg the
-      // string literal "popstate". esquery indexes call arguments positionally.
-      selector:
-        "CallExpression[callee.property.name='addEventListener'][arguments.0.value='popstate']",
-      message: HISTORY_BOUNDARY_MESSAGE,
-    },
+};
+
+/**
+ * The popstate ban, in its OWN block so it can IGNORE the adapter (see
+ * `BOUNDARY_SYNTAX_SELECTORS` for why a per-file subtraction is impossible).
+ * Every boundary layer that must route Back through the adapter carries it; the
+ * adapter is ignored here and re-declares `no-restricted-syntax` (enabled, only
+ * the non-history selectors) in its own override.
+ */
+const HISTORY_SYNTAX_BLOCK = {
+  files: [
+    "src/hooks/**/*.{ts,tsx}",
+    "src/components/**/*.{ts,tsx}",
+    "src/app/**/*.{ts,tsx}",
+    ".nav-history-probe/**/*.{ts,tsx}",
   ],
+  ignores: ["src/hooks/use-nav-stack.ts"],
+  rules: {
+    "no-restricted-syntax": ["error", ...BOUNDARY_SYNTAX_SELECTORS],
+  },
 };
 
 export default tseslint.config(
@@ -323,17 +370,29 @@ export default tseslint.config(
 
   // The history adapter is the ONE place window.history / popstate may live
   // (#452, invariant 1). Allow-list it AFTER the hooks block so flat-config's
-  // later-wins turns the history-boundary rules back off for this file only —
-  // its onion `no-restricted-imports` denial (above) still applies. Proven
-  // load-bearing by mutation: removing this block makes `npm run verify` flag
-  // the real adapter (see the PR body); the file-identity exemption is asserted
-  // by `tests/nav-history-boundary.test.ts`'s `--print-config` rows.
+  // later-wins exempts it from the history boundary for this file only — its
+  // onion `no-restricted-imports` denial (above) still applies. The two
+  // history-OBJECT rules (`no-restricted-globals` / `no-restricted-properties`)
+  // are turned fully off — the adapter owns `history`/`window.history`.
+  //
+  // `no-restricted-syntax` is NOT blanket-`off` (George R3 P3-4): it stays
+  // ENABLED here with the NON-history boundary selectors, so a future selector
+  // added to `NON_HISTORY_SYNTAX_SELECTORS` reaches this file too. The popstate
+  // selector is simply absent — `HISTORY_SYNTAX_BLOCK` (which carries it)
+  // ignores this file — so no popstate option ever reaches this override and
+  // `npm run lint` stays green on the adapter's own `addEventListener(
+  // "popstate", …)`. (A blanket `off` would silently drop every future
+  // selector too; a severity-only `["error"]` could not drop popstate alone —
+  // ESLint retains prior options — which is why popstate is scoped out at
+  // source rather than subtracted here.) Proven load-bearing by mutation:
+  // removing `HISTORY_SYNTAX_BLOCK`'s adapter `ignores`, or the block itself,
+  // flags the real adapter; asserted by `tests/nav-history-boundary.test.ts`.
   {
     files: ["src/hooks/use-nav-stack.ts"],
     rules: {
       "no-restricted-globals": "off",
       "no-restricted-properties": "off",
-      "no-restricted-syntax": "off",
+      "no-restricted-syntax": ["error", ...NON_HISTORY_SYNTAX_SELECTORS],
     },
   },
 
@@ -362,6 +421,12 @@ export default tseslint.config(
     files: ["src/app/**/*.{ts,tsx}"],
     rules: { ...deny([], [CAPACITOR_DENIED]), ...HISTORY_BOUNDARY_RULES },
   },
+
+  // The popstate `no-restricted-syntax` ban across the boundary layers, in its
+  // own block so it can IGNORE the adapter (see `HISTORY_SYNTAX_BLOCK`). The
+  // history OBJECT bans stay in each layer block above via
+  // `HISTORY_BOUNDARY_RULES`; only the syntax selector needs this carve-out.
+  HISTORY_SYNTAX_BLOCK,
 
   // The audio core indexes typed arrays in hot loops, where
   // `noUncheckedIndexedAccess` forces a non-null assertion on every sample

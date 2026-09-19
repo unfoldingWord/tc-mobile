@@ -2946,10 +2946,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // Also frozen through the close window (`isClosing`), matching the
               // record-mode menu opener (:disabled ... || isClosing) and the Editing
               // pill: while `close()`'s stop -> decode -> save is in flight the sheet
-              // is still up, and a second Close tap here is the only ON-SCREEN issuer
-              // of a `goBack` during `requestClose` — the ms-window that would force
+              // is still up, and a second Close tap here is the only issuer in the
+              // HEADER of a `goBack` during `requestClose`; LoadErrorPanel's and
+              // PermissionPanel's Back stay live through the close window and are
+              // covered by the absorb branch. This is the ms-window that would force
               // the commit-close settle's refused-re-arm absorb (use-nav-stack.ts,
-              // the `beginBack("commit-close")` else-branch). Removing that on-screen
+              // the `beginBack("commit-close")` else-branch). Removing this HEADER
               // trigger is the belt to that branch's suspenders (George R2 P2-1).
               disabled={heldTake !== null || isClosing}
               onClick={onRequestBack}

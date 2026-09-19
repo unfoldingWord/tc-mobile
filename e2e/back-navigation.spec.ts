@@ -139,7 +139,7 @@ test("(b) Back from the recorder closes the sheet and lands on Segments (idle pa
   ).toBeVisible();
 });
 
-test("(c) after a reload at depth, the adapter adopts the resumed index and Back stays in the app (Amendment B)", async ({
+test("(c) after a reload at depth, the adapter adopts the resumed index into BOTH refs: the next push stamps resumed+1, Back returns to the resumed depth, and the shelf Back stays in the app (Amendment B, George R3 P2)", async ({
   page,
 }) => {
   await seedToSegments(page);
@@ -157,9 +157,35 @@ test("(c) after a reload at depth, the adapter adopts the resumed index and Back
   // disclosed, pre-existing simplification), so the shelf is what renders.
   await expect(newBookCta(page)).toBeVisible();
 
-  // The first Back after the depth reload is absorbed at the Books root
-  // (`exit-app` is a no-op on the shelf, which pushed no entry) — the app stays
-  // put and shows Books; it does not misroute as a phantom Forward.
+  // The LOAD-BEARING half of Amendment B (George R3 P2): the mount effect must
+  // adopt `resumed` into BOTH `navIndex` and `nextIndex`, because
+  // `pushHistoryEntry` stamps the next entry from `++nextIndex.current` ALONE.
+  // Open a chapter again — the first protective push AFTER the reload — and its
+  // entry must carry resumed + 1 = 2. With only `navIndex` adopted (the mis-wire
+  // this asserts against), `nextIndex` is still at its `useRef(0)` default, so
+  // `++nextIndex` stamps 1 here instead of 2 — F3 one push later, and this
+  // assertion goes red. A reload collapses the shelf's per-session expand state,
+  // so re-expand the book before its chapter is reachable.
+  await page
+    .getByRole("button", { name: "Book 001, 1 chapter, collapsed" })
+    .click();
+  await page.getByRole("button", { name: "Open Chapter 1" }).click();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  expect(await navIndex(page)).toBe(2);
+
+  // Back returns to the resumed depth: it lands on the adopted Segments-depth
+  // entry (index 1), which on this reloaded tree shows Books (React reset).
+  // Under the mis-wire the stamp above would have been 1, so this same Back
+  // would read as "same" and be swallowed — the translator stuck on Segments.
+  await page.goBack();
+  expect(await navIndex(page)).toBe(1);
+  await expect(newBookCta(page)).toBeVisible();
+
+  // One more Back is absorbed at the Books root (`exit-app` is a no-op on the
+  // shelf, which pushed no entry) — the app stays put and shows Books; it does
+  // not misroute as a phantom Forward.
   await page.goBack();
   await expect(newBookCta(page)).toBeVisible();
   await expect(page).toHaveURL(/\/$/);

@@ -379,9 +379,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
               // un-raced commit-close (the recorder's screen, one level below
               // it), which is invariant 7's intent: a second Back during an
               // in-flight commit is absorbed, never escaped. Review-only (no
-              // renderer); reachability of the ms window is inference from the
-              // recorder header Back staying live during close (recorder.tsx:
-              // 2809/2820), the trace is from the code.
+              // renderer); the trace is from the code. The reachability of the
+              // ms window is NOT the recorder header Back — this PR disables
+              // that control through the close window (`disabled={heldTake !==
+              // null || isClosing}`, recorder.tsx:2828), so do not re-enable
+              // header Close believing this absorb depends on it. The
+              // `onRequestBack` issuers still live during close are
+              // LoadErrorPanel's and PermissionPanel's Back (recorder.tsx:2917/
+              // 2923).
               const begun = beginBack(travelGuard.current, "commit-close");
               if (begun.ok) {
                 travelGuard.current = begun.next;
