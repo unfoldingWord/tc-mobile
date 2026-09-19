@@ -15,6 +15,8 @@ import {
 } from "@/lib/audio/format";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
+import { reportFailure } from "./report-failure";
+
 /**
  * Candidate capture formats, best first.
  *
@@ -131,6 +133,100 @@ export function contextNeedsResume(state: string): boolean {
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext();
   if (contextNeedsResume(ctx.state)) await ctx.resume();
+}
+
+/**
+ * How long a caller of `resumeAudioContext()` is willing to block before
+ * proceeding anyway.
+ *
+ * WebKit's `resume()` from an `"interrupted"` `AudioContext` state has been
+ * observed to hang indefinitely (#108). An unbounded `await` on that promise
+ * between "the floor is claimed" and "the recorder/source actually exists"
+ * can leave a caller stuck forever — first found in `start()`
+ * (`use-recorder.ts`, between `getUserMedia` and `new MediaRecorder`), and
+ * the same shape on the playback path in `playSamples` below (#469).
+ *
+ * 1000ms is a PROVISIONAL ASSUMPTION, not a measured value — the real
+ * distribution of WebKit's resume-from-interrupted latency is unmeasured on
+ * any device, which is exactly the open question issue #108 poses. This is
+ * the one place to correct it once an on-device pass answers that question.
+ * Lives here, not in `use-recorder.ts`, because `playSamples` needs the same
+ * bound and `resumeAudioContext` itself already lives in this file — the
+ * browser-audio boundary is the natural shared home, and a hook this low
+ * (`use-recorder.ts`) importing back FROM a higher hook would be circular.
+ */
+export const RESUME_TIMEOUT_MS = 1_000;
+
+/**
+ * Call `resumeAudioContext()` but never let it block the caller for longer
+ * than `RESUME_TIMEOUT_MS` (#108, #469).
+ *
+ * `resumeAudioContext()` is invoked SYNCHRONOUSLY as the first statement,
+ * before the timer or the race promise are even constructed, so a caller
+ * still inside the user gesture that unlocked the microphone or claimed
+ * playback loses none of that activation to a `.then`/microtask hop.
+ *
+ * NEVER rejects. A `resume()` that fails fast is treated exactly like one
+ * that hangs — swallowed, and the caller proceeds — matching every
+ * fire-and-forget `resumeAudioContext()` call site elsewhere in this repo
+ * (`void resumeAudioContext().catch(...)`, several in `use-recorder.ts` and
+ * `use-audio-session.ts`). A rejection, whether it arrives before or after
+ * the timer has already resolved the race, is reported through
+ * `reportFailure` under the CALLER-SUPPLIED `rejectionContextKey` rather
+ * than swallowed outright or left as an unhandled rejection — closer to
+ * AGENTS.md's "errors have a channel before they have copy" bar — but it
+ * never reaches this function's own caller as a rejection.
+ *
+ * RESOLVES `true` WHEN THE TIMER WON, `false` when `resume()` settled first
+ * (either way, resolve or reject). Writes NO row for a timer win: the timer
+ * firing is a fact worth logging only in light of what the CALLER decides to
+ * do about it — `start()` gates its own "recorder-start-resume-timeout" row
+ * behind its own generation check (a Record tap abandoned during the wait
+ * must not light the failure log for work nobody is waiting on any more,
+ * #498 George R1 P2), and `playSamples` gates its own
+ * "playback-resume-timeout" row behind `isStillCurrent()` for the identical
+ * reason. Both callers own that decision; this helper has no such state and
+ * must not guess at it.
+ *
+ * Built with a manual `Promise` executor and a local `settled` flag rather
+ * than `Promise.race`, so a same-tick or early rejection from
+ * `resumeAudioContext()` can never propagate as this function's own
+ * rejection before the `.then(resolve, reject)` handler below converts it —
+ * `raceAudioResume` must never reject. The timer uses the bare global
+ * `setTimeout`/`clearTimeout` (never `window.*`): no DOM global is needed,
+ * and it is directly exercisable with `vi.useFakeTimers()` in this repo's
+ * jsdom-free, Node-only vitest suite.
+ */
+export function raceAudioResume(rejectionContextKey: string): Promise<boolean> {
+  const resumePromise = resumeAudioContext();
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      // The timer won. No report from here — see the docblock: the caller
+      // owns the decision this fact sits behind.
+      resolve(true);
+    }, RESUME_TIMEOUT_MS);
+    resumePromise.then(
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(false);
+      },
+      (cause: unknown) => {
+        // A rejection never bounds the race's own outcome — only resolve it
+        // if the timer has not already done so — but is always reported,
+        // whichever branch wins.
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(false);
+        }
+        reportFailure(cause, rejectionContextKey);
+      }
+    );
+  });
 }
 
 /**
@@ -462,14 +558,45 @@ export async function playSamples(
     isStillCurrent: () => boolean;
   }
 ): Promise<PlaybackHandle> {
-  await resumeAudioContext();
+  // Bounded (#469, same shape as `start()`'s #108 fix): WebKit's resume()
+  // from "interrupted" has been observed to hang, and an unbounded await
+  // here left a play tap stuck "playing" forever with nothing sounding and
+  // no floor ever released. `true` when the bound elapsed before resume()
+  // settled.
+  const resumeTimedOut = await raceAudioResume("playback-resume");
 
   if (!options.isStillCurrent()) {
     // Superseded during the resume await. Return an inert handle before building
     // any node — nothing is created, nothing reaches `ctx.destination`, nothing
     // sounds. The caller's `settle` stops it (a no-op) and discards it; `onEnded`
     // is deliberately not called, since nothing started and the newer claim owns
-    // the UI state now.
+    // the UI state now. Takes priority over a timeout report below: a claim
+    // nobody is waiting on any more is not a #469 event to log, mirroring
+    // `start()`'s generation check for the identical reason (#498 George R1 P2).
+    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+  }
+
+  if (resumeTimedOut) {
+    // Still current, so this IS a #469 event worth a row — and, unlike the
+    // supersession bail above, nothing else will ever call `onEnded` for a
+    // claim that is still current: the caller (`playTake`/`playBuffer` in
+    // `use-audio-session.ts`) set optimistic "playing" state before this
+    // call and clears it only from `onEnded` or a thrown rejection. Ending
+    // the claim honestly here — rather than leaving it stuck "playing" with
+    // nothing sounding — means calling `onEnded` ourselves AND never
+    // building a source: proceeding anyway could start a source on a
+    // context that is still `"interrupted"`, which plays silently with no
+    // error (the iOS silent-playback shape `contextNeedsResume` exists to
+    // avoid), i.e. a playhead moving over silence after the caller was
+    // already told the claim had ended — a second dishonesty on top of the
+    // first.
+    reportFailure(
+      new Error(
+        `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in playSamples elapsed (#469)`
+      ),
+      "playback-resume-timeout"
+    );
+    options.onEnded?.();
     return { stop: () => {}, elapsed: () => 0, duration: 0 };
   }
 
