@@ -3419,13 +3419,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       still `disabled` on the same `idleEditable` safety: without
                       it a Cut tapped during the async close would mutate the
                       working buffer after close() already captured the pre-cut
-                      one — a silently dropped edit. */}
+                      one — a silently dropped edit.
+
+                      `heldByDrag` is the same #317 stage lock Undo/Redo carry
+                      (#512 George R1 P2-1): `onCut` writes `panAfterCutRest`
+                      into `panState`, and a finger still down from a stage
+                      drag keeps writing `onPointerMove`'s
+                      `panAfterDragMove(panAtDragStart, …)` afterwards — a
+                      PRE-cut origin against the POST-cut length, clobbering
+                      the cut's own write. Cut does not clear `dragging` on
+                      its own, so the gate is what has to. */}
                     <Control
                       icon="scissors"
                       label={strings.cut}
                       variant="quiet"
                       size={26}
-                      disabled={!idleEditable || !editor.canCut}
+                      disabled={heldByDrag(
+                        dragging,
+                        !idleEditable || !editor.canCut
+                      )}
                       onClick={onCut}
                     />
                   </div>
