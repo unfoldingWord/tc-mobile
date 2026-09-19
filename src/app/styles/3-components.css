@@ -608,6 +608,14 @@
   .share-scrim[data-outcome="sent"] .share-progress-glyph {
     color: var(--s-done);
   }
+  /* Handed over, but with a gap (P1, this lane's own review round): the same
+     ink `.notice[data-tone="info"]` wears for the ready-state gap Notice this
+     reuses the mark and the tone from — not the plain success ink `sent`
+     wears above, which is exactly the collision this outcome exists to
+     avoid. */
+  .share-scrim[data-outcome="partial"] .share-progress-glyph {
+    color: var(--s-warn);
+  }
   .share-scrim[data-outcome="dismissed"] .share-progress-glyph {
     color: var(--s-ink-muted);
   }

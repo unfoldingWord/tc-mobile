@@ -136,10 +136,14 @@ describe("shareProgressText", () => {
     since: 0,
     pending: null,
   });
-  const outcome = (settled: ShareSettled): ShareProgress => ({
+  const outcome = (
+    settled: ShareSettled,
+    gap?: { missing: number; partial: number }
+  ): ShareProgress => ({
     phase: "outcome",
     settled,
     since: 0,
+    gap,
   });
 
   it("says nothing when hidden", () => {
@@ -195,6 +199,42 @@ describe("shareProgressText", () => {
       strings.shareDismissed
     );
     expect(strings.shareSent).not.toBe(strings.shareDismissed);
+  });
+
+  it("partial reuses the handed-over line, then names the gap — chapter scope (P1, this lane's own review round)", () => {
+    expect(
+      shareProgressText(
+        outcome("partial", { missing: 1, partial: 0 }),
+        "chapter"
+      )
+    ).toBe(`${strings.shareSent} ${strings.shareMissing(1)}`);
+    expect(
+      shareProgressText(
+        outcome("partial", { missing: 3, partial: 0 }),
+        "chapter"
+      )
+    ).toBe(`${strings.shareSent} ${strings.shareMissing(3)}`);
+  });
+
+  it("partial names the gap in BOOK terms, combining both grains when both are non-zero", () => {
+    expect(
+      shareProgressText(outcome("partial", { missing: 2, partial: 0 }), "book")
+    ).toBe(`${strings.shareSent} ${strings.shareBookMissing(2)}`);
+    expect(
+      shareProgressText(outcome("partial", { missing: 0, partial: 2 }), "book")
+    ).toBe(`${strings.shareSent} ${strings.shareBookPartial(2)}`);
+    expect(
+      shareProgressText(outcome("partial", { missing: 1, partial: 2 }), "book")
+    ).toBe(`${strings.shareSent} ${strings.shareBookMissingAndPartial(1, 2)}`);
+  });
+
+  it("partial is never the plain sent line — the whole point of the outcome", () => {
+    const text = shareProgressText(
+      outcome("partial", { missing: 1, partial: 0 }),
+      "chapter"
+    );
+    expect(text).not.toBe(strings.shareSent);
+    expect(text).toMatch(strings.shareSent);
   });
 
   it("the success copy says HANDED OVER, never delivered, and names no destination", () => {

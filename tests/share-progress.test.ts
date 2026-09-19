@@ -8,6 +8,7 @@ import {
   MIN_BUSY_MS,
   OUTCOME_HOLD_MS,
   SHARE_SETTLED,
+  type ShareGap,
   type ShareProgress,
   type ShareSettled,
   reduceShareProgress,
@@ -44,9 +45,10 @@ function begin(
 function settle(
   state: ShareProgress,
   settled: ShareSettled | null,
-  now: number
+  now: number,
+  gap?: ShareGap
 ): ShareProgress {
-  return reduceShareProgress(state, { type: "settle", settled, now });
+  return reduceShareProgress(state, { type: "settle", settled, gap, now });
 }
 
 function tick(state: ShareProgress, now: number): ShareProgress {
@@ -146,6 +148,52 @@ describe("the outcome hold (#491)", () => {
       since: T0 + 5,
       pending: null,
     });
+  });
+});
+
+describe("the partial outcome carries its gap (P1, this lane's own review round)", () => {
+  // A share that genuinely went out, but with a gap `prepare` counted, must
+  // not show the plain `sent` tick — see `share-progress.ts`'s header on
+  // `ShareSettled` for why. This pins the gap surviving both the immediate
+  // and the held-then-released paths, and that `sent` never carries one.
+  const gap: ShareGap = { missing: 2, partial: 0 };
+
+  it("a settle after MIN_BUSY_MS shows partial AT ONCE, with its gap attached", () => {
+    const at = T0 + MIN_BUSY_MS + 5_000;
+    expect(settle(begin("send"), "partial", at, gap)).toEqual({
+      phase: "outcome",
+      settled: "partial",
+      since: at,
+      gap,
+    });
+  });
+
+  it("a partial settle held for MIN_BUSY_MS carries its gap through the tick that releases it", () => {
+    const held = settle(begin("send"), "partial", T0 + 10, gap);
+    expect(held).toMatchObject({
+      phase: "busy",
+      pending: { settled: "partial", gap },
+    });
+    const shown = tick(held, T0 + MIN_BUSY_MS);
+    expect(shown).toEqual({
+      phase: "outcome",
+      settled: "partial",
+      since: T0 + MIN_BUSY_MS,
+      gap,
+    });
+  });
+
+  it("a plain sent settle carries no gap", () => {
+    const at = T0 + MIN_BUSY_MS + 1;
+    const shown = settle(begin("send"), "sent", at) as {
+      gap?: ShareGap;
+    };
+    expect(shown.gap).toBeUndefined();
+  });
+
+  it("partial is in SHARE_SETTLED, distinct from sent", () => {
+    expect(SHARE_SETTLED).toContain("partial");
+    expect(SHARE_SETTLED).toContain("sent");
   });
 });
 

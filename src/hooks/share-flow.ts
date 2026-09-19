@@ -10,6 +10,7 @@ import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   HIDDEN,
+  type ShareGap,
   type ShareProgress,
   type ShareProgressEvent,
   reduceShareProgress,
@@ -162,6 +163,23 @@ type BuildShareFile = (
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
+ * What tap 1 arms for tap 2: the File (plus its native staged copy, if any)
+ * and the gap counts `prepare` read off the {@link PreparedShare} that built
+ * it. Carrying `missing`/`partial` on the ARMED value, not just in `useState`
+ * (P1, this lane's own review round), is what lets `send()` know whether the
+ * File it is about to hand over has a gap: the hook clears its `missing`/
+ * `partial` state to 0 as part of the very same "shared" transition that
+ * settles the modal, so by the time a render could read them they are
+ * already zero — see the comment at the `"sent"` settle below.
+ */
+interface ArmedShare {
+  readonly file: File;
+  readonly staged: StagedShare | null;
+  readonly missing: number;
+  readonly partial: number;
+}
+
+/**
  * How to treat a `navigator.share` rejection.
  *
  * `dismissed`: the user closed the sheet (`AbortError`) — expected, not a failure
@@ -185,6 +203,31 @@ export function classifyShareError(
       return hadActivation ? "failed" : "retry";
   }
   return "failed";
+}
+
+/**
+ * Whether a File that WAS handed to the sheet still leaves a gap behind —
+ * the pure decision that picks `sent` vs `partial` at `send()`'s own settle
+ * (P1, this lane's own review round: a completed-but-incomplete share must
+ * not wear the same tick a whole one gets — `share-progress.ts`'s header on
+ * `ShareSettled` has the failure this closes).
+ *
+ * Reads the counts off the ARMED value `send()` is holding, not off this
+ * hook's `missing`/`partial` state: the success branch's own `setMissing(0)`/
+ * `setPartial(0)` already race those to 0 as part of the SAME transition that
+ * settles the modal, so by the render that settle produces they would read
+ * as whole. The armed value was written once, at `prepare` time, and cannot
+ * have raced — pulled out as a pure function so the decision is
+ * unit-testable without a renderer (#197), the same shape `classifyShareError`
+ * above already uses.
+ */
+export function sentGap(armed: {
+  readonly missing: number;
+  readonly partial: number;
+}): ShareGap | undefined {
+  return armed.missing > 0 || armed.partial > 0
+    ? { missing: armed.missing, partial: armed.partial }
+    : undefined;
 }
 
 export interface UseShareFlow {
@@ -248,7 +291,7 @@ export function useShareFlow(): UseShareFlow {
   // app cache by then, so tap 2 is one plugin call on both routes (George R5
   // P2).
   const handoffRef = useRef<ReturnType<
-    typeof createShareHandoff<{ file: File; staged: StagedShare | null }>
+    typeof createShareHandoff<ArmedShare>
   > | null>(null);
   const handoff = (handoffRef.current ??= createShareHandoff());
   // A generation token invalidating an in-flight `prepare`. Both unmount AND
@@ -390,7 +433,12 @@ export function useShareFlow(): UseShareFlow {
           if (staged !== null) void nativeShare.discard(staged);
           return;
         }
-        handoff.arm({ file, staged });
+        handoff.arm({
+          file,
+          staged,
+          missing: prepared.missing,
+          partial: prepared.partial ?? 0,
+        });
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
         setStatus("ready");
@@ -433,9 +481,15 @@ export function useShareFlow(): UseShareFlow {
     const armed = handoff.take();
     if (armed === null) {
       // Reachable only through a guard hole (ready with no armed File); surface it
-      // rather than no-op silently behind a "Share now" that does nothing.
+      // rather than no-op silently behind a "Share now" that does nothing. Routed
+      // through the same begin/settle pair every other outcome takes (P3, this
+      // lane's own review round) so the modal's invariant — every `send()`
+      // outcome ends in exactly one glyph — holds on this path too, instead of
+      // silently falling back to the menu's inline error Notice alone.
+      modal.dispatch({ type: "begin", work: "send", now: Date.now() });
       setError("failed");
       setStatus("idle");
+      modal.dispatch({ type: "settle", settled: "failed", now: Date.now() });
       return "failed";
     }
     // A reset/unmount while the sheet is open must not write state afterwards.
@@ -498,9 +552,25 @@ export function useShareFlow(): UseShareFlow {
       setPartial(0);
       // Handed to the sheet — which is all a resolve proves (see the R-B7
       // note above and `resolveProvesDelivery`): the glyph says "handed
-      // over", never "delivered". Then hold this send open until the flash
-      // has cleared, so the caller's close-on-sent lands after the glyph.
-      modal.dispatch({ type: "settle", settled: "sent", now: Date.now() });
+      // over", never "delivered". `sentGap` reads the gap off the ARMED
+      // value, not off `missing`/`partial` state (see its own docblock: the
+      // `setState`s just above already raced those to 0 as part of this same
+      // transition). A gap shows `partial`'s own mark, not the plain tick
+      // `sent` wears — the outcome the modal shows must not say "this chapter
+      // went out whole" when it did not (`share-outcome-glyph.ts`'s own
+      // header names exactly this collision for the ready-state Notice; the
+      // modal must not reintroduce it one screen later). Either way this send
+      // genuinely handed a File to the sheet, so `send()`'s own return value
+      // to the caller stays `"sent"` — only the modal's glyph differs. Then
+      // hold this send open until the flash has cleared, so the caller's
+      // close-on-sent lands after it.
+      const gap = sentGap(armed);
+      modal.dispatch({
+        type: "settle",
+        settled: gap ? "partial" : "sent",
+        gap,
+        now: Date.now(),
+      });
       await modal.hidden();
       return "sent";
     } catch (cause) {
@@ -555,6 +625,19 @@ export function useShareFlow(): UseShareFlow {
   }, [handoff, modal]);
 
   const reset = useCallback(() => {
+    // A send is irreversibly in flight: tap 2's activation is spent and the
+    // native chooser (or `navigator.share`) has already been asked, so a scrim
+    // tap or menu-close here can discard this flow's own bookkeeping but
+    // cannot cancel the outstanding call (P2, this lane's own review round —
+    // the modal this lane adds is what first puts a full-screen scrim, and its
+    // cancel affordance, over a call with no cancel). Bumping the run token
+    // below would make `send()`'s own `current()` check read false the moment
+    // the OS resolves, so a share that genuinely went out returns
+    // `"superseded"` and is dropped with NO glyph and NO Notice — reproducing
+    // the exact "succeeded silently" defect (#336/#491) this whole modal
+    // exists to fix, in the window this modal itself creates. So: no-op while
+    // `handoff.sending`, and let `send()`'s own settle end the flow instead.
+    if (handoff.sending) return;
     // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
     // a File behind the now-closed menu, and abort so one mid-encode stops the
     // worker rather than finishing for nobody.

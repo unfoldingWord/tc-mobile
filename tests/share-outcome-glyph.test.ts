@@ -288,6 +288,16 @@ describe("the sent and dismissed marks (#491)", () => {
     expect(shareSettledGlyph("failed")).toEqual(shareOutcomeGlyph("failed"));
   });
 
+  it('shareSettledGlyph("partial") is the partial mark, never the plain sent tick (P1, this lane\'s own review round)', () => {
+    // A completed-but-incomplete share must not wear the same tick a whole one
+    // gets — see `share-progress.ts`'s header on `ShareSettled` for the exact
+    // failure this closes.
+    expect(shareSettledGlyph("partial")).toEqual(shareOutcomeGlyph("partial"));
+    expect(shareSettledGlyph("partial").icon).not.toBe(
+      shareSettledGlyph("sent").icon
+    );
+  });
+
   it("the four marks a translator can see after a share are four different shapes", () => {
     const visible: ShareSettled[] = ["sent", "dismissed", "nothing", "failed"];
     const icons = visible.map((s) => shareSettledGlyph(s).icon);

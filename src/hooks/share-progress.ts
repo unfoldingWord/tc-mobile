@@ -37,10 +37,31 @@ type ShareWork = "prepare" | "send";
 
 /**
  * What the modal can show once work has settled: the hook's three error codes,
- * plus the two send outcomes a translator can act on. `retry` and `superseded`
- * are absent by construction — see the header.
+ * plus the three send outcomes a translator can act on. `retry` and
+ * `superseded` are absent by construction — see the header.
+ *
+ * `partial` (P1, this lane's own review round) is `sent` with a gap: the File
+ * WAS handed to the sheet, but the count `send()` captured on the armed value
+ * at prepare time was non-zero. Distinct from plain `sent` on purpose — a
+ * facilitator who reads a completed-but-incomplete share as the same tick a
+ * whole one gets collects a chapter believing it is whole, the exact defect
+ * `share-outcome-glyph.ts`'s own header names for the READY-state gap Notice
+ * this reuses the mark from. Reuses the `partial` mark #178 already defined
+ * (`shareOutcomeGlyph`), not a fourth glyph.
  */
-export type ShareSettled = ShareError | "sent" | "dismissed";
+export type ShareSettled = ShareError | "sent" | "partial" | "dismissed";
+
+/**
+ * The gap `partial` carries — the same two counts `PreparedShare` and
+ * `UseShareFlow` already track (whole units left out, and, for a book,
+ * segments missing inside a chapter that did ship). Present only on a
+ * `partial` settle/outcome; absent everywhere else, so a reader cannot
+ * mistake it for meaning anything on `sent`.
+ */
+export interface ShareGap {
+  readonly missing: number;
+  readonly partial: number;
+}
 
 /**
  * Every settled value, derived from a `Record` so a widened union that forgets
@@ -52,6 +73,7 @@ const EVERY_SETTLED: Record<ShareSettled, true> = {
   encoder: true,
   failed: true,
   sent: true,
+  partial: true,
   dismissed: true,
 };
 export const SHARE_SETTLED = Object.keys(
@@ -69,13 +91,19 @@ export type ShareProgress =
        * A settle that arrived before {@link MIN_BUSY_MS} had elapsed, waiting
        * for the tick that ends the hold. `null` while nothing has settled.
        */
-      readonly pending: { readonly settled: ShareSettled | null } | null;
+      readonly pending: {
+        readonly settled: ShareSettled | null;
+        /** Carried from the `settle` event that is being held (`partial` only). */
+        readonly gap?: ShareGap;
+      } | null;
     }
   | {
       readonly phase: "outcome";
       readonly settled: ShareSettled;
       /** When the outcome went up — the hold is measured from here. */
       readonly since: number;
+      /** The gap `partial` names — present only when `settled` is `"partial"`. */
+      readonly gap?: ShareGap;
     };
 
 export type ShareProgressEvent =
@@ -84,6 +112,8 @@ export type ShareProgressEvent =
       readonly type: "settle";
       /** `null`: the work ended with nothing to show (ready, or a retry). */
       readonly settled: ShareSettled | null;
+      /** Only meaningful (and only ever passed) when `settled` is `"partial"`. */
+      readonly gap?: ShareGap;
       readonly now: number;
     }
   | { readonly type: "tick"; readonly now: number }
@@ -141,13 +171,13 @@ export function reduceShareProgress(
     case "settle":
       if (state.phase !== "busy" || state.pending !== null) return state;
       if (event.now - state.since >= MIN_BUSY_MS)
-        return release(event.settled, event.now);
-      return { ...state, pending: { settled: event.settled } };
+        return release(event.settled, event.now, event.gap);
+      return { ...state, pending: { settled: event.settled, gap: event.gap } };
     case "tick":
       if (state.phase === "busy") {
         if (state.pending === null || event.now - state.since < MIN_BUSY_MS)
           return state;
-        return release(state.pending.settled, event.now);
+        return release(state.pending.settled, event.now, state.pending.gap);
       }
       if (state.phase === "outcome")
         return event.now - state.since >= OUTCOME_HOLD_MS ? HIDDEN : state;
@@ -162,8 +192,14 @@ export function reduceShareProgress(
 }
 
 /** The busy phase is over: an outcome to show, or nothing to say. */
-function release(settled: ShareSettled | null, now: number): ShareProgress {
-  return settled === null ? HIDDEN : { phase: "outcome", settled, since: now };
+function release(
+  settled: ShareSettled | null,
+  now: number,
+  gap?: ShareGap
+): ShareProgress {
+  return settled === null
+    ? HIDDEN
+    : { phase: "outcome", settled, since: now, gap };
 }
 
 /**

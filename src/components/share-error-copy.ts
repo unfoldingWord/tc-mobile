@@ -20,10 +20,16 @@ import type { ShareProgress } from "@/hooks/share-progress";
  *
  * Busy while tap 1 works: the existing preparing line for the scope. Busy
  * while tap 2 works: the sheet is opening. An outcome: `sent` and `dismissed`
- * have their own lines; the three error codes keep the SAME words the menu's
- * Notice shows once the flash clears (`shareErrorText`), so the glyph and the
- * menu never disagree. Hidden: nothing. Exhaustive with a `never` default,
- * like the table it extends.
+ * have their own lines; `partial` (P1, this lane's own review round) reuses
+ * `shareSent` — the same honesty-constrained "handed over" sentence, since a
+ * partial share still genuinely reached the sheet — followed by the SAME gap
+ * sentence the ready-state Notice already shows
+ * (`shareMissing`/`shareBookMissing`/`shareBookPartial`/
+ * `shareBookMissingAndPartial`), not a new one: one wording for "what did not
+ * make it", read here and there. The three error codes keep the SAME words
+ * the menu's Notice shows once the flash clears (`shareErrorText`), so the
+ * glyph and the menu never disagree. Hidden: nothing. Exhaustive with a
+ * `never` default, like the table it extends.
  */
 export function shareProgressText(
   progress: ShareProgress,
@@ -41,6 +47,8 @@ export function shareProgressText(
       switch (progress.settled) {
         case "sent":
           return strings.shareSent;
+        case "partial":
+          return `${strings.shareSent} ${shareGapText(progress.gap, scope)}`;
         case "dismissed":
           return strings.shareDismissed;
         case "nothing":
@@ -57,6 +65,30 @@ export function shareProgressText(
       return unhandled;
     }
   }
+}
+
+/**
+ * The `partial` outcome's gap sentence — the exact same composition the
+ * ready-state gap Notice already builds (`books-screen.tsx`'s
+ * `bookShareGapText`, `segments-screen.tsx`'s chapter-scope equivalent), read
+ * off the counts `send()` captured on the armed value rather than recomputed.
+ * One wording, called from both places, so a later tightening of the copy
+ * cannot land in one and not the other (the exact drift `strings.ts`'s own
+ * header on `shareBookPartial` warns against). Chapter scope has only the one
+ * grain (`PreparedShare.partial` is never set there — see `share-flow.ts`), so
+ * it never reads the finer count.
+ */
+function shareGapText(
+  gap: { readonly missing: number; readonly partial: number } | undefined,
+  scope: "chapter" | "book"
+): string {
+  const missing = gap?.missing ?? 0;
+  const partial = gap?.partial ?? 0;
+  if (scope === "chapter") return strings.shareMissing(missing);
+  if (missing > 0 && partial > 0)
+    return strings.shareBookMissingAndPartial(missing, partial);
+  if (missing > 0) return strings.shareBookMissing(missing);
+  return strings.shareBookPartial(partial);
 }
 
 export function shareErrorText(

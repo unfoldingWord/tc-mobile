@@ -135,6 +135,7 @@ export function shareSettledGlyph(settled: ShareSettled): ShareOutcomeGlyph {
     case "nothing":
     case "failed":
     case "sent":
+    case "partial":
     case "dismissed":
       return shareOutcomeGlyph(settled);
     case "encoder":
