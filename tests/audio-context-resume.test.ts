@@ -80,6 +80,41 @@ class FakeAudioContext {
   }
 }
 
+/**
+ * A `resume()` that hangs until told otherwise, so the #469 bound (and a
+ * rejection arriving before/after it) can be raced under `vi.useFakeTimers()`.
+ * Top-level (not scoped to one describe block) so both the original
+ * regression tests and the single-exit table-driven test below share one
+ * definition.
+ */
+class HangingAudioContext extends FakeAudioContext {
+  private readonly gate: Promise<void>;
+  private resolveGate: (() => void) | null = null;
+  private rejectGate: ((cause: unknown) => void) | null = null;
+
+  constructor(state: string) {
+    super(state);
+    this.gate = new Promise<void>((resolve, reject) => {
+      this.resolveGate = resolve;
+      this.rejectGate = reject;
+    });
+  }
+
+  async resume(): Promise<void> {
+    this.resumeCalls++;
+    await this.gate;
+    this.state = "running";
+  }
+
+  settleResumeNow(): void {
+    this.resolveGate?.();
+  }
+
+  settleResumeWithRejection(cause: unknown): void {
+    this.rejectGate?.(cause);
+  }
+}
+
 /** Fresh module (so the shared context is null) wired to this fake context. */
 async function loadAudioIo(ctx: FakeAudioContext) {
   vi.resetModules();
@@ -214,34 +249,6 @@ describe("playSamples — supersession guard (#104)", () => {
  */
 describe("playSamples — resume bound (#469)", () => {
   const samples = new Int16Array([1, 2, 3, 4]);
-
-  class HangingAudioContext extends FakeAudioContext {
-    private readonly gate: Promise<void>;
-    private resolveGate: (() => void) | null = null;
-    private rejectGate: ((cause: unknown) => void) | null = null;
-
-    constructor(state: string) {
-      super(state);
-      this.gate = new Promise<void>((resolve, reject) => {
-        this.resolveGate = resolve;
-        this.rejectGate = reject;
-      });
-    }
-
-    async resume(): Promise<void> {
-      this.resumeCalls++;
-      await this.gate;
-      this.state = "running";
-    }
-
-    settleResumeNow(): void {
-      this.resolveGate?.();
-    }
-
-    settleResumeWithRejection(cause: unknown): void {
-      this.rejectGate?.(cause);
-    }
-  }
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -543,4 +550,387 @@ describe("playSamples — resume bound (#469)", () => {
     expect(reportFailure).toHaveBeenCalledTimes(1);
     expect(reportFailure).toHaveBeenCalledWith(cause, "playback-resume");
   });
+});
+
+/**
+ * Single-exit row accounting (dev lead pick, 2026-09-19 judgment sheet,
+ * option A). Every prior round patched ONE exit of `playSamples` at a time —
+ * George r2 P3 (an early rejection and the fail-closed gate each wrote a
+ * row), Frank r1 (a rejection dropped with ZERO rows when a concurrent
+ * `resumeAudioContext()` elsewhere won the race), Frank r2 P2 @
+ * `audio-io.ts:678` (the `isStillCurrent()` supersession bail returned
+ * before ever looking at a captured rejection) and P2 @ `:694` (the gate
+ * always built its OWN synthetic `Error`, discarding a real captured
+ * cause) — and each fix left a DIFFERENT exit still wrong, the "siblings"
+ * shape named on the parked PR's judgment sheet. This table is the single
+ * rule that closes the whole class at once: every reachable exit of
+ * `playSamples`, asserting exactly one row (or zero on a clean play) and,
+ * when one is written, that it carries the REAL captured cause rather than a
+ * synthetic stand-in whenever a real cause exists.
+ *
+ * Rows 3 and 5 are Frank round-3's two open P2s, reproduced as regression
+ * rows: both were RED against `8488de3` (the head Frank reviewed) before
+ * this round's `finally`-based single exit — row 3 with zero `reportFailure`
+ * calls where one was expected, row 5 with a `reportFailure` call whose
+ * reported cause did not match the real captured rejection.
+ */
+describe("playSamples — single-exit row accounting (dev lead pick, option A, 2026-09-19)", () => {
+  const samples = new Int16Array([1, 2, 3, 4]);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    reportFailure.mockReset();
+  });
+
+  interface RowOutcome {
+    rejected: boolean;
+    sourcesCreated: number;
+    started: number;
+    ended: boolean;
+    reportCalls: number;
+    reportedCause: unknown;
+    reportedKey: string | undefined;
+  }
+
+  /**
+   * Runs one `playSamples` call to completion under a caller-supplied driver
+   * (which settles the resume race and/or flips context state and/or trips
+   * supersession, at whatever timing the scenario needs), and reports back
+   * everything a row-accounting assertion needs: whether the call rejected,
+   * how many sources were built/started, whether `onEnded` fired, and the
+   * `reportFailure` call count plus its one call's arguments (if any).
+   */
+  async function observe<C extends FakeAudioContext>(
+    ctx: C,
+    isStillCurrent: () => boolean,
+    drive: (ctx: C) => Promise<void>
+  ): Promise<RowOutcome> {
+    const { playSamples } = await loadAudioIo(ctx);
+    let ended = false;
+    const handlePromise = playSamples(samples, {
+      isStillCurrent,
+      onEnded: () => {
+        ended = true;
+      },
+    });
+    // Observed before the driver runs, so a rejection settled mid-drive is
+    // never briefly unhandled between a fake-timer tick and this line.
+    const outcome = handlePromise.then(
+      () => ({ rejected: false }) as const,
+      () => ({ rejected: true }) as const
+    );
+    await drive(ctx);
+    const result = await outcome;
+    const call = reportFailure.mock.calls[0] as [unknown, string] | undefined;
+    return {
+      rejected: result.rejected,
+      sourcesCreated: ctx.sourcesCreated.length,
+      started: ctx.sourcesCreated.filter((s) => s.started > 0).length,
+      ended,
+      reportCalls: reportFailure.mock.calls.length,
+      reportedCause: call?.[0],
+      reportedKey: call?.[1],
+    };
+  }
+
+  interface Scenario {
+    name: string;
+    run: () => Promise<{ outcome: RowOutcome; expectedCause?: unknown }>;
+    expected: {
+      rejected: boolean;
+      sourcesCreated: number;
+      started: number;
+      ended: boolean;
+      reportCalls: number;
+      reportedKey?: string;
+      /** Substring the synthetic message must contain, when no real cause is expected. */
+      syntheticMessageContains?: string;
+    };
+  }
+
+  const scenarios: Scenario[] = [
+    {
+      name: "clean play: resume resolves promptly, no rejection, still current — zero rows, source starts",
+      run: async () => ({
+        outcome: await observe(
+          new FakeAudioContext("suspended"),
+          () => true,
+          async () => {
+            await vi.runAllTimersAsync();
+          }
+        ),
+      }),
+      expected: {
+        rejected: false,
+        sourcesCreated: 1,
+        started: 1,
+        ended: false,
+        reportCalls: 0,
+      },
+    },
+    {
+      name: "superseded before the fill, no rejection — zero rows, inert handle",
+      run: async () => ({
+        outcome: await observe(
+          new FakeAudioContext("suspended"),
+          () => false,
+          async () => {
+            await vi.runAllTimersAsync();
+          }
+        ),
+      }),
+      expected: {
+        rejected: false,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 0,
+      },
+    },
+    {
+      name: "superseded before the fill, WITH an early rejection — exactly one row, the real cause, not dropped (Frank round-3 P2, audio-io.ts:678)",
+      run: async () => {
+        const ctx = new HangingAudioContext("interrupted");
+        const cause = new Error("resume rejected while already superseded");
+        const outcome = await observe(
+          ctx,
+          () => false,
+          async (c) => {
+            c.settleResumeWithRejection(cause);
+            await vi.advanceTimersByTimeAsync(0);
+          }
+        );
+        return { outcome, expectedCause: cause };
+      },
+      expected: {
+        rejected: false,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 1,
+        reportedKey: "playback-resume",
+      },
+    },
+    {
+      name: "still unusable when the bound elapses, no rejection — exactly one row, a synthetic Error, rejects (timeout)",
+      run: async () => ({
+        outcome: await observe(
+          new HangingAudioContext("interrupted"),
+          () => true,
+          async () => {
+            await vi.advanceTimersByTimeAsync(1000);
+          }
+        ),
+      }),
+      expected: {
+        rejected: true,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 1,
+        reportedKey: "playback-resume-timeout",
+        syntheticMessageContains: "did not settle within",
+      },
+    },
+    {
+      name: "still unusable, WITH an early rejection — exactly one row, the REAL cause, not a synthetic stand-in (Frank round-3 P2, audio-io.ts:694)",
+      run: async () => {
+        const ctx = new HangingAudioContext("interrupted");
+        const cause = new Error("resume rejected, context still unusable");
+        const outcome = await observe(
+          ctx,
+          () => true,
+          async (c) => {
+            c.settleResumeWithRejection(cause);
+            await vi.advanceTimersByTimeAsync(0);
+          }
+        );
+        return { outcome, expectedCause: cause };
+      },
+      expected: {
+        rejected: true,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 1,
+        reportedKey: "playback-resume-unusable",
+      },
+    },
+    {
+      name: "context usable now despite an early rejection — a concurrent resume elsewhere won — exactly one row, the real cause, NO throw, source starts (Frank round-1 P2)",
+      run: async () => {
+        const ctx = new HangingAudioContext("interrupted");
+        const cause = new Error(
+          "resume rejected, but the context is running now"
+        );
+        const outcome = await observe(
+          ctx,
+          () => true,
+          async (c) => {
+            c.state = "running";
+            c.settleResumeWithRejection(cause);
+            await vi.runAllTimersAsync();
+          }
+        );
+        return { outcome, expectedCause: cause };
+      },
+      expected: {
+        rejected: false,
+        sourcesCreated: 1,
+        started: 1,
+        ended: false,
+        reportCalls: 1,
+        reportedKey: "playback-resume",
+      },
+    },
+    {
+      name: "interrupted again DURING the post-fill yield, no rejection — exactly one row, a synthetic Error, rejects (George round-2 P2)",
+      run: async () => {
+        const ctx = new FakeAudioContext("suspended");
+        ctx.createBuffer = (
+          _channels: number,
+          length: number,
+          sampleRate: number
+        ) => ({
+          duration: length / sampleRate,
+          copyToChannel(): void {
+            setTimeout(() => {
+              ctx.state = "interrupted";
+            }, 0);
+          },
+        });
+        const outcome = await observe(
+          ctx,
+          () => true,
+          async () => {
+            await vi.runAllTimersAsync();
+          }
+        );
+        return { outcome };
+      },
+      expected: {
+        rejected: true,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 1,
+        reportedKey: "playback-resume-unusable",
+        syntheticMessageContains: "still needs resume",
+      },
+    },
+    {
+      name: "superseded AFTER the post-fill yield, no rejection — zero rows, inert handle",
+      run: async () => {
+        const ctx = new FakeAudioContext("running");
+        let superseded = false;
+        ctx.createBuffer = (
+          _channels: number,
+          length: number,
+          sampleRate: number
+        ) => ({
+          duration: length / sampleRate,
+          copyToChannel(): void {
+            setTimeout(() => {
+              superseded = true;
+            }, 0);
+          },
+        });
+        const outcome = await observe(
+          ctx,
+          () => !superseded,
+          async () => {
+            await vi.runAllTimersAsync();
+          }
+        );
+        return { outcome };
+      },
+      expected: {
+        rejected: false,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 0,
+      },
+    },
+    {
+      name: "superseded AFTER the post-fill yield, WITH an early rejection captured before the fill (context was usable then) — exactly one row, the real cause, inert handle",
+      run: async () => {
+        const ctx = new HangingAudioContext("interrupted");
+        const cause = new Error(
+          "resume rejected before the fill; superseded during it"
+        );
+        let superseded = false;
+        ctx.createBuffer = (
+          _channels: number,
+          length: number,
+          sampleRate: number
+        ) => ({
+          duration: length / sampleRate,
+          copyToChannel(): void {
+            setTimeout(() => {
+              superseded = true;
+            }, 0);
+          },
+        });
+        const outcome = await observe(
+          ctx,
+          () => !superseded,
+          async (c) => {
+            c.state = "running";
+            c.settleResumeWithRejection(cause);
+            await vi.runAllTimersAsync();
+          }
+        );
+        return { outcome, expectedCause: cause };
+      },
+      expected: {
+        rejected: false,
+        sourcesCreated: 0,
+        started: 0,
+        ended: false,
+        reportCalls: 1,
+        reportedKey: "playback-resume",
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    it(scenario.name, async () => {
+      const { outcome, expectedCause } = await scenario.run();
+      const { expected } = scenario;
+
+      expect(outcome.rejected).toBe(expected.rejected);
+      expect(outcome.sourcesCreated).toBe(expected.sourcesCreated);
+      expect(outcome.started).toBe(expected.started);
+      expect(outcome.ended).toBe(expected.ended);
+      expect(outcome.reportCalls).toBe(expected.reportCalls);
+
+      if (expected.reportCalls === 0) {
+        expect(outcome.reportedCause).toBeUndefined();
+        expect(outcome.reportedKey).toBeUndefined();
+        return;
+      }
+
+      expect(outcome.reportedKey).toBe(expected.reportedKey);
+      if (expectedCause !== undefined) {
+        // A real captured rejection was in play — the row must carry THAT
+        // exact object, never a freshly-built synthetic stand-in (Frank
+        // round-3 P2 @ audio-io.ts:694).
+        expect(outcome.reportedCause).toBe(expectedCause);
+      } else {
+        // No rejection occurred — the only cause there is to report is the
+        // synthetic one this call built for the still-unusable context.
+        expect(outcome.reportedCause).toBeInstanceOf(Error);
+        if (expected.syntheticMessageContains) {
+          expect((outcome.reportedCause as Error).message).toContain(
+            expected.syntheticMessageContains
+          );
+        }
+      }
+    });
+  }
 });
