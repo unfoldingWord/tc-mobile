@@ -142,6 +142,16 @@ Two things to know honestly: the mark appears on the Books screen only, so you
 will see it when you go back there; <!-- source: src/components/books-screen.tsx; gh issue #205 round-1 G7, accepted as product intent --> and sending has not yet been tried on a
 real phone's share sheet, so tell us if it does not open. <!-- source: gh PR for #205, "not device-verified" -->
 
+A third thing, specifically about the **save-failed** screen's share icon: the
+app keeps converting already-finished recordings to a smaller file in the
+background, and that work does not pause just because the save-failed screen
+is up. If that background work is itself failing at the same time as your
+save, it can overwrite the report you just armed before your second tap sends
+it — so on that screen only, a share that will not "stick" (turns quiet again
+on its own, or needs more than two taps) is a known limit, not something you
+did wrong. Retry the save first; if the save then succeeds, the background
+work settles and the share behaves normally again. <!-- source: src/hooks/finish-transcode.ts (module-scoped transcode sweep, no pause on SaveFailed mount); src/components/error-boundary.tsx quiesceTranscodeSweep() (the crash screen's screen-only fix, not available here because its quiesce is one-way and this screen's exit is Retry on the same page); AGENTS.md "Errors have a channel before they have copy" (SaveFailed paragraph); George R1 P2-2 on #509 -->
+
 ### Write down what the app cannot know
 
 The app's record does not say what was happening in the room. When something

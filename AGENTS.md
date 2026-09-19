@@ -219,7 +219,17 @@ crash screen does (#456, moved into its own module,
 `components/send-log-control.tsx`, so both screens share one implementation)
 — `DatabasePanel` still does not: #456 itself calls that a design call,
 since an unreachable database cannot read its own log either, and that is
-different work from wiring the funnel.
+different work from wiring the funnel. **`SaveFailed`'s Send control also sits
+on a still-live app** (unlike `ErrorBoundary`'s, which runs after
+`quiesceTranscodeSweep()` — `components/error-boundary.tsx`): the module-scoped
+transcode sweep (`hooks/finish-transcode.ts`) keeps writing while `SaveFailed`
+is up, and a live failing sweep can churn the armed share and prune the
+50-row ring before the tap that was supposed to send it lands. The crash
+screen's quiesce is one-way, on purpose, because its only exit is a reload;
+`SaveFailed`'s primary exit is Retry on the _same_ page, so copying that
+one-way quiesce would silently skip the post-retry sweep a successful Finished
+retry still owes (D3). Left as a known hole rather than a silent one — see
+#514 (George R1 P2-2 on #509).
 What still ends at `console.error` and is therefore **never written down** is
 mic/playback/record-start (`hooks/use-audio-session.ts`), the recorder's
 preview path, and share _send_ (`hooks/share-flow.ts`). Routing those is
