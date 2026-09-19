@@ -11,6 +11,7 @@ import {
 
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
+import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
@@ -51,6 +52,7 @@ import { classifyShareError } from "@/hooks/share-flow";
 import {
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
@@ -2415,14 +2417,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // Rescued off the phone. Offer a Done exit even though the decode never
           // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
           //
-          // ONLY where the resolve proves it, which on the native route it does
+          // ONLY where the resolve proves it, which on native ANDROID it does
           // not (George stand-in R4 P2, see `resolveProvesDelivery`): a chooser
           // dismissed with Back after the activity stopped resolves as success,
           // and `Done` is a SINGLE tap that drops the only copy of this
-          // recording. So on native the panel stays "held", the two-tap Discard
+          // recording. So there the panel stays "held", the two-tap Discard
           // stays the only exit, and the share sheet itself was the feedback.
-          // Losing an exit is recoverable; losing the take is not.
-          setHeldShared(resolveProvesDelivery(route));
+          // Native iOS resolves only on a completed share (#381), so it gets
+          // Done like the web does. Losing an exit is recoverable; losing the
+          // take is not.
+          setHeldShared(resolveProvesDelivery(route, readSharePlatform()));
           setHeldShareError(null);
         },
         (cause: unknown) => {
@@ -4052,8 +4056,9 @@ function SaveDecodeFailedPanel({
         // OTHER busy `Control` in the app now spins under the shared
         // `[aria-busy="true"]` CSS rule #384 added, and the retry mark is the
         // one that rule's motion is meant to animate — spinning the idle share
-        // glyph instead reads as a stuck tray, not a wait.
-        icon={sharing ? "retry" : "share"}
+        // glyph instead reads as a stuck tray, not a wait. The idle mark is
+        // the platform's own (#490), the same one the share menus draw.
+        icon={sharing ? "retry" : shareControlGlyph(readSharePlatform())}
         label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt

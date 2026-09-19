@@ -1,6 +1,7 @@
 import type { IconName } from "./icon";
 import type { NoticeTone } from "./notice-tone";
 import type { ShareError } from "@/hooks/share-flow";
+import type { ShareSettled } from "@/hooks/share-progress";
 
 /**
  * Which mark each share outcome wears (#178), as one pure table.
@@ -40,8 +41,13 @@ import type { ShareError } from "@/hooks/share-flow";
  * rather than an error code. This union is the presentation grain, which is why
  * it is named for outcomes and lives beside the icons rather than in
  * `hooks/share-flow.ts`.
+ *
+ * `sent` and `dismissed` are #491's two halves — what the modal shows once the
+ * sheet has closed. `sent` means HANDED TO THE SHEET: a resolve proves the
+ * bytes reached the OS, not that any app kept them.
  */
-export type ShareOutcome = "partial" | "nothing" | "failed";
+export type ShareOutcome =
+  "partial" | "nothing" | "failed" | "sent" | "dismissed";
 
 /**
  * Every outcome, for the exhaustiveness tests.
@@ -58,6 +64,8 @@ const EVERY_OUTCOME: Record<ShareOutcome, true> = {
   partial: true,
   nothing: true,
   failed: true,
+  sent: true,
+  dismissed: true,
 };
 export const SHARE_OUTCOMES = Object.keys(
   EVERY_OUTCOME
@@ -91,8 +99,59 @@ export function shareOutcomeGlyph(outcome: ShareOutcome): ShareOutcomeGlyph {
     // for and what the translator has already learned it means.
     case "failed":
       return { icon: "alert", tone: "alert" };
+    // Handed to the sheet (#491). The tray with a tick where the arrow was —
+    // not the bare `check`, which is the "Share now" control the person just
+    // tapped, and not `share`, which is the control. `info` is the tone the
+    // only existing success Notice already wears (`takeRecoverShared`); it
+    // decides the a11y role only — the modal keys its ink on the outcome, so
+    // success is not painted amber.
+    case "sent":
+      return { icon: "share-sent", tone: "info" };
+    // The sheet was closed before anything went out. The arrow back DOWN
+    // into the tray. Not a failure, so not `alert`: a person who changed
+    // their mind must not be shown the failure colour for it.
+    case "dismissed":
+      return { icon: "share-closed", tone: "info" };
     default: {
       const unhandled: never = outcome;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * The mark AND tone for what the share modal shows once work has settled
+ * (#491) — the bridge from `ShareSettled` to the table above.
+ *
+ * Exhaustive with a `never` default, like `shareErrorGlyph` below. Two
+ * choices made here rather than there, both reusing an EXISTING table entry
+ * by name instead of widening `ShareOutcome` (#178's own union) for a mark
+ * that is not one of its three outcomes: `encoder` gets the `failed` entry
+ * EXPLICITLY — `shareErrorGlyph` leaves it `undefined` so `Notice` falls back
+ * to the alert tone's own triangle, but the modal has no tone default to fall
+ * back to, so the identical mark is returned by name. `unproven` (Frank
+ * a446708 P2, #491) gets `dismissed`'s entry — the same neutral, non-alarming
+ * `info`-toned mark, on purpose: a resolve this platform cannot vouch for
+ * must not wear `sent`'s success tick, and inventing a fifth mark for one
+ * platform/route combination would widen this lane past what #178 scoped.
+ * What tells `unproven` apart from an actual dismissal is its OWN text
+ * (`shareProgressText`), not the glyph. Not a fourth (or fifth) mark — the
+ * same choice #457 made, made visible.
+ */
+export function shareSettledGlyph(settled: ShareSettled): ShareOutcomeGlyph {
+  switch (settled) {
+    case "nothing":
+    case "failed":
+    case "sent":
+    case "partial":
+    case "dismissed":
+      return shareOutcomeGlyph(settled);
+    case "encoder":
+      return shareOutcomeGlyph("failed");
+    case "unproven":
+      return shareOutcomeGlyph("dismissed");
+    default: {
+      const unhandled: never = settled;
       return unhandled;
     }
   }

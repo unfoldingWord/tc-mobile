@@ -37,7 +37,10 @@ export type IconName =
   | "sun"
   | "moon"
   | "share-partial"
-  | "share-empty";
+  | "share-empty"
+  | "share-sent"
+  | "share-closed"
+  | "share-android";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -508,6 +511,98 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinecap="round"
       strokeLinejoin="round"
     />
+  ),
+  /* The two outcomes a share can end in once the sheet has closed (#491):
+     handed over, and dismissed. Same tray family as the three above, for the
+     same reason — five marks that read as one vocabulary, each saying what
+     it means by what happens to the arrow.
+
+     `share-sent`: the tray with a TICK where the arrow was. Not the bare
+     `check` (that is the "Share now" control the person just tapped, and a
+     success wearing the control's own mark says "tap this" rather than "this
+     happened"), and not the plain `share`. It means HANDED TO THE SHEET and
+     nothing further — a resolve proves the bytes reached the OS, not that
+     any app kept them (`resolveProvesDelivery`), so the copy under it stops
+     there too.
+
+     `share-closed`: the arrow pointing DOWN into the tray — it came back,
+     nothing left. Not `back` (a control glyph). Shown for a sheet the person
+     closed; on Android native the plugin can resolve a Back after the
+     activity stopped as a success, so this mark is the clean-cancel case
+     only, and that hole is documented where it lives, not papered over here.
+
+     Neither has been shown to a non-reader. The recognition check at the
+     training (#249) is the acceptance evidence for both, as #178 already
+     says for the three above. Drawn at 48px (the modal) — check them there
+     before claiming anything about legibility. */
+  "share-sent": (
+    <>
+      <path
+        d="M7.6 8.2 L10.4 11 L15.2 4.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  "share-closed": (
+    <>
+      <path
+        d="M11 4 L11 13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7.7 10 L11 13.3 L14.3 10"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  /* Android's own share glyph — three discs joined by two strokes, the shape
+     Material draws and every Android phone has already taught (#490, decided
+     2026-09-19). The Android BUILD's Share control wears this; iOS and the
+     web keep the tray above, because on those the tray is the shape the
+     platform teaches. The outcome marks stay one tray family on every build:
+     the decision names the control only, and a second family of outcome
+     glyphs would double the surface #249 has to check. Hand-rolled on the
+     same 22-unit grid, `currentColor`, no icon font. */
+  "share-android": (
+    <>
+      <path
+        d="M6.5 11 L15.5 5 M6.5 11 L15.5 17"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="15.5" cy="5" r="2.2" fill="currentColor" />
+      <circle cx="6.5" cy="11" r="2.2" fill="currentColor" />
+      <circle cx="15.5" cy="17" r="2.2" fill="currentColor" />
+    </>
   ),
 };
 

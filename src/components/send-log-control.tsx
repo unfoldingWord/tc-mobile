@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
+import { readSharePlatform } from "@/hooks/share-target";
 import { Control } from "./control";
+import { shareControlGlyph } from "./control-affordance";
 import { Notice } from "./notice";
 import { strings } from "./strings";
 
@@ -66,14 +68,28 @@ export function SendLogControl() {
         ? strings.shareFailureLogFailed
         : null;
 
+  // The platform's own mark (#490), not a hardcoded tray — `control-affordance
+  // .ts`'s own header names this control as one of the three that must share
+  // it (George r1 P3-4, #491): on the Android APK a crash/save-failed screen
+  // showed the tray here while every ≡ menu showed three dots. Overridden the
+  // same way `failure-log-panel.tsx` is (Frank at `238820a` P2, #491) when
+  // the last send was unconfirmed.
+  const glyph = share.sendUnconfirmed
+    ? "share-closed"
+    : shareControlGlyph(readSharePlatform());
+
   return (
     <>
       {share.status === "ready" ? (
-        <Control icon="share" label={strings.shareSend} onClick={onSend} />
+        <Control icon={glyph} label={strings.shareSend} onClick={onSend} />
       ) : (
         <Control
-          icon="share"
-          label={strings.shareFailureLog}
+          icon={glyph}
+          label={
+            share.sendUnconfirmed
+              ? strings.shareFailureLogUnconfirmed
+              : strings.shareFailureLog
+          }
           variant="quiet"
           onClick={onPrepare}
         />

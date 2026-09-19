@@ -51,6 +51,38 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
+- **What the screen shows while sharing, and after.** Share is two taps: the
+  first gets the file ready, the second ("Share now", the big tick) opens the
+  phone's share sheet. While the app is working, and while the sheet is open,
+  a large spinning ring sits over the menu. When the sheet closes the app
+  shows one big picture for about two seconds, then goes back to the list:
+  - a **tray with a tick** means the file was handed to the phone's share
+    sheet. The app cannot see whether the app you chose actually received or
+    sent it — if that matters, check there.
+  - a **tray with a broken rim** means the file WAS handed to the phone's
+    share sheet, but some of the chapter or book was left out (a segment with
+    no recording, or a whole missing chapter in a book) — the same picture the
+    Share menu already shows before you tap Share now. The words under the
+    picture say what was left out. Check the recording before treating it as
+    complete.
+  - a **tray with a down arrow** means one of two things, and the words under
+    the picture say which: on iPhone, in the browser, or when it says the
+    sheet was closed, it means exactly that — nothing was sent, share again
+    when ready. **On the installed Android app**, the same picture can also
+    mean the app could not tell whether the sheet was actually dismissed or
+    the file went out — Android's own share screen does not always report
+    back which happened. If the words say the app could not confirm what
+    happened, do not assume nothing was sent: check the app you meant to send
+    it to (WhatsApp, Drive, whichever was chosen) before sharing again, so the
+    same chapter or book is not sent twice. <!-- source: src/hooks/share-target.ts resolveProvesDelivery, src/hooks/share-flow.ts resolveSendOutcome, src/components/strings.ts shareUnproven (Frank a446708 P2, #491); not device-verified as of 2026-09-19 -->
+  - a **bare tray** (no arrow) means there was nothing recorded to share yet.
+  - a **red triangle** means it failed — try again. The menu keeps the message
+    after the picture goes.
+
+  On Android the Share button itself is Android's own share picture (three
+  joined dots); on iPhone and in the browser it is the box with an arrow. It
+  does the same thing on both. <!-- source: src/components/share-outcome-glyph.ts (the marks), src/hooks/share-progress.ts (MIN_BUSY_MS, OUTCOME_HOLD_MS = 1800 ms, ShareSettled's "partial" outcome), src/components/control-affordance.ts shareControlGlyph (#490, decided 2026-09-19); not device-verified as of 2026-09-19 -->
+
 - **Known problem: Share may fail on the installed Android app right now**,
   with a message like "Could not share this chapter/book. Try again." This
   was seen on 2026-09-14 and a fix is being worked on. <!-- source: gh issue #336, open as of 2026-09-15 --> On the Chrome web
