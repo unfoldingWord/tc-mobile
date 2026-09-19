@@ -40,6 +40,16 @@ import { describe, expect, it } from "vitest";
 //   REQUEST_CHANGES              (bare, its own line)
 // and it must REJECT a line that merely mentions the words in prose, and a
 // transcript that only echoes the instruction asking for a verdict.
+//
+// #348 round 3 (Frank at 0fa4d99, two P1s) removed the round-2 tail window
+// entirely: a verdict is now read ONLY from a completion artifact each
+// script wrote for this run and cleared before starting — Frank's
+// -o/--output-last-message file (now also cleared before every invocation,
+// closing a stale-artifact false PASS across reruns at the same sha), and
+// George's extracted `--output-format json` "text" field (replacing the
+// live-streamed transcript window George previously relied on). triage.sh
+// was updated to match: its Verdicts table reads from the same isolated
+// *.final-message.txt artifacts, not the .md report/transcript files.
 
 const REPO_ROOT = path.join(import.meta.dirname, "..");
 const REVIEW_DIR = path.join(REPO_ROOT, "scripts", "review");
@@ -232,25 +242,24 @@ describe("verdict_token (scripts/review/_verdict.sh)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // #348 round 2 (Frank at c7b46e3, P1 — overruling round 1's REFUTE): the
-  // old verdict_token() took the LAST anchored verdict line found ANYWHERE in
-  // the file. A model that writes a premature/draft "Verdict: APPROVE" line,
-  // then keeps investigating, then stalls or dies before a real final answer,
-  // produces a file whose ONLY anchored line is that draft — the old
-  // whole-file search read it as a clean pass. The fix bounds the search to
-  // the tail (VERDICT_TAIL_LINES non-blank lines from the end,
-  // scripts/review/_verdict.sh) so a draft followed by real further
-  // investigation — which runs to many more lines than that in every
-  // archived report read for this fix — falls outside the window.
-  it("REJECTS an early anchored verdict line that is followed by many more lines of investigation (#348 round 2's exact mechanism — a draft verdict, not a final one)", () => {
-    const lines = ["Some initial findings.", "", "Verdict: APPROVE", ""];
-    for (let i = 1; i <= 15; i++) {
-      lines.push(`Actually, let me keep investigating point ${i} further.`);
-    }
-    const result = verdictTokenOf(lines.join("\n") + "\n");
-    expect(result.status).toBe(1);
-    expect(result.stdout.trim()).toBe("");
-  });
+  // #348 round 2 (Frank at c7b46e3, P1 — overruling round 1's REFUTE) added a
+  // VERDICT_TAIL_LINES tail window here so a draft verdict followed by real
+  // further investigation would fall outside it before a stall. #348 round 3
+  // (Frank at 0fa4d99, P1 #2) named that window itself as the defect: a
+  // distance-based heuristic, not a completion-based guarantee (a draft
+  // verdict closer to a stall than the window's size still passed, and the
+  // round-2 test only proved the one chosen distance). The window is gone —
+  // verdict_token() no longer defends against "draft, then more
+  // investigation, then a stall" at all; THE ONE RULE moves that defense to
+  // the CALLER instead (scripts/review/_verdict.sh's top comment): both
+  // frank.sh and george.sh now hand verdict_token() a file that is ONLY ever
+  // populated with a genuine completion (codex's -o file; George's extracted
+  // --output-format json "text" field), cleared before every run, so a
+  // draft-then-stall scenario leaves that file absent or empty rather than
+  // containing an early anchored line for a window to have to out-run. The
+  // entry-path tests below (frank.sh's "premature draft, then stall" case,
+  // george.sh's JSON-completion cases) now carry that coverage instead of a
+  // unit-level window test.
 
   // George's own reports are NOT guaranteed to end on the verdict line
   // itself — confirmed directly (not guessed) in two archived reports under
@@ -329,16 +338,23 @@ describe("triage.sh entry path (real subprocess)", () => {
     }
   });
 
-  it("reads a real anchored verdict for one reviewer and 'not run' for the missing other", () => {
+  it("reads a real anchored verdict for one reviewer and 'not run' for the missing other (#348 round 3: verdict read from the isolated *.final-message.txt artifact, not the .md report)", () => {
     const dir = makeTempRepo();
     try {
       mkdirSync(path.join(dir, ".review"), { recursive: true });
       // The finding line matches extract()'s existing frank-shape regex so
       // this fixture doesn't trip the separate, out-of-scope #220 item 1
       // (extract()'s grep/sed/awk pipe aborts under pipefail on zero
-      // matches) — this test is only about the Verdicts table.
+      // matches) — this test is only about the Verdicts table. The .md
+      // report carries the findings text; the verdict itself now comes from
+      // a separate final-message file, matching frank.sh's/george.sh's own
+      // gate exactly.
       writeFileSync(
         path.join(dir, ".review", "frank-test0001.md"),
+        "1. **P1** — none.\n\nVerdict: APPROVE\n"
+      );
+      writeFileSync(
+        path.join(dir, ".review", "frank-test0001.final-message.txt"),
         "1. **P1** — none.\n\nVerdict: APPROVE\n"
       );
       const result = runTriage(dir, "2");
@@ -369,6 +385,10 @@ describe("triage.sh entry path (real subprocess)", () => {
         path.join(dir, ".review", "frank-test0002.md"),
         "1. **P1** — none.\n\nVerdict: APPROVE\n\nFollow-up note: the team can decide later whether to APPROVE or REQUEST_CHANGES the deferred item.\n"
       );
+      writeFileSync(
+        path.join(dir, ".review", "frank-test0002.final-message.txt"),
+        "1. **P1** — none.\n\nVerdict: APPROVE\n\nFollow-up note: the team can decide later whether to APPROVE or REQUEST_CHANGES the deferred item.\n"
+      );
       const result = runTriage(dir, "3");
       expect(result.status).toBe(0);
       const outFile = result.stdout.match(
@@ -379,6 +399,36 @@ describe("triage.sh entry path (real subprocess)", () => {
         encoding: "utf8",
       });
       expect(body).toContain("| Frank  | APPROVE |");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads 'not run' when a reviewer's .md report exists but its final-message artifact does not (a failed/stalled run leaves a transcript behind but never a completion artifact — #348 round 3)", () => {
+    const dir = makeTempRepo();
+    try {
+      mkdirSync(path.join(dir, ".review"), { recursive: true });
+      // Models the exact shape a FAILED frank.sh/george.sh run leaves on
+      // disk: the tee'd/report file contains a draft verdict followed by
+      // more investigation (frank.sh's own STUB_CODEX_DRAFT_THEN_STALL
+      // shape), but the isolated final-message file was never (re)written
+      // because the run never reached genuine completion. The triage table
+      // must agree with the reviewer's own exit code (3, a failure) and say
+      // "not run" — not resurrect a verdict from the leftover transcript.
+      writeFileSync(
+        path.join(dir, ".review", "frank-test0003.md"),
+        "1. **P1** — none.\n\nVerdict: APPROVE\n\nActually, let me keep investigating this further.\n"
+      );
+      const result = runTriage(dir, "4");
+      expect(result.status).toBe(0);
+      const outFile = result.stdout.match(
+        /Triage skeleton: (\S+)/
+      )?.[1] as string;
+      const body = execFileSync("cat", [outFile], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+      expect(body).toContain("| Frank  | not run |");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -429,31 +479,50 @@ if [ -n "\${STUB_CODEX_DRAFT_THEN_STALL:-}" ]; then
 fi
 `;
 
+// Test stub for grok --output-format json (#348 round 3). george.sh always
+// passes --output-format json now, and reads its verdict ONLY from the
+// "text" field of the single JSON completion object this stub writes to
+// stdout — never from stderr, never from a live-streamed tail. Real grok's
+// json-mode contract (probed directly, round 2 and again round 3 via a live
+// smoke call): exactly one JSON object, printed once, at genuine completion.
+//
+// STUB_GROK_JSON_TEXT carries the desired "text" field value (may contain
+// newlines — env vars here are set on the spawned process's env object
+// directly, never shell-parsed, so no escaping is needed). It is JSON-encoded
+// by a small embedded node call rather than hand-escaped in bash, since a
+// real reviewer's final answer routinely contains quotes and backticks.
 const STUB_GROK = `#!/usr/bin/env bash
-# Test stub for grok. Real grok does NOT echo its prompt file back (observed
-# directly in archived reports — george-*.md starts on the model's own
-# analysis, never on prompt text), so this stub exercises the OTHER
-# self-match shape #220 names instead: prose that merely mentions both verdict
-# words without a real anchored verdict line.
-if [ -n "\${STUB_GROK_PROSE_ONLY:-}" ]; then
-  echo "Whatever we conclude, whether to APPROVE or REQUEST_CHANGES is ultimately a judgment call for the team."
+if [ -n "\${STUB_GROK_STDERR_DRAFT:-}" ]; then
+  # #348 round 3 (Frank at 0fa4d99, P1 #2)'s "streamed part": a
+  # verdict-shaped line landing somewhere OTHER than the completion object's
+  # own "text" field — grok's own logging/tool-call chatter on stderr, not a
+  # genuine final answer. Must never be read as a verdict.
+  printf 'Verdict: APPROVE\\n' >&2
 fi
-if [ -n "\${STUB_GROK_VERDICT:-}" ]; then
-  printf 'Some findings here.\\n\\n**Verdict:** %s\\n' "$STUB_GROK_VERDICT"
+
+if [ -n "\${STUB_GROK_NO_OUTPUT:-}" ]; then
+  # A genuine stall: nothing is ever printed to stdout — no completion
+  # object at all.
+  exit 0
 fi
-if [ -n "\${STUB_GROK_DRAFT_THEN_STALL:-}" ]; then
-  # #348 round 2's exact failure shape, George's side: a premature/draft
-  # verdict, then more investigation, then the run stalls before a genuine
-  # final answer — with grok's own streaming transcript (there is no
-  # separate final-message file for grok, george.sh's REPORT captures the
-  # only output) as the sole record. verdict_token()'s tail window
-  # (scripts/review/_verdict.sh) must not reach back past real further
-  # investigation to find the earlier draft.
-  printf '**Verdict:** APPROVE\\n\\n'
-  for i in $(seq 1 15); do
-    printf 'Continuing investigation, line %s of further analysis...\\n' "$i"
-  done
+
+if [ -n "\${STUB_GROK_MALFORMED_JSON:-}" ]; then
+  printf '{"text": "Verdict: APPROVE"'  # deliberately unterminated
+  exit 0
 fi
+
+if [ -n "\${STUB_GROK_NO_TEXT_FIELD:-}" ]; then
+  printf '{"stopReason": "end_turn"}\\n'
+  exit 0
+fi
+
+if [ -n "\${STUB_GROK_JSON_TEXT+x}" ]; then
+  node -e 'process.stdout.write(JSON.stringify({ text: process.env.STUB_GROK_JSON_TEXT, stopReason: "end_turn" }))'
+  exit 0
+fi
+
+echo "test stub grok: no STUB_GROK_* scenario selected" >&2
+exit 1
 `;
 
 function makeStubBin(scripts: Record<string, string>): string {
@@ -578,17 +647,53 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
       { codex: STUB_CODEX }
     );
   });
+
+  it("FAILS a rerun at the SAME sha when codex writes no final message, even though a stale APPROVE from an earlier run at this exact sha is still on disk (#348 round 3, P1 #1 — the stale-artifact false PASS)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+          cwd: dir,
+          encoding: "utf8",
+        }).trim();
+        const lastMsgPath = path.join(
+          dir,
+          ".review",
+          `frank-${sha}.final-message.txt`
+        );
+        mkdirSync(path.dirname(lastMsgPath), { recursive: true });
+        // Pre-seed a stale artifact from an earlier, successful run at this
+        // exact sha — the concrete scenario Frank's own P1 named: a rerun
+        // whose codex produces no final message must not silently inherit
+        // this leftover approval.
+        writeFileSync(lastMsgPath, "Verdict: APPROVE\n");
+
+        // This run's stub codex only echoes the prompt back (no
+        // STUB_CODEX_VERDICT set), so it never (re)writes the -o file —
+        // modeling a genuine stall on the same sha as the stale file above.
+        const result = runBash([FRANK_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({ PATH: `${stubBin}:${process.env.PATH}` }),
+        });
+
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: Frank produced no verdict — stalled or cancelled."
+        );
+      },
+      { codex: STUB_CODEX }
+    );
+  });
 });
 
-describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
-  it("FAILS the run when grok's output only mentions the verdict words in prose (#220's prose shape)", () => {
+describe("george.sh entry path (real subprocess, stub grok --output-format json on PATH, #348 round 3)", () => {
+  it("FAILS the run when grok's completion JSON has no 'text' field", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([GEORGE_SH, baseSha], {
           cwd: dir,
           env: cleanEnv({
             PATH: `${stubBin}:${process.env.PATH}`,
-            STUB_GROK_PROSE_ONLY: "1",
+            STUB_GROK_NO_TEXT_FIELD: "1",
           }),
         });
         expect(result.status).toBe(3);
@@ -600,14 +705,99 @@ describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
     );
   });
 
-  it("passes with a real anchored verdict line", () => {
+  it("FAILS the run when grok's completion JSON is truncated/malformed", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([GEORGE_SH, baseSha], {
           cwd: dir,
           env: cleanEnv({
             PATH: `${stubBin}:${process.env.PATH}`,
-            STUB_GROK_VERDICT: "REQUEST_CHANGES",
+            STUB_GROK_MALFORMED_JSON: "1",
+          }),
+        });
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass."
+        );
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  it("FAILS the run when grok produces no output at all (a genuine stall — no completion object ever printed)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_GROK_NO_OUTPUT: "1",
+          }),
+        });
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass."
+        );
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  it("FAILS the run when a verdict-shaped line appears only on stderr, never in the completion JSON's own 'text' field (#348 round 3, P1 #2 — the 'streamed part' must never be read for a verdict)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_GROK_JSON_TEXT:
+              "Some findings so far. Still need to check one more call site before concluding.",
+            STUB_GROK_STDERR_DRAFT: "1",
+          }),
+        });
+        // $REPORT (george.sh) DOES carry the stderr "Verdict: APPROVE" line,
+        // in its own clearly-labelled diagnostic section — proving this is
+        // not the #348-round-1 "nothing captured at all" shape. The run must
+        // still fail, because verdict_token() is handed only the extracted
+        // "text" field, which has no anchored verdict line.
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass."
+        );
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  it("FAILS the run when the completion JSON's 'text' field only mentions the verdict words in prose (#220's prose shape, now inside the extracted final answer)", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_GROK_JSON_TEXT:
+              "Whatever we conclude, whether to APPROVE or REQUEST_CHANGES is ultimately a judgment call for the team.",
+          }),
+        });
+        expect(result.status).toBe(3);
+        expect(result.stderr).toContain(
+          "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass."
+        );
+      },
+      { grok: STUB_GROK }
+    );
+  });
+
+  it("passes with a real anchored verdict line in the completion JSON's 'text' field", () => {
+    withReviewFixture(
+      ({ dir, baseSha, stubBin }) => {
+        const result = runBash([GEORGE_SH, baseSha], {
+          cwd: dir,
+          env: cleanEnv({
+            PATH: `${stubBin}:${process.env.PATH}`,
+            STUB_GROK_JSON_TEXT:
+              "Some findings here.\n\n**Verdict:** REQUEST_CHANGES\n",
           }),
         });
         expect(result.status).toBe(0);
@@ -617,24 +807,19 @@ describe("george.sh entry path (real subprocess, stub grok on PATH)", () => {
     );
   });
 
-  it("FAILS the run when grok writes a premature draft verdict, keeps investigating, then stalls before a real final answer (#348 round 2, P1 — overrules round 1's REFUTE)", () => {
+  it("passes with a real verdict line followed by one short trailing wrap-up sentence (the archived real George report shape)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
         const result = runBash([GEORGE_SH, baseSha], {
           cwd: dir,
           env: cleanEnv({
             PATH: `${stubBin}:${process.env.PATH}`,
-            STUB_GROK_DRAFT_THEN_STALL: "1",
+            STUB_GROK_JSON_TEXT:
+              "## Verdict\n\n**REQUEST_CHANGES**\n\nP2-1 is a real contract bug; P3s can go to issues.\n",
           }),
         });
-        // The transcript's ONLY anchored line is the draft "**Verdict:**
-        // APPROVE" — the old whole-file verdict_token() would have found
-        // it. It must now fall outside the tail window (15 more non-blank
-        // lines of "investigation" follow it) and the run must fail.
-        expect(result.status).toBe(3);
-        expect(result.stderr).toContain(
-          "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass."
-        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain("Report: ");
       },
       { grok: STUB_GROK }
     );

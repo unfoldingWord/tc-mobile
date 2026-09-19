@@ -25,6 +25,20 @@ SHA="$(git rev-parse --short HEAD)"
 REPORT="$OUT_DIR/george-$SHA.md"
 DIFF_FILE="$OUT_DIR/diff-$SHA.patch"
 PROMPT_FILE="$OUT_DIR/george-prompt-$SHA.txt"
+# The completion artifact (#348 round 3) — grok's own `--output-format json`
+# object, George's equivalent of Frank's -o/--output-last-message file. Never
+# matches the "george-*.md" glob triage.sh's `ls -t .review/george-*.md` uses
+# to find the latest report, so it is never picked up as if it were one.
+JSON_OUT="$OUT_DIR/george-$SHA.completion.json"
+# The model's own final answer, extracted from JSON_OUT's "text" field —
+# what verdict_token() below reads, and ONLY what it reads. Same non-".md"
+# naming reasoning as JSON_OUT.
+FINAL_MSG="$OUT_DIR/george-$SHA.final-message.txt"
+# grok's stderr for this run — diagnostic only (whatever logging or
+# tool-call chatter it writes there), archived in $REPORT for a human to read
+# on a failed run, but NEVER consulted for a verdict. See the invocation
+# below for why that separation matters.
+STDERR_LOG="$OUT_DIR/george-$SHA.stderr.log"
 git diff "$BASE"...HEAD > "$DIFF_FILE"
 
 read -r -d '' PROMPT_TEMPLATE <<'PROMPT_EOF' || true
@@ -85,38 +99,107 @@ echo "George (Reviewer B, deep-tree) reviewing $BRANCH against $BASE..."
 echo "Prompt: $PROMPT_FILE ($(wc -c < "$PROMPT_FILE") bytes)"
 TREE_BEFORE="$(snapshot_tree)"
 
-# --prompt-file, not `-p "$(cat ...)"`. The diff is embedded in the prompt, so
-# passing it as an argv string blows past ARG_MAX on any real change (a 35-file
-# range produced a 135KB prompt and "Argument list too long"). A file has no
-# such limit.
-grok --prompt-file "$PROMPT_FILE" \
+# #348 round 3 (Frank at 0fa4d99, P1 #2): the old VERDICT_TAIL_LINES tail
+# window on George's live-streamed transcript was a distance-based heuristic,
+# not a completion-based guarantee — a draft verdict fewer lines from a stall
+# than the window's size would still read as a clean pass (scripts/review/
+# _verdict.sh has the full history). THE ONE RULE now: a verdict is read only
+# from a completion artifact this run wrote, cleared before the tool starts —
+# never from a window inside a live stream.
+#
+# `--output-format json` is grok's equivalent of Frank's
+# -o/--output-last-message: confirmed directly (round 2, and again round 3
+# via a live smoke call — `grok -p "..." --output-format json`) that it
+# prints exactly one JSON object, once, at genuine completion, whose own
+# "text" field is the model's final answer. Labeled assumption: that smoke
+# call was a trivial, tool-free `-p` prompt, not a full --prompt-file run
+# with --allow read_file/grep/list_dir under tool use — a real deep-tree run
+# was out of scope for this round's smoke, so the json-format contract is
+# confirmed for the flag itself but not yet observed end-to-end through this
+# exact invocation shape.
+#
+# $JSON_OUT is removed before every invocation, same reasoning as Frank's
+# $LAST_MSG (frank.sh) — a stale completion object from an earlier run at
+# this SHA must never be mistaken for this run's own answer.
+#
+# Losing today's live-streamed stdout costs nothing: per the coordinator
+# (2026-09-19), the George runners that watch for a stall already watch
+# ~/.grok/logs/unified.jsonl for a quiet PID, not stdout — grok goes quiet on
+# stdout for 5-10 minutes at a time between tool loops regardless, so no
+# liveness signal this harness actually depends on is lost here. stderr is
+# still captured, to $STDERR_LOG, for a human to read on a failed run — but,
+# per THE ONE RULE, never for a verdict (see the extraction step below).
+rm -f "$JSON_OUT"
+grok --prompt-file "$PROMPT_FILE" --output-format json \
   --allow read_file --allow grep --allow list_dir \
-  --cwd "$(pwd)" </dev/null 2>&1 | tee "$REPORT"
+  --cwd "$(pwd)" </dev/null >"$JSON_OUT" 2>"$STDERR_LOG"
 
 assert_tree_unchanged "$TREE_BEFORE"
 
-# Narration-only output means the session stalled or was cancelled. It is not
-# an approval, and it must not be read as one. verdict_token()
+# Extract the model's own final answer from $JSON_OUT's "text" field — the
+# ONLY thing verdict_token() below is allowed to read. node -e, not jq: this
+# script did not already depend on jq before this fix. A missing/unreadable
+# file, invalid/truncated JSON, and a missing or non-string "text" field all
+# fail the exact same way — nothing is written to $FINAL_MSG, so it is either
+# absent or empty, and the check below reads that as "no verdict" rather than
+# falling back to anything else this run produced (the raw JSON, $STDERR_LOG,
+# the prompt file) — the same fail-closed contract as Frank's missing -o file.
+node -e '
+  const fs = require("fs");
+  let raw;
+  try {
+    raw = fs.readFileSync(process.argv[1], "utf8");
+  } catch {
+    process.exit(1);
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    process.exit(1);
+  }
+  if (typeof data.text !== "string" || data.text.trim().length === 0) {
+    process.exit(1);
+  }
+  process.stdout.write(data.text);
+' "$JSON_OUT" > "$FINAL_MSG" || : > "$FINAL_MSG"
+
+# $REPORT is the human-readable artifact triage.sh's extract() parses for
+# P1/P2/P3 findings, and what a person reads on a failed run — it is allowed
+# to carry more than the isolated final answer (the stderr section below), on
+# purpose, as a diagnostic aid. verdict_token() is NEVER pointed at $REPORT
+# for that exact reason: stderr can carry incidental verdict-shaped noise
+# (grok's own logging, a tool-call echo) that is not the model's real final
+# answer, and reading it from here instead of $FINAL_MSG would reopen the
+# same false-PASS shape this fix closes.
+{
+  if [ -s "$FINAL_MSG" ]; then
+    cat "$FINAL_MSG"
+  else
+    echo "(no final message extracted from $JSON_OUT — see raw JSON and stderr below)"
+    echo
+    echo "## Raw completion JSON"
+    echo
+    cat "$JSON_OUT" 2>/dev/null || echo "(missing)"
+  fi
+  if [ -s "$STDERR_LOG" ]; then
+    echo
+    echo "---"
+    echo "## Raw stderr (diagnostic only — grok's own logging/tool-call"
+    echo "## chatter, NOT part of the reviewed answer; never read for a"
+    echo "## verdict, #348 round 3)"
+    echo
+    cat "$STDERR_LOG"
+  fi
+} > "$REPORT"
+
+# Narration-only or absent output means the session stalled or was cancelled.
+# It is not an approval, and it must not be read as one. verdict_token()
 # (scripts/review/_verdict.sh) anchors to a standalone verdict LINE, not a
 # substring match — #220's prose shape ("whether to APPROVE or
-# REQUEST_CHANGES") cannot satisfy it, and neither could a future George CLI
-# version that starts echoing its prompt back the way Codex's does (#348).
-#
-# #348 round 2: an anchored line is not enough either — a premature draft
-# verdict followed by more investigation, with the run then stalling before a
-# real final answer, is a single anchored line sitting earlier in the file,
-# and a whole-file search would still find it. Unlike Frank/codex, grok has no
-# flag that isolates just the model's own last message into its own file
-# (`grok --output-format json` does — probed directly, one JSON object with a
-# "text" field holding the model's own final content once the run truly ends
-# — but only once, at the very end, with none of today's live streaming to
-# stdout; losing that live view breaks the stall-watching workflow this
-# harness is run under, so it is not adopted here). verdict_token() instead
-# bounds its own search to the tail of whatever file it is given
-# (VERDICT_TAIL_LINES non-blank lines from the end, scripts/review/
-# _verdict.sh) — a draft-then-more-investigation transcript runs well past
-# that window before it stalls, in every archived report read for this fix.
-if ! verdict_token "$REPORT" >/dev/null; then
+# REQUEST_CHANGES") cannot satisfy it — and, per THE ONE RULE above, it is
+# handed ONLY $FINAL_MSG, never $REPORT or $STDERR_LOG.
+if ! verdict_token "$FINAL_MSG" >/dev/null; then
   echo >&2
   echo "FAILED RUN: George produced no verdict — stalled or cancelled, not a pass." >&2
   exit 3

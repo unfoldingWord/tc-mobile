@@ -194,9 +194,22 @@ earlier project and are handled in the scripts.
   forbidden.
 - **Prompts over ~14KB are offloaded to a file** the model must read back — so
   never tell it "you have no tools", or it cannot recover its own prompt.
-- **Output ending on narration is a stalled run, not a pass.** Require that the
-  final message be the complete report, and treat narration-only output as a
-  retry.
+- **The verdict is read from `--output-format json`'s completion object, not
+  from live-streamed stdout** (#348 round 3). Confirmed directly (round 2,
+  and again round 3 via a live smoke call): `--output-format json` prints
+  exactly one JSON object, once, at genuine completion, whose own `"text"`
+  field is the model's final answer — grok's equivalent of Codex's
+  `-o/--output-last-message`. `george.sh` captures that object to its own
+  file, cleared before every run, extracts `"text"`, and `verdict_token()`
+  reads **only** that extracted text — never the report file (which may also
+  carry diagnostic stderr) and never a window over a live transcript. See
+  `scripts/review/_verdict.sh` for the full history of why the file's
+  previous distance-based tail-window approach was replaced.
+- **Losing live-streamed stdout costs nothing.** The runners that watch a
+  George run for a stall watch `~/.grok/logs/unified.jsonl` for a quiet PID,
+  not stdout — grok goes quiet on stdout for 5-10 minutes at a stretch between
+  tool loops regardless of output format, so no liveness signal this harness
+  depends on was lost by moving off streamed stdout.
 - George reads **files from disk** via `--cwd`, not the committed diff.
 
 ### The loop rule
@@ -230,10 +243,17 @@ Two guards exist, and both were wrong on the first attempt:
    own review of this pipeline caught that a stat comparison misses an edit
    preserving insertion/deletion counts, and misses content changes to
    untracked files entirely.
-2. **Failed-run detection** keys on the report's _shape_ (no verdict, or
-   "P1: Not assessed"), never on scanning for error strings. The transcript
-   echoes the diff, so when the review scripts are themselves under review a
-   substring match finds its own source and reports a false failure.
+2. **Failed-run detection** keys on the completion artifact's _shape_ (no
+   verdict line in it, or "P1: Not assessed"), never on scanning for error
+   strings, and — as of #348 round 3 — never on a window over a live
+   transcript either. The transcript echoes the diff, so when the review
+   scripts are themselves under review a substring match finds its own
+   source and reports a false failure; a distance-based tail window has its
+   own failure mode (a draft verdict close enough to a stall still passes).
+   Both reviewers now read a verdict only from a completion artifact cleared
+   before the run — Frank's `-o/--output-last-message` file, George's
+   extracted `--output-format json` "text" field — never from `$REPORT`
+   itself.
 
 ## Provenance
 

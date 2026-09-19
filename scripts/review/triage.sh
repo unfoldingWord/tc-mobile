@@ -22,6 +22,21 @@ mkdir -p .review
 
 frank_report="$(ls -t .review/frank-*.md 2>/dev/null | head -1 || true)"
 george_report="$(ls -t .review/george-*.md 2>/dev/null | head -1 || true)"
+# #348 round 3: the Verdicts table below reads from the SAME isolated
+# completion artifact frank.sh/george.sh themselves gate on
+# (*.final-message.txt — cleared before every run, populated only with the
+# model's own genuine final answer), never from the .md report/transcript
+# files above. Before this, triage.sh's table and the reviewer's own exit
+# code could disagree: a run that frank.sh/george.sh correctly failed (exit
+# 3, no final message) still leaves a .md transcript on disk containing
+# whatever it managed to stream — including a stray anchored draft verdict —
+# and reading a verdict out of THAT file here would show a clean pass in the
+# audit trail for a run the gate itself rejected. Excluding "*.final-message"
+# from the .md glob above is deliberate too (see frank.sh/george.sh's own
+# comments): neither file ever matches "frank-*.md"/"george-*.md" in the
+# first place, so this is a distinct lookup, not an accidental widening.
+frank_verdict_file="$(ls -t .review/frank-*.final-message.txt 2>/dev/null | head -1 || true)"
+george_verdict_file="$(ls -t .review/george-*.final-message.txt 2>/dev/null | head -1 || true)"
 
 # Frank numbers findings as "1. **P1 — ...**"; George uses "### 1. ..." under a
 # "## P1" heading. Pull whichever shape is present rather than assuming one.
@@ -68,11 +83,12 @@ extract() {
   # (scripts/review/_verdict.sh) matches a standalone verdict LINE, not a bare
   # substring — a report whose only mention of the words is prose (#220's
   # "whether to APPROVE or REQUEST_CHANGES" example) reads as "not run" here,
-  # not as a false verdict pulled from that prose.
+  # not as a false verdict pulled from that prose. #348 round 3: read from the
+  # isolated completion artifact, not the .md report — see the lookup above.
   echo "| Reviewer | Verdict @ \`${SHA}\` |"
   echo "| --- | --- |"
-  printf "| Frank  | %s |\n" "$(verdict_token "${frank_report:-/dev/null}" 2>/dev/null || echo 'not run')"
-  printf "| George | %s |\n" "$(verdict_token "${george_report:-/dev/null}" 2>/dev/null || echo 'not run')"
+  printf "| Frank  | %s |\n" "$(verdict_token "${frank_verdict_file:-/dev/null}" 2>/dev/null || echo 'not run')"
+  printf "| George | %s |\n" "$(verdict_token "${george_verdict_file:-/dev/null}" 2>/dev/null || echo 'not run')"
   echo
   echo "> A round is clean only when **both** reviewers post a clean statement"
   echo "> naming this SHA. Hitting the round cap with findings open is an"

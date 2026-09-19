@@ -110,6 +110,17 @@ PROMPT="${PROMPT//@@SEVERITY_RULES@@/$SEVERITY_RULES}"
 echo "Frank (Reviewer A, diff-local) reviewing $BRANCH against $BASE..."
 TREE_BEFORE="$(snapshot_tree)"
 
+# #348 round 3 (Frank at 0fa4d99, P1 #1): $LAST_MSG is reused across reruns at
+# the same SHA. Without clearing it first, a successful earlier run's
+# "Verdict: APPROVE" survives on disk, and a later rerun where codex produces
+# no final message (a real stall — codex only writes -o on genuine
+# completion, per `codex exec --help`) leaves that stale file untouched;
+# verdict_token() below would then read the stale approval as this run's own.
+# Clear it immediately before invoking codex exec — and before any future
+# retry of this same call — so a run that stalls always leaves the artifact
+# either absent or freshly (non-)written by THIS run, never a leftover from a
+# previous one.
+rm -f "$LAST_MSG"
 codex exec -c sandbox_mode="danger-full-access" --skip-git-repo-check \
   -o "$LAST_MSG" \
   "$PROMPT" </dev/null 2>&1 | tee "$REPORT"
