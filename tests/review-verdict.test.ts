@@ -187,6 +187,36 @@ describe("verdict_token (scripts/review/_verdict.sh)", () => {
     expect(result.stdout.trim()).toBe("");
   });
 
+  // The two cases below isolate ONE anchor each, so a test failure points at
+  // which half of VERDICT_LINE_RE broke. The prose-mentions-both-words case
+  // above exercises both anchors at once and would still pass with either one
+  // alone removed (the token there is neither the first nor the last thing on
+  // the line for a different reason each way), so it does not prove either
+  // anchor is load-bearing by itself. Confirmed directly: stripping `^` from
+  // VERDICT_LINE_RE makes the trailing-word case below match (APPROVE is the
+  // last word on its line, so a start-anchor-free pattern finds it); stripping
+  // `$` makes both token-plus-trailing-text cases match (APPROVE/
+  // REQUEST_CHANGES open the line, so an end-anchor-free pattern is satisfied
+  // before the trailing text is ever looked at). Restored before this file was
+  // written.
+  it("REJECTS a line where the verdict token is the trailing word of prose (kills removal of the ^ anchor)", () => {
+    const result = verdictTokenOf(
+      "Given the diff above, I'd lean toward APPROVE\n"
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout.trim()).toBe("");
+  });
+
+  it("REJECTS a line where the verdict token is followed by more text (kills removal of the $ anchor)", () => {
+    const commaCase = verdictTokenOf("APPROVE, pending the follow-up.\n");
+    expect(commaCase.status).toBe(1);
+    expect(commaCase.stdout.trim()).toBe("");
+
+    const dashCase = verdictTokenOf("REQUEST_CHANGES — see finding 2.\n");
+    expect(dashCase.status).toBe(1);
+    expect(dashCase.stdout.trim()).toBe("");
+  });
+
   it("does not let trailing prose override an earlier real anchored verdict", () => {
     const result = verdictTokenOf(
       "Verdict: APPROVE\n\nNote: the team can still decide later whether to APPROVE or REQUEST_CHANGES the follow-up.\n"
