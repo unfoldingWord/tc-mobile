@@ -102,16 +102,7 @@ function runBash(
       encoding: "utf8",
       cwd: opts.cwd,
       env: opts.env ?? cleanEnv(),
-      // 30s, not 15s: these are real subprocess spawns (git, bash, and a
-      // stub codex/grok), and under this suite's full concurrent run (106
-      // files, several spawning tsc/eslint child processes of their own) a
-      // scheduling delay before this child even starts executing its first
-      // line is a false-negative risk distinct from anything under test —
-      // observed once as a handful of round-4 entry-path tests reporting a
-      // pre-seeded fixture's stale content as if untouched, which is what a
-      // process that never got CPU time to reach its own truncate-at-entry
-      // line would also look like from the outside.
-      timeout: 30_000,
+      timeout: 15_000,
     });
     return { status: 0, stdout, stderr: "" };
   } catch (err) {
@@ -340,8 +331,17 @@ function runTriage(dir: string, round: string): Result {
 }
 
 function headShaOf(dir: string): string {
+  // env: cleanEnv() is load-bearing, not decoration — without it, this call
+  // inherits whatever GIT_* vars this test process itself was started with.
+  // Harmless under a plain `npm test`, but this suite also runs inside
+  // `.husky/pre-push` under a real `git push`, and git sets GIT_DIR /
+  // GIT_WORK_TREE / GIT_INDEX_FILE for hook processes so they operate on the
+  // repo being pushed — which would make this resolve the ACTUAL worktree's
+  // HEAD instead of `dir`'s, silently and deterministically, only under that
+  // one invocation path.
   return execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
     cwd: dir,
+    env: cleanEnv(),
     encoding: "utf8",
   }).trim();
 }
@@ -848,8 +848,13 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
   it("FAILS a rerun at the SAME sha AND the SAME run id when codex writes no final message, even though a stale APPROVE at that exact path is still on disk (#348 round 3 P1 #1, defense in depth under round 4's SHA+RUN_ID keying — rule 2's entry-point truncate)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
+        // env: cleanEnv() is load-bearing here, not decoration — see
+        // headShaOf()'s comment above for why (this suite also runs inside
+        // `.husky/pre-push` under a real `git push`, which sets GIT_DIR /
+        // GIT_WORK_TREE for hook processes).
         const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
           cwd: dir,
+          env: cleanEnv(),
           encoding: "utf8",
         }).trim();
         const runId = "1000000000000000000-11111";
@@ -890,8 +895,13 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
   it("does NOT inherit a stale APPROVE left by a DIFFERENT, earlier run at the same SHA (#348 round 4 — every artifact is keyed by SHA and a per-run id, so a different run's file can never be mistaken for this run's own)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
+        // env: cleanEnv() is load-bearing here, not decoration — see
+        // headShaOf()'s comment above for why (this suite also runs inside
+        // `.husky/pre-push` under a real `git push`, which sets GIT_DIR /
+        // GIT_WORK_TREE for hook processes).
         const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
           cwd: dir,
+          env: cleanEnv(),
           encoding: "utf8",
         }).trim();
         const staleRunId = "0000000000000000001-99999";
@@ -928,8 +938,13 @@ describe("frank.sh entry path (real subprocess, stub codex on PATH)", () => {
   it("a run that aborts before codex ever writes anything (crashed/killed) still leaves no usable verdict, even at a path pre-seeded with a stale APPROVE (#348 round 4 rule 2 — truncated at entry, before ANYTHING in the script, including the codex invocation itself, can abort)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
+        // env: cleanEnv() is load-bearing here, not decoration — see
+        // headShaOf()'s comment above for why (this suite also runs inside
+        // `.husky/pre-push` under a real `git push`, which sets GIT_DIR /
+        // GIT_WORK_TREE for hook processes).
         const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
           cwd: dir,
+          env: cleanEnv(),
           encoding: "utf8",
         }).trim();
         const runId = "2000000000000000000-22222";
@@ -1122,8 +1137,13 @@ describe("george.sh entry path (real subprocess, stub grok --output-format json 
   it("a run killed WHILE grok is running (before the completion JSON, let alone the extraction step, is ever produced) still leaves no usable verdict, even at a path pre-seeded with a stale APPROVE (#348 round 3 P1 #1 — the exact scenario; round 4 rule 2 truncates at entry, before ANYTHING in the script, including the grok invocation itself, can abort)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
+        // env: cleanEnv() is load-bearing here, not decoration — see
+        // headShaOf()'s comment above for why (this suite also runs inside
+        // `.husky/pre-push` under a real `git push`, which sets GIT_DIR /
+        // GIT_WORK_TREE for hook processes).
         const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
           cwd: dir,
+          env: cleanEnv(),
           encoding: "utf8",
         }).trim();
         const runId = "3000000000000000000-33333";
@@ -1159,8 +1179,13 @@ describe("george.sh entry path (real subprocess, stub grok --output-format json 
   it("does NOT inherit a stale APPROVE left by a DIFFERENT, earlier run at the same SHA (#348 round 4 — every artifact is keyed by SHA and a per-run id, so a different run's file can never be mistaken for this run's own)", () => {
     withReviewFixture(
       ({ dir, baseSha, stubBin }) => {
+        // env: cleanEnv() is load-bearing here, not decoration — see
+        // headShaOf()'s comment above for why (this suite also runs inside
+        // `.husky/pre-push` under a real `git push`, which sets GIT_DIR /
+        // GIT_WORK_TREE for hook processes).
         const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
           cwd: dir,
+          env: cleanEnv(),
           encoding: "utf8",
         }).trim();
         const staleRunId = "0000000000000000002-88888";
