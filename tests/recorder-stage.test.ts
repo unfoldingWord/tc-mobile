@@ -1165,6 +1165,21 @@ describe("panAfterCutRest", () => {
       2_000
     );
   });
+
+  it("rests at a fractional-boundary cut's TRUNCATED end, not a few tenths short of it (#473 round-2 Frank P2)", () => {
+    // Selection edges are floats. The buffer edit (`cut`/`sliceRange` in
+    // `lib/audio/edit.ts`) truncates `8_000.4` to `8_000` via
+    // `Int16Array.slice`, removing exactly 2_000 samples and landing the
+    // real post-cut length on `8_000` — the same "cut to the end starts
+    // exactly on the pan" shape as the integer-boundary case above, but
+    // through the truncating boundary instead of an already-integer one.
+    // A pan AT 8_000 must rest, not come back as the live number `8_000`
+    // that a raw float removed-length of `1_999.6` (`10_000 - 8_000.4`)
+    // would leave behind.
+    const preCutLength = 10_000;
+    const removed = { start: 8_000.4, end: 10_000 };
+    expect(panAfterCutRest(8_000, removed, preCutLength)).toBeNull();
+  });
 });
 
 /**
@@ -1302,6 +1317,35 @@ describe("panAfterUndo / panAfterRedo", () => {
     const preRedoLength = 12_000;
     expect(panAfterRedo(4_000, cutFromFour, preRedoLength)).toBe(4_000);
     expect(panAfterRedo(8_000, cutFromFour, preRedoLength)).toBe(4_000);
+  });
+
+  it("panAfterUndo re-inserts the buffer edit's TRUNCATED removed length, not the raw float one (#473 round-2 Frank P2)", () => {
+    // 12_000-sample buffer, cut [4_000.4, 8_000.7). `Int16Array.slice`
+    // truncates both edges, so the buffer edit removes exactly 4_000
+    // samples (8_000 - 4_000), leaving 8_000 — `preUndoLength` here. A
+    // frozen pan at 6_000 sat in the post-cut buffer's surviving tail
+    // (past the cut's truncated start), so undoing must re-insert exactly
+    // 4_000 samples ahead of it: 10_000, matching what the buffer edit
+    // actually restores. The raw float span (`8_000.7 - 4_000.4`, ~4_000.3)
+    // instead lands the pan on `10_000.3`.
+    const fractionalCut: EditOp = {
+      kind: "cut",
+      range: { start: 4_000.4, end: 8_000.7 },
+    };
+    expect(panAfterUndo(6_000, fractionalCut, 8_000)).toBe(10_000);
+  });
+
+  it("panAfterRedo rests at the buffer edit's TRUNCATED post-cut length (#473 round-2 Frank P2)", () => {
+    // Same shape as the panAfterCutRest fractional-boundary case: a cut to
+    // the end with a fractional start truncates to removing exactly 2_000
+    // samples, so the real post-redo length is 8_000 and a pan AT the
+    // cut's truncated start (8_000) must rest — not come back as the live
+    // number `8_000` a raw float removed-length of `1_999.6` would leave.
+    const fractionalCutToEnd: EditOp = {
+      kind: "cut",
+      range: { start: 8_000.4, end: 10_000 },
+    };
+    expect(panAfterRedo(8_000, fractionalCutToEnd, 10_000)).toBeNull();
   });
 
   it("leaves the F7 rest resting through both directions — no op has anything to map it through", () => {

@@ -42,6 +42,27 @@ export function spansWholeSample(range: SampleRange): boolean {
   return Math.trunc(range.end) > Math.trunc(range.start);
 }
 
+/**
+ * How many samples `cut`/`sliceRange` actually remove for an already-clamped
+ * `range` — the same truncation `Int16Array.slice` applies to its own
+ * (possibly fractional) arguments, made explicit rather than left implicit
+ * inside `.slice`'s own coercion (#473 round-2 Frank P2).
+ *
+ * Selection edges are floats (`spansWholeSample`'s docblock above), so a
+ * caller predicting a post-cut length WITHOUT slicing — `recorder-stage.ts`'s
+ * pan arithmetic, chiefly — must truncate the same way `cut` does or its
+ * answer drifts from the buffer that actually sliced by up to one sample per
+ * boundary. Takes a range already run through `clampRange` (every stored
+ * `EditOp["range"]` and every `cut`/`sliceRange` return value already is), so
+ * no length is needed here to re-clamp: truncation is idempotent on a value
+ * already inside `[0, length]`.
+ */
+export function removedSampleCount(range: SampleRange): number {
+  const lo = Math.trunc(Math.min(range.start, range.end));
+  const hi = Math.trunc(Math.max(range.start, range.end));
+  return hi - lo;
+}
+
 /** Copy the samples inside `range`. Used for both copy and the cut clipboard. */
 export function sliceRange(
   samples: Int16Array,

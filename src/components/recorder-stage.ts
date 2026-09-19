@@ -10,6 +10,7 @@
  */
 
 import { panAfterCut } from "@/lib/audio/viewport";
+import { removedSampleCount } from "@/lib/audio/edit";
 import type { EditOp } from "@/lib/audio/edit-log";
 
 /** The record-stage inputs this decision reads, all already-derived booleans. */
@@ -501,13 +502,20 @@ export function panAfterDragMove(input: {
  * length this needs for the rest clamp is `preCutLength - removedLength`,
  * derived from `removed` rather than re-read from `editor` (whose `working`
  * has not re-rendered into this closure yet either).
+ *
+ * `removedLength` is `removedSampleCount(removed)`, not a raw
+ * `end - start`: selection edges are floats, and the buffer edit
+ * (`cut`/`sliceRange` in `lib/audio/edit.ts`) truncates them via
+ * `Int16Array.slice`. A fractional-boundary cut whose raw span disagreed
+ * with that truncation left the rest clamp a fraction of a sample off the
+ * buffer's real post-cut length (#473 round-2 Frank P2).
  */
 export function panAfterCutRest(
   pan: number,
   removed: { readonly start: number; readonly end: number },
   preCutLength: number
 ): number | null {
-  const removedLength = Math.abs(removed.end - removed.start);
+  const removedLength = removedSampleCount(removed);
   return panOrRest(panAfterCut(pan, removed), preCutLength - removedLength);
 }
 
@@ -748,8 +756,12 @@ export function panAfterUndo(
   if (pan === null) return null;
   if (undoneOp.kind === "cut") {
     const lo = Math.min(undoneOp.range.start, undoneOp.range.end);
-    const hi = Math.max(undoneOp.range.start, undoneOp.range.end);
-    const removedLen = hi - lo;
+    // The truncation the buffer edit actually applies (`removedSampleCount`,
+    // `lib/audio/edit.ts`), not the raw float span: a fractional-boundary
+    // cut's `end - start` disagrees with what `Int16Array.slice` removed,
+    // landing the re-inserted pan a fraction of a sample off the buffer's
+    // real restored index (#473 round-2 Frank P2).
+    const removedLen = removedSampleCount(undoneOp.range);
     // Undoing a cut re-inserts what it removed, so the restored buffer is
     // LONGER than the one the undo started from.
     return panOrRest(
@@ -784,7 +796,10 @@ export function panAfterRedo(
 ): number | null {
   if (pan === null) return null;
   if (redoneOp.kind === "cut") {
-    const removedLen = Math.abs(redoneOp.range.end - redoneOp.range.start);
+    // Truncated the same way the buffer edit truncates, not a raw float
+    // span — see `panAfterUndo`'s cut branch and `removedSampleCount`
+    // (#473 round-2 Frank P2).
+    const removedLen = removedSampleCount(redoneOp.range);
     return panOrRest(
       panAfterCut(pan, redoneOp.range),
       preRedoLength - removedLen
