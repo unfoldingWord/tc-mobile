@@ -349,6 +349,64 @@ describe("playSamples — resume bound (#469)", () => {
       expect.any(Error),
       "playback-resume-unusable"
     );
+    // One tap, one row (George round-2 P3): raceAudioResume's own rejection
+    // handler used to write "playback-resume" unconditionally, and the gate
+    // above wrote a second "playback-resume-unusable" row for the same
+    // rejection — two durable rows for one failed Play. playSamples now
+    // suppresses the helper's row on this path and lets the gate be the
+    // single writer.
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("resume SUCCEEDS, but the context is interrupted again DURING the post-fill yield — playSamples still fails closed, one row, no source, onEnded does not fire (George round-2 P2)", async () => {
+    // The fail-closed gate at the top of playSamples only proves the context
+    // was usable BEFORE the (synchronous, clip-length) buffer fill and the
+    // `nextTask()` yield that follows it (#175, George R4 G-1). That yield
+    // exists so a Stop or a competing Play can land as a task; an OS
+    // interruption (call / Siri / route change) lands the same way, and
+    // nothing re-read audibility after it — so a source could still start on
+    // a context back in `"interrupted"`, the exact silent-playback shape
+    // this PR exists to close, reachable through the unchanged yield.
+    const ctx = new FakeAudioContext("suspended");
+    ctx.createBuffer = (
+      _channels: number,
+      length: number,
+      sampleRate: number
+    ) => ({
+      duration: length / sampleRate,
+      copyToChannel(): void {
+        // Modelled the same way the existing "Stop during fill" case models
+        // a competing tap: a task queued while the fill runs, delivered once
+        // something yields.
+        setTimeout(() => {
+          ctx.state = "interrupted";
+        }, 0);
+      },
+    });
+    const { playSamples } = await loadAudioIo(ctx);
+    let ended = false;
+
+    const handlePromise = playSamples(samples, {
+      isStillCurrent: () => true,
+      onEnded: () => {
+        ended = true;
+      },
+    });
+    const outcome = handlePromise.then(
+      () => ({ rejected: false }),
+      () => ({ rejected: true })
+    );
+    await vi.runAllTimersAsync();
+    const result = await outcome;
+
+    expect(result.rejected).toBe(true);
+    expect(ended).toBe(false);
+    expect(ctx.sourcesCreated).toHaveLength(0);
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(Error),
+      "playback-resume-unusable"
+    );
   });
 
   it("reports exactly one row, under its own key, distinct from the recorder's timeout key", async () => {
