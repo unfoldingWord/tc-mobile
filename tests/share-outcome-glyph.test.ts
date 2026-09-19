@@ -8,7 +8,10 @@ import {
   SHARE_OUTCOMES,
   shareErrorGlyph,
   shareOutcomeGlyph,
+  shareSettledGlyph,
 } from "@/components/share-outcome-glyph";
+import { shareControlGlyph } from "@/components/control-affordance";
+import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
 import type { ShareError } from "@/hooks/share-flow";
 import { noticePresentation } from "@/components/notice-tone";
 
@@ -238,4 +241,90 @@ describe("the share error Notices carry the table's tone (#457 George R3 P3-3)",
       expect(source).not.toMatch(/<Notice icon=\{shareErrorGlyph\(/);
     });
   }
+});
+
+/**
+ * The two halves #178 did not cover — handed over and dismissed — and the
+ * bridge from what the modal can show to the table (#491).
+ */
+describe("the sent and dismissed marks (#491)", () => {
+  it("sent is its own mark — neither the ready control's check nor the Share control's tray", () => {
+    // The check is the mark the person JUST tapped ("Share now"), and the tray
+    // is the control itself; a success that reuses either says "tap this"
+    // rather than "this happened".
+    const sent = shareOutcomeGlyph("sent");
+    expect(sent.icon).not.toBe("check");
+    expect(sent.icon).not.toBe("share");
+    expect(sent.icon).not.toBe(noticePresentation("info").icon);
+  });
+
+  it("dismissed is its own mark, not the back control's chevron", () => {
+    const dismissed = shareOutcomeGlyph("dismissed");
+    expect(dismissed.icon).not.toBe("back");
+    expect(dismissed.icon).not.toBe("share");
+    expect(dismissed.icon).not.toBe(shareOutcomeGlyph("sent").icon);
+  });
+
+  it("neither success nor dismissal wears the failure tone — a closed sheet is not an alarm", () => {
+    expect(shareOutcomeGlyph("sent").tone).not.toBe("alert");
+    expect(shareOutcomeGlyph("dismissed").tone).not.toBe("alert");
+  });
+
+  it("shareSettledGlyph covers every settled member, and encoder wears the failed entry explicitly", () => {
+    // `shareErrorGlyph` leaves `encoder` on `Notice`'s default (the alert
+    // triangle) as a named choice. The modal has no tone default, so the same
+    // mark is returned explicitly — the same choice, made visible.
+    for (const settled of SHARE_SETTLED) {
+      const glyph = shareSettledGlyph(settled);
+      expect(glyph.icon, `${settled} has no icon`).toBeTruthy();
+      expect(Icon({ name: glyph.icon, size: 48 })).toBeTruthy();
+    }
+    expect(shareSettledGlyph("encoder")).toEqual(shareOutcomeGlyph("failed"));
+    expect(shareSettledGlyph("sent")).toEqual(shareOutcomeGlyph("sent"));
+    expect(shareSettledGlyph("dismissed")).toEqual(
+      shareOutcomeGlyph("dismissed")
+    );
+    expect(shareSettledGlyph("nothing")).toEqual(shareOutcomeGlyph("nothing"));
+    expect(shareSettledGlyph("failed")).toEqual(shareOutcomeGlyph("failed"));
+  });
+
+  it('shareSettledGlyph("unproven") wears the dismissed mark, never the sent tick (Frank a446708 P2)', () => {
+    // A native Android resolve this platform cannot vouch for must not draw
+    // the same affirmative tick a proven send gets — `resolveProvesDelivery`'s
+    // own docblock names the false-success path. Reuses `dismissed`'s neutral,
+    // non-alarming mark rather than a fifth glyph; its OWN text is what tells
+    // it apart from an actual dismissal.
+    expect(shareSettledGlyph("unproven")).toEqual(
+      shareOutcomeGlyph("dismissed")
+    );
+    expect(shareSettledGlyph("unproven").icon).not.toBe(
+      shareSettledGlyph("sent").icon
+    );
+    expect(shareSettledGlyph("unproven").tone).not.toBe("alert");
+  });
+
+  it('shareSettledGlyph("partial") is the partial mark, never the plain sent tick (P1, this lane\'s own review round)', () => {
+    // A completed-but-incomplete share must not wear the same tick a whole one
+    // gets — see `share-progress.ts`'s header on `ShareSettled` for the exact
+    // failure this closes.
+    expect(shareSettledGlyph("partial")).toEqual(shareOutcomeGlyph("partial"));
+    expect(shareSettledGlyph("partial").icon).not.toBe(
+      shareSettledGlyph("sent").icon
+    );
+  });
+
+  it("the four marks a translator can see after a share are four different shapes", () => {
+    const visible: ShareSettled[] = ["sent", "dismissed", "nothing", "failed"];
+    const icons = visible.map((s) => shareSettledGlyph(s).icon);
+    expect(new Set(icons).size).toBe(visible.length);
+  });
+});
+
+describe("the platform-native Share control glyph (#490, decided 2026-09-19)", () => {
+  it("the Android mark is drawn, and it is not the tray", () => {
+    expect(Icon({ name: "share-android", size: 22 })).toBeTruthy();
+    expect(shareControlGlyph("android")).toBe("share-android");
+    expect(shareControlGlyph("ios")).toBe("share");
+    expect(shareControlGlyph("web")).toBe("share");
+  });
 });

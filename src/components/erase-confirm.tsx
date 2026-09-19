@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { Control } from "./control";
@@ -51,10 +51,19 @@ export function EraseConfirm({
   // the handler current without that churn.
   const busyRef = useRef(busy);
   const onCancelRef = useRef(onCancel);
-  // Synced in an effect, not during render (refs must not be written while
-  // rendering): the keydown listener reads the latest values without the effect
-  // that binds it re-running.
-  useEffect(() => {
+  // Synced in a LAYOUT effect, not during render (refs must not be written
+  // while rendering) and not in a passive `useEffect` (share-progress.tsx's
+  // identical bug, Frank at `9832a8b` P2, #491): a passive effect is
+  // scheduled after the browser paints, so a keydown queued in that same
+  // window can fire against a STALE `busyRef` — here, an Escape landing
+  // between `onConfirm` setting the parent's `busy` and this effect
+  // catching up, read as "not busy" and cancelled a confirm that had already
+  // started committing. A layout effect runs synchronously right after the
+  // DOM mutation, before paint or any queued event, so the refs are current
+  // by the time anything could react to what just rendered — the keydown
+  // listener reads the latest values without the effect that binds it
+  // re-running.
+  useLayoutEffect(() => {
     busyRef.current = busy;
     onCancelRef.current = onCancel;
   });

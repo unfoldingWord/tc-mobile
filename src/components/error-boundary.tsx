@@ -1,10 +1,4 @@
-import {
-  Component,
-  useCallback,
-  useState,
-  type ErrorInfo,
-  type ReactNode,
-} from "react";
+import { Component, useState, type ErrorInfo, type ReactNode } from "react";
 
 import {
   flushFailureLog,
@@ -15,10 +9,10 @@ import {
 import { quiesceTranscodeSweep } from "@/hooks/finish-transcode";
 import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import { reportFailure } from "@/hooks/report-failure";
-import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 import { Control } from "./control";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
+import { SendLogControl } from "./send-log-control";
 import { strings } from "./strings";
 
 interface ErrorBoundaryProps {
@@ -173,73 +167,6 @@ function RestartControl() {
       />
       {restarting && <Notice tone="busy">{strings.appReloading}</Notice>}
       {held && <Notice>{strings.appReloadHeld}</Notice>}
-    </>
-  );
-}
-
-/**
- * Send the failure log from the crash screen.
- *
- * Why this is here at all (George, round 2): the boundary REPLACES the tree, so
- * the `≡` marker and the menu that normally sends the log are unmounted with
- * `BooksScreen`. On a deterministic render throw on the home path, Restart
- * reaches this same screen again — so without a control here, the one failure
- * the durable log most exists to carry is the one failure that could never
- * leave the phone.
- *
- * A separate function component because `ErrorBoundary` is a class (there is
- * still no hook form of `getDerivedStateFromError`) and this needs hooks.
- *
- * Same two-gesture contract as everywhere else, and deliberately SECOND in the
- * order: Restart is the primary action and keeps the big `--primary` control.
- * This one is quiet — it is for the facilitator standing next to the
- * translator, not for the translator.
- *
- * The armed gesture DOES change the control's paint (`default`, not `quiet`),
- * and that is not decoration. Both taps are the same glyph in the same place,
- * so with one paint for both states the only thing separating "prepare" from
- * "send" was the accessible name — text, on the screen this app is least
- * willing to make anyone read. The menu panel solves it by going `primary`;
- * here `primary` is taken by Restart and a second one would compete with the
- * action a non-reader should reach first, so the armed state steps up one
- * level instead of two.
- */
-function SendLogControl() {
-  const share = useFailureLogShare();
-
-  const onPrepare = useCallback(() => {
-    void share.prepare();
-  }, [share]);
-
-  // No `onDone` to close: there is nothing to close, and after a send the
-  // screen stays exactly as it was. The flow returns to `idle` on its own.
-  const onSend = useCallback(() => {
-    void share.send();
-  }, [share]);
-
-  const errorText =
-    share.error === "nothing"
-      ? strings.shareFailureLogNothing
-      : share.error === "failed"
-        ? strings.shareFailureLogFailed
-        : null;
-
-  return (
-    <>
-      {share.status === "ready" ? (
-        <Control icon="share" label={strings.shareSend} onClick={onSend} />
-      ) : (
-        <Control
-          icon="share"
-          label={strings.shareFailureLog}
-          variant="quiet"
-          onClick={onPrepare}
-        />
-      )}
-      {share.status === "preparing" && (
-        <Notice tone="busy">{strings.shareFailureLogPreparing}</Notice>
-      )}
-      {errorText && <Notice>{errorText}</Notice>}
     </>
   );
 }

@@ -9,9 +9,20 @@ import {
 import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
+  HIDDEN,
+  type ShareGap,
+  type ShareProgress,
+  type ShareProgressEvent,
+  reduceShareProgress,
+  settledFromOutcome,
+  shareProgressWakeAt,
+} from "./share-progress";
+import {
   type StagedShare,
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
+  resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
 
@@ -116,9 +127,19 @@ export type ShareStatus = "idle" | "preparing" | "ready";
  * The stale send did NOT touch the newer run's File — and callers must not act
  * on it either. A caller that closes-and-resets on `sent`/`dismissed` would
  * otherwise drop the File the new run just prepared (George R-B7-book P2).
+ *
+ * `unproven` (Frank a446708 P2): the native Android route can resolve on a
+ * chooser the translator dismissed with Back after the activity merely
+ * stopped — `resolveProvesDelivery`'s own docblock names the mechanism, and
+ * this outcome is what `send()` now returns instead of `sent` when that
+ * platform/route combination cannot tell the two apart. Deliberately NOT in
+ * the close-on-`sent`/`dismissed` set either screen checks: the File is
+ * already spent either way (nothing to retry), but a caller should not treat
+ * an unproven resolve as confidently as a proven one closing the menu would
+ * imply.
  */
 export type ShareOutcome =
-  "sent" | "dismissed" | "retry" | "failed" | "superseded";
+  "sent" | "dismissed" | "unproven" | "retry" | "failed" | "superseded";
 
 /**
  * The File tap 1 built, plus how many units it had to leave out (segments for a
@@ -154,6 +175,23 @@ type BuildShareFile = (
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
+ * What tap 1 arms for tap 2: the File (plus its native staged copy, if any)
+ * and the gap counts `prepare` read off the {@link PreparedShare} that built
+ * it. Carrying `missing`/`partial` on the ARMED value, not just in `useState`
+ * (P1, this lane's own review round), is what lets `send()` know whether the
+ * File it is about to hand over has a gap: the hook clears its `missing`/
+ * `partial` state to 0 as part of the very same "shared" transition that
+ * settles the modal, so by the time a render could read them they are
+ * already zero — see the comment at the `"sent"` settle below.
+ */
+interface ArmedShare {
+  readonly file: File;
+  readonly staged: StagedShare | null;
+  readonly missing: number;
+  readonly partial: number;
+}
+
+/**
  * How to treat a `navigator.share` rejection.
  *
  * `dismissed`: the user closed the sheet (`AbortError`) — expected, not a failure
@@ -179,9 +217,89 @@ export function classifyShareError(
   return "failed";
 }
 
+/**
+ * Whether a File that WAS handed to the sheet still leaves a gap behind —
+ * the pure decision that picks `sent` vs `partial` at `send()`'s own settle
+ * (P1, this lane's own review round: a completed-but-incomplete share must
+ * not wear the same tick a whole one gets — `share-progress.ts`'s header on
+ * `ShareSettled` has the failure this closes).
+ *
+ * Reads the counts off the ARMED value `send()` is holding, not off this
+ * hook's `missing`/`partial` state: the success branch's own `setMissing(0)`/
+ * `setPartial(0)` already race those to 0 as part of the SAME transition that
+ * settles the modal, so by the render that settle produces they would read
+ * as whole. The armed value was written once, at `prepare` time, and cannot
+ * have raced — pulled out as a pure function so the decision is
+ * unit-testable without a renderer (#197), the same shape `classifyShareError`
+ * above already uses.
+ */
+export function sentGap(armed: {
+  readonly missing: number;
+  readonly partial: number;
+}): ShareGap | undefined {
+  return armed.missing > 0 || armed.partial > 0
+    ? { missing: armed.missing, partial: armed.partial }
+    : undefined;
+}
+
+/**
+ * What a RESOLVED send settles to (Frank a446708 P2): `sent`/`partial` was
+ * unconditional on any resolve, which on native Android can be the plugin's
+ * documented false-success path (a chooser dismissed with Back after the
+ * activity stopped — `resolveProvesDelivery`'s own docblock). This is the
+ * whole point of #491's outcome UI: a translator now sees an explicit,
+ * affirmative tick for a resolve the platform itself cannot vouch for, which
+ * is worse than the silence #336 reported, not better.
+ *
+ * `proven` is {@link resolveProvesDelivery} for the route/platform this send
+ * actually took — read at the call site so this stays a pure decision table,
+ * the same shape `sentGap` and `classifyShareError` above already use.
+ * `unproven` wins over `partial`: a translator who cannot be told delivery
+ * happened at all gets no benefit from also being told which pieces of it
+ * did, and stacking two counts onto one glyph is not what `partial`'s own
+ * mark was built for.
+ */
+export function resolveSendOutcome(
+  proven: boolean,
+  gap: ShareGap | undefined
+): "sent" | "partial" | "unproven" {
+  if (!proven) return "unproven";
+  return gap ? "partial" : "sent";
+}
+
 export interface UseShareFlow {
   readonly status: ShareStatus;
   readonly error: ShareError | null;
+  /**
+   * The most recent `send()` settled `unproven` (George r2 P2-1, #491) and
+   * nothing has re-armed since. `status` alone cannot carry this: the
+   * success branch returns it to `idle` exactly the same as a genuinely
+   * confirmed send, and the modal's own glyph is gone {@link OUTCOME_HOLD_MS}
+   * after the fact — so once both have cleared, an idle Share control read
+   * exactly like a fresh, never-tried one. A translator who tapped Share,
+   * watched the sheet close, and cannot tell if it worked would see the SAME
+   * quiet tray glyph either way and, worse, could tap it again believing
+   * nothing had happened yet — a genuine duplicate send, not a harmless retry.
+   *
+   * State-in-place, not a toast (AGENTS.md): the caller reads this to change
+   * the IDLE Share control's own icon and label (never `disabled` — a second
+   * Share must stay possible, the user may truly need to re-send) rather
+   * than showing a message that scrolls away. Cleared the moment a fresh
+   * `prepare()` begins (see its own reset block) — starting a new attempt is
+   * itself the acknowledgment, the same way `error` clears there today — and
+   * also by `reset()` (menu close), alongside `error`/`missing`/`partial`.
+   *
+   * `reset()` clears it, not just `prepare()`, for a reason specific to
+   * Share Book: `useBookShare` is ONE hook instance shared by every row's ≡
+   * menu (`shareMenuBookId` just tracks which book is open), so a flag that
+   * survived `reset()` would leak an unconfirmed send from book A onto book
+   * B's freshly opened, never-tried Share control the moment the shelf moves
+   * on — a false positive, which is its own dishonesty. What this field
+   * exists to survive is narrower and still fully covered: the SAME menu
+   * session, outcome hold ending with the menu still open (an `unproven`
+   * settle does not close it), through to the next tap in that session.
+   */
+  readonly sendUnconfirmed: boolean;
   /** Units left out of the prepared File (segments or chapters). 0 until ready. */
   readonly missing: number;
   /**
@@ -204,6 +322,19 @@ export interface UseShareFlow {
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
   reset: () => void;
+  /**
+   * The modal timeline over the flow (#491): busy while tap 1 or tap 2 works,
+   * held for a minimum so a fast encode still reads as work, then ONE outcome
+   * glyph — handed to the sheet, dismissed, nothing, failed — for a moment.
+   * `status` above is unchanged and still drives the Share control; this is a
+   * presentation timeline the screens render as a sibling of their menu.
+   * `send()` resolves only once this has returned to hidden, so a caller that
+   * closes its menu on `sent`/`dismissed` closes it AFTER the glyph, not under
+   * it.
+   */
+  readonly progress: ShareProgress;
+  /** End an outcome flash early (a tap on it). The normal close follows. */
+  dismissProgress: () => void;
 }
 
 /**
@@ -217,6 +348,9 @@ export function useShareFlow(): UseShareFlow {
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
   const [partial, setPartial] = useState(0);
+  // See `UseShareFlow.sendUnconfirmed`'s own docblock: set on an `unproven`
+  // settle, cleared only when a fresh `prepare()` begins.
+  const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
   // What tap 1 prepared, waiting for the send gesture, and whether tap 2 owns
   // it right now. Extracted into `share-handoff.ts` (#365) rather than a ref
   // pair: `send` still takes ownership SYNCHRONOUSLY inside the gesture —
@@ -227,7 +361,7 @@ export function useShareFlow(): UseShareFlow {
   // app cache by then, so tap 2 is one plugin call on both routes (George R5
   // P2).
   const handoffRef = useRef<ReturnType<
-    typeof createShareHandoff<{ file: File; staged: StagedShare | null }>
+    typeof createShareHandoff<ArmedShare>
   > | null>(null);
   const handoff = (handoffRef.current ??= createShareHandoff());
   // A generation token invalidating an in-flight `prepare`. Both unmount AND
@@ -243,11 +377,25 @@ export function useShareFlow(): UseShareFlow {
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
   const abortRef = useRef<AbortController | null>(null);
+  // The modal timeline (#491). The machine is `share-progress.ts`; the driver
+  // below is its browser glue and nothing more, created once per hook
+  // instance the way `handoffRef` is, so Books' flow and a Segments screen's
+  // flow never share a timer. `progress` mirrors the driver's state for
+  // render.
+  const [progress, setProgress] = useState<ShareProgress>(HIDDEN);
+  const modalRef = useRef<ReturnType<typeof createProgressDriver> | null>(null);
+  const modal = (modalRef.current ??= createProgressDriver(setProgress));
+  const dismissProgress = useCallback(() => {
+    modal.dispatch({ type: "dismiss" });
+  }, [modal]);
 
   useEffect(
     () => () => {
       runIdRef.current += 1;
       abortRef.current?.abort();
+      // The screen is gone: take the modal down with it and release any
+      // `send()` still waiting on the flash, so nothing pends past unmount.
+      modal.dispatch({ type: "dismiss" });
       // The screen is gone; a staged file armed for a send that will never come
       // has no reader. Same fire-and-forget as `reset`. `dropArmed()` returns
       // `null` if `send()` already took ownership (#365) — that in-flight send
@@ -256,7 +404,7 @@ export function useShareFlow(): UseShareFlow {
       const armed = handoff.dropArmed();
       if (armed?.staged != null) void nativeShare.discard(armed.staged);
     },
-    [handoff]
+    [handoff, modal]
   );
 
   const prepare = useCallback(
@@ -289,7 +437,14 @@ export function useShareFlow(): UseShareFlow {
       setError(null);
       setMissing(0);
       setPartial(0);
+      // A fresh attempt is itself the acknowledgment of any prior unconfirmed
+      // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
+      setSendUnconfirmed(false);
       setStatus("preparing");
+      // The modal goes up with the busy status (#491). Not before the
+      // unsupported gate above: a browser with no Web Share gets the error
+      // Notice, not a busy flash for work that never starts.
+      modal.dispatch({ type: "begin", work: "prepare", now: modal.now() });
       // Yield once so `preparing` paints before the gather starts (its awaits
       // also yield, but a tiny share can return before the browser paints).
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -308,6 +463,13 @@ export function useShareFlow(): UseShareFlow {
         if (prepared === null || prepared === "nothing") {
           if (prepared === "nothing") setError("nothing");
           setStatus("idle");
+          // "nothing" is an outcome the modal shows (the empty tray); a null
+          // has nothing to say, so the busy phase just ends.
+          modal.dispatch({
+            type: "settle",
+            settled: prepared === "nothing" ? "nothing" : null,
+            now: modal.now(),
+          });
           return;
         }
         const { file } = prepared;
@@ -318,6 +480,11 @@ export function useShareFlow(): UseShareFlow {
         if (route === "unsupported") {
           setError("failed");
           setStatus("idle");
+          modal.dispatch({
+            type: "settle",
+            settled: "failed",
+            now: modal.now(),
+          });
           return;
         }
         // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
@@ -339,16 +506,26 @@ export function useShareFlow(): UseShareFlow {
           if (staged !== null) void nativeShare.discard(staged);
           return;
         }
-        handoff.arm({ file, staged });
+        handoff.arm({
+          file,
+          staged,
+          missing: prepared.missing,
+          partial: prepared.partial ?? 0,
+        });
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
         setStatus("ready");
+        // Ready is not an outcome: the busy phase ends (after its minimum
+        // hold) and the primary "Share now" control is what the person sees.
+        modal.dispatch({ type: "settle", settled: null, now: modal.now() });
       } catch (cause) {
         // A stale run's rejection — including the AbortError its own cancel
         // produced — is not this screen's news.
         if (!current()) return;
-        setError(settlePrepareFailure(cause));
+        const settled = settlePrepareFailure(cause);
+        setError(settled);
         setStatus("idle");
+        modal.dispatch({ type: "settle", settled, now: modal.now() });
       } finally {
         // Only clear the guard for the run that still owns it. A stale run whose
         // token was bumped by `reset` must NOT release a newer run's guard, or a
@@ -359,7 +536,7 @@ export function useShareFlow(): UseShareFlow {
         }
       }
     },
-    [handoff]
+    [handoff, modal]
   );
 
   const send = useCallback(async (): Promise<ShareOutcome> => {
@@ -377,14 +554,24 @@ export function useShareFlow(): UseShareFlow {
     const armed = handoff.take();
     if (armed === null) {
       // Reachable only through a guard hole (ready with no armed File); surface it
-      // rather than no-op silently behind a "Share now" that does nothing.
+      // rather than no-op silently behind a "Share now" that does nothing. Routed
+      // through the same begin/settle pair every other outcome takes (P3, this
+      // lane's own review round) so the modal's invariant — every `send()`
+      // outcome ends in exactly one glyph — holds on this path too, instead of
+      // silently falling back to the menu's inline error Notice alone.
+      modal.dispatch({ type: "begin", work: "send", now: modal.now() });
       setError("failed");
       setStatus("idle");
+      modal.dispatch({ type: "settle", settled: "failed", now: modal.now() });
       return "failed";
     }
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
     const current = () => runId === runIdRef.current;
+    // The modal goes up NOW, before the sheet call (#491). A synchronous state
+    // write, not an await, so the activation contract below still holds: the
+    // sheet call is still the first await in this gesture.
+    modal.dispatch({ type: "begin", work: "send", now: modal.now() });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
@@ -436,15 +623,60 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
-      return "sent";
+      // Handed to the sheet — which is all a resolve proves ON A ROUTE THAT
+      // CAN PROVE IT (see the R-B7 note above and `resolveProvesDelivery`):
+      // the glyph says "handed over", never "delivered". On native Android
+      // a resolve can instead be the plugin's documented false-success path
+      // (Frank a446708 P2), which `resolveSendOutcome` is what tells apart —
+      // `proven` reads the route this send actually took (`armed.staged !==
+      // null` is native, set at `prepare` time and carried unchanged) against
+      // the CURRENT platform. `sentGap` reads the gap off the ARMED value,
+      // not off `missing`/`partial` state (see its own docblock: the
+      // `setState`s just above already raced those to 0 as part of this same
+      // transition). A gap shows `partial`'s own mark, not the plain tick
+      // `sent` wears — the outcome the modal shows must not say "this chapter
+      // went out whole" when it did not (`share-outcome-glyph.ts`'s own
+      // header names exactly this collision for the ready-state Notice; the
+      // modal must not reintroduce it one screen later) — unless delivery
+      // itself is unproven, which `resolveSendOutcome` prioritizes over the
+      // gap. `send()`'s own return value to the caller stays `"sent"` for
+      // both `sent` and `partial` (only the modal's glyph differs) but is
+      // `"unproven"` on its own, so the screens' close-on-`sent`/`dismissed`
+      // does not fire on a resolve the platform cannot vouch for. Then hold
+      // this send open until the flash has cleared, so the caller's
+      // close-on-sent lands after it.
+      const gap = sentGap(armed);
+      const proven = resolveProvesDelivery(
+        armed.staged !== null ? "native" : "web",
+        readSharePlatform()
+      );
+      const settled = resolveSendOutcome(proven, gap);
+      // George r2 P2-2 (#491): flag the one outcome this platform cannot
+      // vouch for so the IDLE Share control still shows it once the modal's
+      // own glyph is gone — see `UseShareFlow.sendUnconfirmed`.
+      if (settled === "unproven") setSendUnconfirmed(true);
+      modal.dispatch({
+        type: "settle",
+        settled,
+        gap: settled === "partial" ? gap : undefined,
+        now: modal.now(),
+      });
+      await modal.hidden();
+      return settled === "unproven" ? "unproven" : "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
       if (outcome === "retry" && armed.staged === null) {
         // Activation was spent — the File still stands, so put it back and stay
         // `ready` so another tap can hand it over. Not a failure the translator
-        // should see. Only if this run still owns the flow: if a newer one has
-        // taken over, the File is nobody's and is simply dropped.
-        if (current()) handoff.restore(armed);
+        // should see — and not an outcome the modal shows: the busy phase
+        // ends and "Share now" is what remains (#491 constraint 2). Only if
+        // this run still owns the flow: if a newer one has taken over, the
+        // File is nobody's and is simply dropped.
+        if (current()) {
+          handoff.restore(armed);
+          modal.dispatch({ type: "settle", settled: null, now: modal.now() });
+          await modal.hidden();
+        }
         return "retry";
       }
       // A native `retry` does NOT get its staged value back (George R6 P3):
@@ -467,13 +699,35 @@ export function useShareFlow(): UseShareFlow {
       setMissing(0);
       setPartial(0);
       if (outcome === "failed") setError("failed");
+      // `dismissed` and `failed` are outcomes the modal shows; a native
+      // `retry` that fell through to idle (above) is not, and maps to null —
+      // one table, `settledFromOutcome`, never a hand-mapped case here.
+      modal.dispatch({
+        type: "settle",
+        settled: settledFromOutcome(outcome),
+        now: modal.now(),
+      });
+      await modal.hidden();
       return outcome;
     } finally {
       handoff.finishSending();
     }
-  }, [handoff]);
+  }, [handoff, modal]);
 
   const reset = useCallback(() => {
+    // A send is irreversibly in flight: tap 2's activation is spent and the
+    // native chooser (or `navigator.share`) has already been asked, so a scrim
+    // tap or menu-close here can discard this flow's own bookkeeping but
+    // cannot cancel the outstanding call (P2, this lane's own review round —
+    // the modal this lane adds is what first puts a full-screen scrim, and its
+    // cancel affordance, over a call with no cancel). Bumping the run token
+    // below would make `send()`'s own `current()` check read false the moment
+    // the OS resolves, so a share that genuinely went out returns
+    // `"superseded"` and is dropped with NO glyph and NO Notice — reproducing
+    // the exact "succeeded silently" defect (#336/#491) this whole modal
+    // exists to fix, in the window this modal itself creates. So: no-op while
+    // `handoff.sending`, and let `send()`'s own settle end the flow instead.
+    if (handoff.sending) return;
     // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
     // a File behind the now-closed menu, and abort so one mid-encode stops the
     // worker rather than finishing for nobody.
@@ -496,7 +750,139 @@ export function useShareFlow(): UseShareFlow {
     setError(null);
     setMissing(0);
     setPartial(0);
-  }, [handoff]);
+    // See `UseShareFlow.sendUnconfirmed`'s own docblock for why this clears
+    // here too, not just at the start of `prepare()`.
+    setSendUnconfirmed(false);
+    // The menu is closing: the modal goes with it, whatever phase it is in,
+    // and any `send()` waiting on the flash resolves now rather than after a
+    // hold nobody is looking at.
+    modal.dispatch({ type: "dismiss" });
+  }, [handoff, modal]);
 
-  return { status, error, missing, partial, prepare, send, reset };
+  return {
+    status,
+    error,
+    sendUnconfirmed,
+    missing,
+    partial,
+    prepare,
+    send,
+    reset,
+    progress,
+    dismissProgress,
+  };
+}
+
+/**
+ * A time source for the progress driver. `now()` need not be wall-clock time —
+ * the reducer's own arithmetic is entirely relative (`event.now - state.since`)
+ * — only monotonic: it must never report a smaller value than an earlier call
+ * (Frank e915d05 P2, see {@link monotonicClock}). Injectable so a test can
+ * drive it explicitly instead of trusting real elapsed time.
+ */
+export interface Clock {
+  readonly now: () => number;
+}
+
+/**
+ * The production clock. `Date.now()` can jump — an NTP correction or a manual
+ * clock change moves it, forward or back, with no bound — and a backward jump
+ * between a `settle`'s hold being scheduled and its timer firing made
+ * `reduceShareProgress` see `now` short of the deadline it was told to wait
+ * for, so it correctly left the timed phase in place (see the `tick` case in
+ * `share-progress.ts`) — but nothing then rescheduled a wake for it, and the
+ * busy or outcome modal stayed on screen indefinitely (Frank e915d05 P2:
+ * `share-flow.ts:704` in that revision). `performance.now()` is monotonic by
+ * spec (High Resolution Time), so this driver's own scheduling arithmetic can
+ * no longer see time run backward. Belt: see the `tick`-with-no-change branch
+ * in `createProgressDriver` below, which covers a driver fed some OTHER
+ * non-monotonic clock (a test, or a future caller) the same way.
+ */
+const monotonicClock: Clock = { now: () => performance.now() };
+
+/**
+ * The browser glue around `share-progress.ts`'s machine (#491), and nothing
+ * more: it owns the current state (a dispatch must know the NEXT state
+ * synchronously, to schedule the wake and to release `send()`), ONE timer for
+ * the next tick, and the `send()` calls waiting for the outcome flash to
+ * clear. `clock` and `setTimeout` appear here only — the machine takes `now`
+ * as data, which is what makes the hold provable in Node
+ * (`tests/share-progress.test.ts`); this driver is review-only, like the rest
+ * of this file's React glue. Defaults to {@link monotonicClock}; a test
+ * passes its own so the clock-anomaly shape below is provable without a real
+ * clock.
+ *
+ * A closure rather than a `useCallback`, because the tick it schedules calls
+ * back into itself, and `react-hooks/immutability` (rightly) refuses a hook
+ * callback that reads its own binding before it is declared. Created once
+ * per hook instance through a ref, the way `createShareHandoff` is.
+ */
+export function createProgressDriver(
+  onChange: (next: ShareProgress) => void,
+  clock: Clock = monotonicClock
+) {
+  let state: ShareProgress = HIDDEN;
+  let wake: ReturnType<typeof setTimeout> | null = null;
+  let waiters: (() => void)[] = [];
+  // (Re)schedules the ONE pending wake for `s`'s own deadline, replacing
+  // whatever was there. Called both when a dispatch actually changes state
+  // (the ordinary path) and, as the belt below, when a `tick` did not — so a
+  // wake this driver owes is never simply dropped.
+  const scheduleWake = (s: ShareProgress): void => {
+    if (wake !== null) clearTimeout(wake);
+    wake = null;
+    const wakeAt = shareProgressWakeAt(s);
+    if (wakeAt !== null)
+      wake = setTimeout(
+        () => {
+          wake = null;
+          dispatch({ type: "tick", now: clock.now() });
+        },
+        Math.max(0, wakeAt - clock.now())
+      );
+  };
+  const dispatch = (event: ShareProgressEvent): void => {
+    const next = reduceShareProgress(state, event);
+    if (next !== state) {
+      state = next;
+      onChange(next);
+      scheduleWake(next);
+    } else if (event.type === "tick") {
+      // Belt: a real `tick` only ever arrives here because a wake was
+      // scheduled for it, so an unchanged result means the reducer left that
+      // SAME timed phase in place rather than releasing it (the deadline in
+      // `since` had not actually passed at `event.now`) — reachable if
+      // whatever clock this driver was given is not monotonic. Reschedule
+      // from the state's own wake time — computed from `since`, set when the
+      // phase began, so it is unaffected by whatever made `event.now` short
+      // this time — rather than leaving `wake` at the `null` the fired timer
+      // already set it to above. `scheduleWake` itself is the no-op for the
+      // (unreachable via a real timer, but harmless) case of a directly
+      // dispatched `tick` against a state with nothing to wake for.
+      scheduleWake(state);
+    }
+    // Hidden again — by the tick, a dismiss, or a settle with nothing to show:
+    // let every `send()` waiting on the flash resolve. Checked on every
+    // dispatch, not only on a change, so a dismiss while already hidden can
+    // never strand a waiter.
+    if (next.phase === "hidden" && waiters.length > 0) {
+      const pending = waiters;
+      waiters = [];
+      for (const resolve of pending) resolve();
+    }
+  };
+  return {
+    dispatch,
+    /** The clock this driver reads, for callers that stamp their own events
+     * (`begin`/`settle`) from the same time source the driver schedules
+     * against. */
+    now: (): number => clock.now(),
+    /** Resolves once the modal is hidden — at once if it already is. */
+    hidden: (): Promise<void> =>
+      state.phase === "hidden"
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            waiters.push(resolve);
+          }),
+  };
 }

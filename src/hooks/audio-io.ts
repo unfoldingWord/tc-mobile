@@ -15,6 +15,8 @@ import {
 } from "@/lib/audio/format";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
+import { reportFailure } from "./report-failure";
+
 /**
  * Candidate capture formats, best first.
  *
@@ -131,6 +133,150 @@ export function contextNeedsResume(state: string): boolean {
 export async function resumeAudioContext(): Promise<void> {
   const ctx = getAudioContext();
   if (contextNeedsResume(ctx.state)) await ctx.resume();
+}
+
+/**
+ * How long a caller of `resumeAudioContext()` is willing to block before
+ * proceeding anyway.
+ *
+ * WebKit's `resume()` from an `"interrupted"` `AudioContext` state has been
+ * observed to hang indefinitely (#108). An unbounded `await` on that promise
+ * between "the floor is claimed" and "the recorder/source actually exists"
+ * can leave a caller stuck forever — first found in `start()`
+ * (`use-recorder.ts`, between `getUserMedia` and `new MediaRecorder`), and
+ * the same shape on the playback path in `playSamples` below (#469).
+ *
+ * 1000ms is a PROVISIONAL ASSUMPTION, not a measured value — the real
+ * distribution of WebKit's resume-from-interrupted latency is unmeasured on
+ * any device, which is exactly the open question issue #108 poses. This is
+ * the one place to correct it once an on-device pass answers that question.
+ * Lives here, not in `use-recorder.ts`, because `playSamples` needs the same
+ * bound and `resumeAudioContext` itself already lives in this file — the
+ * browser-audio boundary is the natural shared home, and a hook this low
+ * (`use-recorder.ts`) importing back FROM a higher hook would be circular.
+ */
+export const RESUME_TIMEOUT_MS = 1_000;
+
+/**
+ * Call `resumeAudioContext()` but never let it block the caller for longer
+ * than `RESUME_TIMEOUT_MS` (#108, #469).
+ *
+ * `resumeAudioContext()` is invoked SYNCHRONOUSLY as the first statement,
+ * before the timer or the race promise are even constructed, so a caller
+ * still inside the user gesture that unlocked the microphone or claimed
+ * playback loses none of that activation to a `.then`/microtask hop.
+ *
+ * NEVER rejects. A `resume()` that fails fast is treated exactly like one
+ * that hangs — swallowed, and the caller proceeds — matching every
+ * fire-and-forget `resumeAudioContext()` call site elsewhere in this repo
+ * (`void resumeAudioContext().catch(...)`, several in `use-recorder.ts` and
+ * `use-audio-session.ts`). A rejection that DECIDES the race's own outcome
+ * (arrives before the timer and before any resolve) is reported through
+ * `reportFailure` under the CALLER-SUPPLIED `rejectionContextKey` — unless
+ * the caller passes `onEarlyRejection`, in which case THAT is called with
+ * the cause instead, and reporting it becomes the caller's job. A LATE
+ * rejection — arriving after the timer already won the race — is always
+ * reported directly through `reportFailure`, regardless of
+ * `onEarlyRejection`: nothing else observes it, since the caller
+ * (`playSamples`) already threw under the timeout key by the time it lands.
+ * Either way this is closer to AGENTS.md's "errors have a channel before
+ * they have copy" bar than swallowing it outright or leaving it as an
+ * unhandled rejection — but it never reaches this function's own caller as
+ * a rejection of `raceAudioResume` itself.
+ *
+ * `onEarlyRejection` exists for `playSamples` alone. First cut (George
+ * round-2 P3): an early rejection there used to write TWO durable rows for
+ * one failed Play — this helper's own unconditional "playback-resume" row,
+ * then `playSamples`'s fail-closed gate's "playback-resume-unusable" row for
+ * the same cause, since the gate's own `audioContextNeedsResume()` re-read is
+ * `true` after any rejection (the context never reached `"running"`). A flat
+ * "never report from here" flag fixed that, but broke a DIFFERENT case
+ * (Frank round-3 P2): `playTake`/`playBuffer` ALSO fire their own
+ * fire-and-forget `resumeAudioContext()` call before `playSamples` even
+ * runs (the in-gesture unlock, `use-audio-session.ts`) — a SEPARATE
+ * `ctx.resume()` invocation on the same shared context. If THAT one wins
+ * and leaves the context `"running"` before this claim's own (later)
+ * `raceAudioResume` call observes its rejection, `audioContextNeedsResume()`
+ * reads `false` and the gate never fires — the rejection was real but ended
+ * up silently dropped, with playback proceeding fine. `onEarlyRejection`
+ * lets `playSamples` capture the cause instead of swallowing or
+ * unconditionally reporting it, and decide once it knows the live context
+ * state: fold it into the SAME row as the fail-closed gate when the context
+ * is still unusable (one row, not two), or report it on its own,
+ * non-throwing, when a concurrent resume elsewhere already made the context
+ * usable (so the fact is not lost just because it turned out harmless).
+ * `start()` (`use-recorder.ts`) does not pass it, so its own
+ * "recorder-start-resume" row on rejection is UNCHANGED in every case. A
+ * plain callback, not an options object — an inline `{ ... }` type here
+ * would put a brace before the function's own body opens, which breaks this
+ * repo's text-shape gates that brace-match a declaration's body from its
+ * first `{` (`tests/recorder-resume-race.test.ts`,
+ * `tests/recorder-failure-rows.test.ts`'s `bodyAfter`); a bare arrow-function
+ * TYPE (`(cause: unknown) => void`) has no such brace.
+ *
+ * RESOLVES `true` WHEN THE TIMER WON, `false` when `resume()` settled first
+ * (either way, resolve or reject). Writes NO row for a timer win: the timer
+ * firing is a fact worth logging only in light of what the CALLER decides to
+ * do about it — `start()` gates its own "recorder-start-resume-timeout" row
+ * behind its own generation check (a Record tap abandoned during the wait
+ * must not light the failure log for work nobody is waiting on any more,
+ * #498 George R1 P2), and `playSamples` gates its own
+ * "playback-resume-timeout" row behind `isStillCurrent()` for the identical
+ * reason. Both callers own that decision; this helper has no such state and
+ * must not guess at it.
+ *
+ * Built with a manual `Promise` executor and a local `settled` flag rather
+ * than `Promise.race`, so a same-tick or early rejection from
+ * `resumeAudioContext()` can never propagate as this function's own
+ * rejection before the `.then(resolve, reject)` handler below converts it —
+ * `raceAudioResume` must never reject. The timer uses the bare global
+ * `setTimeout`/`clearTimeout` (never `window.*`): no DOM global is needed,
+ * and it is directly exercisable with `vi.useFakeTimers()` in this repo's
+ * jsdom-free, Node-only vitest suite.
+ */
+export function raceAudioResume(
+  rejectionContextKey: string,
+  onEarlyRejection?: (cause: unknown) => void
+): Promise<boolean> {
+  const resumePromise = resumeAudioContext();
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      // The timer won. No report from here — see the docblock: the caller
+      // owns the decision this fact sits behind.
+      resolve(true);
+    }, RESUME_TIMEOUT_MS);
+    resumePromise.then(
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(false);
+      },
+      (cause: unknown) => {
+        // A rejection never bounds the race's own outcome — only resolve it
+        // if the timer has not already done so. Whether THIS rejection is
+        // the one deciding the race matters for `onEarlyRejection` (below):
+        // a rejection that arrives once the timer has ALREADY won is a LATE
+        // rejection nothing else will ever see — the caller's own flow moved
+        // on when the timer settled the race, under the timeout key, not
+        // this one — so it is always reported directly, regardless of
+        // `onEarlyRejection`, exactly as before that callback existed.
+        const decidesTheRace = !settled;
+        if (decidesTheRace) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(false);
+        }
+        if (decidesTheRace && onEarlyRejection) {
+          onEarlyRejection(cause);
+        } else {
+          reportFailure(cause, rejectionContextKey);
+        }
+      }
+    );
+  });
 }
 
 /**
@@ -435,6 +581,46 @@ function nextTask(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/**
+ * The one fail-closed gate `playSamples` applies whenever a play claim is
+ * still current: if the shared context needs a resume RIGHT NOW, this writes
+ * a single durable row and throws, so `playSamples` builds no source and
+ * `onEnded` never fires for a clip that was never heard (#469).
+ *
+ * Called from TWO points in `playSamples` — immediately after the resume
+ * race settles, and again right before `createBufferSource`, once the
+ * intervening `nextTask()` yield has run (George round-2 P2). One gate, two
+ * call sites, so both share the identical contract rather than drifting: an
+ * OS interruption delivered as a task during the buffer fill/yield is
+ * otherwise invisible to the first call alone, since that call only proves
+ * the context was usable BEFORE the fill started.
+ *
+ * `resumeTimedOut` selects which row this reports UNDER, not WHETHER it
+ * reports — that is `audioContextNeedsResume()` alone. The first call site
+ * passes the real flag from `raceAudioResume`, so a bound that elapsed is
+ * reported as "playback-resume-timeout". The second call site always passes
+ * `false`: by the time it runs, the timeout branch above has already thrown
+ * (a `true` never reaches it), so anything this second call catches is a
+ * context that went back to `"interrupted"` after resume succeeded — logged
+ * as "playback-resume-unusable", the same key an early rejection reports
+ * under at the first call site (George R1 P1's fix; see the docblock there).
+ *
+ * Only called when the context is STILL unusable, so it is not the sole
+ * writer for an early rejection any more (Frank round-3 P2): `playSamples`
+ * passes `onEarlyRejection` to `raceAudioResume` to CAPTURE, not report, an
+ * early rejection, then calls this gate first — if the context is still
+ * unusable, the captured cause is folded into this ONE row rather than
+ * reported separately (George round-2 P3's fix); if the context turned out
+ * usable anyway (a concurrent resume elsewhere won), `playSamples` reports
+ * the captured cause itself, on its own, since this gate never fires for a
+ * usable context.
+ */
+function buildResumeUnusableMessage(resumeTimedOut: boolean): string {
+  return resumeTimedOut
+    ? `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in playSamples elapsed (#469)`
+    : `resumeAudioContext() settled but the shared context still needs resume; playSamples refusing a silent start (#469)`;
+}
+
 /** Play canonical PCM, optionally from an offset. Returns a stop handle. */
 export async function playSamples(
   samples: Int16Array,
@@ -462,62 +648,181 @@ export async function playSamples(
     isStillCurrent: () => boolean;
   }
 ): Promise<PlaybackHandle> {
-  await resumeAudioContext();
+  // SINGLE EXIT for the #469 resume-bound row (dev lead pick, option A on the
+  // 2026-09-19 judgment sheet, replacing the per-site reports round-2 and
+  // Frank round-3 each patched one exit of at a time — George R2 P3 (two
+  // rows for one rejection), Frank r1 (zero rows when a CONCURRENT
+  // `resumeAudioContext()` elsewhere won the race), Frank r2 P2 @ :678 (the
+  // `isStillCurrent()` supersession bail returned before ever looking at a
+  // captured rejection) and P2 @ :694 (the gate always built its OWN
+  // synthetic `Error`, discarding a real captured cause). All four were the
+  // same class: "which exit of `playSamples` owns the row". The `finally`
+  // below is now the ONLY `reportFailure` call for this row, reached from
+  // EVERY exit — success, either supersession bail, or either fail-closed
+  // throw — so accounting can no longer drift per call site by construction.
+  //
+  // `hadRejection`/`capturedCause` are set at most once, from
+  // `raceAudioResume`'s `onEarlyRejection` below, and are never cleared —
+  // once a claim's OWN `resumeAudioContext()` call has genuinely rejected,
+  // that fact survives every branch after it, superseded or not.
+  // `unusableError` is set only at the exact point (either fail-closed
+  // check, at most one of them reachable per call) this function is ABOUT TO
+  // THROW for an unusable context; its presence is what the `finally` uses
+  // to select the "-timeout"/"-unusable" key, kept separate from
+  // `hadRejection` so a captured real cause can still be preferred as the
+  // REPORTED object while the THROWN error stays the stable, synthetic,
+  // user-flow message both call sites' `catch` already matches against.
+  let hadRejection = false;
+  let capturedCause: unknown;
+  let unusableError: Error | undefined;
 
-  if (!options.isStillCurrent()) {
-    // Superseded during the resume await. Return an inert handle before building
-    // any node — nothing is created, nothing reaches `ctx.destination`, nothing
-    // sounds. The caller's `settle` stops it (a no-op) and discards it; `onEnded`
-    // is deliberately not called, since nothing started and the newer claim owns
-    // the UI state now.
-    return { stop: () => {}, elapsed: () => 0, duration: 0 };
+  const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
+    hadRejection = true;
+    capturedCause = cause;
+  });
+
+  try {
+    if (!options.isStillCurrent()) {
+      // Superseded during the resume await. Return an inert handle before
+      // building any node — nothing is created, nothing reaches
+      // `ctx.destination`, nothing sounds. `onEnded` is deliberately not
+      // called, since nothing started and the newer claim owns the UI state
+      // now. Unlike before this round, a captured rejection is NOT dropped
+      // here (Frank round-3 r2 P2 @ audio-io.ts:678) — the `finally` below
+      // still reports it; only the SYNTHETIC "still unusable" row stays
+      // suppressed for a claim nobody is waiting on any more, mirroring
+      // `start()`'s generation check for the identical reason (#498 George
+      // R1 P2) — see the `finally`'s own comment for why those two are not
+      // the same rule.
+      return { stop: () => {}, elapsed: () => 0, duration: 0 };
+    }
+
+    if (audioContextNeedsResume()) {
+      // Still current, so an unusable context here IS a #469 event worth a
+      // row. Gated on the AUDIBILITY predicate, not `resumeTimedOut` (George
+      // R1 P1): `raceAudioResume` also resolves `false` — "timer did not
+      // win" — when `resume()` REJECTS before the bound, and a rejection is
+      // not a success. Checking only the timer flag let that case fall
+      // through to `source.start()` on a context that still needs resume:
+      // the iOS silent-playback shape, with no error and no rejection ever
+      // reaching `playTake`/`playBuffer`'s `catch`. Re-reading the live
+      // state here (rather than trusting `resumeTimedOut`) closes that path
+      // for BOTH causes — timeout and early rejection — with one check.
+      unusableError = new Error(buildResumeUnusableMessage(resumeTimedOut));
+      throw unusableError;
+    }
+
+    const ctx = getAudioContext();
+    const buffer = toAudioBuffer(samples);
+
+    // The fill above is synchronous and scales with the clip (#175): about
+    // 600 `copyToChannel` calls for ten minutes. A Stop, or a Play on
+    // another row, tapped DURING it cannot run until something yields. With
+    // no yield between here and `source.start()`, that tap would be handled
+    // only after the source had started, and `settle` would kill it: the
+    // start-then-stop #104 exists to prevent (George R4 G-1). A bare
+    // re-check here would be dead code, because nothing can change within
+    // this task. So yield one TASK, not a microtask (input events are
+    // tasks), and ask again. The cost is one macrotask of latency per Play.
+    await nextTask();
+    if (!options.isStillCurrent()) {
+      return { stop: () => {}, elapsed: () => 0, duration: 0 };
+    }
+
+    if (audioContextNeedsResume()) {
+      // Re-applied after the yield (George round-2 P2): the check above only
+      // proves the context was usable BEFORE the fill/yield. An OS
+      // interruption (call / Siri / route change) is delivered as a task
+      // exactly like the Stop or competing Play the yield above exists to
+      // let land — nothing between there and `source.start()` re-read
+      // audibility, so a source could still start on a context that went
+      // back to `"interrupted"` during that window: the same
+      // silent-playback shape this function exists to refuse, reachable
+      // through the unchanged yield. `resumeTimedOut` is always `false`
+      // here — a `true` would already have thrown above, before this line
+      // could ever run — so this always builds the "-unusable" message, not
+      // "-timeout".
+      unusableError = new Error(buildResumeUnusableMessage(false));
+      throw unusableError;
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+
+    const offset = Math.max(
+      0,
+      Math.min(options.offsetSeconds ?? 0, buffer.duration)
+    );
+    const startedAt = ctx.currentTime;
+    let stopped = false;
+
+    source.onended = () => {
+      if (!stopped) options.onEnded?.();
+    };
+    source.start(0, offset);
+
+    return {
+      stop: () => {
+        stopped = true;
+        try {
+          source.stop();
+        } catch {
+          // Already stopped — Web Audio throws on a second stop() call and
+          // there is nothing meaningful to do about it.
+        }
+      },
+      elapsed: () =>
+        Math.min(buffer.duration, offset + (ctx.currentTime - startedAt)),
+      duration: buffer.duration,
+    };
+  } finally {
+    // THE single exit (see the long comment above the function): whichever
+    // path above this function left through, this is reached exactly once,
+    // and is the ONLY place that writes the #469 resume-bound row.
+    if (hadRejection) {
+      // A real rejection was captured — ALWAYS the cause reported, never a
+      // synthetic stand-in (Frank round-3 r2 P2 @ audio-io.ts:694: the old
+      // per-site gate always built its own `Error`, discarding the actual
+      // WebKit exception's name/message/stack even when the real cause was
+      // sitting right there). Still folded into the SAME key the fail-closed
+      // throw above would have used when this claim is ALSO still unusable
+      // (`unusableError` set) — one row, not two, preserving George round-2
+      // P3's fix — or reported on its own under the plain "playback-resume"
+      // key, with NO throw already having happened, when a concurrent
+      // `resumeAudioContext()` elsewhere made the context usable anyway
+      // (Frank round-1: the fact must not be lost just because it turned
+      // out harmless). And — the actual fix this round makes — reported
+      // here EVEN WHEN the claim was superseded before either fail-closed
+      // check ever ran (Frank round-3 r2 P2 @ audio-io.ts:678): the old
+      // `isStillCurrent()` bail returned before the gate could ever see the
+      // captured cause; a `finally` cannot be skipped by an early `return`.
+      reportFailure(
+        capturedCause,
+        unusableError
+          ? resumeTimedOut
+            ? "playback-resume-timeout"
+            : "playback-resume-unusable"
+          : "playback-resume"
+      );
+    } else if (unusableError) {
+      // No rejection was ever observed for THIS claim — the bound simply
+      // elapsed, or the context is unusable for some other reason a plain
+      // `resume()` call never surfaces as a promise rejection — so the
+      // synthetic message built at the throw site above is the only cause
+      // there is to report. NOT reported at all when the claim was
+      // superseded before either fail-closed check ran: `unusableError` is
+      // only ever set immediately before a throw INSIDE the try above, and
+      // both supersession bails return before reaching either throw site, so
+      // a superseded claim with no captured rejection reaches here with
+      // `unusableError` still `undefined` — mirroring `start()`'s generation
+      // check for the identical reason (#498 George R1 P2): a claim nobody
+      // is waiting on any more is not a #469 event to log, unless a REAL
+      // rejection (the branch above) makes it one regardless.
+      reportFailure(
+        unusableError,
+        resumeTimedOut ? "playback-resume-timeout" : "playback-resume-unusable"
+      );
+    }
   }
-
-  const ctx = getAudioContext();
-  const buffer = toAudioBuffer(samples);
-
-  // The fill above is synchronous and scales with the clip (#175): about 600
-  // `copyToChannel` calls for ten minutes. A Stop, or a Play on another row,
-  // tapped DURING it cannot run until something yields. With no yield between
-  // here and `source.start()`, that tap would be handled only after the source
-  // had started, and `settle` would kill it: the start-then-stop #104 exists
-  // to prevent (George R4 G-1). A bare re-check here would be dead code,
-  // because nothing can change within this task. So yield one TASK, not a
-  // microtask (input events are tasks), and ask again. The cost is one
-  // macrotask of latency per Play.
-  await nextTask();
-  if (!options.isStillCurrent()) {
-    return { stop: () => {}, elapsed: () => 0, duration: 0 };
-  }
-
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ctx.destination);
-
-  const offset = Math.max(
-    0,
-    Math.min(options.offsetSeconds ?? 0, buffer.duration)
-  );
-  const startedAt = ctx.currentTime;
-  let stopped = false;
-
-  source.onended = () => {
-    if (!stopped) options.onEnded?.();
-  };
-  source.start(0, offset);
-
-  return {
-    stop: () => {
-      stopped = true;
-      try {
-        source.stop();
-      } catch {
-        // Already stopped — Web Audio throws on a second stop() call and
-        // there is nothing meaningful to do about it.
-      }
-    },
-    elapsed: () =>
-      Math.min(buffer.duration, offset + (ctx.currentTime - startedAt)),
-    duration: buffer.duration,
-  };
 }

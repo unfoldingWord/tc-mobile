@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -15,13 +16,21 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
-import { shareErrorText as shareErrorCopy } from "./share-error-copy";
+import {
+  shareErrorText as shareErrorCopy,
+  shareGapText,
+  shareProgressText,
+} from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
+import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
+import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
+import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useFocusRestore } from "@/hooks/use-focus-restore";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
@@ -109,12 +118,29 @@ export const SegmentsScreen = forwardRef<
   // matches. A ref, read at resolution time, so it sees the live value.
   const chapterMenuSession = useRef(0);
   const share = useChapterShare();
+  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491):
+  // `capture()` runs synchronously in `onPrepareShare`/`onSendShare` below —
+  // the opening gesture's own handler, before `<Menu inert={...}>` (below)
+  // can apply `inert` in the same render — never from an effect. See
+  // `share-progress.tsx`'s docblock for why a passive effect there could
+  // never get this ordering right once `inert` is involved.
+  const focusRestore = useFocusRestore();
+  // Whichever of "Share chapter"/"Preparing…"/"Share now" is CURRENTLY
+  // rendered (the ternary below swaps the mounted `Control` as `share.status`
+  // moves) — attached to every branch, so it survives that remount and always
+  // names a live, non-destructive landmark for `restore()`'s `fallback`: the
+  // originally captured trigger can be gone by the time the overlay hides
+  // (prepare alone can swap "Share chapter" for "Share now" before the
+  // overlay ever shows anything), and Share/Send is the control that owns
+  // this flow, never an exiting or destructive one.
+  const shareControlRef = useRef<HTMLButtonElement | null>(null);
   // Tap 1 — encode the chapter and arm the send gesture. Free the audio floor
   // first: a clip may be sounding when the menu opens, and the encode has taken
   // over the chapter's PCM. The menu stays open across both gestures, so the
   // header and list stay `inert` (see listInert) for the whole flow — that is
   // what keeps Record, append, and erase out of an in-flight share.
   const onPrepareShare = useCallback(() => {
+    focusRestore.capture();
     audio.leave();
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
@@ -124,7 +150,7 @@ export const SegmentsScreen = forwardRef<
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
     );
-  }, [audio, share, chapterId, bookName, chapterNumber]);
+  }, [focusRestore, audio, share, chapterId, bookName, chapterNumber]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
   // as its first call inside this gesture (`navigator.share` in a browser, the
   // Share plugin in the native shell, whose file tap 1 already wrote to the
@@ -132,12 +158,31 @@ export const SegmentsScreen = forwardRef<
   // menu once the flow is done, but NOT on `retry`
   // (the File is still armed for another tap) or `failed` (the error Notice
   // lives in the menu and must stay visible).
+  //
+  // `focusRestore.capture()` here is re-entrant-safe even though tap 1 already
+  // called it once: by the time `status` is `"ready"` and this control is
+  // reachable, the earlier capture has already been consumed by the restore
+  // effect below (prepare's own settle drives `progress` back to `hidden`
+  // well before a translator can tap again), so this captures the live tap on
+  // "Share now" fresh, not a stale one from tap 1.
   const onSendShare = useCallback(() => {
+    focusRestore.capture();
     void share.send().then((outcome) => {
       if (outcome === "sent" || outcome === "dismissed")
         setChapterMenuOpen(false);
     });
-  }, [share]);
+  }, [focusRestore, share]);
+  // Hand focus back once `inert` has lifted (`useLayoutEffect`, not
+  // `useEffect`: it must run before paint, right after the mutation that
+  // clears `inert`). Fires on every render where the overlay is not showing —
+  // `restore()` is a safe no-op when nothing is held (`captured: false`).
+  useLayoutEffect(() => {
+    if (shareOverlayOwnsScreen(share.progress)) return;
+    focusRestore.restore({
+      suppressed: false,
+      fallback: shareControlRef.current,
+    });
+  }, [share.progress, focusRestore]);
   // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
   // File and clear state so a stale "ready" cannot linger behind a closed menu.
   //
@@ -152,6 +197,24 @@ export const SegmentsScreen = forwardRef<
   // system Back too, tracked at #393 (with #374, the same gap for Books' other
   // menus) rather than shipped as a partial fix here.
   const onCloseChapterMenu = useCallback(() => {
+    // KEPT deliberately (#491, the DRI's option-A pick): every OTHER guard
+    // this menu's controls carried was removed once `<Menu>`'s own `inert`
+    // prop (below) started covering them — this one is not, because `inert`
+    // only reaches the DOM subtree it is applied to, and this function is
+    // still reachable from TWO places outside that subtree while the
+    // overlay is up: Menu's own `window` Escape listener (`menu.tsx`'s
+    // `onKeyDown`), and its scrim `onClick` — both call `onClose` directly,
+    // neither is inside the panel. `<ShareProgress>`'s own capture-phase
+    // Escape (with `stopPropagation`) is expected to swallow the Escape
+    // before Menu's bubble-phase listener ever sees it, and the overlay's
+    // own scrim (`z-index: 90`, over the menu scrim's 80) is expected to
+    // swallow the click — but neither of those is `inert`, so this guard is
+    // the belt for both, not a redundant copy of the primitive. The
+    // overlay's OWN scrim/Escape still cancel a genuinely cancelable
+    // busy-prepare phase, wired straight to `share.reset` (see
+    // `<ShareProgress>` below) rather than through this function, so that
+    // path is unaffected by this guard.
+    if (shareOverlayOwnsScreen(share.progress)) return;
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
@@ -236,8 +299,17 @@ export const SegmentsScreen = forwardRef<
     })();
   }, [audio, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
-  // sheet (G8: aria-modal alone is not trusted to hide the background).
-  const listInert = eraseTarget !== null || rowMenuOpen || chapterMenuOpen;
+  // sheet (G8: aria-modal alone is not trusted to hide the background). The
+  // share overlay joins the list (George r1 P2 #1/#2, #491): a screen
+  // reader's own gesture navigation does not dispatch the `Tab` keydowns
+  // `<ShareProgress>` intercepts, so `inert` is what keeps THAT path off the
+  // header/list while the overlay is up — including through the outcome
+  // hold, after `chapterMenuOpen` itself may already have gone false.
+  const listInert =
+    eraseTarget !== null ||
+    rowMenuOpen ||
+    chapterMenuOpen ||
+    shareOverlayOwnsScreen(share.progress);
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -261,8 +333,14 @@ export const SegmentsScreen = forwardRef<
   // what the translator is looking at. Its error code is mapped to copy here and
   // rendered in the menu below.
   // The Share Control's glyph/variant/busy across idle → preparing → ready
-  // (#354) — the same table Share Book and NameEdit's Confirm use.
-  const shareAffordance = shareControlAffordance(share.status);
+  // (#354) — the same table Share Book and NameEdit's Confirm use. Its idle
+  // mark is the platform's own (#490): read from the Capacitor runtime each
+  // render — a constant, cheap read — never from the user agent.
+  const shareAffordance = shareControlAffordance(
+    share.status,
+    readSharePlatform(),
+    share.sendUnconfirmed
+  );
   const shareErrorText = shareErrorCopy(share.error, "chapter");
   // Hoisted: the same mark for a chapter and a book, from one table.
   const sharePartial = shareOutcomeGlyph("partial");
@@ -444,6 +522,36 @@ export const SegmentsScreen = forwardRef<
         open={chapterMenuOpen}
         onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
+        // The class-level isolation primitive (#491, the DRI's option-A pick
+        // on the judgment sheet): while the overlay owns the screen, the
+        // WHOLE panel below — Rename, Share/Send, Close, the rename field —
+        // goes `inert` as one subtree, rather than each control carrying its
+        // own `shareOverlayOwnsScreen` guard. See `menu.tsx`'s own docblock
+        // on the prop for why this replaced four rounds of per-handler
+        // patches, the last of which (Frank at `ec2a148`) found Share/Send
+        // themselves still unguarded.
+        inert={shareOverlayOwnsScreen(share.progress)}
+        // The live region moves here, OUTSIDE the inert subtree above but
+        // still inside this panel's `aria-modal` boundary — see `menu.tsx`'s
+        // `liveRegion` docblock for why it cannot live inside `children`
+        // any more, and why `<ShareProgress>`'s own sibling portal still
+        // cannot carry it (George r1 P2 #3).
+        //
+        // Mounted for the WHOLE overlay, busy included — not `phase ===
+        // "outcome"` alone (George r3 P2-1, #491): the in-menu `tone="busy"`
+        // Notice that used to be the busy-phase AT announcement is now
+        // `children`, so it goes `inert` for the entire encode, and a book
+        // share's encode is not short. `shareOverlayOwnsScreen` is exactly
+        // `phase !== "hidden"`, so this covers busy and outcome alike, and
+        // `shareProgressText` already has copy for both (`share-error-copy
+        // .ts`) — busy said nothing here only because nobody asked it to.
+        liveRegion={
+          shareOverlayOwnsScreen(share.progress) && (
+            <span className="sr-only" role="status" aria-live="polite">
+              {shareProgressText(share.progress, "chapter")}
+            </span>
+          )
+        }
       >
         {renamingChapter ? (
           <>
@@ -475,6 +583,12 @@ export const SegmentsScreen = forwardRef<
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"
+              // No `shareOverlayOwnsScreen` guard here any more (#491): this
+              // control sits inside the panel's `inert` subtree above (see
+              // `<Menu>`'s own `inert` prop), so it is unreachable by click,
+              // keyboard or AT activation for the whole time the guard used
+              // to check — the primitive covers it now, not a per-handler
+              // check.
               onClick={() => setRenamingChapter(true)}
             />
             {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once
@@ -483,6 +597,7 @@ export const SegmentsScreen = forwardRef<
                 as it appears, since the Menu only lands focus on its open edge. */}
             {share.status === "ready" ? (
               <Control
+                ref={shareControlRef}
                 icon={shareAffordance.icon}
                 label={strings.shareSend}
                 variant={shareAffordance.variant}
@@ -498,11 +613,14 @@ export const SegmentsScreen = forwardRef<
               // portal (George R-B7). `busy` (not disabled) is what now paints
               // and reads that wait state (#354; `control-affordance.ts`).
               <Control
+                ref={shareControlRef}
                 icon={shareAffordance.icon}
                 label={
                   share.status === "preparing"
                     ? strings.sharePreparing
-                    : strings.shareChapter
+                    : share.sendUnconfirmed
+                      ? strings.shareChapterUnconfirmed
+                      : strings.shareChapter
                 }
                 variant={shareAffordance.variant}
                 busy={shareAffordance.busy}
@@ -521,7 +639,10 @@ export const SegmentsScreen = forwardRef<
               // glyph also carries storage durability (#214/#406), so share
               // would otherwise share a shape with an unrelated condition.
               <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
-                {strings.shareMissing(share.missing)}
+                {shareGapText(
+                  { missing: share.missing, partial: 0 },
+                  "chapter"
+                )}
               </Notice>
             )}
             {shareErrorText && (
@@ -537,6 +658,22 @@ export const SegmentsScreen = forwardRef<
           </>
         )}
       </Menu>
+
+      {/* The share modal (#491): the busy hold and the outcome glyph, over the
+          menu. A sibling of the Menu, not a child, so it survives the menu
+          closing — `send()` resolves only after the flash, so the close above
+          lands after the glyph, not under it. `onCancel` is wired to
+          `share.reset` directly, not `onCloseChapterMenu` (George r1 P2
+          #1/#2): that close now refuses to run at all while this overlay is
+          up, so the busy-phase cancel — still needed for a long encode, and
+          a no-op during send since `reset()` itself already refuses then —
+          has to go through the flow's own reset rather than the menu's. */}
+      <ShareProgress
+        progress={share.progress}
+        scope="chapter"
+        onCancel={share.reset}
+        onDismiss={share.dismissProgress}
+      />
     </div>
   );
 });

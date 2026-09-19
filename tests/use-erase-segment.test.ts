@@ -13,6 +13,10 @@ import {
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import {
+  subscribeToFailures,
+  type FailureReport,
+} from "@/hooks/report-failure";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -109,6 +113,8 @@ describe("performErase", () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const stopSink = subscribeToFailures((r) => reports.push(r));
 
     const result = await performErase(segmentId, onErased);
 
@@ -122,6 +128,12 @@ describe("performErase", () => {
     // The notification failure is logged, never swallowed.
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+
+    // The store op itself committed — this is the notification-failure site
+    // (`"Post-erase notification failed"`), not the store-failure one #456
+    // routes. Only the latter reports to the funnel.
+    expect(reports).toEqual([]);
+    stopSink();
   });
 
   it("catches a store rejection, surfaces the reason, and does not fire onErased", async () => {
@@ -138,7 +150,36 @@ describe("performErase", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("No such segment");
     expect(onErased).not.toHaveBeenCalled();
-    expect(consoleError).toHaveBeenCalledTimes(1); // never swallowed silently
+    // Never swallowed silently: this site's own message, plus `reportFailure`'s
+    // own internal `console.error` (#456) — the same "kept beside it, not
+    // replaced" doubling `recorder-stop-backstop` (#480) already carries.
+    expect(consoleError).toHaveBeenCalledTimes(2);
     consoleError.mockRestore();
+  });
+
+  it('reports a store rejection to the funnel once, under "erase-segment" (#456)', async () => {
+    const bogus = newClipId() as unknown as SegmentId;
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    await performErase(bogus);
+
+    off();
+    consoleError.mockRestore();
+    expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
+  });
+
+  it("reports nothing to the funnel on a successful erase (#456)", async () => {
+    const { segmentId } = await recordedSegment();
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    await performErase(segmentId);
+
+    off();
+    expect(reports).toEqual([]);
   });
 });

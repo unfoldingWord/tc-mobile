@@ -9,7 +9,9 @@ import {
   useState,
 } from "react";
 
+import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
+import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
@@ -18,13 +20,16 @@ import { PlayheadOverlay } from "./playhead-overlay";
 import { recorderStatusKind } from "./processing-status";
 import { resolveProbedPx } from "./recorder-layout";
 import {
+  CENTER_FRACTION,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterCutRest,
   panAfterDragMove,
-  panAfterRematerialize,
+  panAfterRedo,
+  panAfterUndo,
   panGesture,
   recordDisabled,
   stageView,
@@ -47,6 +52,7 @@ import { classifyShareError } from "@/hooks/share-flow";
 import {
   nativeShare,
   readShareEnvironment,
+  readSharePlatform,
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
@@ -64,7 +70,6 @@ import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   effectivePan,
-  panAfterCut,
   panForZoom,
   playbackStrip,
   viewportWindow,
@@ -82,16 +87,6 @@ import {
 import { cn, formatDuration } from "@/lib/utils";
 import type { Peaks, SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
-
-/**
- * Where the fixed centerline sits across the waveform viewport (F6).
- *
- * Centered. Sitting it right-of-centre gave the recorded audio room to the
- * right to grow into on an append (mockup 3), but the requirements owner's v0.1.2 review asked for
- * it centered on every screen — that overrides the append-headroom tradeoff.
- * One constant to retune.
- */
-const CENTER_FRACTION = 0.5;
 
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
@@ -888,11 +883,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * buffer that was playing names different audio in the one that comes back:
      * undo a cut of the first 2 000 samples and the position the line was on
      * moves 2 000 samples deeper into the speech, where the next Record would
-     * splice. Unlike `onCut`, which repairs the index through `panAfterCut`,
-     * there is no mapping for an arbitrary history jump — so the honest answer
-     * is to keep no frozen position at all and leave the pan exactly as the
-     * translator last set it (the F7 rest, usually), which is what these
-     * controls did before playback ever wrote the pan.
+     * splice.
+     *
+     * This function only drops the ONE-SHOT, not-yet-committed play position a
+     * frame loop was observing — a value that was never written into
+     * `panState` at all, so there is nothing there for `onUndo`/`onRedo` to
+     * map (#449's `panAfterUndo`/`panAfterRedo` map a pan that IS already in
+     * `panState` through the undone/redone op instead of dropping it; see
+     * those two below). Dropping the in-flight observation and leaving
+     * `panState` exactly as the translator last set it is what these controls
+     * did before playback ever wrote it, and is still correct here: freezing
+     * an unsettled rAF position into `panState` would invent a pan the
+     * translator never asked for, which is a different defect from #449's.
      *
      * Clearing the one-shot is what makes it a drop rather than a deferral: the
      * layout effect must not freeze this play either, a commit later, against
@@ -1752,40 +1754,52 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // playback WITHOUT freezing a position in it (George R1 P2 #2): a sample
     // index measured in the buffer that was sounding names different audio in
     // the one that comes back, and unlike a cut there is no mapping to repair
-    // it with.
+    // it with in that stop path — the mapping happens below instead.
     //
-    // ...and they drop the pan that is ALREADY there, which is the half round 2
-    // missed (George R3 P1-1). Dropping the in-flight freeze only covers an undo
-    // tapped while a buffer sounds. Pause at sample 4 000 first and the freeze
-    // has committed: `panState` is 4 000, nothing is sounding, the stop above is
-    // a no-op on the pan, and 4 000 is left naming different speech in the
-    // restored buffer — where the next Record locks `insertionOffset` and
-    // punches into the middle of a word. `panAfterRematerialize` carries the
-    // reasoning and returns the F7 rest, so the line follows whatever comes back
-    // and Record appends. Functional, so neither callback has to close over the
-    // pan (and `onCut`'s own `setPanState` still composes with it).
+    // ...and they used to drop the pan that was ALREADY there unconditionally
+    // (George R3 P1-1, then #449): a hand-set pan whose audio did not move
+    // under the undone/redone op is lost the same way a playback freeze's was.
+    // `editor.undo()`/`editor.redo()` now return the op they stepped over, and
+    // `panAfterUndo`/`panAfterRedo` map the pan through its inverse/forward
+    // effect rather than dropping it — see their docblocks in
+    // `recorder-stage.ts` for why this subsumes the round-3 P1 case too.
+    // `length` is the PRE-step closure value (#473's same note): the mappers
+    // derive the restored length from the op rather than needing the caller
+    // to re-read `editor.workingLength`, which has not advanced yet inside
+    // this same callback.
     const onUndo = useCallback(() => {
       stopPlaybackDroppingPan();
-      editor.undo();
-      setPanState(panAfterRematerialize);
-    }, [editor, stopPlaybackDroppingPan]);
+      const undoneOp = editor.undo();
+      if (undoneOp !== null) {
+        setPanState((p) => panAfterUndo(p, undoneOp, length));
+      }
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
-      editor.redo();
-      setPanState(panAfterRematerialize);
-    }, [editor, stopPlaybackDroppingPan]);
+      const redoneOp = editor.redo();
+      if (redoneOp !== null) {
+        setPanState((p) => panAfterRedo(p, redoneOp, length));
+      }
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onCut = useCallback(() => {
       stopPlayback();
       const removed = editor.cut();
-      // Keep the centerline on the same audio: a cut before it shortens the buffer
-      // to its left, so shift an absolute pan by what was removed (George R5). A
-      // null/resting pan already follows the new end.
+      // Keep the centerline on the same audio: a cut before it shortens the
+      // buffer to its left, so shift an absolute pan by what was removed
+      // (George R5), through the rest rule (#473) — a cut that runs to the
+      // end must not leave `panState` holding the number `newLength` instead
+      // of the F7 rest, or a later Paste/Record punches into the pasted
+      // audio. A null/resting pan already follows the new end. `length` is
+      // the PRE-cut closure value; `panAfterCutRest` derives the post-cut
+      // length from `removed` itself.
       if (removed !== null) {
-        setPanState((p) => (p === null ? null : panAfterCut(p, removed)));
+        setPanState((p) =>
+          p === null ? null : panAfterCutRest(p, removed, length)
+        );
       }
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlayback, length]);
 
     // Paste at the drawn centerline — which is ALSO the record insertion offset,
     // and that is not a coincidence to leave unstated (George stand-in P3).
@@ -2403,14 +2417,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // Rescued off the phone. Offer a Done exit even though the decode never
           // succeeded (George R1 G1 / Frank F2): the app is no longer a dead end.
           //
-          // ONLY where the resolve proves it, which on the native route it does
+          // ONLY where the resolve proves it, which on native ANDROID it does
           // not (George stand-in R4 P2, see `resolveProvesDelivery`): a chooser
           // dismissed with Back after the activity stopped resolves as success,
           // and `Done` is a SINGLE tap that drops the only copy of this
-          // recording. So on native the panel stays "held", the two-tap Discard
+          // recording. So there the panel stays "held", the two-tap Discard
           // stays the only exit, and the share sheet itself was the feedback.
-          // Losing an exit is recoverable; losing the take is not.
-          setHeldShared(resolveProvesDelivery(route));
+          // Native iOS resolves only on a completed share (#381), so it gets
+          // Done like the web does. Losing an exit is recoverable; losing the
+          // take is not.
+          setHeldShared(resolveProvesDelivery(route, readSharePlatform()));
           setHeldShareError(null);
         },
         (cause: unknown) => {
@@ -3319,35 +3335,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       />
                     </WaveformScroller>
                   )}
-                  {!liveScope && (
-                    // The fixed centerline (#110/#316), a DOM element rather
-                    // than a bar in the canvas (#415). The canvas is what
-                    // MOVES during playback, so a painted line would travel
-                    // with it — exactly the thing this line is defined by not
-                    // doing ("the waveform pans under a FIXED centerline; the
-                    // line never travels"). Same shape as `PlayheadOverlay`:
-                    // absolute, 2px, `z-[1]` so it paints over the selection
-                    // band, `pointer-events-none` so it never takes the stage's
-                    // pan. `translateX(-1px)` centres it on the fraction, which
-                    // is what the canvas' `round(cf * w) - 1` did.
-                    //
-                    // Mounted on the `Waveform` path only — `LiveScope` draws
-                    // its own record head while capturing — so WHEN the line
-                    // shows is unchanged by this move: every record/edit state,
-                    // per #316.
-                    <div
-                      aria-hidden="true"
-                      className="bg-live pointer-events-none absolute top-0 bottom-0 z-[1] w-[2px]"
-                      // `left` stays inline: it is computed from
-                      // `CENTER_FRACTION`, a module constant the stage's own
-                      // arithmetic reads, so it is data rather than a colour
-                      // bypassing the component layer (#164 L-14).
-                      style={{
-                        left: `${CENTER_FRACTION * 100}%`,
-                        transform: "translateX(-1px)",
-                      }}
-                    />
-                  )}
+                  {/* The fixed centerline (#110/#316, #418) — extracted into
+                    its own component (#513, dev lead's cap pick,
+                    issuecomment-5742347381) so the gate
+                    (`centerlineOverlayShown`, `recorder-stage.ts`) and the
+                    element it gates cannot drift apart the way a JSX `&&`
+                    condition and its child could. See
+                    `centerline-overlay.tsx`'s own docblock for the full
+                    history. */}
+                  <CenterlineOverlay
+                    mode={mode}
+                    selectionActive={editor.selectionActive}
+                    liveScope={liveScope}
+                  />
                   {/* The playback playhead, a pull-model DOM overlay (#102): it
                     polls `readPlaybackPosition` on its own rAF and moves a line,
                     so buffer playback re-renders neither this sheet nor the
@@ -3399,13 +3399,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       still `disabled` on the same `idleEditable` safety: without
                       it a Cut tapped during the async close would mutate the
                       working buffer after close() already captured the pre-cut
-                      one — a silently dropped edit. */}
+                      one — a silently dropped edit.
+
+                      `heldByDrag` is the same #317 stage lock Undo/Redo carry
+                      (#512 George R1 P2-1): `onCut` writes `panAfterCutRest`
+                      into `panState`, and a finger still down from a stage
+                      drag keeps writing `onPointerMove`'s
+                      `panAfterDragMove(panAtDragStart, …)` afterwards — a
+                      PRE-cut origin against the POST-cut length, clobbering
+                      the cut's own write. Cut does not clear `dragging` on
+                      its own, so the gate is what has to. */}
                     <Control
                       icon="scissors"
                       label={strings.cut}
                       variant="quiet"
                       size={26}
-                      disabled={!idleEditable || !editor.canCut}
+                      disabled={heldByDrag(
+                        dragging,
+                        !idleEditable || !editor.canCut
+                      )}
                       onClick={onCut}
                     />
                   </div>
@@ -3669,20 +3681,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant={editor.selectionActive ? "primary" : "quiet"}
                     size={24}
                     // A window control, and the one this class was found through
-                    // (George R4 P2-1). The reason has CHANGED shape since #415
-                    // and #316, and the old wording — "the centerline is hidden
-                    // while a buffer sounds" — is now false in a way that
-                    // invites someone to delete this gate (George R4 P3): the
-                    // line is never hidden any more. What is true is that
-                    // `openSelection` seeds from `win.centerlineSample`, which
-                    // is `panState` — and while the stage SCROLLS the drawn
-                    // line is the sounding sample while `panState` is still the
-                    // pre-play value, stale until the freeze. Seeding from it
-                    // would put the span where the take was parked (at the F7
-                    // rest, the END) while the translator is hearing the middle.
-                    // Inert in BOTH directions: closing an open frame
-                    // mid-audition would also flip the view out from under the
-                    // sound, since a picked span is what keeps the pan window.
+                    // (George R4 P2-1). The reason has CHANGED shape again since
+                    // #418 (George round-1 P3): the line now hides for a loaded
+                    // edit-mode span, and is always visible otherwise
+                    // (`centerlineOverlayShown` in `recorder-stage.ts`) — it is
+                    // not true any more that "the line is never hidden". Select
+                    // stays inert regardless, in BOTH directions: (a) opening
+                    // seeds from `win.centerlineSample`, which is `panState` —
+                    // and while the stage SCROLLS the drawn line is the
+                    // sounding sample while `panState` is still the pre-play
+                    // value, stale until the freeze. Seeding from it would put
+                    // the span where the take was parked (at the F7 rest, the
+                    // END) while the translator is hearing the middle. (b)
+                    // closing an open frame mid-`inPlace` audition flips
+                    // `render` out from under the sound, since a picked span is
+                    // what keeps the pan window.
                     disabled={
                       !idleEditable || !hasAudio || stage.windowControlsInert
                     }
@@ -4043,8 +4056,9 @@ function SaveDecodeFailedPanel({
         // OTHER busy `Control` in the app now spins under the shared
         // `[aria-busy="true"]` CSS rule #384 added, and the retry mark is the
         // one that rule's motion is meant to animate — spinning the idle share
-        // glyph instead reads as a stuck tray, not a wait.
-        icon={sharing ? "retry" : "share"}
+        // glyph instead reads as a stuck tray, not a wait. The idle mark is
+        // the platform's own (#490), the same one the share menus draw.
+        icon={sharing ? "retry" : shareControlGlyph(readSharePlatform())}
         label={sharing ? strings.takeRecoverSharing : strings.takeRecoverShare}
         variant="quiet"
         // Disabled mid-retry (George R1 G7): the OS share sheet would re-interrupt

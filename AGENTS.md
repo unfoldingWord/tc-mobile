@@ -210,15 +210,38 @@ recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below), `stopRecording`'s commit-path backstop
-(`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), and the
-log's own share and clear paths.
+(`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
+save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
+(`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
+(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), playback's own
+resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
+`"playback-resume"`, and the fail-closed gate that still finds the context
+unusable after the resume await — `"playback-resume-timeout"` when the
+1000 ms bound was what ended it, `"playback-resume-unusable"` when an
+earlier rejection did or a fresh interruption arrived during the post-fill
+yield, #469), and the log's own share and clear paths. `SaveFailed` now
+carries the same `SendLogControl` the crash screen does (#456, moved into
+its own module, `components/send-log-control.tsx`, so both screens share one
+implementation) — `DatabasePanel` still does not: #456 itself calls that a
+design call, since an unreachable database cannot read its own log either,
+and that is different work from wiring the funnel. **`SaveFailed`'s Send
+control also sits on a still-live app** (unlike `ErrorBoundary`'s, which runs
+after `quiesceTranscodeSweep()` — `components/error-boundary.tsx`): the
+module-scoped transcode sweep (`hooks/finish-transcode.ts`) keeps writing
+while `SaveFailed` is up, and a live failing sweep can churn the armed share
+and prune the 50-row ring before the tap that was supposed to send it lands.
+The crash screen's quiesce is one-way, on purpose, because its only exit is a
+reload; `SaveFailed`'s primary exit is Retry on the _same_ page, so copying
+that one-way quiesce would silently skip the post-retry sweep a successful
+Finished retry still owes (D3). Left as a known hole rather than a silent
+one — see #514 (George R1 P2-2 on #509).
 What still ends at `console.error` and is therefore **never written down** is
-most of what a translator actually hits: a failed save
-(`hooks/use-save-take.ts`), a failed book delete (`hooks/use-books.ts`), a
-failed erase (`hooks/use-erase-segment.ts`), mic/playback/record-start
-(`hooks/use-audio-session.ts`), the recorder's preview path, and share _send_
-(`hooks/share-flow.ts`). Routing those is follow-up work — and it
-is not a one-line change, because `SaveFailed` replaces the tree the way the
+mic/record-start and the `use-audio-session.ts` catch sites that wrap
+`playSamples` (a failed decode, a dangling clip with nothing to play) — the
+resume bound's OWN failure is now on the funnel above, but the catch around
+it still only `console.error`s — the recorder's preview path, and share
+_send_ (`hooks/share-flow.ts`). Routing those is follow-up work — and it is
+not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 Until it lands, do not describe the log as holding "anything that went wrong":
 `docs/training/facilitator-runbook.md` §5 names both halves for facilitators

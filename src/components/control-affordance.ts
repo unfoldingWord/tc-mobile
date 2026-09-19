@@ -15,7 +15,26 @@
  */
 
 import type { ShareStatus } from "@/hooks/share-flow";
+import type { SharePlatform } from "@/hooks/share-target";
 import type { IconName } from "./icon";
+
+/**
+ * The Share control's idle mark is the PLATFORM'S own (#490, decided
+ * 2026-09-19 by the dev lead): Android's three joined dots on the Android
+ * build, the tray-with-up-arrow on iOS and the web. The phone has already
+ * taught the person that glyph, and the one field data point on the tray
+ * (#249's tester comment, Android v0.2.4) is that it did not convey what it
+ * would do. `platform` comes from `readSharePlatform()` — the Capacitor
+ * runtime, never the user agent. The accessible name is the screen's, from
+ * `strings`, and is identical on every platform: only the shape moves.
+ *
+ * One table for every Share control in the app — the two menus, the failure
+ * log's Send, the held-take rescue — so one build never shows two different
+ * share marks.
+ */
+export function shareControlGlyph(platform: SharePlatform): IconName {
+  return platform === "android" ? "share-android" : "share";
+}
 
 export interface ShareControlAffordance {
   readonly icon: IconName;
@@ -34,20 +53,37 @@ export interface ShareControlAffordance {
 }
 
 /**
- * `idle`: the plain share glyph, the same size as every other quiet control
- * on the row. `preparing`: the retry glyph — the same wait mark `Notice`'s
- * `busy` tone already wears — spinning, `aria-busy`, box size UNCHANGED
- * (#164, #351: a size change on tap reflows the row around it). `ready`: the
- * check glyph — the "yes, this is so" mark `is-done`/`is-on` already wear —
- * on the existing primary/XL variant.
+ * `idle`: the platform's share glyph ({@link shareControlGlyph}), the same
+ * size as every other quiet control on the row. `preparing`: the retry glyph
+ * — the same wait mark `Notice`'s `busy` tone already wears — spinning,
+ * `aria-busy`, box size UNCHANGED (#164, #351: a size change on tap reflows
+ * the row around it). `ready`: the check glyph — the "yes, this is so" mark
+ * `is-done`/`is-on` already wear — on the existing primary/XL variant. Only
+ * `idle` varies by platform: the wait and the "yes" are the same on every
+ * phone.
+ *
+ * `unconfirmed` (George r2 P2-2, #491) — {@link UseShareFlow.sendUnconfirmed}
+ * — overrides the `idle` cell only: `preparing` and `ready` already speak for
+ * themselves (a fresh attempt is underway or armed), and a translator only
+ * needs telling apart "never tried" from "tried, unconfirmed" at the resting
+ * state a plain tray glyph would otherwise show for both. Reuses the
+ * `dismissed` outcome's own arrow-back-down mark (`share-outcome-glyph.ts`'s
+ * `shareSettledGlyph` makes the identical choice for the modal's own glyph,
+ * for the identical reason: not a fourth mark, and not `sent`'s tick, which
+ * this resolve did not earn) rather than inventing a new one — the caller
+ * pairs it with a distinct accessible label (the "unconfirmed" strings), so
+ * the control is not silently mistaken for the plain `idle` cell by a reader
+ * relying on the label alone.
  */
 export function shareControlAffordance(
-  status: ShareStatus
+  status: ShareStatus,
+  platform: SharePlatform,
+  unconfirmed = false
 ): ShareControlAffordance {
   switch (status) {
     case "idle":
       return {
-        icon: "share",
+        icon: unconfirmed ? "share-closed" : shareControlGlyph(platform),
         variant: "quiet",
         busy: false,
         className: undefined,

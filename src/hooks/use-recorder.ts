@@ -21,6 +21,8 @@ import {
   isRecordingSupported,
   type LevelTap,
   pickMimeType,
+  raceAudioResume,
+  RESUME_TIMEOUT_MS,
   resumeAudioContext,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
@@ -188,114 +190,18 @@ export interface RetryDecodeResult {
 const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
 /**
- * How long `start()` waits for `resumeAudioContext()` before proceeding
- * anyway (#108).
- *
- * WebKit's `resume()` from an `"interrupted"` `AudioContext` state has been
- * observed to hang indefinitely. An unbounded `await` on that promise between
- * `getUserMedia` and `new MediaRecorder` left the recorder stuck in
- * `"requesting"` forever, with the microphone already hot and no way out of
- * the sheet.
- *
- * 1000ms is a PROVISIONAL ASSUMPTION, not a measured value — the real
- * distribution of WebKit's resume-from-interrupted latency is unmeasured on
- * any device, which is exactly the open question issue #108 itself poses.
- * This constant is the one place to correct it once an on-device pass
- * answers that question, the same way `STOP_FLUSH_TIMEOUT_MS` above and
- * `SCOPE_CAPACITY` below are each a single named knob for their own
- * provisional value.
+ * `raceAudioResume` and its `RESUME_TIMEOUT_MS` bound moved to `audio-io.ts`
+ * (#469): `playSamples` needs the identical #108 bound on its own
+ * `resumeAudioContext()` await, and `audio-io.ts` — where
+ * `resumeAudioContext` itself already lives — is the shared home both
+ * callers can reach without a circular import back into this higher-level
+ * hook. `start()` below now imports both and passes its own
+ * `"recorder-start-resume"` rejection key at the call site, which is the
+ * only change to this file's own behavior; `raceAudioResume`'s full history
+ * and design rationale (the #108 regression, the #475/#498 George R1 P2
+ * "the helper has no generation to check" reasoning) now lives on the
+ * moved docblock in `audio-io.ts`.
  */
-export const RESUME_START_TIMEOUT_MS = 1_000;
-
-/**
- * Call `resumeAudioContext()` but never let it block `start()` for longer
- * than `RESUME_START_TIMEOUT_MS` (#108).
- *
- * `resumeAudioContext()` is invoked SYNCHRONOUSLY as the first statement,
- * before the timer or the race promise are even constructed — `start()` is
- * still inside the user gesture that opened the microphone at this point
- * (the same timing the comments at its call site, at `resume()`, at
- * `retryDecode()` and at `previewCapture()` all rely on), and queuing the
- * real call behind a `.then` or a microtask would push it a tick later than
- * today's bare `await resumeAudioContext()`.
- *
- * NEVER rejects. A `resume()` that fails fast is treated exactly like one
- * that hangs — swallowed, and the caller proceeds — matching every other
- * `resumeAudioContext()` call site in this file (`armForegroundResume`,
- * `resume()`, `retryDecode()`, `previewCapture()`), all of which are already
- * `void resumeAudioContext().catch(...)` with no propagation. A rejection,
- * whether it arrives before or after the timer has already resolved the
- * race, is reported through `reportFailure` rather than swallowed outright —
- * closer to AGENTS.md's "errors have a channel before they have copy" bar —
- * but it never reaches this function's own caller. This report is
- * unconditional, not generation-gated: this function touches no React state,
- * so there is no stale-generation state a late report could corrupt.
- *
- * A late RESOLVE (no error) after the timeout reports nothing — nothing went
- * wrong, the shared context is simply "running" now, and whichever
- * generation is current benefits silently through the existing #76
- * per-frame `contextNeedsResume`/`available()` check.
- *
- * RESOLVES `true` WHEN THE TIMER WON, `false` when `resume()` settled first
- * (either way). The timer win is the #108 fact the log exists to carry
- * (#475) — but this function does NOT write that row itself. It has no
- * generation to check, and `cancel()` never holds this timer: a Back or a
- * `pagehide` while `"requesting"` bumps the generation and releases the
- * stream, the timer still fires at T+1000 ms, and a row written from here
- * would record an abandoned Record tap as a #108 event and light the Books
- * `≡` for it (George R1 P2 on #498). So the fact is returned to `start()`,
- * which reports it only after the same generation check it already makes
- * after the await — a cancelled or superseded start reports nothing. The
- * wait itself stays un-aborted on purpose: a cancelled `start()` must still
- * never hang on a `resume()` that never settles (the original #108 defect).
- * The rejection-branch report below is the one row this function writes,
- * and it stays unconditional for the reason above: this function touches
- * no React state, so there is no stale-generation state a late report
- * could corrupt — and a `resume()` that REJECTS is a fact worth a row even
- * on a start that was abandoned, unlike a bound that merely elapsed.
- *
- * Built with a manual `Promise` executor and a local `settled` flag rather
- * than `Promise.race`, so a same-tick or early rejection from
- * `resumeAudioContext()` can never propagate as this function's own
- * rejection before the `.then(resolve, reject)` handler below converts it —
- * `raceAudioResume` must never reject. The timer uses the bare global
- * `setTimeout`/`clearTimeout` (never `window.*`): this file already has that
- * precedent (the `await new Promise((resolve) => setTimeout(resolve, 0))`
- * calls in `stop()`), it needs no DOM global, and — unlike `window.setTimeout`
- * — it is directly exercisable with `vi.useFakeTimers()` in this repo's
- * jsdom-free, Node-only vitest suite.
- */
-export function raceAudioResume(): Promise<boolean> {
-  const resumePromise = resumeAudioContext();
-  return new Promise<boolean>((resolve) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      settled = true;
-      // The timer won. No report from here — see the docblock: the caller
-      // owns the generation check this fact must sit behind.
-      resolve(true);
-    }, RESUME_START_TIMEOUT_MS);
-    resumePromise.then(
-      () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(false);
-      },
-      (cause: unknown) => {
-        // A rejection never bounds the race's own outcome — only resolve it
-        // if the timer has not already done so — but is always reported,
-        // whichever branch wins.
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          resolve(false);
-        }
-        reportFailure(cause, "recorder-start-resume");
-      }
-    );
-  });
-}
 
 export interface UseRecorder {
   readonly state: RecorderState;
@@ -642,7 +548,7 @@ export function useRecorder(): UseRecorder {
       // stuck in "requesting" forever with the mic already hot. `true` when
       // the bound elapsed before resume() settled — reported below, behind
       // the generation check, never by the helper (George R1 P2 on #498).
-      const resumeTimedOut = await raceAudioResume();
+      const resumeTimedOut = await raceAudioResume("recorder-start-resume");
 
       // The resume is a real await on the first recording of a session — iOS
       // starts the context suspended — so a `cancel()` from navigation, the
@@ -660,7 +566,7 @@ export function useRecorder(): UseRecorder {
       // The bound firing on a start that is STILL CURRENT is the #108 fact
       // the log exists to carry (#475): every tester phone becomes a
       // measurement of how often resume() takes longer than
-      // `RESUME_START_TIMEOUT_MS`. Placed after the generation check on
+      // `RESUME_TIMEOUT_MS`. Placed after the generation check on
       // purpose — a start() that cancel() discarded during the wait (Back
       // or pagehide while "requesting") is not a #108 event and must not
       // light the Books `≡`. This row fires on EVERY live start() whose
@@ -673,7 +579,7 @@ export function useRecorder(): UseRecorder {
       if (resumeTimedOut) {
         reportFailure(
           new Error(
-            `resumeAudioContext() did not settle within ${RESUME_START_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
+            `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
           ),
           "recorder-start-resume-timeout"
         );

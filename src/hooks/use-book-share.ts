@@ -7,12 +7,15 @@ import {
   type ShareStatus,
   useShareFlow,
 } from "./share-flow";
+import type { ShareProgress } from "./share-progress";
 import { exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
 export interface UseBookShare {
   readonly status: ShareStatus;
   readonly error: ShareError | null;
+  /** See {@link UseShareFlow.sendUnconfirmed}. */
+  readonly sendUnconfirmed: boolean;
   /**
    * Chapters with no resolvable audio, left out of the zip prepared by tap 1.
    * Zero until a prepare succeeds. Surfaced so a book with empty chapters does
@@ -41,6 +44,10 @@ export interface UseBookShare {
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
   reset: () => void;
+  /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
+  readonly progress: ShareProgress;
+  /** End an outcome flash early (a tap on it). */
+  dismissProgress: () => void;
 }
 
 /**
@@ -57,10 +64,13 @@ export function useBookShare(): UseBookShare {
   const {
     status,
     error,
+    sendUnconfirmed,
     missing,
     partial: partialSegments,
     prepare: run,
     send,
+    progress,
+    dismissProgress,
     reset,
   } = useShareFlow();
 
@@ -99,5 +109,16 @@ export function useBookShare(): UseBookShare {
     [run]
   );
 
-  return { status, error, missing, partialSegments, prepare, send, reset };
+  return {
+    status,
+    error,
+    sendUnconfirmed,
+    missing,
+    partialSegments,
+    prepare,
+    send,
+    reset,
+    progress,
+    dismissProgress,
+  };
 }
