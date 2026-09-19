@@ -7,6 +7,7 @@ import {
   type ShareStatus,
   useShareFlow,
 } from "./share-flow";
+import type { ShareProgress } from "./share-progress";
 import { exportChapterMp3 } from "@/lib/export/chapter";
 import type { ChapterId } from "@/types/domain";
 
@@ -28,6 +29,10 @@ export interface UseChapterShare {
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
   reset: () => void;
+  /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
+  readonly progress: ShareProgress;
+  /** End an outcome flash early (a tap on it). */
+  dismissProgress: () => void;
 }
 
 /**
@@ -42,7 +47,16 @@ export interface UseChapterShare {
  * transcode's PCM.
  */
 export function useChapterShare(): UseChapterShare {
-  const { status, error, missing, prepare: run, send, reset } = useShareFlow();
+  const {
+    status,
+    error,
+    missing,
+    prepare: run,
+    send,
+    reset,
+    progress,
+    dismissProgress,
+  } = useShareFlow();
 
   const prepare = useCallback(
     (chapterId: ChapterId, filename: string): Promise<void> =>
@@ -62,5 +76,14 @@ export function useChapterShare(): UseChapterShare {
     [run]
   );
 
-  return { status, error, missing, prepare, send, reset };
+  return {
+    status,
+    error,
+    missing,
+    prepare,
+    send,
+    reset,
+    progress,
+    dismissProgress,
+  };
 }

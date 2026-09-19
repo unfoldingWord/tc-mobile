@@ -9,6 +9,14 @@ import {
 import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
+  HIDDEN,
+  type ShareProgress,
+  type ShareProgressEvent,
+  reduceShareProgress,
+  settledFromOutcome,
+  shareProgressWakeAt,
+} from "./share-progress";
+import {
   type StagedShare,
   nativeShare,
   readShareEnvironment,
@@ -204,6 +212,19 @@ export interface UseShareFlow {
   send: () => Promise<ShareOutcome>;
   /** Drop any prepared file and return to idle (menu close, unmount). */
   reset: () => void;
+  /**
+   * The modal timeline over the flow (#491): busy while tap 1 or tap 2 works,
+   * held for a minimum so a fast encode still reads as work, then ONE outcome
+   * glyph — handed to the sheet, dismissed, nothing, failed — for a moment.
+   * `status` above is unchanged and still drives the Share control; this is a
+   * presentation timeline the screens render as a sibling of their menu.
+   * `send()` resolves only once this has returned to hidden, so a caller that
+   * closes its menu on `sent`/`dismissed` closes it AFTER the glyph, not under
+   * it.
+   */
+  readonly progress: ShareProgress;
+  /** End an outcome flash early (a tap on it). The normal close follows. */
+  dismissProgress: () => void;
 }
 
 /**
@@ -243,11 +264,25 @@ export function useShareFlow(): UseShareFlow {
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
   const abortRef = useRef<AbortController | null>(null);
+  // The modal timeline (#491). The machine is `share-progress.ts`; the driver
+  // below is its browser glue and nothing more, created once per hook
+  // instance the way `handoffRef` is, so Books' flow and a Segments screen's
+  // flow never share a timer. `progress` mirrors the driver's state for
+  // render.
+  const [progress, setProgress] = useState<ShareProgress>(HIDDEN);
+  const modalRef = useRef<ReturnType<typeof createProgressDriver> | null>(null);
+  const modal = (modalRef.current ??= createProgressDriver(setProgress));
+  const dismissProgress = useCallback(() => {
+    modal.dispatch({ type: "dismiss" });
+  }, [modal]);
 
   useEffect(
     () => () => {
       runIdRef.current += 1;
       abortRef.current?.abort();
+      // The screen is gone: take the modal down with it and release any
+      // `send()` still waiting on the flash, so nothing pends past unmount.
+      modal.dispatch({ type: "dismiss" });
       // The screen is gone; a staged file armed for a send that will never come
       // has no reader. Same fire-and-forget as `reset`. `dropArmed()` returns
       // `null` if `send()` already took ownership (#365) — that in-flight send
@@ -256,7 +291,7 @@ export function useShareFlow(): UseShareFlow {
       const armed = handoff.dropArmed();
       if (armed?.staged != null) void nativeShare.discard(armed.staged);
     },
-    [handoff]
+    [handoff, modal]
   );
 
   const prepare = useCallback(
@@ -290,6 +325,10 @@ export function useShareFlow(): UseShareFlow {
       setMissing(0);
       setPartial(0);
       setStatus("preparing");
+      // The modal goes up with the busy status (#491). Not before the
+      // unsupported gate above: a browser with no Web Share gets the error
+      // Notice, not a busy flash for work that never starts.
+      modal.dispatch({ type: "begin", work: "prepare", now: Date.now() });
       // Yield once so `preparing` paints before the gather starts (its awaits
       // also yield, but a tiny share can return before the browser paints).
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -308,6 +347,13 @@ export function useShareFlow(): UseShareFlow {
         if (prepared === null || prepared === "nothing") {
           if (prepared === "nothing") setError("nothing");
           setStatus("idle");
+          // "nothing" is an outcome the modal shows (the empty tray); a null
+          // has nothing to say, so the busy phase just ends.
+          modal.dispatch({
+            type: "settle",
+            settled: prepared === "nothing" ? "nothing" : null,
+            now: Date.now(),
+          });
           return;
         }
         const { file } = prepared;
@@ -318,6 +364,11 @@ export function useShareFlow(): UseShareFlow {
         if (route === "unsupported") {
           setError("failed");
           setStatus("idle");
+          modal.dispatch({
+            type: "settle",
+            settled: "failed",
+            now: Date.now(),
+          });
           return;
         }
         // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
@@ -343,12 +394,17 @@ export function useShareFlow(): UseShareFlow {
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
         setStatus("ready");
+        // Ready is not an outcome: the busy phase ends (after its minimum
+        // hold) and the primary "Share now" control is what the person sees.
+        modal.dispatch({ type: "settle", settled: null, now: Date.now() });
       } catch (cause) {
         // A stale run's rejection — including the AbortError its own cancel
         // produced — is not this screen's news.
         if (!current()) return;
-        setError(settlePrepareFailure(cause));
+        const settled = settlePrepareFailure(cause);
+        setError(settled);
         setStatus("idle");
+        modal.dispatch({ type: "settle", settled, now: Date.now() });
       } finally {
         // Only clear the guard for the run that still owns it. A stale run whose
         // token was bumped by `reset` must NOT release a newer run's guard, or a
@@ -359,7 +415,7 @@ export function useShareFlow(): UseShareFlow {
         }
       }
     },
-    [handoff]
+    [handoff, modal]
   );
 
   const send = useCallback(async (): Promise<ShareOutcome> => {
@@ -385,6 +441,10 @@ export function useShareFlow(): UseShareFlow {
     // A reset/unmount while the sheet is open must not write state afterwards.
     const runId = runIdRef.current;
     const current = () => runId === runIdRef.current;
+    // The modal goes up NOW, before the sheet call (#491). A synchronous state
+    // write, not an await, so the activation contract below still holds: the
+    // sheet call is still the first await in this gesture.
+    modal.dispatch({ type: "begin", work: "send", now: Date.now() });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
@@ -436,15 +496,27 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
+      // Handed to the sheet — which is all a resolve proves (see the R-B7
+      // note above and `resolveProvesDelivery`): the glyph says "handed
+      // over", never "delivered". Then hold this send open until the flash
+      // has cleared, so the caller's close-on-sent lands after the glyph.
+      modal.dispatch({ type: "settle", settled: "sent", now: Date.now() });
+      await modal.hidden();
       return "sent";
     } catch (cause) {
       const outcome = classifyShareError(cause, hadActivation);
       if (outcome === "retry" && armed.staged === null) {
         // Activation was spent — the File still stands, so put it back and stay
         // `ready` so another tap can hand it over. Not a failure the translator
-        // should see. Only if this run still owns the flow: if a newer one has
-        // taken over, the File is nobody's and is simply dropped.
-        if (current()) handoff.restore(armed);
+        // should see — and not an outcome the modal shows: the busy phase
+        // ends and "Share now" is what remains (#491 constraint 2). Only if
+        // this run still owns the flow: if a newer one has taken over, the
+        // File is nobody's and is simply dropped.
+        if (current()) {
+          handoff.restore(armed);
+          modal.dispatch({ type: "settle", settled: null, now: Date.now() });
+          await modal.hidden();
+        }
         return "retry";
       }
       // A native `retry` does NOT get its staged value back (George R6 P3):
@@ -467,11 +539,20 @@ export function useShareFlow(): UseShareFlow {
       setMissing(0);
       setPartial(0);
       if (outcome === "failed") setError("failed");
+      // `dismissed` and `failed` are outcomes the modal shows; a native
+      // `retry` that fell through to idle (above) is not, and maps to null —
+      // one table, `settledFromOutcome`, never a hand-mapped case here.
+      modal.dispatch({
+        type: "settle",
+        settled: settledFromOutcome(outcome),
+        now: Date.now(),
+      });
+      await modal.hidden();
       return outcome;
     } finally {
       handoff.finishSending();
     }
-  }, [handoff]);
+  }, [handoff, modal]);
 
   const reset = useCallback(() => {
     // Bump the token so an in-flight prepare (mid-gather) bails instead of arming
@@ -496,7 +577,79 @@ export function useShareFlow(): UseShareFlow {
     setError(null);
     setMissing(0);
     setPartial(0);
-  }, [handoff]);
+    // The menu is closing: the modal goes with it, whatever phase it is in,
+    // and any `send()` waiting on the flash resolves now rather than after a
+    // hold nobody is looking at.
+    modal.dispatch({ type: "dismiss" });
+  }, [handoff, modal]);
 
-  return { status, error, missing, partial, prepare, send, reset };
+  return {
+    status,
+    error,
+    missing,
+    partial,
+    prepare,
+    send,
+    reset,
+    progress,
+    dismissProgress,
+  };
+}
+
+/**
+ * The browser glue around `share-progress.ts`'s machine (#491), and nothing
+ * more: it owns the current state (a dispatch must know the NEXT state
+ * synchronously, to schedule the wake and to release `send()`), ONE timer for
+ * the next tick, and the `send()` calls waiting for the outcome flash to
+ * clear. `Date.now()` and `setTimeout` appear here only — the machine takes
+ * `now` as data, which is what makes the hold provable in Node
+ * (`tests/share-progress.test.ts`); this driver is review-only, like the rest
+ * of this file's React glue.
+ *
+ * A closure rather than a `useCallback`, because the tick it schedules calls
+ * back into itself, and `react-hooks/immutability` (rightly) refuses a hook
+ * callback that reads its own binding before it is declared. Created once
+ * per hook instance through a ref, the way `createShareHandoff` is.
+ */
+function createProgressDriver(onChange: (next: ShareProgress) => void) {
+  let state: ShareProgress = HIDDEN;
+  let wake: ReturnType<typeof setTimeout> | null = null;
+  let waiters: (() => void)[] = [];
+  const dispatch = (event: ShareProgressEvent): void => {
+    const next = reduceShareProgress(state, event);
+    if (next !== state) {
+      state = next;
+      onChange(next);
+      if (wake !== null) clearTimeout(wake);
+      wake = null;
+      const wakeAt = shareProgressWakeAt(next);
+      if (wakeAt !== null)
+        wake = setTimeout(
+          () => {
+            wake = null;
+            dispatch({ type: "tick", now: Date.now() });
+          },
+          Math.max(0, wakeAt - Date.now())
+        );
+    }
+    // Hidden again — by the tick, a dismiss, or a settle with nothing to show:
+    // let every `send()` waiting on the flash resolve. Checked on every
+    // dispatch, not only on a change, so a dismiss while already hidden can
+    // never strand a waiter.
+    if (next.phase === "hidden" && waiters.length > 0) {
+      const pending = waiters;
+      waiters = [];
+      for (const resolve of pending) resolve();
+    }
+  };
+  return {
+    dispatch,
+    /** Resolves once the modal is hidden — at once if it already is. */
+    hidden: (): Promise<void> =>
+      state.phase === "hidden"
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            waiters.push(resolve);
+          }),
+  };
 }
