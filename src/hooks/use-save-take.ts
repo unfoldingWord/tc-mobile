@@ -13,6 +13,7 @@ import {
   type PendingTake,
 } from "@/lib/takes/pending-take";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
 import { saveFailureKind } from "./save-failure";
 import type { SegmentId } from "@/types/domain";
 
@@ -97,7 +98,11 @@ export async function performSaveTake(
     if (take.finished) effects.requestSweep();
     return true;
   } catch (cause) {
+    // The failure that produces the `SaveFailed` recovery screen — one row
+    // per real failure (#456), console.error kept beside it, as
+    // report-failure.ts's own contract asks.
     console.error("Saving a take failed", cause);
+    reportFailure(cause, "save-take");
     effects.update((held) =>
       failSave(held, take.clipId, saveFailureKind(cause))
     );

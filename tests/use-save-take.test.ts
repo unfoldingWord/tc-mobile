@@ -12,6 +12,10 @@ import {
 } from "@/lib/storage/books";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
+import {
+  subscribeToFailures,
+  type FailureReport,
+} from "@/hooks/report-failure";
 import { startSave, type PendingTake } from "@/lib/takes/pending-take";
 import type { ClipId, SegmentId } from "@/types/domain";
 
@@ -229,6 +233,19 @@ describe("performSaveTake — a commit that lands", () => {
     expect(ok).toBe(true);
     expect(s.held()).toBe(newer);
   });
+
+  it("reports nothing to the funnel on a successful commit (#456)", async () => {
+    const segmentId = await freshSegment();
+    const take = heldTake({ segmentId, clipId: newClipId() });
+    const s = slot(take);
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    await performSaveTake(take, { update: s.update, requestSweep: vi.fn() });
+
+    off();
+    expect(reports).toEqual([]);
+  });
 });
 
 describe("performSaveTake — a commit that fails", () => {
@@ -289,6 +306,23 @@ describe("performSaveTake — a commit that fails", () => {
     expect(await getClipMeta(clipId)).toBeUndefined();
     expect(await getClip(clipId)).toBeUndefined();
     consoleError.mockRestore();
+  });
+
+  it('reports the failure to the funnel once, under "save-take" (#456)', async () => {
+    const take = heldTake({ segmentId: bogusSegment(), clipId: newClipId() });
+    const s = slot(take);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    await performSaveTake(take, { update: s.update, requestSweep: vi.fn() });
+
+    off();
+    consoleError.mockRestore();
+    expect(reports.map((r) => r.context)).toEqual(["save-take"]);
+    expect(reports[0]?.cause).toBeInstanceOf(Error);
   });
 
   it("does not mark a slot that has moved on to another take", async () => {
