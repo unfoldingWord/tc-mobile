@@ -63,42 +63,52 @@ function numberOrUndefined(value: unknown): number | undefined {
  * A coarse origin-storage estimate is not the translator's work failing, and
  * there is no channel worth spending on it on a phone in a village (the same
  * reasoning `ensurePersistedStorage` records). An absent API, a rejected call,
- * a synchronous throw and an answer that is not an object at all all become
- * `null` — "we could not ask" — which `storagePressure` then reads as
- * `"unknown"`, which shows nothing.
+ * a synchronous throw, an answer that is not an object, and a property whose
+ * getter throws all become `null` — "we could not ask" — which
+ * `storagePressure` then reads as `"unknown"`, which shows nothing.
+ *
+ * **Everything this function touches happens inside the `try`**, including
+ * reading `source.estimate` and reading the answer's two fields. Frank round 1
+ * P2-2: `estimate`, `usage` and `quota` are properties, and a property can be
+ * an accessor that throws. Read outside the `try`, such a throw made this
+ * function REJECT — and `useStoragePressure` attaches only `.then`, so it
+ * landed as an unhandled rejection in a mount effect, which is exactly what
+ * "never rejects" exists to prevent. There is no shape of `source` left that
+ * gets past this.
  */
 export async function readStorageEstimate(
   source: StorageEstimateSource | undefined
 ): Promise<StorageEstimateReading | null> {
-  // One guard, not two (`!source || typeof source.estimate !== "function"`):
-  // an absent source and a source without the method are the same answer, and
-  // as two clauses the first is unkillable by any test — the second already
-  // covers it. The one that remains is type-required (TypeScript will not let
-  // an optional method be called unnarrowed) and is itself runtime-equivalent
-  // to the `catch` below, which would turn the same two cases into the same
-  // `null` via a TypeError. It stays because "there is no API to ask" reads
-  // better as a decision than as a swallowed exception; it is recorded as an
-  // equivalent mutant rather than presented as a tested guard. What the tests
-  // pin is the contract — `null` for both — not this line.
-  // Called through `.call(source)` because a real `StorageManager` method
-  // needs its receiver.
-  const estimate = source?.estimate;
-  if (typeof estimate !== "function") return null;
-  let answer: { usage?: number; quota?: number };
   try {
-    // Inside the `try` on purpose: `estimate()` may throw synchronously as
-    // well as reject, and both are the same "could not ask" to this caller.
-    answer = await estimate.call(source);
+    // One guard, not two (`!source || typeof source.estimate !== "function"`):
+    // an absent source and a source without the method are the same answer,
+    // and as two clauses the first is unkillable by any test — the second
+    // already covers it. The one that remains is type-required (TypeScript
+    // will not call an optional method unnarrowed) and is itself
+    // runtime-equivalent to the `catch` below, which would turn the same two
+    // cases into the same `null` via a TypeError. It stays because "there is
+    // no API to ask" reads better as a decision than as a swallowed
+    // exception; it is recorded as an equivalent mutant rather than presented
+    // as a tested guard. What the tests pin is the contract — `null` for
+    // both — not this line. Called through `.call(source)` because a real
+    // `StorageManager` method needs its receiver.
+    const estimate = source?.estimate;
+    if (typeof estimate !== "function") return null;
+    // `unknown`, not the declared shape: the value crossing this boundary is
+    // whatever the browser gave us, and the two lines below are what turn it
+    // into the shape this function promises.
+    const answer: unknown = await estimate.call(source);
+    if (typeof answer !== "object" || answer === null) return null;
+    const { usage, quota } = answer as { usage?: unknown; quota?: unknown };
+    return {
+      usage: numberOrUndefined(usage),
+      quota: numberOrUndefined(quota),
+    };
   } catch {
     // Deliberately not reported — see "Never rejects" above. `null` is the
     // honest report, and the screen's silence is its correct rendering.
     return null;
   }
-  if (typeof answer !== "object" || answer === null) return null;
-  return {
-    usage: numberOrUndefined(answer.usage),
-    quota: numberOrUndefined(answer.quota),
-  };
 }
 
 /**
@@ -167,9 +177,16 @@ export function useStoragePressure(): StoragePressure {
     // `readStorageEstimate` never rejects, so there is no dropped rejection
     // here and no second channel to catch one in.
     void readStorageEstimate(browserStorageSource()).then((reading) => {
-      const next = storagePressure(reading?.usage, reading?.quota);
-      lastBand = next;
-      if (!cancelled) setBand(next);
+      // Both writes are behind `cancelled`, not just the state one. Frank
+      // round 1 P2-1: a slow read from an unmounted screen could otherwise
+      // land AFTER a newer read from the current one and overwrite the cache
+      // with its stale band, seeding the next mount with exactly the wrong
+      // answer — the flicker this cache exists to prevent, inverted. A
+      // cancelled read has been superseded by definition; its answer is not
+      // worth keeping.
+      if (cancelled) return;
+      lastBand = storagePressure(reading?.usage, reading?.quota);
+      setBand(lastBand);
     });
     return () => {
       cancelled = true;

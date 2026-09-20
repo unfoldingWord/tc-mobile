@@ -61,9 +61,10 @@ export type StoragePressure = "unknown" | "ok" | "low" | "critical";
  *
  * The fractions are whole percents, not ratios, so the comparison below can be
  * a multiplication of integers instead of a division: byte counts are
- * integers, `free * 100` and `quota * PERCENT` stay exact for any quota this
- * module accepts, and the edges have no floating-point fuzz for a test to
- * straddle.
+ * integers, `free * 100` and `quota * PERCENT` stay exact for every figure
+ * this module accepts (see `MAX_SAFE_BYTE_COUNT`, which is what makes that
+ * sentence true rather than nearly true), and the edges have no floating-point
+ * fuzz for a test to straddle.
  */
 export const LOW_PRESSURE_FREE_BYTES = 100 * 1024 * 1024;
 export const LOW_PRESSURE_FREE_PERCENT = 15;
@@ -71,15 +72,33 @@ export const CRITICAL_PRESSURE_FREE_BYTES = 30 * 1024 * 1024;
 export const CRITICAL_PRESSURE_FREE_PERCENT = 5;
 
 /**
+ * The largest figure this module will judge: `Number.MAX_SAFE_INTEGER / 100`,
+ * about 90 TB.
+ *
+ * `Number.MAX_SAFE_INTEGER` itself was the bound first, and it made the
+ * exactness claim above false — Frank round 1 P3. Both sides of the percent
+ * test are multiplied by up to 100, so a figure above a hundredth of the safe
+ * range has its product rounded, and two products that differ exactly can
+ * round to the same double: at `quota = 9_007_199_254_740_987` and
+ * `usage = 7_656_119_366_529_839` the exact answer is `"low"` and the float
+ * answer was `"ok"`. Dividing the bound by the same 100 the arithmetic
+ * multiplies by removes the gap rather than papering over it, and the honest
+ * answer for anything above it is `"unknown"`: a band this module cannot
+ * compute exactly is a band it should not report. No real quota comes near
+ * 90 TB; this is about the claim being true, not about the case arising.
+ */
+export const MAX_SAFE_BYTE_COUNT = Math.floor(Number.MAX_SAFE_INTEGER / 100);
+
+/**
  * A figure this module is willing to do arithmetic on.
  *
  * `undefined` is the spec's own answer for either field, not only what an
  * absent API produces. The range does the rest without a `Number.isFinite`
  * call: `NaN` fails both comparisons, `-Infinity` fails `>= 0`, and
- * `Infinity` — like any figure past `Number.MAX_SAFE_INTEGER` — fails the
- * upper bound, which is there because beyond it the arithmetic below stops
- * being exact and `free * 100` can reach `Infinity`, at which point every
- * comparison answers nonsense instead of failing loudly.
+ * `Infinity` — like any figure past `MAX_SAFE_BYTE_COUNT` — fails the upper
+ * bound, which is there because beyond it the arithmetic below stops being
+ * exact and, far enough past it, `free * 100` reaches `Infinity` — at which
+ * point every comparison answers nonsense instead of failing loudly.
  *
  * The `value !== undefined` clause is there for the type system, which will
  * not narrow `number | undefined` through a comparison, and it is runtime-
@@ -88,7 +107,7 @@ export const CRITICAL_PRESSURE_FREE_PERCENT = 5;
  * mutation sweep to rediscover as a coverage hole it is not.
  */
 function isByteCount(value: number | undefined): value is number {
-  return value !== undefined && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
+  return value !== undefined && value >= 0 && value <= MAX_SAFE_BYTE_COUNT;
 }
 
 /**

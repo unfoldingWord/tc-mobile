@@ -9,6 +9,7 @@ import {
   CRITICAL_PRESSURE_FREE_PERCENT,
   LOW_PRESSURE_FREE_BYTES,
   LOW_PRESSURE_FREE_PERCENT,
+  MAX_SAFE_BYTE_COUNT,
   storagePressure,
 } from "@/lib/storage/pressure";
 
@@ -86,11 +87,35 @@ describe("storagePressure", () => {
     });
 
     it("is unknown for a figure too large to be a byte count", () => {
-      // Above Number.MAX_SAFE_INTEGER the arithmetic below stops being exact,
-      // and multiplying by 100 can reach Infinity — at which point every
-      // comparison starts answering nonsense rather than failing loudly.
+      // Past the ceiling the percent comparison stops being exact, and far
+      // enough past it `free * 100` reaches Infinity — at which point every
+      // comparison answers nonsense rather than failing loudly. Refusing is
+      // the only honest answer; a guessed band is not.
       expect(storagePressure(0, Number.MAX_VALUE)).toBe("unknown");
       expect(storagePressure(Number.MAX_VALUE, 1_000_000_000)).toBe("unknown");
+      expect(storagePressure(0, Number.MAX_SAFE_INTEGER)).toBe("unknown");
+      expect(storagePressure(0, MAX_SAFE_BYTE_COUNT + 1)).toBe("unknown");
+      expect(storagePressure(MAX_SAFE_BYTE_COUNT + 1, 1_000_000_000)).toBe(
+        "unknown"
+      );
+    });
+
+    it("still judges a reading exactly at the ceiling", () => {
+      // The other half of the gate: the bound rejects what it exists to
+      // reject and passes what it does not. Frank round 1 P3 — the docblock
+      // claims `free * 100` and `quota * PERCENT` are exact for every figure
+      // this module accepts, and `Number.MAX_SAFE_INTEGER` as the bound made
+      // that claim false (at 9_007_199_254_740_987 / 7_656_119_366_529_839
+      // the exact answer is "low" and the float answer was "ok"). The ceiling
+      // is a hundredth of that, so the products stay inside the safe range.
+      expect(storagePressure(0, MAX_SAFE_BYTE_COUNT)).toBe("ok");
+
+      // A quota at the ceiling, rounded to a multiple of 20 so 15% of it is
+      // an integer: the percent edge is still decided exactly up here.
+      const quota = 90_071_992_547_400;
+      const floor = (quota * LOW_PRESSURE_FREE_PERCENT) / 100;
+      expect(storagePressure(quota - floor, quota)).toBe("ok");
+      expect(storagePressure(quota - floor + 1, quota)).toBe("low");
     });
   });
 
@@ -253,6 +278,42 @@ describe("readStorageEstimate", () => {
     });
     expect(await readStorageEstimate(source({ estimate }))).toBeNull();
     expect(estimate).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws when reading the method itself throws", async () => {
+    // Frank round 1 P2-2. `estimate` is a property, and a property can be an
+    // accessor: a source whose getter throws made this function REJECT,
+    // because the read happened before the `try`. The hook attaches only
+    // `.then`, so that landed as an unhandled rejection in a mount effect —
+    // precisely what "never rejects" exists to prevent. Everything the
+    // function touches now happens inside the try.
+    const hostile = {
+      get estimate(): () => Promise<{ usage?: number; quota?: number }> {
+        throw new Error("hostile getter");
+      },
+    };
+    await expect(readStorageEstimate(hostile)).resolves.toBeNull();
+  });
+
+  it("never throws when reading a field of the answer throws", async () => {
+    // The same shape one level in: `usage` and `quota` are properties too.
+    const estimate = async () =>
+      ({
+        get usage(): number {
+          throw new Error("hostile field");
+        },
+        quota: 1000,
+      }) as unknown as { usage?: number; quota?: number };
+    await expect(readStorageEstimate(source({ estimate }))).resolves.toBeNull();
+  });
+
+  it("returns null for a primitive answer, rather than reading fields off it", async () => {
+    // A number has no `usage`, so destructuring it would quietly produce a
+    // reading of two `undefined`s — "the browser answered, partially" — when
+    // what happened is that it answered nonsense. `null` says the second.
+    const estimate = async () =>
+      42 as unknown as { usage?: number; quota?: number };
+    expect(await readStorageEstimate(source({ estimate }))).toBeNull();
   });
 
   it("returns null for an answer that is not an object at all", async () => {
