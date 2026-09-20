@@ -50,12 +50,12 @@ function newBookCta(page: Page) {
  *
  * MONOTONIC, not a depth: `pushHistoryEntry` stamps from `++nextIndex`, which
  * is only ever reset by the mount adopt (invariant 9 / Amendment B). Every
- * push in a page's life takes a number, including a floor entry armed and
- * released for a Books overlay (Amendment G, #452 PR3), so the value at a
- * given screen depends on what the run did to get there. The cases below
- * therefore compare it against what THIS run observed rather than against a
- * literal — which is also what they always meant: `navDirection` reads these
- * relatively, never absolutely.
+ * push in a page's life takes a number, including a floor entry armed for a
+ * Books overlay (Amendment G, #452 PR3) and then left standing after that
+ * overlay closed, so the value at a given screen depends on what the run did
+ * to get there. The cases below therefore compare it against what THIS run
+ * observed rather than against a literal — which is also what they always
+ * meant: `navDirection` reads these relatively, never absolutely.
  */
 function navIndex(page: Page): Promise<number | undefined> {
   return page.evaluate(
@@ -157,8 +157,9 @@ test("(c) after a reload at depth, the adapter adopts the resumed index into BOT
   // At Segments the top history entry carries the index its own push stamped.
   // Captured rather than written as a literal — see `navIndex`'s docblock: the
   // seed opens the New Book dialog on the way, whose floor entry (Amendment G,
-  // #452 PR3) takes a number of its own before being released. What this case
-  // is about is the RELATIONS below, every one of which is preserved exactly.
+  // #452 PR3) takes a number of its own before `enterScreen` re-stamps it for
+  // Segments (case (i)). What this case is about is the RELATIONS below, every
+  // one of which is preserved exactly.
   const atSegments = await navIndex(page);
   expect(atSegments).toBeGreaterThan(0);
 
@@ -289,10 +290,16 @@ test("(d) a rapid double Back from the recorder issues exactly one history.back(
  * `popstate`.
  *
  * Hence the floor entry (Amendment G, `lib/nav/layer-stack.ts`'s
- * `floorEntryForLayerChange`): while — and only while — the FLOOR screen's
- * layer stack is non-empty, the adapter holds exactly ONE protective entry,
- * whatever number of overlays are stacked on it. These cases drive that
- * arm → absorb → release cycle through the real UI.
+ * `floorEntryForLayerChange`): once the FLOOR screen's layer stack goes
+ * non-empty the adapter holds exactly ONE protective entry, whatever number of
+ * overlays are stacked on it. Nothing hands that entry back — there is no
+ * release, and `floorEntryForLayerChange`'s docblock has the two review
+ * findings that is the answer to. It is CONSUMED instead, by whichever comes
+ * first: a Back that `rearmAfterLayerBack` declines to re-arm (case (e)), or a
+ * screen transition that re-stamps it (case (i)). Case (g) drives the third
+ * path, an overlay closed by its own control, and pins both halves of what
+ * that costs: the entry is bounded at one however often the overlay reopens,
+ * and the price is one silent Back.
  *
  * In a headless tab "the app is gone" is observable as the document leaving for
  * `about:blank`, which is what cases (e) and (h) assert on the final Back. On a
@@ -311,7 +318,7 @@ function globalMenu(page: Page) {
   return page.getByRole("dialog", { name: "Menu" });
 }
 
-test("(e) with the Books hamburger menu open, Back dismisses the menu and stays on the shelf; the floor entry is released, so the NEXT Back leaves (#374)", async ({
+test("(e) with the Books hamburger menu open, Back dismisses the menu and stays on the shelf; that Back CONSUMED the floor entry and nothing re-arms it, so the NEXT Back leaves (#374)", async ({
   page,
 }) => {
   await page.goto("/");
@@ -331,13 +338,13 @@ test("(e) with the Books hamburger menu open, Back dismisses the menu and stays 
   // shelf's last overlay must settle on the entry the `popstate` just landed
   // on and touch nothing: no re-arm, and so no `history.back()` to undo one.
   //
-  // This is the mutation-unique witness for `rearmAfterLayerBack`'s floor row
-  // (`lib/nav/layer-stack.ts`), and it is here because the END STATE is not
-  // one: forcing that row to `true` leaves the shelf identical, since the
-  // adapter's own `popLayer` releases the spurious entry immediately after.
-  // What it does leave behind is a self-caused traversal for a second,
-  // genuine Back to race — and `pushState: 0, back: 0` is what says there is
-  // none. Same shape as case (d)'s call count, for the same reason.
+  // A witness for `rearmAfterLayerBack`'s floor row (`lib/nav/layer-stack.ts`).
+  // It is NOT the only one any more: with the release gone `popLayer` no longer
+  // touches history at all, so forcing that row to `true` leaves a spurious entry
+  // standing and the index assertion at the end of this case reddens too. Both
+  // are kept because they say different things — the index says where the shelf
+  // ENDED, the counts say the adapter issued no history call of its own to get
+  // there. Same shape as case (d)'s call count, for the same reason.
   await page.evaluate(() => {
     const w = window as unknown as { __nav: { push: number; back: number } };
     w.__nav = { push: 0, back: 0 };
@@ -406,27 +413,74 @@ test("(f) with the New Book dialog open, Back dismisses it and creates nothing",
   expect(await navIndex(page)).toBe(0);
 });
 
-test("(g) closing an overlay by its own control releases the floor entry too — Back afterwards leaves the app, not an extra level", async ({
+test("(g) an overlay closed by its OWN control leaves the floor entry standing — but never more than one, however many times it is reopened (Amendment G)", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
 
-  // Open and close the menu three times through its own Close control. Each
-  // open arms the floor entry and each close releases it, so the shelf must
-  // still be at the floor — an arm that is never released would stack up one
-  // dead level per open, and leaving the app would cost four Backs.
+  // Count the app's own history calls across the WHOLE loop below. There is no
+  // release in this design (Frank R1 P2 and R2 P1 were both about a release
+  // existing), so what has to be pinned is the bound: three opens, one entry.
+  await page.evaluate(() => {
+    const w = window as unknown as { __nav: { push: number; back: number } };
+    w.__nav = { push: 0, back: 0 };
+    const push = window.history.pushState.bind(window.history);
+    const back = window.history.back.bind(window.history);
+    window.history.pushState = (...args: Parameters<History["pushState"]>) => {
+      w.__nav.push += 1;
+      push(...args);
+    };
+    window.history.back = () => {
+      w.__nav.back += 1;
+      back();
+    };
+  });
+
+  // Open and close the menu three times through its own Close control.
+  let armed: number | undefined;
   for (let i = 0; i < 3; i += 1) {
     await page.getByRole("button", { name: "Open menu" }).click();
     await expect(globalMenu(page)).toBeVisible();
-    expect(await navIndex(page)).toBeGreaterThan(0);
+    if (i === 0) {
+      armed = await navIndex(page);
+      expect(armed).toBeGreaterThan(0);
+    } else {
+      // Re-opening arms NOTHING: `floorEntryForLayerChange`'s `!armed` guard.
+      // The stamp is the SAME entry, not a new one at a deeper level.
+      expect(await navIndex(page)).toBe(armed);
+    }
     await page.getByRole("button", { name: "Close menu" }).click();
     await expect(globalMenu(page)).toHaveCount(0);
-    // Back AT the floor: the release landed on the floor entry itself, whose
-    // index is 0. A missing release would leave the shelf above it instead.
-    expect(await navIndex(page)).toBe(0);
+    // The entry SURVIVES its overlay's own Close — this is the design, not a
+    // leak. Nothing hands it back; it is consumed by whichever comes first, a
+    // Back (below) or a screen transition (`enterScreen` re-stamps it, case
+    // (i)).
+    expect(await navIndex(page)).toBe(armed);
   }
 
+  // The bound, and the mutation-unique witness for the `!armed` guard: drop it
+  // and this reads 3.
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __nav: { push: number; back: number } }).__nav
+    )
+  ).toEqual({ push: 1, back: 0 });
+
+  // THE DISCLOSED COST. With no overlay open, this Back consumes the standing
+  // entry and routes "exit-app", which is a no-op at the app's own root — so
+  // the gesture does nothing the translator can see. It is one silent Back,
+  // bounded at one, and it cannot be forwarded away (a `history.back()` at the
+  // first entry is a spec no-op, so an installed PWA would not leave either).
+  // See `floorEntryForLayerChange`'s docblock and the PR body's residual.
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  expect(await navIndex(page)).toBe(0);
+
+  // And the second one leaves: the cost is exactly one Back, never a trap.
   await page.goBack();
   await expect(page).toHaveURL("about:blank");
 });
@@ -440,12 +494,15 @@ test("(h) with a book's ≡ menu open, Back dismisses the menu and leaves the sh
   await expect(
     page.getByRole("button", { name: /^More actions for/ })
   ).toBeVisible();
-  // The create closed its own dialog, so the shelf is back at the floor.
-  expect(await navIndex(page)).toBe(0);
+  // The create closed its own dialog, which does NOT hand the floor entry back
+  // (case (g)) — so the shelf is still holding it here.
+  const armed = await navIndex(page);
+  expect(armed).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: /^More actions for/ }).click();
   await expect(page.getByRole("dialog", { name: "Book" })).toBeVisible();
-  expect(await navIndex(page)).toBeGreaterThan(0);
+  // A second overlay on the same shelf reuses that entry rather than stacking.
+  expect(await navIndex(page)).toBe(armed);
 
   await page.goBack();
 
@@ -457,4 +514,64 @@ test("(h) with a book's ≡ menu open, Back dismisses the menu and leaves the sh
   ).toBeVisible();
   expect(await navIndex(page)).toBe(0);
   await expect(page).toHaveURL(/\/$/);
+});
+
+test("(i) a screen transition RE-STAMPS a standing floor entry instead of stacking on it — Segments is still one Back from Books, and two from leaving", async ({
+  page,
+}) => {
+  // `seedToSegments` goes through the New Book dialog, so by the time it opens
+  // the chapter the shelf IS holding a standing floor entry (case (g)). That
+  // makes this the witness for `enterScreen`'s re-stamp branch: the entry
+  // already sits at exactly the depth the Segments entry wants, so it is
+  // replaced, not pushed past.
+  await seedToSegments(page);
+  const atSegments = await navIndex(page);
+  expect(atSegments).toBeGreaterThan(0);
+
+  // One Back to Books. (This much also passes if `enterScreen` pushed — the
+  // landing would route "to-books" off the stale floor entry and LOOK
+  // identical. The next assertion is the one that tells them apart.)
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  // The discriminator: from Books the very next Back leaves. Force
+  // `enterScreen` to always `pushState` and the stale floor entry survives
+  // underneath, so this Back is swallowed by it and the app needs a third —
+  // the extra dead level the re-stamp exists to prevent.
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+test("(j) after the standing entry is consumed, the NEXT overlay arms a fresh one — the shelf does not go unprotected (the `exit-app` flag clear)", async ({
+  page,
+}) => {
+  // Reach the state case (g) ends in: the entry was armed by an overlay, left
+  // standing when that overlay closed itself, then consumed by a Back that did
+  // nothing visible.
+  await page.goto("/");
+  await expect(newBookCta(page)).toBeVisible();
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  await page.getByRole("button", { name: "Close menu" }).click();
+  await expect(globalMenu(page)).toHaveCount(0);
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  // The entry is GONE, so `floorArmed` must have been cleared with it. This is
+  // the witness for that clear (`use-nav-stack.ts`'s `"exit-app"` case): leave
+  // the flag set and the open below arms nothing, because
+  // `floorEntryForLayerChange` believes an entry is already standing.
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  expect(await navIndex(page)).toBeGreaterThan(0);
+
+  // And it is a real entry, not just a stamp: Back spends it on the menu
+  // instead of walking out of the app. Under the mutant this Back leaves.
+  await page.goBack();
+  await expect(globalMenu(page)).toHaveCount(0);
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  expect(await navIndex(page)).toBe(0);
 });

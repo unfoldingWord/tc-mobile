@@ -299,8 +299,10 @@ export function BooksScreen({
   //
   // `busy()` must be true whenever `dismiss()` would be a no-op. Otherwise a
   // Back runs a dismissal that changes nothing, and the adapter still
-  // unregisters the layer and releases the entry protecting it, leaving the
-  // overlay on screen with the next Back walking out of the app (#494 item 3).
+  // unregisters the layer — which empties the floor's stack, so
+  // `rearmAfterLayerBack` declines to put the consumed entry back. The overlay
+  // is left on screen with nothing protecting it, and the next Back walks out
+  // of the app (#494 item 3).
   // Each row pairs the two deliberately; the pairing is noted where it is not
   // obvious.
 
@@ -367,8 +369,9 @@ export function BooksScreen({
    * layer's `busy()` said the overlay does NOT own the screen. Two copies of
    * the same fact can disagree for one commit, and the disagreement is the bad
    * way round — `busy()` false, this guard true — which is a Back that
-   * unregisters the layer and releases its history entry while the menu stays
-   * open. One source, no window.
+   * unregisters the layer, and so leaves `rearmAfterLayerBack` with an empty
+   * stack and no reason to restore the entry, while the menu stays open. One
+   * source, no window.
    */
   const closeBookMenuState = useCallback(() => {
     if (bookShare.ownsScreen()) return false;
@@ -884,11 +887,20 @@ export function BooksScreen({
     // not a per-handler check.
     const bookId = shareMenuBookId;
     // Registered BEFORE the menu's own layer is unregistered, so the floor's
-    // layer stack never passes through empty on the way (#452 PR3). It would
-    // otherwise release the floor entry and immediately re-arm it — a
-    // `pushState` issued behind a `history.back()` that has not landed, which
-    // is exactly the coalescing/desync hazard `travel-guard.ts` exists to keep
-    // out of this adapter. Going 1 → 2 → 1 instead, the entry never moves.
+    // layer stack goes 1 → 2 → 1 and never passes through empty (#452 PR3).
+    //
+    // Belt and braces, and this comment will not overstate it: with no release
+    // in the design, a stack that dipped to 0 here would cost nothing —
+    // `popLayer` issues no history call and `floorArmed` survives an empty
+    // stack, so the entry would still be standing when the confirm registered.
+    // The only thing an empty window could lose is a `popstate` landing inside
+    // it (`popAction` would see no layer at the floor and route `"exit-app"`,
+    // consuming the entry under a confirm that is about to appear) — and it
+    // cannot: both registrations are synchronous in this one handler, and a
+    // `popstate` is a separate task. Kept because it makes
+    // `floorEntryForLayerChange`'s "one entry for as long as any layer is open"
+    // true continuously rather than true-by-scheduling.
+    //
     // The React state below still closes the menu and opens the confirm in the
     // order it always did; only the two registrations are interleaved.
     layers.open("books:delete-confirm");

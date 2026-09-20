@@ -675,12 +675,30 @@ reached — registering Books' overlays as `Layer`s, which is all PR3 was
 scoped to do, would have been **inert code that closed nothing**, and #374
 would have stayed open with a green PR against it.
 
-**The fix.** While — and only while — the floor screen's layer stack is
-non-empty, the adapter holds exactly **one** protective entry, whatever number
-of overlays are stacked on it. Pure decisions in `lib/nav/layer-stack.ts`
+**The fix.** Once the floor screen's layer stack goes non-empty, the adapter
+holds exactly **one** protective entry, whatever number of overlays are
+stacked on it. Pure decisions in `lib/nav/layer-stack.ts`
 (`floorEntryForLayerChange`, `rearmAfterLayerBack`), performed by
-`hooks/use-nav-stack.ts`'s `pushLayer`/`popLayer` and its two
-`"rearm-layer-*"` cases.
+`hooks/use-nav-stack.ts`'s `pushLayer` and its two `"rearm-layer-*"` cases.
+
+**There is no release, and that is the design.** An earlier revision paired the
+arm with a release that consumed the entry when the floor's last layer closed.
+Two review rounds found two defects in it, and both were about the release
+existing rather than about its conditions: Frank R1 P2 (it had to be suppressed
+while a global trap was up, because Amendment C's cleanup runs on both trap
+edges and they need opposite treatment) and Frank R2 P1 (a release is an
+**async** traversal, and nothing stopped `openChapter`'s synchronous
+`pushState` from landing on top of one in flight). Per the repo's siblings rule
+— a second instance of one defect class means the fix approach is wrong — the
+release was removed rather than patched a third time. The entry is **consumed**
+instead, by whichever comes first:
+
+- a Back that `rearmAfterLayerBack` declines to re-arm (the floor's last layer
+  dismissed by Back — `e2e` case (e));
+- a screen transition, which **re-stamps** it rather than stacking on it
+  (`enterScreen`'s `replaceState` branch — `e2e` case (i)). The entry already
+  sits at exactly the depth the new screen's entry wants, so invariant 2 holds
+  and there is no traversal to undo an extra level.
 
 **What it does and does not disturb.**
 
@@ -695,20 +713,27 @@ of overlays are stacked on it. Pure decisions in `lib/nav/layer-stack.ts`
   every user a second Back to leave the shelf, a product change nobody asked
   for and one this document explicitly declines ("Root-level Back leaves the
   tab/backgrounds the installed app, exactly as `exit-app` already does
-  today"). Armed on the first overlay and released with the last, a shelf with
-  nothing open behaves bit-for-bit as before — pinned by `e2e` cases (e) and
-  (g), which both end by asserting the app actually leaves.
-- **It adds a FOURTH raw `history.back()` issuer** (the release), alongside
-  `commitCloseRecorder`'s programmatic close. Like that one it is
-  `suppressPop`-guarded rather than arbitrated by `travel-guard.ts`: its
-  `popstate` never reaches `popAction`, so there is nothing to arbitrate. It
-  also cannot contend with `goBack`, the one issuer that could plausibly
-  overlap it — `goBack` is reached only from the Segments header Back and the
-  recorder, and the release fires only at the floor, which carries no Back
-  control at all. **Disclosed rather than proved:** that is an argument from
-  the two call sites, not a browser observation, and it is the same
-  unevaluated-coalescing note `travel-guard.ts` already carries for the third
-  issuer.
+  today"). A shelf that has never had an overlay open behaves bit-for-bit as
+  before — pinned by `e2e` cases (e), (g) and (i), all of which end by
+  asserting the app actually leaves.
+- **It adds NO new `history.back()` issuer.** With the release gone, the three
+  in `travel-guard.ts`'s accounting are still the only three; `pushLayer` only
+  ever pushes, and `popLayer` touches history not at all. This is the second
+  reason the no-release shape is the right one and not merely the one that
+  survived review: there is no fourth issuer to reason about coalescing for.
+- **The disclosed cost: one silent Back, bounded at one.** One path leaves the
+  entry standing with nothing open — an overlay closed by its OWN control
+  (Close, Cancel, the scrim) with no navigation afterwards. The next Back at the
+  shelf then consumes that entry and routes `"exit-app"`, which is a no-op, so
+  that gesture does nothing visible and a **second** one leaves. It is bounded:
+  reopening the overlay arms nothing (`floorEntryForLayerChange`'s `!armed`
+  guard), so the shelf never holds two. It cannot be forwarded away in the
+  handler either — `history.back()` at the app's first entry is a no-op by
+  spec, so an installed PWA would not leave. `e2e` case (g) drives three
+  open/close cycles and asserts exactly one `pushState`, then both Backs.
+  **This is a real, if small, product cost and it is stated here rather than
+  buried:** the alternative was a release that two review rounds showed to be
+  unsound, and the DRI can weigh the two with both written down.
 - **`nextIndex` now advances for an overlay open, not only for a screen
   transition.** It is a monotonic stamp, not a depth — `navDirection` reads it
   relatively — so nothing downstream changes. Two `e2e` cases that had written
