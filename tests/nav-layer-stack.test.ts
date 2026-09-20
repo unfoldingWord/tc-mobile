@@ -171,46 +171,84 @@ describe("busy() must be ref-backed, never a snapshot boolean (invariant 4, nega
  * every row below is one a plausible wrong implementation gets wrong.
  */
 describe("floorEntryForLayerChange (Amendment G)", () => {
+  /** The untrapped floor — the ordinary case, where every arm/release happens. */
+  const floor = (armed: boolean, open: number) =>
+    floorEntryForLayerChange({ atFloor: true, trapped: false, armed, open });
+
   it("arms on the floor's FIRST layer, when nothing is armed yet", () => {
-    expect(
-      floorEntryForLayerChange({ atFloor: true, armed: false, open: 1 })
-    ).toBe("arm");
+    expect(floor(false, 1)).toBe("arm");
   });
 
   it("arms nothing for a SECOND layer stacked on the floor — one entry per SCREEN, never one per overlay (invariant 2)", () => {
-    expect(
-      floorEntryForLayerChange({ atFloor: true, armed: true, open: 2 })
-    ).toBe("none");
+    expect(floor(true, 2)).toBe("none");
   });
 
   it("releases when the floor's LAST layer closes", () => {
-    expect(
-      floorEntryForLayerChange({ atFloor: true, armed: true, open: 0 })
-    ).toBe("release");
+    expect(floor(true, 0)).toBe("release");
   });
 
   it("releases nothing while a layer remains on the floor", () => {
-    expect(
-      floorEntryForLayerChange({ atFloor: true, armed: true, open: 1 })
-    ).toBe("none");
+    expect(floor(true, 1)).toBe("none");
   });
 
   it("releases nothing when the stack is empty with nothing armed", () => {
     // Also the every-render resting state of a shelf with no overlay open:
     // this row is what makes a spurious `history.back()` impossible there.
-    expect(
-      floorEntryForLayerChange({ atFloor: true, armed: false, open: 0 })
-    ).toBe("none");
+    expect(floor(false, 0)).toBe("none");
   });
 
   it("does NOTHING above the floor, whatever the stack holds — Segments and the Recorder already hold their own entry", () => {
-    for (const armed of [false, true]) {
-      for (const open of [0, 1, 2]) {
-        expect(floorEntryForLayerChange({ atFloor: false, armed, open })).toBe(
-          "none"
-        );
+    for (const trapped of [false, true]) {
+      for (const armed of [false, true]) {
+        for (const open of [0, 1, 2]) {
+          expect(
+            floorEntryForLayerChange({ atFloor: false, trapped, armed, open })
+          ).toBe("none");
+        }
       }
     }
+  });
+
+  /**
+   * The two trap EDGES (Frank R1 P2 on PR #531). Amendment C's cleanup effect
+   * runs on both of them with the stack already cleared, and they must do
+   * opposite things — which is the whole reason `trapped` is a parameter of
+   * the decision rather than a condition at the call site.
+   */
+  it("RETAINS the entry when a trap engages over an open Books overlay — the trap's own re-arm is what it is for", () => {
+    // The cleanup has just emptied the stack, so this reads exactly like the
+    // release row above except for `trapped`. Releasing here would let a Back
+    // walk out of the app from under a panel whose purpose is to hold it.
+    expect(
+      floorEntryForLayerChange({
+        atFloor: true,
+        trapped: true,
+        armed: true,
+        open: 0,
+      })
+    ).toBe("none");
+  });
+
+  it("RELEASES the entry when the trap clears and the shelf is bare again", () => {
+    // The `blocked` panel self-dismisses when the other tab closes and Books
+    // remounts with no overlay, so nothing will call pushLayer/popLayer again
+    // on its own. Without this the stale entry costs a second Back to leave.
+    expect(floor(true, 0)).toBe("release");
+  });
+
+  it("arms nothing while a trap is up, even if an overlay is somehow registered", () => {
+    // Unreachable today (App's early return unmounts both screens, so nothing
+    // can call `pushLayer`), but the rule is "nothing moves while a trap is
+    // up", and a total function says so for every input rather than relying on
+    // that unreachability holding elsewhere.
+    expect(
+      floorEntryForLayerChange({
+        atFloor: true,
+        trapped: true,
+        armed: false,
+        open: 1,
+      })
+    ).toBe("none");
   });
 });
 

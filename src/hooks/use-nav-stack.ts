@@ -165,6 +165,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // render). A ref rather than a dep, because both commands must stay
   // identity-stable for the same reason `goBack` does.
   const atFloor = useRef(false);
+  // Whether a global trap owns the screen, same freshness and for the same
+  // reason. The floor entry does not move while one is up — see
+  // `floorEntryForLayerChange`.
+  const trapped = useRef(false);
   // The any-outstanding travel guard (Amendment A). Replaces `backRequested`.
   const travelGuard = useRef<TravelGuardState>(initialTravelGuardState);
   // The recorder-commit-close in-flight absorber (invariant 7; was `committing`).
@@ -190,6 +194,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // so "the floor" stays one definition: the screen whose Back leaves the app
     // because it pushed nothing of its own.
     atFloor.current = backEffectFor(screen) === "exit-app";
+    trapped.current = params.recovering || params.databasePanel;
+    // Declaration order is load-bearing: React runs effects in the order they
+    // are declared, and this one is FIRST, so Amendment C's cleanup effect
+    // below already sees this render's values when a trap engages or clears.
   });
 
   const pushHistoryEntry = useCallback(() => {
@@ -294,6 +302,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     (open: number) => {
       const action = floorEntryForLayerChange({
         atFloor: atFloor.current,
+        trapped: trapped.current,
         armed: floorArmed.current,
         open,
       });
@@ -340,7 +349,11 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // whole-stack clear, NOT a per-layer screen filter (which would require adding
   // a screen tag to lib/nav — out of scope). Dep array is primitives only, so
   // no unmemoized hook-returned object can destabilise it (invariant 6, the
-  // round-6 P1 class).
+  // round-6 P1 class). `settleFloorEntry` joined the array with Frank's R1 P2
+  // fix below and does not weaken that: it is a `useCallback` declared in THIS
+  // hook over `pushHistoryEntry`, itself a `useCallback([])` here — nothing in
+  // the chain is another hook's return value, which is what the round-6 P1
+  // actually was.
   //
   // #452 PR3 kept this effect EXACTLY as PR2 wrote it, and recorded why next to
   // Amendment C (issue #452): of George R4 P3-1's two options it takes (b) —
@@ -353,13 +366,24 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // the Books↔Segments swap, so clearing is already right for it. PR4 owns (b)'s
   // other half for Segments; see the #452 comment for the full argument.
   //
-  // It deliberately does NOT clear `floorArmed`: a trap engaging over an open
-  // Books menu must keep the entry `"trap-database-panel"` re-arms against, or a
-  // Back walks out of the app from under the panel. `floorEntryForLayerChange`'s
-  // `armed` guard makes that state self-correcting — see its docblock.
+  // It settles the FLOOR entry against the now-empty stack rather than leaving
+  // it wherever it was (Frank R1 P2 on PR #531). Both edges matter and they
+  // differ, which is why `floorEntryForLayerChange` is told whether a trap is
+  // up rather than being asked to infer it:
+  //   - trap ENGAGES over an open Books menu: the entry must SURVIVE — it is
+  //     what `"trap-database-panel"` re-arms against, and releasing it would
+  //     let a Back walk out of the app from under the panel.
+  //   - trap CLEARS (a `blocked` panel self-dismisses when the other tab
+  //     closes, `database-panel.tsx`): Books remounts with no overlay and
+  //     nothing will ever call `pushLayer`/`popLayer` again on its own, so a
+  //     retained entry would sit under a bare shelf and cost a second Back to
+  //     leave. It is released here.
+  // A screen change settles the same way, and at a non-floor screen the pure
+  // function answers `"none"` for every input, so this is inert above Books.
   useEffect(() => {
     layerStack.current = [];
-  }, [screen, params.recovering, params.databasePanel]);
+    settleFloorEntry(0);
+  }, [screen, params.recovering, params.databasePanel, settleFloorEntry]);
 
   // Route the system Back gesture and its Forward sibling (#168). The whole
   // decision is the pure `popAction`; this effect only performs the DOM side of

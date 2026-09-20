@@ -159,26 +159,39 @@ export type FloorEntryAction = "arm" | "release" | "none";
  * AGENTS.md reads as redundant logic rather than a missing test — so it is
  * gone.
  *
- * The `armed` guard is what makes a repeat arm impossible, and it is load-
- * bearing beyond simple double-tap safety. Amendment C's cleanup effect clears
- * the WHOLE stack when a global trap engages (`recovering` / `databasePanel`),
- * which on Books can happen with a menu open — `useDatabaseStatus` flips from
- * another tab. That leaves `armed` true with an empty stack, and it must stay
- * that way: the entry is exactly what `"trap-database-panel"` re-arms against,
- * and releasing it there would let a Back walk out of the app from under a
- * panel whose whole purpose is to hold it (`popAction`'s own comment on that
- * case). When the trap lifts, the next overlay open sees `armed` already true
- * and arms nothing — self-correcting rather than double-counting.
+ * `trapped` is what a global trap (`recovering` / `databasePanel`) does to all
+ * of this: **nothing moves while one is up.** Amendment C's cleanup effect
+ * clears the WHOLE stack when a trap engages, which on Books can happen with a
+ * menu open — `useDatabaseStatus` flips from another tab — and the entry must
+ * SURVIVE that: it is exactly what `"trap-database-panel"` re-arms against, and
+ * releasing it there would let a Back walk out of the app from under a panel
+ * whose whole purpose is to hold it (`popAction`'s own comment on that case).
+ *
+ * The same effect re-runs when the trap CLEARS, and there the entry must go —
+ * this is Frank's round-1 P2 on PR #531, and an earlier revision got it wrong
+ * by claiming the state was "self-correcting". It is not, on its own: a
+ * `blocked` panel self-dismisses when the other tab closes
+ * (`database-panel.tsx`), Books remounts with no overlay, and nothing calls
+ * `pushLayer` or `popLayer` again — so a stale armed entry would sit under a
+ * bare shelf and cost the translator a second Back to leave. `armed` alone
+ * cannot tell the engage edge from the clear edge; `trapped` can, and that is
+ * why it is a parameter here rather than a condition at the call site: it is
+ * part of the decision, so it belongs where the decision is tested.
+ *
+ * The `armed` guard then makes a repeat arm impossible, including across a
+ * trap that engaged and cleared without the entry ever being released.
  */
 export function floorEntryForLayerChange(change: {
   /** `backEffectFor(screen) === "exit-app"` — this screen pushes nothing itself. */
   readonly atFloor: boolean;
+  /** A global trap (`recovering` / `databasePanel`) owns the screen. */
+  readonly trapped: boolean;
   /** Whether the adapter is currently holding a floor entry. */
   readonly armed: boolean;
   /** Stack length AFTER the push/pop. */
   readonly open: number;
 }): FloorEntryAction {
-  if (!change.atFloor) return "none";
+  if (!change.atFloor || change.trapped) return "none";
   if (change.open > 0 && !change.armed) return "arm";
   if (change.open === 0 && change.armed) return "release";
   return "none";
