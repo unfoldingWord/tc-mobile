@@ -4,7 +4,7 @@
  * Raw values with no meaning attached. A primitive never says what something
  * is *for*, only what it is. A *colour* primitive is reachable only through
  * layer 2; the structural primitives here (spacing, radius, type, motion) carry
- * no theme meaning and are read directly by component rules too.
+ * no theme meaning and are read directly by component and app-level rules too.
  *
  * Adding a primitive is cheap; using a *colour* one directly in a component is
  * the leak this layering exists to prevent, because it is what makes a theme

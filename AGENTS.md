@@ -91,7 +91,7 @@ once, so Tailwind utilities always win and a one-off utility stays a safe
 escape hatch rather than a specificity fight. Using a _colour_ primitive
 directly in a component is the leak this exists to prevent — it is what makes a
 theme unswitchable later. Structural primitives (spacing, radius, type, motion)
-carry no theme meaning, so component rules read them directly; only colour,
+carry no theme meaning, so component and app-level rules read them directly; only colour,
 surface and ink must come through layer 2's roles.
 
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
