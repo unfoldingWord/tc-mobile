@@ -15,9 +15,17 @@
  */
 
 /**
- * A durability state worth showing. A union with one member on purpose: #12's
- * deferred half — a nearly-full `estimate()` — lands beside `"not-persisted"`
- * here rather than at the call sites.
+ * A durability state worth showing. A union with one member.
+ *
+ * It once said that #12's deferred half — a nearly-full `estimate()` — would
+ * land beside `"not-persisted"` here rather than at the call sites. It does
+ * not: #247 lands it as its own `StoragePressure` union
+ * (`lib/storage/pressure.ts`), because the two are independent decisions over
+ * different inputs — a boolean persistence answer here, a `usage`/`quota` pair
+ * there — and one union would mean one of these modules importing the other
+ * for nothing but a shared name. Books renders them as separate arms of the
+ * same standing-condition slot, the way `"not-persisted"` and the
+ * encoder-health line already sit side by side.
  */
 export type StorageMarker = "not-persisted";
 
