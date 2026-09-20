@@ -20,6 +20,22 @@
  * finished mark (applied atomically with the take, so a separate write cannot
  * be clobbered by the same close's demote-to-draft). So at most ONE of
  * save-take / save-edit / clear / mark ever happens.
+ *
+ * And a close whose capture classifies as SUPERSEDED — the leftover kind in
+ * `classifyCapture` below, meaning the stop left NOTHING behind: no samples, no
+ * kept bytes and no error — writes nothing at all (#211). Neither the pending
+ * edits nor the finished toggle is still a statement about what should be on
+ * disk, because the recording they were about never landed.
+ *
+ * Read that as the KIND, never as "the generation was bumped". The two are not
+ * the same question, and conflating them would cost a take: a generation-bumped
+ * stop that still decoded usable PCM classifies as `take` and is still
+ * committed, finished mark and all, and one whose decode threw classifies as
+ * `hold` and keeps its bytes for the recovery panel. `classifyStopDecode` in
+ * `lib/audio/stop-decode.ts` emits those samples and keeps that blob EVEN WHEN
+ * SUPERSEDED — only the shared UI message is withheld. So a later change that
+ * gates every generation-bumped stop on this paragraph would drop confirmed
+ * audio and break the #59 / #165 contract.
  */
 
 /**
@@ -291,7 +307,7 @@ export function planPendingWork(inputs: PendingWork): TailPlan {
 export function planClose<TBytes>(
   inputs: CloseInputs<TBytes>
 ): ClosePlan<TBytes> {
-  const { capture, finishedIntent, storedFinished, hasTake } = inputs;
+  const { capture, finishedIntent } = inputs;
 
   if (capture) {
     const verdict = classifyCapture(capture);
@@ -308,16 +324,30 @@ export function planClose<TBytes>(
       case "notice":
         return { action: "stay", error: verdict.error };
       case "superseded":
-        // Nothing to save and nothing to say, so fall through to the
-        // mark/close decision rather than dead-ending the sheet open (#59).
-        break;
+        // Reached only when the stop left NOTHING behind — no samples, no kept
+        // bytes, no error. A bumped generation alone does not land here:
+        // confirmed PCM is `take` above and is still committed, and a failed
+        // decode's bytes are `hold` and still recovered, both of them even when
+        // superseded (`lib/audio/stop-decode.ts`). This is the empty case.
+        //
+        // Nothing to save and nothing to say, so close rather than dead-end
+        // the sheet open (#59) — and write NOTHING on the way out (#211).
+        //
+        // The pending edits were already withheld here, and for a reason that
+        // applies to the finished toggle just as well: a cut-to-empty cleared
+        // on a superseded stop would drop the original recording while the
+        // replacement never landed and the cut audio lives only in RAM on the
+        // clipboard, unrecoverable field loss (George R5). A Finished mark on
+        // this path lands on the STORED take, since the one in flight never
+        // did — and Finished is the trigger for transcode-on-Finished (D3,
+        // ADR 0009), so honouring it starts a lossy 64 kbps encode of the one
+        // recording that survived, on the strength of an intent the
+        // translator expressed about its replacement. One interrupted close,
+        // no writes. Note `planPendingWork` is deliberately NOT what runs
+        // here: the recovery panel's exit reaches it with the capture
+        // settled, which is a different question.
+        return { action: "close" };
     }
-    // The pending edits are deliberately NOT persisted on this path — note
-    // that `planPendingWork` is not what runs here. A cut-to-empty cleared on a
-    // superseded stop would drop the original recording while the replacement
-    // never landed and the cut audio lives only in RAM on the clipboard:
-    // unrecoverable field loss (George R5).
-    return planFinishedWrite(finishedIntent, storedFinished, hasTake);
   }
   return planPendingWork(inputs);
 }

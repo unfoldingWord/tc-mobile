@@ -83,6 +83,19 @@ const supersededCapture: CaptureOutcome<string> = {
 };
 
 /**
+ * The other shape that classifies as superseded: a decode that succeeded to
+ * ZERO frames and withheld its reason. `stop()` normalises a zero-frame decode
+ * to `samples: null` today, so this is a shape the type allows rather than one
+ * observed from the hook — it is pinned because the samples guard is a length
+ * check, and weakening it to a truthiness test routes this to `save-take`.
+ */
+const supersededEmptyDecode: CaptureOutcome<string> = {
+  samples: new Int16Array(0),
+  bytes: null,
+  error: null,
+};
+
+/**
  * No capture was attempted at all — the recorder was idle when Back was tapped.
  *
  * `hasTake` defaults TRUE: most cases below are about a segment that already
@@ -320,10 +333,17 @@ describe("planClose — a capture that produced nothing", () => {
     ).toBe("close");
   });
 
-  it("still writes a real finished toggle after a superseded capture", () => {
-    // Nothing committed, so the toggle has no take to ride on and is written
-    // directly — the behaviour as it stands, enumerated so it cannot drift.
-    // (#211 asks whether it SHOULD; this pins what it does.)
+  it("writes no finished toggle after a superseded capture", () => {
+    // #211, decided by the dev lead 2026-09-19 (option 1): a superseded stop
+    // writes NOTHING. It used to fall through to the mark, which was the one
+    // write still going through on a close whose sheet is being torn down
+    // underneath a newer recording or a backgrounding — and the mark would
+    // land on the STORED take, since the take that was in flight never did.
+    // Finished is also the trigger for transcode-on-Finished (D3, ADR 0009),
+    // so honouring it would start a lossy 64 kbps encode of the one recording
+    // that survived, on the strength of an intent the translator expressed
+    // about the replacement. Same rule the edits directly above already
+    // follow: one interrupted close, no writes.
     const plan = planClose(
       idle({
         capture: supersededCapture,
@@ -331,7 +351,44 @@ describe("planClose — a capture that produced nothing", () => {
         storedFinished: false,
       })
     );
-    expect(plan).toEqual({ action: "mark", finished: true });
+    expect(plan).toEqual({ action: "close" });
+  });
+
+  it("writes no finished toggle after a superseded capture in the un-mark direction either", () => {
+    // Both directions, so a guard that only catches the promote-to-finished
+    // half fails here. Clearing the mark is a write of the same kind, and it
+    // demotes a segment the interrupted session never replaced.
+    expect(
+      planClose(
+        idle({
+          capture: supersededCapture,
+          finishedIntent: false,
+          storedFinished: true,
+        })
+      )
+    ).toEqual({ action: "close" });
+  });
+
+  it("writes nothing on an empty decode with no error, which is superseded too", () => {
+    // The `samples: new Int16Array(0), error: null` half of the branch — a
+    // shape the type allows rather than one observed from the hook, since
+    // `stop()` normalises a zero-frame decode to `samples: null` today. It
+    // must land exactly where `samples: null` lands: not on `stay` (that is
+    // the real empty capture, which HAS a reason, pinned above) and not on
+    // `mark`. Asserted plain and with a finished toggle in play, so a guard
+    // that stops covering this shape dies here.
+    expect(planClose(idle({ capture: supersededEmptyDecode }))).toEqual({
+      action: "close",
+    });
+    expect(
+      planClose(
+        idle({
+          capture: supersededEmptyDecode,
+          finishedIntent: true,
+          storedFinished: false,
+        })
+      )
+    ).toEqual({ action: "close" });
   });
 });
 
@@ -466,9 +523,13 @@ describe("planFinishedWrite — a segment with no take to mark", () => {
     ).toEqual({ action: "mark", finished: false });
   });
 
-  it("does not plan the rejected mark after a superseded capture either", () => {
-    // `planClose`'s own fall-through reaches the same decision, so the gate has
-    // to hold on both routes into it.
+  it("does not reach this gate at all after a superseded capture", () => {
+    // `planClose` used to fall through into `planFinishedWrite` on a superseded
+    // stop, so this gate was the only thing standing between a ticked Finished
+    // box and a rejected store write. Since #211 that route writes nothing
+    // whatever `hasTake` says, so the outcome here is `close` for a stronger
+    // reason than the gate — asserted so that restoring the fall-through is
+    // caught by the #211 cases above rather than silently passing here.
     expect(
       planClose(
         idle({
