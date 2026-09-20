@@ -493,15 +493,24 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * which is a Back that unregisters the layer and releases the history entry
    * protecting it while the menu stays open.
    *
-   * Segments' row is untouched, and stays on the rendered mirror, until PR4
-   * converts its overlays too.
+   * Segments' row moved the same way in #452 PR4, so BOTH rows now name the
+   * state half and the live read. The rendered mirror is still what each
+   * screen's `listInert` / shelf `inert` reads (asserted separately below) —
+   * that is a rendering decision, where last commit's value is the right one;
+   * it is only the `popstate`-reachable close that must not use it.
    */
   for (const [screen, hook, closeFn, guard] of [
     [
       "src/components/segments-screen.tsx",
       "share",
-      "onCloseChapterMenu",
-      String.raw`if \(shareOverlayOwnsScreen\(share\.progress\)\) return;`,
+      "closeChapterMenuState",
+      // Through the local binding `shareOwnsScreen`, which the assertion below
+      // pins to `share.ownsScreen` — Segments needs the binding because its
+      // `dismissOverlays` feeds `useImperativeHandle`'s dependency array and
+      // `exhaustive-deps` would otherwise demand the whole hook object there
+      // (#452 PR4's answer to the design's open question 3). Same predicate,
+      // same freshness; only the spelling differs from Books'.
+      String.raw`if \(shareOwnsScreen\(\)\) return false;`,
     ],
     [
       "src/components/books-screen.tsx",
@@ -535,6 +544,18 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       );
     });
   }
+
+  /**
+   * The binding Segments' guard above goes through, pinned to the hook member
+   * it claims to be. Without this, `shareOwnsScreen` in that regex could be any
+   * local function — including one built from the RENDERED mirror, which is
+   * precisely the shape the guard test exists to rule out. (#452 PR4. Books
+   * needs no equivalent: its guard names `bookShare.ownsScreen()` directly.)
+   */
+  it("segments-screen.tsx: `shareOwnsScreen` IS `share.ownsScreen`, the live flow read — not a local rebuild of the rendered mirror", () => {
+    const source = read("src/components/segments-screen.tsx");
+    expect(source).toMatch(/const shareOwnsScreen = share\.ownsScreen;/);
+  });
 
   /**
    * The class-level primitive itself (#491, DRI option A): while the overlay

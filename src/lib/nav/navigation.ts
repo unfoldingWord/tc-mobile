@@ -186,14 +186,21 @@ export type PopAction =
  * stack. As of PR2 the adapter (`hooks/use-nav-stack.ts`) is the sole caller
  * — `App.tsx` routes every `popstate` through `useNavStack` and no longer
  * calls `popAction` directly — and it passes its live `layerStack` ref on
- * every landing. That stack is EMPTY in PR2 (nothing calls `pushLayer` until
- * Books'/Segments' overlays convert in PR3/PR4), and an empty stack can never
- * satisfy the `direction === "back" && layerStack.length > 0` check below, so
- * the `"rearm-layer-dismiss"` / `"rearm-layer-busy"` tags stay
- * unreachable-by-construction and every Back routes exactly as `develop` does
- * today. The default keeps the pure test rows that omit the argument
- * compiling and producing the identical `develop` result. Zero behaviour
- * change until an overlay conversion first pushes a layer.
+ * every landing.
+ *
+ * **That stack is LIVE, not empty** (#536 item 3; this paragraph still
+ * described PR2 after PR3 had shipped, and a reader who trusted it would treat
+ * `"rearm-layer-dismiss"` as inert and copy "always `pushHistoryEntry()`" onto
+ * the floor path — the exact mutant `e2e` case (e) exists to kill). Books'
+ * overlays push as of PR3; Segments' follow in PR4. Both layer tags are
+ * reachable on any Back landing with an overlay open, and what the adapter owes
+ * each of them — including Amendment G's one exception at the floor, the
+ * paragraph above — is the contract to read, not an unreachable branch.
+ *
+ * The empty DEFAULT is what still carries the pre-PR3 behaviour: a caller that
+ * omits the argument (every pure test row written for PR1) can never satisfy
+ * the `direction === "back" && layerStack.length > 0` check below, so it routes
+ * exactly as `develop` does and those rows keep compiling unchanged.
  */
 export function popAction(
   direction: NavDirection,

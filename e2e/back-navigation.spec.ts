@@ -65,9 +65,17 @@ function navIndex(page: Page): Promise<number | undefined> {
 
 /**
  * Seed one book with one chapter and land on that chapter's Segments screen.
- * Driven through the real UI (the shipped build exposes no seeding harness), so
- * it also exercises that Books does NOT push a history entry — only opening a
- * chapter does.
+ * Driven through the real UI (the shipped build exposes no seeding harness).
+ *
+ * It goes through the New Book dialog, so since Amendment G (#452 PR3) it is
+ * NOT a walk over a shelf that pushes nothing: that dialog is a floor layer, so
+ * opening it ARMS the shelf's one protective entry, and closing it by creating
+ * the book leaves that entry standing (case (g)). `openChapter`'s `enterScreen`
+ * then RE-STAMPS the standing entry rather than stacking a second one on it
+ * (case (i)) — so Segments is still exactly one Back from Books. This comment
+ * used to say Books "does NOT push a history entry", which stopped being true
+ * with PR3 (#536 item 4); cases (c)/(d) already moved to relative indices for
+ * the same reason, and `navIndex`'s docblock has the general rule.
  */
 async function seedToSegments(page: Page) {
   await page.goto("/");
@@ -616,4 +624,156 @@ test("(k) a RELOAD with an overlay open does not cost a level — the adapter ad
 
   await page.goBack();
   await expect(page).toHaveURL("about:blank");
+});
+
+/**
+ * ── #452 PR4: Segments' overlays are Back layers (#374) ───────────────────
+ *
+ * Segments is ABOVE the floor: `openChapter` already pushed its entry, so none
+ * of Amendment G applies here and nothing new is armed when an overlay opens.
+ * That is the first thing case (l) asserts, and it is the mutation-unique
+ * witness for `floorEntryForLayerChange`'s `atFloor` guard from this side —
+ * arming here would strand the app one level below the screen it is showing
+ * (invariant 2).
+ *
+ * **Only ONE of Segments' three overlays is reachable from this spec, and the
+ * reason is structural rather than an oversight.** A row's overflow menu
+ * renders only on a RECORDED row (`segment-row.tsx`'s `hasClip` gate), and the
+ * erase confirm is reachable only from that menu — so both need audio, and this
+ * spec has no microphone (see the file header). They are review plus device,
+ * exactly as PR3 said of Books' `busy()` refusals. What that leaves covered
+ * here is the chapter ≡ menu, which is also the one the Amendment C decision
+ * turns on.
+ *
+ * The `busy()` REFUSAL rows are covered by neither, on this screen as on Books:
+ * a rename write and a share encode are both in-flight windows with no
+ * deterministic way to hold one open from Playwright.
+ */
+
+/** The Segments chapter ≡ menu panel. */
+function chapterMenu(page: Page) {
+  return page.getByRole("dialog", { name: "Chapter" });
+}
+
+test("(l) with the chapter ≡ menu open, Back dismisses the menu and STAYS on Segments — the overlay armed no entry of its own, and the absorbed Back re-armed the screen's (#374)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  const atSegments = await navIndex(page);
+  expect(atSegments).toBeGreaterThan(0);
+
+  // Count the app's own history calls across the OPEN. Invariant 1: an overlay
+  // never touches history. Above the floor there is not even an Amendment G
+  // arm to make — the screen's own entry is already there — so this window must
+  // be silent, and `navIndex` must not move.
+  await page.evaluate(() => {
+    const w = window as unknown as { __nav: { push: number; back: number } };
+    w.__nav = { push: 0, back: 0 };
+    const push = window.history.pushState.bind(window.history);
+    const back = window.history.back.bind(window.history);
+    // Transparent wrappers: they still perform the real operation.
+    window.history.pushState = (...args: Parameters<History["pushState"]>) => {
+      w.__nav.push += 1;
+      push(...args);
+    };
+    window.history.back = () => {
+      w.__nav.back += 1;
+      back();
+    };
+  });
+
+  await page
+    .getByRole("button", { name: "More actions for this chapter" })
+    .click();
+  await expect(chapterMenu(page)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __nav: { push: number; back: number } }).__nav
+    )
+  ).toEqual({ push: 0, back: 0 });
+  expect(await navIndex(page)).toBe(atSegments);
+
+  await page.goBack();
+
+  // THE CASE. The menu is gone and Segments is still here — before PR4 this
+  // same Back fell through to `backEffectFor("segments")` and went to Books
+  // with the menu on it, which is #374. Drop `layers.open("segments:chapter-
+  // menu")` from `openChapterMenu` and this pair is what goes red.
+  await expect(chapterMenu(page)).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await expect(newBookCta(page)).toHaveCount(0);
+  // The `popstate` had already popped the screen's entry before the layer got a
+  // say, so `"rearm-layer-dismiss"` pushed a fresh one — unconditionally, above
+  // the floor. The stamp is monotonic (see `navIndex`), so the witness is that
+  // it ADVANCED: force `rearmAfterLayerBack` to `false` here and the app rests
+  // at the shelf's depth while showing Segments, so this reads 0 and the next
+  // Back leaves the app instead of going to Books.
+  expect(await navIndex(page)).toBeGreaterThan(atSegments ?? 0);
+
+  // And the screen's Back still works normally afterwards: one to Books, one
+  // to leave. Nothing was spent, and nothing extra is owed.
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+test("(m) the Record control is inside the list's `inert` subtree while the chapter ≡ menu is open, and outside it when nothing is — the unreachability Amendment C's decision (b) rests on (#452 PR4)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  await page.getByRole("button", { name: "Add segment" }).click();
+  await expect(
+    page.getByRole("button", { name: "Record segment 1" })
+  ).toBeVisible();
+
+  // `openRecorderState` is the ONE caller of `dismissOverlays()`, and PR4's
+  // erase-in-flight decision leaves one window in which that dismissal cannot
+  // close the erase confirm. That window is harmless only because the control
+  // which STARTS the Segments → Recorder transition cannot be reached while any
+  // overlay is up. This asserts that rather than asserting the comment.
+  //
+  // HALF of it, and the half is the point (Frank R1 P2-1). What this case can
+  // reach is the CHAPTER MENU term: the erase confirm needs a RECORDED row and
+  // this spec has no microphone, so no headless case can open it. What this
+  // proves is that the `listInert` value reaches the DOM and takes the Record
+  // control out of reach; that the SET of terms feeding it still includes
+  // `eraseConfirmOpen` is `tests/segments-inert.test.ts`'s row, in Node. One
+  // value feeds both `inert` props, so the two compose — but the composition is
+  // the claim, not an observation of the erase branch in a browser.
+  //
+  // `closest("[inert]")`, not Playwright actionability: what `listInert` claims
+  // is that the control sits inside an inert SUBTREE. That the platform then
+  // refuses to activate it is the platform's job, not this app's, and asserting
+  // a timeout instead would be slow and would not say which claim failed.
+  const recordIsInert = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[aria-label="Record segment 1"]');
+      return el === null ? null : el.closest("[inert]") !== null;
+    });
+
+  // BOTH states (AGENTS.md: a gate is tested in both). Resting: reachable —
+  // this half is what fails if `listInert` is ever mutated to a constant
+  // `true`, which would otherwise make the assertion below pass vacuously.
+  expect(await recordIsInert()).toBe(false);
+
+  await page
+    .getByRole("button", { name: "More actions for this chapter" })
+    .click();
+  await expect(chapterMenu(page)).toBeVisible();
+  // The load-bearing half: drop `chapterMenuOpen` from `listInert` and this
+  // reads false.
+  expect(await recordIsInert()).toBe(true);
+
+  // And it comes back when the overlay does — through Back, which is PR4's own
+  // path, so the two claims are checked against each other rather than only
+  // against the resting state above.
+  await page.goBack();
+  await expect(chapterMenu(page)).toHaveCount(0);
+  expect(await recordIsInert()).toBe(false);
 });

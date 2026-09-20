@@ -16,6 +16,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
+import { segmentsListInert } from "./segments-inert";
 import {
   shareErrorText as shareErrorCopy,
   shareGapText,
@@ -31,16 +32,65 @@ import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useScreenLayers } from "@/hooks/use-screen-layers";
+import type { Layer } from "@/lib/nav/layer-stack";
+import { overlayDismissal } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { firstNotFinished } from "@/types/view";
 
 /**
- * What App (slice 4) can drive from outside: a rebuild after a recorder commit.
+ * Every overlay this screen can put over the chapter, as a system-Back layer
+ * (#452 PR4, #374). The union is what makes `useScreenLayers`' behaviour record
+ * total — a row added here with no behaviour, or a behaviour for an id that no
+ * longer exists, is a `tsc` error rather than a Back that silently does nothing.
+ *
+ * Three, matching the design's "PR4 — Segments' overlays" (the chapter ≡ menu
+ * and its rename mode are ONE overlay: rename is a mode inside the same panel,
+ * so it opens no second layer and Back from the rename field closes the menu,
+ * just as the panel's own Close does).
+ *
+ * `segments:row-menu` is the one whose state does not live here: it belongs to
+ * the `SegmentRow` that opened it, which hands its own close up through
+ * `onMenuOpen` for this screen to register. Same split as Books'
+ * `books:log-clear-confirm` — the child keeps the state, the screen keeps the
+ * registration — and for the same reason: only the screen can see the stack.
+ *
+ * NOT a layer: `<ShareProgress>` (#491), exactly as on Books. It goes up and
+ * comes down on the share flow's own timeline rather than on any click, so
+ * registering it would mean popping a layer from a timer — an effect, which
+ * invariant 6 forbids. It is folded into the chapter ≡ menu's `busy()` instead
+ * (Amendment D), which is also exactly right: the overlay's whole lifetime is
+ * the window in which that menu's own close is a no-op
+ * (`closeChapterMenuState`'s early return), so Back must refuse rather than run
+ * a `dismiss()` that does nothing.
+ */
+type SegmentsLayerId =
+  "segments:chapter-menu" | "segments:row-menu" | "segments:erase-confirm";
+
+/**
+ * What App (slice 4) can drive from outside: a rebuild after a recorder commit,
+ * and the forced overlay teardown Amendment C's decision (b) owes this screen.
  * The screen stays mounted (dimmed) behind the recorder sheet, so when the
  * sheet saves a take, App calls `reload()` and the row's waveform appears.
  */
 export interface SegmentsScreenHandle {
   reload: () => void;
+  /**
+   * Take this screen's overlays down — React state AND the layer stack —
+   * because App is about to raise the recorder sheet over it.
+   *
+   * Amendment C's other half (#452 PR3's recorded decision, option (b);
+   * `docs/design/back-navigation.md`). The adapter's cleanup effect clears the
+   * WHOLE layer stack on a `screen` change, but Segments → Recorder is not an
+   * unmount — `App.tsx` keeps this screen mounted and `inert` under the sheet —
+   * so without this, React overlay state would outlive the `Layer`s protecting
+   * it and a Back once the sheet closed would route `"to-books"` from under an
+   * open menu.
+   *
+   * See `dismissOverlays` below for the one overlay it cannot close (an erase
+   * already in flight) and why that is the right answer rather than a gap.
+   */
+  dismissOverlays: () => void;
 }
 
 interface SegmentsScreenProps {
@@ -53,6 +103,10 @@ interface SegmentsScreenProps {
   audio: UseAudioSession;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
+  pushLayer: (layer: Layer) => void;
+  /** Unregister one by id. Idempotent. */
+  popLayer: (id: string) => void;
 }
 
 /**
@@ -65,7 +119,10 @@ interface SegmentsScreenProps {
 export const SegmentsScreen = forwardRef<
   SegmentsScreenHandle,
   SegmentsScreenProps
->(function SegmentsScreen({ chapterId, audio, onBack, onOpenRecorder }, ref) {
+>(function SegmentsScreen(
+  { chapterId, audio, onBack, onOpenRecorder, pushLayer, popLayer },
+  ref
+) {
   const {
     bookName,
     chapterNumber,
@@ -84,8 +141,6 @@ export const SegmentsScreen = forwardRef<
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
   const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
-
-  useImperativeHandle(ref, () => ({ reload }), [reload]);
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -111,6 +166,20 @@ export const SegmentsScreen = forwardRef<
   // show a freshly (re)opened menu's Confirm as busy before it has been
   // tapped (Frank r1, #384).
   const [savingChapterName, setSavingChapterName] = useState(false);
+  // The same flag as a live ref (#452 PR4, the design's F4 — the Segments twin
+  // of `books-screen.tsx`'s `savingBookNameRef`). `savingChapterName` above is
+  // last render's answer and drives NameEdit's `busy`; this is what the chapter
+  // ≡ menu's `Layer.busy()` reads, because the system-Back handler calls it from
+  // a `popstate` with no render in between (invariant 4).
+  const savingChapterNameRef = useRef(false);
+  // The two always move together, through one setter, so the Confirm a
+  // translator can see and the Back the system sends can never disagree about
+  // whether a rename is in flight. Every site that touched `setSavingChapterName`
+  // calls this instead.
+  const setSavingName = useCallback((value: boolean) => {
+    savingChapterNameRef.current = value;
+    setSavingChapterName(value);
+  }, []);
   // A monotonic token for the current chapter-menu session. It advances whenever
   // the menu opens, closes, or arms a share — every transition after which a
   // late-resolving rename must NOT run its close, or it would drop a prepared
@@ -118,6 +187,293 @@ export const SegmentsScreen = forwardRef<
   // matches. A ref, read at resolution time, so it sees the live value.
   const chapterMenuSession = useRef(0);
   const share = useChapterShare();
+  const erase = useEraseSegment();
+  // MEMBERS, never the objects — and this is #452's own open question 3,
+  // answered here on this screen's evidence as the design asks PR4 to do.
+  //
+  // PR3 answered it for Books with "not needed": nothing there depended on
+  // `useBookShare()`'s identity. That is NOT true here. `closeChapterMenuState`
+  // below needs the share flow, its identity flows through `onCloseChapterMenu`
+  // into `dismissOverlays`, and `dismissOverlays` is in `useImperativeHandle`'s
+  // dependency array — a hook with a dependency array and a real effect (the
+  // handle App calls into). With the whole object as the dependency, every
+  // render of this screen, including the ~60 ms playback tick, would tear that
+  // handle down and rebuild it.
+  //
+  // So Amendment E's SECOND remedy applies rather than its first: the consumers
+  // below depend on stable MEMBERS — `share.ownsScreen`, `share.reset`,
+  // `erase.isErasing` — never on the objects, and the hooks are left
+  // unmemoized. `ownsScreen` is a `useCallback([modal])` and `reset` a
+  // `useCallback([handoff, modal])` over two values created once per hook
+  // instance (`share-flow.ts`); `isErasing` is a `useCallback([])` over a ref.
+  // All three are created once for their hook's life, so every dependency array
+  // naming one of them is stable. `books-screen.tsx` does the same for
+  // `bookShare.reset`.
+  //
+  // They are LOCAL BINDINGS rather than member expressions in the dependency
+  // arrays because this repo's `exhaustive-deps` asks for the whole object when
+  // a body writes `share.ownsScreen()` — which is the churn this exists to
+  // avoid. The binding is the sanctioned way to say "this member, not that
+  // object", and it is the same shape as `resetBookShare` on Books.
+  const shareOwnsScreen = share.ownsScreen;
+  const resetShare = share.reset;
+  const isErasing = erase.isErasing;
+  // The open row menu's own close, handed up by the `SegmentRow` that owns it
+  // (`onMenuOpen`). `null` while no row menu is open. This is the
+  // `segments:row-menu` layer's `dismiss()`, kept as a ref for the same reason
+  // Books keeps `logClearBehavior` as one: the state belongs to the child, the
+  // registration belongs to the screen, and neither may be read during render.
+  const rowMenuDismiss = useRef<(() => void) | null>(null);
+
+  // ── System Back: this screen's overlays as layers (#452 PR4, #374) ────────
+  //
+  // The shape is Books' (`books-screen.tsx`), deliberately: each overlay has a
+  // STATE half here — everything it takes to close the overlay itself — and,
+  // below `layers`, a full close that also unregisters its layer. Every
+  // behaviour in the record refers only to things already declared, because a
+  // forward reference makes the React Compiler bail on the whole component and
+  // takes `react-hooks`' own analysis down with it (#212's failure mode).
+  //
+  // A `dismiss()` is the STATE half on purpose: the adapter unregisters the
+  // layer itself immediately after calling it (`use-nav-stack.ts`'s
+  // `"rearm-layer-dismiss"` → `popLayer(top.id)`, #494 item 3).
+  //
+  // `busy()` must be true whenever `dismiss()` would be a no-op, or a Back runs
+  // a dismissal that changes nothing while the adapter still unregisters the
+  // layer — leaving the overlay on screen with nothing routing Back to it
+  // (#494 item 3). Segments is ABOVE the floor, so unlike Books there is no
+  // floor entry to lose: the consumed entry is this screen's own and
+  // `rearmAfterLayerBack` always puts it back. What a mismatch costs here is
+  // the NEXT Back routing `"to-books"` out from under an open overlay, which is
+  // #374's original complaint.
+
+  /**
+   * Closing the chapter ≡ menu (scrim, Escape, close button, a system Back)
+   * ends the flow: drop any armed File so a stale "ready" cannot linger behind
+   * a closed menu.
+   *
+   * Returns `false` while the share overlay owns the screen, where this is a
+   * no-op — so the caller keeps its layer registered. That guard is KEPT
+   * deliberately (#491, the DRI's option-A pick): every OTHER guard this menu's
+   * controls carried was removed once `<Menu>`'s own `inert` prop started
+   * covering them — this one is not, because `inert` only reaches the DOM
+   * subtree it is applied to, and this function is still reachable from THREE
+   * places outside that subtree while the overlay is up: Menu's own `window`
+   * Escape listener (`menu.tsx`'s `onKeyDown`), its scrim `onClick`, and now the
+   * system Back gesture. `<ShareProgress>`'s own capture-phase Escape (with
+   * `stopPropagation`) is expected to swallow the Escape before Menu's
+   * bubble-phase listener sees it, and the overlay's own scrim (`z-index: 90`,
+   * over the menu scrim's 80) is expected to swallow the click — but neither of
+   * those is `inert`, and neither sees a system Back at all, so this guard is
+   * the belt for all three. The overlay's OWN scrim/Escape still cancel a
+   * genuinely cancelable busy-prepare phase, wired straight to `share.reset`
+   * (see `<ShareProgress>` below) rather than through this function.
+   *
+   * It reads `share.ownsScreen()` — the LIVE flow state — and not
+   * `shareOverlayOwnsScreen(share.progress)`, the rendered mirror it used
+   * before #452 PR4 (Books moved for the same reason in PR3). Same predicate,
+   * one commit fresher, and the freshness is load-bearing now: this is a
+   * `Layer`'s `dismiss()`, reached only when that layer's `busy()` said the
+   * overlay does NOT own the screen. Two copies of the same fact can disagree
+   * for one commit, and the disagreement is the bad way round — `busy()` false,
+   * this guard true — which is a Back that unregisters the layer while the menu
+   * stays open. One source, no window. (`listInert` below keeps the rendered
+   * mirror, which is right: it is a rendering decision, not a `popstate` one.)
+   */
+  const closeChapterMenuState = useCallback(() => {
+    if (shareOwnsScreen()) return false;
+    chapterMenuSession.current += 1;
+    setChapterMenuOpen(false);
+    setRenamingChapter(false);
+    setSavingName(false);
+    resetShare();
+    return true;
+  }, [resetShare, shareOwnsScreen, setSavingName]);
+
+  /**
+   * Cancel / Escape / scrim / a system Back take the erase confirm down. The
+   * row it was armed for is untouched — this is the "do not erase" answer.
+   */
+  const closeEraseState = useCallback(() => setEraseTarget(null), []);
+
+  const layers = useScreenLayers<SegmentsLayerId>(pushLayer, popLayer, {
+    "segments:chapter-menu": {
+      // Two writes live behind this panel: a rename in flight (#383/#384 —
+      // whether it SHOULD refuse Back is #452 open question 7, for the
+      // requirements owner; this ships the design's overlay-catalogue row and
+      // is one term to remove either way), and the share flow, whose modal owns
+      // the screen for its whole timeline (Amendment D, widened from
+      // `status === "preparing"` because #491's modal outlives it — see
+      // `UseShareFlow.ownsScreen`).
+      //
+      // The Close-vs-Back split Books carries (#536 item 2) is here too, and by
+      // the same construction: `closeChapterMenuState` guards on `ownsScreen()`
+      // alone, so a rename in flight refuses a system Back and does not refuse
+      // Menu's Close/scrim/Escape. Named, not closed — closing it decides open
+      // question 7 for Close, which is the requirements owner's call.
+      busy: () => savingChapterNameRef.current || shareOwnsScreen(),
+      dismiss: () => {
+        closeChapterMenuState();
+      },
+    },
+    "segments:row-menu": {
+      // Edit, Finished and Erase all hand off to the screen and close; none of
+      // them holds a write open behind this panel, so there is nothing for Back
+      // to wait on. (`onSetFinished`'s store write fires and forgets, with its
+      // own failure channel — the row menu is already gone by then.)
+      busy: () => false,
+      // The row's own close, which also reports back up through `onMenuClose`.
+      // `?.` covers only the window in which the row unmounted without this
+      // layer being closed, which `onMenuClose` makes unreachable — and if it
+      // were ever reached, Back would spend one gesture and then fall through,
+      // not trap.
+      dismiss: () => rowMenuDismiss.current?.(),
+    },
+    "segments:erase-confirm": {
+      // The same live ref `erase()` flips to refuse a second Confirm, so Back
+      // and Confirm agree about "in flight" by construction. NOT `erase.erasing`
+      // — that is last render's answer, which is the exact defect invariant 4
+      // exists for and which `recorder.tsx` still carries at its own call site
+      // (#452 PR5).
+      busy: isErasing,
+      dismiss: closeEraseState,
+    },
+  });
+
+  // The chapter ≡ menu's ONE open and ONE close. Every entry point — the ≡, the
+  // panel's Close, Escape, a scrim tap, a completed send — goes through this
+  // pair, so no call site can forget the registration.
+  //
+  // Open the chapter ≡ menu, starting a fresh session so a rename still in
+  // flight from a prior open cannot close this one.
+  const openChapterMenu = useCallback(() => {
+    chapterMenuSession.current += 1;
+    setChapterMenuOpen(true);
+    // A still-pending rename from the last time this menu was open must not
+    // show the freshly reopened Confirm as busy before it has been tapped.
+    setSavingName(false);
+    // Registered in the SAME handler that opens it (invariant 6), and after the
+    // state above for the reason `use-nav-stack.ts`'s `openChapter` documents:
+    // the layer is on the stack before this gesture returns either way.
+    layers.open("segments:chapter-menu");
+  }, [layers, setSavingName]);
+  // Menu's actual `onClose`, and the one close every caller uses.
+  //
+  // The Menu-level guard that blocked this while `savingChapterName` was true
+  // (round 3/4 of #384's review) was REVERTED: it stopped the
+  // scrim/Close/Escape-elsewhere from unmounting the menu mid-write, but system
+  // Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
+  // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
+  // exit (George R5 P2) — Close used to work, so nobody reached for system
+  // Back; making it a silent no-op is what sends them there. **#452 PR4 gives
+  // system Back its own route through this menu's `Layer`**, which is what #374
+  // and #393 were waiting for; see the `busy()` above for the split that is
+  // left, and why it is named rather than closed.
+  const onCloseChapterMenu = useCallback(() => {
+    if (closeChapterMenuState()) layers.close("segments:chapter-menu");
+  }, [closeChapterMenuState, layers]);
+
+  // A row's overflow menu opened, handing up its own close. The screen takes
+  // both jobs at once: the list goes `inert` behind it, and it becomes a layer.
+  const onRowMenuOpen = useCallback(
+    (close: () => void) => {
+      rowMenuDismiss.current = close;
+      setRowMenuOpen(true);
+      layers.open("segments:row-menu");
+    },
+    [layers]
+  );
+  // ...and closed, by its own control, one of its action items, an unmounting
+  // row, or the system Back that ran `close` as this layer's `dismiss()`.
+  // Idempotent on every one of those paths.
+  const onRowMenuClose = useCallback(() => {
+    rowMenuDismiss.current = null;
+    setRowMenuOpen(false);
+    layers.close("segments:row-menu");
+  }, [layers]);
+
+  // Arm the erase confirm for a row. Called from the row menu's Erase item
+  // BEFORE that menu closes itself, so the stack goes 1 → 2 → 1 and never
+  // passes through empty (`segment-row.tsx` has the ordering comment; Books'
+  // `onArmDelete` is the same interleave).
+  const armErase = useCallback(
+    (segmentId: SegmentId) => {
+      layers.open("segments:erase-confirm");
+      setEraseTarget(segmentId);
+    },
+    [layers]
+  );
+  // The confirm's own Cancel/Escape/scrim, plus the layer. A system Back
+  // reaches the state half directly (the adapter unregisters the layer itself),
+  // so both exits end in the same place.
+  const closeErase = useCallback(() => {
+    closeEraseState();
+    layers.close("segments:erase-confirm");
+  }, [closeEraseState, layers]);
+
+  /**
+   * Amendment C's other half — see `SegmentsScreenHandle.dismissOverlays`.
+   *
+   * **The erase-in-flight decision (#452 PR4's, recorded on #452 and in the
+   * PR):** the confirm is NOT forced down while its `clearSegmentTake` is
+   * committing. The rule is `overlayDismissal`'s, reused rather than restated —
+   * `confirmOpen && !erasing` — which the recorder's own absorbed Back already
+   * obeys for the identical dialog, and for the identical reason one level up:
+   * `onConfirmErase` holds `eraseTarget` non-null across the whole delete
+   * precisely to keep `listInert` true, and clearing it mid-erase un-inerts the
+   * list and exposes Record on the very row being erased. Forcing it would
+   * trade a bookkeeping mismatch for a data hazard.
+   *
+   * So in that one window the screen's state cannot agree with the adapter's
+   * clear: the confirm stays up having lost its layer. It is BOUNDED and
+   * self-healing — `onConfirmErase` clears `eraseTarget` on both `"ok"` and
+   * `"failed"`, so the window is one IndexedDB delete long and ends with the
+   * dialog gone either way — and it is UNREACHABLE, because `listInert` covers
+   * the Record control that starts this transition.
+   *
+   * **Exactly how much of that unreachability is asserted, and by what**
+   * (Frank R1 P2-1, which found this paragraph claiming more than it had, and
+   * citing a case letter that does not exist). Two halves, composed, neither
+   * of them a direct observation of the erase-confirm branch in a browser:
+   *
+   *   - `tests/segments-inert.test.ts` pins the TERM SET of `listInert`,
+   *     `eraseConfirmOpen` included, one row per term. That is what stops the
+   *     term this decision rests on being deleted with every gate green, which
+   *     it could have been while the predicate was four inline `||`s.
+   *   - `e2e/back-navigation.spec.ts` case (m) proves the value REACHES the
+   *     DOM, in real Chromium, in both states — but through the chapter ≡ menu,
+   *     because the erase confirm needs a RECORDED row and this spec has no
+   *     microphone.
+   *
+   * One `listInert` value feeds both `inert` props, so a branch proved to reach
+   * the DOM proves the path for every term. That composition is the claim; it
+   * is not the same as having watched a Back land on an in-flight erase. That
+   * remains review plus device, like every other audio-gated path here.
+   *
+   * The chapter menu can also decline, through `closeChapterMenuState`'s own
+   * share guard, and that is the same story: `listInert` includes
+   * `shareOverlayOwnsScreen`, so a share cannot be owning the screen when this
+   * runs.
+   */
+  const dismissOverlays = useCallback(() => {
+    const { closeMenu, closeConfirm } = overlayDismissal(
+      chapterMenuOpen,
+      eraseTarget !== null,
+      isErasing()
+    );
+    if (closeMenu) onCloseChapterMenu();
+    // The row menu has no in-flight state of its own, so it is not a row in
+    // `overlayDismissal`'s table; it comes down unconditionally, and its own
+    // close reports up and unregisters it.
+    rowMenuDismiss.current?.();
+    if (closeConfirm) closeErase();
+  }, [chapterMenuOpen, closeErase, eraseTarget, isErasing, onCloseChapterMenu]);
+
+  useImperativeHandle(ref, () => ({ reload, dismissOverlays }), [
+    reload,
+    dismissOverlays,
+  ]);
+
   // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491):
   // `capture()` runs synchronously in `onPrepareShare`/`onSendShare` below —
   // the opening gesture's own handler, before `<Menu inert={...}>` (below)
@@ -145,12 +501,20 @@ export const SegmentsScreen = forwardRef<
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
-    setSavingChapterName(false);
+    setSavingName(false);
     void share.prepare(
       chapterId,
       strings.shareFilename(bookName, chapterNumber)
     );
-  }, [focusRestore, audio, share, chapterId, bookName, chapterNumber]);
+  }, [
+    focusRestore,
+    audio,
+    share,
+    setSavingName,
+    chapterId,
+    bookName,
+    chapterNumber,
+  ]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
   // as its first call inside this gesture (`navigator.share` in a browser, the
   // Share plugin in the native shell, whose file tap 1 already wrote to the
@@ -165,13 +529,23 @@ export const SegmentsScreen = forwardRef<
   // effect below (prepare's own settle drives `progress` back to `hidden`
   // well before a translator can tap again), so this captures the live tap on
   // "Share now" fresh, not a stale one from tap 1.
+  //
+  // It closes through `onCloseChapterMenu` — the ONE close — rather than
+  // `setChapterMenuOpen(false)` on its own, which is what it did before #452
+  // PR4. A bare state flip would leave the menu's `Layer` registered over a
+  // panel that is gone, and the next Back would spend itself running a
+  // now-no-op dismiss instead of leaving the chapter (#494 item 3). Going
+  // through the full close also resets the flow and bumps the session, which is
+  // what Books' `onSendBookShare` already did and what keeps a spent "ready"
+  // from lingering. The close's own share guard cannot refuse here: `send()`
+  // resolves only after the outcome glyph has cleared, so the overlay no longer
+  // owns the screen by the time this runs.
   const onSendShare = useCallback(() => {
     focusRestore.capture();
     void share.send().then((outcome) => {
-      if (outcome === "sent" || outcome === "dismissed")
-        setChapterMenuOpen(false);
+      if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
     });
-  }, [focusRestore, share]);
+  }, [focusRestore, share, onCloseChapterMenu]);
   // Hand focus back once `inert` has lifted (`useLayoutEffect`, not
   // `useEffect`: it must run before paint, right after the mutation that
   // clears `inert`). Fires on every render where the overlay is not showing —
@@ -183,53 +557,6 @@ export const SegmentsScreen = forwardRef<
       fallback: shareControlRef.current,
     });
   }, [share.progress, focusRestore]);
-  // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
-  // File and clear state so a stale "ready" cannot linger behind a closed menu.
-  //
-  // This is Menu's actual `onClose` — a Menu-level guard that blocked it while
-  // `savingChapterName` was true (round 3/4 of #384's review) was REVERTED: it
-  // stopped the scrim/Close/Escape-elsewhere from unmounting the menu mid-write,
-  // but system Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
-  // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
-  // exit (George R5 P2) — Close used to work, so nobody reached for system Back;
-  // making it a silent no-op is what sends them there. Fixing this properly
-  // needs the nav layer's `overlayBlocksClose`/`overlayDismissal` absorbing
-  // system Back too, tracked at #393 (with #374, the same gap for Books' other
-  // menus) rather than shipped as a partial fix here.
-  const onCloseChapterMenu = useCallback(() => {
-    // KEPT deliberately (#491, the DRI's option-A pick): every OTHER guard
-    // this menu's controls carried was removed once `<Menu>`'s own `inert`
-    // prop (below) started covering them — this one is not, because `inert`
-    // only reaches the DOM subtree it is applied to, and this function is
-    // still reachable from TWO places outside that subtree while the
-    // overlay is up: Menu's own `window` Escape listener (`menu.tsx`'s
-    // `onKeyDown`), and its scrim `onClick` — both call `onClose` directly,
-    // neither is inside the panel. `<ShareProgress>`'s own capture-phase
-    // Escape (with `stopPropagation`) is expected to swallow the Escape
-    // before Menu's bubble-phase listener ever sees it, and the overlay's
-    // own scrim (`z-index: 90`, over the menu scrim's 80) is expected to
-    // swallow the click — but neither of those is `inert`, so this guard is
-    // the belt for both, not a redundant copy of the primitive. The
-    // overlay's OWN scrim/Escape still cancel a genuinely cancelable
-    // busy-prepare phase, wired straight to `share.reset` (see
-    // `<ShareProgress>` below) rather than through this function, so that
-    // path is unaffected by this guard.
-    if (shareOverlayOwnsScreen(share.progress)) return;
-    chapterMenuSession.current += 1;
-    setChapterMenuOpen(false);
-    setRenamingChapter(false);
-    setSavingChapterName(false);
-    share.reset();
-  }, [share]);
-  // Open the chapter ≡ menu, starting a fresh session so a rename still in flight
-  // from a prior open cannot close this one.
-  const openChapterMenu = useCallback(() => {
-    chapterMenuSession.current += 1;
-    setChapterMenuOpen(true);
-    // A still-pending rename from the last time this menu was open must not
-    // show the freshly reopened Confirm as busy before it has been tapped.
-    setSavingChapterName(false);
-  }, []);
   // Commit the typed chapter name (#264), then close the menu on success. The
   // hook patches the breadcrumb in place. A failed write keeps the field up
   // with the reason in the menu's own Notice — the screen Notice sits behind
@@ -242,7 +569,10 @@ export const SegmentsScreen = forwardRef<
       // resolution closes the now-current menu and runs share.reset(),
       // discarding a prepared encode.
       const session = chapterMenuSession.current;
-      setSavingChapterName(true);
+      // Flipped SYNCHRONOUSLY, before the write is even started — which is what
+      // makes the menu layer's `busy()` honest for a system Back landing in the
+      // same task as this tap (invariant 4).
+      setSavingName(true);
       void renameChapter(name)
         .then((ok) => {
           if (ok && chapterMenuSession.current === session)
@@ -252,11 +582,10 @@ export const SegmentsScreen = forwardRef<
           // Guarded like the close above: a stale settle from a session this
           // screen has already moved past must not touch state a newer
           // session (a reopen, or an armed share) now owns.
-          if (chapterMenuSession.current === session)
-            setSavingChapterName(false);
+          if (chapterMenuSession.current === session) setSavingName(false);
         });
     },
-    [renameChapter, onCloseChapterMenu]
+    [renameChapter, setSavingName, onCloseChapterMenu]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingChapterName` like every other exit from
@@ -267,10 +596,8 @@ export const SegmentsScreen = forwardRef<
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
     setRenamingChapter(false);
-    setSavingChapterName(false);
-  }, []);
-  const erase = useEraseSegment();
-  const closeErase = useCallback(() => setEraseTarget(null), []);
+    setSavingName(false);
+  }, [setSavingName]);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
     void (async () => {
@@ -295,9 +622,13 @@ export const SegmentsScreen = forwardRef<
       // double-tap's "busy" is ignored so the confirm does not vanish under the
       // first erase.
       if (result === "ok") eraseRow(eraseTarget);
-      if (result !== "busy") setEraseTarget(null);
+      // Both real outcomes take the confirm down, so both take its layer down
+      // (#494 item 3 — a layer whose overlay is gone traps Back at this depth).
+      // `"busy"` returns without touching either: the first erase still owns
+      // them, and its own settle is what closes them.
+      if (result !== "busy") closeErase();
     })();
-  }, [audio, erase, eraseTarget, eraseRow]);
+  }, [audio, closeErase, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
   // sheet (G8: aria-modal alone is not trusted to hide the background). The
   // share overlay joins the list (George r1 P2 #1/#2, #491): a screen
@@ -305,11 +636,24 @@ export const SegmentsScreen = forwardRef<
   // `<ShareProgress>` intercepts, so `inert` is what keeps THAT path off the
   // header/list while the overlay is up — including through the outcome
   // hold, after `chapterMenuOpen` itself may already have gone false.
-  const listInert =
-    eraseTarget !== null ||
-    rowMenuOpen ||
-    chapterMenuOpen ||
-    shareOverlayOwnsScreen(share.progress);
+  //
+  // The decision moved out to `segments-inert.ts` in #452 PR4 (Frank R1 P2-1):
+  // it is what Amendment C's decision (b) rests on, and inline here it had no
+  // Node-testable surface, so the one term the erase-in-flight call actually
+  // turns on — `eraseConfirmOpen` — could have been deleted with every gate
+  // green. That file's docblock has the full accounting of what its table
+  // proves and what it does not.
+  //
+  // The share half stays the RENDERED mirror (`share.progress`), not the live
+  // `shareOwnsScreen()`: this is a rendering decision, where last commit's
+  // value is the right one. Only the `popstate`-reachable close and `busy()`
+  // must read live.
+  const listInert = segmentsListInert({
+    eraseConfirmOpen: eraseTarget !== null,
+    rowMenuOpen,
+    chapterMenuOpen,
+    shareOwnsScreen: shareOverlayOwnsScreen(share.progress),
+  });
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.
@@ -497,8 +841,9 @@ export const SegmentsScreen = forwardRef<
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)
                   }
-                  onErase={() => setEraseTarget(row.segmentId)}
-                  onMenuOpenChange={setRowMenuOpen}
+                  onErase={() => armErase(row.segmentId)}
+                  onMenuOpen={onRowMenuOpen}
+                  onMenuClose={onRowMenuClose}
                 />
               </li>
             ))}
@@ -511,10 +856,16 @@ export const SegmentsScreen = forwardRef<
         title={strings.eraseConfirmTitle}
         confirmLabel={strings.eraseConfirm}
         cancelLabel={strings.eraseCancel}
+        // The RENDER mirror, deliberately: this paints the Confirm's busy state,
+        // and a painted control may only ever show a committed value. The layer's
+        // `busy()` reads the live ref instead (`isErasing`) — see the behaviour
+        // record above.
         busy={erase.erasing}
         onConfirm={onConfirmErase}
         // Stable identity: a fresh lambda each render would, together with the
         // 60 ms playback tick, thrash EraseConfirm's focus effect (George R-B6).
+        // `closeErase` is a `useCallback` over `closeEraseState` plus the
+        // memoized `layers`, so it still is one.
         onCancel={closeErase}
       />
 

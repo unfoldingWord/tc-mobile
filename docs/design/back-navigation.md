@@ -1,6 +1,7 @@
 # Design pass: the history-stack model for system-Back (#452)
 
-**Status:** PR1 merged (#492); PR2 in review (#499), DRI decisions 1–4 recorded on the PR · **Date:** 2026-09-18 ·
+**Status:** PR1 merged (#492), PR2 merged (#499), PR3 merged (#531); PR4 open ·
+**Date:** 2026-09-20 ·
 **Tracking:** [#452](https://github.com/unfoldingWord/tc-mobile/issues/452),
 supersedes [#430](https://github.com/unfoldingWord/tc-mobile/pull/430)
 (parked as a draft at `36e10fd`, never merged)
@@ -613,6 +614,54 @@ object literal to destabilize.
 > contract than the training runway has room for, and it is named here so PR4
 > does not have to rediscover it.
 
+> **PR4's answers to the two open halves (2026-09-20, #452 PR4):**
+>
+> 1. **Erase in flight: the confirm is NOT forced down.** `dismissOverlays()`
+>    takes the chapter ≡ menu and any row menu down unconditionally, and routes
+>    the confirm through `overlayDismissal` — REUSED, not restated, so there is
+>    one rule and the recorder's own absorbed Back (PR5's call site) and this one
+>    cannot drift. The reason is the same one `overlayDismissal`'s docblock
+>    already gives, one level up: `onConfirmErase` holds `eraseTarget` non-null
+>    across the whole `clearSegmentTake` precisely to keep `listInert` true, so
+>    clearing it mid-erase un-inerts the list and exposes Record on the very row
+>    being erased — trading a bookkeeping mismatch for a data hazard.
+>
+>    So in that one window the screen's state cannot agree with the adapter's
+>    clear: the confirm stays up having lost its layer. Stated rather than
+>    hidden. It is **bounded** — `onConfirmErase` clears `eraseTarget` on both
+>    `"ok"` and `"failed"`, so the window is one IndexedDB delete long and ends
+>    with the dialog gone either way — and it is **unreachable**, which is (2).
+>
+> 2. **Assert `listInert`'s unreachability: yes**, precisely because of (1).
+>    Point 1 above made the decision free; (1) makes the unreachability
+>    load-bearing rather than merely reassuring, and a claim that load-bearing
+>    should not rest on a comment. It is asserted in **two halves, composed**,
+>    and the composition is named rather than glossed (Frank R1 P2-1 on PR #538
+>    found the first draft claiming the browser case covered the erase term,
+>    which it does not):
+>
+>    - **The term set.** `listInert` moved out of the render body into
+>      `src/components/segments-inert.ts`, with `tests/segments-inert.test.ts`
+>      pinning one row per term. Inline it had no Node-testable surface at all,
+>      so `eraseConfirmOpen` — the term (1) actually turns on — could have been
+>      deleted with every gate green. Each term's deletion now kills its own row
+>      and no other (watched, for `eraseConfirmOpen` and `shareOwnsScreen`).
+>    - **The value reaching the DOM.** `e2e/back-navigation.spec.ts` case (m),
+>      in real Chromium, **in both states** — the Record control has no `inert`
+>      ancestor at rest, has one while the chapter ≡ menu is open, and has none
+>      again after the dismissing Back. Both halves were watched fail (dropping
+>      `chapterMenuOpen` from `listInert`; pinning it to `true`), the second
+>      being what stops the first passing vacuously.
+>
+>    One `listInert` value feeds both `inert` props, so a branch proved to reach
+>    the DOM proves the path for every term. **That composition is the claim.**
+>    Nothing here has watched a Back land on an in-flight erase: that needs a
+>    RECORDED row, which needs audio the spec does not have, so it stays review
+>    plus device like every other audio-gated path on this screen.
+>
+> Neither answer needs the rejected third option (a `screen` tag on `Layer`).
+> It remains the shape to reach for if a third instance of this class turns up.
+
 ### Amendment D — Share-preparing is a busy overlay state (grafted from Model 3)
 
 Confirmed above: both the Book ≡ menu and the Segments chapter ≡ menu host a
@@ -894,6 +943,29 @@ inference until it is run on an actual Android device.
    > finds an effect that genuinely needs the identity, memoize it there, with
    > the defect named.
    >
+   > **PR4 re-asked it and found one — and still did not memoize the hook
+   > (2026-09-20).** Segments has a consumer Books does not:
+   > `useImperativeHandle`'s dependency array, reached through
+   > `dismissOverlays` → `onCloseChapterMenu` → `closeChapterMenuState`, which
+   > needs the share flow. With the whole `useChapterShare()` object as the
+   > dependency, every render of that screen — including the ~60 ms playback
+   > tick — would tear the imperative handle down and rebuild it.
+   >
+   > The fix is Amendment E's SECOND remedy, not its first: the consumer depends
+   > on stable MEMBERS (`share.ownsScreen`, `share.reset`, and `erase.isErasing`
+   > for the same reason), bound locally because this repo's `exhaustive-deps`
+   > asks for the whole object when a body writes `share.ownsScreen()`. All
+   > three are `useCallback`s over values created once per hook instance
+   > (`share-flow.ts`, `use-erase-segment.ts`), so every array naming one is
+   > stable. Memoizing the hook would have worked too and is strictly more
+   > change for the same result — and `books-screen.tsx` already sets the
+   > member-binding precedent with `resetBookShare`.
+   >
+   > Worth keeping straight for a future reader: the handle is not the round-6
+   > P1 shape even unmemoized (its "cleanup" is a ref assignment in the layout
+   > phase, not a `history.back()`), so this is avoided churn, not a fixed
+   > defect. Named that way rather than dressed up.
+   >
    > What PR3 did ship instead, for the same class of hazard one level down:
    > `useScreenLayers`' own return is `useMemo`'d, because a caller's close
    > path legitimately can live in an effect (Books' delete confirm auto-closes
@@ -970,9 +1042,20 @@ inference until it is run on an actual Android device.
    genuine second layer. `<ShareProgress>` is deliberately NOT a layer — it
    rises and falls on a timer, so popping it would need an effect (invariant 6) — and is folded into the book ≡ menu's `busy()` instead, which is what
    Amendment D asks for.
-4. **PR4 — Segments' overlays.** Same shape as PR3 for Segments' three
-   overlays, plus the `useChapterShare()` memoization fix if not already
-   done in PR3.
+4. **PR4 — Segments' overlays. OPEN.** Same shape as PR3 for Segments' three
+   overlays — the chapter ≡ menu (rename is a mode inside it, not a second
+   layer), a row's overflow menu, the erase confirm — plus the two F4
+   accessors they need (`useEraseSegment`'s `isErasing()`, `useChapterShare`
+   re-exporting `useShareFlow`'s `ownsScreen()`), Amendment C's other half
+   (`SegmentsScreenHandle.dismissOverlays()`, called from
+   `openRecorderState`), and the answers above to Amendment C's two open
+   halves and to open question 3. **No Amendment G**: Segments is above the
+   floor, so nothing is armed for an overlay here and `rearmAfterLayerBack` is
+   unconditionally true. **Nothing in `src/lib/nav` changed** beyond a
+   docblock — PR1's pure core already decides all of this, and its
+   above-the-floor rows were already covered; PR4 adds the first end-to-end
+   exercise of them. It also lands #536's four stale-comment fixes first, as
+   its own commit, before any conversion work.
 5. **PR5 — Recorder's erase-confirm fix only.** Ports the `isErasing()` live
    ref accessor already proven correct in the unmerged #430 branch
    (confirmed present in `gh pr diff 430`) and switches the one call site
@@ -1041,7 +1124,7 @@ renderer that reaches them** and are review-only; iOS Safari / Android WebView
 remain an on-device (T2) item; nothing here claims a device run. PR2 merged as
 #499.
 
-**PR3 (Books' overlays) is open.** It registers Books' five overlays as
+**PR3 (Books' overlays) merged as #531.** It registers Books' five overlays as
 `Layer`s, builds the F4 ref accessors (`useBooks`' `isDeleting()`,
 `useShareFlow`'s `ownsScreen()`, `books-screen.tsx`'s `savingBookNameRef`),
 records the Amendment C decision above, answers open question 3, and adds
@@ -1056,3 +1139,25 @@ Playwright, so they are review plus device. **No on-device run of any of this
 has happened** — iOS Safari and Android WebView remain the T2 item they have
 been throughout. Next: PR4 (Segments' overlays), which owns the other half of
 the Amendment C decision.
+
+**PR4 (Segments' overlays) is open.** It registers the chapter ≡ menu, a row's
+overflow menu and the erase confirm as `Layer`s, builds the two F4 accessors
+they need, converts `SegmentRow`'s menu reporting from an effect to the
+imperative hand-off invariant 6 requires, routes `onSendShare` through the one
+close (a bare `setChapterMenuOpen(false)` would have left a registered layer
+over a gone panel — #494 item 3), and ships Amendment C's other half. Its
+`lib/nav` change is a docblock and nothing else.
+
+**What PR4's automated coverage does and does not reach.** Two headless-Chromium
+cases in `e2e/back-navigation.spec.ts`, (l) and (m), with a mutation table in
+the PR body; in Node, `tests/segments-inert.test.ts` pins the term set of
+`listInert` (Frank R1 P2-1) and one existing source-shape row is retargeted at
+Segments' close guard reading the live share state. **Only the
+chapter ≡ menu is reachable from Playwright**: a row's overflow menu renders
+only on a RECORDED row (`segment-row.tsx`'s `hasClip` gate) and the erase
+confirm only from that menu, so both need audio the spec does not have. They
+are review plus device, as is every `busy()` REFUSAL row on this screen — the
+same honest bound PR3 recorded for Books. **No on-device run of any of this has
+happened**; iOS Safari and Android WebView remain the T2 item they have been
+throughout. Next: PR5 (the recorder's erase-confirm call site), which is now a
+one-line switch to the `isErasing()` this PR built.
