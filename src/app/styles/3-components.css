@@ -1,8 +1,45 @@
 /**
  * LAYER 3 — COMPONENTS
  *
- * Component-scoped tokens and the primitives-into-roles wiring for each part.
- * A component may reference layer 2 and this layer, never layer 1 directly.
+ * Component-scoped tokens and the part styling that consumes them.
+ *
+ * The layer boundary this enforces is about COLOUR — the thing a theme swaps.
+ * Colour, surface and ink reach a component only through layer 2's semantic
+ * roles (`--s-*`), never a layer-1 colour primitive (`--p-amber-*`,
+ * `--p-cool-*`, `--p-green-*`, `--p-red-*`, `--p-warn-*`) directly: a rule that
+ * reads a raw colour is the leak that makes a theme unswitchable later
+ * (AGENTS.md). Structural primitives carry no theme meaning, so a rule MAY read
+ * them directly — spacing (`--p-space-*`), radius (`--p-radius-*`), type
+ * (`--p-text-*`, `--p-weight-*`, `--p-font-*`) and motion (`--p-dur-*`,
+ * `--p-ease`) — and the rules below do.
+ *
+ * The permission is stated for component AND app-level rules, because one
+ * app-level rule already exercises it: `globals.css`'s unlayered `body` reads
+ * `--p-font-ui` (the only `var(--p-…)` in that file; it arrived in `2a78068`,
+ * 2026-08-22, so it predates this rule rather than drifting from it).
+ * Extending the wording rather than naming that line as an exception is
+ * deliberate — it is the only structural-primitive read outside these three
+ * files in the whole tree, it is the same token `.app-shell` reads one layer
+ * down, and an exception would have to be re-argued the next time a shell rule
+ * needs a spacing value. The colour half of the rule is unchanged by this: an
+ * app-level rule may not read a colour primitive either, and none does.
+ *
+ * Wiring a colour primitive to a role is layer 2's `:root`, not this file's;
+ * this layer's `:root` (below) only consumes roles (`--s-focus`, `--s-voice`)
+ * and otherwise reads structural primitives straight. Which families those are
+ * is not fixed and is not a specification: today it is `--p-space-*`,
+ * `--p-radius-*` and `--p-text-*` (`--c-notice-text`, added by #457, is the
+ * type one). Read that list as examples of the rule above, never as the
+ * permitted set — an exhaustive list here goes stale the next time a part
+ * names its geometry, and a reader who takes it as exhaustive re-raises #146.
+ *
+ * No linter reads CSS — there is no stylelint, and knip excludes the extension
+ * — so this convention is read, not enforced. Building a check is deliberately
+ * deferred under the same "do not ramp up before it is needed" bar, not pending
+ * an owner; the mechanism is not the obstacle, since a handful of tests already
+ * read the stylesheet source (`tests/touch-policy.test.ts` reads this file) and
+ * are the shape to copy. AGENTS.md's knip blind-spot paragraph still says
+ * nothing in this repo reads CSS at all — stale, and tracked in #525.
  *
  * Numbers here come from `ui-craft`: control padding is about half the control
  * height, radius is related to height, spacing sits on named relationship
