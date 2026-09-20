@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
@@ -7,6 +7,7 @@ import { Notice } from "./notice";
 import { strings } from "./strings";
 import { clearFailureLog } from "@/hooks/failure-log";
 import { readSharePlatform } from "@/hooks/share-target";
+import type { ScreenLayerBehavior } from "@/hooks/use-screen-layers";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 
 interface FailureLogPanelProps {
@@ -14,6 +15,22 @@ interface FailureLogPanelProps {
   count: number;
   /** Close the surrounding menu — after a send that left the sheet, or a clear. */
   onDone: () => void;
+  /**
+   * Register the Clear confirm as a system-Back layer (#452 PR3, #374).
+   *
+   * This panel portals that confirm OVER the surrounding menu rather than
+   * replacing it, so it is a second layer, not the same one: without its own
+   * registration a Back here would dismiss the MENU underneath and leave the
+   * confirm standing over nothing.
+   *
+   * The panel supplies the behaviour because it owns the state; the screen
+   * owns the id and the registration. Both closures are built fresh in the
+   * opening handler and close over nothing that can go stale — a ref for
+   * `busy()`, a `useState` setter for `dismiss()`.
+   */
+  onClearConfirmOpen: (behavior: ScreenLayerBehavior) => void;
+  /** Unregister it. Called from every path that takes the confirm down. */
+  onClearConfirmClose: () => void;
 }
 
 /**
@@ -37,7 +54,12 @@ interface FailureLogPanelProps {
  * Only mounted while the log is non-empty, so there is no empty state to design
  * and no dead menu row on a phone that has never failed.
  */
-export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
+export function FailureLogPanel({
+  count,
+  onDone,
+  onClearConfirmOpen,
+  onClearConfirmClose,
+}: FailureLogPanelProps) {
   // The bin is behind a confirm, like every other destructive write in this app
   // (George R2 P3-3): the segment Erase and the book Delete both go through
   // `EraseConfirm`, and this clear is less recoverable than either — the log is
@@ -45,6 +67,31 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // directly under the Share the thumb has just been using.
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  // The live half of `clearing`, for the confirm's `Layer.busy()` (#452 PR3,
+  // invariant 4): the system-Back handler reads it from a `popstate`, with no
+  // render between the flip below and the read. `clearing` above stays the
+  // rendered one, driving `EraseConfirm`'s own `busy`.
+  const clearingRef = useRef(false);
+
+  // Open the Clear confirm AND register it, in the one handler (invariant 6).
+  const openClearConfirm = useCallback(() => {
+    setConfirmingClear(true);
+    onClearConfirmOpen({
+      busy: () => clearingRef.current,
+      dismiss: () => {
+        setConfirmingClear(false);
+        onClearConfirmClose();
+      },
+    });
+  }, [onClearConfirmOpen, onClearConfirmClose]);
+
+  // Cancel / Escape / scrim. `EraseConfirm` already refuses these while `busy`,
+  // and the layer's own `busy()` refuses Back on the same ref, so this never
+  // runs mid-clear from either direction.
+  const closeClearConfirm = useCallback(() => {
+    setConfirmingClear(false);
+    onClearConfirmClose();
+  }, [onClearConfirmClose]);
   // `clearFailureLog` directly, not through a hook that also LOADS the entries
   // (George #6, round 1). The panel renders no entry, so reading every stack
   // into React state to render a count would defeat the reason `countFailures`
@@ -87,12 +134,25 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
   // panel's marker. Close the menu with it rather than leaving an emptied panel
   // standing over two controls that now do nothing.
   const onClear = useCallback(() => {
+    // The ref flips first and synchronously — a Back landing in this same task
+    // must already see the clear as in flight.
+    clearingRef.current = true;
     setClearing(true);
     void clearFailureLog().then(
-      () => onDone(),
       () => {
+        // `onDone` closes the surrounding menu, and that close unregisters BOTH
+        // this confirm's layer and the menu's own (`closeGlobalMenu`), so no
+        // separate `onClearConfirmClose()` is owed here. The ref is cleared for
+        // the same reason `clearing` is not: this panel unmounts with the menu.
+        clearingRef.current = false;
+        onDone();
+      },
+      () => {
+        clearingRef.current = false;
         setClearing(false);
         setConfirmingClear(false);
+        // The confirm comes down on a failed clear, so its layer does too.
+        onClearConfirmClose();
         // A failed clear leaves the log exactly as it was, which is the safe
         // side of this write — nothing is lost, and the marker keeps its count,
         // so the panel stays put and a second tap can try again. Deliberately
@@ -106,7 +166,7 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         // 9, for making that channel the durable one rather than the console).
       }
     );
-  }, [onDone]);
+  }, [onClearConfirmClose, onDone]);
 
   const errorText =
     share.error === "nothing"
@@ -165,7 +225,7 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         icon="trash"
         label={strings.clearFailureLog}
         variant="quiet"
-        onClick={() => setConfirmingClear(true)}
+        onClick={openClearConfirm}
       />
       <EraseConfirm
         open={confirmingClear}
@@ -174,7 +234,7 @@ export function FailureLogPanel({ count, onDone }: FailureLogPanelProps) {
         cancelLabel={strings.eraseCancel}
         busy={clearing}
         onConfirm={onClear}
-        onCancel={() => setConfirmingClear(false)}
+        onCancel={closeClearConfirm}
       />
     </>
   );

@@ -114,6 +114,14 @@ describe("the light theme is reachable (#171)", () => {
   const read = (rel: string) =>
     readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
+  /**
+   * The global menu's opening tag, matched by the props this file is actually
+   * about — `open={menuOpen}` and a close handler of some kind — rather than by
+   * one exact expression. The two cases below both need to FIND that tag; what
+   * they assert is what is inside it.
+   */
+  const GLOBAL_MENU_OPEN_TAG = String.raw`<Menu open=\{menuOpen\} onClose=\{[^}]*\}>`;
+
   it("something in src actually writes data-theme", () => {
     // The literal grep from #171's evidence, which returned no hits.
     const hits = ["src/hooks/use-theme.ts", "src/lib/theme.ts"]
@@ -144,9 +152,15 @@ describe("the light theme is reachable (#171)", () => {
     expect(screen).toMatch(/useTheme\(\)/);
     expect(screen).toMatch(/onClick=\{theme\.toggle\}/);
     // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
-    expect(screen).toMatch(
-      /<Menu open=\{menuOpen\} onClose=\{\(\) => setMenuOpen\(false\)\}>/
-    );
+    //
+    // The close handler is matched loosely on purpose (#452 PR3): it was the
+    // inline `() => setMenuOpen(false)` until the global menu became a Back
+    // layer, at which point opening and closing it had to go through ONE named
+    // pair so no call site could forget the registration. Pinning the exact
+    // expression made this assertion a tripwire for any refactor of that
+    // handler rather than for the thing it is about — that the panel has
+    // children.
+    expect(screen).toMatch(new RegExp(GLOBAL_MENU_OPEN_TAG));
   });
 
   it("sits AFTER the failure-log panel, so ≡-with-failures lands on the report", () => {
@@ -158,9 +172,7 @@ describe("the light theme is reachable (#171)", () => {
     // instead (George R1 P2 on #457). The panel is mounted only while
     // `failureCount > 0`, so on a quiet phone the toggle is still first.
     const screen = read("src/components/books-screen.tsx");
-    const menu = screen.indexOf(
-      "<Menu open={menuOpen} onClose={() => setMenuOpen(false)}>"
-    );
+    const menu = screen.search(new RegExp(GLOBAL_MENU_OPEN_TAG));
     expect(menu).toBeGreaterThan(-1);
     const body = screen.slice(menu);
     const panel = body.indexOf("<FailureLogPanel");

@@ -224,18 +224,24 @@ export function App() {
     [leave]
   );
 
-  const { openChapter, openRecorder, goBack, commitCloseRecorder } =
-    useNavStack({
-      hasChapter: chapterId !== null,
-      recorderOpen: recorder !== null,
-      recovering,
-      databasePanel: databasePanel !== null,
-      getRecorderHandle: () => recorderRef.current,
-      onOpenChapter: openChapterState,
-      onOpenRecorder: openRecorderState,
-      onLeaveToBooks: backToBooks,
-      onRecorderClosed: recorderClosedState,
-    });
+  const {
+    pushLayer,
+    popLayer,
+    openChapter,
+    openRecorder,
+    goBack,
+    commitCloseRecorder,
+  } = useNavStack({
+    hasChapter: chapterId !== null,
+    recorderOpen: recorder !== null,
+    recovering,
+    databasePanel: databasePanel !== null,
+    getRecorderHandle: () => recorderRef.current,
+    onOpenChapter: openChapterState,
+    onOpenRecorder: openRecorderState,
+    onLeaveToBooks: backToBooks,
+    onRecorderClosed: recorderClosedState,
+  });
 
   // Ahead of everything: a held take whose save has failed keeps the microphone
   // and any sound off under the modal with no control to reach them. (`recovery`
@@ -299,7 +305,15 @@ export function App() {
           propagates to its flat-tree descendants. */}
       <div className="contents" inert={recorder !== null || undefined}>
         {chapterId === null ? (
-          <BooksScreen onOpenChapter={openChapter} />
+          /* Books' overlays register as system-Back layers (#452 PR3, #374),
+             so a Back over a menu or a dialog dismisses it instead of leaving
+             the app. Segments' follow in PR4 — until then its own overlays
+             push nothing and Back there routes exactly as it does today. */
+          <BooksScreen
+            onOpenChapter={openChapter}
+            pushLayer={pushLayer}
+            popLayer={popLayer}
+          />
         ) : (
           <SegmentsScreen
             ref={segmentsRef}
