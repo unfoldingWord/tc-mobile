@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   readStorageEstimate,
+  storageEstimateSourceOf,
   type StorageEstimateSource,
 } from "@/hooks/use-storage-pressure";
 import {
@@ -346,5 +347,75 @@ describe("readStorageEstimate", () => {
       )
     ).toEqual({ usage: -1, quota: 0 });
     expect(storagePressure(-1, 0)).toBe("unknown");
+  });
+});
+
+describe("storageEstimateSourceOf", () => {
+  /**
+   * Frank round 2: `readStorageEstimate` protects its own body, but its
+   * ARGUMENT is evaluated first — and finding the source means reading
+   * `navigator` and then `navigator.storage`, two properties that can be
+   * accessors or proxy traps and can throw (a `SecurityError` in an embedded
+   * shell is the realistic case). That threw synchronously inside the mount
+   * effect, before the cleanup was installed. Taking the scope as an argument
+   * is what lets these cases exist at all: `globalThis` is the only reference
+   * in the chain that cannot throw.
+   */
+
+  it("finds the manager on a scope that has one", () => {
+    const storage = { estimate: async () => ({ usage: 1, quota: 2 }) };
+    expect(storageEstimateSourceOf({ navigator: { storage } })).toBe(storage);
+  });
+
+  it("is undefined when the scope, the navigator or the manager is missing", () => {
+    // The plain Node case is the third of these: Node 22 has a `navigator`
+    // and no `navigator.storage`.
+    expect(storageEstimateSourceOf(undefined)).toBeUndefined();
+    expect(storageEstimateSourceOf({})).toBeUndefined();
+    expect(storageEstimateSourceOf({ navigator: {} })).toBeUndefined();
+  });
+
+  it("is undefined for a manager that is not an object", () => {
+    expect(
+      storageEstimateSourceOf({ navigator: { storage: null } })
+    ).toBeUndefined();
+    expect(
+      storageEstimateSourceOf({ navigator: { storage: 42 } })
+    ).toBeUndefined();
+  });
+
+  it("never throws when reading navigator throws", () => {
+    const scope = {
+      get navigator(): unknown {
+        throw new Error("SecurityError");
+      },
+    };
+    expect(storageEstimateSourceOf(scope)).toBeUndefined();
+  });
+
+  it("never throws when reading navigator.storage throws", () => {
+    const scope = {
+      navigator: {
+        get storage(): unknown {
+          throw new Error("SecurityError");
+        },
+      },
+    };
+    expect(storageEstimateSourceOf(scope)).toBeUndefined();
+  });
+
+  it("never throws when the scope is a proxy whose traps throw", () => {
+    const scope = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("trap");
+        },
+        has() {
+          throw new Error("trap");
+        },
+      }
+    );
+    expect(storageEstimateSourceOf(scope)).toBeUndefined();
   });
 });

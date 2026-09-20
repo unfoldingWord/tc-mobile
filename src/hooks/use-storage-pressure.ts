@@ -112,16 +112,38 @@ export async function readStorageEstimate(
 }
 
 /**
- * The source, or `undefined` where there is none — older iOS Safari, and a
- * plain Node test run (Node 22 has a `navigator`, but no `navigator.storage`).
- * Matches `use-storage-persistence.ts`'s `browserStorageManager`.
+ * Find the estimate source on a global scope — `undefined` where there is
+ * none, which is older iOS Safari and a plain Node test run (Node 22 has a
+ * `navigator`, but no `navigator.storage`).
+ *
+ * **Takes the scope rather than reading the global itself**, which is what
+ * makes it testable and is Frank round 2's finding: `readStorageEstimate`'s
+ * protection covers its own body, but its ARGUMENT is evaluated first, so
+ * `navigator` and `navigator.storage` — both properties, both able to be
+ * accessors or proxy traps that throw (a `SecurityError` in an embedded shell
+ * is the realistic one) — were read outside any `try`. That threw
+ * synchronously inside the mount effect, before the cancellation cleanup was
+ * installed, instead of producing the `"unknown"` band this module documents.
+ * The same accessor class as round 1's `estimate` getter, one property
+ * earlier; `globalThis` is the one reference in the chain that cannot throw,
+ * so it is where the protected region now starts.
  */
-function browserStorageSource(): StorageEstimateSource | undefined {
-  if (typeof navigator === "undefined" || !("storage" in navigator)) {
+export function storageEstimateSourceOf(
+  scope: unknown
+): StorageEstimateSource | undefined {
+  try {
+    const nav = (scope as { navigator?: unknown } | null | undefined)
+      ?.navigator;
+    const manager = (nav as { storage?: unknown } | null | undefined)?.storage;
+    return typeof manager === "object" && manager !== null
+      ? (manager as StorageEstimateSource)
+      : undefined;
+  } catch {
+    // Deliberately not reported, for the same reason `readStorageEstimate`
+    // swallows: a storage estimate is not the translator's work failing, and
+    // "we could not ask" already has an honest rendering — silence.
     return undefined;
   }
-  const manager: unknown = navigator.storage;
-  return typeof manager === "object" && manager !== null ? manager : undefined;
 }
 
 /**
@@ -176,18 +198,20 @@ export function useStoragePressure(): StoragePressure {
     let cancelled = false;
     // `readStorageEstimate` never rejects, so there is no dropped rejection
     // here and no second channel to catch one in.
-    void readStorageEstimate(browserStorageSource()).then((reading) => {
-      // Both writes are behind `cancelled`, not just the state one. Frank
-      // round 1 P2-1: a slow read from an unmounted screen could otherwise
-      // land AFTER a newer read from the current one and overwrite the cache
-      // with its stale band, seeding the next mount with exactly the wrong
-      // answer — the flicker this cache exists to prevent, inverted. A
-      // cancelled read has been superseded by definition; its answer is not
-      // worth keeping.
-      if (cancelled) return;
-      lastBand = storagePressure(reading?.usage, reading?.quota);
-      setBand(lastBand);
-    });
+    void readStorageEstimate(storageEstimateSourceOf(globalThis)).then(
+      (reading) => {
+        // Both writes are behind `cancelled`, not just the state one. Frank
+        // round 1 P2-1: a slow read from an unmounted screen could otherwise
+        // land AFTER a newer read from the current one and overwrite the cache
+        // with its stale band, seeding the next mount with exactly the wrong
+        // answer — the flicker this cache exists to prevent, inverted. A
+        // cancelled read has been superseded by definition; its answer is not
+        // worth keeping.
+        if (cancelled) return;
+        lastBand = storagePressure(reading?.usage, reading?.quota);
+        setBand(lastBand);
+      }
+    );
     return () => {
       cancelled = true;
     };
