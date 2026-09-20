@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -34,12 +40,27 @@ interface SegmentRowProps {
    */
   onErase: () => void;
   /**
-   * Reports this row's overflow menu opening and closing, so the screen can go
-   * `inert` behind it for AT/switch users (the menu is portalled out, so it
-   * stays reachable while the list does not). Optional — a consumer that does
-   * not manage list inertness can ignore it.
+   * This row's overflow menu has opened, with the function that closes it.
+   *
+   * Two jobs, one channel, deliberately: the screen goes `inert` behind the
+   * menu for AT/switch users (the menu is portalled out, so it stays reachable
+   * while the list does not), and — since #452 PR4 — registers it as a
+   * system-Back `Layer` whose `dismiss()` IS the `close` handed over here. One
+   * channel because the two facts must never disagree: a registered layer whose
+   * menu is already gone traps Back at this screen's depth (#494 item 3).
+   *
+   * **Called from the tap handler, never from an effect** (invariant 6,
+   * `docs/design/back-navigation.md`). It used to be reported from a
+   * `useEffect` keyed on the open boolean, which is the shape invariant 6
+   * exists to keep out of layer bookkeeping: an unstable dependency fires that
+   * effect's cleanup and body spuriously, which here would deregister and
+   * re-register a live layer.
+   *
+   * Optional — a consumer that manages neither is free to ignore both.
    */
-  onMenuOpenChange?: (open: boolean) => void;
+  onMenuOpen?: (close: () => void) => void;
+  /** This row's overflow menu has closed, by any of its own paths or by Back. */
+  onMenuClose?: () => void;
   /**
    * A save is landing (the list is refreshing). Opening the recorder is held
    * off until it does: the row still reads by its pre-save state, so entering
@@ -77,21 +98,52 @@ export function SegmentRow({
   onOpenRecorder,
   onSetFinished,
   onErase,
-  onMenuOpenChange,
+  onMenuOpen,
+  onMenuClose,
   busy = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   const [menuOpen, setMenuOpen] = useState(false);
-  // Report the menu's open state up so the screen can inert the list behind it.
-  // An effect, not a call inside each setter, so it fires once per real change;
-  // the cleanup releases the list if the row unmounts while its menu is open.
-  // Re-reporting `false` when already closed is a no-op React bails out on.
-  useEffect(() => {
-    onMenuOpenChange?.(menuOpen);
-    return () => {
-      if (menuOpen) onMenuOpenChange?.(false);
-    };
-  }, [menuOpen, onMenuOpenChange]);
+  // The same fact as `menuOpen`, as a ref, for the unmount path below only —
+  // never read during render (`react-hooks/refs`).
+  const menuOpenRef = useRef(false);
+  // Latest-refs for the two callbacks, so the unmount cleanup can stay an
+  // effect with an EMPTY dependency array — it must run on unmount and on
+  // nothing else. Written in the layout phase for the same reason
+  // `use-screen-layers.ts` writes its own there: a passive write can be one
+  // commit behind a macrotask that reads it.
+  const onMenuOpenRef = useRef(onMenuOpen);
+  const onMenuCloseRef = useRef(onMenuClose);
+  useLayoutEffect(() => {
+    onMenuOpenRef.current = onMenuOpen;
+    onMenuCloseRef.current = onMenuClose;
+  });
+  // One close for every path out of the menu — its own Close/scrim/Escape, each
+  // action item, and the system Back that runs this as the layer's `dismiss()`.
+  // Idempotent: closing an already-closed menu re-reports `false`, which
+  // `popLayer` and the screen's own `setRowMenuOpen(false)` both absorb.
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    menuOpenRef.current = false;
+    onMenuCloseRef.current?.();
+  }, []);
+  const openMenu = useCallback(() => {
+    setMenuOpen(true);
+    menuOpenRef.current = true;
+    // Handed over in the SAME handler that flips the state (invariant 6).
+    onMenuOpenRef.current?.(closeMenu);
+  }, [closeMenu]);
+  // The one thing the old reporting effect did that a tap handler cannot: a row
+  // that unmounts with its menu open must still release the list's `inert` and
+  // its layer, or the screen is left inert behind a menu that no longer exists
+  // and Back is trapped at this depth (#494 item 3). Empty deps, so it is an
+  // unmount cleanup and nothing else.
+  useEffect(
+    () => () => {
+      if (menuOpenRef.current) onMenuCloseRef.current?.();
+    },
+    []
+  );
   const hasClip = row.hasClip;
   const durationMs = row.durationMs ?? 0;
   const ordinal = row.ordinal;
@@ -299,11 +351,11 @@ export function SegmentRow({
             size={20}
             className="flex-none"
             disabled={busy}
-            onClick={() => setMenuOpen(true)}
+            onClick={openMenu}
           />
           <Menu
             open={menuOpen}
-            onClose={() => setMenuOpen(false)}
+            onClose={closeMenu}
             title={strings.recorderMenuTitle}
           >
             <Control
@@ -311,7 +363,7 @@ export function SegmentRow({
               label={strings.editSegment(ordinal)}
               variant="quiet"
               onClick={() => {
-                setMenuOpen(false);
+                closeMenu();
                 onOpenRecorder();
               }}
             />
@@ -327,7 +379,7 @@ export function SegmentRow({
               // — the menu is portalled to <body>, outside `.row--finished`.
               className={row.finished ? "is-done" : undefined}
               onClick={() => {
-                setMenuOpen(false);
+                closeMenu();
                 onSetFinished(!row.finished);
               }}
             />
@@ -336,8 +388,13 @@ export function SegmentRow({
               label={strings.eraseSegment}
               variant="quiet"
               onClick={() => {
-                setMenuOpen(false);
+                // Erase FIRST, then close this menu: the screen registers the
+                // confirm's layer inside `onErase` and this close unregisters
+                // this menu's, so the stack goes 1 -> 2 -> 1 and never passes
+                // through empty. Same interleave, and the same reason, as
+                // Books' `onArmDelete` (#452 PR3).
                 onErase();
+                closeMenu();
               }}
             />
           </Menu>

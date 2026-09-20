@@ -493,15 +493,18 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * which is a Back that unregisters the layer and releases the history entry
    * protecting it while the menu stays open.
    *
-   * Segments' row is untouched, and stays on the rendered mirror, until PR4
-   * converts its overlays too.
+   * Segments' row moved the same way in #452 PR4, so BOTH rows now name the
+   * state half and the live read. The rendered mirror is still what each
+   * screen's `listInert` / shelf `inert` reads (asserted separately below) —
+   * that is a rendering decision, where last commit's value is the right one;
+   * it is only the `popstate`-reachable close that must not use it.
    */
   for (const [screen, hook, closeFn, guard] of [
     [
       "src/components/segments-screen.tsx",
       "share",
-      "onCloseChapterMenu",
-      String.raw`if \(shareOverlayOwnsScreen\(share\.progress\)\) return;`,
+      "closeChapterMenuState",
+      String.raw`if \(share\.ownsScreen\(\)\) return false;`,
     ],
     [
       "src/components/books-screen.tsx",

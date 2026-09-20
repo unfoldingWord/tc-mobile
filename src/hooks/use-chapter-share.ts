@@ -33,6 +33,12 @@ export interface UseChapterShare {
   reset: () => void;
   /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
   readonly progress: ShareProgress;
+  /**
+   * The ref-backed read of {@link progress} a `Layer.busy()` must use (#452
+   * PR4, mirroring PR3's `useBookShare`). See {@link UseShareFlow.ownsScreen}
+   * for why the rendered `progress` above cannot serve that purpose.
+   */
+  readonly ownsScreen: () => boolean;
   /** End an outcome flash early (a tap on it). */
   dismissProgress: () => void;
 }
@@ -58,6 +64,7 @@ export function useChapterShare(): UseChapterShare {
     send,
     reset,
     progress,
+    ownsScreen,
     dismissProgress,
   } = useShareFlow();
 
@@ -88,6 +95,7 @@ export function useChapterShare(): UseChapterShare {
     send,
     reset,
     progress,
+    ownsScreen,
     dismissProgress,
   };
 }
