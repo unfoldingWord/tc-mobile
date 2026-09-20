@@ -564,6 +564,55 @@ primitives that already gate every other routing decision in this design —
 so there is nothing for an unmemoized `useChapterShare()`/`useBookShare()`
 object literal to destabilize.
 
+> **PR3's decision on Amendment C (2026-09-20, #452 PR3, answering George
+> round 4 P3-1 on PR #499):** **option (b)** — keep the whole-stack clear
+> exactly as PR2 wrote it, and make the covered screen's own overlay state
+> agree with it — not option (a), narrowing the clear so a covered screen's
+> layers survive the segments↔recorder flip.
+>
+> The evidence, all from the tree at `f45ab56`:
+>
+> 1. **Both options are behaviourally identical today.** `listInert`
+>    (`segments-screen.tsx:308-311`) is true whenever the chapter ≡ menu, a row
+>    menu, the erase confirm or the share overlay is up, and the Record control
+>    that calls `onOpenRecorder` sits inside the subtree it inerts
+>    (`segments-screen.tsx:475`, rows at `:494`). So the stack is provably
+>    EMPTY at the flip. This is a choice about which invariant to preserve
+>    going forward, not a live bug either way.
+> 2. **(a) trades a smaller defect for a larger one.** `popAction` consults the
+>    layer stack BEFORE `backEffectFor(screen)` (`navigation.ts`), and `Layer`
+>    carries no screen tag (`layer-stack.ts`), so a Segments layer surviving
+>    under the recorder sheet would shadow `"commit-close-recorder"`: a system
+>    Back on the recorder would dismiss a menu on a screen the translator
+>    cannot see and appear to do nothing. Making (a) safe needs a `screen` tag
+>    on `Layer` and a screen filter in the routing — which the adapter's own
+>    Amendment C comment rules out of scope, and which is a change to PR1's
+>    merged pure-core contract.
+> 3. **(a) is right about the diagnosis and wrong about the remedy.** The flip
+>    is indeed not an unmount — `App.tsx:300` keeps `SegmentsScreen` mounted and
+>    `inert` under the sheet, so Amendment C's own F1 rationale (a
+>    parent-forced unmount orphaning a busy layer) does not apply to it. But
+>    the fix for "the clear is broader than the unmount" is to make the
+>    screen's state agree with the clear, not to weaken the clear while the
+>    routing stays screen-blind.
+> 4. **Books needs nothing either way.** `App.tsx`'s ternary UNMOUNTS
+>    `BooksScreen` on the Books↔Segments swap, so clearing is already correct
+>    for it, and PR3 changed this effect not at all.
+>
+> **Consequence for PR4, which owns (b)'s other half:** `SegmentsScreenHandle`
+> must grow a `dismissOverlays()` that `App.tsx` calls from
+> `openRecorderState`, so the chapter ≡ menu / rename, the row overflow menu
+> and the erase confirm are closed — in React state and on the layer stack —
+> before the sheet goes up. Two things PR4 must decide rather than inherit:
+> what to do when the erase is IN FLIGHT (`overlayDismissal`'s own rule,
+> `navigation.ts`, is `confirmOpen && !erasing`, so a faithful dismissal cannot
+> close that one), and whether to assert the `listInert` unreachability instead
+> of relying on it. The third option considered and rejected — tagging every
+> `Layer` with its screen and filtering both the clear and the routing — is
+> the one that would make this a non-question; it is a bigger change to PR1's
+> contract than the training runway has room for, and it is named here so PR4
+> does not have to rediscover it.
+
 ### Amendment D — Share-preparing is a busy overlay state (grafted from Model 3)
 
 Confirmed above: both the Book ≡ menu and the Segments chapter ≡ menu host a
@@ -603,6 +652,73 @@ now wires their `status` into a `busy()` check that Amendment C's cleanup
 effect must be able to trust is stable, **memoizing these two hooks' return
 value is in scope for PR3/PR4**, not a separate ticket (whether it lands as
 its own preparatory commit is open question 3).
+
+### Amendment G — the FLOOR entry (#452 PR3, measured, not designed-for)
+
+This amendment was not in the original design. It exists because PR3 measured
+something the design had assumed away.
+
+**The measurement.** On the pre-PR3 build, on Books, with the hamburger menu
+open: `history.length` is 2 (`about:blank` plus the app), `history.state` is
+the app's own `{tc:true,index:0}` — the app's top entry, with **no entry of
+the app's below it** — and a Back navigates the document straight to
+`about:blank`, with **no `popstate` fired at all**. (Headless Chromium against
+the shipped `dist/`; the probe is recorded in `e2e/back-navigation.spec.ts`'s
+PR3 header.)
+
+**Why it matters.** Invariant 2 says "exactly one history entry exists per
+screen depth (0 = Books, 1 = Segments, 2 = Recorder)". That is true of depths
+1 and 2 and **false of depth 0**: Books is the floor and pushes nothing, which
+is precisely what makes a Back there `"exit-app"`. `routeBackToLayer` is
+reached only FROM the `popstate` handler. So at the floor it could never be
+reached — registering Books' overlays as `Layer`s, which is all PR3 was
+scoped to do, would have been **inert code that closed nothing**, and #374
+would have stayed open with a green PR against it.
+
+**The fix.** While — and only while — the floor screen's layer stack is
+non-empty, the adapter holds exactly **one** protective entry, whatever number
+of overlays are stacked on it. Pure decisions in `lib/nav/layer-stack.ts`
+(`floorEntryForLayerChange`, `rearmAfterLayerBack`), performed by
+`hooks/use-nav-stack.ts`'s `pushLayer`/`popLayer` and its two
+`"rearm-layer-*"` cases.
+
+**What it does and does not disturb.**
+
+- **Invariant 1 stands.** No overlay touches history. `books-screen.tsx`
+  contains no `window.history` call; it calls `pushLayer`/`popLayer`, which are
+  the adapter's own screen-depth bookkeeping and always were.
+- **Invariant 2 stands, and is closer to true than before.** The entry is per
+  SCREEN, never per overlay: two overlays stacked on the shelf hold one entry
+  between them.
+- **`"exit-app"` is unchanged at a bare shelf.** An always-present floor entry
+  was the obvious alternative and is the wrong shape: it would silently cost
+  every user a second Back to leave the shelf, a product change nobody asked
+  for and one this document explicitly declines ("Root-level Back leaves the
+  tab/backgrounds the installed app, exactly as `exit-app` already does
+  today"). Armed on the first overlay and released with the last, a shelf with
+  nothing open behaves bit-for-bit as before — pinned by `e2e` cases (e) and
+  (g), which both end by asserting the app actually leaves.
+- **It adds a FOURTH raw `history.back()` issuer** (the release), alongside
+  `commitCloseRecorder`'s programmatic close. Like that one it is
+  `suppressPop`-guarded rather than arbitrated by `travel-guard.ts`: its
+  `popstate` never reaches `popAction`, so there is nothing to arbitrate. It
+  also cannot contend with `goBack`, the one issuer that could plausibly
+  overlap it — `goBack` is reached only from the Segments header Back and the
+  recorder, and the release fires only at the floor, which carries no Back
+  control at all. **Disclosed rather than proved:** that is an argument from
+  the two call sites, not a browser observation, and it is the same
+  unevaluated-coalescing note `travel-guard.ts` already carries for the third
+  issuer.
+- **`nextIndex` now advances for an overlay open, not only for a screen
+  transition.** It is a monotonic stamp, not a depth — `navDirection` reads it
+  relatively — so nothing downstream changes. Two `e2e` cases that had written
+  it as a literal (`(c)`, `(d)`) now capture and compare it, which is what they
+  always meant; every relation they assert is preserved exactly.
+
+**Open for the DRI:** this amendment is what makes PR3 close #374 rather than
+ship inert wiring, and it is also the part of PR3 that touches the adapter.
+It is a separate commit for exactly that reason — dropping it leaves PR3 as
+the (inert) layer registration, with the floor entry sequenced as its own PR.
 
 ### Amendment F — Android hardware Back via `@capacitor/app` (deferred, from Model 3)
 
@@ -712,6 +828,32 @@ inference until it is run on an actual Android device.
    2026-09-30, or does it need to compress?
 3. **Should the memoization fix for `useChapterShare()`/`useBookShare()`
    (Amendment E) ship as its own preparatory commit, or fold into PR3/PR4?**
+
+   > **Answered by PR3 (2026-09-20): NEITHER — it is not needed, and PR3 does
+   > not ship it.** Amendment E's premise was that "Amendment D now wires
+   > their `status` into a `busy()` check that Amendment C's cleanup effect
+   > must be able to trust is stable". Neither half of that turned out to hold
+   > once the wiring existed. Amendment C's cleanup effect has a dependency
+   > array of `[screen, recovering, databasePanel]` — primitives only, by its
+   > own design — so no hook-returned object can reach it. And the `busy()`
+   > check does not go through the returned object at all: it reads
+   > `useShareFlow`'s new `ownsScreen()`, a live accessor over the progress
+   > driver's own synchronous state, because a `busy()` called from a
+   > `popstate` may not read a render mirror (invariant 4). There is no effect
+   > in PR3 that depends on `useBookShare()`'s identity, so memoizing it would
+   > be a change with no defect behind it — and this repo does not ship those.
+   >
+   > The general rule in Amendment E is untouched and still right. PR4 should
+   > re-ask the question for `useChapterShare()` on its own evidence: if it
+   > finds an effect that genuinely needs the identity, memoize it there, with
+   > the defect named.
+   >
+   > What PR3 did ship instead, for the same class of hazard one level down:
+   > `useScreenLayers`' own return is `useMemo`'d, because a caller's close
+   > path legitimately can live in an effect (Books' delete confirm auto-closes
+   > when its book vanishes from another tab), and an unstable object in THAT
+   > dependency array is the round-6 P1 shape exactly.
+
 4. **Is the R3-G-P3-2 latest-wins accepted-risk call (a dropped queued
    intent under a sub-100ms double-navigation race) the right tradeoff, or
    does it warrant the identified-queue machinery Model 2 used instead?**
@@ -774,9 +916,14 @@ inference until it is run on an actual Android device.
    and should bake before PR3 opens.
 3. **PR3 — Books' overlays.** Builds the missing ref accessors (F4) for
    `savingBookName` and `deleting`; converts Books' five overlays to
-   `Layer`s; wires Amendment D for the book ≡ menu's Share status; includes
-   the `useBookShare()` memoization fix (Amendment E) if the dev lead
-   chooses to fold it in here (open question 3).
+   `Layer`s; wires Amendment D for the book ≡ menu's Share status. It also
+   adds **Amendment G**, the floor entry, without which all of the above is
+   inert (see there), and answers open question 3 with "not needed". The fifth
+   overlay is not one the catalogue above lists: `FailureLogPanel`'s Clear
+   confirm portals over the global menu rather than replacing it, so it is a
+   genuine second layer. `<ShareProgress>` is deliberately NOT a layer — it
+   rises and falls on a timer, so popping it would need an effect (invariant 6) — and is folded into the book ≡ menu's `busy()` instead, which is what
+   Amendment D asks for.
 4. **PR4 — Segments' overlays.** Same shape as PR3 for Segments' three
    overlays, plus the `useChapterShare()` memoization fix if not already
    done in PR3.
@@ -845,6 +992,21 @@ rest-at-depth-1 index a landing check, not that witness) run
 in headless Chromium in `e2e/back-navigation.spec.ts`. The
 refused-commit-close absorb else-branch and the Amendment C cleanup have **no
 renderer that reaches them** and are review-only; iOS Safari / Android WebView
-remain an on-device (T2) item; nothing here claims a device run. PR2 is in
-review as #499 with DRI decisions 1–4 recorded on the PR. Next: PR3 (Books'
-overlays) after PR2 bakes.
+remain an on-device (T2) item; nothing here claims a device run. PR2 merged as
+#499.
+
+**PR3 (Books' overlays) is open.** It registers Books' five overlays as
+`Layer`s, builds the F4 ref accessors (`useBooks`' `isDeleting()`,
+`useShareFlow`'s `ownsScreen()`, `books-screen.tsx`'s `savingBookNameRef`),
+records the Amendment C decision above, answers open question 3, and adds
+**Amendment G** — the floor entry, without which none of the rest does
+anything, established by measurement rather than argument. Its `lib/nav`
+decisions are Node-tested with a mutation table; the wiring itself has no
+renderer in the Node suite and is covered by four new headless-Chromium cases
+in `e2e/back-navigation.spec.ts`, each watched fail before the wiring existed.
+**The `busy()` REFUSAL rows are covered by neither**: every Books `busy()` is
+a write-in-flight window with no deterministic way to hold it open from
+Playwright, so they are review plus device. **No on-device run of any of this
+has happened** — iOS Safari and Android WebView remain the T2 item they have
+been throughout. Next: PR4 (Segments' overlays), which owns the other half of
+the Amendment C decision.
