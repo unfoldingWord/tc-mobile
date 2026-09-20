@@ -635,12 +635,29 @@ object literal to destabilize.
 > 2. **Assert `listInert`'s unreachability: yes**, precisely because of (1).
 >    Point 1 above made the decision free; (1) makes the unreachability
 >    load-bearing rather than merely reassuring, and a claim that load-bearing
->    should not rest on a comment. `e2e/back-navigation.spec.ts` case (m) drives
->    it in real Chromium **in both states** — the Record control has no `inert`
->    ancestor at rest, has one while the chapter ≡ menu is open, and has none
->    again after the dismissing Back. Both halves were watched fail (dropping
->    `chapterMenuOpen` from `listInert`; pinning `listInert` to `true`), the
->    second being what stops the first passing vacuously.
+>    should not rest on a comment. It is asserted in **two halves, composed**,
+>    and the composition is named rather than glossed (Frank R1 P2-1 on PR #538
+>    found the first draft claiming the browser case covered the erase term,
+>    which it does not):
+>
+>    - **The term set.** `listInert` moved out of the render body into
+>      `src/components/segments-inert.ts`, with `tests/segments-inert.test.ts`
+>      pinning one row per term. Inline it had no Node-testable surface at all,
+>      so `eraseConfirmOpen` — the term (1) actually turns on — could have been
+>      deleted with every gate green. Each term's deletion now kills its own row
+>      and no other (watched, for `eraseConfirmOpen` and `shareOwnsScreen`).
+>    - **The value reaching the DOM.** `e2e/back-navigation.spec.ts` case (m),
+>      in real Chromium, **in both states** — the Record control has no `inert`
+>      ancestor at rest, has one while the chapter ≡ menu is open, and has none
+>      again after the dismissing Back. Both halves were watched fail (dropping
+>      `chapterMenuOpen` from `listInert`; pinning it to `true`), the second
+>      being what stops the first passing vacuously.
+>
+>    One `listInert` value feeds both `inert` props, so a branch proved to reach
+>    the DOM proves the path for every term. **That composition is the claim.**
+>    Nothing here has watched a Back land on an in-flight erase: that needs a
+>    RECORDED row, which needs audio the spec does not have, so it stays review
+>    plus device like every other audio-gated path on this screen.
 >
 > Neither answer needs the rejected third option (a `screen` tag on `Layer`).
 > It remains the shape to reach for if a third instance of this class turns up.
@@ -1132,9 +1149,10 @@ over a gone panel — #494 item 3), and ships Amendment C's other half. Its
 `lib/nav` change is a docblock and nothing else.
 
 **What PR4's automated coverage does and does not reach.** Two headless-Chromium
-cases in `e2e/back-navigation.spec.ts`, (l) and (m), with a five-row mutation
-table in the PR body; the Node suite is unchanged except for the one
-source-shape row that pins Segments' close guard to the live read. **Only the
+cases in `e2e/back-navigation.spec.ts`, (l) and (m), with a mutation table in
+the PR body; in Node, `tests/segments-inert.test.ts` pins the term set of
+`listInert` (Frank R1 P2-1) and one existing source-shape row is retargeted at
+Segments' close guard reading the live share state. **Only the
 chapter ≡ menu is reachable from Playwright**: a row's overflow menu renders
 only on a RECORDED row (`segment-row.tsx`'s `hasClip` gate) and the erase
 confirm only from that menu, so both need audio the spec does not have. They

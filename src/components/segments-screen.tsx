@@ -16,6 +16,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
+import { segmentsListInert } from "./segments-inert";
 import {
   shareErrorText as shareErrorCopy,
   shareGapText,
@@ -428,10 +429,26 @@ export const SegmentsScreen = forwardRef<
    * self-healing — `onConfirmErase` clears `eraseTarget` on both `"ok"` and
    * `"failed"`, so the window is one IndexedDB delete long and ends with the
    * dialog gone either way — and it is UNREACHABLE, because `listInert` covers
-   * the Record control that starts this transition. That unreachability is the
-   * reason this decision is free, which is why PR4 also ASSERTS it rather than
-   * relying on it: `e2e/back-navigation.spec.ts` case (o) drives it in real
-   * Chromium.
+   * the Record control that starts this transition.
+   *
+   * **Exactly how much of that unreachability is asserted, and by what**
+   * (Frank R1 P2-1, which found this paragraph claiming more than it had, and
+   * citing a case letter that does not exist). Two halves, composed, neither
+   * of them a direct observation of the erase-confirm branch in a browser:
+   *
+   *   - `tests/segments-inert.test.ts` pins the TERM SET of `listInert`,
+   *     `eraseConfirmOpen` included, one row per term. That is what stops the
+   *     term this decision rests on being deleted with every gate green, which
+   *     it could have been while the predicate was four inline `||`s.
+   *   - `e2e/back-navigation.spec.ts` case (m) proves the value REACHES the
+   *     DOM, in real Chromium, in both states — but through the chapter ≡ menu,
+   *     because the erase confirm needs a RECORDED row and this spec has no
+   *     microphone.
+   *
+   * One `listInert` value feeds both `inert` props, so a branch proved to reach
+   * the DOM proves the path for every term. That composition is the claim; it
+   * is not the same as having watched a Back land on an in-flight erase. That
+   * remains review plus device, like every other audio-gated path here.
    *
    * The chapter menu can also decline, through `closeChapterMenuState`'s own
    * share guard, and that is the same story: `listInert` includes
@@ -619,11 +636,24 @@ export const SegmentsScreen = forwardRef<
   // `<ShareProgress>` intercepts, so `inert` is what keeps THAT path off the
   // header/list while the overlay is up — including through the outcome
   // hold, after `chapterMenuOpen` itself may already have gone false.
-  const listInert =
-    eraseTarget !== null ||
-    rowMenuOpen ||
-    chapterMenuOpen ||
-    shareOverlayOwnsScreen(share.progress);
+  //
+  // The decision moved out to `segments-inert.ts` in #452 PR4 (Frank R1 P2-1):
+  // it is what Amendment C's decision (b) rests on, and inline here it had no
+  // Node-testable surface, so the one term the erase-in-flight call actually
+  // turns on — `eraseConfirmOpen` — could have been deleted with every gate
+  // green. That file's docblock has the full accounting of what its table
+  // proves and what it does not.
+  //
+  // The share half stays the RENDERED mirror (`share.progress`), not the live
+  // `shareOwnsScreen()`: this is a rendering decision, where last commit's
+  // value is the right one. Only the `popstate`-reachable close and `busy()`
+  // must read live.
+  const listInert = segmentsListInert({
+    eraseConfirmOpen: eraseTarget !== null,
+    rowMenuOpen,
+    chapterMenuOpen,
+    shareOwnsScreen: shareOverlayOwnsScreen(share.progress),
+  });
 
   // A first-mount load failure leaves `rows` at its initial `[]` with `error`
   // set — indistinguishable from a genuinely empty chapter unless we say so.

@@ -738,6 +738,15 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
   // which STARTS the Segments → Recorder transition cannot be reached while any
   // overlay is up. This asserts that rather than asserting the comment.
   //
+  // HALF of it, and the half is the point (Frank R1 P2-1). What this case can
+  // reach is the CHAPTER MENU term: the erase confirm needs a RECORDED row and
+  // this spec has no microphone, so no headless case can open it. What this
+  // proves is that the `listInert` value reaches the DOM and takes the Record
+  // control out of reach; that the SET of terms feeding it still includes
+  // `eraseConfirmOpen` is `tests/segments-inert.test.ts`'s row, in Node. One
+  // value feeds both `inert` props, so the two compose — but the composition is
+  // the claim, not an observation of the erase branch in a browser.
+  //
   // `closest("[inert]")`, not Playwright actionability: what `listInert` claims
   // is that the control sits inside an inert SUBTREE. That the platform then
   // refuses to activate it is the platform's job, not this app's, and asserting
