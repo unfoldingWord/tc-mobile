@@ -697,12 +697,24 @@ export function BooksScreen({
   // Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
   // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
   // exit (George R5 P2) — Close used to work, so nobody reached for system
-  // Back; making it a silent no-op is what sends them there. **That asymmetry
-  // is gone as of #452 PR3, which is what #374 and #393 were waiting for:**
-  // system Back now routes through this menu's own `Layer`, so both exits obey
-  // the same `busy()`. Whether a rename in flight should be one of the
-  // conditions that refuses them is #452 open question 7, for the requirements
-  // owner — the mechanism no longer prejudges it.
+  // Back; making it a silent no-op is what sends them there.
+  //
+  // **#452 PR3 gave system Back its own route through this menu's `Layer`**,
+  // which is what #374 and #393 were waiting for. What it did NOT do is make
+  // the two exits agree — and this comment claimed it did, until #536 item 2.
+  // The split that remains, stated exactly rather than papered over: the
+  // layer's `busy()` is `savingBookNameRef.current || bookShare.ownsScreen()`
+  // (see the behaviour record above), while this close guards on
+  // `ownsScreen()` ALONE. So in the window between a rename Confirm and its
+  // write settling, a system Back is REFUSED while Menu's Close, its scrim and
+  // its Escape still take the panel down. The write itself is unaffected
+  // either way; `bookMenuSession` only stops that already-closed menu being
+  // closed a second time by the late resolution, it does not recall the `put`.
+  //
+  // Closing the split means adding the saving read here, which would decide
+  // for Close what PR3 decided for Back. Whether a rename in flight should
+  // refuse dismissal AT ALL is #452 open question 7, for the requirements
+  // owner, so it is named here rather than answered by a lane.
   const onCloseShareMenu = useCallback(() => {
     if (closeBookMenuState()) layers.close("books:book-menu");
   }, [closeBookMenuState, layers]);
@@ -893,12 +905,23 @@ export function BooksScreen({
   // gone and popping a dead layer: one extra Back that does nothing visible,
   // ahead of #535's silent one, before the app will leave.
   //
-  // No `bookShare.ownsScreen()` guard, unlike the tap-driven close path. That
-  // guard protects a share overlay the translator can SEE, and there is none
-  // left to protect here: the progress overlay renders INSIDE this same
-  // `<Menu>` (see its `liveRegion`/`inert` props below), so it came down with
-  // the panel. Resetting a share of a book that no longer exists is the
-  // correct end state, not a cancellation of something live.
+  // No `bookShare.ownsScreen()` guard, unlike the tap-driven close path — and
+  // NOT because there is nothing left on screen to protect. This comment used
+  // to say the progress overlay "renders INSIDE this same `<Menu>` … so it
+  // came down with the panel", which is the opposite of what it does (#536
+  // item 1). `<ShareProgress>` is a SIBLING of `<Menu>`, portalled to `<body>`
+  // (`share-progress.tsx`; the render site is at the end of this file), so it
+  // SURVIVES the panel unmounting and is still on screen while this effect
+  // resets it a microtask later.
+  //
+  // The guard is left off anyway, deliberately, and the reason is the BOOK,
+  // not the overlay: that guard exists to stop a dismissal cancelling a share
+  // the translator is watching, and what triggers this path is not a dismissal
+  // — it is the book vanishing from under the menu (another tab, a
+  // pre-`autoUpdate` page). A share of a book that no longer exists has
+  // nothing left to prepare or hand over, so resetting it is the correct end
+  // state however visible its overlay still is. A PR4 copy onto the chapter
+  // menu must carry THAT reason; the unmount premise is false for both.
   useEffect(() => {
     if (shareMenuBookId === null || shareMenuBook !== null) return;
     void Promise.resolve().then(() => {

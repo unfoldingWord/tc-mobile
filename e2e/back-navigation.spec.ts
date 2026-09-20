@@ -65,9 +65,17 @@ function navIndex(page: Page): Promise<number | undefined> {
 
 /**
  * Seed one book with one chapter and land on that chapter's Segments screen.
- * Driven through the real UI (the shipped build exposes no seeding harness), so
- * it also exercises that Books does NOT push a history entry — only opening a
- * chapter does.
+ * Driven through the real UI (the shipped build exposes no seeding harness).
+ *
+ * It goes through the New Book dialog, so since Amendment G (#452 PR3) it is
+ * NOT a walk over a shelf that pushes nothing: that dialog is a floor layer, so
+ * opening it ARMS the shelf's one protective entry, and closing it by creating
+ * the book leaves that entry standing (case (g)). `openChapter`'s `enterScreen`
+ * then RE-STAMPS the standing entry rather than stacking a second one on it
+ * (case (i)) — so Segments is still exactly one Back from Books. This comment
+ * used to say Books "does NOT push a history entry", which stopped being true
+ * with PR3 (#536 item 4); cases (c)/(d) already moved to relative indices for
+ * the same reason, and `navIndex`'s docblock has the general rule.
  */
 async function seedToSegments(page: Page) {
   await page.goto("/");
