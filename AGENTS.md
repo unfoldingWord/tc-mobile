@@ -100,6 +100,16 @@ claim (#146); `3-components.css`'s header states it in full, names the one
 app-level rule that exercises it (`globals.css`'s `body`), and records that no
 linter reads CSS, so it is a convention that is read, not enforced.
 
+No _linter_ reads CSS — but the test suite does, in a handful of targeted
+tests (`tests/touch-policy.test.ts` reads `3-components.css`,
+`tests/contrast.test.ts` reads layers 1 and 2, and `tests/style-bridge.test.ts`,
+`tests/notice-bridge.test.ts` and `tests/dist-css.test.ts` read the others), so
+a CSS check is buildable today and `touch-policy.test.ts` is the shape to copy.
+Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
+at all; that sentence is stale and is tracked in #525, which is where it gets
+fixed — two of those tests quote it verbatim as their reason for existing, so
+correcting it is its own change, not a clause in this one.
+
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
 
