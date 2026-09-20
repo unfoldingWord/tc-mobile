@@ -20,6 +20,11 @@
  * finished mark (applied atomically with the take, so a separate write cannot
  * be clobbered by the same close's demote-to-draft). So at most ONE of
  * save-take / save-edit / clear / mark ever happens.
+ *
+ * And a close whose capture was SUPERSEDED writes nothing at all (#211): the
+ * sheet is coming down underneath a newer recording or a backgrounding, so
+ * neither the pending edits nor the finished toggle is still a statement about
+ * what should be on disk.
  */
 
 /**
@@ -291,7 +296,7 @@ export function planPendingWork(inputs: PendingWork): TailPlan {
 export function planClose<TBytes>(
   inputs: CloseInputs<TBytes>
 ): ClosePlan<TBytes> {
-  const { capture, finishedIntent, storedFinished, hasTake } = inputs;
+  const { capture, finishedIntent } = inputs;
 
   if (capture) {
     const verdict = classifyCapture(capture);
@@ -308,16 +313,24 @@ export function planClose<TBytes>(
       case "notice":
         return { action: "stay", error: verdict.error };
       case "superseded":
-        // Nothing to save and nothing to say, so fall through to the
-        // mark/close decision rather than dead-ending the sheet open (#59).
-        break;
+        // Nothing to save and nothing to say, so close rather than dead-end
+        // the sheet open (#59) — and write NOTHING on the way out (#211).
+        //
+        // The pending edits were already withheld here, and for a reason that
+        // applies to the finished toggle just as well: a cut-to-empty cleared
+        // on a superseded stop would drop the original recording while the
+        // replacement never landed and the cut audio lives only in RAM on the
+        // clipboard, unrecoverable field loss (George R5). A Finished mark on
+        // this path lands on the STORED take, since the one in flight never
+        // did — and Finished is the trigger for transcode-on-Finished (D3,
+        // ADR 0009), so honouring it starts a lossy 64 kbps encode of the one
+        // recording that survived, on the strength of an intent the
+        // translator expressed about its replacement. One interrupted close,
+        // no writes. Note `planPendingWork` is deliberately NOT what runs
+        // here: the recovery panel's exit reaches it with the capture
+        // settled, which is a different question.
+        return { action: "close" };
     }
-    // The pending edits are deliberately NOT persisted on this path — note
-    // that `planPendingWork` is not what runs here. A cut-to-empty cleared on a
-    // superseded stop would drop the original recording while the replacement
-    // never landed and the cut audio lives only in RAM on the clipboard:
-    // unrecoverable field loss (George R5).
-    return planFinishedWrite(finishedIntent, storedFinished, hasTake);
   }
   return planPendingWork(inputs);
 }
