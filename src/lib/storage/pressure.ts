@@ -36,10 +36,22 @@
  * browser that answered `undefined` is worse than no marker, because a warning
  * with nothing behind it teaches a translator to ignore the one that is real.
  *
- * `"low"` is `info` tone and `"critical"` is `alert` — the two tones
- * `notice-tone.ts` already defines, in the Books standing-condition slot
- * `"not-persisted"` already uses. That mapping is the wiring PR's to make; it
- * is written here only so the band names are not read as free-floating.
+ * **Both `"low"` and `"critical"` are `info` tone, and neither is ever
+ * `alert`.** An earlier draft of this docblock said `"critical"` maps to
+ * `alert` "in the Books standing-condition slot `not-persisted` already uses",
+ * and that was wrong twice over: the slot uses `info`
+ * (`books-screen.tsx:1147-1148`), and `alert` is the FAILURE tone — it wears
+ * the red mark and `role="alert"`. `encoder-notice.ts` records the invariant
+ * this rests on: painting a standing condition red on the app's home screen
+ * teaches people to ignore red, which is the cost `notice-tone.ts` exists to
+ * avoid. Nothing has failed when this band trips; it is a heads-up that there
+ * is still time to act on. A real out-of-space failure already has its own
+ * full-screen recovery (`recovery-copy.ts`). For a translator who cannot read
+ * the sentence and is reading the colour alone, red has to keep meaning
+ * "something just failed" rather than "something might fail later". If
+ * `"critical"` must eventually read as stronger than `"low"`, that is a new
+ * standing tone to design, not `alert` borrowed. (George R4 G3; the product
+ * half was decided by the DRI.)
  */
 export type StoragePressure = "unknown" | "ok" | "low" | "critical";
 
@@ -154,4 +166,105 @@ export function storagePressure(
     return "low";
   }
   return "ok";
+}
+
+/**
+ * A band worth putting on screen — the other two states are silence.
+ *
+ * The union a consumer sees is deliberately narrower than the one decided
+ * above (George R4 G5). Both other producers for the Books
+ * standing-condition slot return `null` for "nothing to say" —
+ * `storageMarker` here in `persistence.ts`, and `encoderNotice` in
+ * `components/encoder-notice.ts` — so a screen writes `{marker && <Notice>}`.
+ * A producer that always returns a string makes that `&&` always true and
+ * paints the word `ok` at the translator. The four states stay where they are
+ * decided; only what there is to show leaves.
+ */
+export type StoragePressureMarker = "low" | "critical";
+
+/**
+ * The marker for a band, or `null` when there is nothing to show.
+ *
+ * `"ok"` and `"unknown"` are both silence, for different reasons that matter
+ * upstream and not here: one is headroom we measured, the other a question we
+ * could not ask.
+ */
+export function storagePressureMarker(
+  band: StoragePressure
+): StoragePressureMarker | null {
+  return band === "low" || band === "critical" ? band : null;
+}
+
+/**
+ * What a screen is holding: a band, and the refresh generation it was read
+ * for.
+ *
+ * **Why a cache exists at all.** Books unmounts for the whole time a chapter
+ * is open, so a hook that began each mount at "nothing known" would blink a
+ * STANDING condition off for a tick on every trip home — a visible flicker
+ * and, for a `role="status"` notice, a re-announce of a state that never
+ * changed. That is George R1 P2-2 on #214, one lane over, and the same reason
+ * `failure-log.ts` holds its count at module scope.
+ *
+ * **Why it carries a token.** Because a cache that can only be replaced by a
+ * remount is wrong in the other direction (George R4 G1): a book deleted while
+ * Books stays mounted (`App.tsx:307-318`) frees exactly the space the warning
+ * was about, and nothing unmounts. The token is the caller's generation
+ * counter — the `useFailureCount(recoveryToken)` pattern
+ * (`hooks/failure-log.ts`) — bumped on the writes that change how full the
+ * device is: a delete, an erase, a recorder close. A band held for an older
+ * generation is a claim about a device state that no longer exists.
+ */
+export interface PressureCache {
+  readonly band: StoragePressure;
+  readonly token: number;
+}
+
+/** Nothing known, for the default generation. */
+export const EMPTY_PRESSURE_CACHE: PressureCache = {
+  band: "unknown",
+  token: 0,
+};
+
+/**
+ * Drop a band that a generation bump has made stale, and keep one a plain
+ * remount has not.
+ *
+ * The asymmetry with `adoptPressureReading` is the design, not an oversight.
+ * A token change means the caller knows the device changed, so the held band
+ * stops being evidence and the honest state is `"unknown"` — silence — until
+ * a fresh read lands. Anything else paints a warning about deleted audio over
+ * the empty shelf that replaced it.
+ *
+ * "Different", not "greater": a caller may reset its counter, and any change
+ * means the world moved.
+ */
+export function invalidateStalePressure(
+  cache: PressureCache,
+  token: number
+): PressureCache {
+  return cache.token === token ? cache : { band: "unknown", token };
+}
+
+/**
+ * Fold a fresh reading into the cache — but only if it says anything.
+ *
+ * **An unusable answer never erases a usable one** (George R4 G2). A rejected
+ * or absent `estimate()` reaches here as two `undefined`s and classifies as
+ * `"unknown"`; writing that into the cache would turn a true `"critical"` into
+ * silence on one flaky read, and — because the cache is what the next mount
+ * paints — seed that silence for the next visit too. So `"unknown"` is
+ * dropped, not stored.
+ *
+ * That is the ONLY direction this refuses. The cache is monotone in
+ * information, never in severity: a usable `"ok"` after a delete clears a held
+ * `"critical"`, which is the whole point of the refresh above.
+ */
+export function adoptPressureReading(
+  cache: PressureCache,
+  usage: number | undefined,
+  quota: number | undefined
+): PressureCache {
+  const band = storagePressure(usage, quota);
+  return band === "unknown" ? cache : { band, token: cache.token };
 }

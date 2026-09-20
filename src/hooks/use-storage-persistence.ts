@@ -16,9 +16,13 @@ import { storageMarker, type StorageMarker } from "@/lib/storage/persistence";
  * **The September gate is the request only.** ADR 0002 listed three mitigations
  * for PCM's ~5.3 MB/minute. Transcode-on-Finished shipped in B8, the 22 050 Hz
  * capture rate is deferred, and this is the third — the only one that addresses
- * *loss* rather than size. A nearly-full `estimate()` marker is deliberately not
- * here: it needs a headroom threshold nobody has decided, and sampled once on a
- * screen mount it would go stale while the translator records. #12 carries it.
+ * *loss* rather than size. The nearly-full `estimate()` marker is its sibling
+ * and lives next door, not here: `lib/storage/pressure.ts` decides the band and
+ * `hooks/use-storage-pressure.ts` owns the browser call (#247). The thresholds
+ * this paragraph once said nobody had decided are named constants there — a
+ * documented proposal, since no device reading exists to tune them against —
+ * and the staleness this paragraph worried about is why that hook takes a
+ * refresh generation rather than trusting a screen mount.
  *
  * **Round 1 (George, #214) found two lifecycle bugs**, both fixed here:
  * `storageMarker` now also takes `hasContent` and `native` (an empty shelf or

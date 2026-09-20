@@ -6,12 +6,16 @@ import {
   type StorageEstimateSource,
 } from "@/hooks/use-storage-pressure";
 import {
+  adoptPressureReading,
   CRITICAL_PRESSURE_FREE_BYTES,
   CRITICAL_PRESSURE_FREE_PERCENT,
+  EMPTY_PRESSURE_CACHE,
+  invalidateStalePressure,
   LOW_PRESSURE_FREE_BYTES,
   LOW_PRESSURE_FREE_PERCENT,
   MAX_SAFE_BYTE_COUNT,
   storagePressure,
+  storagePressureMarker,
 } from "@/lib/storage/pressure";
 
 /**
@@ -347,6 +351,136 @@ describe("readStorageEstimate", () => {
       )
     ).toEqual({ usage: -1, quota: 0 });
     expect(storagePressure(-1, 0)).toBe("unknown");
+  });
+});
+
+describe("storagePressureMarker", () => {
+  /**
+   * George R4 G5. The other two producers for the Books standing-condition
+   * slot return `null` for silence — `storageMarker`
+   * (`lib/storage/persistence.ts`) and `encoderNotice`
+   * (`components/encoder-notice.ts`) — so a consumer writes
+   * `{marker && <Notice>}`. A hook that always returns a string makes that
+   * `&&` always true, and the screen paints the word `ok`. The four-state
+   * union stays inside this module, where the bands are decided; what leaves
+   * is what there is to show.
+   */
+
+  it("shows the two bands worth showing", () => {
+    expect(storagePressureMarker("low")).toBe("low");
+    expect(storagePressureMarker("critical")).toBe("critical");
+  });
+
+  it("is null for ok and for unknown — the two silences", () => {
+    // Different reasons, same rendering: "ok" is headroom we measured,
+    // "unknown" is a question we could not ask. Neither is a marker.
+    expect(storagePressureMarker("ok")).toBeNull();
+    expect(storagePressureMarker("unknown")).toBeNull();
+  });
+});
+
+describe("the pressure cache", () => {
+  /**
+   * George R4 G1 and G2, which are one state machine and are decided here
+   * rather than inside a React effect — this repo has no renderer, so a rule
+   * left in an effect is pinned by nothing (the reason `encoder-notice.ts`
+   * was lifted out of JSX in the first place).
+   *
+   * Two transitions, and the whole point is that they are not symmetrical:
+   * a reading may only IMPROVE what we know (G2 — an unusable answer must not
+   * erase a usable one), while a token bump DISCARDS what we know (G1 — the
+   * caller is saying the device's storage just changed, so the held band is
+   * known-stale and no longer evidence of anything).
+   */
+
+  const low: typeof EMPTY_PRESSURE_CACHE = { band: "low", token: 0 };
+
+  describe("adoptPressureReading", () => {
+    it("takes a usable reading", () => {
+      // 1 GB quota, 10 MB free — under both critical floors. (50 MB free
+      // would be EXACTLY the 5% floor, and the floors are strict `<`, so that
+      // reads "low"; the suite caught this expectation being wrong, which is
+      // the edge discipline above doing its job one layer up.)
+      expect(
+        adoptPressureReading(EMPTY_PRESSURE_CACHE, 990_000_000, 1_000_000_000)
+      ).toEqual({ band: "critical", token: 0 });
+    });
+
+    it("keeps the held band when the reading is unusable", () => {
+      // THE G2 CASE. A failed `estimate()` arrives as two `undefined`s. Books
+      // unmounts on every chapter open, so one flaky read on a remount would
+      // otherwise turn a true "critical" into silence — and seed that silence
+      // for the next visit, because the cache is what the next mount paints.
+      expect(adoptPressureReading(low, undefined, undefined)).toEqual(low);
+      expect(adoptPressureReading(low, 100, undefined)).toEqual(low);
+      expect(adoptPressureReading(low, undefined, 1000)).toEqual(low);
+      expect(adoptPressureReading(low, 0, 0)).toEqual(low);
+    });
+
+    it("lets a usable reading clear a band, in either direction", () => {
+      // The cache is monotone in INFORMATION, not in severity. After the
+      // translator deletes a book, a fresh "ok" must be allowed to clear a
+      // held "critical" — that is the whole point of G1's refresh.
+      expect(
+        adoptPressureReading(
+          { band: "critical", token: 3 },
+          100_000_000,
+          1_000_000_000
+        )
+      ).toEqual({ band: "ok", token: 3 });
+    });
+
+    it("keeps the token it was called with", () => {
+      expect(
+        adoptPressureReading({ band: "unknown", token: 7 }, 0, 1_000_000_000)
+          .token
+      ).toBe(7);
+    });
+  });
+
+  describe("invalidateStalePressure", () => {
+    it("keeps the band when the token has not moved", () => {
+      // The remount case, and the reason the cache exists at all: Books
+      // unmounts on every chapter open, and a standing condition must not
+      // blink off for a tick on the way back (#214's George R1 P2-2).
+      expect(invalidateStalePressure(low, 0)).toEqual(low);
+    });
+
+    it("drops the band when the token has moved", () => {
+      // THE G1 CASE. A book deleted while Books stays mounted
+      // (`App.tsx:307-318`) frees the space the warning was about, and the
+      // held band is now a claim about a device state that no longer exists.
+      // Silence until the fresh read lands, never a stale warning painted
+      // over "Start your first book".
+      expect(invalidateStalePressure(low, 1)).toEqual({
+        band: "unknown",
+        token: 1,
+      });
+    });
+
+    it("drops the band when the token moves backwards, too", () => {
+      // "Different" is the test, not "greater": a caller is free to reset a
+      // counter, and any change means the world moved under the held band.
+      expect(
+        invalidateStalePressure({ band: "critical", token: 5 }, 2)
+      ).toEqual({ band: "unknown", token: 2 });
+    });
+
+    it("starts empty and silent", () => {
+      expect(EMPTY_PRESSURE_CACHE).toEqual({ band: "unknown", token: 0 });
+      expect(storagePressureMarker(EMPTY_PRESSURE_CACHE.band)).toBeNull();
+    });
+  });
+
+  it("does not resurrect a dropped band from an unusable reading", () => {
+    // The two rules composed, which is where a patch-at-a-time fix would have
+    // gone wrong: after a bump, the held band is gone; a failed read must not
+    // bring the old one back, and must not invent a new one either.
+    const invalidated = invalidateStalePressure(low, 1);
+    expect(adoptPressureReading(invalidated, undefined, undefined)).toEqual({
+      band: "unknown",
+      token: 1,
+    });
   });
 });
 

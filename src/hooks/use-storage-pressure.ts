@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { storagePressure, type StoragePressure } from "@/lib/storage/pressure";
+import {
+  adoptPressureReading,
+  EMPTY_PRESSURE_CACHE,
+  invalidateStalePressure,
+  storagePressureMarker,
+  type PressureCache,
+  type StoragePressureMarker,
+} from "@/lib/storage/pressure";
 
 /**
  * The `navigator.storage.estimate()` boundary for #247's storage-pressure
@@ -147,75 +154,117 @@ export function storageEstimateSourceOf(
 }
 
 /**
- * The last band this page load resolved, held at module scope.
+ * What this page load knows, held at module scope so it outlives the screen.
  *
- * The reason is George round 1 P2-2 on #214, one lane over: a hook that starts
- * every mount at "nothing known" makes a STANDING condition blink off for a
- * tick each time the screen remounts — and the Books screen unmounts on every
- * chapter open. For a `role="status"` notice that is a visible flicker and a
- * re-announce of a state that never actually changed. Seeding the next mount
- * with the last known band closes that gap; the fresh read still runs and
- * still wins, which is the difference from #214's `persist()` — there the
- * cached answer IS the answer, here it is only what to paint until the new one
- * lands.
+ * Both transitions over it are pure and live in `lib/storage/pressure.ts` —
+ * `invalidateStalePressure` and `adoptPressureReading` — which is deliberate:
+ * this repo has no renderer, so a rule left inside the effect below would be
+ * pinned by nothing (the reason `encoder-notice.ts` was lifted out of JSX).
+ * Everything this module decides about staleness is tested in Node; what is
+ * left here is the wiring to React, and that is the part that is only ever
+ * reviewed.
+ *
+ * One cache for one Books screen. Two screens mounted at once with different
+ * tokens would fight over it — there is only one Books, and if that ever stops
+ * being true this belongs in a store rather than a module variable.
  */
-let lastBand: StoragePressure = "unknown";
+let cache: PressureCache = EMPTY_PRESSURE_CACHE;
 
 /**
- * How full this origin's storage is, re-read once every time this mounts.
+ * The storage-pressure marker for the Books standing-condition slot, or `null`
+ * when there is nothing to show. Re-read on mount, and whenever
+ * `refreshToken` moves.
+ *
+ * **`refreshToken` is how a space-freeing write reaches this** (George R4 G1),
+ * and it is the `useFailureCount(recoveryToken)` pattern from
+ * `hooks/failure-log.ts`, not a new invention. A remount is NOT the only
+ * invalidation, because the writes that free the most space do not unmount
+ * anything: a book deleted from the shelf leaves Books mounted
+ * (`App.tsx:307-318`), so without this a cached `"critical"` would stay
+ * painted over "Start your first book" — a warning about audio the translator
+ * had just deleted. The caller bumps it on delete, on erase and on recorder
+ * close; until the wiring PR exists there is no caller, and the default of `0`
+ * makes this a plain mount-scoped read.
+ *
+ * **A bump is not a re-render, it is an invalidation.** `invalidateStalePressure`
+ * drops the held band the moment the token moves — in the render itself, not
+ * in the effect — so the gap between the bump and the fresh read landing is
+ * silence rather than a stale warning. That is George's point that a *fresh*
+ * estimate on an emptied shelf is fine and a *stale* one is not, and it is why
+ * the state here holds a band together with the generation it was read for
+ * rather than a bare band.
  *
  * **Not gated on content** the way `useStoragePersistence` is. That gate
- * exists because `persist()` spends a one-time browser decision and a warning
- * about an empty shelf would be stale; `estimate()` spends nothing, is safely
- * re-runnable, and an origin can be near its quota because of what some OTHER
- * part of this app wrote. The band answers for the device, not for a book.
+ * exists because `persist()` spends a one-time browser decision; `estimate()`
+ * spends nothing, is safely re-runnable, and an origin can be near its quota
+ * because of what some OTHER part of this app wrote. The band answers for the
+ * device, not for a book — what an emptied shelf needs is a FRESH reading, not
+ * a suppressed one, and that is what the token delivers.
  *
- * **Once per mount, not on a timer.** #247 asks for "once on Books mount and
- * after each recorder close (the writes happen there)". The first half is
- * this; the second half is not reachable from here, because the recorder
- * closes while the Segments screen owns it and Books is unmounted for the
- * whole time a chapter is open. Reaching it means a refresh trigger lifted
- * through `App.tsx`, which is a wiring decision and belongs with the wiring
- * PR. Worth stating plainly: a translator who stays inside one chapter
- * recording segment after segment will not see the band change until they come
- * back out. That gap is real and stays open on #247.
+ * **Still not a timer, and one gap remains open.** #247 asks for "once on
+ * Books mount and after each recorder close". The token now carries the
+ * recorder-close half too — but only once the wiring PR bumps it. Until then,
+ * a translator who stays inside one chapter recording segment after segment
+ * sees no change until they come back out. Open on #247, and now with the seam
+ * it needs.
  *
  * Not covered by any test in this repo: everything below this line. There is
  * no jsdom or renderer here (the same limitation `useStoragePersistence`'s and
- * `useEraseSegment`'s docblocks name), so the effect, its cancellation and the
- * module-scope seeding above are review and on-device surface. What IS pinned
- * in Node is `readStorageEstimate` and `storagePressure`.
+ * `useEraseSegment`'s docblocks name), so the effect, its cancellation and its
+ * two calls into the cache are review and on-device surface. What IS pinned in
+ * Node is every decision they make: `storagePressure`,
+ * `invalidateStalePressure`, `adoptPressureReading`, `storagePressureMarker`,
+ * `readStorageEstimate` and `storageEstimateSourceOf`.
  *
  * @pivotpending No caller yet — #247's Books marker is the reader, and it is
  * deliberately a separate PR: `books-screen.tsx` was rewritten by #531 and the
- * marker lands once that has settled. Tagged rather than left to knip's
- * test-only blind spot, which would otherwise hide it.
+ * marker lands once that has settled, which is also when `refreshToken` gets
+ * its first bumper. Tagged rather than left to knip's test-only blind spot,
+ * which would otherwise hide it.
  */
-export function useStoragePressure(): StoragePressure {
-  const [band, setBand] = useState<StoragePressure>(() => lastBand);
+export function useStoragePressure(
+  refreshToken = 0
+): StoragePressureMarker | null {
+  const [entry, setEntry] = useState<PressureCache>(() => cache);
 
   useEffect(() => {
     let cancelled = false;
+    // A moved token means the held band is known-stale, so the module cache
+    // drops it before the read rather than after. No `setState` here: what
+    // this render shows is derived below, which is both what
+    // `react-hooks/set-state-in-effect` requires and the better behaviour —
+    // an effect-time reset would have left the stale band on screen for the
+    // frame in which the token changed.
+    cache = invalidateStalePressure(cache, refreshToken);
     // `readStorageEstimate` never rejects, so there is no dropped rejection
     // here and no second channel to catch one in.
     void readStorageEstimate(storageEstimateSourceOf(globalThis)).then(
       (reading) => {
-        // Both writes are behind `cancelled`, not just the state one. Frank
-        // round 1 P2-1: a slow read from an unmounted screen could otherwise
-        // land AFTER a newer read from the current one and overwrite the cache
-        // with its stale band, seeding the next mount with exactly the wrong
-        // answer — the flicker this cache exists to prevent, inverted. A
-        // cancelled read has been superseded by definition; its answer is not
-        // worth keeping.
+        // Behind `cancelled`, both of them. Frank round 1 P2-1: a slow read
+        // from an unmounted screen could otherwise land AFTER a newer read
+        // from the current one and write its stale band, seeding the next
+        // mount with exactly the wrong answer — the flicker this cache exists
+        // to prevent, inverted. A cancelled read has been superseded by
+        // definition. (A read outstanding across a token bump is cancelled by
+        // the same cleanup, so it cannot write into the new generation.)
         if (cancelled) return;
-        lastBand = storagePressure(reading?.usage, reading?.quota);
-        setBand(lastBand);
+        // `adoptPressureReading` is what refuses an unusable answer — a failed
+        // read must not erase a band that is still true (George R4 G2).
+        cache = adoptPressureReading(cache, reading?.usage, reading?.quota);
+        setEntry(cache);
       }
     );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshToken]);
 
-  return band;
+  // Staleness is decided HERE, in render, by the same pure function the cache
+  // uses: an entry held for an older generation shows nothing, from the very
+  // render in which the caller bumped the token. The state holds the entry
+  // with its generation precisely so this question can be asked without a
+  // second piece of state to keep in step.
+  return storagePressureMarker(
+    invalidateStalePressure(entry, refreshToken).band
+  );
 }
