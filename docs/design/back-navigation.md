@@ -700,6 +700,24 @@ instead, by whichever comes first:
   sits at exactly the depth the new screen's entry wants, so invariant 2 holds
   and there is no traversal to undo an extra level.
 
+**The entry outlives the page; the flag does not.** `floorArmed` is a ref, so
+it starts `false` on every mount, while the ENTRY it tracks survives a reload.
+Left alone that breaks the "at most one" property across reload → open cycles:
+the adapter comes back having forgotten an entry still on the stack and arms a
+second, a dead Back per cycle, growing without bound (Frank R3 P2 on PR #531).
+So Amendment B's bootstrap adopts the flag too, via `floorArmedOnResume`.
+
+It reads an explicit **entry-kind marker** rather than inferring from depth:
+`pushHistoryEntry` stamps `floor: atFloor` (every one of its call sites is the
+floor's arm or a re-arm at the current screen's depth), and `enterScreen` never
+does, because a screen entry is what it writes by definition. Depth cannot
+serve here — a reload always re-renders the shelf (no session restore of the
+open chapter), so at bootstrap _every_ adopted entry is sitting at the floor
+whichever screen pushed it. Treating a Segments entry that outlived its screen
+as the floor's would hand the next `enterScreen` a `replaceState` over a level
+PR2 keeps on purpose; `e2e` case (c)'s tail pins that, and it is what kills the
+naive "adopt anything at the floor" shape. Case (k) drives the reload itself.
+
 **What it does and does not disturb.**
 
 - **Invariant 1 stands.** No overlay touches history. `books-screen.tsx`

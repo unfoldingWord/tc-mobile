@@ -575,3 +575,45 @@ test("(j) after the standing entry is consumed, the NEXT overlay arms a fresh on
   await expect(page).toHaveURL(/\/$/);
   expect(await navIndex(page)).toBe(0);
 });
+
+test("(k) a RELOAD with an overlay open does not cost a level — the adapter adopts the entry it left behind instead of arming a second (Frank R3 P2)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  const armed = await navIndex(page);
+  expect(armed).toBeGreaterThan(0);
+
+  // Reload WITH the menu open. The entry survives; `floorArmed` is a ref and
+  // does not, so the bootstrap has to read the entry's kind back off
+  // `history.state` (`floorArmedOnResume`). React state resets, so the menu
+  // itself is gone.
+  await page.reload();
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(globalMenu(page)).toHaveCount(0);
+  expect(await navIndex(page)).toBe(armed);
+
+  // The load-bearing assertion. Opening an overlay now must arm NOTHING,
+  // because the adopted entry already is the floor's. Drop the adopt and this
+  // pushes a second entry at a deeper index and reads `armed + 1`.
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(armed);
+
+  // And the bound holds end to end: Back dismisses the menu and lands at the
+  // floor, then one more Back leaves. Without the adopt there is an extra dead
+  // level in between, so this second Back is silently swallowed and the app
+  // does not leave — which is what "unbounded across reload cycles" costs the
+  // translator, one Back per cycle.
+  await page.goBack();
+  await expect(globalMenu(page)).toHaveCount(0);
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});

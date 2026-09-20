@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  floorArmedOnResume,
   floorEntryForLayerChange,
   rearmAfterLayerBack,
   routeBackToLayer,
@@ -238,5 +239,38 @@ describe("rearmAfterLayerBack (Amendment G)", () => {
     // `pushState`/`back()` call counts (that the adapter issued nothing of its
     // own to get there).
     expect(rearmAfterLayerBack(true, 0)).toBe(false);
+  });
+});
+
+/**
+ * Amendment G's resume half (Frank R3 P2 on PR #531). Two booleans, so the
+ * table is stated complete rather than spot-checked — and each row is one a
+ * plausible wrong implementation gets wrong, including the two shapes actually
+ * proposed: "adopt whenever `index > 0`" (row 3) and "adopt whenever the entry
+ * is marked" (row 4).
+ */
+describe("floorArmedOnResume (Amendment G, the reload half)", () => {
+  it("adopts a MARKED entry when the resumed screen is the floor — the reload-with-an-overlay-open case", () => {
+    // Without this the adapter forgets an entry that is still on the stack and
+    // the next overlay arms a second one, one dead Back per reload cycle.
+    expect(floorArmedOnResume({ marked: true, atFloor: true })).toBe(true);
+  });
+
+  it("does NOT adopt an unmarked entry at the floor — a Segments entry that outlived its screen is not the floor's", () => {
+    // A reload always re-renders the shelf, so depth alone would say "floor"
+    // here and be wrong. Adopting this would let the next `enterScreen`
+    // `replaceState` over a level PR2 keeps on purpose (e2e case (c)'s tail).
+    expect(floorArmedOnResume({ marked: false, atFloor: true })).toBe(false);
+  });
+
+  it("does NOT adopt a marked entry when the resumed screen is NOT the floor", () => {
+    // Unreachable today (nothing restores a screen across a reload) and a row
+    // rather than an assumption: a screen that owns its own entry must not
+    // come back believing it also holds the floor's.
+    expect(floorArmedOnResume({ marked: true, atFloor: false })).toBe(false);
+  });
+
+  it("adopts nothing on a first load — no marker, not the floor's entry", () => {
+    expect(floorArmedOnResume({ marked: false, atFloor: false })).toBe(false);
   });
 });

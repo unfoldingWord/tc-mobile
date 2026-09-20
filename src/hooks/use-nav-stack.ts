@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import {
+  floorArmedOnResume,
   floorEntryForLayerChange,
   rearmAfterLayerBack,
   topLayer,
@@ -195,8 +196,16 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const pushHistoryEntry = useCallback(() => {
     // A marker entry whose only job is to be there for Back to consume, carrying
     // the monotonic index that tells Back from Forward (invariant 9).
+    //
+    // `floor` records the entry's KIND for a later page life to read back
+    // (Amendment G, `floorArmedOnResume`; Frank R3 P2). Every call site here is
+    // either the floor's arm or a re-arm of the entry the `popstate` just
+    // consumed at the CURRENT screen's depth — so "was the current screen the
+    // floor when this entry was pushed" is exactly the right question, and
+    // `atFloor.current` is exactly its answer. `enterScreen` is the one push
+    // that is a SCREEN entry by definition and does not go through here.
     const index = ++nextIndex.current;
-    window.history.pushState({ tc: true, index }, "");
+    window.history.pushState({ tc: true, index, floor: atFloor.current }, "");
     navIndex.current = index;
   }, []);
 
@@ -241,6 +250,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     const raw = window.history.state as {
       tc?: unknown;
       index?: unknown;
+      floor?: unknown;
     } | null;
     const resumed = resumeNavIndex(raw);
     navIndex.current = resumed;
@@ -248,7 +258,26 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     const adoptable = raw?.tc === true && raw.index === resumed;
     if (!adoptable) {
       window.history.replaceState({ tc: true, index: 0 }, "");
+      return;
     }
+    // Amendment G's half of the adopt (Frank R3 P2). The ENTRY survives a
+    // reload; `floorArmed` is a ref and does not, so without this the adapter
+    // comes back having forgotten an entry that is still on the stack and the
+    // next overlay arms a second one — unbounded across reload → open cycles.
+    // Reading the kind the push wrote, rather than inferring it from the depth,
+    // is what keeps a Segments entry that outlived its screen from being
+    // adopted as the floor's; `floorArmedOnResume` has the full argument.
+    //
+    // Ordering: this effect is declared AFTER the latest-ref effect above,
+    // which has no dep array and so has already run on this mount — meaning
+    // `atFloor.current` is resolved for the screen being resumed on, not a
+    // stale value. That is the same declaration-order contract the popstate
+    // effect below already relies on, stated here because this is now a second
+    // reader of it.
+    floorArmed.current = floorArmedOnResume({
+      marked: raw.floor === true,
+      atFloor: atFloor.current,
+    });
   }, []);
 
   const goBack = useCallback(() => {
@@ -438,10 +467,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           // Amendment G: above the floor the consumed entry is the SCREEN's own
           // and always comes back. AT the floor it is the floor entry, which
           // exists only while a layer does — so it comes back only if one
-          // remains beneath this dismissal. Clearing `floorArmed` BEFORE
-          // `dismiss()` is what keeps the two paths from double-consuming: the
-          // layer's own close handler normally calls `popLayer` too, and
-          // `settleFloorEntry` must see the entry as already gone.
+          // remains beneath this dismissal. `floorArmed` is cleared BEFORE
+          // `dismiss()` because the layer's own close handler normally calls
+          // `popLayer` as well, and the flag must already read "nothing held"
+          // by the time that re-entrant path runs.
           if (
             rearmAfterLayerBack(atFloor.current, layerStack.current.length - 1)
           ) {

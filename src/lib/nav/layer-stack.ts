@@ -240,3 +240,41 @@ export function rearmAfterLayerBack(
 ): boolean {
   return atFloor ? remaining > 0 : true;
 }
+
+/**
+ * Whether the adapter should consider itself already holding the floor entry
+ * after Amendment B's bootstrap ADOPTED an entry left on the stack by a
+ * previous page life (a reload).
+ *
+ * **The gap this closes** (Frank R3 P2 on PR #531). `floorArmed` is a ref, so
+ * it starts `false` on every mount, while the ENTRY it tracks survives the
+ * reload. Without this, a shelf reloaded with an overlay open comes back
+ * holding an entry the adapter has forgotten, and the next overlay arms a
+ * SECOND one. Repeat reload → open and the history tail grows without bound —
+ * one dead Back per cycle — which falsifies the "at most one" property
+ * {@link floorEntryForLayerChange} is written around.
+ *
+ * **Why an explicit marker and not `index > 0`.** A reload always re-renders
+ * the shelf (no session restore of the open chapter — `e2e` case (c) pins
+ * that), so at bootstrap EVERY adopted entry is sitting at the floor, whichever
+ * screen pushed it. Depth cannot tell a floor entry from a Segments entry that
+ * outlived its screen, and the two must not be treated alike: adopting a
+ * Segments entry as the floor's would hand the next `enterScreen` a
+ * `replaceState` over a level PR2 deliberately keeps, which case (c)'s tail
+ * pins. So the kind is WRITTEN DOWN when the entry is pushed —
+ * `pushHistoryEntry` stamps `floor: atFloor`, `enterScreen` never does — and
+ * read back here.
+ *
+ * `atFloor` is still required and is not redundant: it is what stops a stale
+ * marker arming the adapter on a screen that owns its own entry, if this app
+ * ever does restore a screen across a reload. Today that combination is
+ * unreachable; it is a row in the table rather than an assumption.
+ */
+export function floorArmedOnResume(resumed: {
+  /** The adopted entry carries the `floor` marker this app writes. */
+  readonly marked: boolean;
+  /** `backEffectFor(screen) === "exit-app"` for the screen being resumed ON. */
+  readonly atFloor: boolean;
+}): boolean {
+  return resumed.marked && resumed.atFloor;
+}
