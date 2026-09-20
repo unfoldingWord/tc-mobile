@@ -187,10 +187,35 @@ export const SegmentsScreen = forwardRef<
   const chapterMenuSession = useRef(0);
   const share = useChapterShare();
   const erase = useEraseSegment();
-  // The member, never the object: `useEraseSegment()` returns a fresh literal
-  // every render, and `dismissOverlays` below depends on this. `isErasing` is a
-  // `useCallback([])` over a ref, created once for the hook's life (Amendment
-  // E's rule, the same one `books-screen.tsx` applies to `bookShare.reset`).
+  // MEMBERS, never the objects — and this is #452's own open question 3,
+  // answered here on this screen's evidence as the design asks PR4 to do.
+  //
+  // PR3 answered it for Books with "not needed": nothing there depended on
+  // `useBookShare()`'s identity. That is NOT true here. `closeChapterMenuState`
+  // below needs the share flow, its identity flows through `onCloseChapterMenu`
+  // into `dismissOverlays`, and `dismissOverlays` is in `useImperativeHandle`'s
+  // dependency array — a hook with a dependency array and a real effect (the
+  // handle App calls into). With the whole object as the dependency, every
+  // render of this screen, including the ~60 ms playback tick, would tear that
+  // handle down and rebuild it.
+  //
+  // So Amendment E's SECOND remedy applies rather than its first: the consumers
+  // below depend on stable MEMBERS — `share.ownsScreen`, `share.reset`,
+  // `erase.isErasing` — never on the objects, and the hooks are left
+  // unmemoized. `ownsScreen` is a `useCallback([modal])` and `reset` a
+  // `useCallback([handoff, modal])` over two values created once per hook
+  // instance (`share-flow.ts`); `isErasing` is a `useCallback([])` over a ref.
+  // All three are created once for their hook's life, so every dependency array
+  // naming one of them is stable. `books-screen.tsx` does the same for
+  // `bookShare.reset`.
+  //
+  // They are LOCAL BINDINGS rather than member expressions in the dependency
+  // arrays because this repo's `exhaustive-deps` asks for the whole object when
+  // a body writes `share.ownsScreen()` — which is the churn this exists to
+  // avoid. The binding is the sanctioned way to say "this member, not that
+  // object", and it is the same shape as `resetBookShare` on Books.
+  const shareOwnsScreen = share.ownsScreen;
+  const resetShare = share.reset;
   const isErasing = erase.isErasing;
   // The open row menu's own close, handed up by the `SegmentRow` that owns it
   // (`onMenuOpen`). `null` while no row menu is open. This is the
@@ -255,14 +280,14 @@ export const SegmentsScreen = forwardRef<
    * mirror, which is right: it is a rendering decision, not a `popstate` one.)
    */
   const closeChapterMenuState = useCallback(() => {
-    if (share.ownsScreen()) return false;
+    if (shareOwnsScreen()) return false;
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
     setSavingName(false);
-    share.reset();
+    resetShare();
     return true;
-  }, [share, setSavingName]);
+  }, [resetShare, shareOwnsScreen, setSavingName]);
 
   /**
    * Cancel / Escape / scrim / a system Back take the erase confirm down. The
@@ -285,7 +310,7 @@ export const SegmentsScreen = forwardRef<
       // alone, so a rename in flight refuses a system Back and does not refuse
       // Menu's Close/scrim/Escape. Named, not closed — closing it decides open
       // question 7 for Close, which is the requirements owner's call.
-      busy: () => savingChapterNameRef.current || share.ownsScreen(),
+      busy: () => savingChapterNameRef.current || shareOwnsScreen(),
       dismiss: () => {
         closeChapterMenuState();
       },

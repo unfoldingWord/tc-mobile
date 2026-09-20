@@ -504,7 +504,13 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       "src/components/segments-screen.tsx",
       "share",
       "closeChapterMenuState",
-      String.raw`if \(share\.ownsScreen\(\)\) return false;`,
+      // Through the local binding `shareOwnsScreen`, which the assertion below
+      // pins to `share.ownsScreen` — Segments needs the binding because its
+      // `dismissOverlays` feeds `useImperativeHandle`'s dependency array and
+      // `exhaustive-deps` would otherwise demand the whole hook object there
+      // (#452 PR4's answer to the design's open question 3). Same predicate,
+      // same freshness; only the spelling differs from Books'.
+      String.raw`if \(shareOwnsScreen\(\)\) return false;`,
     ],
     [
       "src/components/books-screen.tsx",
@@ -538,6 +544,18 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       );
     });
   }
+
+  /**
+   * The binding Segments' guard above goes through, pinned to the hook member
+   * it claims to be. Without this, `shareOwnsScreen` in that regex could be any
+   * local function — including one built from the RENDERED mirror, which is
+   * precisely the shape the guard test exists to rule out. (#452 PR4. Books
+   * needs no equivalent: its guard names `bookShare.ownsScreen()` directly.)
+   */
+  it("segments-screen.tsx: `shareOwnsScreen` IS `share.ownsScreen`, the live flow read — not a local rebuild of the rendered mirror", () => {
+    const source = read("src/components/segments-screen.tsx");
+    expect(source).toMatch(/const shareOwnsScreen = share\.ownsScreen;/);
+  });
 
   /**
    * The class-level primitive itself (#491, DRI option A): while the overlay
