@@ -20,9 +20,11 @@ import { storageMarker, type StorageMarker } from "@/lib/storage/persistence";
  * and lives next door, not here: `lib/storage/pressure.ts` decides the band and
  * `hooks/use-storage-pressure.ts` owns the browser call (#247). The thresholds
  * this paragraph once said nobody had decided are named constants there — a
- * documented proposal, since no device reading exists to tune them against —
- * and the staleness this paragraph worried about is why that hook takes a
- * refresh generation rather than trusting a screen mount.
+ * documented proposal, since no device reading exists to tune them against.
+ * The staleness this paragraph worried about is real and is still open: that
+ * hook reads once per mount and holds nothing between mounts, deliberately,
+ * because the invalidation it needs has to outlive a Books unmount and nobody
+ * has yet decided whether it is needed at all (#247).
  *
  * **Round 1 (George, #214) found two lifecycle bugs**, both fixed here:
  * `storageMarker` now also takes `hasContent` and `native` (an empty shelf or
