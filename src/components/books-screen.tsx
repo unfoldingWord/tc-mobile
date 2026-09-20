@@ -659,6 +659,21 @@ export function BooksScreen({
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
   const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // The teardown the vanish effect below runs, behind a latest-ref ON PURPOSE.
+  // It has to reset the share, and `useBookShare()` returns a fresh object
+  // literal every render (`use-book-share.ts`) — putting that in an effect's
+  // dependency array is precisely the round-6 P1 shape this design exists to
+  // remove, and it is the reason `useScreenLayers` exists at all. A ref keeps
+  // the effect's deps to plain state values plus the memoized `layers`, which
+  // is the property its sibling effect for the delete confirm documents.
+  // The vanish effect below needs to reset the share, and `useBookShare()`
+  // returns a fresh object literal every render (`use-book-share.ts`) — that
+  // object in a dependency array is the round-6 P1 shape this design exists to
+  // remove. `reset` ITSELF is stable, though, so the member is the dependency
+  // and the object never is: it is a `useCallback([handoff, modal])` over two
+  // values that are `ref.current ??= …` in `share-flow.ts:388,409`, created
+  // once for the hook's life.
+  const resetBookShare = bookShare.reset;
   // Open a book's ≡ menu, ending any prior menu session so a rename still in
   // flight from the previous one cannot close this one.
   const onOpenShareMenu = useCallback(
@@ -870,6 +885,31 @@ export function BooksScreen({
       layers.close("books:delete-confirm");
     });
   }, [deleteTarget, deleteTargetId, layers]);
+  // The SAME class for the book ≡ menu (George R1 P3-2). `<Menu>` is open on
+  // `shareMenuBook !== null`, which is resolved from the shelf — so when
+  // another tab deletes the open book the panel unmounts on its own, while
+  // `shareMenuBookId` and the registered layer stay behind. The next Back then
+  // spends itself running `closeBookMenuState` against a menu that is already
+  // gone and popping a dead layer: one extra Back that does nothing visible,
+  // ahead of #535's silent one, before the app will leave.
+  //
+  // No `bookShare.ownsScreen()` guard, unlike the tap-driven close path. That
+  // guard protects a share overlay the translator can SEE, and there is none
+  // left to protect here: the progress overlay renders INSIDE this same
+  // `<Menu>` (see its `liveRegion`/`inert` props below), so it came down with
+  // the panel. Resetting a share of a book that no longer exists is the
+  // correct end state, not a cancellation of something live.
+  useEffect(() => {
+    if (shareMenuBookId === null || shareMenuBook !== null) return;
+    void Promise.resolve().then(() => {
+      bookMenuSession.current += 1;
+      setShareMenuBookId(null);
+      setRenamingBook(false);
+      setSavingName(false);
+      resetBookShare();
+      layers.close("books:book-menu");
+    });
+  }, [shareMenuBook, shareMenuBookId, layers, setSavingName, resetBookShare]);
   // Arm the confirm from the ≡ menu, closing the menu first — the same shape as
   // the Segments row menu, where Erase closes the row menu and the screen owns
   // the target. `shareMenuBookId` is read BEFORE the close clears it.

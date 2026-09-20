@@ -182,16 +182,30 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const onRecorderClosedRef = useRef(params.onRecorderClosed);
   const getRecorderHandleRef = useRef(params.getRecorderHandle);
   const screen = screenFor(params.hasChapter, params.recorderOpen);
-  // `useLayoutEffect`, NOT `useEffect` (Frank R4 P2 on PR #531, applied to both
-  // latest-ref sites rather than only the one raised — the class, not the
-  // instance). Every ref below is read from the `popstate` handler, which runs
-  // in a macrotask; a passive effect is ALSO flushed in a macrotask after the
-  // commit, so a Back landing in between would route on pre-commit values.
-  // `atFloor` is the one this PR added and the one that matters most here: it
-  // decides whether a dismissal re-arms the floor entry, so a stale read is a
-  // Back that leaves the app from under an overlay. A layout effect runs
-  // synchronously inside the commit task, before any macrotask, which closes
-  // the window instead of narrowing it.
+  // The remaining four values `onPopState` used to read from its CLOSURE
+  // (George R1 P2 on PR #531). See the popstate effect for why a closure is
+  // the wrong home for any of them; they live here so that EVERY value that
+  // handler reads is a ref written in the layout phase, with no exceptions
+  // left to reason about individually.
+  const screenRef = useRef(screen);
+  const recoveringRef = useRef(params.recovering);
+  const databasePanelRef = useRef(params.databasePanel);
+  const onLeaveToBooksRef = useRef(params.onLeaveToBooks);
+  // `useLayoutEffect`, NOT `useEffect` (Frank R4 P2 on PR #531; widened to the
+  // whole popstate closure by George R1 P2). A passive effect is flushed in a
+  // scheduler macrotask AFTER the commit, and a `popstate` is a macrotask too,
+  // so anything refreshed passively can be read pre-commit by a Back that
+  // lands in between. A layout effect runs synchronously inside the commit
+  // task, before paint and before any macrotask, which closes that window
+  // rather than narrowing it.
+  //
+  // THE RULE THIS ENCODES, stated once so the next value added does not have
+  // to rediscover it: **every value `onPopState` reads is a ref written here.**
+  // Round 5 moved `atFloor` for exactly this reason and left `screen`,
+  // `recovering`, `databasePanel` and `onLeaveToBooks` on the passive
+  // re-subscribe path — the fix was narrower than the class it claimed to
+  // close, which is what George's P2 found. The boundary is not "things named
+  // latest-ref"; it is the handler's whole closure.
   //
   // This also makes the bootstrap effect's ordering dependency below stronger
   // than declaration order alone: layout effects run before passive ones, so
@@ -201,6 +215,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     onOpenRecorderRef.current = params.onOpenRecorder;
     onRecorderClosedRef.current = params.onRecorderClosed;
     getRecorderHandleRef.current = params.getRecorderHandle;
+    screenRef.current = screen;
+    recoveringRef.current = params.recovering;
+    databasePanelRef.current = params.databasePanel;
+    onLeaveToBooksRef.current = params.onLeaveToBooks;
     // Amendment G. Derived from `backEffectFor`, not from `screen === "books"`,
     // so "the floor" stays one definition: the screen whose Back leaves the app
     // because it pushed nothing of its own.
@@ -377,11 +395,12 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // whole-stack clear, NOT a per-layer screen filter (which would require adding
   // a screen tag to lib/nav — out of scope). Dep array is primitives only, so
   // no unmemoized hook-returned object can destabilise it (invariant 6, the
-  // round-6 P1 class). `settleFloorEntry` joined the array with Frank's R1 P2
-  // fix below and does not weaken that: it is a `useCallback` declared in THIS
-  // hook over `pushHistoryEntry`, itself a `useCallback([])` here — nothing in
-  // the chain is another hook's return value, which is what the round-6 P1
-  // actually was.
+  // round-6 P1 class), and it has no non-primitive member at all: Frank's R1
+  // P2 fix briefly added one (`settleFloorEntry`), and R2 P1 removed both that
+  // callback and the release it settled. Nothing was put back in its place,
+  // and nothing should be — a callback here would be the first way back into
+  // R2 P1's race (George R1 P3-4, which found this sentence still claiming the
+  // callback exists).
   //
   // #452 PR3 kept this effect EXACTLY as PR2 wrote it, and recorded why next to
   // Amendment C (issue #452): of George R4 P3-1's two options it takes (b) —
@@ -408,12 +427,15 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
 
   // Route the system Back gesture and its Forward sibling (#168). The whole
   // decision is the pure `popAction`; this effect only performs the DOM side of
-  // the tag it names. Deps mirror App.tsx's original popstate effect — the
-  // current-render primitives plus `onLeaveToBooks` — and re-subscription is
-  // safe because the cleanup is only removeEventListener (unlike Amendment C's
-  // effect, which stays primitive-only). The recorder handle and the other
-  // state-half callbacks are read through latest-refs, so they are not deps.
-  const { recovering, databasePanel, onLeaveToBooks } = params;
+  // the tag it names.
+  //
+  // This effect subscribes ONCE (George R1 P2). It used to mirror App.tsx's
+  // original popstate effect and re-subscribe on the current-render primitives
+  // plus `onLeaveToBooks`, which looked safe because the cleanup is only
+  // `removeEventListener` — but "safe to re-subscribe" is not "fresh": between
+  // a commit and this PASSIVE effect re-running, the listener in place was the
+  // previous render's, closing over the previous render's trap flags. Every
+  // value the handler reads is now a ref written in the layout effect above.
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       // Settle the guard at the top of EVERY landing, issuer-blind — the exact
@@ -437,12 +459,19 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       }
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
+      // Every argument is a ref read at CALL time (George R1 P2). None of
+      // these may go back to being a closure variable: this handler is
+      // subscribed once and runs from a macrotask, so a closure here is a
+      // snapshot of whatever render last re-subscribed, which for the trap
+      // flags is the difference between routing `"trap-database-panel"` and
+      // routing a layer dismissal that clears the floor entry underneath a
+      // panel the translator cannot leave.
       const action = popAction(
         direction,
-        screen,
+        screenRef.current,
         transitionInFlight.current,
-        recovering,
-        databasePanel,
+        recoveringRef.current,
+        databasePanelRef.current,
         layerStack.current
       );
       switch (action) {
@@ -485,6 +514,21 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           // `dismiss()` because the layer's own close handler normally calls
           // `popLayer` as well, and the flag must already read "nothing held"
           // by the time that re-entrant path runs.
+          //
+          // NO TRAP GUARD HERE, and this is deliberate rather than an omission
+          // (George R1 P2 proposed one: "if either trap flag is set, do not
+          // take the non-rearm path"). It would be dead code. `popAction`
+          // returns `"trap-recovery"` / `"trap-database-panel"` BEFORE it ever
+          // reaches layer routing (`navigation.ts:195`, `:210`), so reaching
+          // this branch already proves both flags were false — and since the
+          // P2 fix above they are the SAME refs, read microseconds earlier in
+          // this same synchronous task, with no commit able to interleave. A
+          // guard here could never fire. That is the identical objection this
+          // file already records for `rearm-layer-busy`: a call whose answer
+          // is constant by construction is a branch no test could kill.
+          //
+          // The ref fix is what actually closes George's scenario; the guard
+          // was a second reader of the staleness rather than a fix for it.
           if (
             rearmAfterLayerBack(atFloor.current, layerStack.current.length - 1)
           ) {
@@ -583,7 +627,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           return;
         }
         case "to-books":
-          onLeaveToBooks();
+          onLeaveToBooksRef.current();
           return;
         case "exit-app":
           // The Books shelf pushed no entry, so this popstate is the browser
@@ -611,14 +655,20 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [
-    screen,
-    recovering,
-    databasePanel,
-    onLeaveToBooks,
-    pushHistoryEntry,
-    popLayer,
-  ]);
+    // `screen`, `recovering`, `databasePanel` and `onLeaveToBooks` are GONE
+    // from this array on purpose (George R1 P2): they are read through
+    // layout-written refs above, so re-subscribing on them bought nothing and
+    // cost correctness. The listener was only ever as fresh as its last
+    // re-subscribe, and that re-subscribe is a PASSIVE effect — so a Back
+    // landing between a trap's commit and this effect re-running was routed by
+    // the previous render's listener, with `databasePanel` still `false`.
+    //
+    // The two that remain are `useCallback([])` and so never change identity:
+    // this handler subscribes ONCE for the hook's life. That is the property
+    // to preserve — a new dependency here would silently reintroduce the
+    // re-subscribe window, so a new value belongs in the layout effect above,
+    // not in this array.
+  }, [pushHistoryEntry, popLayer]);
 
   return {
     pushLayer,

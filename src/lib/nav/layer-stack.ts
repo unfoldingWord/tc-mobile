@@ -62,7 +62,16 @@ export function topLayer(stack: LayerStack): Layer | undefined {
  * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy` all re-arm),
  * so BOTH a `"dismiss"` and a `"refused-busy"`
  * outcome require the adapter to re-arm; `"dismiss"` additionally calls
- * `dismiss()` on the named layer. That full, corrected contract is encoded
+ * `dismiss()` on the named layer.
+ *
+ * **Amendment G narrowed the re-arm half, and this paragraph is where a PR4
+ * reader will look for it** (George R1 P3-3). Above the floor it is still
+ * unconditional. AT the floor the consumed entry is the floor entry, which
+ * exists only while a layer does, so it comes back only when one remains —
+ * `rearmAfterLayerBack` is the decision and `e2e` case (e) pins the shelf
+ * going back to the floor. Copying "always push a fresh entry" into a Segments
+ * overlay is harmless there; copying it back into the floor path breaks that
+ * case. That full, corrected contract is encoded
  * where the adapter actually reads it — `navigation.ts`'s `popAction`, as the
  * string tags `"rearm-layer-dismiss"` / `"rearm-layer-busy"` — not here. This
  * type stays three-way (`empty`/`dismiss`/`refused-busy`) because it is still
@@ -83,8 +92,9 @@ export type RouteBackToLayerResult =
  *
  * See `RouteBackToLayerResult`'s docblock for what the adapter must actually
  * do with each of these (both non-empty outcomes re-arm the screen-depth
- * entry the `popstate` already consumed; `"dismiss"` additionally dismisses
- * the named layer) — `navigation.ts`'s `popAction` is where that full
+ * entry the `popstate` already consumed — unconditionally above the floor, and
+ * at the floor only when a layer remains, per `rearmAfterLayerBack`;
+ * `"dismiss"` additionally dismisses the named layer) — `navigation.ts`'s `popAction` is where that full
  * contract is encoded, as `"rearm-layer-dismiss"` / `"rearm-layer-busy"`.
  *
  * `navigation.ts`'s `popAction` calls this once `layerStack` is non-empty.
