@@ -132,7 +132,18 @@ export function navDirection(from: number, to: number): NavDirection {
  * not just one: `"rearm-layer-dismiss"` means dismiss the top layer (the
  * adapter recovers it via `topLayer(stack)`) AND push a fresh entry;
  * `"rearm-layer-busy"` means push a fresh entry only, same as every other
- * re-arm case. **On `"rearm-layer-dismiss"` the adapter must also UNREGISTER
+ * re-arm case.
+ *
+ * **One exception, added by Amendment G** (#452 PR3; George R1 P3-3 found this
+ * paragraph still stating the rule as unconditional). The "push a fresh entry"
+ * half holds unconditionally ABOVE the floor, where the consumed entry is the
+ * screen's own. AT the floor it is the floor entry, which exists only while a
+ * layer does, so `"rearm-layer-dismiss"` of the LAST floor layer re-arms
+ * nothing and clears `floorArmed` instead — `rearmAfterLayerBack`
+ * (`layer-stack.ts`) is the decision. **The tag name is misleading for exactly
+ * that one case**: it still says "rearm" because the busy sibling shares it
+ * and because every case above the floor does re-arm. Renaming it is a PR1
+ * contract change, so it is written down here instead. **On `"rearm-layer-dismiss"` the adapter must also UNREGISTER
  * that top layer — call `popLayer(id)` — or make `dismiss()` itself the same
  * Close handler that already pops it (#494 item 3, George R4 P3-3 on PR
  * #492). If the layer is left on the stack, every later Back re-selects it as

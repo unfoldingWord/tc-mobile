@@ -15,6 +15,7 @@ import {
   type ShareProgressEvent,
   reduceShareProgress,
   settledFromOutcome,
+  shareOverlayOwnsScreen,
   shareProgressWakeAt,
 } from "./share-progress";
 import {
@@ -333,6 +334,27 @@ export interface UseShareFlow {
    * it.
    */
   readonly progress: ShareProgress;
+  /**
+   * {@link shareOverlayOwnsScreen} over the flow's LIVE progress, read at call
+   * time (#452 PR3, #374).
+   *
+   * The ref-backed counterpart of `progress` above, and the only shape a
+   * `Layer.busy()` may use: the system-Back handler calls `busy()` from a
+   * `popstate`, with no render between the flow's own transition and the read,
+   * so a closure over the rendered `progress` would be exactly the stale
+   * `useState` snapshot invariant 4 forbids (`lib/nav/layer-stack.ts`'s
+   * `Layer`, and the negative example in `tests/nav-layer-stack.test.ts`).
+   *
+   * `shareOverlayOwnsScreen` and not `status === "preparing"` — the predicate
+   * Amendment D named — because the design pre-dates #491's modal: this is the
+   * window in which a menu's own close is a NO-OP (`onCloseShareMenu` /
+   * `onCloseChapterMenu` both return early on it), and a Back whose `dismiss()`
+   * does nothing but which still unregisters its layer is #494 item 3's trap.
+   * It is the wider of the two windows and strictly contains `"preparing"`:
+   * `prepare()` dispatches `begin` in the same synchronous block that sets
+   * `preparing`, and the modal stays up through the send and its outcome hold.
+   */
+  readonly ownsScreen: () => boolean;
   /** End an outcome flash early (a tap on it). The normal close follows. */
   dismissProgress: () => void;
 }
@@ -388,6 +410,13 @@ export function useShareFlow(): UseShareFlow {
   const dismissProgress = useCallback(() => {
     modal.dispatch({ type: "dismiss" });
   }, [modal]);
+  // See `UseShareFlow.ownsScreen`. `modal` is created once per hook instance
+  // through `modalRef`, so this is identity-stable — which matters because a
+  // `Layer`'s `busy()` is captured when the overlay opens.
+  const ownsScreen = useCallback(
+    () => shareOverlayOwnsScreen(modal.state()),
+    [modal]
+  );
 
   useEffect(
     () => () => {
@@ -769,6 +798,7 @@ export function useShareFlow(): UseShareFlow {
     send,
     reset,
     progress,
+    ownsScreen,
     dismissProgress,
   };
 }
@@ -877,6 +907,18 @@ export function createProgressDriver(
      * (`begin`/`settle`) from the same time source the driver schedules
      * against. */
     now: (): number => clock.now(),
+    /**
+     * The driver's LIVE state, read synchronously (#452 PR3).
+     *
+     * `useShareFlow` also mirrors this into a `useState` for render, and that
+     * mirror is one commit behind at best — which is fine for rendering and
+     * wrong for a `Layer.busy()`, which the `popstate` handler calls with no
+     * render in between (invariant 4, `lib/nav/layer-stack.ts`'s `Layer`). The
+     * driver already keeps `state` synchronously because `dispatch` must know
+     * the next state to schedule its wake and release `send()`'s waiters; this
+     * accessor is that same value, not a second copy that could drift.
+     */
+    state: (): ShareProgress => state,
     /** Resolves once the modal is hidden — at once if it already is. */
     hidden: (): Promise<void> =>
       state.phase === "hidden"

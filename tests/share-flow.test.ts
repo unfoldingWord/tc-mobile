@@ -432,4 +432,65 @@ describe("createProgressDriver — the clock-monotonicity fix (Frank e915d05 P2)
     expect(MIN_BUSY_MS).toBe(600);
     expect(OUTCOME_HOLD_MS).toBe(1800);
   });
+
+  /**
+   * `driver.state()` — the live read `UseShareFlow.ownsScreen` is built on
+   * (#452 PR3, #374).
+   *
+   * The book ≡ menu's `Layer.busy()` is called from a `popstate`, with no
+   * render between the flow's own transition and the read, so it may not go
+   * through the `useState` mirror the hook keeps for rendering (invariant 4,
+   * `lib/nav/layer-stack.ts`). `onChange` here stands in for that mirror: the
+   * assertions below are that `state()` has ALREADY moved at the moment
+   * `onChange` is being told to, and that it keeps moving for a transition the
+   * subscriber is never told about at all.
+   */
+  it("reports the next state SYNCHRONOUSLY — already moved by the time the render mirror is notified", () => {
+    const clock = fakeClock(0);
+    // Read from INSIDE `onChange`: in the hook this callback is `setProgress`,
+    // i.e. the earliest possible moment a render could learn anything. If
+    // `state()` were assigned after the notification — or were a second copy
+    // kept in step by a render — this would still read "hidden".
+    const seenFromSubscriber: string[] = [];
+    let driverRef: { state: () => ShareProgress } | null = null;
+    const driver = createProgressDriver(() => {
+      seenFromSubscriber.push(driverRef?.state().phase ?? "unset");
+    }, clock);
+    driverRef = driver;
+
+    expect(driver.state().phase).toBe("hidden");
+    driver.dispatch({ type: "begin", work: "prepare", now: clock.now() });
+    expect(driver.state().phase).toBe("busy");
+    expect(seenFromSubscriber).toEqual(["busy"]);
+
+    clock.set(700); // past MIN_BUSY_MS, so the settle releases at once
+    driver.dispatch({ type: "settle", settled: "sent", now: clock.now() });
+    expect(driver.state().phase).toBe("outcome");
+    expect(seenFromSubscriber).toEqual(["busy", "outcome"]);
+  });
+
+  it("keeps reporting the live state for a dispatch the subscriber is never told about", () => {
+    const clock = fakeClock(0);
+    let notifications = 0;
+    const driver = createProgressDriver(() => {
+      notifications += 1;
+    }, clock);
+
+    // `dismiss` from `hidden` changes nothing, so `onChange` never fires — the
+    // render mirror learns nothing and cannot be the source of this answer.
+    driver.dispatch({ type: "dismiss" });
+    expect(notifications).toBe(0);
+    expect(driver.state().phase).toBe("hidden");
+
+    driver.dispatch({ type: "begin", work: "send", now: clock.now() });
+    expect(notifications).toBe(1);
+    // A second `begin` while already busy is ignored by the machine
+    // (`share-progress.ts`), so again no notification — and `state()` must
+    // still report the FIRST begin's phase rather than drifting.
+    driver.dispatch({ type: "begin", work: "send", now: clock.now() });
+    expect(notifications).toBe(1);
+    const live = driver.state();
+    expect(live.phase).toBe("busy");
+    if (live.phase === "busy") expect(live.work).toBe("send");
+  });
 });

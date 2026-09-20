@@ -356,6 +356,21 @@ export function useBooks() {
    * can open a second delete transaction over the same tree.
    */
   const deletingRef = useRef(false);
+  /**
+   * The same live guard, exposed (#452 PR3, the design's F4).
+   *
+   * `deleting` above is a `useState` value and so is last render's answer —
+   * which is exactly what `Layer.busy()` may not be (invariant 4,
+   * `lib/nav/layer-stack.ts`): the system-Back handler calls it from a
+   * `popstate`, with no render between `deletingRef.current = true` and the
+   * read. Identity-stable, because the delete confirm's `Layer` captures it
+   * when the confirm opens.
+   *
+   * Not a second source of truth: it reads the SAME ref `deleteBook` flips
+   * synchronously to refuse a double tap, so "Back is refused" and "a second
+   * Confirm is refused" can never disagree.
+   */
+  const isDeleting = useCallback(() => deletingRef.current, []);
 
   /**
    * The ONE place this hook sets or clears `error`.
@@ -678,5 +693,6 @@ export function useBooks() {
     renameBook,
     deleteBook,
     deleting,
+    isDeleting,
   };
 }
