@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 import type { Layer } from "@/lib/nav/layer-stack";
 
@@ -27,18 +27,36 @@ import type { Layer } from "@/lib/nav/layer-stack";
  * So the behaviours are re-read from a latest-ref on every call — the same
  * pattern `use-nav-stack.ts` uses for its own state-half callbacks, and
  * `menu.tsx` for `onClose`. The `Layer` this pushes holds no closure of its
- * own beyond the id: `busy()` and `dismiss()` always run the CURRENT render's
- * behaviour for that id. That removes the class for every overlay at once
- * rather than per overlay, which is what this repo's own history says to do
- * when the same defect shows up as siblings.
+ * own beyond the id.
+ *
+ * ── EXACTLY how current "current" is ──
+ *
+ * `busy()` and `dismiss()` run the behaviour from **the most recent COMMIT**
+ * for that id. That is a precise claim and it is deliberately not the stronger
+ * one an earlier revision of this docblock made ("always the CURRENT render's
+ * behaviour"), which contradicted the paragraph below it and was the P2 Frank
+ * raised in round 4 of #531. The refresh is a `useLayoutEffect`, so it lands
+ * synchronously inside the commit task — before paint, and before any
+ * macrotask a `popstate` could arrive on. There is therefore no window in
+ * which a committed overlay is driven by a pre-commit closure. What this does
+ * NOT claim is anything about a render that has not committed; nothing here
+ * can see one, and nothing needs to.
  *
  * It does NOT weaken invariant 4. The behaviours a caller writes must still
- * read a live ref for `busy()` — a latest-ref makes the closure at most one
- * commit old, which is enough for a `dismiss()` that calls stable setters but
- * says nothing about a `useState` value read INSIDE it. `busy()` still has to
- * be ref-backed at the source (`creatingBook.current`, `useBooks`'
- * `isDeleting()`, `useShareFlow`'s `ownsScreen()`); see `Layer`'s docblock and
- * the negative example in `tests/nav-layer-stack.test.ts`.
+ * read a live ref for `busy()`: "most recent commit" is enough for a
+ * `dismiss()` that calls stable setters, and says nothing about a `useState`
+ * value read INSIDE it that changed without a commit. `busy()` still has to be
+ * ref-backed at the source (`creatingBook.current`, `useBooks`' `isDeleting()`,
+ * `useShareFlow`'s `ownsScreen()`); see `Layer`'s docblock and the negative
+ * example in `tests/nav-layer-stack.test.ts`.
+ *
+ * **Review-only, and this is the honest bound on it.** The window this closes
+ * cannot be covered by a test in this repo: there is no jsdom or renderer for
+ * a unit test (AGENTS.md), and Playwright cannot deterministically schedule a
+ * Back inside a commit→effect window. The mutation
+ * `useLayoutEffect` → `useEffect` leaves the entire suite green. Stated rather
+ * than implied, because a reader is otherwise entitled to assume the suite
+ * would catch a regression here. It would not.
  *
  * Node-testable surface: none. This is a hook, and this repo runs Vitest in
  * the Node environment with no jsdom or renderer (AGENTS.md), so it is review
@@ -74,8 +92,18 @@ export function useScreenLayers<Id extends string>(
   // No dependency array: the behaviours are rebuilt every render, and this
   // refresh must land on every one of them. `use-nav-stack.ts`'s own
   // latest-ref effect is written the same way and for the same reason.
+  //
+  // `useLayoutEffect`, NOT `useEffect` (Frank R4 P2 on PR #531). A passive
+  // effect is flushed in a scheduler macrotask AFTER the commit, and a
+  // `popstate` is a macrotask too — so between React committing an overlay's
+  // new state and this refresh landing, a Back could run the PREVIOUS render's
+  // behaviour. That window is short but it is not empty, and it is exactly
+  // where a Back lands when the translator opens an overlay and immediately
+  // presses Back. A layout effect runs synchronously inside the commit task,
+  // before paint and before any macrotask, which closes it rather than
+  // narrowing it.
   const behaviorsRef = useRef(behaviors);
-  useEffect(() => {
+  useLayoutEffect(() => {
     behaviorsRef.current = behaviors;
   });
 

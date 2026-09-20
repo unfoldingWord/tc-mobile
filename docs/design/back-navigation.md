@@ -749,9 +749,12 @@ naive "adopt anything at the floor" shape. Case (k) drives the reload itself.
   handler either — `history.back()` at the app's first entry is a no-op by
   spec, so an installed PWA would not leave. `e2e` case (g) drives three
   open/close cycles and asserts exactly one `pushState`, then both Backs.
-  **This is a real, if small, product cost and it is stated here rather than
-  buried:** the alternative was a release that two review rounds showed to be
-  unsound, and the DRI can weigh the two with both written down.
+  **Accepted by the DRI as a known cost, and tracked as
+  [#535](https://github.com/unfoldingWord/tc-mobile/issues/535)** (2026-09-20),
+  with the release path explicitly not to be redesigned to remove it: the
+  alternative was a release that two review rounds showed to be unsound. It is
+  stated here rather than buried so the acceptance is traceable rather than
+  implicit.
 - **`nextIndex` now advances for an overlay open, not only for a screen
   transition.** It is a monotonic stamp, not a depth — `navDirection` reads it
   relatively — so nothing downstream changes. Two `e2e` cases that had written

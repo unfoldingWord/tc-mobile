@@ -391,6 +391,19 @@ export function BooksScreen({
    * P2-2). The row is untouched, so the target is just the book the confirm was
    * armed for; the focus effect runs once `deleteTargetId` goes null and
    * `inert` lifts.
+   *
+   * **The one behaviour on this screen that closes over render state**, and so
+   * the one that depends on `useScreenLayers` refreshing its latest-ref in a
+   * LAYOUT effect rather than a passive one (Frank R4 P2 on #531). The other
+   * four are immune by construction and it is worth knowing which is which:
+   * `closeGlobalMenuState` and `cancelNewBookState` have empty dep arrays;
+   * `closeBookMenuState` closes over `bookShare`, but reads it only through
+   * `ownsScreen()`, which is a live synchronous read; the log-clear behaviour
+   * is handed over imperatively in its own click handler and holds a ref. Here
+   * `deleteTargetId` is a `useState` value read INSIDE the body, so a
+   * pre-commit closure would run this with `null` and silently skip the focus
+   * hand-off — the dialog would still close, and a keyboard or switch user
+   * would land on `document`. Do not "simplify" that layout effect back.
    */
   const closeDeleteConfirmState = useCallback(() => {
     if (deleteTargetId !== null) pendingFocus.current = deleteTargetId;

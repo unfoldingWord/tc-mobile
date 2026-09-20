@@ -157,9 +157,10 @@ export function routeBackToLayer(stack: LayerStack): RouteBackToLayerResult {
  *     the next Back at the shelf consumes it and routes `"exit-app"`, which is
  *     a no-op, so that Back does nothing visible and a second one leaves.
  *
- * **That last line is a real cost and it is disclosed, not hidden:** one
- * silent Back, once, after an overlay was opened and closed without using
- * Back. It is bounded — `armed` refuses a second arm, so the shelf never holds
+ * **That last line is a real cost, disclosed rather than hidden, and ACCEPTED
+ * by the DRI (2026-09-20) — tracked as #535, which also records that the
+ * release path is not to be redesigned to remove it:** one silent Back, once,
+ * after an overlay was opened and closed without using Back. It is bounded — `armed` refuses a second arm, so the shelf never holds
  * more than one — and it is the same accepted class as Amendment B's "after a
  * reload at depth N, leaving takes N extra Backs" (dev lead, 2026-09-18), at a
  * smaller size. It cannot be forwarded away: `history.back()` at the app's

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
   floorArmedOnResume,
@@ -182,7 +182,21 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const onRecorderClosedRef = useRef(params.onRecorderClosed);
   const getRecorderHandleRef = useRef(params.getRecorderHandle);
   const screen = screenFor(params.hasChapter, params.recorderOpen);
-  useEffect(() => {
+  // `useLayoutEffect`, NOT `useEffect` (Frank R4 P2 on PR #531, applied to both
+  // latest-ref sites rather than only the one raised — the class, not the
+  // instance). Every ref below is read from the `popstate` handler, which runs
+  // in a macrotask; a passive effect is ALSO flushed in a macrotask after the
+  // commit, so a Back landing in between would route on pre-commit values.
+  // `atFloor` is the one this PR added and the one that matters most here: it
+  // decides whether a dismissal re-arms the floor entry, so a stale read is a
+  // Back that leaves the app from under an overlay. A layout effect runs
+  // synchronously inside the commit task, before any macrotask, which closes
+  // the window instead of narrowing it.
+  //
+  // This also makes the bootstrap effect's ordering dependency below stronger
+  // than declaration order alone: layout effects run before passive ones, so
+  // `atFloor.current` is resolved by PHASE before the adopt reads it.
+  useLayoutEffect(() => {
     onOpenChapterRef.current = params.onOpenChapter;
     onOpenRecorderRef.current = params.onOpenRecorder;
     onRecorderClosedRef.current = params.onRecorderClosed;
@@ -268,12 +282,12 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // is what keeps a Segments entry that outlived its screen from being
     // adopted as the floor's; `floorArmedOnResume` has the full argument.
     //
-    // Ordering: this effect is declared AFTER the latest-ref effect above,
-    // which has no dep array and so has already run on this mount — meaning
-    // `atFloor.current` is resolved for the screen being resumed on, not a
-    // stale value. That is the same declaration-order contract the popstate
-    // effect below already relies on, stated here because this is now a second
-    // reader of it.
+    // Ordering: `atFloor.current` must already be resolved for the screen being
+    // resumed on when this runs. It is, by PHASE rather than by declaration
+    // order alone — the latest-ref effect above is a `useLayoutEffect` (Frank
+    // R4 P2) and React flushes every layout effect before any passive one, so
+    // this passive effect cannot observe a pre-commit `atFloor`. Declaration
+    // order still holds too; it is simply no longer the only thing holding it.
     floorArmed.current = floorArmedOnResume({
       marked: raw.floor === true,
       atFloor: atFloor.current,
@@ -580,7 +594,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           // entry rather than walking out of the app. Clear the flag — the
           // entry is gone, and the next overlay open must arm a fresh one or
           // its Back would exit. This gesture does nothing visible and a second
-          // one leaves; that one silent Back is Amendment G's disclosed cost,
+          // one leaves; that one silent Back is Amendment G's accepted cost
+          // (#535, DRI 2026-09-20),
           // and it cannot be forwarded away here (`history.back()` at the app's
           // first entry is a no-op by spec, so an installed PWA would not
           // leave). See `floorEntryForLayerChange` for the full accounting.
