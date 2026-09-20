@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { routeBackToLayer, topLayer, type Layer } from "@/lib/nav/layer-stack";
+import {
+  floorEntryForLayerChange,
+  rearmAfterLayerBack,
+  routeBackToLayer,
+  topLayer,
+  type Layer,
+} from "@/lib/nav/layer-stack";
 
 /**
  * The layer-stack decision table (docs/design/back-navigation.md, "Pure
@@ -150,5 +156,82 @@ describe("busy() must be ref-backed, never a snapshot boolean (invariant 4, nega
       kind: "refused-busy",
       layerId: "right",
     });
+  });
+});
+
+/**
+ * Amendment G's decision table (#452 PR3, #374) — see
+ * `floorEntryForLayerChange`'s own docblock for why the floor needs an entry
+ * at all, and `e2e/back-navigation.spec.ts`'s PR3 header for the measurement
+ * that established it (a Back on the pre-PR3 shelf navigated the document to
+ * `about:blank` with no `popstate`, so the layer stack was never consulted).
+ *
+ * Enumerated, not spot-checked: the decision is `atFloor` × `armed` × whether
+ * any layer is left open, which is small enough to state completely — and
+ * every row below is one a plausible wrong implementation gets wrong.
+ */
+describe("floorEntryForLayerChange (Amendment G)", () => {
+  it("arms on the floor's FIRST layer, when nothing is armed yet", () => {
+    expect(
+      floorEntryForLayerChange({ atFloor: true, armed: false, open: 1 })
+    ).toBe("arm");
+  });
+
+  it("arms nothing for a SECOND layer stacked on the floor — one entry per SCREEN, never one per overlay (invariant 2)", () => {
+    expect(
+      floorEntryForLayerChange({ atFloor: true, armed: true, open: 2 })
+    ).toBe("none");
+  });
+
+  it("releases when the floor's LAST layer closes", () => {
+    expect(
+      floorEntryForLayerChange({ atFloor: true, armed: true, open: 0 })
+    ).toBe("release");
+  });
+
+  it("releases nothing while a layer remains on the floor", () => {
+    expect(
+      floorEntryForLayerChange({ atFloor: true, armed: true, open: 1 })
+    ).toBe("none");
+  });
+
+  it("releases nothing when the stack is empty with nothing armed", () => {
+    // Also the every-render resting state of a shelf with no overlay open:
+    // this row is what makes a spurious `history.back()` impossible there.
+    expect(
+      floorEntryForLayerChange({ atFloor: true, armed: false, open: 0 })
+    ).toBe("none");
+  });
+
+  it("does NOTHING above the floor, whatever the stack holds — Segments and the Recorder already hold their own entry", () => {
+    for (const armed of [false, true]) {
+      for (const open of [0, 1, 2]) {
+        expect(floorEntryForLayerChange({ atFloor: false, armed, open })).toBe(
+          "none"
+        );
+      }
+    }
+  });
+});
+
+describe("rearmAfterLayerBack (Amendment G)", () => {
+  it("always re-arms above the floor — the consumed entry is the SCREEN's own", () => {
+    expect(rearmAfterLayerBack(false, 0)).toBe(true);
+    expect(rearmAfterLayerBack(false, 1)).toBe(true);
+    expect(rearmAfterLayerBack(false, 2)).toBe(true);
+  });
+
+  it("re-arms at the floor while a layer remains (a busy refusal, or a dismissal over a layer beneath it)", () => {
+    expect(rearmAfterLayerBack(true, 1)).toBe(true);
+    expect(rearmAfterLayerBack(true, 2)).toBe(true);
+  });
+
+  it("does NOT re-arm at the floor once the last layer is gone — the shelf goes back to being the floor with no self-caused traversal", () => {
+    // This row is about CHURN, not about the end state, and the docblock says
+    // why: with this forced to `true` the adapter's own `popLayer` releases
+    // the entry a moment later and the shelf ends up identical. The assertion
+    // that kills that mutant is in `e2e/back-navigation.spec.ts` case (e),
+    // which counts the app's `pushState`/`back()` calls across the dismissal.
+    expect(rearmAfterLayerBack(true, 0)).toBe(false);
   });
 });
