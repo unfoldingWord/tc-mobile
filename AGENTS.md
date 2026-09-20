@@ -100,15 +100,52 @@ claim (#146); `3-components.css`'s header states it in full, names the one
 app-level rule that exercises it (`globals.css`'s `body`), and records that no
 linter reads CSS, so it is a convention that is read, not enforced.
 
-No _linter_ reads CSS — but the test suite does, in a handful of targeted
-tests (`tests/touch-policy.test.ts` reads `3-components.css`,
-`tests/contrast.test.ts` reads layers 1 and 2, and `tests/style-bridge.test.ts`,
-`tests/notice-bridge.test.ts` and `tests/dist-css.test.ts` read the others), so
-a CSS check is buildable today and `touch-policy.test.ts` is the shape to copy.
+No _linter_ reads CSS — there is no stylelint, and knip's project globs are
+`ts`/`tsx`/`mjs` only — but the test suite does. **Treat the list below as
+examples, not as a set this file keeps current: `grep -rln "\.css\"" tests` is
+the source of truth.** That grep returns eight files today and over-matches by
+exactly one — `tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as
+fixtures for a CI path filter and never reads their contents. The other seven:
+`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts` and
+`tests/share-progress.test.ts` all read `3-components.css`;
+`tests/contrast.test.ts` and `tests/theme.test.ts` read layers 1 and 2
+(theme.test.ts pins a `--p-cool-950` hex);
+`tests/style-bridge.test.ts` reads `globals.css` and `2-semantic.css`; and
+`tests/dist-css.test.ts` reads the **built** `dist/assets/*.css`, not a source
+layer at all.
+
+So a CSS check is buildable today. **For the colour boundary, copy
+`tests/share-progress.test.ts`, not `tests/touch-policy.test.ts`** — share-progress
+already asserts this exact split for `.share-scrim`, by slicing the rule block
+and matching declaration _values_, which a comment cannot false-hit.
+touch-policy reads its file whole and regexes the raw string, so the obvious
+`not.toMatch(/--p-(amber|cool|green|red|warn)/)` copied from it fails on
+`3-components.css`'s own header, which names those five families in prose in
+order to ban them — and the natural repair is to weaken the pattern until it can
+no longer catch a real leak in a rule. A whole-file reader must ignore comments
+and match `var(…)` declarations rather than the bare identifier.
+
+The same trap runs in the other direction, and it is observed, not theoretical:
+a **comment** that names something a test greps for can capture that test. Round
+3 of #529 wrote the share-scrim selector into `3-components.css`'s header, and
+`share-progress.test.ts` — which locates its block with a raw `indexOf` over the
+whole file — sliced the comment instead of the rule and went red. Its
+`expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only reason
+that surfaced as a failure rather than as an assertion looping over nothing.
+When a stylesheet comment must name a selector a test searches for, write it
+without its leading dot, and keep a non-emptiness floor in any test that slices
+a block out of a file.
+
 Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
 at all; that sentence is stale and is tracked in #525, which is where it gets
-fixed — two of those tests quote it verbatim as their reason for existing, so
-correcting it is its own change, not a clause in this one.
+fixed. Four places lean on it today, not one:
+`tests/contrast.test.ts:12`, `tests/style-bridge.test.ts:18-19` and
+`tests/notice-bridge.test.ts:21-23` cite it as their stated reason for existing,
+and `src/app/globals.css:29` paraphrases it as the reason an orphaned alias
+fails no check. No two quote it identically — notice-bridge elides the knip
+parenthetical, style-bridge elides with an ellipsis, contrast lowercases it —
+so #525 is a grep (`grep -rn "reads CSS at all" src tests AGENTS.md`), not a
+one-line edit, which is why it is its own change and not a clause in this one.
 
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
