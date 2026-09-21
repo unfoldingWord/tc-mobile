@@ -3,7 +3,11 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { distBuildRequired, distGateDecision } from "./dist-gate";
+import {
+  distBuildRequired,
+  distGateDecision,
+  resolveDistGate,
+} from "./dist-gate";
 
 // #568: `npm run verify` runs `test` before `build`, so `dist/` is present or
 // absent depending on what an earlier command left behind — and the two
@@ -47,11 +51,55 @@ describe("distBuildRequired", () => {
   });
 });
 
+// `distGateDecision` returning "fail" is inert until something turns it into
+// a failure the runner sees. That wiring is `resolveDistGate`, and where it
+// is called is the whole of Frank R1 P2 on #572: the first shape of this fix
+// put the loud half in a deletable `it()` in each suite, so deleting those
+// two cases left every assertion in this file green while the gate went back
+// to skipping quietly. The throw is now at module scope in the resolver, so
+// it fires during collection and no arrangement of test cases can suppress
+// it.
+describe("resolveDistGate — the wiring that makes a failed gate reach vitest", () => {
+  it("throws when a build was required and the artifact is missing", () => {
+    expect(() =>
+      resolveDistGate(false, "dist/sw.js", { REQUIRE_DIST_BUILD: "1" })
+    ).toThrow(/REQUIRE_DIST_BUILD is set but dist\/sw\.js was not found/);
+  });
+
+  it("names the artifact it was told to look for, so the message is actionable", () => {
+    // Two callers, two artifacts — a hardcoded message would pass the case
+    // above and fail this one.
+    expect(() =>
+      resolveDistGate(false, "dist/assets/*.css", { REQUIRE_DIST_BUILD: "1" })
+    ).toThrow(/dist\/assets\/\*\.css/);
+  });
+
+  it("tells the caller how to fix it, rather than only that it broke", () => {
+    expect(() =>
+      resolveDistGate(false, "dist/sw.js", { REQUIRE_DIST_BUILD: "1" })
+    ).toThrow(/npm run build/);
+  });
+
+  it.each([true, false])(
+    "returns skip with artifactPresent=%s when no caller required a build, and does not throw",
+    (artifactPresent) => {
+      expect(resolveDistGate(artifactPresent, "dist/sw.js", {})).toBe("skip");
+    }
+  );
+
+  it("returns run when a build was required and the artifact is there", () => {
+    expect(
+      resolveDistGate(true, "dist/sw.js", { REQUIRE_DIST_BUILD: "1" })
+    ).toBe("run");
+  });
+});
+
 // The helper above can be correct while a suite ignores it, so this pins the
 // two consumers to it. It is a source check, with the trap AGENTS.md names:
 // a COMMENT naming the thing being searched for captures the search. Hence
 // the comment stripping below, the non-emptiness floor, and the rule that no
-// prose in these two files may spell the skip call with its opening paren.
+// prose in these two files may spell the skip call, or the resolver call,
+// with its opening paren.
 const GATED_FILES = ["dist-css.test.ts", "precache-manifest.test.ts"];
 
 function withoutComments(source: string): string {
@@ -86,5 +134,24 @@ describe.each(GATED_FILES)("%s's skip condition", (file) => {
     for (const condition of conditions) {
       expect(condition).not.toMatch(/existsSync|readdirSync|CSS_PATH/);
     }
+  });
+
+  // The two assertions above pin what the suite SKIPS on. These pin that it
+  // still goes through the throwing resolver: swap `resolveDistGate` back for
+  // a bare `distGateDecision` and the suite compiles, skips identically, and
+  // silently loses the loud half again.
+  const bare = withoutComments(source);
+
+  it("calls the resolver that throws, at module scope", () => {
+    const calls = [...bare.matchAll(/^const GATE = resolveDistGate\(/gm)];
+    expect(calls.length).toBe(1);
+  });
+
+  it("does not reach past the resolver to the raw decision", () => {
+    expect(bare).not.toMatch(/distGateDecision\(/);
+  });
+
+  it('no longer tests for "fail", which the resolver can no longer return', () => {
+    expect(bare).not.toMatch(/GATE === "fail"/);
   });
 });

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { distBuildRequired, distGateDecision } from "./dist-gate";
+import { resolveDistGate } from "./dist-gate";
 
 // The Workbox precache manifest is generated at build time from the
 // `workbox.globPatterns` in vite.config.ts, so what it contains cannot be
@@ -279,9 +279,9 @@ describe("the precache manifest reader (#522)", () => {
 // Which of these two build-artifact suites runs is decided by the caller,
 // never by whether a `dist/` happens to be lying around from an earlier
 // command — see `./dist-gate` (#568).
-const GATE = distGateDecision(distBuildRequired(), existsSync(SW));
+const GATE = resolveDistGate(existsSync(SW), "dist/sw.js");
 
-describe.skipIf(GATE !== "run")(
+describe.skipIf(GATE === "skip")(
   "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
   () => {
     it("never contains version.json", () => {
@@ -303,19 +303,12 @@ describe.skipIf(GATE !== "run")(
 // build: a missing `dist/sw.js` skips rather than fails, so a plain `npm
 // test` exits 0 with nothing built. A skip is also indistinguishable from a
 // pass, so the gate makes the other half loud — `npm run test:dist` promises
-// a build, and this case turns that promise into an assertion.
+// a build, and the shared resolver turns that promise into a module-scope
+// throw rather than a case in this file that could be deleted.
 // `REQUIRE_DIST_BUILD` is a purpose-built flag rather than the ambient `CI`
 // variable, which is true wherever tests run, including the passes that
-// legitimately have no build yet.
-it("fails, rather than silently skips, when required to find a build and does not", () => {
-  if (GATE === "fail") {
-    throw new Error(
-      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — run `npm " +
-        "run build` first, or drop the variable. Only `npm run test:dist` " +
-        "should set it."
-    );
-  }
-});
+// legitimately have no build yet. See `./dist-gate` for why the loud half
+// does not live here.
 
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
   const readers = obsThumbnailReaders();

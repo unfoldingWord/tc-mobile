@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { distBuildRequired, distGateDecision } from "./dist-gate";
+import { resolveDistGate } from "./dist-gate";
 
 // Whether a CSS fallback survives the production build cannot be asserted
 // from source alone (George R5 on #414/#420): Vite's default CSS minifier
@@ -37,9 +37,9 @@ function builtCssPath(): string | null {
 }
 
 const CSS_PATH = builtCssPath();
-const GATE = distGateDecision(distBuildRequired(), CSS_PATH !== null);
+const GATE = resolveDistGate(CSS_PATH !== null, "dist/assets/*.css");
 
-describe.skipIf(GATE !== "run")(
+describe.skipIf(GATE === "skip")(
   "the built recorder-stage CSS (dist/assets/*.css, requires a prior `npm run build`)",
   () => {
     // Guarded even though the gate already means this factory's child `it`s
@@ -115,16 +115,8 @@ describe.skipIf(GATE !== "run")(
 // build: vitest reports a skip, not a failure, so a plain `npm test` still
 // exits 0. A skip is also indistinguishable from a pass, which is why the
 // gate makes the OTHER half loud — `npm run test:dist` promises a build, and
-// this case turns that promise into an assertion rather than one more place
-// these tests quietly do nothing. `REQUIRE_DIST_BUILD` is a purpose-built
-// flag, not the ambient `CI` variable: `CI` is true wherever tests run,
-// including the passes that legitimately have no build yet.
-it("fails, rather than silently skips, when required to find a build and does not", () => {
-  if (GATE === "fail") {
-    throw new Error(
-      "REQUIRE_DIST_BUILD is set but dist/assets/*.css was not found — run " +
-        "`npm run build` first, or drop the variable. Only `npm run " +
-        "test:dist` should set it."
-    );
-  }
-});
+// the shared resolver turns that promise into a module-scope throw rather
+// than one more case in this file that could be deleted. `REQUIRE_DIST_BUILD`
+// is a purpose-built flag, not the ambient `CI` variable: `CI` is true
+// wherever tests run, including the passes that legitimately have no build
+// yet. See `./dist-gate` for why the loud half does not live here.
