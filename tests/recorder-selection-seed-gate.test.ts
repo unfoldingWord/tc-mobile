@@ -70,8 +70,15 @@ describe("onToggleSelection seeds through seedSelection (#554)", () => {
     //   const half = win.visibleSamples * 0.15;
     //   editor.openSelection({ start: win.centerlineSample - half, ... });
     // with no `seedSelection` call at all, so this fails on the base tree.
+    //
+    // The match spans `openSelection(` through the seed call, not the seed
+    // call alone (Frank P2 on d099b0f): a body that CALLED `seedSelection`
+    // and then handed `openSelection` something else — his example was
+    // `editor.openSelection({ start: 0, end: 0 })` — satisfied every other
+    // assertion here while the control opened a collapsed span. It is the
+    // composition that is the wiring, so the composition is what is pinned.
     expect(body).toMatch(
-      /seedSelection\(\s*length,\s*win\.centerlineSample,\s*win\.visibleSamples\s*\)/
+      /editor\.openSelection\(\s*seedSelection\(\s*length,\s*win\.centerlineSample,\s*win\.visibleSamples\s*\)\s*\)/
     );
   });
 
