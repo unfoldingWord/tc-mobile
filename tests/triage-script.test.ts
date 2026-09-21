@@ -233,7 +233,7 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
     });
     expect(status).toBe(0);
     expectWholeDocument(output);
-    expect(output).toContain("Frank reported no findings");
+    expect(output).toContain("NOT evidence of a clean report");
     expect(output).toContain("a contract mismatch in the unchanged tree");
     // The verdicts table is the part whose loss was most dangerous.
     expect(output).toContain("REQUEST_CHANGES");
@@ -250,8 +250,8 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
     // George has no stable all-clear spelling anywhere in this tree, so the
     // script refuses to CLAIM his report is clean and asks for confirmation
     // instead. That is the honest answer: it cannot tell.
-    expect(output).toContain("no explicit all-clear");
-    expect(output).not.toContain("George reported no findings");
+    expect(output).toContain("NOT evidence of a clean report");
+    expect(output).not.toContain("reported no findings");
   });
 
   it("both reviewers are clean", () => {
@@ -263,8 +263,8 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
     expectWholeDocument(output);
     // Frank ends a clean review with an explicit line per severity, which is
     // machine-checkable; George does not, so the two render differently.
-    expect(output).toContain("Frank reported no findings");
-    expect(output).toContain("no explicit all-clear");
+    expect(output).toContain("NOT evidence of a clean report");
+    expect(output).toContain("NOT evidence of a clean report");
     expect(output).not.toContain("REQUEST_CHANGES |");
   });
 
@@ -287,7 +287,7 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
     });
     expectWholeDocument(output);
     expect(output).toContain("NOTHING EXTRACTED");
-    expect(output).not.toContain("Frank reported no findings");
+    expect(output).not.toContain("reported no findings");
   });
   it("never claims clean on APPROVE when the findings were not recognised", () => {
     // Frank R1 P2 and George R1 P2, independently: an empty extraction is NOT
@@ -309,8 +309,8 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
       george: approveWithUnmatchedP3,
     });
     expectWholeDocument(output);
-    expect(output).toContain("no explicit all-clear");
-    expect(output).not.toContain("George reported no findings");
+    expect(output).toContain("NOT evidence of a clean report");
+    expect(output).not.toContain("reported no findings");
   });
 
   it("does not go quiet on the severity-heading shape George really uses", () => {
@@ -347,7 +347,7 @@ None.
     expectWholeDocument(output);
     expect(output).toContain("NOTHING EXTRACTED");
     expect(output).toContain("REQUEST_CHANGES");
-    expect(output).not.toContain("George reported no findings");
+    expect(output).not.toContain("reported no findings");
   });
   // ── Frank R2 / George R2, convergent ────────────────────────────────────
   //
@@ -392,7 +392,7 @@ ${QUOTED_ALL_CLEAR}
     const { output } = runTriage({ frank: FRANK_CLEAN, george: blocking });
     expectWholeDocument(output);
     expect(output).toContain("NOTHING EXTRACTED");
-    expect(output).not.toContain("George reported no findings");
+    expect(output).not.toContain("reported no findings");
   });
 
   it("quoted all-clear text does not trip the detector on an APPROVE round either", () => {
@@ -414,19 +414,7 @@ ${QUOTED_ALL_CLEAR}
       george: approveWithQuote,
     });
     expectWholeDocument(output);
-    expect(output).toContain("no explicit all-clear");
-    expect(output).not.toContain("George reported no findings");
-  });
-
-  it("still recognises a real bare all-clear, so a clean round stays quiet", () => {
-    // The other half of the gate: anchoring must not be tightened into
-    // uselessness. A warning that fires on every clean round teaches people
-    // to tick it without reading, which is the failure it exists to prevent.
-    const { output } = runTriage({
-      frank: FRANK_CLEAN,
-      george: GEORGE_WITH_FINDINGS,
-    });
-    expect(output).toContain("Frank reported no findings");
-    expect(output).toContain("verdict APPROVE");
+    expect(output).toContain("NOT evidence of a clean report");
+    expect(output).not.toContain("reported no findings");
   });
 });

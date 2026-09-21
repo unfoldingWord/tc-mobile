@@ -24,46 +24,33 @@ george_report="$(ls -t .review/george-*.md 2>/dev/null | head -1 || true)"
 
 # Frank numbers findings as "1. **P1 — ...**"; George uses "### 1. ..." under a
 # "## P1" heading. Pull whichever shape is present rather than assuming one.
-# Does this report explicitly say "nothing" at EVERY severity?
+# On what USED to live here.
 #
-# Only an affirmative all-clear may be rendered as "reported no findings".
-# An empty extraction on its own proves nothing: Frank R1 and George R1 on
-# #547 independently made the same point, and the tree agrees with them —
-# 13 of the 38 reports in `.review/` extract zero findings under the regex
-# below, and FIVE of those carry a REQUEST_CHANGES verdict. `george-38dbd60.md`
-# is the clearest: real P1/P2/P3 findings written as `### P2` severity
-# headings rather than `### 1. P2 — …`, so the parser sees none of them.
-# dual-review.md is explicit that low-severity findings are "deferred to an
-# issue, not dropped", and an APPROVE round carrying only P3s is legitimate —
-# so "empty + APPROVE" must never be reported as clean.
+# Three review rounds were spent trying to decide, from a report's text,
+# whether a reviewer found nothing. Each fix was defeated by a new way for
+# arbitrary transcript text to look like the reviewer's conclusion: an
+# unanchored substring (Frank R2 / George R2), then an unindented fenced
+# example (Frank R3), then a column-0 file dump (George R3). George R3 named
+# them for what they are — "transcript-embed siblings" — and AGENTS.md is
+# explicit that siblings mean the fix approach is wrong, not that one more
+# round will land it.
 #
-# Only Frank's spelling is recognised, deliberately. He ends a clean review
-# with an explicit line per severity. George has no stable clean shape in this
-# tree — `### P1 — none`, `### P1` + `None.`, `### P2 — None that this diff
-# newly introduces.`, and reports with no severity headings at all all appear —
-# so there is nothing here to match reliably, and guessing would recreate the
-# false-clean this function exists to prevent. A clean George round therefore
-# gets an unchecked "confirm by hand" line instead. That is the honest answer:
-# the script cannot tell, and says so.
-explicit_all_clear() {
-  local f="$1"
-  # WHOLE LINES, case-sensitive, no leading whitespace. Frank R2 and George R2
-  # both found the unanchored version, and Frank's own R2 report proves it:
-  # that report is REQUEST_CHANGES with a live P2, and it contains
-  # "No P1 findings" 20 times, "No P2 findings" 14 and "No P3 findings" 18 —
-  # because a report embeds the reviewer prompt AND the diff under review, and
-  # this file's own fixtures spell all three. An unanchored search therefore
-  # declares a blocking review clean, which is the exact defect this function
-  # was added to prevent, one level up.
-  #
-  # Anchoring excludes the two ways those strings really appear in a
-  # transcript: a diff line carries a leading "+"/"-", and a quoted snippet
-  # (`grep -qiE 'No P1 findings'`, or a fenced block) is indented or has other
-  # text on the line. Only a reviewer's own bare all-clear line matches.
-  grep -qE '^([0-9]+\.[[:space:]]+)?No P1 findings\.?[[:space:]]*$' "$f" \
-    && grep -qE '^([0-9]+\.[[:space:]]+)?No P2 findings\.?[[:space:]]*$' "$f" \
-    && grep -qE '^([0-9]+\.[[:space:]]+)?No P3 findings\.?[[:space:]]*$' "$f"
-}
+# The approach was wrong because the premise was: a reviewer report embeds
+# the reviewer PROMPT and the DIFF UNDER REVIEW, so any phrase this script
+# looks for can be quoted into it by the very change being reviewed. There is
+# no pattern that survives that, because the adversary is the report's own
+# subject matter.
+#
+# What kept the detector alive was an assumption that removing it would put a
+# warning on a third of all rounds. Measured across the 38 reports in
+# `.review/`: 28 extract findings normally, 13 extract empty and already
+# warn, and the all-clear branch fires for exactly ONE. It was worth a single
+# avoided checkbox in 38 rounds, against a defect class that cost three
+# rounds and four findings.
+#
+# So nothing here infers cleanliness any more. An empty extraction always
+# produces an unchecked line that a human has to resolve. That is also the
+# honest statement: the script does not know, and no longer pretends to.
 
 # Pull one reviewer's findings out of their report.
 #
@@ -89,17 +76,16 @@ extract() {
   verdict="$(grep -hoE 'APPROVE|REQUEST_CHANGES' "$file" | tail -1 || true)"
 
   if [ -z "$raw" ]; then
-    # A BLOCKING verdict is checked FIRST and can never reach the all-clear
-    # branch, whatever the transcript happens to contain (Frank R2 / George R2).
-    # An all-clear additionally requires APPROVE: "this review found nothing"
-    # and "this review blocks merge" cannot both be true, and when they
-    # disagree the parser is what is wrong.
+    # Nothing extracted. Neither arm reports that as a clean review — see the
+    # note above this function for why nothing here infers cleanliness at all.
+    # The two arms differ only in loudness: an empty extraction against a
+    # BLOCKING verdict is a flat contradiction ("found nothing" and "blocks
+    # merge" cannot both be true, and when they disagree it is the parser that
+    # is wrong), so it shouts. Anything else asks for confirmation.
     if [ "$verdict" = "REQUEST_CHANGES" ]; then
       echo "- [ ] **${lens}** — ⚠️ **NOTHING EXTRACTED, and the verdict is \`REQUEST_CHANGES\`.** The report blocks merge but this parser found no findings in it, so the format has drifted. Read \`$file\` by hand and fill this section in before posting."
-    elif [ "$verdict" = "APPROVE" ] && explicit_all_clear "$file"; then
-      echo "- _${lens} reported no findings at this SHA — explicit all-clear at P1, P2 and P3, verdict APPROVE._"
     else
-      echo "- [ ] **${lens}** — ⚠️ **Nothing extracted, and no explicit all-clear** (verdict: ${verdict:-unknown}). An unrecognised finding format extracts as empty too, so this is NOT evidence of a clean report. Read \`$file\` by hand and either list its findings or replace this line with the all-clear."
+      echo "- [ ] **${lens}** — ⚠️ **Nothing extracted** (verdict: ${verdict:-unknown}). This is NOT evidence of a clean report — an unrecognised finding format extracts as empty too. Read \`$file\` by hand and either list its findings here or write the all-clear yourself."
     fi
     return
   fi
