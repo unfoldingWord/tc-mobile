@@ -11,6 +11,103 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-21 (Monday) — v0.2.8 promoted and verified with both native tester builds cut, #542 parked at the storage-pressure wiring, and #547 merged after five review rounds that found seven harness defects
+
+One coordinator session. The dev lead was present for picks and away between them; standing authority — **merge on clean and green**, scoped to lane PRs and never to promotions — was granted mid-session and used once, on #547.
+
+The day started with the tester feedback still outstanding, so the question put to the session was "what is the best use of the wait". The answer turned out to be: get off the critical path (promote and cut the builds so the device work is not gated on us), then spend the wait on the harness rather than on features.
+
+### Shipped
+
+| PR   | What                                      | Merge     | Review                                            |
+| ---- | ----------------------------------------- | --------- | ------------------------------------------------- |
+| #545 | `chore(release): v0.2.8` — the patch bump | `09e6f28` | mechanical; green alone                           |
+| #546 | Promote develop → staging, v0.2.8         | `a129d54` | promotion; deploy verified after merge            |
+| #547 | #522 + #524 and five more harness defects | `7a53842` | **5 rounds.** Both reviewers APPROVE at `4ae102e` |
+
+### The promotion, and the device path
+
+`npm run check:deploy` **PASS**: `version=0.2.8 sha=a129d54`, built 13:46Z. A merged promotion is not a deployed build (#143), and this one was confirmed rather than assumed.
+
+Both native lanes then ran green off that exact tree — the deployment payloads name `ref: staging`, `sha: a129d549…`, and Preflight's ref gate passed on each, so the ref gotcha was confirmed clean rather than hoped for.
+
+- **Android**: `android-apk-a129d549030fe4872a902c2bcc7542301db8cc1b`, 5.6 MB. **Expires 2026-10-05 — during training week.** If this is the training build it needs pulling somewhere durable.
+- **iOS**: uploaded to TestFlight; processing is async, so the lane going green is not the same claim as installable.
+
+**Distribution is deliberately held** until the outstanding v0.2.7 field report lands, so that report stays unambiguous about which build it describes. What the promotion buys is that #374 and #535 are testable _at all_ — they need #531/#538, which existed only on `develop` until today.
+
+The first push of the day was blocked by **#522**, which is how that issue stopped being theoretical.
+
+### #542 — parked, and the closing keyword that nearly ate an accessibility requirement
+
+Two review rounds. Round 1: six P2s across both lenses, all confirmed against the tree, one root cause — **the pressure line was modelled on the eviction notice, and pressure is not eviction.** It inherited `storageNotPersisted`'s Share clause (Share is egress, not reclaim), its "This phone" framing (the reading is per-origin), and a gate copied to the wrong width, while _not_ inheriting the `hasContent` retraction its sibling has.
+
+The lane fixed five in one commit and deferred one to #544. Round 2 was mixed: one chain link (round 1's own `hasContent` fix created a resurrection path — delete the last book, create a new one, and the same frozen `critical` band repaints over an empty shelf) and one **sibling** of round 1's class, with `strings.ts:543-548` recording the identical defect already fixed next door for #214.
+
+**Parked.** #247 is `v1-desired`, the PR does not close it regardless, and the remaining fix re-opens the module-scope lifecycle question #537 round 6 parked by _removing_ its cache. The device run answers thresholds, first paint, in-shell `estimate()` and the glyph in one pass.
+
+**Caught in passing:** the lane corrected the body to "Part of #247", but `closingIssuesReferences` was **still `[247]`** — its own explanatory sentence, _"this PR does NOT close #247"_, is parsed as `close #247`. Same trap as #470. Merging would have auto-closed an `accessibility`-labelled v0.3.0 issue.
+
+### #547 — filed as two bugs, closed as seven
+
+| #   | Defect                                                                                   | Found by                       |
+| --- | ---------------------------------------------------------------------------------------- | ------------------------------ |
+| 1   | precache reader blind to the development-mode `sw.js` shape (blocked every local push)   | #522, hit live                 |
+| 2   | `triage.sh` truncating silently, dropping a reviewer's findings **and both verdicts**    | #524, hit live                 |
+| 3   | `"$lens_"` parses as the variable `lens_` — the missing-report path had **never** worked | the new test                   |
+| 4   | the new test passed standalone and failed under `pre-push` (inherited `GIT_DIR`)         | `git push`                     |
+| 5   | empty extraction reported as clean on an `APPROVE` verdict                               | Frank R1 **+** George R1       |
+| 6   | unanchored all-clear tripped by quoted transcript text                                   | Frank R2 **+** George R2       |
+| 7   | fenced / column-0 embeds, then the dual — a quoted fixture _faking_ a finding            | Frank R3, George R3, George R4 |
+
+**Three of those were introduced by the fix for the one before.** Worth naming plainly rather than filing under "iterated to green".
+
+Two records corrected:
+
+- **#522's root cause was inverted.** `NODE_ENV` _unset_ emits the minified shape (which parsed fine, which is why CI was green); this sandbox's explicit `NODE_ENV=development` is the trigger. Its "asserted nowhere" claim was also false — CI asserts it twice, and the test file's own comment says the CI gap closed in #414/#420 three days before the issue was filed. The issue had quoted the first half of a comment documenting its own repair.
+- **My own round-2 triage was wrong**, and round 3 said so. It argued against deleting the all-clear detector on alert fatigue, unmeasured. Measured across all 38 reports in `.review/`: 28 extract normally, **13 already warn**, and the branch fired for **one**. I had been defending one avoided checkbox in 38 rounds against a class that cost three review rounds.
+
+### Decisions (all DRI)
+
+1. Promote v0.2.8 now; **hold distribution** until the v0.2.7 report lands.
+2. Park #542 pending the device run rather than run rounds 3–4.
+3. Keep **#247 open**, carrying both unmet fix-shape bullets — the recorder-close re-read and the storage glyph. Not split, not amended: splitting would read as optional polish rather than the accessibility requirement it is.
+4. Accept **#544** as a deferred P2 residual, recorded explicitly.
+5. Harness fixes (#522/#524) before #452 PR5 — both had blocked or corrupted real work that day.
+6. At #547's round-4 cap: **one more round with a pre-set stop rule**, because the remedy was a different class from the four that had failed. The rule did not fire.
+7. Standing **merge on clean and green** for lane PRs.
+
+### Filed
+
+**#548** — `triage.sh`'s extractor is blind to the `### P2` severity-heading shape. Measured: **13 of 38 reports extract zero findings, five of them carrying `REQUEST_CHANGES`.** `.review/george-38dbd60.md` is the clearest — real P1/P2/P3 findings the regex cannot see. #547 makes that silence _loud_; it does not make the extractor see. Deliberately its own change, with its own red-first pass, and the 38 reports are a ready-made regression corpus.
+
+### Learnings
+
+1. **An empty result is not evidence.** Both halves of #547 are the same shape: a parser blind to a form its producer actually emits — Workbox's unminified manifest, and a reviewer's severity-heading report. Neither errored; both returned `[]`, and everything downstream read that as "nothing to see".
+2. **Measure the thing you are defending.** The all-clear detector survived a round because of an unmeasured alert-fatigue argument. One grep over `.review/` ended the debate in a minute and reversed the decision.
+3. **A reviewer transcript is adversarial input.** It embeds the prompt _and the diff under review_, so any phrase a script searches for can be quoted into it by the very change being reviewed. Three rounds were lost learning that no pattern survives; the fix was to remove the bait from our own source, not to harden the scan.
+4. **Verify closing references mechanically.** Prose that says a PR does not close an issue still closes it. `gh pr view --json closingIssuesReferences` is the gate; reading the body is not.
+5. **`pre-push` is a different environment from the suite.** A test that passes standalone can fail in the hook, because git exports `GIT_DIR` there — and a contaminated run committed a stray file onto the branch before it was caught.
+6. **A test written to prove a gate can itself be vacuous.** The "other half of the gate" case added in round 2 asserted a substring already present in the prose it was pinning, and drove it with a `REQUEST_CHANGES` fixture while calling itself a clean round.
+
+### Held for the DRI
+
+- **The v0.2.7 field report**, still outstanding; it is what unblocks handing over the v0.2.8 build.
+- **The APK artifact expires 2026-10-05**, during training week.
+- #542's park, revisited after the device run, together with #544 and #247's glyph.
+- #422's stale precondition figure (it cites 15 open `v1-required`; the live count is 9).
+- Dependabot majors #501/#503/#504/#505, still held past October.
+
+### Next session, in order
+
+1. **The v0.2.7 report and the device run** — then hand over the v0.2.8 build and test #374, #535, #245.
+2. **#452 PR5** (recorder erase-confirm), starting from **#539**.
+3. **#548** — the extractor, with the 38-report corpus as its regression set.
+4. #533 (vacuous notice-bridge tests), then #220 with #524's mechanism folded in.
+5. #172 via a re-cut of #235 — still waiting on device feedback.
+
+---
+
 ## 2026-09-20 (Sunday) — Wave 1 and Wave 2 of the open-PR batching plan: five PRs merged including #452 PR3 and PR4, the storage-pressure core shipped with its cache deliberately removed, and seventeen issues filed
 
 One coordinator session, Sonnet lanes in isolated worktrees, the dev lead present throughout and answering picks. Standing authority was granted mid-session: **merge on clean and green** — both reviewers clean at the _current_ head SHA plus green CI — scoped to lane PRs, never to promotions.
