@@ -182,6 +182,42 @@ describe("playback buffer fill — windowed, not whole-clip (#175)", () => {
     expect(assembled).toEqual(expectedFloat(samples));
   });
 
+  /**
+   * #553 lead 1, settled with an observed equality rather than a code read.
+   *
+   * The lead alleges that the edit-mode audition is quiet because it sounds a
+   * `subarray` — `soundRange` plays `editor.working.subarray(start, end)`
+   * (`components/recorder.tsx:970`) — and that something on the way to Web
+   * Audio reads the VIEW through its backing store, so a mid-buffer view
+   * silently plays the wrong samples (a different, generally lower-energy
+   * window) instead of its own.
+   *
+   * `int16ToFloatInto` reads `input[start + i]`, which is a view index, so the
+   * allegation is false. This pins that: a mid-buffer view must reassemble to
+   * exactly the floats its own samples produce. The zero-offset cases above
+   * cannot see this — for them the view and its backing store are the same
+   * array — which is why this case exists separately rather than as a wider
+   * assertion on one of them.
+   */
+  it("plays a mid-buffer view as its own samples, not its backing store's", async () => {
+    const backing = ramp(WINDOW * 2 + 17);
+    // Deliberately not window-aligned, and longer than one fill window, so the
+    // reassembly crosses a window boundary at a non-zero view offset.
+    const from = 1_000;
+    const to = from + WINDOW + 5;
+    const view = backing.subarray(from, to);
+    const { playSamples } = await loadAudioIo();
+    await playSamples(view, { isStillCurrent: () => true });
+
+    const buffer = constructed[0]!.buffersCreated[0]!;
+    expect(buffer.length).toBe(view.length);
+    const assembled = new Float32Array(view.length);
+    for (const write of buffer.writes) assembled.set(write.data, write.offset);
+    // `slice` copies, so the expectation is built from the view's OWN samples
+    // and shares no backing store with the input.
+    expect(assembled).toEqual(expectedFloat(backing.slice(from, to)));
+  });
+
   it("writes a clip shorter than one window exactly once", async () => {
     const samples = ramp(1_000);
     const { playSamples } = await loadAudioIo();

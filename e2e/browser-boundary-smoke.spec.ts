@@ -62,10 +62,21 @@ const MP3_GRANULE = 1152;
 /** A standard decoder's own delay, which some decoders trim and some do not. */
 const MP3_DECODER_DELAY = 529;
 
+/** Mirrors `StageLevels` in `src/app/e2e-harness.ts`. */
+interface StageLevels {
+  frames: number;
+  peak: number;
+  rms: number;
+  clipped: number;
+}
+
 declare global {
   interface Window {
     __e2e?: {
-      encodeAndDecode: (frameCount: number) => Promise<{
+      encodeAndDecode: (
+        frameCount: number,
+        amplitude?: number
+      ) => Promise<{
         mp3Length: number;
         rawDecodedFrameCount: number;
         emittedFrameCount: number;
@@ -75,6 +86,19 @@ declare global {
         fittedHeadRms: number;
         fittedTailRms: number;
         sourceRms: number;
+        source: StageLevels;
+        rawDecoded: StageLevels;
+        fitted: StageLevels;
+      }>;
+      measureCanonicalise: (
+        frameCount: number,
+        amplitude?: number
+      ) => Promise<{
+        source: StageLevels;
+        downmixed: StageLevels;
+        renderBranchTaken: boolean;
+        resampleSource: StageLevels;
+        resampled: StageLevels;
       }>;
       encodeWithHeartbeat: (frameCount: number) => Promise<{
         frameCount: number;
@@ -177,6 +201,180 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
     expect(result.fittedHeadRms).toBeLessThan(result.sourceRms * 1.5);
     expect(result.fittedTailRms).toBeGreaterThan(result.sourceRms * 0.5);
     expect(result.fittedTailRms).toBeLessThan(result.sourceRms * 1.5);
+  });
+});
+
+/**
+ * Amplitude levels for the #555 spike, in Int16 units.
+ *
+ * Two probes, because one cannot answer both questions. The quiet probe is the
+ * harness's existing ~-12 dBFS tone, where a linear gain change is unambiguous
+ * and nothing is near the rails. The hot probe sits just under full scale,
+ * where a lossy decode's overshoot is CLAMPED by `floatToInt16` — the only way
+ * the "loud and dirty" half of the reported symptom can show up in numbers at
+ * all, and it shows up as a clipped-sample count, not as a peak.
+ *
+ * A tone, not speech: this is a linear-gain question, and a tone makes a gain
+ * change unambiguous and the measurement reproducible. It is deliberately the
+ * WRONG probe for a perceptual-loudness question, and this spike does not ask
+ * one.
+ */
+const QUIET_TONE = 8_000;
+const HOT_TONE = 32_000;
+
+/**
+ * THE THRESHOLDS, named before anything was measured, so the result cannot be
+ * read to taste afterwards.
+ *
+ * Beyond 3 dB of whole-clip RMS loss is a real finding and would be a
+ * candidate cause of "very quiet" (#555). Under 1 dB is not the reported field
+ * symptom under any reading — "very quiet" on a phone in a village is an order
+ * of magnitude, not a percent. Between the two is inconclusive and would need a
+ * device.
+ */
+const REAL_FINDING_DB = 3;
+const NOT_THE_SYMPTOM_DB = 1;
+
+const INT16_FULL_SCALE = 32_767;
+
+/** dBFS of an Int16 magnitude. Digital silence prints as a sentinel, never NaN. */
+function dbfs(magnitude: number): string {
+  return magnitude > 0
+    ? `${(20 * Math.log10(magnitude / INT16_FULL_SCALE)).toFixed(2)}`
+    : "-inf";
+}
+
+/**
+ * `20*log10(value / reference)`, with the two degenerate cases kept out of the
+ * division (the `!(x > 0)` guard shape `lib/audio/display-gain.ts` already
+ * uses).
+ *
+ * Both sentinels are FAIL-CLOSED against the bounds below: `Math.abs()` of
+ * either is less than nothing, so a stage that measured silence, or that had
+ * no scale to be measured against, fails the assertion rather than passing it.
+ */
+function deltaDb(value: number, reference: number): number {
+  if (!(reference > 0)) return Number.NaN;
+  if (!(value > 0)) return Number.NEGATIVE_INFINITY;
+  return 20 * Math.log10(value / reference);
+}
+
+function stageRow(name: string, stage: StageLevels, source: StageLevels) {
+  return (
+    `  ${name.padEnd(22)} ${String(stage.frames).padStart(8)} frames  ` +
+    `peak ${dbfs(stage.peak).padStart(7)} dBFS  ` +
+    `rms ${dbfs(stage.rms).padStart(7)} dBFS  ` +
+    `Δrms ${deltaDb(stage.rms, source.rms).toFixed(2).padStart(6)} dB  ` +
+    `clipped ${stage.clipped}`
+  );
+}
+
+test.describe("audio LEVEL across the store/decode round trip (#555 spike)", () => {
+  /**
+   * The measurement the #555 hypothesis asks for, on the one stage where level
+   * can legitimately move: PCM → the real worker `encodeMp3` → the real
+   * `decodeAudioData` → `fitMp3Decode`. That is what a Finished segment's row
+   * Play sounds (`hooks/use-audio-session.ts`'s `playTake`), and the
+   * hypothesis is that it comes back several dB below the capture buffer that
+   * record-mode Play sounds.
+   *
+   * EVIDENCE ONLY. Nothing here is a fix, and the bound is deliberately the
+   * pre-committed "real finding" threshold rather than the tightest number
+   * that happens to pass: this test's job is to be able to SEE an attenuation
+   * of the size being hunted, and to say plainly when there is none.
+   *
+   * That it can see one is not assumed. Scaling the PCM handed to the encoder
+   * by 0.5 inside `encodeAndDecode` makes both assertions below report -6.02 dB
+   * and fail — run before they were written, per AGENTS.md's "a gate is tested
+   * in both states". Without that step a harness blind to attenuation and a
+   * clean pipeline produce the same green.
+   */
+  test("the MP3 round trip returns the level it was given, at two amplitudes", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const frameCount = 44_100 * 3;
+    for (const amplitude of [QUIET_TONE, HOT_TONE]) {
+      const r = await page.evaluate(
+        ([n, a]) => window.__e2e!.encodeAndDecode(n!, a!),
+        [frameCount, amplitude]
+      );
+      console.log(
+        `[levels] 3 s tone at amplitude ${amplitude} (${dbfs(amplitude)} dBFS), ` +
+          `mp3 ${r.mp3Length} bytes\n` +
+          stageRow("capture PCM", r.source, r.source) +
+          "\n" +
+          stageRow("decodeAudioData raw", r.rawDecoded, r.source) +
+          "\n" +
+          stageRow("fitMp3Decode (played)", r.fitted, r.source)
+      );
+
+      // What playback actually receives, against what the encoder was given.
+      // This is the number a fix would be scoped from.
+      expect(Math.abs(deltaDb(r.fitted.rms, r.source.rms))).toBeLessThan(
+        REAL_FINDING_DB
+      );
+      // And the raw decode, so a loss can be attributed to the decoder rather
+      // than to the alignment if one ever appears.
+      expect(Math.abs(deltaDb(r.rawDecoded.rms, r.source.rms))).toBeLessThan(
+        REAL_FINDING_DB
+      );
+      // The source really is where it was asked to be — a probe that silently
+      // came back quiet would make every delta above meaningless.
+      expect(r.source.peak).toBeGreaterThan(amplitude * 0.99);
+    }
+  });
+
+  /**
+   * `toCanonical`'s OfflineAudioContext render (`hooks/audio-io.ts`), which the
+   * #555 hypothesis names first and which the round-trip test above never
+   * reaches: the shared context is pinned to 44.1 kHz and the app's MP3s are
+   * 44.1 kHz mono, so `alreadyCanonical` is true and the render is skipped.
+   * Reporting "the round trip is clean" without this would be stepping around
+   * the named suspect.
+   *
+   * `renderBranchTaken` is asserted rather than assumed, for the same reason
+   * `encodeAfterAbortRebuild` asserts `transferred`: if this browser handed
+   * back an already-canonical buffer, the downmix number measured the unity
+   * branch and proves nothing about the render.
+   */
+  test("the canonicalisation render is unity, on both halves of the branch", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const r = await page.evaluate(
+      ([n, a]) => window.__e2e!.measureCanonicalise(n!, a!),
+      [44_100 * 3, QUIET_TONE]
+    );
+    console.log(
+      `[levels] toCanonical render (branch taken: ${r.renderBranchTaken})\n` +
+        stageRow("tone in", r.source, r.source) +
+        "\n" +
+        stageRow("2ch→1ch downmix", r.downmixed, r.source) +
+        "\n" +
+        stageRow("48k→44.1k resample", r.resampled, r.resampleSource)
+    );
+
+    // The app's own render really ran.
+    expect(r.renderBranchTaken).toBe(true);
+    // Web Audio's 2 → 1 downmix is 0.5*(L+R); identical channels make it
+    // unity, so this is held to the "not the symptom" bound, not the looser
+    // finding bound — there is no lossy step here to excuse a percent.
+    expect(Math.abs(deltaDb(r.downmixed.rms, r.source.rms))).toBeLessThan(
+      NOT_THE_SYMPTOM_DB
+    );
+    // The resample PRIMITIVE, not the app's call site: with the rate pin
+    // honoured, `toCanonical`'s render can never be a resample, because
+    // `decodeAudioData` already delivered at the context's rate. This is what
+    // the fallback path (Safari < 14.1, which throws on the `sampleRate`
+    // option) would do, measured on the same node graph `toCanonical` builds.
+    expect(
+      Math.abs(deltaDb(r.resampled.rms, r.resampleSource.rms))
+    ).toBeLessThan(NOT_THE_SYMPTOM_DB);
   });
 });
 

@@ -30,8 +30,13 @@ import {
   warmEncoder,
   withEncoder,
 } from "@/hooks/mp3-codec";
+import { decodeToCanonical } from "@/hooks/audio-io";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
-import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import {
+  CANONICAL_CHANNELS,
+  CANONICAL_SAMPLE_RATE,
+  INT16_MAX,
+} from "@/lib/audio/format";
 import {
   fitMp3Decode,
   mp3GranuleCount,
@@ -39,6 +44,31 @@ import {
   MP3_TOTAL_DELAY,
 } from "@/lib/audio/mp3-align";
 import type { IDBPDatabase } from "idb";
+
+/**
+ * Whole-clip amplitude of one stage of the audio pipeline, in Int16 units
+ * (#555 spike).
+ *
+ * Int16 units, not dBFS, and not normalised floats: every stage measured here
+ * already IS canonical Int16 PCM, so converting would only introduce a second
+ * scale for the spec to get wrong. The spec turns the ratio of two of these
+ * into dB, which is the only form the comparison is meaningful in.
+ *
+ * `clipped` is here because peak alone cannot tell "hot" from "clipped":
+ * `floatToInt16` CLAMPS at the rails (`lib/audio/format.ts`), so a lossy decode
+ * that overshoots ±1.0 lands as a peak of exactly INT16_MAX with no other
+ * trace. The requirements owner reported the raw capture as loud AND dirty, so
+ * the loud-and-dirty half stays invisible without this count.
+ */
+export interface StageLevels {
+  readonly frames: number;
+  /** Largest |sample|. 0 for an empty clip — never NaN. */
+  readonly peak: number;
+  /** Root-mean-square over the WHOLE clip, not a window. 0 for an empty clip. */
+  readonly rms: number;
+  /** Samples sitting exactly at either Int16 rail. */
+  readonly clipped: number;
+}
 
 export interface EncodeDecodeResult {
   /** Bytes of the MP3 the worker returned. */
@@ -69,18 +99,55 @@ export interface EncodeDecodeResult {
   readonly fittedTailRms: number;
   /** RMS of the same window of the PCM fed in — the scale to compare against. */
   readonly sourceRms: number;
+  /** The PCM fed to the encoder, measured BEFORE the transfer detaches it. */
+  readonly source: StageLevels;
+  /** What the browser's `decodeAudioData` returned, before any alignment. */
+  readonly rawDecoded: StageLevels;
+  /** What `fitMp3Decode` hands playback — the samples a translator hears. */
+  readonly fitted: StageLevels;
 }
 
+/**
+ * The amplitude `syntheticPcm` uses unless a caller asks for another: about
+ * -12 dBFS, which is where the existing head/tail alignment assertions were
+ * calibrated. Kept as the default so those assertions measure what they always
+ * measured.
+ */
+const DEFAULT_TONE_AMPLITUDE = 8_000;
+
 /** A synthetic tone, not silence — a real encoder path, not an all-zero edge case. */
-function syntheticPcm(frameCount: number): Int16Array {
+function syntheticPcm(
+  frameCount: number,
+  amplitude: number = DEFAULT_TONE_AMPLITUDE
+): Int16Array {
   const out = new Int16Array(frameCount);
   const freq = 440;
   for (let i = 0; i < frameCount; i++) {
     out[i] = Math.round(
-      Math.sin((2 * Math.PI * freq * i) / CANONICAL_SAMPLE_RATE) * 8_000
+      Math.sin((2 * Math.PI * freq * i) / CANONICAL_SAMPLE_RATE) * amplitude
     );
   }
   return out;
+}
+
+/** Whole-clip peak, RMS and rail count. Empty reads 0 everywhere, never NaN. */
+function levels(samples: Int16Array): StageLevels {
+  let peak = 0;
+  let sum = 0;
+  let clipped = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i]!;
+    const magnitude = s < 0 ? -s : s;
+    if (magnitude > peak) peak = magnitude;
+    if (s >= INT16_MAX || s <= -INT16_MAX - 1) clipped += 1;
+    sum += s * s;
+  }
+  return {
+    frames: samples.length,
+    peak,
+    rms: samples.length === 0 ? 0 : Math.sqrt(sum / samples.length),
+    clipped,
+  };
 }
 
 /** Root-mean-square of `count` samples starting at `from`. Silence reads ~0. */
@@ -108,15 +175,19 @@ function rms(samples: Int16Array, from: number, count: number): number {
  * that is too large runs off the end of the recording into the tail padding.
  */
 async function encodeAndDecode(
-  frameCount: number
+  frameCount: number,
+  amplitude: number = DEFAULT_TONE_AMPLITUDE
 ): Promise<EncodeDecodeResult> {
-  const samples = syntheticPcm(frameCount);
+  const samples = syntheticPcm(frameCount, amplitude);
   const window = MP3_TOTAL_DELAY;
   // BEFORE the encode: `encodeMp3` TRANSFERS the PCM's ArrayBuffer to the
   // worker (`hooks/mp3-codec.ts`), which detaches it here — a read of
   // `samples` afterwards sees a zero-length array, and this reference RMS
   // would silently be 0. Found by this assertion failing on its first run.
+  // The whole-clip `source` levels below (#555) are taken here for the same
+  // reason and would fail the same way.
   const sourceRms = rms(samples, 0, window);
+  const source = levels(samples);
   const mp3 = await withEncoder(undefined, (codec) => codec.encodeMp3(samples));
   const decoded = await withEncoder(undefined, (codec) => codec.decodeMp3(mp3));
   const rawDecodedFrameCount = decoded.length;
@@ -131,6 +202,167 @@ async function encodeAndDecode(
     fittedHeadRms: rms(fitted, 0, window),
     fittedTailRms: rms(fitted, Math.max(0, fitted.length - window), window),
     sourceRms,
+    source,
+    rawDecoded: levels(decoded),
+    fitted: levels(fitted),
+  };
+}
+
+export interface CanonicaliseResult {
+  /** The mono tone written into both channels of the WAV, before any decode. */
+  readonly source: StageLevels;
+  /** What the REAL `decodeToCanonical` returned for that stereo WAV. */
+  readonly downmixed: StageLevels;
+  /**
+   * False if this browser handed `toCanonical` an already-canonical buffer
+   * anyway, in which case `downmixed` measured the unity branch and says
+   * nothing about the render. Reported, never assumed.
+   */
+  readonly renderBranchTaken: boolean;
+  /** The same tone, rendered 48 kHz → 44.1 kHz by a bare OfflineAudioContext. */
+  readonly resampleSource: StageLevels;
+  readonly resampled: StageLevels;
+}
+
+/**
+ * Little-endian 16-bit PCM WAV bytes carrying `channels` copies of `samples`
+ * (#555 spike). Lossless, so `decodeAudioData` of this changes no level and
+ * whatever the measurement below sees came from the render, not the decoder.
+ */
+function wavBlob(
+  samples: Int16Array,
+  sampleRate: number,
+  channels: number
+): Blob {
+  const dataBytes = samples.length * channels * 2;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++)
+      view.setUint8(offset + i, text.charCodeAt(i));
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  ascii(8, "WAVEfmt ");
+  view.setUint32(16, 16, true); // PCM fmt chunk size
+  view.setUint16(20, 1, true); // format: PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * 2, true); // byte rate
+  view.setUint16(32, channels * 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  ascii(36, "data");
+  view.setUint32(40, dataBytes, true);
+  for (let i = 0; i < samples.length; i++) {
+    for (let c = 0; c < channels; c++) {
+      view.setInt16(44 + (i * channels + c) * 2, samples[i]!, true);
+    }
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+/**
+ * Measure `toCanonical`'s OfflineAudioContext render — the step the #555
+ * hypothesis names FIRST (`audio-io.ts`, the `alreadyCanonical === false`
+ * branch).
+ *
+ * `encodeAndDecode` above never reaches it. The shared context is pinned to
+ * CANONICAL_SAMPLE_RATE and the app's MP3s are 44.1 kHz mono, so
+ * `alreadyCanonical` is true and the render is skipped — measuring that path
+ * alone would report "0 dB, nothing wrong" while having stepped around the
+ * named suspect entirely.
+ *
+ * Two measurements, because the branch has two halves and only one of them is
+ * reachable through the app's own entry point on a browser that honours the
+ * rate pin:
+ *
+ *  1. THE DOWNMIX, through the REAL exported `decodeToCanonical`. A STEREO WAV
+ *     carrying the same mono tone in both channels is decoded by the real
+ *     `decodeAudioData`, which preserves channel count while resampling to the
+ *     context rate — so `numberOfChannels === 2` makes `alreadyCanonical`
+ *     false and the app's own render runs. Web Audio's 2 → 1 downmix is
+ *     `0.5 * (L + R)`, which for identical channels is unity, so the expected
+ *     answer is 0 dB and anything else is the render losing level.
+ *  2. THE RESAMPLE, as a BARE OfflineAudioContext render built here with the
+ *     same node graph `toCanonical` builds. This measures the PRIMITIVE, not
+ *     the call site, and deliberately so: with the context pinned,
+ *     `decodeAudioData` has already delivered at 44.1 kHz, so `toCanonical`'s
+ *     render can never BE a resample. It becomes one only on the fallback path
+ *     — Safari before 14.1 throws on the `sampleRate` option
+ *     (`tests/playback-memory.test.ts` pins that fallback), leaving the context
+ *     at the device rate. Read this number as "what the resampler does",
+ *     not as "what the app did".
+ */
+async function measureCanonicalise(
+  frameCount: number,
+  amplitude: number = DEFAULT_TONE_AMPLITUDE
+): Promise<CanonicaliseResult> {
+  const tone = syntheticPcm(frameCount, amplitude);
+  const downmixed = await decodeToCanonical(
+    wavBlob(tone, CANONICAL_SAMPLE_RATE, 2)
+  );
+
+  // Did the render actually run? REPORTED, never assumed: if this browser's
+  // `decodeAudioData` handed back a buffer `toCanonical` would call canonical
+  // anyway, the number above measured the unity branch and the spec must fail
+  // rather than read it as evidence about the render.
+  //
+  // `audio-io.ts` keeps its shared context private and should not grow a seam
+  // for this, so the intermediate buffer is observed on a second context
+  // constructed the same way (`{ sampleRate: CANONICAL_SAMPLE_RATE }`) and
+  // closed again. Same browser, same options, same blob — only the observer
+  // differs, the same reasoning `encodeWithHeartbeat` uses for its second
+  // worker.
+  const probeCtx = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE });
+  let renderBranchTaken: boolean;
+  try {
+    const probe = await probeCtx.decodeAudioData(
+      await wavBlob(tone, CANONICAL_SAMPLE_RATE, 2).arrayBuffer()
+    );
+    renderBranchTaken = !(
+      probe.sampleRate === CANONICAL_SAMPLE_RATE &&
+      probe.numberOfChannels === CANONICAL_CHANNELS
+    );
+  } finally {
+    await probeCtx.close();
+  }
+
+  // 48 kHz is what a device that refuses the rate pin most commonly runs at.
+  // The tone's own frequency is not held constant across the two rates
+  // (`syntheticPcm` always steps at the canonical rate, so written into a
+  // 48 kHz buffer it sounds ~479 Hz) and deliberately need not be: peak and
+  // RMS of a sine depend on its amplitude, not its frequency.
+  const sourceRate = 48_000;
+  const resampleSource = syntheticPcm(frameCount, amplitude);
+  const offline = new OfflineAudioContext(
+    CANONICAL_CHANNELS,
+    Math.ceil((frameCount / sourceRate) * CANONICAL_SAMPLE_RATE),
+    CANONICAL_SAMPLE_RATE
+  );
+  const input = offline.createBuffer(
+    CANONICAL_CHANNELS,
+    frameCount,
+    sourceRate
+  );
+  const channel = input.getChannelData(0);
+  for (let i = 0; i < frameCount; i++)
+    channel[i] = resampleSource[i]! / INT16_MAX;
+  const node = offline.createBufferSource();
+  node.buffer = input;
+  node.connect(offline.destination);
+  node.start();
+  const rendered = await offline.startRendering();
+  const out = new Int16Array(rendered.length);
+  const renderedChannel = rendered.getChannelData(0);
+  for (let i = 0; i < out.length; i++)
+    out[i] = Math.round(renderedChannel[i]! * INT16_MAX);
+
+  return {
+    source: levels(tone),
+    downmixed: levels(downmixed),
+    renderBranchTaken,
+    resampleSource: levels(resampleSource),
+    resampled: levels(out),
   };
 }
 
@@ -438,6 +670,7 @@ declare global {
   interface Window {
     __e2e?: {
       encodeAndDecode: typeof encodeAndDecode;
+      measureCanonicalise: typeof measureCanonicalise;
       encodeWithHeartbeat: typeof encodeWithHeartbeat;
       encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
       measureWorkerReady: typeof measureWorkerReady;
@@ -452,6 +685,7 @@ declare global {
 
 window.__e2e = {
   encodeAndDecode,
+  measureCanonicalise,
   encodeWithHeartbeat,
   encodeAfterAbortRebuild,
   measureWorkerReady,
