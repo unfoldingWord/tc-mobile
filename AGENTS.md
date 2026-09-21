@@ -240,13 +240,11 @@ classifier, invites a triage reader to mark a P1 fixed.
 **A run's output belongs in a PR comment or the progress tracker, never in a
 docblock, a CSS comment or a test name.** Those three cannot be re-stamped at a
 new head, and whoever opens the file next reads them as current. A docblock may
-link that comment's URL; it may not restate its output. The scope is
-deliberately those three sites and not "every committed file":
-`docs/progress_tracker.md` **is** the run record, `CONTRIBUTING.md`'s "name the
-platform, the OS version and the build" still stands, and a dated observation a
-file needs in order to explain itself — `docs/native/README.md`'s Galaxy A17
-paragraph, which is why both manifest permissions stay — is a reason, not a run
-report. Counts go in an assertion,
+link that comment's URL; it may not restate its output. `docs/progress_tracker.md`
+**is** the run record, and a dated observation a file needs in order to explain
+itself is a reason rather than a run report. This rule binds prose you write or
+edit; the sweep of what already violates it is **#575**, which is where an
+existing docblock gets fixed, not here. Counts go in an assertion,
 not in prose: a CSS comment quoting its own grep named a count the tree no
 longer returns, having counted four comment lines as declarations — one of them
 the sentence's own grep string. Do not name an environment: a docblock credited
@@ -272,8 +270,16 @@ false sentence went on propagating into every agent's context, because that is
 what AGENTS.md does. Correct a false claim where you find it, and prefer
 deleting it to restating it. Deferring is available only when the claim is
 quoted at several sites that have to move together and the deferral names the
-issue that moves them — #525 is the standing example. A single false sentence
-does not qualify.
+issue that moves them — #525 and #575 are the standing examples. A single
+false sentence does not qualify.
+
+This applies to **living instructions** — this file, `CONTRIBUTING.md`, the
+runbooks, docblocks, CSS comments. It does **not** apply to a dated entry in
+`docs/progress_tracker.md`: that file is append-only and newest-first, so a
+sentence inside an entry is judged as of that entry's date and is superseded
+by a later one, never edited in place. "Android has still never run" in a
+2026-09-12 entry was true on 2026-09-12; rewriting it would destroy the reason
+that session's next step was the first Android pass.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**

@@ -31,8 +31,8 @@ import {
  *   - NOT COVERED: `readTheme`'s catch path (an accessor that throws on READ,
  *     as opposed to on write), and `applyTheme`'s empty-`--s-floor` early
  *     return. Both are engine-specific states this suite cannot produce.
- *   - NOT COVERED, and not coverable here: any of it on a phone. Capacitor's
- *     Android WebView has never run this app at all (#245), and headless
+ *   - NOT COVERED, and not coverable here: any of it on a phone. No theme
+ *     check has run on a device on any platform (#245), and headless
  *     Chromium in a container is not the sunlit screen the light theme exists
  *     for. `lib/theme.ts`'s Node table remains what pins the decision.
  *
