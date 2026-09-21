@@ -206,13 +206,17 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
  *
  * WHICH ISSUE THE HOT PROBE'S RESULT BELONGS TO. It answers issue 558's
  * "dirty", NOT issue 555's "quiet", and the two must not be conflated. In this
- * Chromium the peak moves the WRONG WAY for a quietness hypothesis — up by
- * 1.18 dB at both amplitudes (-12.25 → -11.07 dBFS, and -0.21 → 0.00 dBFS) —
- * and at the hot probe 49 samples of a 3 s clip land on an Int16 rail
- * (`floatToInt16`'s clamp, `lib/audio/format.ts:28-29`). That is lossy-codec
- * overshoot being
- * clamped, which is a distortion finding. Nothing about it supports 555, and
- * this spike does not claim it does.
+ * Chromium the peak moves the WRONG WAY for a quietness hypothesis — UP at
+ * both amplitudes, but by very different amounts: +1.18 dB at the quiet tone
+ * (-12.25 → -11.07 dBFS) and only +0.21 dB at the hot tone
+ * (-0.21 → 0.00 dBFS). The hot figure is small because it is CAPPED, not
+ * because there is less overshoot: 0.00 dBFS IS the Int16 rail, so the rise
+ * that the quiet peak has room to show has nowhere to go here and is clamped
+ * instead — and that clamp is what the 49 clipped samples of the hot 3 s clip
+ * ARE (`floatToInt16`, `lib/audio/format.ts:29-30`; `:28` is the `Math.round`
+ * scaling that precedes the clamp). One mechanism, two read-outs: a peak rise
+ * below the rail, a clipped-sample count at it. That is a distortion finding.
+ * Nothing about it supports 555, and this spike does not claim it does.
  *
  * A tone, not speech: this is a linear-gain question, and a tone makes a gain
  * change unambiguous and the measurement reproducible. It is deliberately the
@@ -284,32 +288,61 @@ test.describe("audio LEVEL across the store/decode round trip (#555 spike)", () 
    * that happens to pass: this test's job is to be able to SEE an attenuation
    * of the size being hunted, and to say plainly when there is none.
    *
-   * That it can see one is not assumed. Scaling the PCM handed to the encoder
-   * by 0.5 inside `encodeAndDecode`, after the `source` levels are taken,
-   * makes both assertions below fail — per AGENTS.md's "a gate is tested in
-   * both states". The OBSERVED reds, re-run in pinned Chromium at the head
-   * this docblock ships on:
+   * ONE CASE PER AMPLITUDE, AND BOTH DELTAS SOFT. The shape is a correction,
+   * and it is the point. The previous version ran both amplitudes in a `for`
+   * loop inside ONE test with two hard `expect`s in it. A Playwright
+   * `expect()` THROWS, so the first failure ended the case: under the
+   * injection below only the `fitted` assertion was ever evaluated, the
+   * `rawDecoded` assertion never ran, and the hot-tone iteration never ran at
+   * all — one of the two assertions in this test had never been observed red.
+   * That is half a gate, the #215/#232/#256 shape this PR itself cites to
+   * justify deleting the other probe. Each amplitude is now its own case, so
+   * neither can be hidden by the other's failure, and both deltas are
+   * `expect.soft`, so both are evaluated and both are reported in one run.
+   * Soft is not weaker — a soft failure still fails the case; it only stops
+   * the first red from suppressing the second. The source precondition stays
+   * HARD and runs first, because a probe that came back quiet makes both
+   * deltas meaningless and should end the case rather than add rows to the
+   * report.
    *
-   *     decodeAudioData raw     Δrms  -6.51 dB
-   *     fitMp3Decode (played)   Δrms  -6.46 dB
-   *     Expected: < 3   Received: 6.463528222169275
+   * That it can see an attenuation is not assumed. Scaling the PCM handed to
+   * the encoder by 0.5 inside `encodeAndDecode`, after the `source` levels
+   * are taken, makes ALL FOUR assertions fail — both deltas, in both cases —
+   * per AGENTS.md's "a gate is tested in both states". The OBSERVED reds, run
+   * in pinned Chromium at the head this docblock ships on:
+   *
+   *     amplitude 8000
+   *       decodeAudioData raw     Δrms  -6.51 dB
+   *       fitMp3Decode (played)   Δrms  -6.46 dB
+   *       fitted      Expected: < 3   Received: 6.463528222169275
+   *       rawDecoded  Expected: < 3   Received: 6.507033917399476
+   *     amplitude 32000
+   *       decodeAudioData raw     Δrms  -6.51 dB
+   *       fitMp3Decode (played)   Δrms  -6.47 dB
+   *       fitted      Expected: < 3   Received: 6.466378730996205
+   *       rawDecoded  Expected: < 3   Received: 6.509884001489926
+   *     2 failed
    *
    * -6.02 dB is what the injection predicts arithmetically (`20*log10(0.5)`)
-   * and is NOT what either assertion reported; the extra ~0.45 dB is the round
-   * trip's own loss, which the injection does not remove. This docblock
-   * carried the prediction until it was replaced with the run.
+   * and is NOT what any of the four reported. INFERENCE, not a measurement:
+   * the extra 0.44-0.51 dB is most plausibly the round trip's own loss, which
+   * the injection does not remove — the unmutated run measures -0.44 dB
+   * (fitted) and -0.49 dB (raw) on the same two rows, which is the same size.
+   * Nothing here isolates it, so it is labelled the way the dilution
+   * arithmetic in `EncodeDecodeResult.rawDecoded` is. This docblock carried
+   * the -6.02 prediction written as a run until the run replaced it.
    *
    * Without this step a harness blind to attenuation and a clean pipeline
    * produce the same green.
    */
-  test("the MP3 round trip returns the level it was given, at two amplitudes", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    await waitForHarness(page);
+  for (const amplitude of [QUIET_TONE, HOT_TONE]) {
+    test(`the MP3 round trip returns the level it was given — amplitude ${amplitude}`, async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await waitForHarness(page);
 
-    const frameCount = 44_100 * 3;
-    for (const amplitude of [QUIET_TONE, HOT_TONE]) {
+      const frameCount = 44_100 * 3;
       const r = await page.evaluate(
         ([n, a]) => window.__e2e!.encodeAndDecode(n!, a!),
         [frameCount, amplitude]
@@ -324,21 +357,24 @@ test.describe("audio LEVEL across the store/decode round trip (#555 spike)", () 
           stageRow("fitMp3Decode (played)", r.fitted, r.source)
       );
 
+      // PRECONDITION, and hard: the source really is where it was asked to be.
+      // A probe that silently came back quiet would make both deltas below
+      // meaningless, so this one stops the case rather than adding a row to
+      // the report.
+      expect(r.source.peak).toBeGreaterThan(amplitude * 0.99);
+
       // What playback actually receives, against what the encoder was given.
       // This is the number a fix would be scoped from.
-      expect(Math.abs(deltaDb(r.fitted.rms, r.source.rms))).toBeLessThan(
-        REAL_FINDING_DB
-      );
+      expect
+        .soft(Math.abs(deltaDb(r.fitted.rms, r.source.rms)))
+        .toBeLessThan(REAL_FINDING_DB);
       // And the raw decode, so a loss can be attributed to the decoder rather
       // than to the alignment if one ever appears.
-      expect(Math.abs(deltaDb(r.rawDecoded.rms, r.source.rms))).toBeLessThan(
-        REAL_FINDING_DB
-      );
-      // The source really is where it was asked to be — a probe that silently
-      // came back quiet would make every delta above meaningless.
-      expect(r.source.peak).toBeGreaterThan(amplitude * 0.99);
-    }
-  });
+      expect
+        .soft(Math.abs(deltaDb(r.rawDecoded.rms, r.source.rms)))
+        .toBeLessThan(REAL_FINDING_DB);
+    });
+  }
 
   /**
    * WHAT THIS SPIKE DOES NOT MEASURE: `toCanonical`'s OfflineAudioContext
