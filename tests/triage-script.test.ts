@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -103,6 +104,15 @@ function gitFreeEnv(): NodeJS.ProcessEnv {
   for (const key of Object.keys(env)) {
     if (key.startsWith("GIT_")) delete env[key];
   }
+  // Stripping GIT_* does not stop git reading ~/.gitconfig, and this helper
+  // is the only test in the tree that runs `git commit`. A developer with
+  // `commit.gpgsign=true` would have it block on pinentry, and a global
+  // `core.hooksPath` would run their hooks against the fixture repo — both
+  // inside `.husky/pre-push`, which is the very path this PR is fixing
+  // (George R1 P3). Point git at no config at all; these are set AFTER the
+  // strip above, which would otherwise remove them.
+  env.GIT_CONFIG_GLOBAL = "/dev/null";
+  env.GIT_CONFIG_SYSTEM = "/dev/null";
   return env;
 }
 
@@ -113,54 +123,84 @@ function runTriage(reports: { frank?: string; george?: string }): {
 } {
   const dir = mkdtempSync(path.join(tmpdir(), "triage-"));
   const env = gitFreeEnv();
+  // Every child gets an explicit timeout. vitest's per-`it` timeout cannot
+  // interrupt a blocked `execFileSync` — only Node's own kill can — which is
+  // why `check-deploy.test.ts` does the same thing (George R1 P3).
+  const TIMEOUT = 10_000;
   const git = (...args: string[]) =>
-    execFileSync("git", args, { cwd: dir, stdio: "pipe", env });
-
-  git("init", "--quiet");
-  git("config", "user.email", "test@example.com");
-  git("config", "user.name", "Test");
-  writeFileSync(path.join(dir, "seed"), "seed\n");
-  git("add", "seed");
-  git("commit", "--quiet", "-m", "seed");
-
-  mkdirSync(path.join(dir, "scripts", "review"), { recursive: true });
-  cpSync(TRIAGE, path.join(dir, "scripts", "review", "triage.sh"));
-
-  mkdirSync(path.join(dir, ".review"), { recursive: true });
-  if (reports.frank !== undefined) {
-    writeFileSync(path.join(dir, ".review", "frank-abc1234.md"), reports.frank);
-  }
-  if (reports.george !== undefined) {
-    writeFileSync(
-      path.join(dir, ".review", "george-abc1234.md"),
-      reports.george
-    );
-  }
-
-  let status = 0;
-  try {
-    execFileSync("bash", ["scripts/review/triage.sh", "1"], {
+    execFileSync("git", args, {
       cwd: dir,
       stdio: "pipe",
       env,
+      timeout: TIMEOUT,
     });
-  } catch (cause) {
-    status = (cause as { status?: number }).status ?? -1;
+
+  try {
+    git("init", "--quiet");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    writeFileSync(path.join(dir, "seed"), "seed\n");
+    git("add", "seed");
+    // Belt and braces alongside GIT_CONFIG_GLOBAL: signing and hooks are the
+    // two things that turn this commit into an interactive wait.
+    git(
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "commit",
+      "--quiet",
+      "-m",
+      "seed"
+    );
+
+    mkdirSync(path.join(dir, "scripts", "review"), { recursive: true });
+    cpSync(TRIAGE, path.join(dir, "scripts", "review", "triage.sh"));
+
+    mkdirSync(path.join(dir, ".review"), { recursive: true });
+    if (reports.frank !== undefined) {
+      writeFileSync(
+        path.join(dir, ".review", "frank-abc1234.md"),
+        reports.frank
+      );
+    }
+    if (reports.george !== undefined) {
+      writeFileSync(
+        path.join(dir, ".review", "george-abc1234.md"),
+        reports.george
+      );
+    }
+
+    let status = 0;
+    try {
+      execFileSync("bash", ["scripts/review/triage.sh", "1"], {
+        cwd: dir,
+        stdio: "pipe",
+        env,
+        timeout: TIMEOUT,
+      });
+    } catch (cause) {
+      status = (cause as { status?: number }).status ?? -1;
+    }
+
+    const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
+      cwd: dir,
+      encoding: "utf8",
+      env,
+      timeout: TIMEOUT,
+    }).trim();
+
+    return {
+      output: readFileSync(
+        path.join(dir, ".review", `triage-round1-${sha}.md`),
+        "utf8"
+      ),
+      status,
+    };
+  } finally {
+    // Six of these per run, each an initialised repo (Frank R1 P3).
+    rmSync(dir, { recursive: true, force: true });
   }
-
-  const sha = execFileSync("git", ["rev-parse", "--short=9", "HEAD"], {
-    cwd: dir,
-    encoding: "utf8",
-    env,
-  }).trim();
-
-  return {
-    output: readFileSync(
-      path.join(dir, ".review", `triage-round1-${sha}.md`),
-      "utf8"
-    ),
-    status,
-  };
 }
 
 /** The sections every triage document must carry, whatever the findings are. */
@@ -207,7 +247,11 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
     expect(status).toBe(0);
     expectWholeDocument(output);
     expect(output).toContain("something diff-local is wrong");
-    expect(output).toContain("George reported no findings");
+    // George has no stable all-clear spelling anywhere in this tree, so the
+    // script refuses to CLAIM his report is clean and asks for confirmation
+    // instead. That is the honest answer: it cannot tell.
+    expect(output).toContain("no explicit all-clear");
+    expect(output).not.toContain("George reported no findings");
   });
 
   it("both reviewers are clean", () => {
@@ -217,8 +261,10 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
     });
     expect(status).toBe(0);
     expectWholeDocument(output);
+    // Frank ends a clean review with an explicit line per severity, which is
+    // machine-checkable; George does not, so the two render differently.
     expect(output).toContain("Frank reported no findings");
-    expect(output).toContain("George reported no findings");
+    expect(output).toContain("no explicit all-clear");
     expect(output).not.toContain("REQUEST_CHANGES |");
   });
 
@@ -240,7 +286,67 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
       george: GEORGE_CLEAN,
     });
     expectWholeDocument(output);
-    expect(output).toContain("NO FINDINGS EXTRACTED");
+    expect(output).toContain("NOTHING EXTRACTED");
     expect(output).not.toContain("Frank reported no findings");
+  });
+  it("never claims clean on APPROVE when the findings were not recognised", () => {
+    // Frank R1 P2 and George R1 P2, independently: an empty extraction is NOT
+    // evidence of a clean report. dual-review.md keeps P3s — they are
+    // "deferred to an issue, not dropped" — and an APPROVE round carrying only
+    // P3s is legitimate, so this shape must never render as "no findings".
+    const approveWithUnmatchedP3 = `# Review B
+
+## P3
+
+\`runTriage\` never deletes its temp directories.
+
+## Verdict
+
+**APPROVE**
+`;
+    const { output } = runTriage({
+      frank: FRANK_CLEAN,
+      george: approveWithUnmatchedP3,
+    });
+    expectWholeDocument(output);
+    expect(output).toContain("no explicit all-clear");
+    expect(output).not.toContain("George reported no findings");
+  });
+
+  it("does not go quiet on the severity-heading shape George really uses", () => {
+    // Not hypothetical. `.review/george-38dbd60.md` is a REQUEST_CHANGES round
+    // whose P1/P2/P3 findings are written as `### P2` severity headings rather
+    // than `### 1. P2 — …`, so the extractor matches none of them. 13 of the
+    // 38 reports in `.review/` extract empty this way and five of those block
+    // merge. Widening the extractor is its own change; what this pins is that
+    // the shape can never be reported as nothing-to-see.
+    const severityHeadings = `# Review B (DEEP-TREE)
+
+## Findings
+
+### P1
+
+None.
+
+### P2
+
+- **Concrete failure scenario:** the protective entry is gone.
+
+### P3
+
+- **Concrete failure scenario:** None at runtime.
+
+## Verdict
+
+**REQUEST_CHANGES**
+`;
+    const { output } = runTriage({
+      frank: FRANK_CLEAN,
+      george: severityHeadings,
+    });
+    expectWholeDocument(output);
+    expect(output).toContain("NOTHING EXTRACTED");
+    expect(output).toContain("REQUEST_CHANGES");
+    expect(output).not.toContain("George reported no findings");
   });
 });

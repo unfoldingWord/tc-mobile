@@ -24,6 +24,34 @@ george_report="$(ls -t .review/george-*.md 2>/dev/null | head -1 || true)"
 
 # Frank numbers findings as "1. **P1 — ...**"; George uses "### 1. ..." under a
 # "## P1" heading. Pull whichever shape is present rather than assuming one.
+# Does this report explicitly say "nothing" at EVERY severity?
+#
+# Only an affirmative all-clear may be rendered as "reported no findings".
+# An empty extraction on its own proves nothing: Frank R1 and George R1 on
+# #547 independently made the same point, and the tree agrees with them —
+# 13 of the 38 reports in `.review/` extract zero findings under the regex
+# below, and FIVE of those carry a REQUEST_CHANGES verdict. `george-38dbd60.md`
+# is the clearest: real P1/P2/P3 findings written as `### P2` severity
+# headings rather than `### 1. P2 — …`, so the parser sees none of them.
+# dual-review.md is explicit that low-severity findings are "deferred to an
+# issue, not dropped", and an APPROVE round carrying only P3s is legitimate —
+# so "empty + APPROVE" must never be reported as clean.
+#
+# Only Frank's spelling is recognised, deliberately. He ends a clean review
+# with an explicit line per severity. George has no stable clean shape in this
+# tree — `### P1 — none`, `### P1` + `None.`, `### P2 — None that this diff
+# newly introduces.`, and reports with no severity headings at all all appear —
+# so there is nothing here to match reliably, and guessing would recreate the
+# false-clean this function exists to prevent. A clean George round therefore
+# gets an unchecked "confirm by hand" line instead. That is the honest answer:
+# the script cannot tell, and says so.
+explicit_all_clear() {
+  local f="$1"
+  grep -qiE 'No P1 findings' "$f" \
+    && grep -qiE 'No P2 findings' "$f" \
+    && grep -qiE 'No P3 findings' "$f"
+}
+
 # Pull one reviewer's findings out of their report.
 #
 # #524: `grep` exits 1 when it matches NOTHING, and this script runs under
@@ -48,10 +76,12 @@ extract() {
   verdict="$(grep -hoE 'APPROVE|REQUEST_CHANGES' "$file" | tail -1 || true)"
 
   if [ -z "$raw" ]; then
-    if [ "$verdict" = "REQUEST_CHANGES" ]; then
-      echo "- [ ] **${lens}** — ⚠️ **NO FINDINGS EXTRACTED, but the verdict is \`REQUEST_CHANGES\`.** The report format has probably drifted out from under this parser. Read \`$file\` by hand and fill this section in before posting."
+    if explicit_all_clear "$file"; then
+      echo "- _${lens} reported no findings at this SHA — explicit all-clear at P1, P2 and P3 (verdict: ${verdict:-unknown})._"
+    elif [ "$verdict" = "REQUEST_CHANGES" ]; then
+      echo "- [ ] **${lens}** — ⚠️ **NOTHING EXTRACTED, and the verdict is \`REQUEST_CHANGES\`.** The report blocks merge but this parser found no findings in it, so the format has drifted. Read \`$file\` by hand and fill this section in before posting."
     else
-      echo "- _${lens} reported no findings at this SHA (verdict: ${verdict:-unknown})._"
+      echo "- [ ] **${lens}** — ⚠️ **Nothing extracted, and no explicit all-clear** (verdict: ${verdict:-unknown}). An unrecognised finding format extracts as empty too, so this is NOT evidence of a clean report. Read \`$file\` by hand and either list its findings or replace this line with the all-clear."
     fi
     return
   fi
