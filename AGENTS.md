@@ -234,6 +234,27 @@ review history — three separate passes wrote a false "verified" claim. A test
 file's name is a claim too: a file named for a bug, covering only a string
 classifier, invites a triage reader to mark a P1 fixed.
 
+**A run is described in a PR comment, never in a committed file.** No committed
+file states where, on what, or with what result a run happened — a comment can
+be re-stamped at a new head, a committed sentence cannot. A docblock may link
+that comment's URL; it may not restate its output. Counts go in an assertion,
+not in prose: a CSS comment quoting its own grep named a count the tree no
+longer returns, having counted four comment lines as declarations — one of them
+the sentence's own grep string. Do not name an environment: a docblock credited
+a pinned Chromium that resolved to a path with nothing at it, so the run it
+described used Playwright's own cached browser. Five such sentences shipped
+across three PRs in one day — those two, a docblock claiming both assertions
+were observed red when the first `expect` throws and the second never
+evaluates, and two PR-body tallies a fresh checkout does not reproduce. Where
+such a claim must change, **prefer deleting it to restating it**: of ten
+repairs attempted that day, the only one that never needed re-correcting was
+the one that removed a claim.
+
+**"At the head this docblock ships on" is unverifiable by construction.** The
+head moves with the commit that carries the sentence, so there is no head at
+which the sentence can be checked. It reads as maximally precise and cannot be
+falsified.
+
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
 transaction, never two; content-addressed clips so a repeated import dedupes
