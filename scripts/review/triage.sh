@@ -47,9 +47,22 @@ george_report="$(ls -t .review/george-*.md 2>/dev/null | head -1 || true)"
 # the script cannot tell, and says so.
 explicit_all_clear() {
   local f="$1"
-  grep -qiE 'No P1 findings' "$f" \
-    && grep -qiE 'No P2 findings' "$f" \
-    && grep -qiE 'No P3 findings' "$f"
+  # WHOLE LINES, case-sensitive, no leading whitespace. Frank R2 and George R2
+  # both found the unanchored version, and Frank's own R2 report proves it:
+  # that report is REQUEST_CHANGES with a live P2, and it contains
+  # "No P1 findings" 20 times, "No P2 findings" 14 and "No P3 findings" 18 —
+  # because a report embeds the reviewer prompt AND the diff under review, and
+  # this file's own fixtures spell all three. An unanchored search therefore
+  # declares a blocking review clean, which is the exact defect this function
+  # was added to prevent, one level up.
+  #
+  # Anchoring excludes the two ways those strings really appear in a
+  # transcript: a diff line carries a leading "+"/"-", and a quoted snippet
+  # (`grep -qiE 'No P1 findings'`, or a fenced block) is indented or has other
+  # text on the line. Only a reviewer's own bare all-clear line matches.
+  grep -qE '^([0-9]+\.[[:space:]]+)?No P1 findings\.?[[:space:]]*$' "$f" \
+    && grep -qE '^([0-9]+\.[[:space:]]+)?No P2 findings\.?[[:space:]]*$' "$f" \
+    && grep -qE '^([0-9]+\.[[:space:]]+)?No P3 findings\.?[[:space:]]*$' "$f"
 }
 
 # Pull one reviewer's findings out of their report.
@@ -76,10 +89,15 @@ extract() {
   verdict="$(grep -hoE 'APPROVE|REQUEST_CHANGES' "$file" | tail -1 || true)"
 
   if [ -z "$raw" ]; then
-    if explicit_all_clear "$file"; then
-      echo "- _${lens} reported no findings at this SHA — explicit all-clear at P1, P2 and P3 (verdict: ${verdict:-unknown})._"
-    elif [ "$verdict" = "REQUEST_CHANGES" ]; then
+    # A BLOCKING verdict is checked FIRST and can never reach the all-clear
+    # branch, whatever the transcript happens to contain (Frank R2 / George R2).
+    # An all-clear additionally requires APPROVE: "this review found nothing"
+    # and "this review blocks merge" cannot both be true, and when they
+    # disagree the parser is what is wrong.
+    if [ "$verdict" = "REQUEST_CHANGES" ]; then
       echo "- [ ] **${lens}** — ⚠️ **NOTHING EXTRACTED, and the verdict is \`REQUEST_CHANGES\`.** The report blocks merge but this parser found no findings in it, so the format has drifted. Read \`$file\` by hand and fill this section in before posting."
+    elif [ "$verdict" = "APPROVE" ] && explicit_all_clear "$file"; then
+      echo "- _${lens} reported no findings at this SHA — explicit all-clear at P1, P2 and P3, verdict APPROVE._"
     else
       echo "- [ ] **${lens}** — ⚠️ **Nothing extracted, and no explicit all-clear** (verdict: ${verdict:-unknown}). An unrecognised finding format extracts as empty too, so this is NOT evidence of a clean report. Read \`$file\` by hand and either list its findings or replace this line with the all-clear."
     fi

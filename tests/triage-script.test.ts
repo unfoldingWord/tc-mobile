@@ -349,4 +349,84 @@ None.
     expect(output).toContain("REQUEST_CHANGES");
     expect(output).not.toContain("George reported no findings");
   });
+  // ── Frank R2 / George R2, convergent ────────────────────────────────────
+  //
+  // A reviewer report is not just the reviewer's prose: `frank.sh`/`george.sh`
+  // embed the prompt AND the diff under review. So a report ABOUT this file
+  // contains this file's fixtures, which spell all three all-clear phrases.
+  // Frank's own R2 report on this PR is REQUEST_CHANGES with a live P2 and
+  // contains "No P1 findings" 20 times, "No P2 findings" 14 and "No P3
+  // findings" 18. An unanchored all-clear search declares it clean.
+  //
+  // These two fixtures quote the phrases the way a transcript really does —
+  // indented inside a snippet, and as `+` diff lines — so they pin the
+  // anchoring, not just the verdict guard.
+  const QUOTED_ALL_CLEAR = `I read \`explicit_all_clear\`:
+
+    grep -qiE 'No P1 findings' "$f" \\
+      && grep -qiE 'No P2 findings' "$f" \\
+      && grep -qiE 'No P3 findings' "$f"
+
+and the fixture it is matched against:
+
++1. No P1 findings.
++
++2. No P2 findings.
++
++3. No P3 findings.
+`;
+
+  it("a blocking verdict can never be reported as clean, whatever the transcript quotes", () => {
+    const blocking = `# Review B
+
+## Findings
+
+### P2
+
+${QUOTED_ALL_CLEAR}
+
+## Verdict
+
+**REQUEST_CHANGES**
+`;
+    const { output } = runTriage({ frank: FRANK_CLEAN, george: blocking });
+    expectWholeDocument(output);
+    expect(output).toContain("NOTHING EXTRACTED");
+    expect(output).not.toContain("George reported no findings");
+  });
+
+  it("quoted all-clear text does not trip the detector on an APPROVE round either", () => {
+    // The verdict guard alone would let this through; only the anchoring
+    // stops it. An unmatched P3 on an APPROVE round is a legitimate round
+    // (dual-review.md: deferred to an issue, NOT dropped).
+    const approveWithQuote = `# Review B
+
+## P3
+
+${QUOTED_ALL_CLEAR}
+
+## Verdict
+
+**APPROVE**
+`;
+    const { output } = runTriage({
+      frank: FRANK_CLEAN,
+      george: approveWithQuote,
+    });
+    expectWholeDocument(output);
+    expect(output).toContain("no explicit all-clear");
+    expect(output).not.toContain("George reported no findings");
+  });
+
+  it("still recognises a real bare all-clear, so a clean round stays quiet", () => {
+    // The other half of the gate: anchoring must not be tightened into
+    // uselessness. A warning that fires on every clean round teaches people
+    // to tick it without reading, which is the failure it exists to prevent.
+    const { output } = runTriage({
+      frank: FRANK_CLEAN,
+      george: GEORGE_WITH_FINDINGS,
+    });
+    expect(output).toContain("Frank reported no findings");
+    expect(output).toContain("verdict APPROVE");
+  });
 });
