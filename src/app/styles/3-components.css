@@ -742,6 +742,26 @@
        indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
+    /* Nothing on this sheet is text anyone would copy, and double-tap and
+       long-press are the two gestures a non-reader uses to probe an unfamiliar
+       control. Left alone, WebKit answers both with its selection callout
+       (Copy · Look Up · Translate) and blue handles — over the waveform, and
+       over the header and breadcrumb, which are ordinary text (#556). The
+       canvas's existing pan policy only governs scroll and zoom; it does not
+       reach selection.
+
+       Declared here, on the sheet, rather than on the stage: both properties
+       inherit, so one rule covers the header, the breadcrumb, the canvas, the
+       selection handles and the toolbar — none of which has a class of its
+       own. Deliberately NOT global: BuildStamp's version and sha, the database
+       panel and the failure log are text a maintainer legitimately selects.
+       The rename field is out of this subtree entirely (its menu portals to
+       `document.body`), so it needs no exclusion rule; recorder-selection.test.ts
+       holds both halves of that. Both spellings of `user-select` because
+       Safari only supports the unprefixed one from 17.0. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   /* The waveform stage. `position: relative` anchors the recording indicator
      and every overlay the recorder lays over the canvas — the centerline
