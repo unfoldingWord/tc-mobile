@@ -8,12 +8,10 @@ import { describe, expect, it } from "vitest";
  * long-press/double-tap callout (#556).
  *
  * What was wrong in source: nothing anywhere in `src/` set `user-select` or
- * `-webkit-touch-callout`. What was REPORTED, and the only evidence anyone
- * here has for the symptom, is #556 — the requirements owner, iOS 0.2.8, with
- * a screenshot in which the recorder breadcrumb has been text-selected and a
- * Copy · Look Up · Translate callout is up. Nobody on this lane reproduced it,
- * and how the platform decides to raise that callout is not recorded anywhere
- * in this repo.
+ * `-webkit-touch-callout`. The only evidence anyone here has for the symptom
+ * is the report in #556. Nobody on this lane reproduced it, and how the
+ * platform decides to raise that callout is not recorded anywhere in this
+ * repo.
  *
  * The opt-out has THREE roots, not one, because two of the recorder's own
  * surfaces are portalled out of the sheet's subtree: `.recorder-sheet` for the
@@ -28,8 +26,8 @@ import { describe, expect, it } from "vitest";
  * roots, those roots are classes the recorder really renders, the roots are
  * portalled (which is WHY there are three), and the opt-out neither goes
  * global nor swallows the one field that must stay editable — in `.css` and,
- * for these properties, in `.tsx` too. They do NOT prove the iOS symptom is
- * gone, and they do not prove the rename field is still editable inside a
+ * for these properties, in `.tsx` too. They do NOT prove the reported symptom
+ * is gone, and they do not prove the rename field is still editable inside a
  * drawer that now suppresses selection. Both are on-device checks and neither
  * has been run; they are #564.
  */
@@ -59,17 +57,27 @@ const components = read("src/app/styles/3-components.css");
 const recorder = read("src/components/recorder.tsx");
 
 /**
- * The declarations of one class's own rule block, as prop -> value.
+ * The EFFECTIVE declarations of one class's own rule blocks, as prop -> value.
+ *
+ * Every bare-class block is read, in source order, and a later block's value
+ * replaces an earlier one's — which is what the cascade does at equal
+ * specificity. Reading only the first block leaves a second
+ * `.recorder-sheet { user-select: text; }` further down the file unseen, while
+ * this helper keeps handing back the reviewed rule's values and the sheet
+ * loses its opt-out.
+ *
  * `\s*\{` keeps this on the bare class, not on a `::placeholder` or `:focus`
  * sibling.
  */
 const declarationsOf = (className: string) => {
-  const body =
-    new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`, "s").exec(components)?.[1] ??
-    "";
   const declarations = new Map<string, string>();
-  for (const [, prop, value] of body.matchAll(/(-?[a-z][a-z-]*):\s*([^;]+);/g))
-    if (prop && value) declarations.set(prop, value.trim());
+  for (const [, body] of components.matchAll(
+    new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`, "gs")
+  ))
+    for (const [, prop, value] of (body ?? "").matchAll(
+      /(-?[a-z][a-z-]*):\s*([^;]+);/g
+    ))
+      if (prop && value) declarations.set(prop, value.trim());
   return declarations;
 };
 
@@ -244,21 +252,35 @@ describe("the opt-out stops at those three roots (#556)", () => {
   // not be seen. Left narrow deliberately — widening it is a second gate
   // needing its own red-first work, and the test below pins that there is
   // nothing in `.tsx` to catch yet, so the bound cannot rot unnoticed.
-  it("declares selection nowhere in src/ but on the four reviewed selectors", () => {
+  //
+  // The comparison is a MULTISET, not a set. A set paired with a lower-bound
+  // count cannot see a second rule block on an already-allowed selector: its
+  // declarations push the count further past the floor and add nothing new to
+  // the set, leaving the later block free to win the cascade and undo the
+  // opt-out. Each of the four selectors declares the three properties exactly
+  // once, so the expected shape is a count per selector, and an extra block —
+  // whatever it declares — fails here.
+  it("declares selection nowhere in src/ but once on each of the four reviewed selectors", () => {
     const declaring = STYLESHEETS.flatMap((sheet) =>
       selectorsDeclaringSelection(read(sheet))
     );
-    // Non-emptiness floor: an empty list would satisfy the set comparison
-    // below just as well as the correct one, and every way this test could
-    // break its own reads (a renamed file, an over-eager comment strip)
-    // produces exactly that.
-    expect(declaring.length).toBeGreaterThanOrEqual(12);
-    expect([...new Set(declaring)].sort()).toEqual([
-      ".confirm-panel",
-      ".menu-panel",
-      ".name-input",
-      ".recorder-sheet",
-    ]);
+    // Non-emptiness floor: an empty list would satisfy an all-zero comparison
+    // just as well as the correct one, and every way this test could break its
+    // own reads (a renamed file, an over-eager comment strip) produces exactly
+    // that.
+    expect(
+      declaring.length,
+      "fewer selection declarations in src/ than the four reviewed rules carry"
+    ).toBeGreaterThanOrEqual(12);
+    const perSelector = new Map<string, number>();
+    for (const selector of declaring)
+      perSelector.set(selector, (perSelector.get(selector) ?? 0) + 1);
+    expect(Object.fromEntries([...perSelector].sort())).toEqual({
+      ".confirm-panel": 3,
+      ".menu-panel": 3,
+      ".name-input": 3,
+      ".recorder-sheet": 3,
+    });
   });
 
   // The floor under the discovery itself. `STYLESHEETS` no longer states a
