@@ -2,7 +2,9 @@
  * LAYER 2 — SEMANTIC
  *
  * Roles, not values. This is the only layer that knows about themes, and the
- * only layer permitted to reference layer 1.
+ * only layer permitted to reference a layer-1 *colour* primitive — the
+ * structural primitives (spacing, radius, type, motion) are read directly by
+ * component and app-level rules too (#146).
  *
  * The app ships dark by default: it is used in low light, on battery, and a
  * theme switch is a decision nobody in a workshop should have to make. A light

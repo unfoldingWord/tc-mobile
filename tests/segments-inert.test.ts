@@ -1,0 +1,101 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  segmentsListInert,
+  type SegmentsOverlayState,
+} from "@/components/segments-inert";
+
+/**
+ * The Segments screen's `inert` decision (#452 PR4, Frank R1 P2-1).
+ *
+ * **What this file is for, said before the rows so nobody mistakes it for
+ * testing a disjunction.** The operator is `||` and nobody needed a test for
+ * that. What these rows pin is the SET of terms — that these four conditions,
+ * and no fewer, take the header and list out of the focus and pointer tree.
+ *
+ * That set is load-bearing beyond accessibility. `dismissOverlays()`
+ * (`segments-screen.tsx`) deliberately leaves an erase confirm standing while
+ * its `clearSegmentTake` commits, rather than tearing the dialog down over a
+ * write it cannot recall — and the reason that is safe, rather than a window in
+ * which the confirm has lost its `Layer`, is that `eraseConfirmOpen` keeps the
+ * Record control unreachable for exactly as long as the erase runs. Delete that
+ * term and the argument is silently false: a tap on Record would open the
+ * recorder over a committing delete of the very row it opens.
+ *
+ * Before PR4 this predicate was four inline `||`s in the screen's render body,
+ * where this repo has no renderer to reach it (AGENTS.md) — so the only
+ * automated evidence for any of it was one headless case that opens the chapter
+ * ≡ menu, and the `eraseConfirmOpen` term could have been deleted with every
+ * gate in the repo green. Each term is now one row that dies on its own.
+ *
+ * **What these rows do NOT prove**, kept here rather than left to inference:
+ * that the value reaches the DOM. That is the screen's wiring, review surface
+ * in Node, observed once — for the `chapterMenuOpen` term — by
+ * `e2e/back-navigation.spec.ts` case (m) in real Chromium. The erase confirm
+ * needs a RECORDED row, so no headless case can open it at all.
+ */
+
+const nothingOpen: SegmentsOverlayState = {
+  eraseConfirmOpen: false,
+  rowMenuOpen: false,
+  chapterMenuOpen: false,
+  shareOwnsScreen: false,
+};
+
+describe("segmentsListInert", () => {
+  it("leaves the screen live when nothing is open — the resting state, and the row that stops every other row passing vacuously", () => {
+    expect(segmentsListInert(nothingOpen)).toBe(false);
+  });
+
+  /**
+   * One row per term. The mutation each kills is the deletion of its own term:
+   * with that term removed from `segmentsListInert`, its row reads `false` and
+   * dies, and no other row moves. Run for all four while writing this file.
+   */
+  const terms: readonly {
+    readonly term: keyof SegmentsOverlayState;
+    readonly why: string;
+  }[] = [
+    {
+      term: "eraseConfirmOpen",
+      why: "the term Amendment C's erase-in-flight decision rests on: it must hold for the whole of `clearSegmentTake`, not just while the dialog awaits a tap",
+    },
+    {
+      term: "rowMenuOpen",
+      why: "the menu is portalled out of the list, so the list behind it stays reachable unless this says otherwise",
+    },
+    {
+      term: "chapterMenuOpen",
+      why: "the same, for the chapter-level menu — the one term case (m) also proves end to end in a browser",
+    },
+    {
+      term: "shareOwnsScreen",
+      why: "the share modal outlives `chapterMenuOpen` (#491), through the busy hold and the outcome hold, and a screen reader's gesture navigation never dispatches the Tab keydowns it intercepts",
+    },
+  ];
+
+  for (const { term, why } of terms) {
+    it(`inerts the screen on ${term} alone — ${why}`, () => {
+      expect(segmentsListInert({ ...nothingOpen, [term]: true })).toBe(true);
+    });
+  }
+
+  it("inerts on any combination — an overlay opening over another never un-inerts the screen between them", () => {
+    expect(
+      segmentsListInert({
+        eraseConfirmOpen: true,
+        rowMenuOpen: true,
+        chapterMenuOpen: false,
+        shareOwnsScreen: false,
+      })
+    ).toBe(true);
+    expect(
+      segmentsListInert({
+        eraseConfirmOpen: false,
+        rowMenuOpen: false,
+        chapterMenuOpen: true,
+        shareOwnsScreen: true,
+      })
+    ).toBe(true);
+  });
+});

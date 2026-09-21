@@ -1,8 +1,76 @@
 /**
  * LAYER 3 — COMPONENTS
  *
- * Component-scoped tokens and the primitives-into-roles wiring for each part.
- * A component may reference layer 2 and this layer, never layer 1 directly.
+ * Component-scoped tokens and the part styling that consumes them.
+ *
+ * The layer boundary this enforces is about COLOUR — the thing a theme swaps.
+ * Colour, surface and ink reach a component only through layer 2's semantic
+ * roles (`--s-*`), never a layer-1 colour primitive (`--p-amber-*`,
+ * `--p-cool-*`, `--p-green-*`, `--p-red-*`, `--p-warn-*`) directly: a rule that
+ * reads a raw colour is the leak that makes a theme unswitchable later
+ * (AGENTS.md). Structural primitives carry no theme meaning, so a rule MAY read
+ * them directly — spacing (`--p-space-*`), radius (`--p-radius-*`), type
+ * (`--p-text-*`, `--p-weight-*`, `--p-font-*`) and motion (`--p-dur-*`,
+ * `--p-ease`) — and the rules below do.
+ *
+ * The permission is stated for component AND app-level rules, because one
+ * app-level rule already exercises it: `globals.css`'s unlayered `body` reads
+ * `--p-font-ui` (the only layer-1 reference in that file; it arrived in
+ * `2a78068`, 2026-08-22, so it predates this rule rather than drifting from
+ * it). Extending the wording rather than naming that line as an exception is
+ * deliberate — it is the only structural-primitive read outside these three
+ * files in the whole tree, it is the same token `.app-shell` reads one layer
+ * down, and an exception would have to be re-argued the next time a shell rule
+ * needs a spacing value. The colour half of the rule is unchanged by this: an
+ * app-level rule may not read a colour primitive either, and none does.
+ *
+ * Wiring a colour primitive to a role is layer 2's `:root`, not this file's;
+ * this layer's `:root` (below) only consumes roles (`--s-focus`, `--s-voice`)
+ * and otherwise reads structural primitives straight. Which families those are
+ * is not fixed and is not a specification: today it is `--p-space-*`,
+ * `--p-radius-*` and `--p-text-*` (`--c-notice-text`, added by #457, is the
+ * type one). Read that list as examples of the rule above, never as the
+ * permitted set — an exhaustive list here goes stale the next time a part
+ * names its geometry, and a reader who takes it as exhaustive re-raises #146.
+ *
+ * No linter reads CSS — there is no stylelint, and knip's project globs are
+ * ts/tsx/mjs only — so this convention is read, not enforced. Building a check
+ * is deliberately deferred under the same "do not ramp up before it is needed"
+ * bar, not pending an owner; the mechanism is not the obstacle, because several
+ * tests already read stylesheet source. This header deliberately keeps no list
+ * of them — `grep -rln "\.css\"" tests` is the source of truth, and AGENTS.md's
+ * styling section names today's set with the one file that grep over-matches.
+ *
+ * If a colour-boundary check is ever built, copy `tests/share-progress.test.ts`
+ * ("the stylesheet inks busy and every settled outcome, with layer-2 roles
+ * only"), NOT `tests/touch-policy.test.ts`. share-progress asserts this rule
+ * for the share-scrim block: it slices that block and matches declaration
+ * VALUES, which a comment cannot false-hit.
+ *
+ * That selector is written here WITHOUT its leading dot on purpose. The test
+ * finds its block with a raw `indexOf` over this whole file, so a comment
+ * containing the literal selector is found first and the slice becomes comment
+ * text with no declarations in it. Not a hypothetical: an earlier draft of this
+ * very paragraph did exactly that and turned the test red in review round 3.
+ * Its `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is what
+ * caught it rather than the assertion silently passing over an empty block —
+ * which is the difference between a gate and a comment.
+ *
+ * touch-policy reads this file whole and
+ * regexes the raw string — and the paragraph above names the five colour
+ * families in prose precisely in order to ban them, so the obvious whole-file
+ * `not.toMatch(/--p-(amber|cool|green|red|warn)/)` copied from it fails on THIS
+ * COMMENT rather than on a leak, and the natural repair is to weaken it until
+ * it can no longer see a real leak in a rule. Match declarations, not bare
+ * identifiers. For the same reason no sentence in this header writes `var(`
+ * immediately followed by a primitive name: a line count of primitive
+ * references over this file would otherwise count the prose describing them.
+ *
+ * AGENTS.md's knip blind-spot #2 still says nothing in this repo reads CSS at
+ * all. That is stale, and tracked in #525 — where the work is a grep, not a
+ * one-line edit: four places lean on the sentence today (three test docblocks
+ * and `globals.css`'s `@theme inline` comment) and no two of them quote it
+ * identically.
  *
  * Numbers here come from `ui-craft`: control padding is about half the control
  * height, radius is related to height, spacing sits on named relationship

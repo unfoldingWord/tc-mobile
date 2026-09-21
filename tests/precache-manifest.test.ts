@@ -69,13 +69,43 @@ function navigateFallbackDenylist(): RegExp {
 // generateSW inlines it as `precacheAndRoute([{url:"...",revision:...},...])`.
 const SW = path.join(ROOT, "dist", "sw.js");
 
-function precachedUrls(): string[] {
-  const source = readFileSync(SW, "utf8");
+// generateSW emits the manifest in one of TWO shapes, and which one depends on
+// the ambient `NODE_ENV` rather than on anything in this repo:
+//
+//   NODE_ENV unset or "production"  ->  {url:"registerSW.js",revision:"..."}
+//   NODE_ENV="development"          ->  { "url": "registerSW.js", ... }
+//
+// A parser that matches only the first is BLIND, not red, on the second: it
+// returns `[]`, every `filter` over it finds no offender, and the assertion
+// passes vacuously. The `toBeGreaterThan(0)` floor below is the only reason
+// that surfaces as a failure at all — and it surfaces as a confusing one,
+// since the manifest is fine and the reader is broken.
+//
+// This matters locally, not in CI. GitHub Actions leaves `NODE_ENV` unset, so
+// CI builds the minified shape and this file's Build-job step (ci.yml,
+// `REQUIRE_DIST_BUILD=1`) has always parsed it correctly. The uw-sandbox
+// container this repo is developed in exports `NODE_ENV=development`, so a
+// local `npm run build` emits the second shape — and because `.husky/pre-push`
+// runs the suite, `git push` then fails on a tree whose only sin is having
+// been built. That is #522, and its "the assertion is made nowhere" reading is
+// corrected on the issue: it is made in CI, twice.
+//
+// Matching both shapes is what makes this a reader of the manifest rather than
+// a reader of the minifier.
+const PRECACHE_URL = /"?url"?\s*:\s*"([^"]+)"/g;
+
+/** The manifest's urls, parsed out of an emitted `sw.js` source. Split from
+ *  the file read so both emitted shapes can be pinned without two builds. */
+function parsePrecachedUrls(source: string): string[] {
   const match = source.match(/precacheAndRoute\(\[(.*?)\],/s);
   const body = match?.[1];
   if (body === undefined)
     throw new Error("could not find precacheAndRoute([...]) in dist/sw.js");
-  return [...body.matchAll(/url:"([^"]+)"/g)].map((m) => m[1] ?? "");
+  return [...body.matchAll(PRECACHE_URL)].map((m) => m[1] ?? "");
+}
+
+function precachedUrls(): string[] {
+  return parsePrecachedUrls(readFileSync(SW, "utf8"));
 }
 
 function tsFiles(dir: string): string[] {
@@ -194,6 +224,60 @@ describe("navigateFallbackDenylist keeps /version.json off the SPA shell", () =>
 // The always-on half of the invariant is the exact-allowlist assertion above:
 // `json` cannot enter globPatterns without failing that, unskippably and with
 // no build required.
+// The manifest READER, pinned against both shapes generateSW emits, with no
+// build required — so this runs in CI's Quality job and on a fresh clone,
+// unlike the build-dependent block below. #522.
+//
+// Both directions are pinned on purpose (AGENTS.md, "a gate is tested in both
+// states"): each shape must PARSE (green on a legitimate build) and each shape
+// must SURFACE a version.json entry (red on the state the gate exists to
+// catch). Pinning only the first would let the parser regress to matching
+// nothing and still look green here.
+describe("the precache manifest reader (#522)", () => {
+  // Trimmed from real `dist/sw.js` output, one per NODE_ENV.
+  const MINIFIED =
+    'precacheAndRoute([{url:"registerSW.js",revision:"abc"},{url:"index.html",revision:"def"}],{});';
+  const DEVELOPMENT = `precacheAndRoute([{
+    "url": "registerSW.js",
+    "revision": "abc"
+  }, {
+    "url": "index.html",
+    "revision": "def"
+  }], {});`;
+
+  it("parses the minified shape (NODE_ENV unset or production — what CI builds)", () => {
+    expect(parsePrecachedUrls(MINIFIED)).toEqual([
+      "registerSW.js",
+      "index.html",
+    ]);
+  });
+
+  it("parses the development shape (NODE_ENV=development — what uw-sandbox builds)", () => {
+    expect(parsePrecachedUrls(DEVELOPMENT)).toEqual([
+      "registerSW.js",
+      "index.html",
+    ]);
+  });
+
+  it("surfaces a version.json entry in the minified shape", () => {
+    const offending = MINIFIED.replace("index.html", "version.json");
+    expect(parsePrecachedUrls(offending)).toContain("version.json");
+  });
+
+  it("surfaces a version.json entry in the development shape", () => {
+    const offending = DEVELOPMENT.replace("index.html", "version.json");
+    expect(parsePrecachedUrls(offending)).toContain("version.json");
+  });
+
+  it("throws rather than returning [] when there is no manifest at all", () => {
+    // A silent [] here is the failure mode this whole block exists to stop:
+    // it would satisfy every `filter`-based assertion vacuously.
+    expect(() => parsePrecachedUrls("// no service worker here")).toThrow(
+      /precacheAndRoute/
+    );
+  });
+});
+
 describe.skipIf(!existsSync(SW))(
   "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
   () => {
