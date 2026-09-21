@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { distBuildRequired, distGateDecision } from "./dist-gate";
+
 // The Workbox precache manifest is generated at build time from the
 // `workbox.globPatterns` in vite.config.ts, so what it contains cannot be
 // asserted without a full production build. This pins the one knob that
@@ -274,7 +276,12 @@ describe("the precache manifest reader (#522)", () => {
   });
 });
 
-describe.skipIf(!existsSync(SW))(
+// Which of these two build-artifact suites runs is decided by the caller,
+// never by whether a `dist/` happens to be lying around from an earlier
+// command — see `./dist-gate` (#568).
+const GATE = distGateDecision(distBuildRequired(), existsSync(SW));
+
+describe.skipIf(GATE !== "run")(
   "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
   () => {
     it("never contains version.json", () => {
@@ -292,26 +299,20 @@ describe.skipIf(!existsSync(SW))(
   }
 );
 
-// `describe.skipIf(!existsSync(SW))` above is a convenience for a developer
-// running the suite on an unbuilt tree — a missing `dist/sw.js` skips rather
-// than fails, so `npm run verify`'s pre-build test pass and a fresh clone's
-// `npm test` both exit 0 with nothing built yet. Unguarded, that is also how
-// this file behaves inside CI: the Quality job runs `npm test` before any
-// build exists, so this describe block has been skipping there on every run
-// since it landed (#436) — and the Build job that actually produces
-// `dist/sw.js` never re-asks the question at all. Round 7 (#414/#420, same
-// gap Frank found for tests/dist-css.test.ts) closes that with a dedicated
-// CI step (`.github/workflows/ci.yml`, Build job, after `npm run build`)
-// that re-runs this file with `REQUIRE_DIST_BUILD=1` set — a purpose-built
-// env var, not GitHub Actions' ambient `CI` (`true` in every job, including
-// Quality, where skipping is still correct). Only that one step sets it, so
-// local dev, Quality, and `npm run verify`'s pre-build pass are unaffected.
+// The skip above is a convenience for anyone running the suite without a
+// build: a missing `dist/sw.js` skips rather than fails, so a plain `npm
+// test` exits 0 with nothing built. A skip is also indistinguishable from a
+// pass, so the gate makes the other half loud — `npm run test:dist` promises
+// a build, and this case turns that promise into an assertion.
+// `REQUIRE_DIST_BUILD` is a purpose-built flag rather than the ambient `CI`
+// variable, which is true wherever tests run, including the passes that
+// legitimately have no build yet.
 it("fails, rather than silently skips, when required to find a build and does not", () => {
-  if (process.env.REQUIRE_DIST_BUILD && !existsSync(SW)) {
+  if (GATE === "fail") {
     throw new Error(
-      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — this step " +
-        "must run in ci.yml's Build job, after `npm run build`, not before " +
-        "it and not in the Quality job."
+      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — run `npm " +
+        "run build` first, or drop the variable. Only `npm run test:dist` " +
+        "should set it."
     );
   }
 });

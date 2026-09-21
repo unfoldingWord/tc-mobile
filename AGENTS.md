@@ -65,9 +65,10 @@ npm run lint           # ESLint, zero warnings allowed
 npm run typecheck      # tsc -b (project references)
 npm run typecheck:lib  # lib/ + types/ compiled with NO DOM lib — see below
 npm run knip           # unused files, deps, exports and exported types
-npm test               # vitest run
+npm test               # vitest run — the build-artifact suites always skip here
+npm run test:dist      # the build-artifact suites, run for real; needs a prior build
 npm run format         # prettier --write
-npm run verify         # everything above, in one command
+npm run verify         # everything above, in one command (test:dist last, after the build)
 npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below

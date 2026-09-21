@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { distBuildRequired, distGateDecision } from "./dist-gate";
+
 // Whether a CSS fallback survives the production build cannot be asserted
 // from source alone (George R5 on #414/#420): Vite's default CSS minifier
 // (esbuild) collapses two declarations of the SAME property within one rule
@@ -17,16 +19,14 @@ import { describe, expect, it } from "vitest";
 // TWO limitations, stated rather than glossed (mirrors
 // `precache-manifest.test.ts`'s own honesty about this class of test):
 //
-//   1. It needs a build. `npm run verify` runs the suite BEFORE `npm run
-//      build`, and CI builds in a separate job that runs no tests — so on a
-//      tree that has never been built there is nothing to read and this is
-//      skipped rather than failing a fresh clone or CI's quality job.
-//   2. What it reads is the LAST build's output, which within a single
-//      `verify` run is the build from before the current source change (or,
-//      per round 6's `npm run build`-before-`verify` ordering, the build
-//      that source change itself produced). A green result is a statement
-//      about that build, not an unconditional proof about uncommitted
-//      source that was never rebuilt.
+//   1. It needs a build, so it runs only where one is guaranteed to precede
+//      it — `npm run test:dist`, which `npm run verify` invokes after `npm
+//      run build`. Everywhere else it skips, and it skips whether or not a
+//      `dist/` happens to be lying around. See `./dist-gate` for why the
+//      artifact's presence decides nothing (#568).
+//   2. What it reads is the last build's output. A green result is a
+//      statement about that build, not an unconditional proof about source
+//      that was never rebuilt.
 const ROOT = path.resolve(import.meta.dirname, "..");
 const ASSETS_DIR = path.join(ROOT, "dist", "assets");
 
@@ -37,20 +37,17 @@ function builtCssPath(): string | null {
 }
 
 const CSS_PATH = builtCssPath();
+const GATE = distGateDecision(distBuildRequired(), CSS_PATH !== null);
 
-describe.skipIf(CSS_PATH === null)(
+describe.skipIf(GATE !== "run")(
   "the built recorder-stage CSS (dist/assets/*.css, requires a prior `npm run build`)",
   () => {
-    // Guarded even though `skipIf` already means this factory's child `it`s
-    // never RUN when CSS_PATH is null — vitest still INVOKES this factory
-    // (to collect and report those its as "skipped" rather than absent), so
-    // an unconditional `readFileSync(null, ...)` here crashed instead of
-    // skipping cleanly (round 7, #414/#420: caught by actually running
-    // these build-artifact tests with dist/ removed, per AGENTS.md "a gate
-    // is tested in both states" — before round 7 this file had only ever
-    // been exercised with a build already on disk, never in the state its
-    // own skip guard exists to handle). `css` is unused when skipped; only
-    // its presence as a real string matters when the suite actually runs.
+    // Guarded even though the gate already means this factory's child `it`s
+    // never RUN unless the gate says "run" — vitest still INVOKES this
+    // factory (to collect and report those its as "skipped" rather than
+    // absent), so an unconditional `readFileSync(null, ...)` here crashes
+    // instead of skipping cleanly. `css` is unused when skipped; only its
+    // presence as a real string matters when the suite actually runs.
     const css = CSS_PATH !== null ? readFileSync(CSS_PATH, "utf8") : "";
 
     // The FIRST `.recorder-stage{...}` occurrence in the file is the base,
@@ -114,32 +111,20 @@ describe.skipIf(CSS_PATH === null)(
   }
 );
 
-// The `describe.skipIf` above is a convenience for a developer running the
-// suite on an unbuilt tree — vitest reports a skip, not a failure, so a
-// clean local `npm test` still exits 0 with no `dist/`. That is also,
-// unguarded, exactly how this file behaves inside CI (Frank, round 6 on
-// #414/#420): the Quality job runs `npm test` before any build exists, and a
-// missing `dist/assets/*.css` there just skips — CI's Build job then runs
-// `npm run build` and never re-asks this question at all, so a regression
-// that this file exists to catch (see the top-of-file comment) can ship
-// through a fully green CI run without either job ever evaluating either
-// assertion above.
-//
-// Round 7 closes that with a dedicated CI step (`.github/workflows/ci.yml`,
-// Build job, after `npm run build`) that re-runs this file with
-// `REQUIRE_DIST_BUILD=1` set. This is a purpose-built env var, not GitHub
-// Actions' ambient `CI` (which Actions sets to `true` in EVERY job,
-// including Quality, where no build exists yet and skipping is still
-// correct — gating on bare `CI` here would have made this new assertion
-// fail Quality on every run, not just close the gap in Build). Only that one
-// step sets it, so this stays a no-op everywhere else: local dev, Quality,
-// and `npm run verify`'s pre-build test pass all keep the plain skip above.
+// The skip above is a convenience for anyone running the suite without a
+// build: vitest reports a skip, not a failure, so a plain `npm test` still
+// exits 0. A skip is also indistinguishable from a pass, which is why the
+// gate makes the OTHER half loud — `npm run test:dist` promises a build, and
+// this case turns that promise into an assertion rather than one more place
+// these tests quietly do nothing. `REQUIRE_DIST_BUILD` is a purpose-built
+// flag, not the ambient `CI` variable: `CI` is true wherever tests run,
+// including the passes that legitimately have no build yet.
 it("fails, rather than silently skips, when required to find a build and does not", () => {
-  if (process.env.REQUIRE_DIST_BUILD && CSS_PATH === null) {
+  if (GATE === "fail") {
     throw new Error(
-      "REQUIRE_DIST_BUILD is set but dist/assets/*.css was not found — this " +
-        "step must run in ci.yml's Build job, after `npm run build`, not " +
-        "before it and not in the Quality job."
+      "REQUIRE_DIST_BUILD is set but dist/assets/*.css was not found — run " +
+        "`npm run build` first, or drop the variable. Only `npm run " +
+        "test:dist` should set it."
     );
   }
 });
