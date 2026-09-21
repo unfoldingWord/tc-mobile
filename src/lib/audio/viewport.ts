@@ -281,10 +281,26 @@ export function panForZoom(
 
 /**
  * How much of the visible window the `[ ]` control seeds a span across. The
- * component used to spell this as two halves of 0.15 around the centerline;
- * the width is unchanged, only the anchor moved (#554). Module-private: the
- * seed has exactly one reader, unlike `CENTER_FRACTION`, which two components
- * share and so lives up in the UI.
+ * component used to spell this as two halves of 0.15 around the centerline, so
+ * the NOMINAL width is the same 0.3 — but the DELIVERED width is not, and the
+ * difference lands on the commonest path of all (#554).
+ *
+ * The old centred seed ran PAST the end of the buffer at the append rest, and
+ * `openSelection`'s per-endpoint `clampPoint` (`use-segment-editor.ts:182-196`)
+ * truncated it there. That rest is the default, not an edge: `panState` is null
+ * on every fresh open of the edit sheet, so `centerlineSample === length`, and
+ * `{length - 0.15v, length + 0.15v}` was delivered as `{length - 0.15v,
+ * length}` — 0.15 of the visible window actually selected. This seed slides
+ * back off the end instead of overrunning, so the same first tap delivers the
+ * full 0.3. On that path the anchor moved AND the delivered width roughly
+ * doubled. Away from the tail, where a full span of audio lies to the right of
+ * the centerline, the delivered width was 0.3 and still is: there, and only
+ * there, is it true that "only the anchor moved". The wider default is a
+ * deliberate, named behaviour change — the PR's "the seed widens at the append
+ * rest" section carries it.
+ *
+ * Module-private: the seed has exactly one reader, unlike `CENTER_FRACTION`,
+ * which two components share and so lives up in the UI.
  */
 const SEED_SPAN_FRACTION = 0.3;
 

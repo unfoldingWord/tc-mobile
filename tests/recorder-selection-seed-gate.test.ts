@@ -84,9 +84,21 @@ describe("onToggleSelection seeds through seedSelection (#554)", () => {
   });
 
   it("depends on the buffer length the seed is measured against", () => {
-    // `seedSelection` slides the span off `length`, so a callback that did not
-    // list it would keep seeding against the length captured when the span was
-    // last re-created — after a cut, past the new end.
+    // NOT a staleness guard, and the earlier comment here that called it one
+    // was wrong: `win.visibleSamples` is `length / zoom` (`viewport.ts:71`)
+    // and is already in this dependency array, so a length that changes under
+    // a fixed zoom re-creates the callback whether or not `length` is listed.
+    //
+    // What it is: a second lens on the one thing that can go wrong silently.
+    // `react-hooks/exhaustive-deps` DOES report this exact mutation today —
+    // "React Hook useCallback has a missing dependency: 'length'" at
+    // `recorder.tsx:1742:8`, fatal under `--max-warnings 0` — so in the normal
+    // state this assertion is a duplicate, deliberately. AGENTS.md's #212
+    // blind spot is an analysis that BAILS OUT for a hook and takes every
+    // react-hooks rule with it, silently; the tree has needed a manual sweep
+    // for that shape twice (`use-save-take.ts` #213, `use-books.ts` #433).
+    // This line reads the source and depends on no plugin, so it still fires
+    // where the lint has gone quiet. Kept for that, not for staleness.
     expect(deps.split(",").map((d) => d.trim())).toContain("length");
   });
 });

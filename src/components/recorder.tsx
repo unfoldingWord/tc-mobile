@@ -3699,15 +3699,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // not true any more that "the line is never hidden". Select
                     // stays inert regardless, in BOTH directions: (a) opening
                     // anchors its span on `win.centerlineSample` (#554), which
-                    // is `panState` —
-                    // and while the stage SCROLLS the drawn line is the
-                    // sounding sample while `panState` is still the pre-play
-                    // value, stale until the freeze. Seeding from it would put
-                    // the span where the take was parked (at the F7 rest, the
-                    // END) while the translator is hearing the middle. (b)
-                    // closing an open frame mid-`inPlace` audition flips
-                    // `render` out from under the sound, since a picked span is
-                    // what keeps the pan window.
+                    // is `panState` — and while the stage SCROLLS the drawn
+                    // line is the sounding sample while `panState` is still the
+                    // pre-play value, stale until the freeze. Seeding from it
+                    // would put the span where the take was parked (at the F7
+                    // rest, the END) while the translator is hearing the
+                    // middle. (b) closing an open frame mid-`inPlace` audition
+                    // flips `render` out from under the sound, since a picked
+                    // span is what keeps the pan window.
                     disabled={
                       !idleEditable || !hasAudio || stage.windowControlsInert
                     }

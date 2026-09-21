@@ -209,13 +209,15 @@ interface StageView {
    *   — under a swapped view that reads as "the middle of the clip" rather
    *   than the pan window's own sample (it is unmounted, not merely disabled,
    *   so the false IMPLICATION goes too);
-   * - **Select**: seeds its span with `win.centerlineSample` as its LEFT edge
-   *   (#554) — a position that, while sounding, no longer matches what the
-   *   (visible except for a loaded edit-mode span, #316/#418) line marks once
-   *   the view has swapped to the whole clip, so it would highlight the
-   *   insert point rather than the audio being heard. Inert in both
-   *   directions: closing a frame mid-audition would also flip the view out
-   *   from under the sound.
+   * - **Select**: anchors its span ON `win.centerlineSample` (#554) — its LEFT
+   *   edge wherever a full span of audio lies to the right, its RIGHT edge at
+   *   the append rest, where the span slides back off the end of the buffer
+   *   instead of overrunning it. Either way it is a position that, while
+   *   sounding, no longer matches what the (visible except for a loaded
+   *   edit-mode span, #316/#418) line marks once the view has swapped to the
+   *   whole clip, so it would highlight the insert point rather than the audio
+   *   being heard. Inert in both directions: closing a frame mid-audition
+   *   would also flip the view out from under the sound.
    *
    * OUT, deliberately — each stays live, and why:
    *
