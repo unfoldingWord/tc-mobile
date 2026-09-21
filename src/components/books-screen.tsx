@@ -25,6 +25,7 @@ import {
 } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
+import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
@@ -38,6 +39,7 @@ import {
   type ScreenLayerBehavior,
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
+import { useStoragePressure } from "@/hooks/use-storage-pressure";
 import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { cn } from "@/lib/utils";
@@ -144,6 +146,13 @@ export function BooksScreen({
   // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
   // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
+  // Storage pressure (#247, wiring half of #537's core). Unlike `storage`
+  // above, this hook is NOT gated on a loaded shelf — the device can be full
+  // before this app has read anything (`use-storage-pressure.ts`'s CONTRACT
+  // note), so it is gated explicitly below, against the same `noticeText`/
+  // `loading` flags the load-failure slot already holds, rather than folded
+  // into this hook the way `hasContent` is folded into `storage` above.
+  const pressureLine = storagePressureNotice(useStoragePressure());
   const [menuOpen, setMenuOpen] = useState(false);
   // #171. The global menu is the only place a theme switch belongs: it is a
   // once-per-session decision about the light you are standing in, not a
@@ -1144,31 +1153,50 @@ export function BooksScreen({
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
       )}
 
-      {/* Two standing background conditions can be true at once — the browser
-          has not promised to keep this storage (#12), AND the encoder has
-          stopped working (#166) — and they are about different subsystems, so
-          #279's precedent (encoderLine's own line, not folded into the
+      {/* Three standing background conditions can be true at once — the
+          browser has not promised to keep this storage (#12), this origin is
+          running low regardless (#247), AND the encoder has stopped working
+          (#166) — and they are about different subsystems, so #279's
+          precedent (encoderLine's own line, not folded into the
           load/delete/loading slot above, which stays exclusive and acute-first)
-          extends to both rather than making one dominant CSS-flag over the
-          other: each is `&&`-rendered on its own, and BOTH may show stacked.
-          Neither collides with the slot above — both need a completed,
-          non-loading read, which is exactly when `noticeText` is falsy and
-          `loading` is false; there is no gate keying on that here because
-          `storage` and `encoderLine` are themselves already `null` until then
-          (`useStoragePersistence` requires `hasContent`, i.e. a loaded shelf;
-          `encoderHealth()` has nothing to report before a book exists to
-          encode from).
+          extends to all three rather than making one dominant CSS-flag over
+          the others: each is `&&`-rendered on its own, and ANY combination may
+          show stacked.
 
-          Order: storage first, encoder second. Storage's risk is total and
-          unrecoverable (browser eviction, no restore path) where encoder's
-          copy explicitly promises nothing is lost — the more severe standing
-          risk reads first, same principle the load-failure/loading slot above
+          `storage` and `encoderLine` need no explicit gate against the slot
+          above — both are themselves already `null` until a completed,
+          non-loading read exists (`useStoragePersistence` requires
+          `hasContent`, i.e. a loaded shelf; `encoderHealth()` has nothing to
+          report before a book exists to encode from). `pressureLine` is
+          different on purpose (`use-storage-pressure.ts`'s CONTRACT note): the
+          device can be full before this app has read anything, so it is NOT
+          gated on content, and this is where that gate has to live instead —
+          `!noticeText && !loading`, the same pair the slot above already
+          holds.
+
+          Order: storage, pressure, encoder. Storage's risk is total and
+          unrecoverable (browser eviction, no restore path); pressure is
+          recoverable by acting on it (mark segments finished, share and
+          erase); encoder's copy explicitly promises nothing is lost — most
+          severe first, same principle the load-failure/loading slot above
           already applies by being exclusive and ordered acute-first.
           `notice-tone.ts`'s `info` docblock names this exact case (a standing
           condition, not only a completed-event caveat) after George round 1
-          P3-3 flagged the original wording as covering only the latter. */}
+          P3-3 flagged the original wording as covering only the latter.
+
+          Two things #247 still leaves open, honestly: `pressureLine` starts
+          `null` on every Books mount and only paints once `estimate()` lands
+          (no cross-mount cache — #537 round 6), so a translator who stays
+          inside one chapter recording segment after segment sees no update
+          until they come back out; and this has not been read against a real
+          Android `estimate()` value or inside the Capacitor training shell,
+          so the thresholds and the native behaviour are both unverified
+          in-shell. Neither is guessed at here. */}
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
+      )}
+      {!noticeText && !loading && pressureLine && (
+        <Notice tone={pressureLine.tone}>{pressureLine.text}</Notice>
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>

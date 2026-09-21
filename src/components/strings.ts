@@ -547,6 +547,21 @@ export const strings = {
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
 
+  // ── Storage pressure (#247) ──────────────────────────────────────────────
+  // State-in-place on the Books screen, alongside `storageNotPersisted`:
+  // `navigator.storage.estimate()` says this ORIGIN is running low, which is a
+  // different risk from durability above — the browser has not evicted
+  // anything, the device is simply filling up. No byte count or percentage in
+  // either line: the estimate is coarse and per-origin
+  // (`lib/storage/pressure.ts`), so a number here would be a precision the
+  // reading does not support. Names the one thing the translator can act on —
+  // finishing segments reclaims most of the space (ADR 0009's transcode) —
+  // rather than the mechanism.
+  storageLow:
+    "This phone is starting to run low on space. Mark segments finished or share your work when you can.",
+  storageCritical:
+    "This phone is almost out of space. Mark segments finished or share your work now.",
+
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
   // upgrades the database. The mark on the panel carries the meaning; these

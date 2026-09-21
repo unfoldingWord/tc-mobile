@@ -19,10 +19,9 @@ import {
  * Node against stubs; the React half below is the thin part, and is the part
  * no test in this repo reaches.
  *
- * **This is the core only. Nothing on any screen consumes it yet.** #247's
- * other half — the Books marker — is a separate PR: `books-screen.tsx` was
- * rewritten by #531 (its overlays became system-Back layers) and the marker
- * lands once that has settled.
+ * Read by the Books screen (`books-screen.tsx`, through
+ * `storagePressureNotice`) — #247's wiring half, landed once #531's rewrite
+ * had settled.
  *
  * **The marker is all that leaves this file.** `useStoragePressure` returns
  * `"low" | "critical" | null` rather than the `usage`/`quota` pair, so
@@ -39,9 +38,14 @@ import {
  * remount painting the marker one frame late actually matters — cannot be
  * answered from inside this repository, because nothing here renders and
  * nobody has watched a real Books screen on a real phone. So this hook reads
- * once per mount and holds nothing between mounts. **If the wiring PR decides
- * that first-render paint does matter, the invalidation belongs at module
- * scope, bumped by the write that changed the world** — the shape
+ * once per mount and holds nothing between mounts.
+ *
+ * **The wiring PR (`books-screen.tsx`) left it that way rather than guess.**
+ * Whether the one-frame-late paint on remount is worth a cache is a product
+ * judgement that needs a real screen on a real phone, which nobody has done —
+ * so it is recorded as an open gap on #247, not silently decided either way.
+ * If a future reading says it matters, the invalidation belongs at module
+ * scope, bumped by the write that changed the world — the shape
  * `mp3-codec.ts`'s encoder health and `failure-log.ts`'s count already use —
  * and NOT on a React prop, which dies with the screen that held it. That
  * analysis is George R6 H2 and is recorded on #247.
@@ -211,10 +215,8 @@ export function storageEstimateSourceOf(
  * `storagePressure`, `storagePressureMarker`, `readStorageEstimate` and
  * `storageEstimateSourceOf`.
  *
- * @pivotpending No caller yet — #247's Books marker is the reader, and it is
- * deliberately a separate PR: `books-screen.tsx` was rewritten by #531 and the
- * marker lands once that has settled. Tagged rather than left to knip's
- * test-only blind spot, which would otherwise hide it.
+ * Read by `books-screen.tsx` (#247's wiring half), through
+ * `storagePressureNotice`.
  */
 export function useStoragePressure(): StoragePressureMarker | null {
   const [band, setBand] = useState<StoragePressure>("unknown");
