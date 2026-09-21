@@ -136,6 +136,11 @@ export function BooksScreen({
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
+  // The shelf holds at least one book. Shared by `useStoragePersistence`
+  // below and by `storagePressureNotice`'s own `hasContent` gate (#542,
+  // George P2-2): a book deleted down to an empty shelf must clear BOTH
+  // storage lines, not just the durability one.
+  const hasContent = loaded && books.length > 0;
   // Durable storage (#12). A book exists only because a write committed, so a
   // successful shelf read that finds one is "after the first successful write"
   // reached from the read side — the trigger the hook's docblock explains. The
@@ -145,14 +150,23 @@ export function BooksScreen({
   // and the app is not the Capacitor training shell (native storage is not
   // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
   // rejected query) says nothing.
-  const storage = useStoragePersistence(loaded && books.length > 0);
+  const storage = useStoragePersistence(hasContent);
   // Storage pressure (#247, wiring half of #537's core). Unlike `storage`
-  // above, this hook is NOT gated on a loaded shelf — the device can be full
-  // before this app has read anything (`use-storage-pressure.ts`'s CONTRACT
-  // note), so it is gated explicitly below, against the same `noticeText`/
-  // `loading` flags the load-failure slot already holds, rather than folded
-  // into this hook the way `hasContent` is folded into `storage` above.
-  const pressureLine = storagePressureNotice(useStoragePressure());
+  // above, `useStoragePressure` itself is NOT gated on a loaded shelf — the
+  // device can be full before this app has read anything
+  // (`use-storage-pressure.ts`'s CONTRACT note) — so `storagePressureNotice`
+  // takes `hasContent` and the shelf's acute trio (`loading`/`loadFailed`/
+  // `deleteFailed`) as its own gate, rather than folding `hasContent` into
+  // the hook the way `storage` above does. See that function's docblock for
+  // why the gate lives there now and not as JSX `&&` (#542, Frank P2-2 /
+  // George P3-5), and why it is the acute trio and not the wider
+  // `noticeText` below (#542, George P2-4).
+  const pressureLine = storagePressureNotice(useStoragePressure(), {
+    hasContent,
+    loading,
+    loadFailed,
+    deleteFailed,
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   // #171. The global menu is the only place a theme switch belongs: it is a
   // once-per-session decision about the light you are standing in, not a
@@ -1167,12 +1181,18 @@ export function BooksScreen({
           above — both are themselves already `null` until a completed,
           non-loading read exists (`useStoragePersistence` requires
           `hasContent`, i.e. a loaded shelf; `encoderHealth()` has nothing to
-          report before a book exists to encode from). `pressureLine` is
-          different on purpose (`use-storage-pressure.ts`'s CONTRACT note): the
-          device can be full before this app has read anything, so it is NOT
-          gated on content, and this is where that gate has to live instead —
-          `!noticeText && !loading`, the same pair the slot above already
-          holds.
+          report before a book exists to encode from). `pressureLine` used to
+          be different on purpose (`use-storage-pressure.ts`'s CONTRACT note:
+          the device can be full before this app has read anything, so the
+          underlying hook is NOT gated on content) — but the gate that
+          exclusivity needs now lives INSIDE `storagePressureNotice` itself
+          (`hasContent` plus the acute trio `loading`/`loadFailed`/
+          `deleteFailed`, passed in above), not as JSX here. #542 (Frank P2-2 /
+          George P3-5) found the load-bearing predicate living here, in a
+          bare `&&` no test could pin — the same shape `encoder-notice.ts`
+          already avoids for `encoderLine`. `pressureLine` is `null` whenever
+          any of that applies, so the render below needs no extra condition of
+          its own.
 
           Order: storage, pressure, encoder. Storage's risk is total and
           unrecoverable (browser eviction, no restore path); pressure is
@@ -1195,7 +1215,7 @@ export function BooksScreen({
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
       )}
-      {!noticeText && !loading && pressureLine && (
+      {pressureLine && (
         <Notice tone={pressureLine.tone}>{pressureLine.text}</Notice>
       )}
       {encoderLine && (

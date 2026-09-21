@@ -195,12 +195,15 @@ export function storageEstimateSourceOf(
  * different on purpose — the device can be full before this app has read
  * anything — so it can return a marker while Books is still loading or showing
  * a load failure, and that slot is exclusive and acute-first
- * (`books-screen.tsx:1124-1137`). **A consumer that must not stack the two
- * gates on its own side** (`{!noticeText && !loading && marker && …}`), the way
- * it already orders the rest of that chain. A `ready` parameter was considered
- * and left out: the ordering is the screen's decision, the screen already holds
- * both flags, and this PR has just finished removing one parameter that
- * existed for a caller that does not exist yet.
+ * (`books-screen.tsx:1124-1137`). **The consumer must not show this marker
+ * while that slot is showing something** — `storagePressureNotice`
+ * (`components/storage-pressure-notice.ts`) is where that gate now lives, as
+ * an explicit `hasContent`/acute-trio (`loading`/`loadFailed`/`deleteFailed`)
+ * parameter rather than as JSX prose in the screen (#542, Frank P2-2 /
+ * George P3-5) — a `ready` parameter on THIS hook was considered and left
+ * out: the ordering is the screen's decision, the screen already holds those
+ * flags, and this file has just finished removing one parameter that existed
+ * for a caller that does not exist yet.
  *
  * **The recorder-close half of #247's fix shape is not here.** #247 asks for
  * "once on Books mount and after each recorder close". This is the first half.

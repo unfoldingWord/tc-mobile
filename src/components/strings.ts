@@ -554,13 +554,19 @@ export const strings = {
   // anything, the device is simply filling up. No byte count or percentage in
   // either line: the estimate is coarse and per-origin
   // (`lib/storage/pressure.ts`), so a number here would be a precision the
-  // reading does not support. Names the one thing the translator can act on —
-  // finishing segments reclaims most of the space (ADR 0009's transcode) —
-  // rather than the mechanism.
+  // reading does not support. Neither line says "this phone" — `pressure.ts`'s
+  // own docblock says the reading is per-origin, not per-device: the OS can
+  // hand this origin a comfortable quota while the disk is nearly full, or the
+  // reverse, so a device-wide claim would overclaim what `estimate()` actually
+  // said (Frank P2-1 / George P2-1, #542). Names the pair `pressure.ts`'s
+  // docblock itself names — mark segments Finished (ADR 0009's transcode
+  // reclaims ~90%) OR share and erase — not bare "share", which does not
+  // reclaim anything: `lib/export/chapter.ts` decodes and re-encodes without
+  // deleting a single stored clip. Only the actual reclaim actions are named.
   storageLow:
-    "This phone is starting to run low on space. Mark segments finished or share your work when you can.",
+    "There isn't much space left here for recordings. Mark segments finished, or share and erase, when you can.",
   storageCritical:
-    "This phone is almost out of space. Mark segments finished or share your work now.",
+    "There is almost no space left here for recordings. Mark segments finished, or share and erase, now.",
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
