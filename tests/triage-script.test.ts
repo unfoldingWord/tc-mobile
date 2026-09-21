@@ -34,16 +34,35 @@ import { describe, expect, it } from "vitest";
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const TRIAGE = path.join(REPO_ROOT, "scripts", "review", "triage.sh");
 
-const FRANK_WITH_FINDINGS = `# Review A
-
-1. **P2 — something diff-local is wrong.**
-   Details here.
-
-2. **P3 — a nit.**
-   More details.
-
-**Verdict: REQUEST_CHANGES**
-`;
+// ── Why these fixtures are built from quoted pieces, not template literals ──
+//
+// George R4 P2. A reviewer transcript embeds the diff AND cited source, and
+// George's citation habit is a start:end:path fence that dumps file lines at
+// COLUMN 0 (seen on this very branch: `.review/george-e859e62.md:31-37`).
+// When these fixtures were template literals, `1. **P2 — …**` and
+// `### 1. P2 — …` sat at column 0 in THIS file — so a review that quoted them
+// handed `extract()` a line it accepts. `raw` then looks non-empty, which
+// skips the empty-raw drift guard entirely and prints the quoted fixture as
+// if it were the reviewer's finding.
+//
+// That is the dual of the false-clean the earlier rounds chased, and the
+// remedy is deliberately NOT another parser pattern — `triage.sh` records
+// that hardening the whole-file scan is the approach that kept failing.
+// Instead the bait is removed: indented, quoted source lines cannot match
+// `^###` or `^[0-9]+\.`, while `.join("\n")` still writes a column-0 report.
+// `pins its own source against the extractor` below keeps it that way.
+const FRANK_WITH_FINDINGS = [
+  "# Review A",
+  "",
+  "1. **P2 — something diff-local is wrong.**",
+  "   Details here.",
+  "",
+  "2. **P3 — a nit.**",
+  "   More details.",
+  "",
+  "**Verdict: REQUEST_CHANGES**",
+  "",
+].join("\n");
 
 const FRANK_CLEAN = `# Review A
 
@@ -56,22 +75,24 @@ const FRANK_CLEAN = `# Review A
 Verdict: **APPROVE**
 `;
 
-const GEORGE_WITH_FINDINGS = `# Review B (DEEP-TREE)
-
-## P1
-
-None.
-
-### 1. P2 — a contract mismatch in the unchanged tree
-
-Where: src/thing.ts:12
-
-### 2. P3 — a nit about a comment
-
-## Verdict
-
-**REQUEST_CHANGES**
-`;
+const GEORGE_WITH_FINDINGS = [
+  "# Review B (DEEP-TREE)",
+  "",
+  "## P1",
+  "",
+  "None.",
+  "",
+  "### 1. P2 — a contract mismatch in the unchanged tree",
+  "",
+  "Where: src/thing.ts:12",
+  "",
+  "### 2. P3 — a nit about a comment",
+  "",
+  "## Verdict",
+  "",
+  "**REQUEST_CHANGES**",
+  "",
+].join("\n");
 
 const GEORGE_CLEAN = `# Review B (DEEP-TREE)
 
@@ -198,7 +219,7 @@ function runTriage(reports: { frank?: string; george?: string }): {
       status,
     };
   } finally {
-    // Six of these per run, each an initialised repo (Frank R1 P3).
+    // One per case, each an initialised repo (Frank R1 P3).
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -212,89 +233,99 @@ function expectWholeDocument(output: string) {
   expect(output).toContain("escalation, not an approval");
 }
 
-describe("triage.sh writes a whole document in every finding combination (#524)", () => {
-  it("both reviewers have findings", () => {
-    const { output, status } = runTriage({
-      frank: FRANK_WITH_FINDINGS,
-      george: GEORGE_WITH_FINDINGS,
+describe(
+  "triage.sh writes a whole document in every finding combination (#524)",
+  // `execFileSync` blocks vitest's event loop, so the per-`it` timeout cannot
+  // fire while a child runs — it is only checked once the sync call returns.
+  // vitest's default is 5s and each case spawns `git init` + `commit` + bash
+  // with a 10s child timeout, so the default sits BELOW the child's and a slow
+  // disk under `.husky/pre-push` would fail the test rather than the script.
+  // Same shape and same reason as `tests/react-hooks-refs-gate.test.ts`
+  // (George R4 P3).
+  { timeout: 15_000 },
+  () => {
+    it("both reviewers have findings", () => {
+      const { output, status } = runTriage({
+        frank: FRANK_WITH_FINDINGS,
+        george: GEORGE_WITH_FINDINGS,
+      });
+      expect(status).toBe(0);
+      expectWholeDocument(output);
+      expect(output).toContain("something diff-local is wrong");
+      expect(output).toContain("a contract mismatch in the unchanged tree");
     });
-    expect(status).toBe(0);
-    expectWholeDocument(output);
-    expect(output).toContain("something diff-local is wrong");
-    expect(output).toContain("a contract mismatch in the unchanged tree");
-  });
 
-  it("Frank is clean and George has findings — the case observed on #542", () => {
-    // The regression: Frank is extracted FIRST, so his empty result used to
-    // kill the block and take George's findings and both verdicts with it.
-    const { output, status } = runTriage({
-      frank: FRANK_CLEAN,
-      george: GEORGE_WITH_FINDINGS,
+    it("Frank is clean and George has findings — the case observed on #542", () => {
+      // The regression: Frank is extracted FIRST, so his empty result used to
+      // kill the block and take George's findings and both verdicts with it.
+      const { output, status } = runTriage({
+        frank: FRANK_CLEAN,
+        george: GEORGE_WITH_FINDINGS,
+      });
+      expect(status).toBe(0);
+      expectWholeDocument(output);
+      expect(output).toContain("NOT evidence of a clean report");
+      expect(output).toContain("a contract mismatch in the unchanged tree");
+      // The verdicts table is the part whose loss was most dangerous.
+      expect(output).toContain("REQUEST_CHANGES");
     });
-    expect(status).toBe(0);
-    expectWholeDocument(output);
-    expect(output).toContain("NOT evidence of a clean report");
-    expect(output).toContain("a contract mismatch in the unchanged tree");
-    // The verdicts table is the part whose loss was most dangerous.
-    expect(output).toContain("REQUEST_CHANGES");
-  });
 
-  it("George is clean and Frank has findings", () => {
-    const { output, status } = runTriage({
-      frank: FRANK_WITH_FINDINGS,
-      george: GEORGE_CLEAN,
+    it("George is clean and Frank has findings", () => {
+      const { output, status } = runTriage({
+        frank: FRANK_WITH_FINDINGS,
+        george: GEORGE_CLEAN,
+      });
+      expect(status).toBe(0);
+      expectWholeDocument(output);
+      expect(output).toContain("something diff-local is wrong");
+      // George has no stable all-clear spelling anywhere in this tree, so the
+      // script refuses to CLAIM his report is clean and asks for confirmation
+      // instead. That is the honest answer: it cannot tell.
+      expect(output).toContain("NOT evidence of a clean report");
+      expect(output).not.toContain("reported no findings");
     });
-    expect(status).toBe(0);
-    expectWholeDocument(output);
-    expect(output).toContain("something diff-local is wrong");
-    // George has no stable all-clear spelling anywhere in this tree, so the
-    // script refuses to CLAIM his report is clean and asks for confirmation
-    // instead. That is the honest answer: it cannot tell.
-    expect(output).toContain("NOT evidence of a clean report");
-    expect(output).not.toContain("reported no findings");
-  });
 
-  it("both reviewers are clean", () => {
-    const { output, status } = runTriage({
-      frank: FRANK_CLEAN,
-      george: GEORGE_CLEAN,
+    it("both reviewers are clean", () => {
+      const { output, status } = runTriage({
+        frank: FRANK_CLEAN,
+        george: GEORGE_CLEAN,
+      });
+      expect(status).toBe(0);
+      expectWholeDocument(output);
+      // Frank ends a clean review with an explicit line per severity, which is
+      // machine-checkable; George does not, so the two render differently.
+      expect(output).toContain("NOT evidence of a clean report");
+      expect(output).toContain("NOT evidence of a clean report");
+      expect(output).not.toContain("REQUEST_CHANGES |");
     });
-    expect(status).toBe(0);
-    expectWholeDocument(output);
-    // Frank ends a clean review with an explicit line per severity, which is
-    // machine-checkable; George does not, so the two render differently.
-    expect(output).toContain("NOT evidence of a clean report");
-    expect(output).toContain("NOT evidence of a clean report");
-    expect(output).not.toContain("REQUEST_CHANGES |");
-  });
 
-  it("a missing report is named, not silently skipped", () => {
-    const { output, status } = runTriage({ george: GEORGE_WITH_FINDINGS });
-    expect(status).toBe(0);
-    expectWholeDocument(output);
-    expect(output).toContain("no report found for Frank");
-  });
-
-  it("shouts when nothing extracts but the verdict is REQUEST_CHANGES", () => {
-    // "The reviewer found nothing" and "this parser no longer understands the
-    // report" must not render identically — the second means the format has
-    // drifted and the findings are being dropped, which is the failure this
-    // whole file exists to make loud.
-    const drifted = `# Review A\n\nP2: the format changed shape entirely.\n\n**Verdict: REQUEST_CHANGES**\n`;
-    const { output } = runTriage({
-      frank: drifted,
-      george: GEORGE_CLEAN,
+    it("a missing report is named, not silently skipped", () => {
+      const { output, status } = runTriage({ george: GEORGE_WITH_FINDINGS });
+      expect(status).toBe(0);
+      expectWholeDocument(output);
+      expect(output).toContain("no report found for Frank");
     });
-    expectWholeDocument(output);
-    expect(output).toContain("NOTHING EXTRACTED");
-    expect(output).not.toContain("reported no findings");
-  });
-  it("never claims clean on APPROVE when the findings were not recognised", () => {
-    // Frank R1 P2 and George R1 P2, independently: an empty extraction is NOT
-    // evidence of a clean report. dual-review.md keeps P3s — they are
-    // "deferred to an issue, not dropped" — and an APPROVE round carrying only
-    // P3s is legitimate, so this shape must never render as "no findings".
-    const approveWithUnmatchedP3 = `# Review B
+
+    it("shouts when nothing extracts but the verdict is REQUEST_CHANGES", () => {
+      // "The reviewer found nothing" and "this parser no longer understands the
+      // report" must not render identically — the second means the format has
+      // drifted and the findings are being dropped, which is the failure this
+      // whole file exists to make loud.
+      const drifted = `# Review A\n\nP2: the format changed shape entirely.\n\n**Verdict: REQUEST_CHANGES**\n`;
+      const { output } = runTriage({
+        frank: drifted,
+        george: GEORGE_CLEAN,
+      });
+      expectWholeDocument(output);
+      expect(output).toContain("NOTHING EXTRACTED");
+      expect(output).not.toContain("reported no findings");
+    });
+    it("never claims clean on APPROVE when the findings were not recognised", () => {
+      // Frank R1 P2 and George R1 P2, independently: an empty extraction is NOT
+      // evidence of a clean report. dual-review.md keeps P3s — they are
+      // "deferred to an issue, not dropped" — and an APPROVE round carrying only
+      // P3s is legitimate, so this shape must never render as "no findings".
+      const approveWithUnmatchedP3 = `# Review B
 
 ## P3
 
@@ -304,23 +335,23 @@ describe("triage.sh writes a whole document in every finding combination (#524)"
 
 **APPROVE**
 `;
-    const { output } = runTriage({
-      frank: FRANK_CLEAN,
-      george: approveWithUnmatchedP3,
+      const { output } = runTriage({
+        frank: FRANK_CLEAN,
+        george: approveWithUnmatchedP3,
+      });
+      expectWholeDocument(output);
+      expect(output).toContain("NOT evidence of a clean report");
+      expect(output).not.toContain("reported no findings");
     });
-    expectWholeDocument(output);
-    expect(output).toContain("NOT evidence of a clean report");
-    expect(output).not.toContain("reported no findings");
-  });
 
-  it("does not go quiet on the severity-heading shape George really uses", () => {
-    // Not hypothetical. `.review/george-38dbd60.md` is a REQUEST_CHANGES round
-    // whose P1/P2/P3 findings are written as `### P2` severity headings rather
-    // than `### 1. P2 — …`, so the extractor matches none of them. 13 of the
-    // 38 reports in `.review/` extract empty this way and five of those block
-    // merge. Widening the extractor is its own change; what this pins is that
-    // the shape can never be reported as nothing-to-see.
-    const severityHeadings = `# Review B (DEEP-TREE)
+    it("does not go quiet on the severity-heading shape George really uses", () => {
+      // Not hypothetical. `.review/george-38dbd60.md` is a REQUEST_CHANGES round
+      // whose P1/P2/P3 findings are written as `### P2` severity headings rather
+      // than `### 1. P2 — …`, so the extractor matches none of them. 13 of the
+      // 38 reports in `.review/` extract empty this way and five of those block
+      // merge. Widening the extractor is its own change; what this pins is that
+      // the shape can never be reported as nothing-to-see.
+      const severityHeadings = `# Review B (DEEP-TREE)
 
 ## Findings
 
@@ -340,28 +371,28 @@ None.
 
 **REQUEST_CHANGES**
 `;
-    const { output } = runTriage({
-      frank: FRANK_CLEAN,
-      george: severityHeadings,
+      const { output } = runTriage({
+        frank: FRANK_CLEAN,
+        george: severityHeadings,
+      });
+      expectWholeDocument(output);
+      expect(output).toContain("NOTHING EXTRACTED");
+      expect(output).toContain("REQUEST_CHANGES");
+      expect(output).not.toContain("reported no findings");
     });
-    expectWholeDocument(output);
-    expect(output).toContain("NOTHING EXTRACTED");
-    expect(output).toContain("REQUEST_CHANGES");
-    expect(output).not.toContain("reported no findings");
-  });
-  // ── Frank R2 / George R2, convergent ────────────────────────────────────
-  //
-  // A reviewer report is not just the reviewer's prose: `frank.sh`/`george.sh`
-  // embed the prompt AND the diff under review. So a report ABOUT this file
-  // contains this file's fixtures, which spell all three all-clear phrases.
-  // Frank's own R2 report on this PR is REQUEST_CHANGES with a live P2 and
-  // contains "No P1 findings" 20 times, "No P2 findings" 14 and "No P3
-  // findings" 18. An unanchored all-clear search declares it clean.
-  //
-  // These two fixtures quote the phrases the way a transcript really does —
-  // indented inside a snippet, and as `+` diff lines — so they pin the
-  // anchoring, not just the verdict guard.
-  const QUOTED_ALL_CLEAR = `I read \`explicit_all_clear\`:
+    // ── Frank R2 / George R2, convergent ────────────────────────────────────
+    //
+    // A reviewer report is not just the reviewer's prose: `frank.sh`/`george.sh`
+    // embed the prompt AND the diff under review. So a report ABOUT this file
+    // contains this file's fixtures, which spell all three all-clear phrases.
+    // Frank's own R2 report on this PR is REQUEST_CHANGES with a live P2 and
+    // contains "No P1 findings" 20 times, "No P2 findings" 14 and "No P3
+    // findings" 18. An unanchored all-clear search declares it clean.
+    //
+    // These two fixtures quote the phrases the way a transcript really does —
+    // indented inside a snippet, and as `+` diff lines — so they pin the
+    // anchoring, not just the verdict guard.
+    const QUOTED_ALL_CLEAR = `I read \`explicit_all_clear\`:
 
     grep -qiE 'No P1 findings' "$f" \\
       && grep -qiE 'No P2 findings' "$f" \\
@@ -376,8 +407,8 @@ and the fixture it is matched against:
 +3. No P3 findings.
 `;
 
-  it("a blocking verdict can never be reported as clean, whatever the transcript quotes", () => {
-    const blocking = `# Review B
+    it("a blocking verdict can never be reported as clean, whatever the transcript quotes", () => {
+      const blocking = `# Review B
 
 ## Findings
 
@@ -389,17 +420,17 @@ ${QUOTED_ALL_CLEAR}
 
 **REQUEST_CHANGES**
 `;
-    const { output } = runTriage({ frank: FRANK_CLEAN, george: blocking });
-    expectWholeDocument(output);
-    expect(output).toContain("NOTHING EXTRACTED");
-    expect(output).not.toContain("reported no findings");
-  });
+      const { output } = runTriage({ frank: FRANK_CLEAN, george: blocking });
+      expectWholeDocument(output);
+      expect(output).toContain("NOTHING EXTRACTED");
+      expect(output).not.toContain("reported no findings");
+    });
 
-  it("quoted all-clear text does not trip the detector on an APPROVE round either", () => {
-    // The verdict guard alone would let this through; only the anchoring
-    // stops it. An unmatched P3 on an APPROVE round is a legitimate round
-    // (dual-review.md: deferred to an issue, NOT dropped).
-    const approveWithQuote = `# Review B
+    it("quoted all-clear text does not trip the detector on an APPROVE round either", () => {
+      // The verdict guard alone would let this through; only the anchoring
+      // stops it. An unmatched P3 on an APPROVE round is a legitimate round
+      // (dual-review.md: deferred to an issue, NOT dropped).
+      const approveWithQuote = `# Review B
 
 ## P3
 
@@ -409,12 +440,94 @@ ${QUOTED_ALL_CLEAR}
 
 **APPROVE**
 `;
-    const { output } = runTriage({
-      frank: FRANK_CLEAN,
-      george: approveWithQuote,
+      const { output } = runTriage({
+        frank: FRANK_CLEAN,
+        george: approveWithQuote,
+      });
+      expectWholeDocument(output);
+      expect(output).toContain("NOT evidence of a clean report");
+      expect(output).not.toContain("reported no findings");
     });
-    expectWholeDocument(output);
-    expect(output).toContain("NOT evidence of a clean report");
-    expect(output).not.toContain("reported no findings");
+  }
+);
+
+/**
+ * The bait guard (George R4 P2).
+ *
+ * De-baiting the fixtures above is only durable if something notices when a
+ * column-0 extractor match comes back. This reads the finding regex out of
+ * `triage.sh` rather than restating it — a copy would pass while the script's
+ * own pattern widened, which is exactly the class of bug this file exists to
+ * pin, and it is the same trick `precache-manifest.test.ts` uses to lift
+ * `navigateFallbackDenylist` live out of `vite.config.ts`.
+ *
+ * Why this file specifically: a reviewer transcript embeds the diff and the
+ * source it cites, so any column-0 line here that the extractor accepts can
+ * be donated to a report ABOUT this file — making `raw` non-empty, skipping
+ * the empty-raw guard, and printing a fixture as a finding.
+ */
+describe("the triage test source cannot donate a finding to a transcript", () => {
+  const FINDING_REGEX = (() => {
+    const script = readFileSync(TRIAGE, "utf8");
+    // raw="$(grep -hoE '<pattern>' "$file" || true)"
+    const match = script.match(/grep -hoE '([^']+)' "\$file"/);
+    const pattern = match?.[1];
+    if (pattern === undefined) {
+      throw new Error(
+        "could not find extract()'s finding regex in scripts/review/triage.sh — " +
+          "if its shape changed, update this reader rather than restating the pattern"
+      );
+    }
+    return pattern;
+  })();
+
+  it("lifts a non-trivial regex out of triage.sh", () => {
+    // Non-vacuity: an empty or absurdly short pattern would make the grep
+    // below match nothing and the real assertion pass for the wrong reason.
+    expect(FINDING_REGEX.length).toBeGreaterThan(20);
+    expect(FINDING_REGEX).toContain("P[123]");
+  });
+
+  it("matches a real finding line, so the guard below is not vacuous", () => {
+    const hits = grepCount(FINDING_REGEX, [
+      "### 1. P2 — a real finding heading",
+    ]);
+    expect(hits).toBe(1);
+  });
+
+  it("finds no column-0 extractor match in its own source", () => {
+    const hits = grepCount(FINDING_REGEX, [
+      readFileSync(new URL(import.meta.url), "utf8"),
+    ]);
+    expect(
+      hits,
+      "a column-0 line in this file matches triage.sh's finding regex. A " +
+        "reviewer quoting this file would hand that line to extract() as a " +
+        "phantom finding and silence the empty-raw drift guard (George R4 " +
+        "P2). Build the fixture from quoted pieces instead of a template " +
+        "literal, as the ones above are."
+    ).toBe(0);
   });
 });
+
+/** How many lines of `contents` match `pattern`, using grep's own engine. */
+function grepCount(pattern: string, contents: string[]): number {
+  const dir = mkdtempSync(path.join(tmpdir(), "grep-"));
+  try {
+    const file = path.join(dir, "subject.txt");
+    writeFileSync(file, contents.join("\n"));
+    try {
+      const out = execFileSync("grep", ["-cE", pattern, file], {
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      return Number.parseInt(out.trim(), 10);
+    } catch (cause) {
+      // grep exits 1 with no match, which is a count of zero, not a failure.
+      if ((cause as { status?: number }).status === 1) return 0;
+      throw cause;
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
