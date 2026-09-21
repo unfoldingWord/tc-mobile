@@ -11,6 +11,106 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-21 (evening) — the device pass opened and refuted the audio hypothesis, five ultracode waves produced four PRs and zero merges, and one defect class explains why
+
+Coordinator session, DRI present throughout for picks. Standing authority **merge on clean and green** — both reviewers at the current head plus green CI, lane PRs only — granted this morning and **not exercised once tonight**, because nothing earned it.
+
+The session began with a question about readiness for **2026-10-04**, which the DRI then fixed as the date the v0.3.0 build must be **in facilitators' hands**. Training itself is later; the milestone's 10-09 due date is the training date. Working back: promotion ~10-01, freeze ~09-30, **eight working days**.
+
+### The device pass opened at 17:44Z, mid-session
+
+The requirements owner started the iOS TestFlight 0.2.8 pass immediately after the morning EOD and filed **five `v1-required` issues in under half an hour** — #553, #554, #555, #556, #557 — and was still filing while lanes were running. The v1-required count rose during the work rather than falling.
+
+**#557 depends on #554** ("honouring #554's left-edge-at-playhead seed"), which set the lane order.
+
+### The audio cluster: hypothesis refuted, replacement found, neither shipped
+
+The wave's purpose was a spike, evidence only, no fix. It delivered.
+
+**REFUTED, by measurement.** The store/MP3/decode round trip is _not_ where the level goes: **−0.44 dB whole-clip, identical across a 12 dB input span**, against a 3 dB "real finding" bar named before measuring. Red-first genuine, reproduced by two independent verifiers. The requirements owner's leading hypothesis died for a few hours of work, which is what a spike is for.
+
+Also refuted: #553's `subarray`-through-`.buffer` lead, by **mutation** at `lib/audio/format.ts:75` rather than a code read; the metering-gain and display-gain leads, by code read; and **#558's chunk-join hypothesis, which was the dev lead's own** — there is no sample-domain concat of MediaRecorder chunks, so the mechanism does not exist. Correction posted on the issue rather than a quiet body edit.
+
+**The replacement, which is better.** `getUserMedia` (`hooks/use-recorder.ts:527-533`) sets `echoCancellation`, `noiseSuppression`, `autoGainControl` — and **no `channelCount: 1`**. Measured on the real `toCanonical` graph:
+
+| input                    | level        |
+| ------------------------ | ------------ |
+| identical channels       | 0.00 dB      |
+| decorrelated             | ~−3 dB       |
+| **silent right channel** | **−6.02 dB** |
+
+A device handing back a 2-channel track with a dead second channel loses 6 dB on **every take, before any other stage**, while `displayGain`'s draw-time fit keeps the waveform looking right. First mechanism that explains **#269 (Android silent) and #555 (iOS quiet) with one cause**. The coordinator reproduced the −6.02 dB independently with a standalone 20-line probe, so the number no longer rests on any lane's word.
+
+Still a hypothesis. A paste-in Web Inspector probe is on #555 for the DRI's iPhone; the decisive reading is one device session, not more harness work.
+
+### Four PRs, zero merges, one defect class
+
+| PR                  | State at close                                  |
+| ------------------- | ----------------------------------------------- |
+| #559 (#556 callout) | Round 6 pushed `1767a86`, reviews **in flight** |
+| #560 (#554 seed)    | **PARKED** `d291558` — stop rule fired          |
+| #561 (audio spike)  | **PARKED** `70644af`                            |
+| #565 (subarray pin) | Green, Frank pending                            |
+| #566 (AGENTS.md)    | Round 2 pushed `1374ce0`, reviews **in flight** |
+
+**The class: run-describing prose committed to files that outlive the run.** Five instances across three PRs. Not dishonesty — every lane disclosed heavily and two disclosed their own instance somewhere. The mechanism is that a docblock saying _"at the head this docblock ships on"_ is **unverifiable by construction**, because the head moves with the commit containing the sentence; and a source comment quoting a grep goes stale the moment a line is added. One said "twelve"; the tree returns sixteen.
+
+Every remediation round re-committed a weaker instance of the class it was sent to close, and **in two of three the lane's own overclaim audit missed its own new instance**. Round-by-round correction produced instances 2, 3 and 4. **One round of deletion produced none.** That asymmetry is the finding: of ten repairs attempted, the only one that never needed re-correcting is the one that _removed_ a claim rather than rewording it.
+
+The rule is now on PR #566: _no committed file states where, on what, or with what result a run happened._ Output goes in a PR comment, which can be re-stamped; a docblock points at its URL. Counts go in an assertion, not prose.
+
+### Two things the process caught that no single lens would have
+
+**A reviewer lens found that the lanes cited "the DRI's call" with no artifact in the repo** — no comment on #556, no review on #559, only the lanes' own triage. The decisions were real but unverifiable, which AGENTS.md treats as not having been made. Decision records are now posted on #559 and #560, including what each decision does _not_ cover.
+
+**Frank found a hole George APPROVE'd over.** At #559's `c339785`: `declarationsOf` reads only the _first_ matching block while the global count is a `Set` with a `>=12` floor, so appending `.recorder-sheet { user-select: text; }` keeps every assertion green while the cascade restores selection. **The gate passes on a tree where the feature is broken.** The coordinator was one step from merging. Deep-tree chased the change out into the portals; diff-local read the assertions and found one that cannot fail. Clearest argument for the both-lenses rule this repo has produced.
+
+### A false claim in AGENTS.md cost the day's reasoning
+
+AGENTS.md:170 and :178 assert **"Android has never been run at all."** The DRI corrected it: Android has been run and testers have filed issues from it — #269 describes a playhead moving with no audio, which is someone watching an Android screen.
+
+`docs/progress_tracker.md:890` had **already flagged that exact sentence as stale**, deferring the rewrite to #245 "once the protocol runs". It never ran, and the sentence stayed. Because AGENTS.md is injected into every agent's context, it propagated into every lane brief and every coordinator report of the session before it was caught.
+
+**A known-stale claim in an injected document is worse than an unknown one, because it is being actively relied upon.** Deferring correction of a false statement until other work lands is the anti-pattern. The fix rides on #566; #571 tracks the same shape elsewhere in the Testing section.
+
+### Decisions (all DRI)
+
+1. **2026-10-04 = build in facilitators' hands.** Promotion ~10-01, freeze ~09-30.
+2. Wave 1 = audio spike + #556 + #554; spike first, fix as its own PR.
+3. #554: accept the seed width going ~15% → ~30%, fix the docblock that denies it. Tail rule (A vs C) stays **open and is the requirements owner's**.
+4. #556: extend the opt-out to `.menu-panel` and `.confirm-panel`.
+5. **#413 closed** in favour of #553, evidence preserved.
+6. Review load: George mandatory on all three, Frank as quota allows, exemptions recorded.
+7. **Skip installing WebKit for Playwright.** Linux WebKitGTK shares WebCore with iOS Safari but uses GStreamer, not CoreAudio; the shared part already agrees with Chromium and the diverging part is exactly the audio path. It would produce an authoritative-looking number that does not transfer.
+8. **Stop rule, armed before the results landed:** a further new instance of the class parks the PR. It fired on #559 and #561 and was honoured.
+9. #559 by **deletion only** — the one repair shape that has not regenerated the defect.
+10. #565 re-cut alone; AGENTS.md rule adopted now rather than deferred.
+11. **#568 fixed before the freeze** — while the harness is order-dependent, every green until then is weaker evidence than it reads, including the promotion's.
+
+### Filed
+
+#562, #563, #564, #567, #568, #569, #570, #571 by the waves; **#558** by the dev lead. All on `v0.3.0 — Oct: training`.
+
+### Learnings
+
+1. **Deletion beats correction for a claim that keeps rotting.** Four rounds of rewording produced five instances; one round of deleting produced none.
+2. **A self-audit field does not catch the defect it audits.** Three waves, each with an explicit overclaim check, each missing its own new instance. The fix was structural — ban the construction — not another field.
+3. **An injected document is load-bearing infrastructure.** One stale sentence in AGENTS.md misdirected a day of work across every agent that read it. Treat its factual claims as code, with the same staleness discipline.
+4. **Both lenses are not redundancy.** George APPROVE'd the SHA where Frank found an assertion that cannot fail. Neither alone was sufficient, and the one that ran first was the one that missed it.
+5. **A spike that refutes its own hypothesis has succeeded.** The transcode theory died cheaply and a better one replaced it. The expensive outcome would have been building the fix first.
+6. **Record a decision where it can be found, or it was not made.** "The DRI's call" with no artifact is indistinguishable from an invention, and a reviewer was right to treat it as one.
+
+### Next session, in order
+
+1. **The device session** — the iPhone `channelCount` probe on #555 and the not-yet-Finished discriminator. Highest-value hour available, and not an agent's to spend. Testers have been asked to run the latest build on Android.
+2. Land Wave 5's reviews: #559 round 6, #566, then #565.
+3. **#568**, so that later greens mean something.
+4. #567 + the Rule A / C tail question to the requirements owner; nobody writes another `panForZoom` branch before it is answered.
+5. #557, after #554 resolves.
+6. The release train: `chore(release)` → staging → `check:deploy`, then staging → main as **v0.3.0** with `git tag v0.3.0` and `check:deploy:prod`. **The Android APK expires 2026-10-05**, the day after handoff — the training artifact must be cut fresh and given a durable home; a Release on the tag is the cheap answer (#262).
+
+---
+
 ## 2026-09-21 (Monday) — v0.2.8 promoted and verified with both native tester builds cut, #542 parked at the storage-pressure wiring, and #547 merged after five review rounds that found seven harness defects
 
 One coordinator session. The dev lead was present for picks and away between them; standing authority — **merge on clean and green**, scoped to lane PRs and never to promotions — was granted mid-session and used once, on #547.
