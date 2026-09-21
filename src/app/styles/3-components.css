@@ -552,6 +552,17 @@
     flex-direction: column;
     gap: var(--c-gap-items);
     overflow-y: auto;
+    /* The same opt-out the recorder sheet carries (#556), repeated rather than
+       inherited: this panel portals to `document.body`, so no ancestor rule on
+       the sheet reaches it. The recorder's own ≡ drawer is one of these, and
+       its title is a bare `t-title` span — the same kind of ordinary text the
+       report caught selected. Repeating three declarations on the shared class
+       also takes every other screen's drawer with it, which is the honest cost
+       of not inventing a recorder-only panel class for it. The rename field
+       inside this drawer opts back IN below. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */
@@ -587,6 +598,17 @@
        standing between a focused rename field and a zoomed sheet. Do not
        lower it. */
     font-size: 16px;
+    /* Opted back IN (#556). `menu-panel` above suppresses selection and the
+       platform callout for the whole drawer, and this field is a descendant of
+       it — `books-screen.tsx` and `segments-screen.tsx` both render `NameEdit`
+       as a `Menu` child. A rename is an edit: the caret, dragging a selection
+       and the platform's own Cut/Copy/Paste callout all have to work here, and
+       this is the one surface in the app where that is true. Before #556 no
+       such escape hatch was needed, because the suppression stopped at the
+       recorder sheet and this field was never inside it. */
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
   .name-input::placeholder {
     color: var(--s-ink-faint);
@@ -621,6 +643,14 @@
     align-items: center;
     gap: var(--c-gap-items);
     text-align: center;
+    /* Same opt-out, same reason as the drawer above (#556): portalled to
+       `document.body`, raised by the recorder among others, and holding only a
+       glyph, a title and two controls — nothing anyone copies, and Erase is
+       exactly the moment a long-press must not raise a callout over the two
+       buttons. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   /* The subject glyph, tinted destructive so the dialog reads as "delete"
      before a word is parsed. */
@@ -753,12 +783,40 @@
        Declared here, on the sheet, rather than on the stage: both properties
        inherit, so one rule covers the header, the breadcrumb, the canvas, the
        selection handles and the toolbar — none of which has a class of its
-       own. Deliberately NOT global: BuildStamp's version and sha, the database
-       panel and the failure log are text a maintainer legitimately selects.
-       The rename field is out of this subtree entirely (its menu portals to
-       `document.body`), so it needs no exclusion rule; recorder-selection.test.ts
-       holds both halves of that. Both spellings of `user-select` because
-       Safari only supports the unprefixed one from 17.0. */
+       own.
+
+       Inheritance reaches the sheet's INLINE subtree and nothing else, and the
+       recorder raises two surfaces that are outside it: the ≡ drawer and the
+       erase confirm each `createPortal` to `document.body` (`menu.tsx`,
+       `erase-confirm.tsx`), so they are siblings of `#root`, not descendants of
+       this rule. The same three declarations are repeated on `menu-panel` and
+       `confirm-panel` below for that reason. Round 1 of this change used only
+       one edge of that portal fact — it argued the rename field needed no
+       exclusion because its menu portals away — and missed that the identical
+       mechanism strands the recorder's own chrome: the drawer's title is a bare
+       `t-title` span, the same kind of element as the breadcrumb in the report,
+       one tap on the hamburger away. Both edges now hold, and the field DOES
+       need an exclusion; see `name-input` below.
+
+       Deliberately NOT global. BuildStamp's version and sha and the database
+       panel render at the top level of `App.tsx`, outside all three roots, and
+       stay selectable. The failure log panel does NOT: it renders inside the
+       ≡ drawer, so its count marker and its teaching line are suppressed with
+       the rest of the drawer. Accepted rather than missed — the log's entries
+       leave the phone by the share sheet, never by being read off the screen —
+       but it is a real consequence of using the shared panel classes, and the
+       drawers and confirms of every other screen take the same opt-out along
+       with the recorder's. `recorder-selection.test.ts` holds both halves: that
+       the opt-out reaches all three roots, and that it stays out of
+       `globals.css`.
+
+       Both spellings of `user-select` because WebKit shipped the prefixed name
+       long before the unprefixed one, and this repo records no minimum iOS
+       anywhere, so the prefixed declaration is the one certain to apply on an
+       old device. Round 1 gave a specific first-unprefixed Safari version here
+       as flat fact; that was unverified platform recollection, no source for it
+       was checked in this repo, and it is not restated — nothing about keeping
+       the pair depends on which version it is. */
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The recorder sheet opts out of text selection and the platform's
+ * The recorder opts out of text selection and the platform's
  * long-press/double-tap callout (#556).
  *
  * What was wrong in source: nothing anywhere in `src/` set `user-select` or
@@ -13,27 +13,50 @@ import { describe, expect, it } from "vitest";
  * reported screenshot had been text-selected, and a Copy/Look Up/Translate
  * callout covered the canvas.
  *
+ * The opt-out has THREE roots, not one, because two of the recorder's own
+ * surfaces are portalled out of the sheet's subtree: `.recorder-sheet` for the
+ * inline sheet, `.menu-panel` for the ≡ drawer and `.confirm-panel` for the
+ * erase confirm (both `createPortal(..., document.body)`). Inheritance carries
+ * each root over its own chrome; nothing carries between them.
+ *
  * Not assertable by rendering: this repo has no DOM runner (#197, and
  * `touch-policy.test.ts` concedes the same for its own subject), and whether
  * the platform raises a callout is a measurement on a phone. These tests
- * prove three things and only those three: the declarations exist, they sit
- * on a class the recorder really renders, and they stop at the recorder.
- * They do NOT prove the iOS symptom is gone. That is an on-device check and
- * it has not been run.
- *
- * The block is sliced and its declaration VALUES are matched — the shape
- * `share-progress.test.ts` uses — and comments are stripped from the slice
- * first. A test that regexes a stylesheet raw is captured by the file's own
- * prose: a comment naming the property it discusses reads as the property
- * (AGENTS.md; #529 round 3 turned a test red exactly that way).
+ * prove four things and only those four: the declarations exist on all three
+ * roots, those roots are classes the recorder really renders, the roots are
+ * portalled (which is WHY there are three), and the opt-out neither goes
+ * global nor swallows the one field that must stay editable. They do NOT
+ * prove the iOS symptom is gone. That is an on-device check and it has not
+ * been run.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
-const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
+
+/**
+ * Source with its comments removed — block (`/* … *\/`, JSX `{/* … *\/}` with
+ * it) and line (`//`) alike.
+ *
+ * Every read below goes through this, CSS and TSX. A test that regexes a file
+ * raw is captured by that file's own prose: a comment naming the thing it
+ * discusses reads as the thing (AGENTS.md; #529 round 3 turned a test red
+ * exactly that way). Round 1 of this file applied the strip to the CSS slices
+ * only and read `recorder.tsx` raw, which was defeated in BOTH directions at
+ * `b906f38` — renaming the live class and adding one prose line naming the old
+ * one left the suite 6/6 green with the fix dead, and a single added comment
+ * line containing `<input>` turned the last test red on its own.
+ *
+ * The `//` strip is guarded against `:` so a `://` inside a string survives.
+ * Over-stripping is the dangerous direction here — it would make the two
+ * negative assertions below pass over nothing — so the recorder read carries
+ * code landmarks as a floor, and the helper itself is exercised directly.
+ */
+const withoutComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+const read = (rel: string) =>
+  withoutComments(readFileSync(path.join(ROOT, rel), "utf8"));
 
 const components = read("src/app/styles/3-components.css");
 const recorder = read("src/components/recorder.tsx");
-
-const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /**
  * The declarations of one class's own rule block, as prop -> value.
@@ -41,82 +64,148 @@ const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
  * sibling.
  */
 const declarationsOf = (className: string) => {
-  const block = new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`, "s").exec(
-    components
-  )?.[1];
-  const body = withoutComments(block ?? "");
+  const body =
+    new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`, "s").exec(components)?.[1] ??
+    "";
   const declarations = new Map<string, string>();
   for (const [, prop, value] of body.matchAll(/(-?[a-z][a-z-]*):\s*([^;]+);/g))
     if (prop && value) declarations.set(prop, value.trim());
   return declarations;
 };
 
-describe("the recorder sheet opts out of selection and the callout (#556)", () => {
-  const sheet = declarationsOf("recorder-sheet");
+/** The three roots, and the floor that keeps each slice non-empty. */
+const ROOTS = ["recorder-sheet", "menu-panel", "confirm-panel"] as const;
 
-  // The floor. Without it every assertion below would pass vacuously over an
-  // empty slice if the selector moved, was renamed, or was matched inside a
-  // comment instead of a rule.
-  it("has a .recorder-sheet rule with declarations in it", () => {
-    expect(
-      sheet.size,
-      "no .recorder-sheet rule in 3-components.css"
-    ).toBeGreaterThanOrEqual(6);
+describe("the comment strip every read here depends on", () => {
+  // The gate's own mechanism, in both states: comments go, code stays.
+  it("removes line and block comments and keeps the code around them", () => {
+    const stripped = withoutComments(
+      [
+        'const a = "keep";',
+        "// drop me",
+        "/* drop\n me */",
+        "const b = 1;",
+      ].join("\n")
+    );
+    expect(stripped).toContain('const a = "keep";');
+    expect(stripped).toContain("const b = 1;");
+    expect(stripped).not.toContain("drop me");
+    expect(stripped).not.toContain("drop\n me");
   });
 
-  // Both spellings of `user-select` on purpose: Safari only supports the
-  // unprefixed property from 17.0, and this repo records no minimum iOS
-  // anywhere. esbuild cannot collapse the pair — they are different property
-  // names, not a repeated declaration of one (the scar `dist-css.test.ts`
-  // documents).
-  it("suppresses selection in both spellings and suppresses the callout", () => {
-    expect(sheet.get("-webkit-user-select")).toBe("none");
-    expect(sheet.get("user-select")).toBe("none");
-    expect(sheet.get("-webkit-touch-callout")).toBe("none");
+  it("does not eat the rest of a line after a :// in a string", () => {
+    expect(withoutComments('const u = "https://example.test/x";')).toContain(
+      "https://example.test/x"
+    );
   });
 
-  // The `.breadcrumb`/`p-0` lesson from `touch-policy.test.ts`: if the class
-  // comes off the element, the rule above styles nothing and the two
-  // assertions before this one still pass. Both properties inherit, which is
-  // why one rule on the sheet reaches the header, the breadcrumb span, the
-  // canvas, the selection handles and the toolbar — none of which carries a
-  // class of its own.
-  it("is the class the recorder sheet actually renders", () => {
-    expect(recorder).toMatch(/className="recorder-sheet/);
+  // The floor for the two negative assertions at the bottom of this file: if
+  // the strip ever ate real code, `not.toMatch` would pass over the wreckage.
+  it("leaves recorder.tsx's real code standing", () => {
+    expect(recorder).toMatch(/export const Recorder = forwardRef</);
+    expect(recorder).toMatch(/className="recorder-canvas/);
   });
 });
 
-describe("the opt-out stops at the recorder (#556)", () => {
+describe("the recorder opts out of selection and the callout (#556)", () => {
+  // The floor. Without it every assertion below would pass vacuously over an
+  // empty slice if a selector moved, was renamed, or was matched inside a
+  // comment instead of a rule.
+  it.each(ROOTS)("has a .%s rule with declarations in it", (className) => {
+    expect(
+      declarationsOf(className).size,
+      `no .${className} rule in 3-components.css`
+    ).toBeGreaterThanOrEqual(6);
+  });
+
+  // Both spellings of `user-select` on purpose: WebKit shipped the prefixed
+  // name long before the unprefixed one and this repo records no minimum iOS
+  // anywhere, so the prefixed declaration is the one certain to apply on an
+  // old device.
+  //
+  // Round 1 of this file stated a specific first-unprefixed Safari version as
+  // flat fact, here and in the stylesheet. That was unverified platform
+  // recollection — no source for it was checked in this repo — and it is not
+  // restated. Keeping the pair does not depend on which version it is.
+  //
+  // esbuild cannot collapse the pair either way: they are different property
+  // names, not a repeated declaration of one (the scar `dist-css.test.ts`
+  // documents).
+  it.each(ROOTS)(
+    ".%s suppresses selection in both spellings and suppresses the callout",
+    (className) => {
+      const rule = declarationsOf(className);
+      expect(rule.get("-webkit-user-select")).toBe("none");
+      expect(rule.get("user-select")).toBe("none");
+      expect(rule.get("-webkit-touch-callout")).toBe("none");
+    }
+  );
+
+  // The `.breadcrumb`/`p-0` lesson from `touch-policy.test.ts`: if a class
+  // comes off its element, the rule styles nothing and the assertions above
+  // still pass. Both properties inherit, which is why one rule per root
+  // reaches the header, the breadcrumb span, the canvas, the selection
+  // handles, the toolbar, the drawer title and the confirm's title — none of
+  // which carries a class of its own.
+  it("renders the sheet class, and raises the other two roots", () => {
+    expect(recorder).toMatch(/className="recorder-sheet/);
+    expect(recorder).toMatch(/<Menu\b/);
+    expect(recorder).toMatch(/<EraseConfirm\b/);
+    expect(read("src/components/menu.tsx")).toMatch(/className="menu-panel"/);
+    expect(read("src/components/erase-confirm.tsx")).toMatch(
+      /className="confirm-panel"/
+    );
+  });
+
+  // WHY there are three roots rather than one rule on the sheet. The day
+  // either component renders inline instead, its panel is inside the sheet's
+  // subtree, the repeated declarations become redundant, and this test says
+  // so out loud instead of leaving two copies with no stated reason.
+  it.each(["menu", "erase-confirm"])(
+    "%s.tsx portals out of the recorder's subtree, which is why it needs its own rule",
+    (file) => {
+      const source = read(`src/components/${file}.tsx`);
+      expect(source).toMatch(/createPortal\(/);
+      expect(source).toMatch(/document\.body/);
+    }
+  );
+});
+
+describe("the opt-out stops at those three roots (#556)", () => {
   // The other half of the gate. A suppression that reached `#root` would also
-  // reach BuildStamp's version and sha, DatabasePanel and FailureLogPanel —
-  // the surfaces where selecting text is a legitimate act.
+  // reach BuildStamp's version and sha and `DatabasePanel` — both rendered at
+  // the top level of `App.tsx`, outside all three roots, and both text a
+  // maintainer legitimately selects.
   it("did not go global: globals.css suppresses neither", () => {
-    const globals = withoutComments(read("src/app/globals.css"));
+    const globals = read("src/app/globals.css");
     expect(globals).not.toMatch(/user-select/);
     expect(globals).not.toMatch(/touch-callout/);
   });
 
   // The rename field is the one surface in the app whose text MUST stay
-  // selectable and editable. It is not opted out, and no exclusion rule was
-  // shipped to protect it — it is out of the sheet's subtree entirely (the
-  // menu that carries it portals to `document.body`), so a guard here would
-  // be a stub for a condition that cannot occur.
-  it("the rename field is not opted out", () => {
+  // selectable and editable, and it is a descendant of `.menu-panel` —
+  // `books-screen.tsx` and `segments-screen.tsx` both render `NameEdit` as a
+  // `Menu` child. Round 1 asserted the opposite of this (that the field
+  // carried no such declarations) and was right at the time, because the
+  // suppression stopped at the sheet. Extending the opt-out to the drawer is
+  // what turned that from a stub into a real exclusion.
+  it("the rename field is opted back in", () => {
     const field = declarationsOf("name-input");
     expect(
       field.size,
       "no .name-input rule in 3-components.css"
     ).toBeGreaterThanOrEqual(6);
-    expect(field.has("user-select")).toBe(false);
-    expect(field.has("-webkit-user-select")).toBe(false);
-    expect(field.has("-webkit-touch-callout")).toBe(false);
+    expect(field.get("-webkit-user-select")).toBe("text");
+    expect(field.get("user-select")).toBe("text");
+    expect(field.get("-webkit-touch-callout")).toBe("default");
   });
 
-  // Why that needs no exclusion rule, asserted rather than asserted-in-prose:
-  // the recorder has no text-entry element of its own and does not render the
-  // one component that has one. The day either changes, this fails and the
-  // exclusion becomes real work instead of a silent regression.
-  it("nothing inside the recorder can inherit it onto a text field", () => {
+  // The field above is the only text entry in `src/`. This says the recorder
+  // still contributes none of its own — one that appeared inside the sheet
+  // without `.name-input` on it would inherit the suppression with no escape
+  // hatch. The day that changes, this fails and the exclusion becomes real
+  // work instead of a silent regression.
+  it("the recorder adds no text field of its own", () => {
     expect(recorder).not.toMatch(/<input|<textarea|contentEditable/);
     expect(recorder).not.toMatch(/from "\.\/name-edit"/);
   });
