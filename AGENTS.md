@@ -168,10 +168,10 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   iPhone / iOS 27 beta 6 / Safari** — capture continued while Safari was
   backgrounded and while the phone was locked, and the audio from that period
   was present in the take. That is one device on one pre-release build, and
-  **iOS 27 beta 6 is not a shipping release.** **Android has been run, and has
-  already produced device-reported defects: #269, #272, #336.** What has not
-  run is #245's structured first pass — those are different claims, and this
-  file conflated them. The cases in `docs/progress_tracker.md` — a take shorter
+  **iOS 27 beta 6 is not a shipping release.** **Android has been run.** The
+  runs are recorded in `docs/progress_tracker.md`; they are not a finished #245
+  sheet, and this file does not say which of them confirmed a defect — read the
+  tracker and the issue. The cases in `docs/progress_tracker.md` — a take shorter
   than one 250 ms timeslice, and backgrounding immediately after Stop — are
   still open. Say so honestly rather than claiming coverage that does not exist.
 - **Second on-device run: 2026-08-25, Seth, iPhone / Safari (staging pivot
@@ -237,10 +237,16 @@ review history — three separate passes wrote a false "verified" claim. A test
 file's name is a claim too: a file named for a bug, covering only a string
 classifier, invites a triage reader to mark a P1 fixed.
 
-**A run is described in a PR comment, never in a committed file.** No committed
-file states where, on what, or with what result a run happened — a comment can
-be re-stamped at a new head, a committed sentence cannot. A docblock may link
-that comment's URL; it may not restate its output. Counts go in an assertion,
+**A run's output belongs in a PR comment or the progress tracker, never in a
+docblock, a CSS comment or a test name.** Those three cannot be re-stamped at a
+new head, and whoever opens the file next reads them as current. A docblock may
+link that comment's URL; it may not restate its output. The scope is
+deliberately those three sites and not "every committed file":
+`docs/progress_tracker.md` **is** the run record, `CONTRIBUTING.md`'s "name the
+platform, the OS version and the build" still stands, and a dated observation a
+file needs in order to explain itself — `docs/native/README.md`'s Galaxy A17
+paragraph, which is why both manifest permissions stay — is a reason, not a run
+report. Counts go in an assertion,
 not in prose: a CSS comment quoting its own grep named a count the tree no
 longer returns, having counted four comment lines as declarations — one of them
 the sentence's own grep string. Do not name an environment: a docblock credited
@@ -261,10 +267,13 @@ falsified.
 **A known-stale claim is worse than an unknown one, because it is being relied
 on while it waits.** This file said Android had never been run; the staleness
 was logged and deferred to the issue that would rewrite it "once the protocol
-runs", the protocol did not run, and the false sentence went on propagating
-into every agent's context, because that is what AGENTS.md does. Correct a
-false claim where you find it. Deleting it is always available; deferring it
-is not.
+runs"; that sheet was never finished, the deferral was never revisited, and the
+false sentence went on propagating into every agent's context, because that is
+what AGENTS.md does. Correct a false claim where you find it, and prefer
+deleting it to restating it. Deferring is available only when the claim is
+quoted at several sites that have to move together and the deferral names the
+issue that moves them — #525 is the standing example. A single false sentence
+does not qualify.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
