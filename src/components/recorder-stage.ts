@@ -938,10 +938,10 @@ export const CENTER_FRACTION = 0.5;
  * - the #418 exception to #316's "always visible": a selection span loaded
  *   in edit mode has no playback role for the line — with a span picked,
  *   the audition sounds only the selection (#284), and the line is only the
- *   audition's start point when nothing is picked. Drawn inside the span it
- *   does not describe, it is clutter rather than a cue, so it hides for
- *   that one sub-state and nothing else — record, play, paused preview, and
- *   edit mode with no span picked all keep it, per the table in #418.
+ *   audition's start point when nothing is picked. It is clutter rather
+ *   than a cue, so it hides for that one sub-state and nothing else —
+ *   record, play, paused preview, and edit mode with no span picked all
+ *   keep it, per the table in #418.
  *
  * The #418 half is deliberately NOT keyed off {@link StageRender} or
  * `playingBuffer`: the hide is about whether a span is loaded, not about
