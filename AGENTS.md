@@ -167,17 +167,20 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   can only be verified on-device. **First on-device run: 2026-08-24, Seth,
   iPhone / iOS 27 beta 6 / Safari** — capture continued while Safari was
   backgrounded and while the phone was locked, and the audio from that period
-  was present in the take. That is one device on one pre-release build; **iOS 27
-  beta 6 is not a shipping release and Android has never been run at all.** The
-  cases in `docs/progress_tracker.md` — a take shorter than one 250 ms
-  timeslice, and backgrounding immediately after Stop — are still open. Say so
-  honestly rather than claiming coverage that does not exist.
+  was present in the take. That is one device on one pre-release build, and
+  **iOS 27 beta 6 is not a shipping release.** **Android has been run, and has
+  already produced device-reported defects: #269, #272, #336.** What has not
+  run is #245's structured first pass — those are different claims, and this
+  file conflated them. The cases in `docs/progress_tracker.md` — a take shorter
+  than one 250 ms timeslice, and backgrounding immediately after Stop — are
+  still open. Say so honestly rather than claiming coverage that does not exist.
 - **Second on-device run: 2026-08-25, Seth, iPhone / Safari (staging pivot
   build).** Record → playback works. Backgrounding mid-take still records, and an
   incoming call mid-take (dialed in via Google Voice) stopped capture but **saved
   the partial take as a playable segment** — the #59 interruption fix, verified
-  on iOS. Still **iOS Safari only; Android has never been run**, so #59 and #58
-  (pagehide) remain open for Android. The two cases above (sub-timeslice take,
+  on iOS. **These two cases are still iOS Safari only** — no Android pass has
+  reached interruption or background capture (#245), so #59 and #58 (pagehide)
+  remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
 - **The export path exists (B7) and the encoder runs in a Web Worker (B8).**
   Share Chapter / Share Book, the worker round-trip (`hooks/mp3.worker.ts`,
@@ -254,6 +257,14 @@ the one that removed a claim.
 head moves with the commit that carries the sentence, so there is no head at
 which the sentence can be checked. It reads as maximally precise and cannot be
 falsified.
+
+**A known-stale claim is worse than an unknown one, because it is being relied
+on while it waits.** This file said Android had never been run; the staleness
+was logged and deferred to the issue that would rewrite it "once the protocol
+runs", the protocol did not run, and the false sentence went on propagating
+into every agent's context, because that is what AGENTS.md does. Correct a
+false claim where you find it. Deleting it is always available; deferring it
+is not.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
