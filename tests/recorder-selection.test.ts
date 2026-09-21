@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -75,6 +75,42 @@ const declarationsOf = (className: string) => {
 
 /** The three roots, and the floor that keeps each slice non-empty. */
 const ROOTS = ["recorder-sheet", "menu-panel", "confirm-panel"] as const;
+
+/**
+ * Every stylesheet under `src/` — discovered, not a hand-kept list that goes
+ * stale the day a fifth one lands. The app loads four today (`globals.css`
+ * imports `styles/index.css`, which imports the three layers).
+ */
+const STYLESHEETS = readdirSync(path.join(ROOT, "src"), { recursive: true })
+  .map(String)
+  .filter((name) => name.endsWith(".css"))
+  .map((name) => path.join("src", name))
+  .sort();
+
+/**
+ * The selector of every rule in one stylesheet that declares `user-select` or
+ * `-webkit-touch-callout`, in either spelling.
+ *
+ * Walking back from the declaration to its own `{`, and from there to the
+ * previous `{`, `}` or `;`, is what survives this repo's `@layer components {
+ * … }` wrapper and any `@media` block without pulling in a CSS parser for one
+ * question. Comments are already gone (`read` strips them), so the prose in
+ * `3-components.css`'s header that names these properties in order to discuss
+ * them is not counted as a rule.
+ */
+const selectorsDeclaringSelection = (css: string) =>
+  [...css.matchAll(/(?:-webkit-)?(?:user-select|touch-callout)\s*:/g)].map(
+    (match) => {
+      const head = css.slice(0, match.index);
+      const before = head.slice(0, head.lastIndexOf("{"));
+      const start = Math.max(
+        before.lastIndexOf("{"),
+        before.lastIndexOf("}"),
+        before.lastIndexOf(";")
+      );
+      return before.slice(start + 1).trim();
+    }
+  );
 
 describe("the comment strip every read here depends on", () => {
   // The gate's own mechanism, in both states: comments go, code stays.
@@ -172,14 +208,35 @@ describe("the recorder opts out of selection and the callout (#556)", () => {
 });
 
 describe("the opt-out stops at those three roots (#556)", () => {
-  // The other half of the gate. A suppression that reached `#root` would also
-  // reach BuildStamp's version and sha and `DatabasePanel` — both rendered at
-  // the top level of `App.tsx`, outside all three roots, and both text a
-  // maintainer legitimately selects.
-  it("did not go global: globals.css suppresses neither", () => {
-    const globals = read("src/app/globals.css");
-    expect(globals).not.toMatch(/user-select/);
-    expect(globals).not.toMatch(/touch-callout/);
+  // The other half of the gate. A suppression that reached `body` or `#root`
+  // would also reach BuildStamp's version and sha and `DatabasePanel` — both
+  // rendered at the top level of `App.tsx`, outside all three roots, and both
+  // text a maintainer legitimately selects.
+  //
+  // Round 2 of this file asserted that over `globals.css` alone, which Frank
+  // called correctly: the app loads four stylesheets, so `body { user-select:
+  // none }` added to `3-components.css` or to either layer below it would have
+  // left that assertion green while making the whole app unselectable — the
+  // exact regression it claims to prevent. An allowlist over EVERY source
+  // stylesheet replaces it. It subsumes the old one (a global rule in
+  // `globals.css` is still caught) and adds what the old one could not see: a
+  // fifth root anywhere in the tree fails here until someone decides it
+  // belongs, whatever its selector.
+  it("declares selection nowhere in src/ but on the four reviewed selectors", () => {
+    const declaring = STYLESHEETS.flatMap((sheet) =>
+      selectorsDeclaringSelection(read(sheet))
+    );
+    // Non-emptiness floor: an empty list would satisfy the set comparison
+    // below just as well as the correct one, and every way this test could
+    // break its own reads (a renamed file, an over-eager comment strip)
+    // produces exactly that.
+    expect(declaring.length).toBeGreaterThanOrEqual(12);
+    expect([...new Set(declaring)].sort()).toEqual([
+      ".confirm-panel",
+      ".menu-panel",
+      ".name-input",
+      ".recorder-sheet",
+    ]);
   });
 
   // The rename field is the one surface in the app whose text MUST stay

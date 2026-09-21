@@ -807,8 +807,12 @@
        but it is a real consequence of using the shared panel classes, and the
        drawers and confirms of every other screen take the same opt-out along
        with the recorder's. `recorder-selection.test.ts` holds both halves: that
-       the opt-out reaches all three roots, and that it stays out of
-       `globals.css`.
+       the opt-out reaches all three roots, and that across EVERY stylesheet
+       under `src/` these properties are declared on exactly four selectors —
+       the three roots and the rename field's opt-back-in. A fifth, wherever it
+       is and whatever its selector, fails that test until someone decides it
+       belongs (Frank R2 P2: the round-2 version of that half read `globals.css`
+       alone, so a `body` rule added to THIS file would have passed it).
 
        Both spellings of `user-select` because WebKit shipped the prefixed name
        long before the unprefixed one, and this repo records no minimum iOS
