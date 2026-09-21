@@ -182,6 +182,42 @@ describe("playback buffer fill — windowed, not whole-clip (#175)", () => {
     expect(assembled).toEqual(expectedFloat(samples));
   });
 
+  /**
+   * Lead 1 of issue 553 alleges the edit-mode audition is quiet because it
+   * sounds a VIEW: `soundRange` in `components/recorder.tsx` plays
+   * `editor.working.subarray(start, end)`, and the lead supposes something on
+   * the way to Web Audio reads that view through its BACKING STORE — so a
+   * mid-buffer range would sound a different, generally lower-energy window
+   * instead of its own samples.
+   *
+   * `int16ToFloatInto` indexes `input[start + i]`, which is a VIEW index, so
+   * the allegation does not hold. This pins that as an assertion rather than
+   * as a code read: a mid-buffer view must reassemble to exactly the floats
+   * its own samples produce. The zero-offset cases above cannot see it — for
+   * them the view and its backing store are the same array — which is why
+   * this is a separate case and not a wider assertion on one of them.
+   *
+   * Refuting this one lead does not resolve issue 553; its others stand.
+   */
+  it("plays a mid-buffer view as its own samples, not its backing store's", async () => {
+    const backing = ramp(WINDOW * 2 + 17);
+    // Deliberately not window-aligned, and longer than one fill window, so the
+    // reassembly crosses a window boundary at a non-zero view offset.
+    const from = 1_000;
+    const to = from + WINDOW + 5;
+    const view = backing.subarray(from, to);
+    const { playSamples } = await loadAudioIo();
+    await playSamples(view, { isStillCurrent: () => true });
+
+    const buffer = constructed[0]!.buffersCreated[0]!;
+    expect(buffer.length).toBe(view.length);
+    const assembled = new Float32Array(view.length);
+    for (const write of buffer.writes) assembled.set(write.data, write.offset);
+    // `slice` copies, so the expectation is built from the view's OWN samples
+    // and shares no backing store with the input.
+    expect(assembled).toEqual(expectedFloat(backing.slice(from, to)));
+  });
+
   it("writes a clip shorter than one window exactly once", async () => {
     const samples = ramp(1_000);
     const { playSamples } = await loadAudioIo();
