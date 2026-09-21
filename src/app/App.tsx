@@ -196,6 +196,14 @@ export function App() {
 
   const openRecorderState = useCallback(
     (segmentId: SegmentId, ordinal: number) => {
+      // Amendment C's other half (#452 PR4, the decision recorded on #452 and
+      // beside the cleanup effect in `use-nav-stack.ts`). The adapter clears
+      // the WHOLE layer stack when `screen` changes, but this transition is not
+      // an unmount — `SegmentsScreen` stays mounted and `inert` under the sheet
+      // (the wrapper below) — so its overlay STATE has to be taken down to
+      // match, or it would outlive the `Layer`s protecting it. First, before
+      // the flip, so state and stack never disagree even for a task.
+      segmentsRef.current?.dismissOverlays();
       // Opening the recorder stops any row that was playing — the same single
       // `leave()` every navigation makes.
       leave();
@@ -224,18 +232,24 @@ export function App() {
     [leave]
   );
 
-  const { openChapter, openRecorder, goBack, commitCloseRecorder } =
-    useNavStack({
-      hasChapter: chapterId !== null,
-      recorderOpen: recorder !== null,
-      recovering,
-      databasePanel: databasePanel !== null,
-      getRecorderHandle: () => recorderRef.current,
-      onOpenChapter: openChapterState,
-      onOpenRecorder: openRecorderState,
-      onLeaveToBooks: backToBooks,
-      onRecorderClosed: recorderClosedState,
-    });
+  const {
+    pushLayer,
+    popLayer,
+    openChapter,
+    openRecorder,
+    goBack,
+    commitCloseRecorder,
+  } = useNavStack({
+    hasChapter: chapterId !== null,
+    recorderOpen: recorder !== null,
+    recovering,
+    databasePanel: databasePanel !== null,
+    getRecorderHandle: () => recorderRef.current,
+    onOpenChapter: openChapterState,
+    onOpenRecorder: openRecorderState,
+    onLeaveToBooks: backToBooks,
+    onRecorderClosed: recorderClosedState,
+  });
 
   // Ahead of everything: a held take whose save has failed keeps the microphone
   // and any sound off under the modal with no control to reach them. (`recovery`
@@ -299,7 +313,16 @@ export function App() {
           propagates to its flat-tree descendants. */}
       <div className="contents" inert={recorder !== null || undefined}>
         {chapterId === null ? (
-          <BooksScreen onOpenChapter={openChapter} />
+          /* Both screens' overlays register as system-Back layers (Books #452
+             PR3, Segments PR4; #374), so a Back over a menu, a dialog or a
+             confirm dismisses it instead of leaving the screen. The recorder
+             sheet keeps its own, older mechanism for now
+             (`overlayBlocksClose`/`overlayDismissal`), which PR5 touches. */
+          <BooksScreen
+            onOpenChapter={openChapter}
+            pushLayer={pushLayer}
+            popLayer={popLayer}
+          />
         ) : (
           <SegmentsScreen
             ref={segmentsRef}
@@ -307,6 +330,8 @@ export function App() {
             audio={audio}
             onBack={goBack}
             onOpenRecorder={openRecorder}
+            pushLayer={pushLayer}
+            popLayer={popLayer}
           />
         )}
       </div>

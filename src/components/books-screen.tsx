@@ -33,15 +33,58 @@ import { readSharePlatform } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import {
+  useScreenLayers,
+  type ScreenLayerBehavior,
+} from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { useTheme } from "@/hooks/use-theme";
+import type { Layer } from "@/lib/nav/layer-stack";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
+/**
+ * Every overlay this screen can put over the shelf, as a system-Back layer
+ * (#452 PR3, #374). The union is what makes `useScreenLayers`' behaviour
+ * record total — a row added here with no behaviour, or a behaviour for an id
+ * that no longer exists, is a `tsc` error rather than a Back that silently
+ * does nothing.
+ *
+ * Five, matching the design's "PR3 — Books' overlays" (the book ≡ menu and its
+ * rename mode are ONE overlay: rename is a mode inside the same panel, so it
+ * opens no second layer and Back from the rename field closes the menu, just
+ * as the panel's own Close does).
+ *
+ * `books:log-clear-confirm` is the one the design's overlay catalogue does not
+ * list: `FailureLogPanel`'s Clear confirm (#205) portals OVER the global menu
+ * rather than replacing it, so it is a genuine second layer. Left unregistered,
+ * a Back with it up would have dismissed the global menu UNDERNEATH it and left
+ * the confirm standing over nothing.
+ *
+ * NOT a layer: `<ShareProgress>` (#491). It goes up and comes down on the share
+ * flow's own timeline (a minimum hold, then an outcome hold) rather than on any
+ * click, so registering it would mean popping a layer from a timer — an effect,
+ * which invariant 6 forbids. It is folded into the book ≡ menu's `busy()`
+ * instead, which is what Amendment D asks for and is also exactly right: the
+ * overlay's whole lifetime is the window in which that menu's own close is a
+ * no-op (`onCloseShareMenu`'s early return), so Back must refuse rather than
+ * run a `dismiss()` that does nothing.
+ */
+type BooksLayerId =
+  | "books:global-menu"
+  | "books:log-clear-confirm"
+  | "books:new-book"
+  | "books:book-menu"
+  | "books:delete-confirm";
+
 interface BooksScreenProps {
   /** Open a chapter's Segments screen. Owned by App (slice 4) for navigation. */
   onOpenChapter: (chapterId: ChapterId) => void;
+  /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
+  pushLayer: (layer: Layer) => void;
+  /** Unregister one by id. Idempotent. */
+  popLayer: (id: string) => void;
 }
 
 /**
@@ -52,7 +95,11 @@ interface BooksScreenProps {
  * short; a book the translator just made opens expanded and scrolls into view,
  * because the next thing they do is add a chapter to it.
  */
-export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
+export function BooksScreen({
+  onOpenChapter,
+  pushLayer,
+  popLayer,
+}: BooksScreenProps) {
   const {
     books,
     newBookPlaceholder,
@@ -65,6 +112,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     renameBook,
     deleteBook,
     deleting,
+    isDeleting,
     deleteFailed,
   } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
@@ -185,6 +233,19 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // banned (`react-hooks/refs`), so the reset instead happens at each place
   // that already advances the session.
   const [savingBookName, setSavingBookName] = useState(false);
+  // The same flag as a live ref (#452 PR3, the design's F4). `savingBookName`
+  // above is last render's answer and drives NameEdit's `busy`; this is what
+  // the book-≡ menu's `Layer.busy()` reads, because the system-Back handler
+  // calls it from a `popstate` with no render in between (invariant 4).
+  const savingBookNameRef = useRef(false);
+  // The two always move together, through one setter, so the Confirm a
+  // translator can see and the Back the system sends can never disagree about
+  // whether a rename is in flight. Every site that touched `setSavingBookName`
+  // calls this instead.
+  const setSavingName = useCallback((value: boolean) => {
+    savingBookNameRef.current = value;
+    setSavingBookName(value);
+  }, []);
   // Which book the Delete confirm is armed for (#337), held apart from
   // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
   // Segments row menu, where Erase closes the row menu and the screen holds the
@@ -216,6 +277,211 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     if (el) nodes.current.set(id, el);
     else nodes.current.delete(id);
   }, []);
+
+  // ── System Back: this screen's overlays as layers (#452 PR3, #374) ────────
+  //
+  // Each overlay has a STATE half here — everything it takes to close the
+  // overlay itself — and, further down, a full close that also unregisters its
+  // layer. The split is App.tsx's own (`openChapterState` vs `openChapter`),
+  // and here it also buys something specific: every behaviour in the record
+  // below refers only to things already declared. A forward reference makes
+  // the React Compiler bail on this whole component, and a bail-out silently
+  // takes `react-hooks`' own analysis down with it — the failure mode #212
+  // already cost this repo once, invisibly. `npm run lint` does catch this one
+  // (`preserve-manual-memoization`), which is how it was found; the ordering
+  // is kept deliberate rather than accidental.
+  //
+  // A `dismiss()` is the STATE half on purpose: the adapter unregisters the
+  // layer itself immediately after calling it (`use-nav-stack.ts`'s
+  // `"rearm-layer-dismiss"` → `popLayer(top.id)`, #494 item 3), so a `dismiss`
+  // that unregistered too would be saying it twice — and would need `layers`,
+  // which is the forward reference this ordering exists to avoid.
+  //
+  // `busy()` must be true whenever `dismiss()` would be a no-op. Otherwise a
+  // Back runs a dismissal that changes nothing, and the adapter still
+  // unregisters the layer — which empties the floor's stack, so
+  // `rearmAfterLayerBack` declines to put the consumed entry back. The overlay
+  // is left on screen with nothing protecting it, and the next Back walks out
+  // of the app (#494 item 3).
+  // Each row pairs the two deliberately; the pairing is noted where it is not
+  // obvious.
+
+  /**
+   * `FailureLogPanel`'s Clear confirm, which owns its own state and so supplies
+   * its own behaviour when it opens. `null` while that confirm is down — which
+   * includes whenever the global menu is closed, since the panel unmounts with
+   * it.
+   */
+  const logClearBehavior = useRef<ScreenLayerBehavior | null>(null);
+
+  const closeGlobalMenuState = useCallback(() => {
+    setMenuOpen(false);
+    logClearBehavior.current = null;
+  }, []);
+
+  /**
+   * Cancel, Escape, the panel's Close, a scrim tap, a system Back: all the same
+   * outcome — nothing is created, and focus goes back where it came from.
+   *
+   * Returns `false` when the dialog is HELD mid-create, so the caller keeps its
+   * layer registered. Mid-create, dismissal does nothing: the IndexedDB write
+   * cannot be recalled once Confirm has run, so tearing the dialog down here
+   * would make "Cancel creates nothing" false AND let the create's continuation
+   * expand and steal focus for a book the closing gesture disowned (Frank R1 P2
+   * / George R1 P2-4, both lenses). Holding the panel for the length of one
+   * `put` is the same "in-flight owns the panel" rule EraseConfirm applies to
+   * its own committing action — and the layer's `busy()` reads the SAME ref, so
+   * a system Back never reaches this early return at all.
+   */
+  const cancelNewBookState = useCallback(() => {
+    if (creatingBook.current) return false;
+    setNewBookSeed(null);
+    setNewBookError(null);
+    return true;
+  }, []);
+
+  /**
+   * Closing the book ≡ menu (scrim, Escape, close button, a system Back) ends
+   * the flow: drop any armed File so a stale "ready" cannot linger behind a
+   * closed menu (mirrors Segments).
+   *
+   * Returns `false` while the share overlay owns the screen, where this is a
+   * no-op. That guard is KEPT deliberately (#491, the DRI's option-A pick):
+   * every OTHER guard this menu's controls carried was removed once `<Menu>`'s
+   * own `inert` prop started covering them — this one is not, because `inert`
+   * only reaches the DOM subtree it is applied to, and this function is still
+   * reachable from THREE places outside that subtree while the overlay is up:
+   * Menu's own `window` Escape listener (`menu.tsx`'s `onKeyDown`), its scrim
+   * `onClick`, and now the system Back gesture. `<ShareProgress>`'s own
+   * capture-phase Escape (with `stopPropagation`) is expected to swallow the
+   * Escape before Menu's bubble-phase listener sees it, and the overlay's own
+   * scrim (`z-index: 90`, over the menu scrim's 80) is expected to swallow the
+   * click — but neither of those is `inert`, and neither sees a system Back at
+   * all, so this guard is the belt for all three. The overlay's OWN
+   * scrim/Escape still cancel a genuinely cancelable busy-prepare phase, wired
+   * straight to `bookShare.reset` (see `<ShareProgress>` below) rather than
+   * through this function, so that path is unaffected by this guard.
+   *
+   * It reads `bookShare.ownsScreen()` — the LIVE flow state — and not
+   * `shareOverlayOwnsScreen(bookShare.progress)`, the rendered mirror it used
+   * before #452 PR3. Same predicate, one commit fresher, and the freshness is
+   * load-bearing now: this is a `Layer`'s `dismiss()`, reached only when that
+   * layer's `busy()` said the overlay does NOT own the screen. Two copies of
+   * the same fact can disagree for one commit, and the disagreement is the bad
+   * way round — `busy()` false, this guard true — which is a Back that
+   * unregisters the layer, and so leaves `rearmAfterLayerBack` with an empty
+   * stack and no reason to restore the entry, while the menu stays open. One
+   * source, no window.
+   */
+  const closeBookMenuState = useCallback(() => {
+    if (bookShare.ownsScreen()) return false;
+    bookMenuSession.current += 1;
+    setShareMenuBookId(null);
+    setRenamingBook(false);
+    setSavingName(false);
+    bookShare.reset();
+    return true;
+  }, [bookShare, setSavingName]);
+
+  /**
+   * Cancel / Escape / scrim / a system Back unmount the delete confirm with
+   * focus still on Cancel. `onConfirmDelete` below already hands focus off
+   * after both of ITS outcomes; a plain close never did, so a keyboard/switch
+   * user landed on `document` on the path they actually take most (George R10
+   * P2-2). The row is untouched, so the target is just the book the confirm was
+   * armed for; the focus effect runs once `deleteTargetId` goes null and
+   * `inert` lifts.
+   *
+   * **The one behaviour on this screen that closes over render state**, and so
+   * the one that depends on `useScreenLayers` refreshing its latest-ref in a
+   * LAYOUT effect rather than a passive one (Frank R4 P2 on #531). The other
+   * four are immune by construction and it is worth knowing which is which:
+   * `closeGlobalMenuState` and `cancelNewBookState` have empty dep arrays;
+   * `closeBookMenuState` closes over `bookShare`, but reads it only through
+   * `ownsScreen()`, which is a live synchronous read; the log-clear behaviour
+   * is handed over imperatively in its own click handler and holds a ref. Here
+   * `deleteTargetId` is a `useState` value read INSIDE the body, so a
+   * pre-commit closure would run this with `null` and silently skip the focus
+   * hand-off — the dialog would still close, and a keyboard or switch user
+   * would land on `document`. Do not "simplify" that layout effect back.
+   */
+  const closeDeleteConfirmState = useCallback(() => {
+    if (deleteTargetId !== null) pendingFocus.current = deleteTargetId;
+    setDeleteTargetId(null);
+  }, [deleteTargetId]);
+
+  const layers = useScreenLayers<BooksLayerId>(pushLayer, popLayer, {
+    "books:global-menu": {
+      // The theme toggle and the log panel's Share write nothing this screen
+      // must wait for — `clearFailureLog` belongs to the Clear confirm, one
+      // layer up, and `useFailureLogShare`'s own send holds no menu state.
+      busy: () => false,
+      dismiss: closeGlobalMenuState,
+    },
+    "books:log-clear-confirm": {
+      // `?? false` / `?.` cover only the window in which the panel unmounted
+      // without this layer being closed, which `closeGlobalMenu` below makes
+      // unreachable by closing BOTH ids. If it were ever reached, Back would
+      // spend one gesture and then fall through — not a trap.
+      busy: () => logClearBehavior.current?.busy() ?? false,
+      dismiss: () => logClearBehavior.current?.dismiss(),
+    },
+    "books:new-book": {
+      busy: () => creatingBook.current,
+      dismiss: () => {
+        cancelNewBookState();
+      },
+    },
+    "books:book-menu": {
+      // Two writes live behind this panel: a rename in flight (#383/#384 —
+      // whether it SHOULD refuse Back is #452 open question 7, for the
+      // requirements owner; this ships the design's overlay-catalogue row and
+      // is one term to remove either way), and the share flow, whose modal owns
+      // the screen for its whole timeline (Amendment D, widened from
+      // `status === "preparing"` because #491's modal outlives it — see
+      // `UseShareFlow.ownsScreen`).
+      busy: () => savingBookNameRef.current || bookShare.ownsScreen(),
+      dismiss: () => {
+        closeBookMenuState();
+      },
+    },
+    "books:delete-confirm": {
+      // The same live ref `deleteBook` flips to refuse a second Confirm, so
+      // Back and Confirm agree about "in flight" by construction.
+      busy: isDeleting,
+      dismiss: closeDeleteConfirmState,
+    },
+  });
+
+  // The global menu's ONE open and ONE close. Every entry point — the ≡, the
+  // panel's Close, Escape, a scrim tap, the log panel's `onDone` — goes through
+  // this pair, so no call site can forget the registration.
+  const openGlobalMenu = useCallback(() => {
+    setMenuOpen(true);
+    layers.open("books:global-menu");
+  }, [layers]);
+  const closeGlobalMenu = useCallback(() => {
+    closeGlobalMenuState();
+    // The Clear confirm lives INSIDE this panel and unmounts with it, so its
+    // layer goes too — otherwise it would outlive its own component with a
+    // `dismiss()` that can no longer reach anything, and hold Back at the shelf
+    // forever (#494 item 3). Idempotent when it was never opened.
+    layers.close("books:log-clear-confirm");
+    layers.close("books:global-menu");
+  }, [closeGlobalMenuState, layers]);
+  // `FailureLogPanel` tells this screen when its Clear confirm opens and
+  // closes; the panel keeps the state, this screen keeps the registration.
+  const onClearConfirmOpen = useCallback(
+    (behavior: ScreenLayerBehavior) => {
+      logClearBehavior.current = behavior;
+      layers.open("books:log-clear-confirm");
+    },
+    [layers]
+  );
+  const onClearConfirmClose = useCallback(() => {
+    layers.close("books:log-clear-confirm");
+    logClearBehavior.current = null;
+  }, [layers]);
 
   useEffect(() => {
     const id = pendingScroll.current;
@@ -293,22 +559,23 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     setCreatingBookBusy(false);
     setNewBookError(null); // a fresh dialog starts with nothing to report
     setNewBookSeed(newBookPlaceholder);
-  }, [newBookPlaceholder]);
+    // Registered in the SAME handler that opens it (invariant 6), and after
+    // the state above for the same reason that ordering is documented as
+    // unobservable in `use-nav-stack.ts`'s `openChapter`: the layer is on the
+    // stack before this gesture returns either way.
+    layers.open("books:new-book");
+  }, [layers, newBookPlaceholder]);
 
   // Cancel, Escape, the panel's Close, a scrim tap: all the same outcome —
-  // nothing is created, and focus goes back where it came from.
+  // nothing is created, and focus goes back where it came from. See
+  // `cancelNewBookState` above for why a create in flight refuses all of them.
+  //
+  // The layer is unregistered on the SAME guarded path the dialog comes down
+  // on, which is why the state half returns whether it closed: the in-flight
+  // case leaves BOTH the panel and its layer standing.
   const onCancelNewBook = useCallback(() => {
-    // Mid-create, dismissal does nothing. The IndexedDB write cannot be recalled
-    // once Confirm has run, so tearing the dialog down here would make "Cancel
-    // creates nothing" false AND let the create's continuation expand and steal
-    // focus for a book the closing gesture disowned (Frank R1 P2 / George R1
-    // P2-4, both lenses). Holding the panel for the length of one `put` is the
-    // same "in-flight owns the panel" rule EraseConfirm applies to its own
-    // committing action.
-    if (creatingBook.current) return;
-    setNewBookSeed(null);
-    setNewBookError(null);
-  }, []);
+    if (cancelNewBookState()) layers.close("books:new-book");
+  }, [cancelNewBookState, layers]);
 
   // Return focus to the trigger once the dialog is gone. In an effect, not in
   // the handler: the shelf is `inert` while the dialog is open, and focusing an
@@ -359,6 +626,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       const { book } = outcome;
       newBookReturnFocus.current = null;
       setNewBookSeed(null);
+      // The dialog comes down on the success path too, so its layer must —
+      // NOT through `onCancelNewBook`, whose own guard would refuse here
+      // (`creatingBook` stays held until the next open edge, deliberately).
+      layers.close("books:new-book");
       // A new book opens expanded — the next action is adding its first
       // chapter — and focus follows, in EVERY case now. Before #314 only a
       // create from the empty-state invite handed focus off, because the
@@ -372,7 +643,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       // See its declaration — releasing it here reopens the double-create window
       // between the write resolving and the panel actually unmounting.
     },
-    [createBook, newBookSeed]
+    [createBook, layers, newBookSeed]
   );
 
   const onNewChapter = useCallback(
@@ -388,53 +659,65 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
   const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // The teardown the vanish effect below runs, behind a latest-ref ON PURPOSE.
+  // It has to reset the share, and `useBookShare()` returns a fresh object
+  // literal every render (`use-book-share.ts`) — putting that in an effect's
+  // dependency array is precisely the round-6 P1 shape this design exists to
+  // remove, and it is the reason `useScreenLayers` exists at all. A ref keeps
+  // the effect's deps to plain state values plus the memoized `layers`, which
+  // is the property its sibling effect for the delete confirm documents.
+  // The vanish effect below needs to reset the share, and `useBookShare()`
+  // returns a fresh object literal every render (`use-book-share.ts`) — that
+  // object in a dependency array is the round-6 P1 shape this design exists to
+  // remove. `reset` ITSELF is stable, though, so the member is the dependency
+  // and the object never is: it is a `useCallback([handoff, modal])` over two
+  // values that are `ref.current ??= …` in `share-flow.ts:388,409`, created
+  // once for the hook's life.
+  const resetBookShare = bookShare.reset;
   // Open a book's ≡ menu, ending any prior menu session so a rename still in
   // flight from the previous one cannot close this one.
-  const onOpenShareMenu = useCallback((bookId: BookId) => {
-    bookMenuSession.current += 1;
-    setShareMenuBookId(bookId);
-    // A different book's still-pending rename must not show THIS book's fresh
-    // Confirm as busy before it has even been tapped (Frank r1, #384).
-    setSavingBookName(false);
-  }, []);
-  // Closing the menu (scrim, Escape, close button) ends the flow: drop any armed
-  // File so a stale "ready" cannot linger behind a closed menu (mirrors Segments).
+  const onOpenShareMenu = useCallback(
+    (bookId: BookId) => {
+      bookMenuSession.current += 1;
+      setShareMenuBookId(bookId);
+      // A different book's still-pending rename must not show THIS book's fresh
+      // Confirm as busy before it has even been tapped (Frank r1, #384).
+      setSavingName(false);
+      layers.open("books:book-menu");
+    },
+    [layers, setSavingName]
+  );
+  // Menu's actual `onClose`, and the one close every caller uses — see
+  // `closeBookMenuState` above for what it does and why the share-overlay guard
+  // is kept.
   //
-  // This is Menu's actual `onClose` — a Menu-level guard that blocked it while
-  // `savingBookName` was true (round 3/4 of #384's review) was REVERTED: it
-  // stopped the scrim/Close/Escape-elsewhere from unmounting the menu mid-write,
-  // but system Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
+  // The Menu-level guard that blocked this while `savingBookName` was true
+  // (round 3/4 of #384's review) was REVERTED: it stopped the
+  // scrim/Close/Escape-elsewhere from unmounting the menu mid-write, but system
+  // Back still could (a separate mechanism, `lib/nav/navigation.ts`'s
   // `popAction`), and a Menu-only guard funnels a user onto exactly that worse
-  // exit (George R5 P2) — Close used to work, so nobody reached for system Back;
-  // making it a silent no-op is what sends them there. Fixing this properly
-  // needs the nav layer's `overlayBlocksClose`/`overlayDismissal` absorbing
-  // system Back too, tracked at #393 (with #374, the same gap for Books' other
-  // menus) rather than shipped as a partial fix here.
+  // exit (George R5 P2) — Close used to work, so nobody reached for system
+  // Back; making it a silent no-op is what sends them there.
+  //
+  // **#452 PR3 gave system Back its own route through this menu's `Layer`**,
+  // which is what #374 and #393 were waiting for. What it did NOT do is make
+  // the two exits agree — and this comment claimed it did, until #536 item 2.
+  // The split that remains, stated exactly rather than papered over: the
+  // layer's `busy()` is `savingBookNameRef.current || bookShare.ownsScreen()`
+  // (see the behaviour record above), while this close guards on
+  // `ownsScreen()` ALONE. So in the window between a rename Confirm and its
+  // write settling, a system Back is REFUSED while Menu's Close, its scrim and
+  // its Escape still take the panel down. The write itself is unaffected
+  // either way; `bookMenuSession` only stops that already-closed menu being
+  // closed a second time by the late resolution, it does not recall the `put`.
+  //
+  // Closing the split means adding the saving read here, which would decide
+  // for Close what PR3 decided for Back. Whether a rename in flight should
+  // refuse dismissal AT ALL is #452 open question 7, for the requirements
+  // owner, so it is named here rather than answered by a lane.
   const onCloseShareMenu = useCallback(() => {
-    // KEPT deliberately (#491, the DRI's option-A pick): every OTHER guard
-    // this menu's controls carried was removed once `<Menu>`'s own `inert`
-    // prop (below) started covering them — this one is not, because `inert`
-    // only reaches the DOM subtree it is applied to, and this function is
-    // still reachable from TWO places outside that subtree while the
-    // overlay is up: Menu's own `window` Escape listener (`menu.tsx`'s
-    // `onKeyDown`), and its scrim `onClick` — both call `onClose` directly,
-    // neither is inside the panel. `<ShareProgress>`'s own capture-phase
-    // Escape (with `stopPropagation`) is expected to swallow the Escape
-    // before Menu's bubble-phase listener ever sees it, and the overlay's
-    // own scrim (`z-index: 90`, over the menu scrim's 80) is expected to
-    // swallow the click — but neither of those is `inert`, so this guard is
-    // the belt for both, not a redundant copy of the primitive. The
-    // overlay's OWN scrim/Escape still cancel a genuinely cancelable
-    // busy-prepare phase, wired straight to `bookShare.reset` (see
-    // `<ShareProgress>` below) rather than through this function, so that
-    // path is unaffected by this guard.
-    if (shareOverlayOwnsScreen(bookShare.progress)) return;
-    bookMenuSession.current += 1;
-    setShareMenuBookId(null);
-    setRenamingBook(false);
-    setSavingBookName(false);
-    bookShare.reset();
-  }, [bookShare]);
+    if (closeBookMenuState()) layers.close("books:book-menu");
+  }, [closeBookMenuState, layers]);
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -447,7 +730,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
       // same session (F1). Without this, the stale resolution closes the
       // now-current menu and runs share.reset(), discarding a prepared encode.
       const session = bookMenuSession.current;
-      setSavingBookName(true);
+      // Flipped SYNCHRONOUSLY, before the write is even started — which is
+      // what makes the menu layer's `busy()` honest for a system Back landing
+      // in the same task as this tap (invariant 4).
+      setSavingName(true);
       void renameBook(shareMenuBookId, name)
         .then((book) => {
           if (book && bookMenuSession.current === session) onCloseShareMenu();
@@ -456,10 +742,10 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           // Guarded the same way the close above is: a stale settle from a
           // session this screen has already moved past (a newer open, close,
           // or armed share) must not touch state a newer session now owns.
-          if (bookMenuSession.current === session) setSavingBookName(false);
+          if (bookMenuSession.current === session) setSavingName(false);
         });
     },
-    [renameBook, shareMenuBookId, onCloseShareMenu]
+    [renameBook, setSavingName, shareMenuBookId, onCloseShareMenu]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingBookName` like every other exit from this
@@ -470,8 +756,8 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   const onCancelRenameBook = useCallback(() => {
     bookMenuSession.current += 1;
     setRenamingBook(false);
-    setSavingBookName(false);
-  }, []);
+    setSavingName(false);
+  }, [setSavingName]);
   // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491) —
   // see `segments-screen.tsx`'s own copy of this comment for why capture must
   // happen synchronously in the tap handlers below, never from an effect.
@@ -490,13 +776,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
-    setSavingBookName(false);
+    setSavingName(false);
     void bookShare.prepare(
       shareMenuBook.bookId,
       strings.shareBookFilename(shareMenuBook.name),
       (n) => strings.shareFilename(shareMenuBook.name, n)
     );
-  }, [focusRestore, bookShare, shareMenuBook]);
+  }, [focusRestore, bookShare, setSavingName, shareMenuBook]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).
@@ -565,17 +851,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
   // hand-off. Read by the auto-close effect further down, whose vanish can
   // only ever see the shelf AFTER the book is already gone.
   const armedShelf = useRef<readonly BookId[]>([]);
+  // Cancel / Escape / scrim — see `closeDeleteConfirmState` above, plus the
+  // layer. A system Back reaches the state half directly (the adapter
+  // unregisters the layer itself), so both exits end in the same place.
   const closeDeleteConfirm = useCallback(() => {
-    // Cancel / Escape / scrim unmount the confirm with focus still on Cancel.
-    // `onConfirmDelete` below already hands focus off after both of ITS
-    // outcomes; a plain close never did, so a keyboard/switch user landed on
-    // `document` on the path they actually take most (George R10 P2-2). The
-    // row is untouched, so the target is just the book the confirm was
-    // armed for; the effect above runs once `deleteTargetId` goes null and
-    // `inert` lifts.
-    if (deleteTargetId !== null) pendingFocus.current = deleteTargetId;
-    setDeleteTargetId(null);
-  }, [deleteTargetId]);
+    closeDeleteConfirmState();
+    layers.close("books:delete-confirm");
+  }, [closeDeleteConfirmState, layers]);
   // The book underneath the confirm can also vanish WITHOUT going through
   // this screen's own delete flow — a second tab or a pre-`autoUpdate` page
   // deleting it, the same shape `reportUnlessStale` (`use-books.ts`) guards
@@ -602,8 +884,55 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         armedShelf.current
       );
       setDeleteTargetId(null);
+      // The confirm comes down here without any tap, so its layer has to come
+      // down here too — a registered layer whose overlay is gone is #494 item
+      // 3's trap, and this path is the one way to reach it on Books.
+      //
+      // This is an EFFECT closing a layer, which invariant 6 does NOT forbid:
+      // what it forbids is REGISTRATION keyed on an effect, because that is
+      // what an unstable dependency can fire spuriously. Both deps here are
+      // plain state values and `layers` is memoized (`use-screen-layers.ts`),
+      // so there is no hook-returned object literal to destabilise the array —
+      // the round-6 P1 shape cannot occur.
+      layers.close("books:delete-confirm");
     });
-  }, [deleteTarget, deleteTargetId]);
+  }, [deleteTarget, deleteTargetId, layers]);
+  // The SAME class for the book ≡ menu (George R1 P3-2). `<Menu>` is open on
+  // `shareMenuBook !== null`, which is resolved from the shelf — so when
+  // another tab deletes the open book the panel unmounts on its own, while
+  // `shareMenuBookId` and the registered layer stay behind. The next Back then
+  // spends itself running `closeBookMenuState` against a menu that is already
+  // gone and popping a dead layer: one extra Back that does nothing visible,
+  // ahead of #535's silent one, before the app will leave.
+  //
+  // No `bookShare.ownsScreen()` guard, unlike the tap-driven close path — and
+  // NOT because there is nothing left on screen to protect. This comment used
+  // to say the progress overlay "renders INSIDE this same `<Menu>` … so it
+  // came down with the panel", which is the opposite of what it does (#536
+  // item 1). `<ShareProgress>` is a SIBLING of `<Menu>`, portalled to `<body>`
+  // (`share-progress.tsx`; the render site is at the end of this file), so it
+  // SURVIVES the panel unmounting and is still on screen while this effect
+  // resets it a microtask later.
+  //
+  // The guard is left off anyway, deliberately, and the reason is the BOOK,
+  // not the overlay: that guard exists to stop a dismissal cancelling a share
+  // the translator is watching, and what triggers this path is not a dismissal
+  // — it is the book vanishing from under the menu (another tab, a
+  // pre-`autoUpdate` page). A share of a book that no longer exists has
+  // nothing left to prepare or hand over, so resetting it is the correct end
+  // state however visible its overlay still is. A PR4 copy onto the chapter
+  // menu must carry THAT reason; the unmount premise is false for both.
+  useEffect(() => {
+    if (shareMenuBookId === null || shareMenuBook !== null) return;
+    void Promise.resolve().then(() => {
+      bookMenuSession.current += 1;
+      setShareMenuBookId(null);
+      setRenamingBook(false);
+      setSavingName(false);
+      resetBookShare();
+      layers.close("books:book-menu");
+    });
+  }, [shareMenuBook, shareMenuBookId, layers, setSavingName, resetBookShare]);
   // Arm the confirm from the ≡ menu, closing the menu first — the same shape as
   // the Segments row menu, where Erase closes the row menu and the screen owns
   // the target. `shareMenuBookId` is read BEFORE the close clears it.
@@ -633,13 +962,31 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
     // the whole time the guard used to check — the primitive covers it now,
     // not a per-handler check.
     const bookId = shareMenuBookId;
+    // Registered BEFORE the menu's own layer is unregistered, so the floor's
+    // layer stack goes 1 → 2 → 1 and never passes through empty (#452 PR3).
+    //
+    // Belt and braces, and this comment will not overstate it: with no release
+    // in the design, a stack that dipped to 0 here would cost nothing —
+    // `popLayer` issues no history call and `floorArmed` survives an empty
+    // stack, so the entry would still be standing when the confirm registered.
+    // The only thing an empty window could lose is a `popstate` landing inside
+    // it (`popAction` would see no layer at the floor and route `"exit-app"`,
+    // consuming the entry under a confirm that is about to appear) — and it
+    // cannot: both registrations are synchronous in this one handler, and a
+    // `popstate` is a separate task. Kept because it makes
+    // `floorEntryForLayerChange`'s "one entry for as long as any layer is open"
+    // true continuously rather than true-by-scheduling.
+    //
+    // The React state below still closes the menu and opens the confirm in the
+    // order it always did; only the two registrations are interleaved.
+    layers.open("books:delete-confirm");
     onCloseShareMenu();
     // Captured NOW, while the row this confirm targets is still on screen —
     // the auto-close effect above needs this "before" shelf, because by the
     // time it detects the vanish, `books` has already moved on without it.
     armedShelf.current = books.map((b) => b.bookId);
     setDeleteTargetId(bookId);
-  }, [books, onCloseShareMenu, shareMenuBookId]);
+  }, [books, layers, onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // The shelf order as it is right now, captured while the row is still on
@@ -681,8 +1028,12 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
         shelfBefore
       );
       setDeleteTargetId(null);
+      // Both outcomes take the confirm down, so both take its layer down.
+      // `"busy"` returned above the `if`s, leaving both standing — which is
+      // right: the first delete still owns them.
+      layers.close("books:delete-confirm");
     })();
-  }, [books, deleteBook, deleteTargetId]);
+  }, [books, deleteBook, deleteTargetId, layers]);
 
   // `deleteFailed` only ever RELABELS the hook's current error — they are one
   // state there, so the label cannot outlive what it labels. A *reload* no
@@ -760,7 +1111,7 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
                 : strings.menuOpen
             }
             variant="quiet"
-            onClick={() => setMenuOpen(true)}
+            onClick={openGlobalMenu}
           />
           {failureCount > 0 && (
             // Decorative for AT — the count is already in the button's
@@ -878,11 +1229,13 @@ export function BooksScreen({ onOpenChapter }: BooksScreenProps) {
           change behind the scrim and can tap straight back if they guessed
           wrong; that is the affordance doing the explaining, which is the
           `state-in-place` rule this repo prefers over a message. */}
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)}>
+      <Menu open={menuOpen} onClose={closeGlobalMenu}>
         {failureCount > 0 && (
           <FailureLogPanel
             count={failureCount}
-            onDone={() => setMenuOpen(false)}
+            onDone={closeGlobalMenu}
+            onClearConfirmOpen={onClearConfirmOpen}
+            onClearConfirmClose={onClearConfirmClose}
           />
         )}
         <Control

@@ -75,6 +75,25 @@ export interface UseEraseSegment {
   erase(segmentId: SegmentId): Promise<EraseResult>;
   /** True while an erase is in flight — the confirm/menu disables its Erase button on this. */
   erasing: boolean;
+  /**
+   * The same in-flight fact as {@link erasing}, read LIVE (#452 PR4, the
+   * design's F4). `erasing` is last render's answer and is what paints the
+   * confirm's busy Control; this reads the ref `erase` flips synchronously, and
+   * is what the erase confirm's `Layer.busy()` must call — a system Back
+   * arrives on a `popstate` with no render in between, so a state value read
+   * there can be one render stale and let a Back tear the dialog down over a
+   * `clearSegmentTake` that is already committing (invariant 4,
+   * `docs/design/back-navigation.md`; `lib/nav/layer-stack.ts`'s `Layer`).
+   *
+   * Identity-stable (`useCallback([])`), because a `Layer`'s `busy` is
+   * captured when the overlay opens and called much later.
+   *
+   * The recorder's own erase confirm still reads `erase.erasing` at
+   * `recorder.tsx` — that call site is #452 PR5's single-line fix, and this
+   * accessor is the thing it switches to. Named here so the two do not drift
+   * into two different ideas of "in flight".
+   */
+  isErasing: () => boolean;
   /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
   error: string | null;
 }
@@ -98,6 +117,10 @@ export function useEraseSegment(
    * it can fire a second `clearSegmentTake` against a row the first is clearing.
    */
   const erasingRef = useRef(false);
+  // The live read of that same ref, for `Layer.busy()` (see `isErasing`'s
+  // docblock). Mirrors `useBooks`' `isDeleting` exactly, including the empty
+  // dependency array that keeps its identity stable for the life of the hook.
+  const isErasing = useCallback(() => erasingRef.current, []);
 
   const erase = useCallback(
     async (segmentId: SegmentId): Promise<EraseResult> => {
@@ -120,5 +143,5 @@ export function useEraseSegment(
     [onErased]
   );
 
-  return { erase, erasing, error };
+  return { erase, erasing, isErasing, error };
 }

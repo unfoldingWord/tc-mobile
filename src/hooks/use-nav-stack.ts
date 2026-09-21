@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-import { topLayer, type Layer } from "@/lib/nav/layer-stack";
 import {
+  floorArmedOnResume,
+  floorEntryForLayerChange,
+  rearmAfterLayerBack,
+  topLayer,
+  type Layer,
+} from "@/lib/nav/layer-stack";
+import {
+  backEffectFor,
   navDirection,
   popAction,
   resumeNavIndex,
@@ -42,12 +49,18 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
  *     seed from `resumeNavIndex` on mount (Amendment B): a reload mid-stack
  *     ADOPTS the entry already there rather than rewriting it to 0.
- *   - `layerStack` — the screen-scoped overlay stack (invariant 1/3). EMPTY in
- *     PR2: nothing calls `pushLayer` until Books'/Segments' overlays convert in
- *     PR3/PR4, so the two layer tags are unreachable-by-construction and every
- *     Back routes exactly as `develop` does today. Not a stub — a functional,
- *     empty stack with its full API, per the design's "an empty layer stack is
- *     fine, a half-built overlay conversion is not".
+ *   - `layerStack` — the screen-scoped overlay stack (invariant 1/3). Books'
+ *     five overlays register here as of PR3 (#374); Segments' follow in PR4, so
+ *     above the floor the two layer tags are still unreachable-by-construction
+ *     and every Back there routes exactly as `develop` does today.
+ *   - `floorArmed` / `atFloor` — Amendment G (#452 PR3). Books pushes no entry
+ *     of its own, so before PR3 a Back with a Books overlay open was a document
+ *     navigation with NO `popstate` — measured, see
+ *     `e2e/back-navigation.spec.ts`'s PR3 header — and the layer stack was
+ *     never consulted. While (and only while) the floor screen has any layer
+ *     open, the adapter holds ONE protective entry, so that Back becomes a
+ *     `popstate` the stack can absorb. The pure decisions are
+ *     `floorEntryForLayerChange` / `rearmAfterLayerBack` (`lib/nav/layer-stack.ts`).
  *   - `travelGuard` — the any-outstanding guard (Amendment A). `goBack` and the
  *     commit-close settle call `beginBack`; every popstate landing clears it
  *     with `settleOutstanding` (issuer-blind, mirroring `develop`'s
@@ -117,7 +130,12 @@ export interface UseNavStackParams {
 }
 
 export interface UseNavStack {
-  /** Register an overlay (PR3/PR4 click handlers; unused in PR2). */
+  /**
+   * Register an open overlay, from the SAME click handler that flips its own
+   * `open` state (invariant 6 — never from an effect). At the floor screen this
+   * also arms the protective entry the Back it absorbs will consume
+   * (Amendment G).
+   */
   readonly pushLayer: (layer: Layer) => void;
   /** Unregister an overlay by id, idempotent (the rearm-layer-dismiss case). */
   readonly popLayer: (id: string) => void;
@@ -135,8 +153,19 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // Monotonic depth stamp (invariant 9). Seeded on mount by Amendment B.
   const navIndex = useRef(0);
   const nextIndex = useRef(0);
-  // Screen-scoped overlay stack (invariant 1/3). Empty in PR2.
+  // Screen-scoped overlay stack (invariant 1/3). Books' overlays push onto it
+  // as of PR3; Segments' follow in PR4.
   const layerStack = useRef<Layer[]>([]);
+  // Amendment G (#452 PR3): whether this adapter is holding the FLOOR screen's
+  // protective entry. At most one, for as long as the floor screen has any
+  // layer open — see `floorEntryForLayerChange` for why the floor needs one at
+  // all and why an always-on entry was the wrong shape.
+  const floorArmed = useRef(false);
+  // `backEffectFor(screen) === "exit-app"` as of the last commit, read by
+  // `pushLayer`/`popLayer` (both called from click handlers, never during
+  // render). A ref rather than a dep, because both commands must stay
+  // identity-stable for the same reason `goBack` does.
+  const atFloor = useRef(false);
   // The any-outstanding travel guard (Amendment A). Replaces `backRequested`.
   const travelGuard = useRef<TravelGuardState>(initialTravelGuardState);
   // The recorder-commit-close in-flight absorber (invariant 7; was `committing`).
@@ -152,18 +181,89 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const onOpenRecorderRef = useRef(params.onOpenRecorder);
   const onRecorderClosedRef = useRef(params.onRecorderClosed);
   const getRecorderHandleRef = useRef(params.getRecorderHandle);
-  useEffect(() => {
+  const screen = screenFor(params.hasChapter, params.recorderOpen);
+  // The remaining four values `onPopState` used to read from its CLOSURE
+  // (George R1 P2 on PR #531). See the popstate effect for why a closure is
+  // the wrong home for any of them; they live here so that EVERY value that
+  // handler reads is a ref written in the layout phase, with no exceptions
+  // left to reason about individually.
+  const screenRef = useRef(screen);
+  const recoveringRef = useRef(params.recovering);
+  const databasePanelRef = useRef(params.databasePanel);
+  const onLeaveToBooksRef = useRef(params.onLeaveToBooks);
+  // `useLayoutEffect`, NOT `useEffect` (Frank R4 P2 on PR #531; widened to the
+  // whole popstate closure by George R1 P2). A passive effect is flushed in a
+  // scheduler macrotask AFTER the commit, and a `popstate` is a macrotask too,
+  // so anything refreshed passively can be read pre-commit by a Back that
+  // lands in between. A layout effect runs synchronously inside the commit
+  // task, before paint and before any macrotask, which closes that window
+  // rather than narrowing it.
+  //
+  // THE RULE THIS ENCODES, stated once so the next value added does not have
+  // to rediscover it: **every value `onPopState` reads is a ref written here.**
+  // Round 5 moved `atFloor` for exactly this reason and left `screen`,
+  // `recovering`, `databasePanel` and `onLeaveToBooks` on the passive
+  // re-subscribe path — the fix was narrower than the class it claimed to
+  // close, which is what George's P2 found. The boundary is not "things named
+  // latest-ref"; it is the handler's whole closure.
+  //
+  // This also makes the bootstrap effect's ordering dependency below stronger
+  // than declaration order alone: layout effects run before passive ones, so
+  // `atFloor.current` is resolved by PHASE before the adopt reads it.
+  useLayoutEffect(() => {
     onOpenChapterRef.current = params.onOpenChapter;
     onOpenRecorderRef.current = params.onOpenRecorder;
     onRecorderClosedRef.current = params.onRecorderClosed;
     getRecorderHandleRef.current = params.getRecorderHandle;
+    screenRef.current = screen;
+    recoveringRef.current = params.recovering;
+    databasePanelRef.current = params.databasePanel;
+    onLeaveToBooksRef.current = params.onLeaveToBooks;
+    // Amendment G. Derived from `backEffectFor`, not from `screen === "books"`,
+    // so "the floor" stays one definition: the screen whose Back leaves the app
+    // because it pushed nothing of its own.
+    atFloor.current = backEffectFor(screen) === "exit-app";
   });
 
   const pushHistoryEntry = useCallback(() => {
     // A marker entry whose only job is to be there for Back to consume, carrying
     // the monotonic index that tells Back from Forward (invariant 9).
+    //
+    // `floor` records the entry's KIND for a later page life to read back
+    // (Amendment G, `floorArmedOnResume`; Frank R3 P2). Every call site here is
+    // either the floor's arm or a re-arm of the entry the `popstate` just
+    // consumed at the CURRENT screen's depth — so "was the current screen the
+    // floor when this entry was pushed" is exactly the right question, and
+    // `atFloor.current` is exactly its answer. `enterScreen` is the one push
+    // that is a SCREEN entry by definition and does not go through here.
     const index = ++nextIndex.current;
-    window.history.pushState({ tc: true, index }, "");
+    window.history.pushState({ tc: true, index, floor: atFloor.current }, "");
+    navIndex.current = index;
+  }, []);
+
+  /**
+   * The push a SCREEN TRANSITION makes (`openChapter` / `openRecorder`), as
+   * opposed to the re-arms above.
+   *
+   * It differs in one case and only one: the shelf may still be holding a
+   * floor entry armed for an overlay that was closed by its own control
+   * (Amendment G). That entry already sits at exactly the depth this screen's
+   * entry wants, so it is RE-STAMPED rather than stacked on top of — one entry
+   * per screen depth (invariant 2), and no traversal to undo an extra level.
+   *
+   * The re-arm sites must NOT use this. They run from the `popstate` handler
+   * AFTER the browser has already popped the entry they are restoring, so at
+   * the floor a `replaceState` there would overwrite the app's own root entry
+   * instead of putting the popped one back.
+   */
+  const enterScreen = useCallback(() => {
+    const index = ++nextIndex.current;
+    if (floorArmed.current) {
+      floorArmed.current = false;
+      window.history.replaceState({ tc: true, index }, "");
+    } else {
+      window.history.pushState({ tc: true, index }, "");
+    }
     navIndex.current = index;
   }, []);
 
@@ -182,6 +282,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     const raw = window.history.state as {
       tc?: unknown;
       index?: unknown;
+      floor?: unknown;
     } | null;
     const resumed = resumeNavIndex(raw);
     navIndex.current = resumed;
@@ -189,7 +290,26 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     const adoptable = raw?.tc === true && raw.index === resumed;
     if (!adoptable) {
       window.history.replaceState({ tc: true, index: 0 }, "");
+      return;
     }
+    // Amendment G's half of the adopt (Frank R3 P2). The ENTRY survives a
+    // reload; `floorArmed` is a ref and does not, so without this the adapter
+    // comes back having forgotten an entry that is still on the stack and the
+    // next overlay arms a second one — unbounded across reload → open cycles.
+    // Reading the kind the push wrote, rather than inferring it from the depth,
+    // is what keeps a Segments entry that outlived its screen from being
+    // adopted as the floor's; `floorArmedOnResume` has the full argument.
+    //
+    // Ordering: `atFloor.current` must already be resolved for the screen being
+    // resumed on when this runs. It is, by PHASE rather than by declaration
+    // order alone — the latest-ref effect above is a `useLayoutEffect` (Frank
+    // R4 P2) and React flushes every layout effect before any passive one, so
+    // this passive effect cannot observe a pre-commit `atFloor`. Declaration
+    // order still holds too; it is simply no longer the only thing holding it.
+    floorArmed.current = floorArmedOnResume({
+      marked: raw.floor === true,
+      atFloor: atFloor.current,
+    });
   }, []);
 
   const goBack = useCallback(() => {
@@ -226,25 +346,44 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       // state, so their relative order is not observable — the entry is on the
       // stack before this gesture returns either way.
       onOpenChapterRef.current(id);
-      pushHistoryEntry();
+      enterScreen();
     },
-    [pushHistoryEntry]
+    [enterScreen]
   );
 
   const openRecorder = useCallback(
     (segmentId: SegmentId, ordinal: number) => {
       onOpenRecorderRef.current(segmentId, ordinal);
-      pushHistoryEntry();
+      enterScreen();
+    },
+    [enterScreen]
+  );
+
+  const pushLayer = useCallback(
+    (layer: Layer) => {
+      layerStack.current = [...layerStack.current, layer];
+      // Amendment G's DOM half, and the ONLY half: the floor entry is armed
+      // here and never handed back by a traversal. `floorEntryForLayerChange`
+      // has the whole argument for why there is no release — two review
+      // findings in two places, both of them about one existing.
+      const action = floorEntryForLayerChange({
+        atFloor: atFloor.current,
+        armed: floorArmed.current,
+        open: layerStack.current.length,
+      });
+      if (action === "arm") {
+        floorArmed.current = true;
+        pushHistoryEntry();
+      }
     },
     [pushHistoryEntry]
   );
 
-  const pushLayer = useCallback((layer: Layer) => {
-    layerStack.current = [...layerStack.current, layer];
-  }, []);
-
   const popLayer = useCallback((id: string) => {
-    // Idempotent: removing an id that is not present is a no-op.
+    // Idempotent: removing an id that is not present is a no-op. It touches
+    // history not at all — closing an overlay leaves the floor entry standing
+    // for whichever comes first, a Back that consumes it or a screen
+    // transition that re-stamps it (`enterScreen`).
     layerStack.current = layerStack.current.filter((l) => l.id !== id);
   }, []);
 
@@ -256,20 +395,47 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // whole-stack clear, NOT a per-layer screen filter (which would require adding
   // a screen tag to lib/nav — out of scope). Dep array is primitives only, so
   // no unmemoized hook-returned object can destabilise it (invariant 6, the
-  // round-6 P1 class). Inert in PR2 (the stack is always empty).
-  const screen = screenFor(params.hasChapter, params.recorderOpen);
+  // round-6 P1 class), and it has no non-primitive member at all: Frank's R1
+  // P2 fix briefly added one (`settleFloorEntry`), and R2 P1 removed both that
+  // callback and the release it settled. Nothing was put back in its place,
+  // and nothing should be — a callback here would be the first way back into
+  // R2 P1's race (George R1 P3-4, which found this sentence still claiming the
+  // callback exists).
+  //
+  // #452 PR3 kept this effect EXACTLY as PR2 wrote it, and recorded why next to
+  // Amendment C (issue #452): of George R4 P3-1's two options it takes (b) —
+  // keep the whole-stack clear and make the screen's own overlay state agree
+  // with it — rather than (a), narrowing the clear so a covered screen's layers
+  // survive. `popAction` consults the stack BEFORE `backEffectFor(screen)`
+  // (navigation.ts) and `Layer` carries no screen tag, so a surviving Segments
+  // layer would shadow `"commit-close-recorder"` on the sheet above it. Books
+  // needs nothing here either way — App.tsx's ternary UNMOUNTS `BooksScreen` on
+  // the Books↔Segments swap, so clearing is already right for it. PR4 owns (b)'s
+  // other half for Segments; see the #452 comment for the full argument.
+  //
+  // It deliberately leaves `floorArmed` and its entry alone on BOTH trap edges,
+  // and with no release to schedule there is nothing to schedule (Frank R1 P2
+  // and R2 P1 on PR #531 were both about a release existing — see
+  // `floorEntryForLayerChange`). On engage, the entry is exactly what
+  // `"trap-database-panel"` re-arms against. On clear, the shelf comes back
+  // holding it, and it is consumed by whichever comes first: a Back (routing
+  // `"exit-app"`, which clears the flag below) or a screen transition
+  // (`enterScreen` re-stamps it). This effect is byte-for-byte PR2's.
   useEffect(() => {
     layerStack.current = [];
   }, [screen, params.recovering, params.databasePanel]);
 
   // Route the system Back gesture and its Forward sibling (#168). The whole
   // decision is the pure `popAction`; this effect only performs the DOM side of
-  // the tag it names. Deps mirror App.tsx's original popstate effect — the
-  // current-render primitives plus `onLeaveToBooks` — and re-subscription is
-  // safe because the cleanup is only removeEventListener (unlike Amendment C's
-  // effect, which stays primitive-only). The recorder handle and the other
-  // state-half callbacks are read through latest-refs, so they are not deps.
-  const { recovering, databasePanel, onLeaveToBooks } = params;
+  // the tag it names.
+  //
+  // This effect subscribes ONCE (George R1 P2). It used to mirror App.tsx's
+  // original popstate effect and re-subscribe on the current-render primitives
+  // plus `onLeaveToBooks`, which looked safe because the cleanup is only
+  // `removeEventListener` — but "safe to re-subscribe" is not "fresh": between
+  // a commit and this PASSIVE effect re-running, the listener in place was the
+  // previous render's, closing over the previous render's trap flags. Every
+  // value the handler reads is now a ref written in the layout effect above.
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       // Settle the guard at the top of EVERY landing, issuer-blind — the exact
@@ -293,12 +459,19 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       }
       const direction = navDirection(navIndex.current, toIndex);
       navIndex.current = toIndex;
+      // Every argument is a ref read at CALL time (George R1 P2). None of
+      // these may go back to being a closure variable: this handler is
+      // subscribed once and runs from a macrotask, so a closure here is a
+      // snapshot of whatever render last re-subscribed, which for the trap
+      // flags is the difference between routing `"trap-database-panel"` and
+      // routing a layer dismissal that clears the floor entry underneath a
+      // panel the translator cannot leave.
       const action = popAction(
         direction,
-        screen,
+        screenRef.current,
         transitionInFlight.current,
-        recovering,
-        databasePanel,
+        recoveringRef.current,
+        databasePanelRef.current,
         layerStack.current
       );
       switch (action) {
@@ -309,19 +482,62 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           // Every global trap and the busy-layer refusal re-arm the screen-depth
           // entry the browser already popped, and route nothing (the modal /
           // busy write / in-flight commit is the only thing that may leave).
+          //
+          // `rearm-layer-busy` is grouped here and NOT routed through
+          // Amendment G's `rearmAfterLayerBack`, deliberately: a refused layer
+          // is not popped, so the stack is still non-empty, and that function
+          // is `true` for a non-empty stack at EVERY depth, floor included. A
+          // call whose answer is constant by construction is a branch no test
+          // could kill; the constant itself is pinned by
+          // `rearmAfterLayerBack(true, >=1) === true` in
+          // `tests/nav-layer-stack.test.ts`.
           pushHistoryEntry();
           return;
         case "rearm-layer-dismiss": {
           // Non-busy top layer: re-arm AND dismiss it, then UNREGISTER it
           // (popLayer by id, #494 item 3) so a later Back is not trapped
-          // re-selecting the same layer with a no-op dismiss(). Inert in PR2
-          // (empty stack).
-          pushHistoryEntry();
+          // re-selecting the same layer with a no-op dismiss().
           const top = topLayer(layerStack.current);
-          if (top) {
-            top.dismiss();
-            popLayer(top.id);
+          if (!top) {
+            // Unreachable: `popAction` only names this tag for a non-empty
+            // stack. Absorbed rather than dropped, for the same reason the
+            // missing-recorder-handle case below absorbs — the browser has
+            // already popped the entry, so returning without a re-arm would
+            // strand the app one level below the screen it is showing.
+            pushHistoryEntry();
+            return;
           }
+          // Amendment G: above the floor the consumed entry is the SCREEN's own
+          // and always comes back. AT the floor it is the floor entry, which
+          // exists only while a layer does — so it comes back only if one
+          // remains beneath this dismissal. `floorArmed` is cleared BEFORE
+          // `dismiss()` because the layer's own close handler normally calls
+          // `popLayer` as well, and the flag must already read "nothing held"
+          // by the time that re-entrant path runs.
+          //
+          // NO TRAP GUARD HERE, and this is deliberate rather than an omission
+          // (George R1 P2 proposed one: "if either trap flag is set, do not
+          // take the non-rearm path"). It would be dead code. `popAction`
+          // returns `"trap-recovery"` / `"trap-database-panel"` BEFORE it ever
+          // reaches layer routing (`navigation.ts:195`, `:210`), so reaching
+          // this branch already proves both flags were false — and since the
+          // P2 fix above they are the SAME refs, read microseconds earlier in
+          // this same synchronous task, with no commit able to interleave. A
+          // guard here could never fire. That is the identical objection this
+          // file already records for `rearm-layer-busy`: a call whose answer
+          // is constant by construction is a branch no test could kill.
+          //
+          // The ref fix is what actually closes George's scenario; the guard
+          // was a second reader of the staleness rather than a fix for it.
+          if (
+            rearmAfterLayerBack(atFloor.current, layerStack.current.length - 1)
+          ) {
+            pushHistoryEntry();
+          } else {
+            floorArmed.current = false;
+          }
+          top.dismiss();
+          popLayer(top.id);
           return;
         }
         case "trap-forward":
@@ -411,11 +627,23 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           return;
         }
         case "to-books":
-          onLeaveToBooks();
+          onLeaveToBooksRef.current();
           return;
         case "exit-app":
           // The Books shelf pushed no entry, so this popstate is the browser
           // already leaving. Nothing to do — and nothing is lost at the shelf.
+          //
+          // UNLESS a floor entry was still armed (Amendment G): an overlay was
+          // opened and closed by its own control, so this Back consumed THAT
+          // entry rather than walking out of the app. Clear the flag — the
+          // entry is gone, and the next overlay open must arm a fresh one or
+          // its Back would exit. This gesture does nothing visible and a second
+          // one leaves; that one silent Back is Amendment G's accepted cost
+          // (#535, DRI 2026-09-20),
+          // and it cannot be forwarded away here (`history.back()` at the app's
+          // first entry is a no-op by spec, so an installed PWA would not
+          // leave). See `floorEntryForLayerChange` for the full accounting.
+          floorArmed.current = false;
           return;
         default: {
           // Exhaustiveness (repo idiom, share-error-copy.ts:33): a new PopAction
@@ -427,14 +655,20 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [
-    screen,
-    recovering,
-    databasePanel,
-    onLeaveToBooks,
-    pushHistoryEntry,
-    popLayer,
-  ]);
+    // `screen`, `recovering`, `databasePanel` and `onLeaveToBooks` are GONE
+    // from this array on purpose (George R1 P2): they are read through
+    // layout-written refs above, so re-subscribing on them bought nothing and
+    // cost correctness. The listener was only ever as fresh as its last
+    // re-subscribe, and that re-subscribe is a PASSIVE effect — so a Back
+    // landing between a trap's commit and this effect re-running was routed by
+    // the previous render's listener, with `databasePanel` still `false`.
+    //
+    // The two that remain are `useCallback([])` and so never change identity:
+    // this handler subscribes ONCE for the hook's life. That is the property
+    // to preserve — a new dependency here would silently reintroduce the
+    // re-subscribe window, so a new value belongs in the layout effect above,
+    // not in this array.
+  }, [pushHistoryEntry, popLayer]);
 
   return {
     pushLayer,

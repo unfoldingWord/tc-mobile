@@ -62,7 +62,16 @@ export function topLayer(stack: LayerStack): Layer | undefined {
  * (`trap-recovery`/`trap-database-panel`/`rearm-transition-busy` all re-arm),
  * so BOTH a `"dismiss"` and a `"refused-busy"`
  * outcome require the adapter to re-arm; `"dismiss"` additionally calls
- * `dismiss()` on the named layer. That full, corrected contract is encoded
+ * `dismiss()` on the named layer.
+ *
+ * **Amendment G narrowed the re-arm half, and this paragraph is where a PR4
+ * reader will look for it** (George R1 P3-3). Above the floor it is still
+ * unconditional. AT the floor the consumed entry is the floor entry, which
+ * exists only while a layer does, so it comes back only when one remains —
+ * `rearmAfterLayerBack` is the decision and `e2e` case (e) pins the shelf
+ * going back to the floor. Copying "always push a fresh entry" into a Segments
+ * overlay is harmless there; copying it back into the floor path breaks that
+ * case. That full, corrected contract is encoded
  * where the adapter actually reads it — `navigation.ts`'s `popAction`, as the
  * string tags `"rearm-layer-dismiss"` / `"rearm-layer-busy"` — not here. This
  * type stays three-way (`empty`/`dismiss`/`refused-busy`) because it is still
@@ -83,17 +92,200 @@ export type RouteBackToLayerResult =
  *
  * See `RouteBackToLayerResult`'s docblock for what the adapter must actually
  * do with each of these (both non-empty outcomes re-arm the screen-depth
- * entry the `popstate` already consumed; `"dismiss"` additionally dismisses
- * the named layer) — `navigation.ts`'s `popAction` is where that full
+ * entry the `popstate` already consumed — unconditionally above the floor, and
+ * at the floor only when a layer remains, per `rearmAfterLayerBack`;
+ * `"dismiss"` additionally dismisses the named layer) — `navigation.ts`'s `popAction` is where that full
  * contract is encoded, as `"rearm-layer-dismiss"` / `"rearm-layer-busy"`.
  *
  * `navigation.ts`'s `popAction` calls this once `layerStack` is non-empty.
- * The adapter (`hooks/use-nav-stack.ts`, #452 PR2) owns the stack, but no
- * overlay pushes onto it yet — it stays empty until Books'/Segments' overlays
- * convert to `Layer`s in PR3/PR4, so this routing is inert until then. */
+ * The adapter (`hooks/use-nav-stack.ts`, #452 PR2) owns the stack. Books'
+ * overlays push onto it as of PR3; Segments' follow in PR4. */
 export function routeBackToLayer(stack: LayerStack): RouteBackToLayerResult {
   const layer = topLayer(stack);
   if (!layer) return { kind: "empty" };
   if (layer.busy()) return { kind: "refused-busy", layerId: layer.id };
   return { kind: "dismiss", layerId: layer.id };
+}
+
+/**
+ * ── Amendment G: the FLOOR entry (#452 PR3, #374) ─────────────────────────
+ *
+ * The design's invariant 2 says "exactly one history entry exists per screen
+ * depth (0 = Books, 1 = Segments, 2 = Recorder)". That is true for depths 1
+ * and 2, each of which holds the entry its own screen transition pushed — and
+ * FALSE for depth 0. Books is the floor: it pushes nothing, which is what
+ * makes a Back there `"exit-app"`.
+ *
+ * The consequence for the layer stack was MEASURED on the pre-PR3 build, not
+ * inferred (`e2e/back-navigation.spec.ts`'s PR3 header records the reading):
+ * on Books with an overlay open, `history.state` was the app's own
+ * `{tc:true,index:0}` with no entry of the app's BELOW it, and a Back
+ * navigated the document straight to `about:blank` — **no `popstate` fired at
+ * all**. `routeBackToLayer` is reached only FROM the `popstate` handler, so at
+ * the floor it could never be reached: registering Books' overlays as `Layer`s
+ * would have been inert, and #374 would have stayed open. That is the whole
+ * reason this decision exists.
+ *
+ * So: when the floor screen's first overlay opens, the adapter arms ONE entry.
+ * One per SCREEN, never one per overlay — two or five deep makes no
+ * difference, and `atFloor` is `backEffectFor(screen) === "exit-app"` so
+ * nothing here hard-codes WHICH screen the floor is. Invariant 1 is untouched:
+ * no overlay calls this, the adapter does.
+ *
+ * ── THE ENTRY IS NEVER GIVEN BACK BY A TRAVERSAL, and that is the whole
+ * shape of this amendment ──
+ *
+ * An earlier revision paired `"arm"` with a `"release"` that consumed the
+ * entry with a suppressed `window.history.back()` when the last overlay
+ * closed. It was the wrong shape and Frank's review found it twice, in two
+ * different places, which is this repo's own siblings signal — the approach,
+ * not the details:
+ *
+ *   - **R1 P2:** the release had to be suppressed while a global trap was up
+ *     (the trap re-arms against that very entry) and re-issued when the trap
+ *     cleared. One edge was handled and the other was not.
+ *   - **R2 P1:** a release is an ASYNC traversal, and nothing stopped
+ *     `openChapter` from issuing a `pushState` before it landed — a push
+ *     behind an outstanding `back()`, which is precisely the coalescing/desync
+ *     hazard `travel-guard.ts` exists to keep out of this adapter. Closing it
+ *     would have needed a deferral latch on the app's only push path, whose
+ *     own stuck state kills navigation for the session (#494 item 2's defect,
+ *     invited back in).
+ *
+ * Both dissolve if the entry is never released. What replaces the release:
+ *
+ *   - A Back that DISMISSES the last overlay consumes the entry itself — the
+ *     `popstate` already popped it and {@link rearmAfterLayerBack} declines to
+ *     put it back. Nothing is issued.
+ *   - A screen transition out of the shelf REUSES it: the entry already sits
+ *     at exactly the depth the new screen's entry wants, so the adapter
+ *     re-stamps it with `replaceState` instead of stacking a second one on top
+ *     (`use-nav-stack.ts`'s `enterScreen`). One entry per screen depth,
+ *     invariant 2, with no traversal.
+ *   - Only one path leaves an entry standing: an overlay closed by its OWN
+ *     control (Close, Cancel, the scrim) with no navigation afterwards. Then
+ *     the next Back at the shelf consumes it and routes `"exit-app"`, which is
+ *     a no-op, so that Back does nothing visible and a second one leaves.
+ *
+ * **That last line is a real cost, disclosed rather than hidden, and ACCEPTED
+ * by the DRI (2026-09-20) — tracked as #535, which also records that the
+ * release path is not to be redesigned to remove it:** one silent Back, once,
+ * after an overlay was opened and closed without using Back. It is bounded — `armed` refuses a second arm, so the shelf never holds
+ * more than one — and it is the same accepted class as Amendment B's "after a
+ * reload at depth N, leaving takes N extra Backs" (dev lead, 2026-09-18), at a
+ * smaller size. It cannot be forwarded away: `history.back()` at the app's
+ * first entry is a no-op by spec, so an installed PWA would not leave, and
+ * asking the platform to close the app is not something the History API can
+ * do. Every path is still strictly better than before PR3, where that same
+ * Back exited the app and took the open dialog with it (#374).
+ */
+export type FloorEntryAction = "arm" | "none";
+
+/**
+ * Whether opening an overlay must arm the floor screen's protective entry.
+ * Pure: the adapter performs the `pushState` this names, and owns the `armed`
+ * flag this reads.
+ *
+ * - `"arm"` — the floor screen has an overlay open and no entry is armed yet.
+ * - `"none"` — everything else, and notably EVERY change above the floor:
+ *   Segments and the Recorder already hold the entry their own transition
+ *   pushed, and arming a second one there would strand the app one level below
+ *   the screen it is showing (invariant 2).
+ *
+ * The decision is `open` — the stack size AFTER the change — and not a
+ * before/after PAIR, because a transition adds nothing `armed` does not
+ * already say. A `before` parameter was written first and its mutation
+ * survived the decision table — an unkillable branch, which AGENTS.md reads as
+ * redundant logic rather than a missing test — so it is gone.
+ *
+ * `armed` is also what makes this correct across a global trap
+ * (`recovering` / `databasePanel`). Amendment C's cleanup clears the WHOLE
+ * stack when one engages, which on Books can happen with a menu open —
+ * `useDatabaseStatus` flips from another tab — leaving `armed` true with
+ * nothing stacked. Nothing needs doing on either trap edge now that there is
+ * no release: the entry stays, which is what `"trap-database-panel"` re-arms
+ * against, and when the shelf comes back the next overlay open sees `armed`
+ * already true and arms nothing.
+ */
+export function floorEntryForLayerChange(change: {
+  /** `backEffectFor(screen) === "exit-app"` — this screen pushes nothing itself. */
+  readonly atFloor: boolean;
+  /** Whether the adapter is already holding a floor entry. */
+  readonly armed: boolean;
+  /** Stack length AFTER the change. */
+  readonly open: number;
+}): FloorEntryAction {
+  if (!change.atFloor) return "none";
+  return change.open > 0 && !change.armed ? "arm" : "none";
+}
+
+/**
+ * Whether a Back that a layer absorbed must re-arm the entry the `popstate`
+ * has already consumed (#452 PR1's `"rearm-layer-dismiss"` /
+ * `"rearm-layer-busy"` obligation), given how many layers remain afterwards.
+ *
+ * ABOVE the floor this is unconditionally `true`, unchanged from PR1/PR2: the
+ * entry that was consumed is the SCREEN's own, it must exist for as long as
+ * the screen does, and whether an overlay is left open has nothing to do with
+ * it. Both tags re-arm.
+ *
+ * AT the floor the consumed entry is the floor entry, which exists only for
+ * overlays — so it comes back only if one remains. `remaining` is the stack
+ * length AFTER the absorption: unchanged for `"rearm-layer-busy"` (a refused
+ * layer is not popped), one less for `"rearm-layer-dismiss"`. A busy refusal
+ * at the floor therefore always re-arms, and a dismissal re-arms only while
+ * something is still stacked beneath it.
+ *
+ * **This is the only path that gives the floor entry back**, now that there is
+ * no release (see {@link FloorEntryAction}): declining to re-arm is how a Back
+ * that dismisses the shelf's last overlay both absorbs the gesture AND leaves
+ * the shelf at the floor again, with no traversal of its own to race. The
+ * adapter clears `armed` in the same breath. Getting it wrong in the other
+ * direction — not re-arming while a layer remains — drops the protection out
+ * from under an overlay that is still open, so the next Back leaves the app
+ * over it.
+ */
+export function rearmAfterLayerBack(
+  atFloor: boolean,
+  remaining: number
+): boolean {
+  return atFloor ? remaining > 0 : true;
+}
+
+/**
+ * Whether the adapter should consider itself already holding the floor entry
+ * after Amendment B's bootstrap ADOPTED an entry left on the stack by a
+ * previous page life (a reload).
+ *
+ * **The gap this closes** (Frank R3 P2 on PR #531). `floorArmed` is a ref, so
+ * it starts `false` on every mount, while the ENTRY it tracks survives the
+ * reload. Without this, a shelf reloaded with an overlay open comes back
+ * holding an entry the adapter has forgotten, and the next overlay arms a
+ * SECOND one. Repeat reload → open and the history tail grows without bound —
+ * one dead Back per cycle — which falsifies the "at most one" property
+ * {@link floorEntryForLayerChange} is written around.
+ *
+ * **Why an explicit marker and not `index > 0`.** A reload always re-renders
+ * the shelf (no session restore of the open chapter — `e2e` case (c) pins
+ * that), so at bootstrap EVERY adopted entry is sitting at the floor, whichever
+ * screen pushed it. Depth cannot tell a floor entry from a Segments entry that
+ * outlived its screen, and the two must not be treated alike: adopting a
+ * Segments entry as the floor's would hand the next `enterScreen` a
+ * `replaceState` over a level PR2 deliberately keeps, which case (c)'s tail
+ * pins. So the kind is WRITTEN DOWN when the entry is pushed —
+ * `pushHistoryEntry` stamps `floor: atFloor`, `enterScreen` never does — and
+ * read back here.
+ *
+ * `atFloor` is still required and is not redundant: it is what stops a stale
+ * marker arming the adapter on a screen that owns its own entry, if this app
+ * ever does restore a screen across a reload. Today that combination is
+ * unreachable; it is a row in the table rather than an assumption.
+ */
+export function floorArmedOnResume(resumed: {
+  /** The adopted entry carries the `floor` marker this app writes. */
+  readonly marked: boolean;
+  /** `backEffectFor(screen) === "exit-app"` for the screen being resumed ON. */
+  readonly atFloor: boolean;
+}): boolean {
+  return resumed.marked && resumed.atFloor;
 }

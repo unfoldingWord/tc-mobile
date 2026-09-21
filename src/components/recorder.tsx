@@ -2070,12 +2070,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // turns a failure into the recovery screen App renders.
         // A take was in play at close (live, paused, or an interruption froze it to
         // processing). Its stop can be SUPERSEDED — a leave()/pagehide bumped the
-        // generation mid-flush — returning no samples and no error. B4 just closed
-        // then, original intact. B5 must keep that: a superseded capture must NOT
-        // persist the pending edits, or a cut-to-empty would clear the original
-        // recording (gone) with the replacement never landed and the cut audio only
-        // in RAM on the clipboard — unrecoverable field loss (George R5). That rule
-        // now lives in `planClose`, where it is enumerated rather than commented.
+        // generation mid-flush — returning no samples, no kept bytes and no error.
+        // B4 just closed then, original intact. B5 must keep that: a superseded
+        // capture must NOT persist the pending edits, or a cut-to-empty would clear
+        // the original recording (gone) with the replacement never landed and the
+        // cut audio only in RAM on the clipboard — unrecoverable field loss
+        // (George R5). Since #211 the same applies to the Finished toggle, which
+        // used to be the one write that still went through here: that close now
+        // writes NOTHING. Both halves of the rule live in `planClose`, where they
+        // are enumerated rather than commented.
         //
         // `capture` null below means no capture was attempted, which is the same
         // question `attemptsCapture(state)` answers — so the plan reads one input,
