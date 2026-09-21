@@ -11,6 +11,91 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-20 (Sunday) — Wave 1 and Wave 2 of the open-PR batching plan: five PRs merged including #452 PR3 and PR4, the storage-pressure core shipped with its cache deliberately removed, and seventeen issues filed
+
+One coordinator session, Sonnet lanes in isolated worktrees, the dev lead present throughout and answering picks. Standing authority was granted mid-session: **merge on clean and green** — both reviewers clean at the _current_ head SHA plus green CI — scoped to lane PRs, never to promotions.
+
+### Shipped
+
+| PR   | What                                                                                                                             | Closes | Merge     | Review outcome                                                                                                                                 |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------- | ------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| #523 | #211: a superseded capture closes with **no writes at all** — no edits, no Finished toggle. The pinned test flipped and renamed. | #211   | `d12817e` | 3 rounds. Frank + George APPROVE. Two George P3s were comment drift; the third round's was deferred as siblings (#530).                        |
+| #529 | #146: the layer-3 rule reconciled with the structural-primitive use the files actually have. Re-cut of #156 with author credit.  | #146   | `b05a599` | 4 rounds. Rounds 3–4 found the _new text_ making unchecked claims about the tree — the same defect class the PR exists to close, one level up. |
+| #531 | #452 **PR3**: Books' overlays become system-Back layers; the shelf gets an entry that absorbs one Back.                          | —      | `fad539c` | **8 rounds.** See below.                                                                                                                       |
+| #538 | #452 **PR4**: Segments' overlays become layers. #536 fixed as its **first commit**.                                              | #536   | `5048102` | 3 rounds. Frank 0 findings; George APPROVE with four P3s.                                                                                      |
+| #537 | #247 storage-pressure **core only** — the pure band, the marker, the `estimate()` boundary. No wiring.                           | —      | `dd127d0` | 8 rounds, parked once. See below.                                                                                                              |
+
+### #531 — eight rounds, one class
+
+The through-line was a single defect class: **a currency claim the mechanism does not deliver in a window nobody enumerated.**
+
+- Round 5 fixed it at the two "latest-ref" sites. George's round-6 P2 showed the class boundary was actually **every value `onPopState` reads from a closure** — the trap flags in the same handler were still on the passive path.
+- Round 7's fix put all of them on layout refs and dropped the listener's dep array to two stable `useCallback([])` values, so **it subscribes once for the hook's life and cannot be stale by construction.** The sweep turned up a fifth closure read nobody had named (`onLeaveToBooks`).
+- **The DRI deliberately overrode the round-5 stop rule at round 6.** That rule was set against a focus-only residual; the new one ended with the tab leaving while an unreachable-database panel was on screen. Recorded on the PR as an override, not a rule application.
+- George's suggested belt was **REFUTED with evidence** — `popAction` returns the trap actions before layer routing, so a guard there could never fire and no test could kill it. Declining to add unkillable code is the right outcome.
+- **Both the round-5 and round-7 fixes are review-only.** Their faithful mutants survive: no renderer for a unit test, and Playwright cannot deterministically schedule a Back inside a commit-to-passive-effect window. Recorded as a seventh instance on #361.
+
+**#374 was NOT closed.** It is defined by what a phone does and nothing here has run on one. The comment on #374 names exactly what closes it.
+
+### #537 — a contract PR, and the value of removing scope
+
+George's first read gave three P2s and two P3s, **all on the contract the wiring PR would obey** rather than on running code — there is no consumer. The DRI picked fix-all-five and decided the product half: **both `low` and `critical` map to `info`, never `alert`**, because `encoder-notice.ts` already records that painting a standing condition red on the home screen teaches people to ignore red.
+
+The next round produced two more P2s, both the same cache × Books-unmount class — **and George refuted the mechanism his own earlier finding had prescribed** (`useFailureCount`'s token is per-instance; this needed module scope). Two pre-set stop rules fired at once, so the PR **parked with a judgment sheet** rather than attempting the same caching model a third time.
+
+**The DRI picked option B: remove the cache entirely.** It served a consumer that did not exist, had produced four P2s across two rounds, and nobody had decided whether the one frame of lateness it saved actually mattered — a question needing a real screen on a real phone. Removal converted a recurring defect into removed scope. Merged one round later.
+
+The lane also deleted `adoptPressureReading` on its own reasoning: it was a rule about a re-read that cannot happen without a cache. Its full mutation re-run then **caught that the previous round's figures were an arithmetic error** (reported 28/26; actually 29/27), corrected publicly. That is what re-run-don't-carry-forward exists for.
+
+### Decisions (all DRI)
+
+1. Close #231 — the arithmetic was measured and correct, but `toCanonical` has zero coverage; #526 carries the extraction plus boundary tests.
+2. Merge #529 over Jesse's #156, which he had updated three minutes before our lane started. Decided on the text, stated plainly in the courtesy comment.
+3. Accept the deferral of Frank's #529 P2 to #525 as a named residual.
+4. File #146's three sweep items as #532 and close #146.
+5. `info` for both storage-pressure bands.
+6. Keep Amendment G in #531 (it is what stops PR3 shipping inert code).
+7. Accept #535's one silent Back as a known cost, filed rather than fixed.
+8. Override the round-5 stop rule on #531; one more round.
+9. Remove the cache from #537 rather than fix it a third time.
+10. Wave 1 first, then PR4 + the #247 core ahead of #172 — #172 benefits from Monday's device feedback.
+
+### Filed — seventeen issues
+
+**Test and gate integrity:** #522 (`precache-manifest.test.ts` fails on any locally-built tree **and** `skipIf`s on every CI run, so the version.json-never-precached assertion behind #143's deploy check is currently asserted **nowhere**), #524 (`triage.sh` truncates on a clean round and prints nothing, so an unchecked run looks like it worked), #533 (**two `notice-bridge` tests are vacuous on develop today**, plus four more extract-then-assert sites, plus a wrong-region variant a non-emptiness floor cannot catch).
+
+**Comment and contract drift:** #530, #534, #536 (closed by #538), #539, #540, #541.
+
+**Behaviour and follow-ups:** #525, #526, #527, #528, #532, #535.
+
+Substantive comments were also added to #361, #374, #146, #211, #247, #525 and #533.
+
+### Learnings
+
+1. **A contract PR's contract is the deliverable.** #537's first George read found five defects in text, not code, because there was no code path to be wrong. Reviewing the contract is the point of splitting core from wiring — and it is what let three defects be caught before a consumer existed to inherit them.
+2. **Removing scope beats fixing a thing twice.** The #537 cache produced four P2s across two rounds. Deleting it resolved the class and handed the underlying question to whoever can answer it with a device.
+3. **A stop rule is set against a specific residual.** #531's rule was written for a focus-only consequence; when the consequence became "the app exits with an unreachable-database panel up", applying the rule mechanically would have been wrong. Override deliberately and record it.
+4. **Re-run a mutation table, never carry it forward.** The re-run caught an arithmetic error in the previous round's reported figures that a carried-forward table would have hidden indefinitely.
+5. **Prose that ships behaviour should be code.** #540's published recipe type-checks and produces the wrong tone. An example that compiles and misbehaves is worse than a stale sentence, because copying it feels like compliance.
+6. **Four consecutive PRs left the next one text it would copy** (#536 → #539 → #540). Handled each time by an issue scoped as the next PR's first commit, which has worked — but only because a reviewer caught it; no gate here can fail on any of it. The general question is deferred to **#541**; explicitly rejected was making `Notice`'s `tone` required (40 call sites, 17 take the `alert` default correctly).
+
+### Held for the DRI
+
+- **The v0.2.7 device run** — Android APK on `android-release-v0.2.7` and the TestFlight build have been idle since 2026-09-19. It now gates more than it did this morning: seven `v1-required` issues, #374's closure, #535's silent-Back question, and every review-only residual above.
+- #500/#479's Frank-r3 residual, still reversible. #461, the question to Tim. The CVD desk check. Dependabot majors #501/#503/#504/#505, held past October. #422's preconditions before the next promotion.
+
+### Next session, in order
+
+1. **The v0.2.7 device run** and Monday's tester feedback.
+2. **#452 PR5** (recorder erase-confirm) — start with **#539**, whose item 2 is a deletion, not a third correction.
+3. **The storage-pressure wiring PR** — start with **#540**, whose item 1 ships as a tested helper rather than a reworded docblock. It owns two decisions: whether first paint after a remount matters, and whether the band means anything inside Capacitor at all (#245).
+4. **#172** via a re-cut of #235 — deliberately not started; #509 moved that ground and the device run informs it.
+5. #533 and #522 (test integrity), #220, #516, #517.
+
+`#247`, `#464` and `#374` all remain open by design.
+
+---
+
 ## 2026-09-19 (night run and day): twelve PRs merged, v0.2.7 promoted and verified, three PRs brought back from park by class-level picks, #510 closed into #220
 
 This entry covers the 2026-09-18 evening session through the 2026-09-19 day, as one coordinator session.
