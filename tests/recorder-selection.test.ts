@@ -81,6 +81,20 @@ const declarationsOf = (className: string) => {
 const ROOTS = ["recorder-sheet", "menu-panel", "confirm-panel"] as const;
 
 /**
+ * Every way a `.tsx` file could spell one of these properties.
+ *
+ * CSS-hyphenated (a Tailwind arbitrary utility, a `<style>` string) and
+ * React's camelCase DOM style keys alike. `[uU]serSelect` subsumes
+ * `WebkitUserSelect`, `MozUserSelect` and `msUserSelect` because each ends in
+ * `UserSelect`; `[tT]ouchCallout` does the same for `WebkitTouchCallout`.
+ *
+ * Deliberately NOT global — `.test()` on a `/g` regex carries `lastIndex`
+ * between calls and would skip every other file it is asked about.
+ */
+const SELECTION_SPELLING =
+  /user-select|touch-callout|\bselect-none\b|[uU]serSelect|[tT]ouchCallout/;
+
+/**
  * Every stylesheet under `src/` — discovered, not a hand-kept list that goes
  * stale the day another one lands.
  *
@@ -282,6 +296,15 @@ describe("the opt-out stops at those three roots (#556)", () => {
   // or a Tailwind utility, so this covers the other half of `src/` for the one
   // thing that would evade it. It is NOT a general CSS-in-TSX gate — it looks
   // for these properties only.
+  //
+  // Both spellings systems, because a TSX file can write either and the first
+  // version of this test caught only one (Frank R3 P2): CSS-hyphenated in a
+  // Tailwind arbitrary utility or a `<style>` string, and React's camelCase
+  // DOM style keys in a `style={{ … }}` prop. `[uU]serSelect` covers
+  // `userSelect` and the `Webkit`/`Moz`/`ms` prefixed forms in one, since each
+  // ends in `UserSelect`; `[tT]ouchCallout` does the same for
+  // `WebkitTouchCallout`. The pattern is a named constant so the spelling
+  // test below exercises THIS regex and not a copy of it that can drift.
   it("declares selection in no .tsx file either", () => {
     const sources = readdirSync(path.join(ROOT, "src"), { recursive: true })
       .map(String)
@@ -291,9 +314,39 @@ describe("the opt-out stops at those three roots (#556)", () => {
     // Floor: an empty or broken discovery would make the loop below vacuous.
     expect(sources).toContain(path.join("src", "components", "recorder.tsx"));
     const offenders = sources.filter((file) =>
-      /user-select|touch-callout|\bselect-none\b/.test(read(file))
+      SELECTION_SPELLING.test(read(file))
     );
     expect(offenders).toEqual([]);
+  });
+
+  // The gate above is only as wide as its pattern, so the pattern itself is
+  // tested in both states rather than trusted. Each spelling here is one a
+  // real TSX file could use to suppress selection; the negatives are the
+  // nearby words it must NOT fire on, because a matcher that flags ordinary
+  // code gets weakened until it catches nothing.
+  it.each([
+    "user-select",
+    "-webkit-user-select",
+    "touch-callout",
+    "-webkit-touch-callout",
+    "select-none",
+    'style={{ userSelect: "none" }}',
+    'style={{ WebkitUserSelect: "none" }}',
+    'style={{ MozUserSelect: "none" }}',
+    'style={{ msUserSelect: "none" }}',
+    'style={{ WebkitTouchCallout: "none" }}',
+    'className="[user-select:none]"',
+  ])("the .tsx matcher catches %s", (spelling) => {
+    expect(SELECTION_SPELLING.test(spelling)).toBe(true);
+  });
+
+  it.each([
+    "const selected = useSelection();",
+    "onSelect={handleSelect}",
+    'className="select-all text-ink"',
+    "user.select",
+  ])("the .tsx matcher does not fire on %s", (innocuous) => {
+    expect(SELECTION_SPELLING.test(innocuous)).toBe(false);
   });
 
   // The rename field is the one surface in the app whose text MUST stay
