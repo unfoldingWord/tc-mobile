@@ -72,6 +72,7 @@ import {
   effectivePan,
   panForZoom,
   playbackStrip,
+  seedSelection,
   viewportWindow,
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
@@ -1730,14 +1731,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // selection's zoom left behind — otherwise re-opening a selection later
       // would jump the view to where an earlier one had been fitted (#91).
       setZoomPan(null);
-      // Seed a grabbable span around the centerline (~30% of the visible window),
-      // so the frame opens with handles under the finger rather than collapsed.
-      const half = win.visibleSamples * 0.15;
-      editor.openSelection({
-        start: win.centerlineSample - half,
-        end: win.centerlineSample + half,
-      });
-    }, [editor, win.centerlineSample, win.visibleSamples, stopPlayback]);
+      // Seed a grabbable span STARTING at the centerline (#554), slid left only
+      // as far as the end of the buffer forces. The rule is geometry, so it
+      // lives in `lib/audio/viewport` with the rest of the window math and is
+      // tested there; the three scalars rather than `win` itself because `win`
+      // is rebuilt every render and would churn this callback's identity.
+      editor.openSelection(
+        seedSelection(length, win.centerlineSample, win.visibleSamples)
+      );
+    }, [
+      editor,
+      length,
+      win.centerlineSample,
+      win.visibleSamples,
+      stopPlayback,
+    ]);
 
     // A handle drag moves the span the audition is OF, so it silences it too.
     // `stopBuffer` returns immediately when nothing is sounding, so this costs a
@@ -3690,7 +3698,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // (`centerlineOverlayShown` in `recorder-stage.ts`) — it is
                     // not true any more that "the line is never hidden". Select
                     // stays inert regardless, in BOTH directions: (a) opening
-                    // seeds from `win.centerlineSample`, which is `panState` —
+                    // anchors its span on `win.centerlineSample` (#554), which
+                    // is `panState` —
                     // and while the stage SCROLLS the drawn line is the
                     // sounding sample while `panState` is still the pre-play
                     // value, stale until the freeze. Seeding from it would put

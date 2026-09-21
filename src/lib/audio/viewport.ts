@@ -280,6 +280,60 @@ export function panForZoom(
 }
 
 /**
+ * How much of the visible window the `[ ]` control seeds a span across. The
+ * component used to spell this as two halves of 0.15 around the centerline;
+ * the width is unchanged, only the anchor moved (#554). Module-private: the
+ * seed has exactly one reader, unlike `CENTER_FRACTION`, which two components
+ * share and so lives up in the UI.
+ */
+const SEED_SPAN_FRACTION = 0.3;
+
+/**
+ * The span the selection frame opens with (#554).
+ *
+ * The seed used to be centred on the centerline, so the playhead sat in the
+ * MIDDLE of the span it had just created. The requirements owner's report: the
+ * line marks where the translator is, and a span they are about to cut or
+ * audition runs from there FORWARD — which is also the record/paste mental
+ * model (the line is where the next thing begins) and makes the first handle
+ * drag, extending the right edge, the common case.
+ *
+ * So the left edge is the playhead, and the span slides left only as far as
+ * the end of the buffer forces. That last clause is not an edge case: `null`
+ * `panState` is the F7 append rest, so `centerlineSample === length` on every
+ * fresh open of the edit sheet — the FIRST tap of the control. Anchoring there
+ * and letting the right edge run past the end would leave `openSelection`'s
+ * per-endpoint clamp holding `{length, length}`, which `spansWholeSample`
+ * reads as nothing selected: Cut and Play would open dead. Sliding keeps the
+ * width, so the two 24px handles never land on top of each other and the frame
+ * is grabbable wherever it opens. The cost, stated plainly: within the last
+ * span-width of the buffer the playhead is inside the span rather than on its
+ * left edge, because there is not a full span of audio to its right.
+ *
+ * No clamps, and the `min` is the only branch, because `visibleSamples` is
+ * `length / zoom` at `zoom >= 1`: the span is at most `0.3 * length`, so
+ * `length - span` is never negative and `start` is never below 0, while
+ * `start <= length - span` puts `end` at or inside `length`. A `Math.max(0,…)`
+ * would be a branch no input can reach — what `panForZoom`'s own note calls
+ * untestable rather than safe. At `length` 0 every term is 0 and this returns
+ * `{0, 0}`, matching `viewportWindow`'s lack of a divide-by-zero guard; the
+ * recorder cannot reach it anyway (Select is disabled without audio).
+ *
+ * Three scalars rather than the `WaveformViewport` itself: the recorder rebuilds
+ * that object every render, so a callback depending on it would change identity
+ * every render where the two scalars do not.
+ */
+export function seedSelection(
+  length: number,
+  centerlineSample: number,
+  visibleSamples: number
+): SampleRange {
+  const span = SEED_SPAN_FRACTION * visibleSamples;
+  const start = Math.min(centerlineSample, length - span);
+  return { start, end: start + span };
+}
+
+/**
  * The view window for the live capture scope: the ring's clip-fractions [0,1]
  * mapped onto screen [0, headFraction], so the newest column sits toward the
  * head and history runs left, with the head's right left blank.
