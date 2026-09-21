@@ -8,10 +8,12 @@ import { describe, expect, it } from "vitest";
  * long-press/double-tap callout (#556).
  *
  * What was wrong in source: nothing anywhere in `src/` set `user-select` or
- * `-webkit-touch-callout`, so WebKit's default selection fired over the
- * waveform and over the sheet's ordinary-text chrome — the breadcrumb in the
- * reported screenshot had been text-selected, and a Copy/Look Up/Translate
- * callout covered the canvas.
+ * `-webkit-touch-callout`. What was REPORTED, and the only evidence anyone
+ * here has for the symptom, is #556 — the requirements owner, iOS 0.2.8, with
+ * a screenshot in which the recorder breadcrumb has been text-selected and a
+ * Copy · Look Up · Translate callout is up. Nobody on this lane reproduced it,
+ * and how the platform decides to raise that callout is not recorded anywhere
+ * in this repo.
  *
  * The opt-out has THREE roots, not one, because two of the recorder's own
  * surfaces are portalled out of the sheet's subtree: `.recorder-sheet` for the
@@ -21,13 +23,15 @@ import { describe, expect, it } from "vitest";
  *
  * Not assertable by rendering: this repo has no DOM runner (#197, and
  * `touch-policy.test.ts` concedes the same for its own subject), and whether
- * the platform raises a callout is a measurement on a phone. These tests
- * prove four things and only those four: the declarations exist on all three
+ * the platform raises a callout is a measurement on a phone. These tests prove
+ * source facts and only source facts: the declarations exist on all three
  * roots, those roots are classes the recorder really renders, the roots are
  * portalled (which is WHY there are three), and the opt-out neither goes
- * global nor swallows the one field that must stay editable. They do NOT
- * prove the iOS symptom is gone. That is an on-device check and it has not
- * been run.
+ * global nor swallows the one field that must stay editable — in `.css` and,
+ * for these properties, in `.tsx` too. They do NOT prove the iOS symptom is
+ * gone, and they do not prove the rename field is still editable inside a
+ * drawer that now suppresses selection. Both are on-device checks and neither
+ * has been run; they are #564.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -78,8 +82,14 @@ const ROOTS = ["recorder-sheet", "menu-panel", "confirm-panel"] as const;
 
 /**
  * Every stylesheet under `src/` — discovered, not a hand-kept list that goes
- * stale the day a fifth one lands. The app loads four today (`globals.css`
- * imports `styles/index.css`, which imports the three layers).
+ * stale the day another one lands.
+ *
+ * No count is written here. The round-3 docblock said "the app loads four",
+ * which was a different claim from the one this constant makes (discovery
+ * returns five `.css` files, `styles/index.css` among them — it is an import
+ * barrel that declares no rules), and the two sitting side by side read as one
+ * wrong number. What the suite needs is not a count but a floor and a landmark,
+ * and the test below asserts both against the discovered list itself.
  */
 const STYLESHEETS = readdirSync(path.join(ROOT, "src"), { recursive: true })
   .map(String)
@@ -154,19 +164,22 @@ describe("the recorder opts out of selection and the callout (#556)", () => {
     ).toBeGreaterThanOrEqual(6);
   });
 
-  // Both spellings of `user-select` on purpose: WebKit shipped the prefixed
-  // name long before the unprefixed one and this repo records no minimum iOS
-  // anywhere, so the prefixed declaration is the one certain to apply on an
-  // old device.
+  // Both spellings of `user-select` on purpose, with NO claim here about
+  // which engine shipped which name when. Round 1 stated a specific
+  // first-unprefixed Safari version as flat fact; round 2 replaced it with
+  // "WebKit shipped the prefixed name long before the unprefixed one", which
+  // is the same unverified recollection with the number filed off. Both are
+  // retracted and neither is restated.
   //
-  // Round 1 of this file stated a specific first-unprefixed Safari version as
-  // flat fact, here and in the stylesheet. That was unverified platform
-  // recollection — no source for it was checked in this repo — and it is not
-  // restated. Keeping the pair does not depend on which version it is.
+  // The checkable reason: this repo pins no minimum browser anywhere —
+  // `package.json`'s `engines` names only Node, and there is no browserslist —
+  // so nothing in the tree shows either spelling to be unnecessary.
   //
-  // esbuild cannot collapse the pair either way: they are different property
-  // names, not a repeated declaration of one (the scar `dist-css.test.ts`
-  // documents).
+  // On the build: `dist-css.test.ts:6-15` records that esbuild collapses two
+  // declarations of the SAME property in one rule. These are two different
+  // property names, so that scar does not apply to them — and the build output
+  // was read directly rather than reasoned about; see the PR body's pasted
+  // `dist/assets/*.css` lines.
   it.each(ROOTS)(
     ".%s suppresses selection in both spellings and suppresses the callout",
     (className) => {
@@ -214,14 +227,22 @@ describe("the opt-out stops at those three roots (#556)", () => {
   // text a maintainer legitimately selects.
   //
   // Round 2 of this file asserted that over `globals.css` alone, which Frank
-  // called correctly: the app loads four stylesheets, so `body { user-select:
-  // none }` added to `3-components.css` or to either layer below it would have
-  // left that assertion green while making the whole app unselectable — the
-  // exact regression it claims to prevent. An allowlist over EVERY source
+  // called correctly: `globals.css` imports `styles/index.css`, which imports
+  // the three layers, so `body { user-select: none }` added to
+  // `3-components.css` or to either layer below it would have left that
+  // assertion green while making the whole app unselectable — the exact
+  // regression it claims to prevent. An allowlist over every DISCOVERED source
   // stylesheet replaces it. It subsumes the old one (a global rule in
   // `globals.css` is still caught) and adds what the old one could not see: a
-  // fifth root anywhere in the tree fails here until someone decides it
+  // fifth CSS RULE in any of those files fails here until someone decides it
   // belongs, whatever its selector.
+  //
+  // The bound, stated because round 3's wording did not state it: this reads
+  // `.css` files. A suppression written as an inline `style` prop or as a
+  // Tailwind utility (`select-none`, `[user-select:none]`) in a `.tsx` would
+  // not be seen. Left narrow deliberately — widening it is a second gate
+  // needing its own red-first work, and the test below pins that there is
+  // nothing in `.tsx` to catch yet, so the bound cannot rot unnoticed.
   it("declares selection nowhere in src/ but on the four reviewed selectors", () => {
     const declaring = STYLESHEETS.flatMap((sheet) =>
       selectorsDeclaringSelection(read(sheet))
@@ -237,6 +258,42 @@ describe("the opt-out stops at those three roots (#556)", () => {
       ".name-input",
       ".recorder-sheet",
     ]);
+  });
+
+  // The floor under the discovery itself. `STYLESHEETS` no longer states a
+  // count in prose; this is where the list is held to something instead. A
+  // discovery that returned nothing, or that stopped reaching the nested
+  // `styles/` directory, would leave the allowlist above passing over an empty
+  // list — its own `>= 12` floor catches that, and this says which file going
+  // missing was the cause.
+  it("discovers the layered stylesheets it is supposed to scan", () => {
+    expect(STYLESHEETS).toEqual(
+      expect.arrayContaining([
+        path.join("src", "app", "globals.css"),
+        path.join("src", "app", "styles", "1-primitives.css"),
+        path.join("src", "app", "styles", "2-semantic.css"),
+        path.join("src", "app", "styles", "3-components.css"),
+      ])
+    );
+  });
+
+  // The stated bound on the allowlist above, made checkable rather than left
+  // as a sentence in a comment. The CSS gate cannot see an inline `style` prop
+  // or a Tailwind utility, so this covers the other half of `src/` for the one
+  // thing that would evade it. It is NOT a general CSS-in-TSX gate — it looks
+  // for these properties only.
+  it("declares selection in no .tsx file either", () => {
+    const sources = readdirSync(path.join(ROOT, "src"), { recursive: true })
+      .map(String)
+      .filter((name) => name.endsWith(".tsx"))
+      .map((name) => path.join("src", name))
+      .sort();
+    // Floor: an empty or broken discovery would make the loop below vacuous.
+    expect(sources).toContain(path.join("src", "components", "recorder.tsx"));
+    const offenders = sources.filter((file) =>
+      /user-select|touch-callout|\bselect-none\b/.test(read(file))
+    );
+    expect(offenders).toEqual([]);
   });
 
   // The rename field is the one surface in the app whose text MUST stay

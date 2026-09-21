@@ -605,7 +605,14 @@
        and the platform's own Cut/Copy/Paste callout all have to work here, and
        this is the one surface in the app where that is true. Before #556 no
        such escape hatch was needed, because the suppression stopped at the
-       recorder sheet and this field was never inside it. */
+       recorder sheet and this field was never inside it.
+
+       A PRECAUTION, NOT A MEASUREMENT. That an inherited `user-select: none`
+       would actually break this input on iOS has not been observed here — no
+       device, no DOM runner — and nothing in this repo records it. The rule is
+       cheap and the failure it guards against is expensive, which is why it
+       ships ahead of the evidence; #564 step 7 is the check that would supply
+       the evidence. Do not restate the premise as fact until it does. */
     -webkit-user-select: text;
     user-select: text;
     -webkit-touch-callout: default;
@@ -774,11 +781,20 @@
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
     /* Nothing on this sheet is text anyone would copy, and double-tap and
        long-press are the two gestures a non-reader uses to probe an unfamiliar
-       control. Left alone, WebKit answers both with its selection callout
-       (Copy · Look Up · Translate) and blue handles — over the waveform, and
-       over the header and breadcrumb, which are ordinary text (#556). The
-       canvas's existing pan policy only governs scroll and zoom; it does not
-       reach selection.
+       control. What was REPORTED in #556, from the requirements owner on iOS
+       0.2.8 with a screenshot: a double-tap or long-press on the waveform
+       raised the selection callout (Copy · Look Up · Translate) and blue
+       handles, and the breadcrumb — ordinary text — had been selected. That
+       report is the whole evidence base for this rule; no one here has
+       reproduced it, and the platform's rules for when it fires are not
+       written down anywhere in this repo.
+
+       The stage's existing `touch-action` gesture policy did not prevent it:
+       those declarations were already in the tree when #556 was reported. That
+       is an observation from the report, not a claim about what `touch-action`
+       is specified to do. (Spelled without its value on purpose —
+       `touch-policy.test.ts` counts that property-and-value pair raw, comments
+       included, and a third occurrence here turns it red.)
 
        Declared here, on the sheet, rather than on the stage: both properties
        inherit, so one rule covers the header, the breadcrumb, the canvas, the
@@ -807,20 +823,33 @@
        but it is a real consequence of using the shared panel classes, and the
        drawers and confirms of every other screen take the same opt-out along
        with the recorder's. `recorder-selection.test.ts` holds both halves: that
-       the opt-out reaches all three roots, and that across EVERY stylesheet
-       under `src/` these properties are declared on exactly four selectors —
-       the three roots and the rename field's opt-back-in. A fifth, wherever it
-       is and whatever its selector, fails that test until someone decides it
-       belongs (Frank R2 P2: the round-2 version of that half read `globals.css`
-       alone, so a `body` rule added to THIS file would have passed it).
+       the opt-out reaches all three roots, and that across every `.css` file
+       discovered under `src/` these properties are declared on exactly four
+       selectors — the three roots and the rename field's opt-back-in. A fifth
+       CSS RULE, in any of those files and whatever its selector, fails that
+       test until someone decides it belongs (Frank R2 P2: the round-2 version
+       of that half read `globals.css` alone, so a `body` rule added to THIS
+       file would have passed it).
 
-       Both spellings of `user-select` because WebKit shipped the prefixed name
-       long before the unprefixed one, and this repo records no minimum iOS
-       anywhere, so the prefixed declaration is the one certain to apply on an
-       old device. Round 1 gave a specific first-unprefixed Safari version here
-       as flat fact; that was unverified platform recollection, no source for it
-       was checked in this repo, and it is not restated — nothing about keeping
-       the pair depends on which version it is. */
+       The bound on that gate, stated because the round-3 wording overstated it:
+       it reads stylesheets, so a suppression written as an inline `style` prop
+       or as a Tailwind utility (`select-none`, `[user-select:none]`) in a
+       `.tsx` file would not be seen by it. Left narrow rather than widened —
+       widening it is a second gate with its own red-first work, and there is
+       nothing to catch yet: `grep -rnE "user-select|touch-callout|select-none"
+       src/ index.html` returns the twelve declarations below and in the three
+       rules above, and nothing in any `.tsx`.
+
+       Both spellings of `user-select`, with NO claim here about which engine
+       shipped which name when. Round 1 gave a specific first-unprefixed Safari
+       version as flat fact; round 2 replaced it with "WebKit shipped the
+       prefixed name long before the unprefixed one", which is the same
+       unverified recollection with the number filed off. Both are retracted and
+       neither is restated. What is checkable in this repo is that it pins no
+       minimum browser anywhere — `package.json`'s `engines` names only Node,
+       and there is no browserslist — so nothing in the tree shows either
+       spelling to be unnecessary. That, and only that, is why the pair is
+       kept. */
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
