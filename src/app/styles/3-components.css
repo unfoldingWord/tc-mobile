@@ -834,11 +834,7 @@
        The bound on that gate, stated because the round-3 wording overstated it:
        it reads stylesheets, so a suppression written as an inline `style` prop
        or as a Tailwind utility (`select-none`, `[user-select:none]`) in a
-       `.tsx` file would not be seen by it. Left narrow rather than widened —
-       widening it is a second gate with its own red-first work, and there is
-       nothing to catch yet: `grep -rnE "user-select|touch-callout|select-none"
-       src/ index.html` returns the twelve declarations below and in the three
-       rules above, and nothing in any `.tsx`.
+       `.tsx` file would not be seen by it.
 
        Both spellings of `user-select`, with NO claim here about which engine
        shipped which name when. Round 1 gave a specific first-unprefixed Safari

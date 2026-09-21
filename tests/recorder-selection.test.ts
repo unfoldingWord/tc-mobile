@@ -42,11 +42,7 @@ const ROOT = path.resolve(import.meta.dirname, "..");
  * Every read below goes through this, CSS and TSX. A test that regexes a file
  * raw is captured by that file's own prose: a comment naming the thing it
  * discusses reads as the thing (AGENTS.md; #529 round 3 turned a test red
- * exactly that way). Round 1 of this file applied the strip to the CSS slices
- * only and read `recorder.tsx` raw, which was defeated in BOTH directions at
- * `b906f38` — renaming the live class and adding one prose line naming the old
- * one left the suite 6/6 green with the fix dead, and a single added comment
- * line containing `<input>` turned the last test red on its own.
+ * exactly that way).
  *
  * The `//` strip is guarded against `:` so a `://` inside a string survives.
  * Over-stripping is the dangerous direction here — it would make the two
@@ -98,12 +94,9 @@ const SELECTION_SPELLING =
  * Every stylesheet under `src/` — discovered, not a hand-kept list that goes
  * stale the day another one lands.
  *
- * No count is written here. The round-3 docblock said "the app loads four",
- * which was a different claim from the one this constant makes (discovery
- * returns five `.css` files, `styles/index.css` among them — it is an import
- * barrel that declares no rules), and the two sitting side by side read as one
- * wrong number. What the suite needs is not a count but a floor and a landmark,
- * and the test below asserts both against the discovered list itself.
+ * No count is written here. What the suite needs is not a count but a floor
+ * and a landmark, and the test below asserts both against the discovered list
+ * itself.
  */
 const STYLESHEETS = readdirSync(path.join(ROOT, "src"), { recursive: true })
   .map(String)
@@ -188,12 +181,6 @@ describe("the recorder opts out of selection and the callout (#556)", () => {
   // The checkable reason: this repo pins no minimum browser anywhere —
   // `package.json`'s `engines` names only Node, and there is no browserslist —
   // so nothing in the tree shows either spelling to be unnecessary.
-  //
-  // On the build: `dist-css.test.ts:6-15` records that esbuild collapses two
-  // declarations of the SAME property in one rule. These are two different
-  // property names, so that scar does not apply to them — and the build output
-  // was read directly rather than reasoned about; see the PR body's pasted
-  // `dist/assets/*.css` lines.
   it.each(ROOTS)(
     ".%s suppresses selection in both spellings and suppresses the callout",
     (className) => {
