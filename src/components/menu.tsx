@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
@@ -45,13 +45,16 @@ interface MenuProps {
    * Opened by a ≡ that stays a ≡ (#608). The header's dismiss control wears
    * the same `menu` glyph as the control that opened it, in the same top-right
    * corner, and the panel shows no visible title — one control, one glyph, one
-   * place, and the glyph is the label. Off (the default) the header is a title
-   * beside a back chevron, which every other menu — a per-row ≡, the
-   * recorder's, the New Book dialog — deliberately keeps: #589 owns their
-   * affordances, and this prop must not pre-empt that pick. What a screen
-   * reader hears does not change either way: `title` still names the dialog
-   * and `closeLabel` still names the control ("Close menu" dismisses, as
-   * before), which is also what the e2e specs locate the menu by.
+   * place, and the glyph is the label. The recorder's overflow drawer wears
+   * it too (#621, the requirements owner's call on that panel): its "More"
+   * heading said nothing the ≡ did not, and a left-pointing chevron reads as
+   * "move left" on a drawer that slides back to the RIGHT (see the exit motion
+   * below). Off (the default) the header is a title beside a back chevron,
+   * which the per-row ≡ menus and the New Book dialog deliberately keep: #589
+   * owns their affordances, and this prop must not pre-empt that pick. What a
+   * screen reader hears does not change either way: `title` still names the
+   * dialog and `closeLabel` still names the control ("Close menu" dismisses,
+   * as before), which is also what the e2e specs locate the menu by.
    */
   hamburger?: boolean;
   /**
@@ -144,6 +147,46 @@ export function Menu({
     onCloseRef.current = onClose;
   });
 
+  // Mounted for one exit motion after `open` drops (#621): the drawer slides
+  // back off the right edge it came in from instead of vanishing on the frame
+  // it is dismissed. Adjusted during render — the pattern React documents for
+  // deriving state from a changed input, and the one this repo's ESLint leaves
+  // open (`setState` inside an effect is refused as a cascading render;
+  // `recorder.tsx`'s `prevDenied` is the precedent). Reopening mid-exit is
+  // just `open` changing again, so it cancels the exit by the same line.
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [exiting, setExiting] = useState(false);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setExiting(!open);
+  }
+
+  // Unmount when the exit motion settles — and what "settles" means is the
+  // stylesheet's call, not this file's. `getAnimations` returns whatever
+  // `.menu-scrim[data-closing]` is animating (the panel's slide and the
+  // scrim's fade, `3-components.css`), and their `finished` promises end the
+  // exit together. Under `prefers-reduced-motion` the stylesheet sets
+  // `animation: none`, the list is empty, and the drawer is gone on the next
+  // microtask: reduced motion is honoured by this same path, not a second
+  // one, and no duration is written here, so the `--p-dur-*` token stays the
+  // only clock. jsdom has no Web Animations API; the optional call gives it
+  // the same "nothing to wait for" answer. `finished` REJECTS when an
+  // animation is cancelled mid-run (its element restyled or removed), which
+  // `allSettled` treats as done too — so nothing here can strand a closed
+  // drawer on screen.
+  const scrimRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!exiting) return;
+    const running = scrimRef.current?.getAnimations?.({ subtree: true }) ?? [];
+    let cancelled = false;
+    void Promise.allSettled(running.map((a) => a.finished)).then(() => {
+      if (!cancelled) setExiting(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [exiting]);
+
   // Land focus inside the panel ONCE on the open edge — first ENABLED control,
   // never a disabled one (focusing it is a no-op that strands the user behind
   // the scrim — Frank R-B6) — and not again on every parent render.
@@ -208,7 +251,7 @@ export function Menu({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  if (!open) return null;
+  if (!open && !exiting) return null;
 
   // Portalled to <body>, out of the caller's subtree. A caller that goes `inert`
   // to hide its own background from AT (the Segments list does this while a
@@ -217,7 +260,14 @@ export function Menu({
   // the DOM parent never mattered for layout. (Frank/George R-B6.)
   return createPortal(
     <div
+      ref={scrimRef}
       className="menu-scrim"
+      // On the way out the drawer is paint only (#621): `inert` takes it out
+      // of reach and out of the accessibility tree the instant it is
+      // dismissed — the exit is something to see, never something to tap or
+      // hear — and `data-closing` is what the stylesheet keys the motion on.
+      inert={exiting || undefined}
+      data-closing={exiting || undefined}
       // A tap on the scrim, but not on the panel, closes.
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

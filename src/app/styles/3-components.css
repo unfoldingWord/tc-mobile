@@ -232,8 +232,9 @@
      the whole write (#383). The spin is scoped to the glyph itself, not the
      button, so the control's box size never moves (#164, #351) — the caller's
      icon swap (`control-affordance.ts`, e.g. the retry glyph) does the shape
-     half, this does the motion half. The second `@keyframes` animation in the
-     app, alongside `rec-pulse` below — both reduced-motion-guarded. */
+     half, this does the motion half. One of the app's three `@keyframes`
+     animations, with `rec-pulse` below and the menu drawer's slide (#621) —
+     all reduced-motion-guarded. */
   .control[aria-busy="true"] svg {
     animation: control-spin 900ms linear infinite;
   }
@@ -455,7 +456,8 @@
 
 @layer components {
   /* A recording that looks identical to a stopped one is how a take gets
-     lost, so this is one of only two animations in the app. */
+     lost, so this earns one of the app's three animations (see
+     `control-spin` above for the other two). */
   .rec-dot {
     animation: rec-pulse 1.6s var(--p-ease) infinite;
   }
@@ -518,6 +520,11 @@
        explicitly, or a recorder menu paints behind the inert sheet — unreachable
        by touch (George R-B6). */
     z-index: 80;
+    /* The panel sits a full width past the right edge at both ends of its
+       slide (below); clip it there rather than let any engine grow a
+       horizontal scroll range for it. */
+    overflow: hidden;
+    animation: menu-scrim-in var(--p-dur-base) var(--p-ease);
   }
   .menu-panel {
     width: min(320px, 84vw);
@@ -544,6 +551,55 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+    animation: menu-panel-in var(--p-dur-base) var(--p-ease);
+  }
+  /* The drawer's motion (#621): in from the right edge it docks on, and back
+     out the same way on dismiss. A panel that arrives from the right and then
+     vanishes in place — or is dismissed by a chevron pointing LEFT — reads as
+     navigation, not as a drawer closing (#589's tester took it for Back).
+     `menu.tsx` keeps the drawer mounted under `[data-closing]` until whatever
+     is animating here has finished (`getAnimations`), so the duration and the
+     easing are written once, in this file's primitives, and nowhere in JS.
+     The reduced-motion `animation: none` below is ALSO what makes the dismiss
+     instant there: nothing animating, nothing to wait for. `forwards` holds
+     the last frame so the drawer cannot flash back into place between the
+     motion ending and React unmounting it. */
+  .menu-scrim[data-closing] {
+    animation: menu-scrim-out var(--p-dur-base) var(--p-ease) forwards;
+  }
+  .menu-scrim[data-closing] .menu-panel {
+    animation: menu-panel-out var(--p-dur-base) var(--p-ease) forwards;
+  }
+  @keyframes menu-scrim-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes menu-scrim-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes menu-panel-in {
+    from {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes menu-panel-out {
+    to {
+      transform: translateX(100%);
+    }
+  }
+  /* The exit selectors are listed on their own: they outrank the base rules,
+     so `.menu-scrim, .menu-panel` alone would silence the entrance and leave
+     the exit sliding. */
+  @media (prefers-reduced-motion: reduce) {
+    .menu-scrim,
+    .menu-panel,
+    .menu-scrim[data-closing],
+    .menu-scrim[data-closing] .menu-panel {
+      animation: none;
+    }
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */
