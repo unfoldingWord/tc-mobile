@@ -20,7 +20,7 @@
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
     "test": "vitest run",
-    "test:dist": "REQUIRE_DIST_BUILD=1 vitest run tests/dist-css.test.ts tests/precache-manifest.test.ts",
+    "test:dist": "node scripts/test-dist.mjs",
     "test:watch": "vitest",
     "test:e2e": "npm run build && npm run build:e2e && playwright test",
     "verify": "npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run typecheck:lib && npm run test && npm run build && npm run test:dist",

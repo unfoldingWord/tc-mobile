@@ -210,14 +210,15 @@ describe("navigateFallbackDenylist keeps /version.json off the SPA shell", () =>
 // TWO limitations, stated rather than glossed, because a reader must not take
 // a green run here for more than it is:
 //
-//   1. It needs a build. `npm run verify` runs the suite BEFORE `npm run
-//      build`, and CI builds in a separate job that runs no tests — so on a
-//      tree that has never been built there is nothing to read and this is
-//      skipped rather than failing a fresh clone or CI's quality job.
-//   2. What it reads is the LAST build's output, which within a single
-//      `verify` is the build from before the current source change. A green
-//      result is therefore a statement about that build, not a proof about
-//      uncommitted source. Two consecutive verifies converge.
+//   1. It needs a build, so it runs only where one is guaranteed to precede
+//      it — `npm run test:dist`, which `npm run verify` invokes after `npm
+//      run build` and which ci.yml's build-artifact step calls after its own.
+//      Everywhere else it skips, and it skips whether or not a `dist/`
+//      happens to be lying around. See `./dist-gate` for why the artifact's
+//      presence decides nothing (#568).
+//   2. What it reads is the last build's output. A green result is a
+//      statement about that build, not an unconditional proof about source
+//      that was never rebuilt.
 //
 // The always-on half of the invariant is the exact-allowlist assertion above:
 // `json` cannot enter globPatterns without failing that, unskippably and with
