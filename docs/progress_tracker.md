@@ -40,6 +40,13 @@ Three corrections to the late entry's presentation:
   harness is order-dependent, every green until then is weaker evidence than
   it reads, including the promotion's."
 
+**Correction to the shared-worktree race attribution below.** Both compromised
+runs were discarded, but they were not both caught by `assert_tree_unchanged`.
+The [#572 round-1 triage](https://github.com/unfoldingWord/tc-mobile/pull/572#issuecomment-5768337415)
+records that its first Frank run read base-tree content and then died on
+SIGKILL (exit 137) before that check could report. That run was discarded on
+the observed wrong-tree reads, not a completed guard result.
+
 **Held follow-up: review-process completion and isolation.** The `pgrep`
 self-match and report-created-at-start problems described below remain
 orchestration work. The review coordinator owns carrying that follow-up:
