@@ -84,11 +84,11 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     // The half the rename could silently lose: a prop is only as good as what
     // the sheet passes into it, and `windowControlsInert={false}` would leave
     // every assertion above green while the gate did nothing.
-    const editToolbar = sheet.slice(sheet.indexOf("<EditToolbar"));
-    expect(editToolbar).toMatch(
+    const toolbarTag = sheet.slice(sheet.indexOf("<RecorderToolbar"));
+    expect(toolbarTag).toMatch(
       /windowControlsInert=\{stage\.windowControlsInert\}/
     );
-    expect(editToolbar).toMatch(/idleEditable=\{idleEditable\}/);
+    expect(toolbarTag).toMatch(/idleEditable=\{idleEditable\}/);
   });
 
   it("the close-window term ORs with the inert term — neither masks the other", () => {

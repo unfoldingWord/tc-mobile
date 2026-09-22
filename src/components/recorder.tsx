@@ -19,7 +19,7 @@ import { Notice } from "./notice";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
-import { EditToolbar, RecordToolbar } from "./recorder-toolbars";
+import { RecorderToolbar } from "./recorder-toolbars";
 import {
   CENTER_FRACTION,
   dragOriginAfterInterrupt,
@@ -3444,43 +3444,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
               {audio.error && <Notice>{audio.error}</Notice>}
 
-              {mode === "record" ? (
-                <RecordToolbar
-                  recording={recording}
-                  paused={paused}
-                  busy={busy}
-                  isClosing={isClosing}
-                  hasView={view !== null}
-                  playingBuffer={audio.playingBuffer}
-                  dragging={dragging}
-                  playSource={playPlan?.source ?? null}
-                  playDisabled={playDisabled}
-                  editToolbarDisabled={editToolbarDisabled}
-                  editToolbarHint={editToolbarHint}
-                  onRecordButton={onRecordButton}
-                  onPlayButton={onPlayButton}
-                  onEnterEdit={onEnterEdit}
-                />
-              ) : (
-                <EditToolbar
-                  isClosing={isClosing}
-                  hasView={view !== null}
-                  playingBuffer={audio.playingBuffer}
-                  dragging={dragging}
-                  idleEditable={idleEditable}
-                  playSource={playPlan?.source ?? null}
-                  canUndo={editor.canUndo}
-                  canRedo={editor.canRedo}
-                  displayedZoom={displayedZoom}
-                  windowControlsInert={stage.windowControlsInert}
-                  onAuditionButton={onAuditionButton}
-                  onToggleZoom={onToggleZoom}
-                  onUndo={onUndo}
-                  onRedo={onRedo}
-                  openMenu={openMenu}
-                  onExitEdit={onExitEdit}
-                />
-              )}
+              <RecorderToolbar
+                mode={mode}
+                recording={recording}
+                paused={paused}
+                busy={busy}
+                isClosing={isClosing}
+                hasView={view !== null}
+                playingBuffer={audio.playingBuffer}
+                dragging={dragging}
+                idleEditable={idleEditable}
+                playSource={playPlan?.source ?? null}
+                playDisabled={playDisabled}
+                editToolbarDisabled={editToolbarDisabled}
+                editToolbarHint={editToolbarHint}
+                canUndo={editor.canUndo}
+                canRedo={editor.canRedo}
+                displayedZoom={displayedZoom}
+                windowControlsInert={stage.windowControlsInert}
+                onRecordButton={onRecordButton}
+                onPlayButton={onPlayButton}
+                onEnterEdit={onEnterEdit}
+                onAuditionButton={onAuditionButton}
+                onToggleZoom={onToggleZoom}
+                onUndo={onUndo}
+                onRedo={onRedo}
+                openMenu={openMenu}
+                onExitEdit={onExitEdit}
+              />
             </>
           )}
         </div>

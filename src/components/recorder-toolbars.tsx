@@ -9,27 +9,36 @@ import { strings } from "./strings";
 import type { RowHint } from "./menu-row-state";
 
 /**
- * The recorder sheet's two bottom bars (#160, L-1).
+ * The recorder sheet's bottom bar, in both its modes (#160, L-1) — ~210 lines
+ * of JSX lifted out of a 4000-line component.
  *
- * `RecordToolbar` and `EditToolbar` are the two arms of one `mode ===
- * "record" ? … : …`, ~210 lines of JSX inside a 4000-line component. They are
- * one module rather than two files because the thing they most need to keep
- * agreeing on is each other: both reserve the same right-hand slot for the
- * mode toggle, and both name the play control from the same `playSource`, so
- * a non-reader meets one glyph in one place whichever mode they are in.
+ * ONE component holding the `mode === "record" ? … : …`, not two exported
+ * side by side, and that is a correction rather than a preference. The first
+ * attempt exported `RecordToolbar` and `EditToolbar` and let the sheet pick;
+ * `e2e/recorder-selection.spec.ts` caught it. The mode toggle carries
+ * `key="edit-toggle"` in BOTH arms so React matches the two `Control`s across
+ * the flip and reuses the one DOM node — which is what keeps focus on it, and
+ * keeps it at the same pixel, when a keyboard user toggles into edit mode. A
+ * key only reconciles within one element list, so two component types at that
+ * position unmount and remount instead, and focus goes to the document.
  *
- * Both are presentational. Every gate arrives as a prop or is computed here
- * from primitives by a pure function that is already tested
- * (`recordDisabled`, `heldByDrag` in `recorder-stage.ts`) — neither reaches
- * into the audio session, the editor or the viewport. `playSource` is the
- * narrow slice of the play plan the labels need: WHAT a tap will sound, so
- * what a screen reader speaks is what happens.
+ * So the split is by FILE, not by component: the sheet no longer carries this
+ * JSX, and the keyed pair stays in one element list where React can match it.
+ *
+ * Presentational throughout. Every gate arrives as a prop or is computed here
+ * from primitives by a pure function that is already tested (`recordDisabled`,
+ * `heldByDrag` in `recorder-stage.ts`); nothing reaches into the audio
+ * session, the editor or the viewport. `playSource` is the narrow slice of the
+ * play plan the labels need — WHAT a tap will sound, so what a screen reader
+ * speaks is what happens — and both modes read it, so the same act is named
+ * the same way in both.
  */
 
 /** What a Play tap will sound, or null when there is nothing to sound. */
 export type PlaySource = "whole" | "line" | "selection" | null;
 
-export interface RecordToolbarProps {
+export interface RecorderToolbarProps {
+  mode: "record" | "edit";
   recording: boolean;
   paused: boolean;
   busy: boolean;
@@ -37,20 +46,36 @@ export interface RecordToolbarProps {
   /** A segment is loaded. */
   hasView: boolean;
   playingBuffer: boolean;
-  /** A finger is mid-pan (#317). */
+  /** A finger is mid-pan (#317) — the stage lock the history controls carry. */
   dragging: boolean;
+  /** Idle, and the sheet is not committing. */
+  idleEditable: boolean;
+  /** What a Play tap will sound, or null when there is nothing to sound. */
   playSource: PlaySource;
   playDisabled: boolean;
   /** The bottom-bar Edit gate, which ORs the open ≡ menu on top of the row's. */
   editToolbarDisabled: boolean;
   /** Its reason, which is NOT always the ≡ row's words (#315). */
   editToolbarHint: RowHint | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** The zoom as DRAWN — a swapped whole-clip view overrides the stored one. */
+  displayedZoom: number;
+  /** The stage says its window controls cannot act right now. */
+  windowControlsInert: boolean;
   onRecordButton: () => void;
   onPlayButton: () => void;
   onEnterEdit: () => void;
+  onAuditionButton: () => void;
+  onToggleZoom: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  openMenu: () => void;
+  onExitEdit: () => void;
 }
 
-export function RecordToolbar({
+export function RecorderToolbar({
+  mode,
   recording,
   paused,
   busy,
@@ -58,15 +83,29 @@ export function RecordToolbar({
   hasView,
   playingBuffer,
   dragging,
+  idleEditable,
   playSource,
   playDisabled,
   editToolbarDisabled,
   editToolbarHint,
+  canUndo,
+  canRedo,
+  displayedZoom,
+  windowControlsInert,
   onRecordButton,
   onPlayButton,
   onEnterEdit,
-}: RecordToolbarProps) {
-  return (
+  onAuditionButton,
+  onToggleZoom,
+  onUndo,
+  onRedo,
+  openMenu,
+  onExitEdit,
+}: RecorderToolbarProps) {
+  // The ternary is HERE, in one element list, so the mode toggle's shared
+  // `key` reconciles across the flip — see the module docblock. Two component
+  // types at this position would remount it and drop focus.
+  return mode === "record" ? (
     // Both modes reserve the same right-hand slot for the toggle.
     <div className="recorder-toolbar pair grid items-center px-[16px]">
       <Control
@@ -144,52 +183,7 @@ export function RecordToolbar({
         onClick={onEnterEdit}
       />
     </div>
-  );
-}
-
-export interface EditToolbarProps {
-  isClosing: boolean;
-  /** A segment is loaded. */
-  hasView: boolean;
-  playingBuffer: boolean;
-  /** A finger is mid-pan (#317) — the stage lock both history controls carry. */
-  dragging: boolean;
-  /** Idle, and the sheet is not committing. */
-  idleEditable: boolean;
-  playSource: PlaySource;
-  canUndo: boolean;
-  canRedo: boolean;
-  /** The zoom as DRAWN — a swapped whole-clip view overrides the stored one. */
-  displayedZoom: number;
-  /** The stage says its window controls cannot act right now. */
-  windowControlsInert: boolean;
-  onAuditionButton: () => void;
-  onToggleZoom: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  openMenu: () => void;
-  onExitEdit: () => void;
-}
-
-export function EditToolbar({
-  isClosing,
-  hasView,
-  playingBuffer,
-  dragging,
-  idleEditable,
-  playSource,
-  canUndo,
-  canRedo,
-  displayedZoom,
-  windowControlsInert,
-  onAuditionButton,
-  onToggleZoom,
-  onUndo,
-  onRedo,
-  openMenu,
-  onExitEdit,
-}: EditToolbarProps) {
-  return (
+  ) : (
     // Edit mode: the spread editing toolbar. Redo is a visible button
     // here (out of the menu); the menu opener lives at the end.
     <div className="recorder-toolbar edit grid items-center px-[16px]">
