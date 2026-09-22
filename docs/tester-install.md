@@ -30,7 +30,8 @@ Apple's normal way to try an app before it is in the App Store.
 
 On Android you install tC Mobile from a download link we send you, rather than
 from the Play Store. Your phone will ask you to confirm this is okay — that is
-normal, and the steps below show you exactly what to tap.
+normal. The steps below describe the usual path; button names and settings
+vary by phone and language.
 
 The app needs **Android 7.0 (2016) or newer** — an older phone cannot install
 it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
@@ -47,6 +48,11 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
 5. **The first time you record, your phone will ask to use the microphone.**
    Tap **Allow** — the app needs the microphone to record, and without it
    recording will not work.
+
+If you cannot reach Install, tell the facilitator whether the download stopped
+or the downloaded file would not open. Include the phone model, screen
+language, and a photo or exact wording of the message. Some phones have extra
+steps that are not yet documented here; do not guess which settings to change.
 
 ---
 
