@@ -68,6 +68,14 @@
  * orders future owed clips by the count, so poison clips near the head of a
  * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
  * still kept; this is scheduling metadata only.
+ *
+ * ── v7 (#591): segment labels — append-only ──
+ *
+ * `Segment` gained an optional `label` ("verses 3–4"), the segment twin of v5's
+ * chapter name. The v7 step stamps `label: null` on every pre-existing segment
+ * row, so a reader never meets `undefined`. Additive like v5: no store dropped,
+ * no other field touched, and the takes and clips behind a segment are never
+ * read.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -545,6 +553,22 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             const legacy = cursor.value as Chapter & { name?: string | null };
             if (legacy.name === undefined) {
               await cursor.update({ ...legacy, name: null });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v7 (#591): stamp every pre-existing segment with `label: null`. The
+        // same shape as v5 above, for the same reasons: only the missing field
+        // is added, and keying on it being ABSENT leaves a row a newer build
+        // already labelled alone.
+        if (oldVersion < 7) {
+          const store = tx.objectStore("segments");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as Segment & { label?: string | null };
+            if (legacy.label === undefined) {
+              await cursor.update({ ...legacy, label: null });
             }
             cursor = await cursor.continue();
           }
