@@ -43,12 +43,60 @@ Short session on the Mac checkout with the dev lead: start-of-day health check, 
 2. **zsh's `$VAR:path` modifier trap fired again**, the second time in one day (the day entry's learning 4). `git show $S:src/...` became `git show $S` and printed a commit instead of a file. Always `"${S}:path"`.
 3. **A tester's "it doesn't do anything" needs the screenshot read against the state table first.** The "no row" report was the documented ready state, not a failure. It is still a real affordance finding, just not the bug it first looked like.
 
+### Later in the session — state changes after the entry above was first written
+
+- **#686** (this entry's first version) merged on green by the DRI's instruction.
+- **The evening entry's first steps are done:** #634 (native Back) merged 20:26Z, #624 merged 20:35Z, #618 merged 17:33Z, and **#588 (T1, schema v6 → v7) merged 20:52Z**. `develop` is 61+ merges ahead of `staging` (v0.2.9).
+- **The Mac checkout's `core.bare=true` was unset** with the DRI's approval. It is a normal working tree on `develop` again.
+- **Board (org project 7):** snapshotted first (Mac scratchpad `board-snapshot-before-fix.json`). Statuses set: #374, #608, #589, #591, #604 → In review; #554 → Blocked (on the #560 pick); #666, #674, #677 → Todo. Queue set: #674 = 44, #677 = 45. 330 of 335 items have a status (327 before, plus those three).
+- **Assigned to the DRI (code issues):** #336, #612, #555, #557, #556, #554, and **#593**, which he takes on the condition that the debuggable build below is set up and walked through with him. **#613 moved to Jesse** (his PR is #671).
+
+### Scoreboard for the training (2026-09-22 evening)
+
+**v1-required: 20 open, 35 closed since 09-15.**
+
+- Fixed on develop, needing a device check: #374, #608.
+- PR in flight: #621 (#656), #591 (#675), #604 (#672), #589 (#683, D1 with the requirements owner), #613 (#671), #554 (#560, waiting on the pick).
+- No open PR: #593/#336, #605, #614, #612/#555/#269, #557, #556, #59. This is the risk; four of them are Android-first, and Android is the training platform. "No PR" comes from matching PR titles, not from a full check.
+- Umbrellas: #262, #245.
+
+**v1-desired in v0.3.0: 9.** #172, #247, #248, #249, #592, #629, and three waiting on a decision: #594, #602, #640. Another 10 are in v1.0.0. #590 is in v0.3.0 with no v1 label; label it or move it.
+
+### Batch plan — the next session runs this (DRI-approved shape, 2026-09-22)
+
+**Batch 1: four code lanes, none needs a phone to build.** One worktree per lane, cut from `develop`. Review tier per AGENTS.md, and merge one lane at a time with a rebase between. The freeze budget (`docs/review/dual-review.md`) applies.
+
+| Lane   | Issues             | Scope                                                                                                                                                                                                                                                                                                                                                                                                                  | Files / collision                                            |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **L1** | #557 + #554        | Edit entry: one tap on `[ ]` from record/playback opens the selection envelope, and the seed selection's left edge sits at the playhead. One code path, so one lane. **Gate: the DRI's #560 tail-rule pick.** #560's table rejects the issue's literal rule A (the selection narrows to a hairline near the end, and the 24 px handles cover each other). Without the pick, L1 runs #557 alone and #554 stays Blocked. | `recorder.tsx` (edit entry, seed selection); supersedes #560 |
+| **L2** | #614               | The waveform pans again right after recording. The requirements owner picked **Option A**, on the condition that Record at the end still appends. A code read shows it does: `insertionOffset` locks to the centerline sample at the idle→recording edge.                                                                                                                                                              | `recorder.tsx` (pan writers); a different region from L1     |
+| **L3** | #555 / #612 / #269 | Quiet or silent playback of **stored / decoded** audio. The fresh capture buffer plays at normal volume; see #555's table. First a code-read diagnosis of the `channelCount` hypothesis, then a fix with a test at the audio boundary. Final proof is a device run (batch 2, L6). T2.                                                                                                                                  | `hooks/audio-io.ts`, the decode path                         |
+| **L4** | #556 + #643        | The iOS text-selection callout on a double-tap or long-press of the waveform and header, plus #632's batched P3 test tweaks (#643; the wiring half landed in #664). T3.                                                                                                                                                                                                                                                | CSS / touch policy; `tests/menu-hamburger-header.test.ts`    |
+
+**Collision rule:** L1 and L2 both edit `recorder.tsx`, and so do #656 (#621) and Jesse's #160 recorder drafts (#657, #661, #662, #668). Those drafts stay held (the evening entry's item 5). Merge whichever of L1/L2 is clean first, then rebase the other.
+
+**Batch 2 (2026-09-23).** It opens with **v0.2.10**. That is a sequence, not a lane:
+
+1. A staging pass of **v0.2.9 data upgrading under #588's v6 → v7 migration**, before any tester's recordings go through it.
+2. The `chore(release): v0.2.10` PR, carrying #634, #618, #624, #632, #637, #648, #599, #597, #588 and the docs PRs since v0.2.9.
+3. Promote, then `npm run check:deploy`, then both native lanes cut from staging, then the pre-release with the APK and a QR.
+4. Release notes: every line says what to do and what to look at, walked on the screen before it is written (the day entry's learning 1).
+
+| Lane   | Issues         | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L5** | #593 / #336    | **The debuggable APK, then a walkthrough with the DRI.** `android-apk.yml` today builds only a signed release, and `capacitor.config.ts` does not set `android.webContentsDebuggingEnabled`, so `chrome://inspect` cannot attach. Plan: a `workflow_dispatch` input that sets it `true` for that build only (at `cap sync`), and a distinct version suffix (e.g. `0.2.10-debug`) so it can never be mistaken for the training build. The change is a process artifact (a native lane), so both reviewers run. Then: USB debugging on, `chrome://inspect`, and a trace of where `Share.share` settles. Also run Tester D's log test (does the log's two-tap send open a share sheet?). |
+| **L6** | device session | On v0.2.10: confirm #374, #608, #601 and #606. #606 is the shriek, likely closed by #618's rest-at-start; if it still reproduces, label it v1-required. Reproduce #605 (which of the two readings) and #59 (interruption on Android). Run L3's fix on Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **L7** | #621           | Take #656 through George's re-run (round 1 fixes are at `c6c67b6`) to merge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **L8** | batch 1        | L1–L4 through Frank and George, merged one at a time.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+**Not in the lanes (the DRI's non-code items):** #629, #248, #249, #245 and #262. Fit them around L6.
+
 ### Next session — in order
 
-The evening entry's list still stands (#634 round 4 at the cap → merge → #624 → promote v0.2.10 → re-cut the APK). Add:
-
-1. File Tester D's answers when they arrive (#593 or #374, per the question above).
-2. The two decisions owed above.
+1. **Ask the DRI for the #560 pick**, then start batch 1 (L1–L4).
+2. File Tester D's answers when they arrive (#593 or #374, per the question above).
+3. Batch 2: v0.2.10 first, then L5–L8.
+4. Decisions still owed: #683 D1 (the requirements owner); label or move #590.
 
 ---
 
