@@ -3645,7 +3645,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     icon="selection"
                     label={strings.enterEdit}
                     pressed={true}
-                    hint={null}
+                    // No `hint` prop, matching the record-mode twin above: the
+                    // two share `key="edit-toggle"` so React keeps ONE button
+                    // across the mode switch, and `Control` roots a hinted
+                    // control in a wrapper span. Passing `hint` on one side and
+                    // not the other makes the two elements different types
+                    // under the same key — a remount, and the focus the one tap
+                    // was holding is gone (#610's first CI run).
                     variant="default"
                     disabled={!idleEditable || dragging}
                     onClick={onExitEdit}
