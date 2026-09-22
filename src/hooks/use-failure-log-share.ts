@@ -11,6 +11,7 @@ import {
   classifyShareError,
   resolveSendOutcome,
   type ShareError,
+  type ShareGestures,
   type ShareOutcome,
   type ShareStatus,
 } from "./share-flow";
@@ -100,9 +101,7 @@ export function selectLogShareShape(
   return canShare.text() ? "text" : "unsupported";
 }
 
-export interface UseFailureLogShare {
-  readonly status: ShareStatus;
-  readonly error: ShareError | null;
+export interface UseFailureLogShare extends ShareGestures {
   /**
    * See {@link UseShareFlow.sendUnconfirmed} — the identical field, on the
    * identical policy, for this hook's own `send()` (Frank at `238820a` P2,
@@ -114,6 +113,10 @@ export interface UseFailureLogShare {
    * nothing telling it apart from one that was never tried. Wired the same
    * way as chapter/book: true after an `unproven` settle, cleared at the
    * start of a fresh `prepare()` and by `reset()`.
+   *
+   * Re-declared from {@link ShareGestures} rather than inherited silently: the
+   * type is identical and adds nothing, but this history is about THIS hook's
+   * two callers and belongs where they will look for it.
    */
   readonly sendUnconfirmed: boolean;
   /**
@@ -121,13 +124,6 @@ export interface UseFailureLogShare {
    * a reason surfaces through `error`.
    */
   prepare: () => Promise<void>;
-  /** Tap 2: hand the armed payload to the OS share sheet. Must be called
-   * straight from a user gesture — the sheet call, `navigator.share` in a
-   * browser or the Share plugin inside the shell, runs with no await before it,
-   * so the activation the web platform requires is still live. */
-  send: () => Promise<ShareOutcome>;
-  /** Drop anything armed and return to idle (panel close, unmount). */
-  reset: () => void;
 }
 
 /**
