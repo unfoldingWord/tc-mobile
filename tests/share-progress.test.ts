@@ -724,14 +724,14 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       );
       expect(source).toMatch(liveRegionPropRe);
       // A PROP of <Menu ...>, so it appears before `children` starts —
-      // found by the ternary that opens the rename-vs-action-list split.
+      // found by the ternary that opens the stale/rename/action-list split.
       const menuOpenAt = source.indexOf(
         `title={strings.${scope === "chapter" ? "chapterMenuTitle" : "bookMenuTitle"}}`
       );
       expect(menuOpenAt).toBeGreaterThan(-1);
       const childrenStartAt = source.indexOf(
         scope === "chapter"
-          ? "{renamingChapter ? ("
+          ? "{staleTarget ? ("
           : "{renamingBook && shareMenuBook ? (",
         menuOpenAt
       );
