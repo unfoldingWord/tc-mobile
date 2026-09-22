@@ -208,6 +208,9 @@ it("sends a typed name, and reads a re-typed default as untouched", async () => 
   expect(mocks.addChapter).toHaveBeenCalledWith(bookId, "Mark 7");
 
   await click(strings.addChapter(bookName));
+  // Reopening re-seeds: `Menu` unmounts its children when closed, so the
+  // typed name above cannot survive into the next prompt.
+  expect(field()?.value).toBe(strings.chapterName(3));
   // A stray trailing space on the pre-filled text must not slip the default
   // down the named path — the trimmed comparison the New Book dialog makes.
   await type(`${strings.chapterName(3)} `);
