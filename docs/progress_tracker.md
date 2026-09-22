@@ -11,6 +11,77 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-22 (day, Mac session) — v0.2.9 cut, promoted, verified and released with a QR; two testers' feedback triaged into eleven issues; eight parked drafts closed by a bounded triage pass; #588 round 1
+
+Dev lead's session on the Mac checkout, with the dev lead present and answering picks. **A second session ran in parallel on the same repo** (lanes in `/private/tmp/tc-lane-*`; it merged #581, #582, #422, #597, #599, #603, #611, #616 and the requirements owner filed #604, #608–#610, #612–#614 from an iOS pass during the day). That work is not recorded here beyond this pointer; it owns its own entry. Note for the reader: the late 2026-09-21 session that cut #584 and merged #579, #585 and #587 wrote no tracker entry either — the PRs are the record.
+
+### Shipped
+
+| What                                                                                                                                                                                                                                                                                                                                      | Evidence                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v0.2.9 promoted and verified.** #584 merged to develop (`f3c8556`); promotion #596 merged, staging at `0ca5441`.                                                                                                                                                                                                                        | `npm run check:deploy` PASS: `version=0.2.9 sha=0ca5441 builtAt=2026-09-22T13:17:17Z`. Cloudflare took ~4 min after the merge; a bare check right after the merge read 0.2.8. |
+| **Both native lanes cut from staging** after the deploy check, not before. The `release-signing` gate was approved through the API (`POST …/pending_deployments` with a JSON body; the form-encoded shape 422s).                                                                                                                          | Android run 35732565066 success; iOS run 35732567918 success.                                                                                                                 |
+| **Pre-release `android-release-v0.2.9`** at `0ca5441` with `app-release.apk`, following the v0.2.3/v0.2.4/v0.2.7 pattern. The asset URL is login-free (public repo; unauthenticated HEAD → 302 to the file), which is the "direct APK link" the requirements owner asked for, and a **QR code** of it was generated for the Signal group. | Signing cert SHA-256 `eed23e1b…34baf2`, identical to v0.2.7's, read with `apksigner verify --print-certs` — `keytool -printcert -jarfile` prints nothing on a v2-signed APK.  |
+| **Release notes rewritten twice** on tester evidence: once to cover everything since v0.2.7 (v0.2.8 was never handed out), once because item 5 named a Record control in edit mode that does not exist.                                                                                                                                   | https://github.com/unfoldingWord/tc-mobile/releases/tag/android-release-v0.2.9                                                                                                |
+| #598 — the install guide's `<placeholder: download URL>` replaced with the releases page. Rides v0.2.10.                                                                                                                                                                                                                                  | `bc1fea6`                                                                                                                                                                     |
+| uw-dev-skills PR #3 — `/sod` step 2b, open-PR health (conflicts, unanswered reviews, past-due next actions; age secondary), plugin 0.2.1.                                                                                                                                                                                                 | open, docs-only                                                                                                                                                               |
+
+### Tester feedback — two Android testers, one developer, and the requirements owner's own triage
+
+The requirements owner ran his own session at 08:41 and filed #589 (three meanings of ≡), #590 (delete a segment), #591 (rename a segment), #592 (visible re-record), plus the Tester-D share evidence on #336. Filed from here for what that left:
+
+- **#593** (v1-required) — Android APK Share resolves with **no share sheet** and lands on the "can't confirm" state. #347 _is_ in v0.2.7 (`git tag --contains d7051ee`), so this is the native route's phantom resolve, not the `navigator.share` gate. Confirmed on a **second phone** in the afternoon (Galaxy A36, SM-A366B/DS, **Android 16**, v0.2.9): _"No share sheet."_ Android 16 argues against the old-WebView hypothesis. The one decisive measurement is a `chrome://inspect` trace of `Share.share`'s settle. (#599, merged by the parallel session, bounds the native payload to 512 KiB — whether that touches this is unknown.)
+- **#594** (needs-decision) — is `[ ]` the right edit-entry glyph. v0.2.9's #579 changes what the tap does; re-test before deciding.
+- **#595** (post-v1) — "super-simplified, no editor" from both testers, documented per the convention with the requirements owner's "paper and pencil" objective quoted. No pivot.
+- **#601** (v1-required) — Segments row: after a run-out the dot rests at ≈1.0 and every next Play starts at the end. Code-read confirmed (`segment-row.tsx:325` passes `fraction × duration`). The recorder does _not_ have this defect (`panOrRest` → `null` at length → whole buffer).
+- **#602** (needs-decision) — the row's red Record opens the recorder without recording; the design record says a row without audio "records". iOS mic-gesture constraint noted.
+- **#605** (v1-required) — the recorder ≡ Erase "doesn't work" on Android v0.2.9; two readings, reporter asked which. Blocks testing #587.
+- **#606** — a shrieking noise ending a segment "in some cases". The reporter's afternoon lead: **only when the cursor was at the end** — i.e. #601's Play-from-the-end path. Posted on both: if dragging the dot to the end and tapping Play shrieks on demand, one fix (rest at 0 on run-out **and** clamp a Play offset at or past the end to 0) closes both.
+- **#374** — **FAIL on the v0.2.9 APK**: Back with the Books menu open backgrounds the app. The #531 layer stack does not hold in the Capacitor shell. Code-read posted: no `@capacitor/app` listener in the app, and the vendored Capacitor 8.5.2 Android bridge has no Back routing to WebView history at all, so the Activity default runs. Fix shape: a native `backButton` listener that pops the same layer stack. **v1-required, Android is the training platform.**
+- **#245** — Tester D's v0.2.7 passes tabulated (#418, #473, #449, playback after a call, share-icon contrast), the developer's v0.2.9 results (Back FAIL, edit toggle PASS, share unproven, Erase FAIL, one invalid item), six dated run-sheet rows R1–R6 with requested owners, and the device header. WebView version still not reported.
+- **#248** — sideload friction on a simple Android phone (download blocked before the install warning; English-only setting labels). Play Store stays out of scope (#262).
+
+### The bounded triage pass on the open PRs
+
+The dev lead asked how to stop PRs going stale. The first plan (no parking; close after 7 days; merge #501 on green) went through Frank, who changed it on four points, all taken: **three states** — active (next round owned within 48 h), blocked (owner + dated next action), closed with a linked issue; **a per-PR check before any close** (conflict, files changed on develop since the merge-base, unanswered findings) rather than distance alone; run-sheet rows carry owner, build, evidence and date; and **green is not review** — #501 gets its tier's review like everything else.
+
+Applied, with the DRI's approval at each step:
+
+- **Eight drafts closed** — #191, #216, #217, #218, #235, #237, #257 (and #261, which its author's session closed on reading the triage two minutes ahead of us): each with a triage comment carrying the evidence, and every open finding and re-cut note copied to the linked issue (#163, #159, #161, #172, #233, #253, #246). Branches and author credit kept. Not one had a fresh reviewer round; four carried QA reviews from 2026-09-04 nobody had answered.
+- **The "no common ancestor" claim on #235 was false** and is corrected there: `git merge-base` gives `72a3b6f`, and `c3574cb` is on the branch. The decision (re-cut, not rebase) stands on the 12-of-13-file overlap, not on ancestry. The bot session that made the claim most likely ran on a shallow or single-branch clone.
+- **#588 (T1, schema v6 → v7) round 1** at `f6354d9`: Frank two P2s (the source-level test matches one of four `readRecorderState() === "paused"` sites; a run claim in a test docblock), George one P2 (AGENTS.md:353 and the runbook still describe #514 as open) and three P3s (stale comments). **All six confirmed against the tree**, none refuted; fixes are the author's; P3s fold into round 2 or batch into one issue.
+- **#501** (fastlane patch, feeds the iOS lane → process artifact): **Frank APPROVE, George APPROVE, no findings at any severity** at `a2bd35a`; George traced every changed gem into the lane and found the only runtime consumer is `bundle exec fastlane ios beta`. Residual named on the PR: CI never runs fastlane, so the first TestFlight dispatch after merge is the real test. Review-clean; merge is the DRI's call.
+- **#600** (Jesse, T3): first round scheduled after a rebase; it conflicted within hours of opening.
+- Still open and owned: #542 (one round after the R2 reading, then merge), #471 (R1 log), #560 (**DRI pick on #554**, not a phone), #144 (post-training), Dependabot #503–#505 (held).
+
+### Decisions (DRI)
+
+1. Cut v0.2.9 with #579/#585/#587 riding the promotion merge commit; #581/#582 to v0.2.10 (they then merged the same morning from the parallel session).
+2. Tester builds are pre-releases with the APK attached; the asset link plus a QR is the distribution. Play Store out of scope stands.
+3. The three-state PR rule and the bounded pass above; Frank's four amendments accepted.
+4. Close the eight drafts; findings live on the issues.
+5. No product pivot on the "no editor" ask unless the requirements owner dictates it (#595 is post-v1 documentation).
+
+### Learnings
+
+1. **A test list copied from PR titles is not a test list.** Tester D could not run three of nine items; the developer could not run one because it named a control that does not exist — and the writer of that list was this session. Every line: what to do, then what to look at, and walk the screen before writing it.
+2. **A snapshot of repo state is stale within the hour when two sessions share a repo.** #422, #581 and #582 vanished from the open list mid-session because the other session merged them; #261 was closed under us. Re-fetch before every claim about live state; say which session did what.
+3. **A bot's "history was force-updated" needs the two commands, not the sentence.** `merge-base` plus `--is-ancestor` took ten seconds and refuted it.
+4. **zsh eats `$VAR:path` as a modifier.** `$D:src/...` silently became `$D` with `:s` applied and every "0 matches" in that batch was false; `${D}:path` is required. The false negatives were caught only because one of them (`wav.ts present`) contradicted the next line.
+5. **`keytool` is not the tool for a v2-signed APK**; `apksigner verify --print-certs` is.
+6. **The closing-keyword trap fired on a release PR body** (`closes #562` in #584's table linked the issue to the promotion). Caught by `closingIssuesReferences`, reworded as "issue 562". Fourth time in the tracker.
+
+### Next session (Docker) — in order
+
+1. **#501** is review-clean at `a2bd35a`; merge it (DRI), then watch the next TestFlight dispatch.
+2. **#588 round 2** when the author pushes the four P2 fixes; both lenses again (T1).
+3. **DRI picks owed:** #560's #554 geometry; who re-cuts #172 and by when (or move it to v1.0.0 explicitly).
+4. **#374 native Back** — the training-platform bug with a code-read fix shape and nobody assigned. And #601 (+ #606 if the repro holds), #605, #593: all v1-required, all on the v0.2.9 APK, all with an Android volunteer waiting for instructions.
+5. **#245 rows R1–R6** are dated 09-24/25 with _requested_ owners; confirm them or they lapse.
+6. Merge uw-dev-skills #3 on green.
+
+---
+
 ## 2026-09-21 (review recovery) — correction to the parked #572 finding
 
 This correction supersedes the #572 diagnosis and next action in the late
