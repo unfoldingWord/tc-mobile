@@ -19,8 +19,10 @@ import { one, render } from "./render";
  *
  * `tests/control-affordance.test.ts` covers the neighbouring question — which
  * glyph and label a busy control wears — from the pure table. This file is the
- * other half, and neither subsumes the other: a correct table rendered through
- * a wrong attribute is still a control an AT user is stranded behind, and a
+ * attribute half. Static markup cannot exercise the `onClick` guard: whether
+ * busy and soft-disabled controls reject activation remains outside this
+ * harness's coverage. Neither half subsumes the other: a correct table rendered
+ * through a wrong attribute is still a control an AT user is stranded behind, and a
  * correct attribute carrying the wrong glyph is still the wrong mark.
  */
 const button = (props: Parameters<typeof Control>[0]) =>

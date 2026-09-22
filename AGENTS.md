@@ -201,10 +201,10 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   and nothing else. Where the CASCADE or the real build is what is under test,
   the answer is still the Playwright suite against `dist/`
   (`e2e/theme-toggle.spec.ts`); where a HOOK's effects or focus are, it is still
-  on-device. **Most of the 79 "no renderer / no jsdom" claims across 60 files in
-  `src/` and `tests/` therefore remain true and were deliberately not swept** —
-  the five this harness falsifies outright were corrected in place, and the
-  rest need reading one at a time (the #525 shape, tracked in #549).
+  on-device. Existing claims in `src/` and `tests/` still need individual
+  review (#549): hook, focus and cascade limitations survive this harness,
+  but statements that jsdom or a renderer is absent are now stale. The local
+  corrections in this PR do not complete that sweep.
 - `fake-indexeddb` backs the storage tests. Reset between cases by **clearing
   every object store**, not by `deleteDatabase`: deletion blocks indefinitely
   while any connection is open, and a harness that resolves on `onblocked`

@@ -10,8 +10,8 @@ import { JSDOM } from "jsdom";
  *
  * A whole class of this repo's contracts is carried by a single JSX attribute
  * and pinned by nothing. #197's finding is the type case — `recorder.tsx`'s
- * interrupted branch passes `tone="info"`, and flipping it back to `"busy"`
- * left all tests green. The same hole covers `Control`'s `busy` × `disabled`
+ * former inline interrupted branch passed `tone="info"`, and flipping it back
+ * to `"busy"` left all tests green. The same hole covers `Control`'s `busy` × `disabled`
  * cell (#155 F1), the recovery panels' `role="alert"` and the ≡-row `alert`
  * badge: each is a prop-to-attribute guarantee with no runner behind it.
  *
