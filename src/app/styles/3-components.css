@@ -120,6 +120,11 @@
 
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
+    /* The guide ring (#604), one step heavier than the focus ring. Named here
+       so the two marks cannot drift into the same weight — a keyboard user has
+       to be able to tell "focused" from "next step" when both are on the same
+       control. */
+    --c-guide-ring: 3px;
 
     /* The waveform stroke. Defaults to the voice accent; a finished row remaps
        it to done (green) and the canvas reads it back — no prop drilling, and
@@ -272,6 +277,35 @@
   .control--primary {
     width: var(--c-control-xl);
     height: var(--c-control-xl);
+  }
+  /* THE GUIDE RING (#604) — "this is the next required action".
+     Which control wears it is decided once, in `guided-step.ts`; this is the
+     only place it is drawn. Deliberately not scoped to `.control`: the same
+     class marks the chapter row, which is a plain button.
+
+     Drawn INSIDE the element's own box, and that half is not a taste call. A
+     guided chapter row is exactly as wide as the shelf's scrolling container,
+     which clips anything painted outside it — so an outward ring on a row
+     would lose both of its vertical strokes and read as two stray lines.
+     Inside the box there is nothing to clip it, and the ring follows whatever
+     radius the element already has: a circle on a tile, a rectangle on a row.
+
+     It also has to stay tellable apart from focus-visible, which a keyboard
+     user can have on this same control at this same moment. They differ in
+     hue (guide against focus), in weight, and in place — focus is an outline
+     3px outside the box, this is 3px inside it, so the two read as concentric
+     rings rather than as one thick one. */
+  .is-guided {
+    box-shadow: inset 0 0 0 var(--c-guide-ring) var(--s-guide);
+  }
+  /* The one exception, for a measured reason. The guide accent scores ~1.05:1
+     against the live red, so a ring inside the record button is a ring a
+     low-vision user simply does not get; on the sheet's floor behind it, it
+     clears the non-text floor. The record button is also the one guided
+     control with room around it. `tests/contrast.test.ts` holds both numbers,
+     so if the accent ever changes this exception is re-argued from evidence. */
+  .control--record.is-guided {
+    box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
   }
   /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
      the button so the badge escapes the inert control's opacity — the mark must
