@@ -449,6 +449,17 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // the same commit-window protection as the system gesture. `beginBack` is
     // the pure form of the old `backRequested` double-tap latch: on refusal
     // (a back() already outstanding) do NOTHING — no history.back(), no push.
+    //
+    // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
+    // it: the raw issuers outside the guard (`commitCloseRecorder`,
+    // `trap-forward`'s cancel) set `suppressPop` and call `history.back()`
+    // themselves, and the header Back is disabled for exactly that window
+    // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
+    // can — the plugin posts it from the Android UI thread, not behind the
+    // pending `popstate` task — and a second `history.back()` before the
+    // first lands is the coalescing hazard `travel-guard.ts` exists to rule
+    // out (#493). That press is already the Back in flight; issue nothing.
+    if (suppressPop.current) return;
     const begun = beginBack(travelGuard.current, "go-back");
     if (!begun.ok) return;
     travelGuard.current = begun.next;
