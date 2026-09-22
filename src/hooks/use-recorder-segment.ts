@@ -4,6 +4,7 @@ import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { computePeaks } from "@/lib/audio/peaks";
+import { errorMessage } from "@/lib/failure-text";
 import {
   getBook,
   getChapter,
@@ -150,7 +151,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
         // decoder string.
         console.error("Could not open the segment for recording", cause);
         setView(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorMessage(cause));
       } finally {
         if (!cancelled) setRetrying(false);
       }
@@ -202,7 +203,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
       // panel, the cause reaches the log sink (not translator-facing).
       console.error("Could not reload the segment after a commit", cause);
       setView(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
       return null;
     }
   }, [segmentId]);

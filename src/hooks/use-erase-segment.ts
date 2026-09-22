@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
+import { errorMessage } from "@/lib/failure-text";
 import { clearSegmentTake } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
 import type { SegmentId } from "@/types/domain";
@@ -44,7 +45,7 @@ export async function performErase(
     reportFailure(cause, "erase-segment");
     return {
       ok: false,
-      error: cause instanceof Error ? cause.message : String(cause),
+      error: errorMessage(cause),
     };
   }
   // The delete has committed. A notification failure is logged, never folded

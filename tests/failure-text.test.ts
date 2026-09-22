@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { describeCause, formatFailureLog } from "@/lib/failure-text";
+import {
+  describeCause,
+  errorMessage,
+  formatFailureLog,
+} from "@/lib/failure-text";
 import type { StoredFailure } from "@/types/failure";
 
 /**
@@ -103,6 +107,53 @@ describe("describeCause", () => {
  * that named the segment was the row that had lost the reason — browsers do not
  * fold the chain into `error.stack`, that concatenation is Node's.
  */
+/**
+ * The other renderer (#160, L-15). What these pin is not "it formats nicely"
+ * but the two boundaries that make it a SEPARATE function from `describeCause`
+ * rather than a duplicate of it: the Error branch is real (a message, not
+ * `String(err)`), and everything else falls through to `String`.
+ *
+ * Both halves matter. Drop the Error branch and every `setError` in the app
+ * starts showing "Error: …" instead of the message; drop the `String` fallback
+ * and a thrown string — which `lib/storage` does throw — renders as `undefined`.
+ */
+describe("errorMessage", () => {
+  it("gives an Error's message WITHOUT its name", () => {
+    // The whole difference from `describeCause`, which prefixes the name.
+    expect(errorMessage(new TypeError("bad input"))).toBe("bad input");
+    expect(describeCause(new TypeError("bad input")).message).toBe(
+      "TypeError: bad input"
+    );
+  });
+
+  it("gives a subclass's message, not its class name", () => {
+    class QuotaError extends Error {}
+    expect(errorMessage(new QuotaError("no space left"))).toBe("no space left");
+  });
+
+  it("carries the store's own thrown messages through unchanged", () => {
+    // The shape every call site is actually rendering: `lib/storage` throws
+    // `No such segment: …`, and that string is what a recovery panel shows.
+    expect(errorMessage(new Error("No such segment: seg-1"))).toBe(
+      "No such segment: seg-1"
+    );
+  });
+
+  it("falls back to String for what is not an Error", () => {
+    expect(errorMessage("quota exceeded")).toBe("quota exceeded");
+    expect(errorMessage(undefined)).toBe("undefined");
+    expect(errorMessage(null)).toBe("null");
+    expect(errorMessage(42)).toBe("42");
+    expect(errorMessage({ code: 22 })).toBe("[object Object]");
+  });
+
+  it("is empty, not undefined, for an Error thrown with no message", () => {
+    // `new Error()` has `message: ""`. A caller storing this as state renders
+    // nothing — which is right — but must not render the string "undefined".
+    expect(errorMessage(new Error())).toBe("");
+  });
+});
+
 describe("describeCause and the cause chain", () => {
   it("keeps the reason a wrapper was built to carry", () => {
     class EncoderStalledError extends Error {

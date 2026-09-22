@@ -37,6 +37,31 @@ export function boundText(text: string): string {
 }
 
 /**
+ * A thrown value as the bare message a caller can put on screen or on a report.
+ *
+ * The expression this replaces — `cause instanceof Error ? cause.message :
+ * String(cause)` — was written out twelve times across six hooks, and once more
+ * behind a private `messageOf` in `mp3-codec.ts` (#160, L-15).
+ *
+ * Deliberately NOT {@link describeCause}, and the difference is the reason both
+ * exist. `describeCause` renders for the durable log: it prefixes the error's
+ * NAME ("TypeError: …"), walks the `cause` chain, and bounds the result, because
+ * a maintainer reading the log days later needs all three. This renders for a
+ * caller that is about to hold the string as state — `setError`, a report's
+ * `message` field — where the name is noise and the chain is not wanted.
+ *
+ * Also not `stale-target.ts`'s same-named local, which returns `string | null`
+ * on purpose: it feeds an equality test against a known message, so a non-Error
+ * must render as `null` rather than as its own text, or a THROWN STRING reading
+ * "No such chapter: …" would be mistaken for the store's own failure. Folding
+ * that one into this would be a behaviour change in a predicate, not a
+ * deduplication, so it stays where it is.
+ */
+export function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
  * How many `cause` links are followed past the value that was thrown.
  *
  * Three, because the wrapping in this app is shallow by construction — a sweep
