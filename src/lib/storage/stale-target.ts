@@ -1,7 +1,5 @@
 import type { ChapterId, SegmentId } from "@/types/domain";
 
-export type MissingTargetKind = "chapter" | "segment";
-
 function messageOf(cause: unknown): string | null {
   return cause instanceof Error ? cause.message : null;
 }
