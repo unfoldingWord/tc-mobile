@@ -64,10 +64,15 @@ import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
 import { panelRecoveryFocus } from "@/lib/a11y/panel-recovery";
 import { auditionPlan } from "@/lib/audio/audition";
-import { mergeTake } from "@/lib/audio/edit";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
-import { computePeaks } from "@/lib/audio/peaks";
+import {
+  buildPreview,
+  previewOnStage,
+  stateAfterAbort,
+  type PreparedPreview,
+  type PreviewState,
+} from "@/lib/takes/paused-preview";
 import {
   effectivePan,
   panForZoom,
@@ -85,7 +90,7 @@ import {
   type TailPlan,
 } from "@/lib/takes/close-plan";
 import { cn, formatDuration } from "@/lib/utils";
-import type { Peaks, SampleRange } from "@/types/audio";
+import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
@@ -428,13 +433,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * not decode the paused container (iOS writes the moov atom only on stop) — Play
      * then degrades to disabled with a Notice rather than a false or silent preview.
      */
-    const [preview, setPreview] = useState<{
-      buffer: Int16Array;
-      peaks: Peaks | null;
-    } | null>(null);
-    const [previewState, setPreviewState] = useState<
-      "none" | "decoding" | "failed"
-    >("none");
+    const [preview, setPreview] = useState<PreparedPreview | null>(null);
+    const [previewState, setPreviewState] = useState<PreviewState>("none");
     /**
      * The preview request epoch (#101). A first paused Play decodes asynchronously
      * (`previewCapture` + `mergeTake`); this is bumped by every transport tap
@@ -605,7 +605,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // whole-clip preview with no insert line (George R4 #1). A resume/re-record
     // discards the preview (`cancelPreview`); the failed-close paths do too. A single
     // narrowed value so the stage reads `.buffer`/`.peaks` without a null assertion.
-    const previewShown = paused || busy || isClosing ? preview : null;
+    const previewShown = previewOnStage({ paused, busy, isClosing })
+      ? preview
+      : null;
 
     // The DRAWN buffer's duration, for the playhead overlay's position fraction
     // (#102). The denominator is the buffer shown: the preview (longer than
@@ -1250,7 +1252,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const abortPreview = useCallback(() => {
       previewGenRef.current++;
       previewDecodeRef.current = false;
-      setPreviewState((s) => (s === "decoding" ? "none" : s));
+      setPreviewState(stateAfterAbort);
     }, []);
 
     // Discard the preview outright — abort the decode AND drop the prepared buffer
@@ -1399,19 +1401,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setPreviewState("failed");
             return;
           }
-          const buffer = mergeTake(
+          const prepared = buildPreview(
             editor.working,
             pcm,
-            insertionOffset.current
+            insertionOffset.current,
+            PREVIEW_PEAK_BUCKETS
           );
-          const peaks =
-            buffer.length > 0
-              ? computePeaks(buffer, PREVIEW_PEAK_BUCKETS)
-              : null;
           // Re-check after the synchronous splice/peaks, which are not instant on a
           // long take: a transport tap can land in that window too.
           if (gen !== previewGenRef.current) return;
-          setPreview({ buffer, peaks });
+          setPreview(prepared);
           setPreviewState("none");
           // Auto-play only if the context is audible NOW. This runs after the decode
           // await, OUTSIDE the Play tap's gesture, so an iOS context left
@@ -1420,7 +1419,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // needs a gesture, leave the prepared preview on stage (Play stays enabled,
           // the waveform shows) so the next tap replays it in-gesture and sounds.
           if (!audio.audioNeedsGesture()) {
-            audio.playBuffer(buffer, 0, { preemptPausedMic: true });
+            audio.playBuffer(prepared.buffer, 0, { preemptPausedMic: true });
           }
         } catch (cause) {
           // mergeTake/computePeaks allocate the full result and can throw on a
