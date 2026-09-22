@@ -67,3 +67,9 @@ body {
   outline: var(--c-focus-ring);
   outline-offset: var(--c-focus-offset);
 }
+
+/* Keep the paste marker's ring inside the recorder stage's clipping edge.
+   This exception is unlayered like the global rule so its offset takes precedence. */
+.paste-marker:focus-visible {
+  outline-offset: -2px;
+}

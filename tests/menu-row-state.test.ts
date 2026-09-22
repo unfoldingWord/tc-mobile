@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -187,6 +189,73 @@ describe("rowHint — which reasons carry a cue", () => {
     ]) {
       expect(copy).toContain(`"${strings.closeRecorder}"`);
     }
+  });
+
+  // The test above proves the SPOKEN half: "Close recorder" is a name AT can
+  // find. It says nothing about the SEEN half, and that is the gap #620 fell
+  // through: `closeRecorder` is the accessible name of an icon-only `Control`,
+  // so nothing on screen is labelled "Close recorder", and a sighted tester
+  // reading 'Use "Close recorder" to save it' found no such control (Android,
+  // v0.2.9). So the two cues that render in the sheet BODY — where the header
+  // chevron is the one on screen — name the control BOTH ways: how it looks
+  // ("the back arrow at the top") and how it is spoken, so a reader and a
+  // screen-reader user each get a match. "back arrow" is tied to the glyph the
+  // header control actually renders, read from the source the way
+  // `tests/nav-commit-close-race-guards.test.ts` isolates the same control
+  // (`recorder.tsx` mounts the audio hook graph, so no test renders it): if
+  // that `icon` ever changes, these words are stale and this fails.
+  //
+  // `blockedByTake` is deliberately NOT in this list — the next test says why.
+  it("body notices also describe the control the way a sighted user sees it (#620)", () => {
+    const recorderSource = readFileSync(
+      new URL("../src/components/recorder.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const glyph = /icon="([\w-]+)"\s*label=\{strings\.closeRecorder\}/.exec(
+      recorderSource
+    );
+    expect(glyph?.[1]).toBe("back");
+
+    for (const copy of [
+      strings.previewUnavailable,
+      strings.recorderInterrupted,
+    ]) {
+      expect(copy).toContain(
+        `the back arrow at the top ("${strings.closeRecorder}")`
+      );
+    }
+  });
+
+  // The ≡-menu hint must NOT describe the save control by its looks. It is only
+  // ever spoken inside the recorder's ≡ menu, and while that menu is up the
+  // recorder header — the control it names — is `inert` (`recorder.tsx`'s
+  // `overlayUp` gate), so the one live back chevron on screen is the menu's own
+  // dismiss, "Close menu". Inside that overlay "the back arrow at the top"
+  // names the dismiss, and a translator who tapped it would close the menu and
+  // save nothing — the same collision the round-1 `back` badge had (`rowHint`'s
+  // docblock); #648 round 1 (George P2) caught the words repeating it. The
+  // dismiss glyph is read from `menu.tsx` the same way the header's is read
+  // above, so the ban's premise is pinned rather than assumed: if the menu's
+  // dismiss stops being a back chevron, this fails and the ban is re-decided
+  // instead of silently outliving its reason.
+  it("the ≡-menu hint names both controls by name only, never by glyph (#620, #648 R1)", () => {
+    const menuSource = readFileSync(
+      new URL("../src/components/menu.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const dismiss =
+      /icon=\{hamburger \? "menu" : "([\w-]+)"\}\s*label=\{closeLabel\}/.exec(
+        menuSource
+      );
+    expect(dismiss?.[1]).toBe("back");
+
+    expect(strings.blockedByTake).not.toMatch(/back arrow/i);
+    expect(strings.blockedByTake).toContain(`"${strings.menuClose}"`);
+    expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
   });
 
   // The "Back" ban is a PRODUCT-WIDE rule, so it is enforced over the whole
