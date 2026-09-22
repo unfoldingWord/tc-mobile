@@ -71,6 +71,7 @@ function resolvedPcm(clipId: ClipId, samples: Int16Array): SegmentAudio<Clip> {
         encoding: "pcm",
         generation: 0,
         byteLength: samples.length * 2,
+        transcodeStallCount: 0,
         peaks: null,
       },
       samples,

@@ -40,8 +40,15 @@ export async function seedToSegments(page: Page) {
   // Confirm alone accepts the pre-filled placeholder name — the one-tap create.
   await page.getByRole("button", { name: "Create book" }).click();
 
-  // The new book opens expanded; add its first chapter.
+  // The new book opens expanded; add its first chapter. Add chapter opens a
+  // naming prompt of its own (#609) — a second overlay, opened and closed
+  // inside this seed, so it arms no history entry the New Book dialog above
+  // has not already armed (`floorEntryForLayerChange`, and `popLayer` touches
+  // history not at all). `back-navigation.spec.ts`'s index assertions are what
+  // prove that. Confirm alone accepts the pre-filled "Chapter N" and is what
+  // actually writes the chapter.
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page.getByRole("button", { name: "Create chapter" }).click();
   // Open the chapter → Segments. This is the first transition that pushes a
   // protective history entry.
   await page.getByRole("button", { name: "Open Chapter 1" }).click();

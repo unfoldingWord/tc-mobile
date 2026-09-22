@@ -37,6 +37,9 @@ test("selection stays scoped to recorder and panels, with editable names", async
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  // Add chapter opens a naming prompt now (#609); Confirm alone accepts the
+  // pre-filled "Chapter N" and is what actually writes the chapter.
+  await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await page.getByRole("button", { name: "Record segment 1" }).click();
@@ -70,6 +73,9 @@ test.describe("edit mode toggle", () => {
       await page.getByRole("button", { name: "New book" }).click();
       await page.getByRole("button", { name: "Create book" }).click();
       await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      // Add chapter opens a naming prompt now (#609); Confirm alone accepts
+      // the pre-filled "Chapter N" and is what actually writes the chapter.
+      await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
       await page.getByRole("button", { name: "Record segment 1" }).click();
