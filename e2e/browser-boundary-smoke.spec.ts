@@ -65,6 +65,15 @@ const MP3_DECODER_DELAY = 529;
 declare global {
   interface Window {
     __e2e?: {
+      measureCanonicalise: (
+        right: "identical" | "decorrelated" | "silent"
+      ) => Promise<{
+        sourceRms: number;
+        outputRms: number;
+        deltaDb: number;
+        inputFrames: number;
+        outputFrames: number;
+      }>;
       encodeAndDecode: (frameCount: number) => Promise<{
         mp3Length: number;
         rawDecodedFrameCount: number;
@@ -403,3 +412,24 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     expect(result.mp3Length).toBeGreaterThan(0);
   });
 });
+
+// #562: analytic stereo-to-mono expectations. This bounds a synthetic browser
+// path; it does not identify either phone's capture channels or audible route.
+for (const [right, expectedDb] of [
+  ["identical", 0],
+  ["decorrelated", 10 * Math.log10(0.5)],
+  ["silent", 20 * Math.log10(0.5)],
+] as const) {
+  test(`canonicalisation level: ${right} right channel`, async ({ page }) => {
+    await page.goto("/");
+    await page.waitForFunction(() => !!window.__e2e);
+    const result = await page.evaluate(
+      (mode) => window.__e2e!.measureCanonicalise(mode),
+      right
+    );
+    console.log(JSON.stringify({ right, expectedDb, ...result }));
+    expect
+      .soft(result.deltaDb, `${right} right-channel RMS delta`)
+      .toBeCloseTo(expectedDb, 1);
+  });
+}
