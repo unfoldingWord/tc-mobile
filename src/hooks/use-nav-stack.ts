@@ -51,11 +51,10 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  *     ADOPTS the entry already there rather than rewriting it to 0.
  *   - `layerStack` — the screen-scoped overlay stack (invariant 1/3).
  *   - `floorArmed` / `atFloor` — Amendment G (#452 PR3). Books pushes no entry
- *     of its own, so before PR3 a Back with a Books overlay open was a document
- *     navigation with NO `popstate` — measured, see
- *     `e2e/back-navigation.spec.ts`'s PR3 header — and the layer stack was
- *     never consulted. While (and only while) the floor screen has any layer
- *     open, the adapter holds ONE protective entry, so that Back becomes a
+ *     of its own, so a Back without a protective entry can leave the document
+ *     without an in-app `popstate`; the layer stack cannot intercept that.
+ *     While the floor screen has an open layer, the adapter holds ONE
+ *     protective entry so that Back becomes a
  *     `popstate` the stack can absorb. The pure decisions are
  *     `floorEntryForLayerChange` / `rearmAfterLayerBack` (`lib/nav/layer-stack.ts`).
  *   - `travelGuard` — the any-outstanding guard (Amendment A). `goBack` and the

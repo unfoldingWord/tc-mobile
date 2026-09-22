@@ -159,11 +159,10 @@ export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
  * What it has to cover is evaluation of the whole ~170 KB worker chunk, lamejs
  * included, because `ready` is posted at the FOOT of `mp3.worker.ts` — not the
  * "script load" an earlier version of this comment claimed (George R2 P2). The
- * #251 smoke measures that evaluation on Chromium and logs the number; it is
- * single-digit milliseconds there, which is the only engine anyone has measured.
- * Three seconds is a guess about phones, so the window is made SAFE rather than
- * merely long: it is not counted while the page is hidden, and one expiry costs
- * this job a fallback rather than the snapshot (`SNAPSHOT_MUTE_STRIKES`).
+ * #251 smoke logs that evaluation time in Chromium. The three-second window
+ * is an assumption about phones, not a measured phone latency budget. It is
+ * not counted while the page is hidden, and one expiry costs this job a
+ * fallback rather than the snapshot (`SNAPSHOT_MUTE_STRIKES`).
  */
 export const ENCODER_READY_TIMEOUT_MS = 3_000;
 
