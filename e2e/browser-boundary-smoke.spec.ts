@@ -25,35 +25,25 @@ import { expect, test } from "@playwright/test";
  * proven is the same code the screens run, without a fake microphone or a
  * simulated tap driving fragile UI timing.
  *
- * The issue's fix-shape step 3 also asked for "at least one `progress` message
- * before `done`". That heartbeat did not exist when this spec was written; #166
- * (PR #279) added it, and the heartbeat describe below asserts it — and more
- * than its existence: that a BUSY worker's heartbeat actually reaches the main
- * thread well inside the silence deadline, over an encode long enough for that
- * to matter (George R4 residual 1 on #279).
+ * The heartbeat assertions require progress before completion and bound the
+ * gaps while encoding, so a busy worker must reach the main thread before the
+ * silence deadline (#166).
  */
 
 /**
- * Ten minutes of canonical PCM — the "ten-minute segment" #175's memory figures
- * are written about. Three minutes was tried first: it encoded in 1.2 s on the
- * dev container, which is only two or three heartbeat intervals (the worker
- * throttles to one every 500 ms) and too thin a margin for a gap measurement
- * to mean much. Ten minutes gives several intervals even on a fast machine and
- * still keeps two encodes to seconds. The measured timings are logged, so a
- * slower runner shows up in the output rather than as a mystery.
+ * Ten minutes of canonical PCM gives the heartbeat test a long encode over
+ * which to sample progress gaps. The worker throttles progress to one message
+ * per 500 ms; a clip that finishes too quickly cannot exercise those gaps.
+ * Timings are logged to distinguish slow runners from missing heartbeats.
  */
 const HEARTBEAT_CLIP_FRAMES = 44_100 * 600;
 
 /**
  * One minute of canonical PCM for the #192 purge spec.
  *
- * The clip has one job: be long enough that the encode cannot possibly finish
- * before the abort. One SECOND was tried first and is not — it encodes in a few
- * milliseconds on this container, so `done` could beat the abort and the spec
- * would flake on `aborted` (George R1 P3-6). The harness no longer guesses at
- * the timing either: it waits for the PCM buffer to be detached, which is the
- * transfer itself. A minute keeps the whole spec well under a second while
- * leaving a margin of two orders of magnitude.
+ * The longer clip gives the abort a chance to interrupt an active encode.
+ * The harness waits for the PCM buffer to detach (the transfer) before
+ * aborting, rather than guessing when the worker has received it.
  */
 const PURGE_CLIP_FRAMES = 44_100 * 60;
 

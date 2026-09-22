@@ -86,17 +86,10 @@ describe.skipIf(GATE === "skip")(
       expect(supportsMatch?.[0]).toContain("justify-content:safe center");
     });
 
-    // George R7 P2-1, round 8: `.recorder-canvas`'s `overflow-hidden` utility
-    // gives it CSS Flexbox §4.5's automatic minimum size of 0, so on a short
-    // `.recorder-stage` ordinary flex-shrink absorbed the ENTIRE deficit into
-    // the canvas alone (measured: a 151px stage shrank it to 55px, silently,
-    // with the amplitude midline 20px below the visible box) — the group
-    // never actually overflowed its container, so `justify-content: safe
-    // center` (the fix above) never activated at all; see the round-7/8
-    // triage on #420 for the Playwright measurements. `flex-shrink: 0` on
-    // all three stage children makes the group genuinely unshrinkable, so a
-    // short stage overflows for real and `safe center` clips Cut as the
-    // comments above it have claimed since round 3.
+    // Hidden overflow gives the canvas wrapper an automatic flex minimum of
+    // zero. Allowing it to shrink can clip the canvas before the group
+    // overflows, preventing safe centering from taking effect. Keeping all
+    // three children unshrinkable lets a short stage overflow as a group.
     it.each([".recorder-paste", ".recorder-canvas", ".recorder-cut"])(
       "makes %s unshrinkable (flex-shrink:0) so a short stage overflows instead of silently shrinking the canvas",
       (selector) => {
