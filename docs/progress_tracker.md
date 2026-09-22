@@ -11,6 +11,45 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-21 (review recovery) — correction to the parked #572 finding
+
+This correction supersedes the #572 diagnosis and next action in the late
+entry below; that dated entry is retained as the record of the park.
+
+**The pre-push masking finding is refuted for the configured Git hook.**
+Husky 9.1.7 invokes the user hook with `sh -e`, so a failed build stops before
+`test:dist`. The missing `set -e` in the user hook is not a missing guard in
+Git's execution path. Running the hook directly with bare `sh` bypasses that
+launcher and produces a different result. The coordinator's controlled
+launcher experiment, independent Claude review, and explicit disposition are
+on [PR #572](https://github.com/unfoldingWord/tc-mobile/pull/572#issuecomment-5769637290).
+
+The next action is review of #572's current head, not adding `set -e` or
+spending another round repairing that refuted mechanism. The new branch
+commit reports runner-launch errors and removes a stale precache comment;
+those are separate review corrections. No merge is recorded here.
+
+Three corrections to the late entry's presentation:
+
+- Its evening-wave list contains **five** PRs, not four. With #550 and #572,
+  the entry population is seven.
+- The Windows-push history is in the **2026-09-03 public-readiness** entry,
+  issue #189. Use that heading rather than a tracker line number, which moves
+  whenever an entry is prepended.
+- Decision 11's full wording is: "#568 fixed before the freeze — while the
+  harness is order-dependent, every green until then is weaker evidence than
+  it reads, including the promotion's."
+
+**Held follow-up: review-process completion and isolation.** The `pgrep`
+self-match and report-created-at-start problems described below remain
+orchestration work. The review coordinator owns carrying that follow-up:
+use an actual process exit and a complete verdict, unique output per attempt,
+and an isolated checkout per lane. Neither a report's existence nor a wrapper
+that stopped watching is completion. This entry does not claim that the
+repository's review scripts have been repaired.
+
+---
+
 ## 2026-09-21 (late) — four review rounds across three PRs, a Windows push regression caught before it shipped, two stop-rule parks, and zero merges
 
 Coordinator session picking up the evening wave's in-flight lanes. The dev lead was away for the working part and returned at the end to park. **Nothing was merged**, and no merge authority was exercised — not because nothing was close, but because nothing reached both-lenses-clean.
