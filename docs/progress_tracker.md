@@ -11,6 +11,51 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-22 (evening, Mac session) — Tester D's v0.2.9 pass triaged live: one announcement issue, one display issue, four evidence comments on open issues, and the two parked repro worktrees read and reported
+
+Dev lead's evening session on the Mac checkout, with the dev lead present and pasting the tester thread as it arrived. **The parallel Docker session kept merging through the evening** (#622, #625, #626, #627, #632, #641, #644, #645, #648 since the day entry, plus the #160 refactor wave #628–#657 opened and #634's native-Back fix opened). That work is not recorded here beyond this pointer.
+
+### Shipped
+
+| What                                                                                                                                                                                                                                                                                                           | Evidence                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **The Docker session's worktree question answered.** `tc-lane-605` and `tc-lane-614` are both detached at `897683f` with no branch, no commits ahead and no stash — only untracked Playwright repro scripts and their evidence folders from 10:40. No code WIP; the lanes impose no constraint on taking #614. | `git status`/`git log` in both worktrees; `evidence-6xx/result.json`                                  |
+| **#629 filed** — the tester build announcement reads as Android-only: the `android-release-` tag and the APK asset frame a page that is the all-platform announcement, so the iPhone line, the "iOS version" ask and the "iPhone text selection" changelog all read as mistakes. Five actions A1–A5.           | The parallel session merged #644 (template, A3) the same evening; the v0.2.9 body itself is unedited. |
+| **#640 filed** — after a mid-clip insert stops, the stage shows only the new audio until Play. `recorder-stage.ts:96-102` documents this as the #283 tradeoff and says a composed view is "tracked separately if wanted"; no such issue existed. Options O1–O3, O1 (compose on Stop, no auto-play) smallest.   | needs-decision, v1-desired                                                                            |
+| **#605 desktop repro recorded as inconclusive:** storage read cleared after the confirm, then the script's own assertion threw. Not an Android result.                                                                                                                                                         | comment on #605                                                                                       |
+
+### Tester D on v0.2.9 — first report with a full device line
+
+Galaxy S26, Android 16, Android System WebView 152.0.7977.87. Every item routed to the issue that owns it; nothing new filed where an issue existed.
+
+- **#374** — second device FAIL: Back with a Books menu open backgrounds the app; the rename field is still open on return, so the Activity default (move task to back) ran, which matches the "no Back handling at all" read. Re-swept `@capacitor/android` 8.5.2: nothing outside the Cordova shim. New caveat for the fix: Android 16 with `targetSdk 36` runs the predictive-back path by default, so a fix that only works through the legacy `onBackPressed` passes on an older phone and still fails here. #634 (parallel session) is the fix PR.
+- **#593** — third device, no share sheet, control ended on a mark the tester reads as a **success tick**. By code the unconfirmed cell is the arrow glyph and the tick is `ready` after prepare; which he saw is unresolved, screenshot asked.
+- **#614** — first field confirmation on a second vendor, and the tester found the workaround the morning repro predicts: `[ ]` on and off (an edit commit and exit with no edit) restores the drag. Instruction for testers until the fix: tap `[ ]` twice.
+- **#59** — "locked up" after leaving the app mid-test; the screenshot shows the `recorderInterrupted` notice, reachable only through `state === "processing"` with no close in flight, transport frozen by design, Close saves. Asked whether Stop had been tapped before leaving (would be the first run of the "background right after Stop" case) and for the failure log (#478's row is in v0.2.9).
+- **#629** — follow-up evidence: the tester did not know an iPhone group exists (_"unless you have a parallel iPhone review"_). TestFlight has run every tester build since v0.2.3.
+
+### Decisions (this session, labelling only — no DRI picks were asked)
+
+1. Tester feedback on an announcement is `documentation` + `source: tester`, neither `bug` nor `post-v1`; the convention names only the other two kinds.
+2. A confusing-but-correct display is a `bug` with `source: tester` and `needs-decision`, not a feature request, when the code already documents it as a tradeoff.
+
+### Learnings
+
+1. **A tester quoting "3." may mean the page's item 2.** The chat copy of the test list numbered from 1, the release page from 0. Map the number before answering, or the reply lands on the wrong item.
+2. **"Claude is confused" was an announcement defect, not a fact defect.** Every line the tester questioned was true; the page's tag and asset said Android and nothing said otherwise. Context is part of the claim.
+3. **A docblock that says "tracked separately if wanted" is a promise with no issue behind it.** `recorder-stage.ts` carried one since #283. Worth a grep for the phrase and its cousins before the freeze.
+4. **The `uw-dev` plugin is not installed in the Mac session**, so `/eod` is unavailable there; this entry was written from `uw-dev-skills/plugins/uw-dev/commands/eod.md` by hand. Install it or keep running EOD from the workspace.
+
+### Next session — in order
+
+1. **Tester D's three open asks** (Share row screenshot; whether Stop preceded the background; the failure log from Books ≡). Post the paste-ready reply from this session's transcript to the thread if not already sent.
+2. **Publish the v0.2.9 release correction** (#629 A5). #644 says it is drafted and unpublished; the body still reads as Android-only at EOD.
+3. **#634** (native Back) through both lenses, then re-cut the APK: Tester D and the developer are both on v0.2.9 with Back broken.
+4. **#640** DRI pick between O1 and O3; **#614** fix, with "tap `[ ]` twice" in the next announcement until then.
+5. Everything the day entry listed still stands: #501 merge, #588 round 2, the #560/#172 picks, #245 R1–R6 owners, uw-dev-skills #3.
+
+---
+
 ## 2026-09-22 (day, Mac session) — v0.2.9 cut, promoted, verified and released with a QR; two testers' feedback triaged into eleven issues; eight parked drafts closed by a bounded triage pass; #588 round 1
 
 Dev lead's session on the Mac checkout, with the dev lead present and answering picks. **A second session ran in parallel on the same repo** (lanes in `/private/tmp/tc-lane-*`; it merged #581, #582, #422, #597, #599, #603, #611, #616 and the requirements owner filed #604, #608–#610, #612–#614 from an iOS pass during the day). That work is not recorded here beyond this pointer; it owns its own entry. Note for the reader: the late 2026-09-21 session that cut #584 and merged #579, #585 and #587 wrote no tracker entry either — the PRs are the record.
