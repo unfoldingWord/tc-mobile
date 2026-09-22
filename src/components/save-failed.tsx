@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -13,6 +13,10 @@ import {
 import { SendLogControl } from "./send-log-control";
 import { strings } from "./strings";
 import { flushFailureLog } from "@/hooks/failure-log";
+import {
+  pauseTranscodeSweep,
+  resumeTranscodeSweep,
+} from "@/hooks/finish-transcode";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 import { restartAfterFlush } from "@/lib/restart-after-flush";
 
@@ -24,6 +28,8 @@ import { restartAfterFlush } from "@/lib/restart-after-flush";
 function reload(): void {
   window.location.reload();
 }
+
+const SAVE_FAILED_SWEEP_PAUSE = "save-failed";
 
 interface SaveFailedProps {
   state: "saving" | "failed";
@@ -91,6 +97,12 @@ export function SaveFailed({
   // quietly went un-busy while nothing had changed would be a dead button
   // wearing a spinner first, the same reasoning `RestartControl` documents.
   const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    pauseTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
+    return () => resumeTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
+  }, []);
+
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
   const restartArmed = restartArmedAt === attempts && !saving;
@@ -217,18 +229,12 @@ export function SaveFailed({
               (George R1 P2-1). This is the same reason `DatabasePanel`
               carries no Send control.
 
-              KNOWN HOLE (George R1 P2-2, unfoldingWord/tc-mobile#514): unlike
-              `ErrorBoundary`, which calls `quiesceTranscodeSweep()` before
-              ever reaching its own `SendLogControl`, this screen does NOT
-              stop `App`'s module-scoped transcode sweep (`finish-transcode.ts`)
-              — `App` stays mounted underneath `SaveFailed`. A live failing
-              sweep can churn the armed share and prune the 50-row ring before
-              a tap here lands. Not fixed here: `ErrorBoundary`'s quiesce is
-              one-way, and its only exit is a reload, while this screen's
-              primary exit is Retry on the SAME page — a one-way quiesce would
-              silently skip the post-retry sweep a successful Finished retry
-              still owes (D3). Needs an explicit pause/resume, tracked in the
-              linked issue; documented, not silently reused. */}
+              `ErrorBoundary` can one-way quiesce the transcode sweep because
+              its only exit is a reload. This screen's primary exit is Retry on
+              the SAME page, so it pauses the module-scoped sweep while mounted
+              and resumes on unmount instead; otherwise a live failing sweep can
+              churn the armed share and prune the 50-row ring before a Send tap
+              lands (unfoldingWord/tc-mobile#514). */}
           {!terminal && <SendLogControl />}
 
           {safetyLine && (
