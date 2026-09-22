@@ -8,7 +8,6 @@ import {
   heldTakeIsBusy,
   markRowReason,
   rowHint,
-  toolbarEditHint,
 } from "@/components/menu-row-state";
 import { strings } from "@/lib/strings";
 
@@ -322,31 +321,6 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an enabled row has no hint", () => {
     expect(rowHint(null)).toBeNull();
-  });
-});
-
-describe("toolbarEditHint — the bottom-bar Edit control's own copy (#315 round 1, George P2-1)", () => {
-  // The failure this pins: the toolbar control fires `"uncommitted-take"`
-  // during a normal Back-tapped close or a #59 processing freeze, with no ≡
-  // menu open at all — so `rowHint`'s "Use \"Close menu\", then..." copy would
-  // name a menu that does not exist on this surface, over a control that was
-  // never inside one.
-  it("omits the hint for an uncommitted take — the toolbar is not inside the ≡ menu", () => {
-    expect(toolbarEditHint("uncommitted-take")).toBeNull();
-  });
-
-  // Every other reason is surface-agnostic: it names no control, so it reads
-  // the same whether the row lives in the menu or on the toolbar.
-  it("carries every other reason through unchanged", () => {
-    expect(toolbarEditHint("starting")).toEqual(rowHint("starting"));
-    expect(toolbarEditHint("no-audio")).toEqual(rowHint("no-audio"));
-    expect(toolbarEditHint("denied")).toEqual(rowHint("denied"));
-    expect(toolbarEditHint("no-segment")).toEqual(rowHint("no-segment"));
-    expect(toolbarEditHint(null)).toEqual(rowHint(null));
-  });
-
-  it("an enabled control has no hint", () => {
-    expect(toolbarEditHint(null)).toBeNull();
   });
 });
 

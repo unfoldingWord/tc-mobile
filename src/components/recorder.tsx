@@ -43,7 +43,6 @@ import {
   heldTakeIsBusy,
   markRowReason,
   rowHint,
-  toolbarEditHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
@@ -2689,19 +2688,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     //
     // `editReason` alone must not gain a `menuShown` clause — that would split
     // the #134/#135 gate the ≡ row and this control otherwise share verbatim.
-    // Instead the toolbar copy ORs in `menuShown` on top of the shared reason,
-    // and drops to no hint (a plain native disable, matching how the rest of
-    // the un-exempted sheet is unreachable) whenever `menuShown` is the only
-    // thing blocking it — there is nothing surface-specific to say beyond "the
-    // menu owns the screen right now", and the menu itself already says that.
+    // Instead the toolbar copy ORs in `menuShown` on top of the shared reason.
     const editToolbarDisabled = editReason !== null || menuShown;
-    // `toolbarEditHint` only has an opinion when `editReason` itself disables
-    // the control (#315 round 1, George P2-1) — see its own docblock in
-    // `menu-row-state.ts` for why `"uncommitted-take"` drops the ≡ row's
-    // "Close menu" copy here. When `menuShown` alone is what disables it,
-    // `editReason` is null and there is no reason-shaped hint to show.
+    // Keep the blocked reason reachable to keyboard and switch users without
+    // painting an alert badge for an empty segment or a starting microphone.
+    // The commit Notice already explains uncommitted-take; its menu-specific
+    // "Close menu" hint does not describe this toolbar.
+    const editHint = rowHint(editReason);
     const editToolbarHint =
-      editReason !== null ? toolbarEditHint(editReason) : null;
+      editReason === "uncommitted-take" || editHint === null
+        ? null
+        : { label: editHint.label };
 
     // A full-body panel owns the sheet body — the permission panel, the
     // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
@@ -3651,6 +3648,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     icon="selection"
                     label={strings.enterEdit}
                     pressed={true}
+                    // Both twins keep the hinted root so their shared key
+                    // preserves the button and focus across the mode switch.
                     hint={null}
                     variant="default"
                     disabled={!idleEditable || dragging}

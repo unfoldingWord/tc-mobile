@@ -38,12 +38,18 @@
  */
 
 import { reportFailure } from "./report-failure";
-import { EncoderStalledError, withEncoder } from "./mp3-codec";
+import {
+  EncoderStalledError,
+  encoderHealth,
+  subscribeToEncoderHealth,
+  withEncoder,
+} from "./mp3-codec";
 import { computePeaks } from "@/lib/audio/peaks";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
   commitTranscode,
   listPcmFinishedSegments,
+  recordTranscodeStall,
 } from "@/lib/storage/transcode";
 import type { SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS } from "@/types/view";
@@ -51,17 +57,15 @@ import { ROW_PEAK_BUCKETS } from "@/types/view";
 let running: Promise<void> | null = null;
 let requestedDuringRun = false;
 /**
- * The segment whose encode last stalled, if any.
+ * Segments whose encode stalled in this page.
  *
- * Not a blocklist — a deprioritisation. The owed list comes back "in no
- * particular order" but in practice a stable `getAll` walk, and a stall ends the
- * RUN (#290), so a single clip that wedges the worker every time sat at the head
- * of that list and every other finished segment behind it never got a turn for
- * the life of the page (George R1 P2-2). Moving it to the BACK of the next
- * pass's list lets the other nineteen through and still retries it, rather than
- * abandoning a segment nothing else will ever pick up.
+ * Not a blocklist — a deprioritisation. The owed list is sorted by durable
+ * stall count; this same-page set moves stalled ids behind its healthy tail.
+ * A stall ends the RUN (#290), so poison clips near the head would otherwise
+ * starve healthy segments. Poison clips are still retried after recovery (#404):
+ * they can therefore consume another encoder timeout before later Share work.
  */
-let lastStalledSegmentId: SegmentId | null = null;
+const stalledSegmentIds = new Set<SegmentId>();
 
 /**
  * Stop sweeping, for the life of this page. One-way (George R5 P2-3).
@@ -85,14 +89,60 @@ let lastStalledSegmentId: SegmentId | null = null;
  * segment left untranscoded keeps its PCM and is picked up by the next launch or
  * the next Finished transition — dying half-way is already documented as safe.
  * And the only exit from the crash screen is a reload, which is a new page with
- * a fresh launch sweep, so there is nothing to resume: no `resume` exists,
- * because a one-way flag with no reader for its other half would be a stub.
+ * a fresh launch sweep, so there is nothing for this quiesce path to resume: a
+ * quiesce-specific `resume` would be a stub.
  */
 let quiesced = false;
+const pauseReasons = new Set<string>();
+let requestedDuringPause = false;
+
+/**
+ * Ask for a sweep when the encoder RECOVERS.
+ *
+ * A module-scoped subscription with no unsubscribe: there is one sweep per page
+ * and it lives as long as the module does. Health only returns to `ok` on an
+ * encode that actually produced bytes, so this never fires on a hunch — but
+ * that encode may well be a Share's, and then the sweep goes back at a clip
+ * that wedged the worker earlier in this page. `stalledSegmentIds` puts it
+ * behind the healthy ones; when it is the ONLY clip owed, it is retried
+ * straight away. That is the intended trade — the encoder has just been
+ * demonstrated to work — and not the #290 case, which is about going back at a
+ * stall with nothing having changed.
+ */
+let lastEncoderHealth = encoderHealth();
+subscribeToEncoderHealth((health) => {
+  const recovered = lastEncoderHealth === "failing" && health === "ok";
+  lastEncoderHealth = health;
+  if (recovered) void requestTranscodeSweep();
+});
+
+function paused(): boolean {
+  return pauseReasons.size > 0;
+}
 
 /** Called from the error boundary. See {@link quiesced}. */
 export function quiesceTranscodeSweep(): void {
   quiesced = true;
+  pauseReasons.clear();
+  requestedDuringPause = false;
+}
+
+/**
+ * Temporarily stop new transcode work while a live screen needs the failure log
+ * to stay stable. Unlike {@link quiesceTranscodeSweep}, this is reversible.
+ */
+export function pauseTranscodeSweep(reason: string): void {
+  if (quiesced) return;
+  pauseReasons.add(reason);
+}
+
+/** Resume work paused by {@link pauseTranscodeSweep}. */
+export function resumeTranscodeSweep(reason: string): void {
+  if (quiesced) return;
+  pauseReasons.delete(reason);
+  if (paused() || !requestedDuringPause) return;
+  requestedDuringPause = false;
+  void requestTranscodeSweep();
 }
 
 /**
@@ -115,6 +165,10 @@ export function requestTranscodeSweep(): Promise<void> {
   // `void`s this, and a rejection would reach the funnel and append the very
   // kind of row this is here to stop.
   if (quiesced) return Promise.resolve();
+  if (paused()) {
+    requestedDuringPause = true;
+    return Promise.resolve();
+  }
   if (running) {
     requestedDuringRun = true;
     return running;
@@ -164,6 +218,15 @@ async function runSweeps(): Promise<void> {
     do {
       requestedDuringRun = false;
       if (quiesced) break;
+      // A pause noticed HERE, rather than inside `sweepOnce`, still ends a run
+      // that has work owed: `requestedDuringRun` was cleared one line above,
+      // and the stall budget's drain pass is scheduled through that same flag.
+      // Unlike the quiesce, the pause is reversible, so the owed pass has a
+      // reader — hand it over, or it is lost until the next launch.
+      if (paused()) {
+        requestedDuringPause = true;
+        break;
+      }
       const stalled = await sweepOnce(poison);
       if (stalled !== null) {
         // Second stall in this run: the encoder has stopped. End the run.
@@ -181,19 +244,31 @@ async function runSweeps(): Promise<void> {
 /**
  * Move the segment that stalled last time to the BACK of this pass.
  *
- * `listPcmFinishedSegments` promises no order and delivers a stable `getAll`
- * walk, so a clip that wedges the worker every time keeps the head of the queue
- * and — since a stall ends the run — nothing behind it is ever attempted
- * (George R1 P2-2). Pure, so the reordering is pinned by a test rather than by
- * reading the loop.
+ * `listPcmFinishedSegments` already orders by the DURABLE stall count (#404),
+ * which is what survives a reload. This is the same move for stalls this PAGE
+ * has seen and not yet written down — the count is stamped after the stall, and
+ * a clip that wedges the worker every time would otherwise keep the head of the
+ * queue within the run, where a stall ends the pass and nothing behind it is
+ * ever attempted (George R1 P2-2). Pure, so the reordering is pinned by a test
+ * rather than by reading the loop.
  */
 export function afterStalledSegment<
   T extends { readonly segmentId: SegmentId },
->(owed: readonly T[], stalled: SegmentId | null): readonly T[] {
+>(
+  owed: readonly T[],
+  stalled: SegmentId | null | ReadonlySet<SegmentId>
+): readonly T[] {
   if (stalled === null || owed.length < 2) return owed;
-  const index = owed.findIndex((entry) => entry.segmentId === stalled);
-  if (index < 0) return owed;
-  return [...owed.slice(0, index), ...owed.slice(index + 1), owed[index]!];
+  const stalledIds = stalled instanceof Set ? stalled : new Set([stalled]);
+  if (stalledIds.size === 0) return owed;
+  const ready: T[] = [];
+  const deprioritised: T[] = [];
+  for (const entry of owed) {
+    if (stalledIds.has(entry.segmentId)) deprioritised.push(entry);
+    else ready.push(entry);
+  }
+  if (deprioritised.length === 0) return owed;
+  return [...ready, ...deprioritised];
 }
 
 /**
@@ -203,7 +278,7 @@ export function afterStalledSegment<
  * `skip` leaves one segment out entirely — the drain pass's poison clip.
  */
 async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
-  if (quiesced) return null;
+  if (quiesced || paused()) return null;
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
@@ -216,13 +291,16 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
   }
   for (const { segmentId, clipId } of afterStalledSegment(
     owed,
-    lastStalledSegmentId
+    stalledSegmentIds
   )) {
     // Checked per segment, so a pass already in flight when the boundary catches
     // stops at the next clip rather than running the backlog to the end. One
     // segment already inside `withEncoder` finishes — it holds the lane and its
     // commit is a transaction — so at most one further row can land.
-    if (quiesced) return null;
+    if (quiesced || paused()) {
+      if (paused()) requestedDuringPause = true;
+      return null;
+    }
     if (segmentId === skip) continue;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
@@ -249,7 +327,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // This clip is no longer the one that wedged the worker, so it stops being
       // deprioritised. Cleared on ANY completed turn: a skip proves nothing
       // about the clip, but it does mean the head of the queue moved on.
-      if (lastStalledSegmentId === segmentId) lastStalledSegmentId = null;
+      stalledSegmentIds.delete(segmentId);
     } catch (cause) {
       // To the app's ONE sink, not the console alone (#167). The segment id
       // rides in a wrapper rather than in the context, because `context` is the
@@ -274,7 +352,12 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // head-of-line block: one poison clip at the front of a stable list would
       // otherwise starve every other finished segment (George R1 P2-2, R2 P2).
       if (cause instanceof EncoderStalledError) {
-        lastStalledSegmentId = segmentId;
+        stalledSegmentIds.add(segmentId);
+        try {
+          await recordTranscodeStall(clipId);
+        } catch (accountingCause) {
+          reportFailure(accountingCause, "transcode-stall-accounting");
+        }
         return segmentId;
       }
     }

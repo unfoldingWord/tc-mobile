@@ -207,6 +207,7 @@ const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
 export interface UseRecorder {
   readonly state: RecorderState;
+  readonly readState: () => RecorderState;
   readonly supported: boolean;
   readonly elapsedMs: number;
   readonly error: string | null;
@@ -321,7 +322,13 @@ export interface UseRecorder {
  * having to know what codec the device produced.
  */
 export function useRecorder(): UseRecorder {
-  const [state, setState] = useState<RecorderState>("idle");
+  const [state, setRenderedState] = useState<RecorderState>("idle");
+  const stateRef = useRef<RecorderState>("idle");
+  const setState = useCallback((next: RecorderState): void => {
+    stateRef.current = next;
+    setRenderedState(next);
+  }, []);
+  const readState = useCallback((): RecorderState => stateRef.current, []);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // The VU tap could not be wired on this device (createLevelTap threw). The
@@ -744,7 +751,15 @@ export function useRecorder(): UseRecorder {
       }
       return false;
     }
-  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
+  }, [
+    abandonStream,
+    clearTick,
+    closeTap,
+    releaseStream,
+    setState,
+    startTick,
+    supported,
+  ]);
 
   /**
    * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
@@ -764,7 +779,7 @@ export function useRecorder(): UseRecorder {
     clearTick();
     setElapsedMs(baseElapsedRef.current);
     setState("paused");
-  }, [clearTick]);
+  }, [clearTick, setState]);
 
   /** Resume the paused take into the same recording. */
   const resume = useCallback(() => {
@@ -786,7 +801,7 @@ export function useRecorder(): UseRecorder {
     startedAtRef.current = performance.now();
     setState("recording");
     startTick();
-  }, [startTick]);
+  }, [setState, startTick]);
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
@@ -1063,7 +1078,7 @@ export function useRecorder(): UseRecorder {
         blob: verdict.keepBlob ? blob : null,
       };
     }
-  }, [abandonStream, clearTick]);
+  }, [abandonStream, clearTick, setState]);
 
   const retryDecode = useCallback(
     async (blob: Blob): Promise<RetryDecodeResult> => {
@@ -1207,7 +1222,7 @@ export function useRecorder(): UseRecorder {
     // failure must not follow the translator to the next screen and read as a
     // fresh one. Nothing else clears it that `start()` does not already clear.
     setError(null);
-  }, [clearTick, releaseStream]);
+  }, [clearTick, releaseStream, setState]);
 
   // Re-arm Web Audio when the app returns to the foreground mid-take (#76).
   // Extracted to `armForegroundResume` so its two guards (recording, visible) and
@@ -1224,6 +1239,7 @@ export function useRecorder(): UseRecorder {
 
   return {
     state,
+    readState,
     supported,
     elapsedMs,
     error,
