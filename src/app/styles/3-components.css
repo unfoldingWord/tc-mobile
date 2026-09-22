@@ -862,13 +862,11 @@
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
-    /* A thin bar centred in a wide, finger-sized target. */
+    /* A thin bar centred in a wide, finger-sized target. Its inward focus
+       offset lives beside the unlayered default in globals.css, like
+       `.paste-marker`'s: a layered copy here never won (#635). */
     background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
       100% no-repeat;
-  }
-  .selection-handle:focus-visible {
-    outline: 2px solid var(--s-focus);
-    outline-offset: -2px;
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
