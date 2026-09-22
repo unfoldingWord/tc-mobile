@@ -29,6 +29,9 @@ export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
+  // The global menu's dialog name for a screen reader — never painted (#608):
+  // that panel opens from a ≡ that stays a ≡, so the glyph is its only label.
+  // Every OTHER menu passes its own `title` and still shows it.
   menuTitle: "Menu",
   menuClose: "Close menu",
   booksEmpty: "Start your first book",
