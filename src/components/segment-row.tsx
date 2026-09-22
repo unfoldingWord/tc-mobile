@@ -101,6 +101,7 @@ export function SegmentRow({
   row,
   playing,
   playbackElapsedMs,
+  ranOut = false,
   onPlay,
   onOpenRecorder,
   onSetFinished,
@@ -162,8 +163,8 @@ export function SegmentRow({
   const ordinal = row.ordinal;
 
   // The resting scrub position, [0,1]. While playing, the dot tracks the take's
-  // elapsed instead; when playback ends or is stopped, it rests where it
-  // reached (F4/§3.4), so `position` catches up to the last elapsed fraction.
+  // elapsed instead; a hand stop rests it where it reached, so `position`
+  // catches up to the last elapsed fraction.
   const [position, setPosition] = useState(0);
   const [dragging, setDragging] = useState(false);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -180,13 +181,16 @@ export function SegmentRow({
   }, [playing, playbackElapsedMs, durationMs]);
 
   useEffect(() => {
-    // When playback ends or is stopped, leave the dot where it reached rather
-    // than snapping back to the old start position.
+    // A hand stop is a place the translator picked, so the dot stays there
+    // rather than snapping back to the old start position. A take that RAN OUT
+    // picked nothing, and resting at the end points the next Play's offset past
+    // the audio — the segment then cannot be played twice without dragging the
+    // dot back (#601), so a run-out rests at the start instead.
     if (wasPlaying.current && !playing) {
-      setPosition(lastElapsedFraction.current);
+      setPosition(ranOut ? 0 : lastElapsedFraction.current);
     }
     wasPlaying.current = playing;
-  }, [playing]);
+  }, [playing, ranOut]);
 
   // A 1:1 re-record replaces the clip under the SAME row instance (same key),
   // so the resting scrub must snap back to the start when the audio identity

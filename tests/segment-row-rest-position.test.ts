@@ -20,6 +20,11 @@ import type { SegmentId, ClipId } from "@/types/domain";
  * (`hooks/audio-io.ts` sets `stopped` before `source.stop()`), which is why the
  * session can tell the row which one happened and the row cannot work it out
  * alone: both arrive here as `playing` going false.
+ *
+ * Scope: this mounts the row and hands it the prop the screen passes. That the
+ * SESSION sets that prop only on `onEnded` is not reached from here —
+ * `useAudioSession` mounts the recorder, so it needs a microphone and an
+ * AudioContext — and nothing else in `tests/` covers it either.
  */
 
 let dom: JSDOM;
