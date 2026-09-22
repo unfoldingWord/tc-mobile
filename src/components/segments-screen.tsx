@@ -132,6 +132,7 @@ export const SegmentsScreen = forwardRef<
     loaded,
     refreshing,
     error,
+    staleTarget,
     reload,
     addSegment,
     setFinished,
@@ -670,7 +671,7 @@ export const SegmentsScreen = forwardRef<
   const loadFailed = error !== null && !loaded;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
-  const showEmpty = loaded && rows.length === 0;
+  const showEmpty = !staleTarget && loaded && rows.length === 0;
 
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
@@ -785,7 +786,7 @@ export const SegmentsScreen = forwardRef<
             icon="plus"
             label={strings.addSegment}
             variant="quiet"
-            disabled={loading || refreshing || loadFailed}
+            disabled={staleTarget || loading || refreshing || loadFailed}
             onClick={() => void onAppend()}
           />
         )}
@@ -797,7 +798,7 @@ export const SegmentsScreen = forwardRef<
           icon="menu"
           label={strings.chapterMenuOpen}
           variant="quiet"
-          disabled={loading || refreshing || loadFailed}
+          disabled={staleTarget || loading || refreshing || loadFailed}
           onClick={openChapterMenu}
         />
       </header>
@@ -806,7 +807,11 @@ export const SegmentsScreen = forwardRef<
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
-      {(error ?? audio.error ?? (erase.error ? strings.eraseFailed : null)) ? (
+      {staleTarget ? (
+        <Notice>{strings.staleChapter}</Notice>
+      ) : (error ??
+        audio.error ??
+        (erase.error ? strings.eraseFailed : null)) ? (
         <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
@@ -817,7 +822,7 @@ export const SegmentsScreen = forwardRef<
       )}
 
       <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
-        {showEmpty ? (
+        {staleTarget ? null : showEmpty ? (
           <EmptyState
             headline={strings.segmentsEmpty}
             teach={strings.segmentsEmptyTeach}
@@ -870,6 +875,10 @@ export const SegmentsScreen = forwardRef<
       />
 
       <Menu
+        // Re-enter Menu's open focus behavior when stale contents replace a
+        // focused rename field. Only Close remains; the screen keeps its layer
+        // until the translator dismisses it and explicitly goes Back (#378).
+        key={staleTarget ? "stale" : "live"}
         open={chapterMenuOpen}
         onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
@@ -904,7 +913,9 @@ export const SegmentsScreen = forwardRef<
           )
         }
       >
-        {renamingChapter ? (
+        {staleTarget ? (
+          <Notice>{strings.staleChapter}</Notice>
+        ) : renamingChapter ? (
           <>
             {/* Rename the chapter in place (#264). Seeded with the current
                 custom label, or empty when it is still the default "Chapter N"

@@ -3579,12 +3579,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // `stageView` now answers for a prepared preview only — a
                     // sounding buffer scrolls at the real zoom, which is #417's
                     // whole point, so during playback `displayedZoom` IS
-                    // `zoom`. A preview never reaches this toolbar (it requires
-                    // `idleEditable`), so here the two are always equal today.
-                    // Kept because a disabled control still tells a non-reader
-                    // which state it is in, and it must name the window that is
-                    // actually drawn — not because the canvas is swapped out
-                    // from under this control any more.
+                    // `zoom`. The one window that claim was false in was the
+                    // CLOSE window (#396): a leftover paused-take preview can
+                    // outlive the edit gate while `close()` is committing, put
+                    // `wholeView` up with a SILENT buffer (so `windowControls-
+                    // Inert` is false), and stand this control up drawing the
+                    // whole chrome over a handler that flips the real `zoom`.
+                    // `!idleEditable` on `disabled` below is what kills that
+                    // — in the windows the control can fire, `wholeView` is
+                    // false, so the two values the chrome could name are the
+                    // two that are equal.
                     icon={displayedZoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
                     label={
                       displayedZoom === ZOOM_WHOLE
@@ -3596,7 +3600,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     size={24}
                     // A window control: it rebuilds the window under a line that
                     // is already travelling. `recorder-stage.ts` carries the class.
-                    disabled={stage.windowControlsInert}
+                    // `!idleEditable` also gates #396's slack window: a leftover
+                    // preview during `isClosing` shows whole-view chrome over the
+                    // REAL zoom handler, and a tap there silently flips the stored
+                    // zoom with no visible change — see the comment above.
+                    disabled={stage.windowControlsInert || !idleEditable}
                     onClick={onToggleZoom}
                   />
                   <Control

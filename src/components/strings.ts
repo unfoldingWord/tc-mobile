@@ -106,6 +106,7 @@ export const strings = {
   // never happened, and even after a real save the write is already done by the
   // time this shows — the list is recomputing peaks, not saving (#77).
   updating: "Updating the chapter.",
+  staleChapter: "This chapter is no longer available. Go back to Books.",
   loadingChapter: "Loading the chapter.",
   segmentsEmpty: "Add the first segment",
   segmentsEmptyTeach:

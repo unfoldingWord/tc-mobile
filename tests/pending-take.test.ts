@@ -155,16 +155,19 @@ describe("retrySave", () => {
     expect(retrySave(null)).toBeNull();
   });
 
-  it("refuses a downgrade, which no attempt can clear", () => {
-    // A newer copy of the app has moved the database past this build, so
-    // `getDb()` fails the version check before any transaction — identically,
-    // every time. Arming a save here spins the recovery screen through "Saving"
-    // and back for as long as someone keeps tapping. Refused by returning the
-    // slot UNCHANGED, which is the same "refused" every caller already reads
-    // (George R2 P2-1).
+  it("refuses non-retryable kinds, which no attempt can clear", () => {
+    // `downgrade`: a newer copy of the app has moved the database past this
+    // build, so `getDb()` fails before any transaction — identically, every
+    // time. `stale`: another live copy deleted the row this take belongs to, so
+    // there is no valid target for the held PCM (#378). Arming a save for either
+    // spins the recovery screen through "Saving" and back for as long as someone
+    // keeps tapping. Refused by returning the slot UNCHANGED, which is the same
+    // "refused" every caller already reads (George R2 P2-1).
     const { take } = held();
-    const failed = failSave(take, CLIP, "downgrade");
-    expect(retrySave(failed)).toBe(failed);
+    const downgraded = failSave(take, CLIP, "downgrade");
+    expect(retrySave(downgraded)).toBe(downgraded);
+    const stale = failSave(take, CLIP, "stale");
+    expect(retrySave(stale)).toBe(stale);
     // And the retryable kinds are untouched by the guard.
     const blip = failSave(take, CLIP, "unknown");
     expect(retrySave(blip)).not.toBe(blip);

@@ -35,13 +35,13 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * produces it stays in `hooks/save-failure.ts` and re-exports this type, so
  * there is still only one definition.
  *
- * `downgrade` is the one that is NOT retryable: a newer copy of the app has
- * upgraded the database past this build, so `getDb()` fails the version check
- * before any transaction is reached and will do so on every attempt. The other
- * two are blips — a full phone, or anything else — where the next Retry can
- * genuinely land.
+ * `downgrade` and `stale` are the ones that are NOT retryable: a newer copy of
+ * the app has upgraded the database past this build, or another live copy has
+ * deleted the chapter/segment the held audio was supposed to save into. The
+ * other two are blips — a full phone, or anything else — where the next Retry
+ * can genuinely land.
  */
-export type SaveFailureKind = "quota" | "downgrade" | "unknown";
+export type SaveFailureKind = "quota" | "downgrade" | "stale" | "unknown";
 
 /**
  * A finished recording that is not on disk yet.
@@ -156,14 +156,16 @@ export function failSave(
  */
 export function retrySave(current: PendingTake | null): PendingTake | null {
   if (!current || current.state === "saving") return current;
-  // A `downgrade` cannot be retried — `getDb()` fails the version check before
-  // any transaction, identically, every time. The recovery screen offers a
-  // restart instead of Retry for this kind, so nothing should reach here; this
-  // is defence in depth, and it refuses by returning the slot UNCHANGED, which
-  // every caller already reads as "refused" (`retryPendingTake` compares
-  // identity). Arming a save that cannot land would spin the screen through
-  // "Saving" and back for as long as someone kept tapping (George R2 P2-1).
-  if (current.kind === "downgrade") return current;
+  // `downgrade`/`stale` cannot be retried. For `downgrade`, `getDb()` fails the
+  // version check before any transaction, identically, every time. For `stale`,
+  // the segment/chapter id the take belongs to is gone, and Retry has no valid
+  // row to write. The recovery screen offers no Retry for these kinds, so
+  // nothing should reach here; this is defence in depth, and it refuses by
+  // returning the slot UNCHANGED, which every caller already reads as "refused"
+  // (`retryPendingTake` compares identity). Arming a save that cannot land would
+  // spin the screen through "Saving" and back for as long as someone kept
+  // tapping (George R2 P2-1, #378).
+  if (current.kind === "downgrade" || current.kind === "stale") return current;
   return { ...current, state: "saving", kind: null };
 }
 

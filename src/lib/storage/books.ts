@@ -179,6 +179,13 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  * `updatedAt`, so a re-run is a true no-op that never reshuffles the shelf.
  * Any real rename bumps `updatedAt` — labelling a book is activity, and
  * `listBooks` sorts by it, so the book just named floats to the top.
+ *
+ * Concurrent renames deliberately use transaction-creation-order last-write-wins
+ * (#394). The read and write stay in one readwrite transaction. The same-tab
+ * calls in `tests/rename-ordering.test.ts` share `getDb()` and leave the later
+ * call's label stored. Across tabs, connection readiness can change transaction
+ * creation order after `await getDb()`: we do not promise typing-time ordering
+ * or reject competing edits from another copy.
  */
 export async function renameBook(
   id: BookId,
@@ -468,6 +475,12 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * `updatedAt`, so the book floats up the shelf exactly as `addChapter`,
  * `renameBook`, and recording do (G4). The no-op path skips the bump, so a
  * re-run never reshuffles the shelf.
+ *
+ * Concurrent renames use the same transaction-order last-write-wins policy as
+ * {@link renameBook} (#394). The scope overlaps `renameBook` on `books`, so a
+ * chapter rename preserves a competing book rename while updating its timestamp.
+ * A parent-book deletion either removes the renamed chapter afterward or makes
+ * this transaction fail with `No such chapter`, depending on transaction order.
  */
 export async function renameChapter(
   id: ChapterId,
