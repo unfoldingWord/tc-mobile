@@ -69,3 +69,44 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
       };
   }
 }
+
+/**
+ * The tone worn by every Notice whose answer to "is this genuinely a failure?"
+ * is **no** — #147's open question, in one place instead of three.
+ *
+ * The three members of the class, as the audit found them:
+ *
+ *   - `previewUnavailable` (`recorder.tsx`) — this device could not decode the
+ *     PAUSED, uncommitted take for a preview (#101). The take itself is intact;
+ *     Back commits it and it plays from the Segments list.
+ *   - `staleChapter` (`segments-screen.tsx`, twice) — another live copy deleted
+ *     this book or chapter under the screen (#378). `useChapterSegments` says so
+ *     itself: it sets `staleTarget` and clears `error` in the same breath, so
+ *     the hook already classifies this as not-a-failure while the screen paints
+ *     it in the failure colour.
+ *   - `shareOutcomeGlyph("nothing")` — there is no audio yet to share. Nothing
+ *     failed to go; nothing was ever recorded.
+ *
+ * All three are "you cannot do this yet (or any more), and nothing is wrong and
+ * nothing is at risk" — a settled fact plus what to do next, which is the `info`
+ * contract as #147 states it. All three are `alert` today, so a translator who
+ * cannot read gets the red failure triangle for a state where nothing has gone
+ * wrong. That is the mis-signal `info` was added to stop (#112, #140).
+ *
+ * **This constant does not answer the question; it makes the answer one token.**
+ * The counter-argument #147 records is real — from where the translator sits
+ * they tapped Play and got silence, or tapped Share and nothing was shared — and
+ * it is Tim's call, not an engineering one. Two earlier passes (#457, and #147's
+ * own filing) declined to decide it, and this one declines too: the value below
+ * is the `alert` all three already wore, so this change re-tones nothing.
+ *
+ * What it buys is that the three cannot drift apart while the question waits,
+ * which is what #147 asks for — "rather than fixing one and leaving the rest to
+ * drift". If the answer is `info`, it is this line. If the answer differs PER
+ * SITE (#147's comment thread notes the share case is the weakest `alert` of the
+ * three, since it is only reached from a menu the translator opened themselves),
+ * then the right move is to split this constant into the classes that were
+ * answered differently — not to hardcode a tone back at one call site, which is
+ * exactly the drift it exists to prevent.
+ */
+export const NOTHING_FAILED_TONE: NoticeTone = "alert";
