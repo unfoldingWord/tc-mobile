@@ -28,6 +28,14 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     new URL("../src/components/recorder.tsx", import.meta.url),
     "utf8"
   );
+  // Undo moved to the toolbars when #160's L-1 split them out of the sheet;
+  // Cut stayed, because it lives in the edit body above the bar. So the two
+  // controls this test compares now sit in two files, and reading both is what
+  // keeps the comparison the one the test claims to make.
+  const toolbars = readFileSync(
+    new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
+    "utf8"
+  );
 
   const cutDisabledExpr = (() => {
     // Isolate the Cut control by its unique `label={strings.cut}` and read
@@ -62,14 +70,19 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
   });
 
   it("matches the Undo control's gate shape exactly (same heldByDrag call convention)", () => {
-    // Undo: `heldByDrag(dragging, !idleEditable || !editor.canUndo)`. Cut's
+    // Undo: `heldByDrag(dragging, !idleEditable || !canUndo)` — the editor's
+    // flag arrives as a prop since the toolbar split, so the NAME differs
+    // while the call shape, which is what this compares, does not. Cut's
     // wrap must be the same call shape — `heldByDrag(dragging, <original>)`
     // — not, say, an inline `dragging || (...)` that reimplements the rule
     // heldByDrag exists to centralise (its own docblock: "so the rule is
     // written once rather than three times in JSX").
-    const undoLabelIdx = recorder.indexOf("label={strings.undo}");
-    expect(undoLabelIdx).toBeGreaterThan(-1);
-    const undoMatch = /disabled=\{([^}]*)\}/.exec(recorder.slice(undoLabelIdx));
+    const undoLabelIdx = toolbars.indexOf("label={strings.undo}");
+    expect(
+      undoLabelIdx,
+      "no Control with label={strings.undo} in recorder-toolbars.tsx"
+    ).toBeGreaterThan(-1);
+    const undoMatch = /disabled=\{([^}]*)\}/.exec(toolbars.slice(undoLabelIdx));
     expect(undoMatch).not.toBeNull();
     const undoDisabledExpr = undoMatch![1] ?? "";
     // Both must open with `heldByDrag(` and pass `dragging` as the first
