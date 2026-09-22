@@ -3,12 +3,8 @@ import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Headless-Chromium config, begun as the #251 smoke and now standing up four
- * spec files in `e2e/`: `browser-boundary-smoke` (#251, the harness build),
- * `service-worker-precache`, `theme-toggle` (#171) and `failure-log` (#205),
- * the last three against the shipped build. What each proves, and
- * deliberately does not, is documented in its own header; the project list
- * at the bottom is what maps a spec to a build.
+ * Headless Chromium projects for browser boundaries and shipped UI behavior.
+ * The project list below maps each spec to its build.
  *
  * TWO builds, two previews, two projects — because the two specs need
  * different builds (round-1 George G3):
@@ -86,7 +82,7 @@ export default defineConfig({
     },
     {
       name: "chromium-shipped-build",
-      // Both specs that assert what USERS get, against the real build. The
+      // These specs assert what users get, against the real build. The
       // theme spec belongs here and not in the harness project for exactly the
       // reason the comment above gives: `dist-e2e/` carries an extra chunk, so
       // its cascade is not the one anyone installs, and a light theme dropped
