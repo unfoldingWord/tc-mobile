@@ -838,6 +838,7 @@ export const SegmentsScreen = forwardRef<
                   row={row}
                   playing={audio.playingId === row.segmentId}
                   playbackElapsedMs={audio.playbackElapsedMs}
+                  ranOut={audio.playbackRanOut}
                   busy={refreshing}
                   onPlay={(offsetSeconds) => audio.playTake(row, offsetSeconds)}
                   onOpenRecorder={() =>
