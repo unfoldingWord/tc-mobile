@@ -82,18 +82,34 @@ export interface UseEraseSegment {
    * captured when the overlay opens and called much later.
    */
   isErasing: () => boolean;
-  /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
-  error: string | null;
 }
 
 /**
  * Both Erase entry points (#32, D-TWO-ENTRIES) — the recorder menu and the
- * Segments-row overflow menu — call this hook, so the erase is one
- * implementation behind one confirm.
+ * Segments-row overflow menu — go through ONE instance of this hook, mounted
+ * in `App` and passed to both screens (#160, L-12).
+ *
+ * It was instantiated twice, so the in-flight guard was per-screen and "two
+ * erases of the same segment cannot overlap" held only because the recorder
+ * sheet is modal — the same unwritten premise #642 records for the finished
+ * flag. One instance makes it structural: there is one `erasingRef`, so a
+ * second erase is refused wherever it is asked for.
+ *
+ * It carries NO error, and that is what makes one instance safe rather than a
+ * regression. The old `error: string | null` looked like shared state and was
+ * not: neither screen ever read its CONTENT — both rendered the constant
+ * `strings.eraseFailed` and used the field only as a boolean — while SHARING
+ * it would have bled, because a failed list erase leaves it set and nothing
+ * clears it until the next erase starts, so opening the recorder afterwards
+ * would have shown an erase-failed Notice for a segment whose erase never
+ * failed there. `erase()` already returns `"failed"`, so each screen now holds
+ * its own flag, from the result of the call IT made.
+ *
+ * The reason string still reaches the durable log through `reportFailure`,
+ * which is where a maintainer reads it. It was never translator-facing (#172).
  */
 export function useEraseSegment(): UseEraseSegment {
   const [erasing, setErasing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   /**
    * The live in-flight guard, readable synchronously.
    *
@@ -113,10 +129,8 @@ export function useEraseSegment(): UseEraseSegment {
       if (erasingRef.current) return "busy";
       erasingRef.current = true;
       setErasing(true);
-      setError(null);
       try {
         const result = await performErase(segmentId);
-        if (!result.ok) setError(result.error);
         return result.ok ? "ok" : "failed";
       } finally {
         // Releases the guard rather than dropping state, so it is safe in
@@ -128,5 +142,5 @@ export function useEraseSegment(): UseEraseSegment {
     []
   );
 
-  return { erase, erasing, isErasing, error };
+  return { erase, erasing, isErasing };
 }

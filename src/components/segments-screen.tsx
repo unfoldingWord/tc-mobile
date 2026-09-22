@@ -30,7 +30,7 @@ import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
-import { useEraseSegment } from "@/hooks/use-erase-segment";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -101,6 +101,12 @@ interface SegmentsScreenProps {
    * "only one row plays at a time" falls out of that single floor for free.
    */
   audio: UseAudioSession;
+  /**
+   * The single erase, held by App so ONE in-flight guard covers both entry
+   * points (#160, L-12). This screen keeps its own record of whether the erase
+   * IT asked for failed — see `eraseFailed` below.
+   */
+  erase: UseEraseSegment;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
@@ -120,7 +126,7 @@ export const SegmentsScreen = forwardRef<
   SegmentsScreenHandle,
   SegmentsScreenProps
 >(function SegmentsScreen(
-  { chapterId, audio, onBack, onOpenRecorder, pushLayer, popLayer },
+  { chapterId, audio, erase, onBack, onOpenRecorder, pushLayer, popLayer },
   ref
 ) {
   const {
@@ -188,7 +194,12 @@ export const SegmentsScreen = forwardRef<
   // matches. A ref, read at resolution time, so it sees the live value.
   const chapterMenuSession = useRef(0);
   const share = useChapterShare();
-  const erase = useEraseSegment();
+  // This screen's own record of "the erase I asked for failed". NOT the hook's:
+  // one instance is shared with the recorder sheet now (#160, L-12), and a
+  // shared flag would paint this screen's failure inside the sheet. The hook
+  // owns the in-flight guard, which genuinely must be single; whose failure it
+  // was is the caller's to remember.
+  const [eraseFailed, setEraseFailed] = useState(false);
   // MEMBERS, never the objects — and this is #452's own open question 3,
   // answered here on this screen's evidence as the design asks PR4 to do.
   //
@@ -616,13 +627,15 @@ export const SegmentsScreen = forwardRef<
       // pause control — the same R-B6 hole. `stopBuffer`, not `leave()`: a
       // recording in progress is never ours to cancel from a list erase (#103).
       else if (audio.playingBuffer) audio.stopBuffer();
+      setEraseFailed(false);
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
-      // (George R-B6). "failed" leaves `erase.error` for the Notice; a
+      // (George R-B6). "failed" raises this screen's own flag for the Notice; a
       // double-tap's "busy" is ignored so the confirm does not vanish under the
-      // first erase.
+      // first erase, and leaves the flag alone — the first erase owns it.
       if (result === "ok") eraseRow(eraseTarget);
+      else if (result === "failed") setEraseFailed(true);
       // Both real outcomes take the confirm down, so both take its layer down
       // (#494 item 3 — a layer whose overlay is gone traps Back at this depth).
       // `"busy"` returns without touching either: the first erase still owns
@@ -811,7 +824,7 @@ export const SegmentsScreen = forwardRef<
         <Notice>{strings.staleChapter}</Notice>
       ) : (error ??
         audio.error ??
-        (erase.error ? strings.eraseFailed : null)) ? (
+        (eraseFailed ? strings.eraseFailed : null)) ? (
         <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a

@@ -3,6 +3,7 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { strings } from "@/components/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
@@ -113,24 +114,28 @@ async function setup() {
     readScope: () => null,
     peekScope: () => null,
   };
-  await act(async () =>
-    root.render(
-      createElement(Recorder, {
-        ref,
-        segmentId: "segment" as SegmentId,
-        audio,
-        saveRecording,
-        saveEditedSegment,
-        clipboard: null,
-        onClipboardChange: vi.fn(),
-        databaseUnreachable: false,
-        onExit,
-        onRequestBack: () => {
-          void ref.current?.requestClose();
-        },
-      })
-    )
-  );
+  // `erase` is a prop now (#160, L-12), so this mounts a host that calls the
+  // REAL `useEraseSegment`. A hand-built stub would not do: what this test is
+  // about is the synchronous in-flight guard, which is the hook's own.
+  function Host() {
+    const erase = useEraseSegment();
+    return createElement(Recorder, {
+      ref,
+      segmentId: "segment" as SegmentId,
+      audio,
+      erase,
+      saveRecording,
+      saveEditedSegment,
+      clipboard: null,
+      onClipboardChange: vi.fn(),
+      databaseUnreachable: false,
+      onExit,
+      onRequestBack: () => {
+        void ref.current?.requestClose();
+      },
+    });
+  }
+  await act(async () => root.render(createElement(Host)));
   await act(async () => button(strings.recorderMenuOpen).click());
   await act(async () => button(strings.eraseSegment).click());
   return { ref, onExit, saveRecording, saveEditedSegment };

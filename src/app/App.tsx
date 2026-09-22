@@ -13,6 +13,7 @@ import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useNavStack } from "@/hooks/use-nav-stack";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
@@ -73,6 +74,11 @@ export function App() {
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
+  // ONE erase for both entry points — the recorder menu and the Segments-row
+  // overflow menu (#160, L-12). Held here rather than in each screen so a
+  // single in-flight guard covers both, instead of that resting on the sheet
+  // being modal. Each screen keeps its own record of whether ITS erase failed.
+  const erase = useEraseSegment();
 
   // Transcode on Finished (B8, D3) is a background sweep. Each Finished
   // transition asks for one; this catch-all at launch covers anything left over
@@ -328,6 +334,7 @@ export function App() {
             ref={segmentsRef}
             chapterId={chapterId}
             audio={audio}
+            erase={erase}
             onBack={goBack}
             onOpenRecorder={openRecorder}
             pushLayer={pushLayer}
@@ -347,6 +354,7 @@ export function App() {
           ref={recorderRef}
           segmentId={recorder.segmentId}
           audio={audio}
+          erase={erase}
           saveRecording={saveRecording}
           saveEditedSegment={saveEditedSegment}
           clipboard={clipboard}

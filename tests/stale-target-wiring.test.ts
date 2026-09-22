@@ -22,13 +22,13 @@ vi.mock("@/hooks/use-chapter-share", () => ({
     reset: () => {},
   }),
 }));
-vi.mock("@/hooks/use-erase-segment", () => ({
-  useEraseSegment: () => ({
-    error: null,
-    erasing: false,
-    isErasing: () => false,
-  }),
-}));
+// A PROP now, not a module the screen reaches for (#160, L-12): App holds the
+// one instance. Mocking the module here would no longer intercept anything.
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
 
 let root: Root;
 let clipboard: string | null;
@@ -92,6 +92,7 @@ async function render(staleTarget: boolean, rows: SegmentRow[] = []) {
       createElement(SegmentsScreen, {
         chapterId: "chapter" as ChapterId,
         audio,
+        erase,
         onBack,
         onOpenRecorder: vi.fn(),
         pushLayer,

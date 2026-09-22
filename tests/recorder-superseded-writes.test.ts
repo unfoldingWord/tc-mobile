@@ -129,6 +129,14 @@ async function setup() {
           ref,
           segmentId: "segment" as SegmentId,
           audio,
+          // A prop now (#160, L-12). This file never exercises erase, so a
+          // resting stub is honest: a real hook here would only add a guard
+          // nothing in these cases touches.
+          erase: {
+            erase: vi.fn(async () => "ok" as const),
+            erasing: false,
+            isErasing: () => false,
+          },
           saveRecording,
           saveEditedSegment,
           clipboard: null,
