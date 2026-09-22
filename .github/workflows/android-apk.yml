@@ -49,8 +49,8 @@ jobs:
     env:
       REF: ${{ github.ref_name }}
       # ref_name drops the branch-or-tag distinction: a TAG named `staging`
-      # would read as "staging". Require the ref to be a branch as well (#320
-      # tracks the same gap in the iOS lane).
+      # would read as "staging". Require the ref to be a branch as well,
+      # matching the iOS lane.
       REF_TYPE: ${{ github.ref_type }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
@@ -168,7 +168,8 @@ jobs:
           done
           # ci.yml's fourth ship-blocker: the OBS thumbnails must not be in the
           # service-worker precache (ADR 0006 / #177) — ~598 files stalling the
-          # first native launch. The iOS guard omits this one; #320 carries it.
+          # first native launch. iOS checks emitted thumbnails against the
+          # reader-gated jpg policy; Android still rejects them unconditionally.
           if grep -q "obs/thumbs" dist/sw.js; then
             echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
             exit 1

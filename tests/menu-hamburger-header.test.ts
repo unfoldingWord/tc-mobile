@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
@@ -77,6 +78,22 @@ function dismissControl(panel: Element): HTMLButtonElement {
 }
 
 describe("the global menu's header (#608)", () => {
+  it("opts the Books global menu into the hamburger header (#643)", () => {
+    const books = readFileSync(
+      new URL("../src/components/books-screen.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    // Check the caller as well as Menu's rendered opt-in behavior below.
+    // Count matches so a missing or duplicated global menu cannot pass.
+    const globalMenus = [...books.matchAll(/<Menu\b[^>]*>/g)].filter(([tag]) =>
+      /\bopen\s*=\s*\{\s*menuOpen\s*\}/.test(tag)
+    );
+    expect(globalMenus).toHaveLength(1);
+    expect(globalMenus.at(0)?.[0]).toMatch(/\shamburger(?=\s|>)/);
+  });
+
   it("keeps the ≡ glyph top-right with no visible title, and still closes as 'Close menu'", async () => {
     const panel = await mount({ hamburger: true });
 
