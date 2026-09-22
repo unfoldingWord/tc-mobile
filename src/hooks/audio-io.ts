@@ -10,6 +10,7 @@
 import {
   CANONICAL_CHANNELS,
   CANONICAL_SAMPLE_RATE,
+  canonicalFrameCount,
   floatToInt16,
   int16ToFloatInto,
 } from "@/lib/audio/format";
@@ -505,13 +506,7 @@ async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
 
   // OfflineAudioContext does the resample and the downmix in one pass, and
   // does it in optimised native code rather than a hand-rolled JS resampler.
-  const frames = Math.max(
-    1,
-    Math.ceil(
-      (buffer.duration * CANONICAL_SAMPLE_RATE * buffer.sampleRate) /
-        buffer.sampleRate
-    )
-  );
+  const frames = canonicalFrameCount(buffer.duration, buffer.sampleRate);
   const offline = new OfflineAudioContext(
     CANONICAL_CHANNELS,
     frames,
