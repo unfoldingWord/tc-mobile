@@ -70,9 +70,10 @@ export const strings = {
   chapterHeading: (name: string | null, n: number): string =>
     name ?? `Chapter ${n}`,
 
-  // ── Naming (#264 rename, #314 New Book) ──────────────────────────────────
-  // One naming field serves both flows, so these strings are shared: the rename
-  // reached from a ≡ menu, and the New Book dialog the corner + now opens.
+  // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
+  // One naming field serves all three flows, so these strings are shared: the
+  // rename reached from a ≡ menu, the New Book dialog the corner + now opens,
+  // and the Add-chapter prompt a book row's + opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
   // The inline text field's accessible name (the whole text layer of the input)
@@ -94,10 +95,20 @@ export const strings = {
   // being saved back onto an existing book here — this activation is what
   // creates it, and the spoken label is the only thing that says so.
   createBook: "Create book",
-  // Shown in place of `saveName`/`createBook` while the write is in flight
-  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
-  // already do, so a screen reader focused on Confirm does not read it as idle
-  // for the whole write, on either caller.
+  // The Add-chapter prompt (#609), the chapter parallel of the three New Book
+  // strings above and worded for the same reason: the field arrives pre-filled
+  // with "Chapter N", so the heading has to say that the filled-in text is
+  // already a usable answer, the dismiss has to say that leaving creates
+  // nothing, and the check has to say that this activation is what makes the
+  // chapter. `chapterNameField` above is the field's own label, shared with
+  // Rename. The busy relabel is `savingName`, shared with both.
+  newChapterTitle: "Name your new chapter",
+  newChapterClose: "Close without creating a chapter",
+  createChapter: "Create chapter",
+  // Shown in place of `saveName`/`createBook`/`createChapter` while the write is
+  // in flight (#383) — the same in-place busy relabel
+  // `loadRetrying`/`takeRecoverRetrying` already do, so a screen reader focused
+  // on Confirm does not read it as idle for the whole write, on any caller.
   savingName: "Saving…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
@@ -620,6 +631,8 @@ export const strings = {
   // The log emptied between the render that offered Share and the tap.
   shareFailureLogNothing: "There is nothing to send now.",
   shareFailureLogFailed: "Could not send the problem report. Try again.",
+  shareFailureLogRestart:
+    "Cannot use this copy any more. Restart the app to use the new version.",
   clearFailureLog: "Clear problem report",
   // Behind the bin: the same two-tap confirm the segment Erase and the book
   // Delete use, not a second dialog (George R2 P3-3). Clearing is the one
