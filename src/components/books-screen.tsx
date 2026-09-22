@@ -1400,7 +1400,12 @@ export function BooksScreen({
           change behind the scrim and can tap straight back if they guessed
           wrong; that is the affordance doing the explaining, which is the
           `state-in-place` rule this repo prefers over a message. */}
-      <Menu open={menuOpen} onClose={closeGlobalMenu}>
+      {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
+          panel too — same glyph, same corner, and no visible "Menu" title
+          (#608, the requirements owner's navigation rule). This is the ONE
+          menu that wears it; the per-book ≡ below and the others keep their
+          title + chevron until #589 picks their affordances. */}
+      <Menu open={menuOpen} onClose={closeGlobalMenu} hamburger>
         {failureCount > 0 && (
           <FailureLogPanel
             count={failureCount}

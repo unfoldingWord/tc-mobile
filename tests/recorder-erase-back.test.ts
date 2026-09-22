@@ -89,6 +89,7 @@ async function setup() {
     playingId: null,
     playingBuffer: false,
     playbackElapsedMs: 0,
+    playbackRanOut: false,
     recorderState: "idle",
     elapsedMs: 0,
     supported: true,
