@@ -6,6 +6,10 @@ import { SegmentRow } from "@/components/segment-row";
 import { strings } from "@/components/strings";
 import type { SegmentRow as Row } from "@/types/view";
 import type { SegmentId, ClipId } from "@/types/domain";
+import { reportFailure } from "@/hooks/report-failure";
+
+// Read back, not run: the row hands a rejected rename's cause to the log.
+vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
 
 /**
  * Rename in the segment row's menu (#591): the label rides beside the ordinal,
@@ -191,6 +195,7 @@ describe("segment row rename (#591)", () => {
   });
 
   it("treats a rename that rejects as not landed, never as still saving", async () => {
+    vi.mocked(reportFailure).mockClear();
     await render({ ...recorded, label: "verse 3" }, () =>
       Promise.reject(new Error("boom"))
     );
@@ -201,6 +206,11 @@ describe("segment row rename (#591)", () => {
     expect(button(strings.saveName)).toBeDefined();
     expect(button(strings.savingName)).toBeUndefined();
     expect(dialog()?.textContent).toContain(strings.renameSegmentFailed);
+    // And its cause still reaches the failure log rather than vanishing.
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "boom" }),
+      "segment-rename"
+    );
   });
 
   it("returns focus to Rename when Escape leaves rename mode", async () => {
