@@ -307,6 +307,21 @@
   .control--record.is-guided {
     box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
   }
+  /* A control nobody can tap is nobody's next action. The screens keep
+     rendering behind a scrim — the Segments list stays mounted and inert under
+     the recorder sheet, and each screen goes inert behind its own menus — so
+     the mark the screen last painted is still in the DOM while something else
+     owns the surface. Without this, two rings show at once, one of them
+     through a scrim, which is the "never lingers" rule broken by composition
+     rather than by the resolver. Found by `e2e/guided-highlight.spec.ts`, which
+     is the only place the composed tree is assembled.
+
+     Last of the three, so it beats the record exception at equal specificity;
+     `box-shadow: none` kills both spellings of the ring. */
+  [inert] .is-guided,
+  .is-guided[inert] {
+    box-shadow: none;
+  }
   /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
      the button so the badge escapes the inert control's opacity — the mark must
      read at full ink while the control it explains is dimmed. `alert`, a state

@@ -20,19 +20,36 @@ import { expect, test, type Page } from "@playwright/test";
  * judgement a person makes looking at a screen.
  */
 
-/** Every element currently wearing the guide ring, by accessible name. */
-async function guided(page: Page): Promise<string[]> {
-  return page
-    .locator(".is-guided")
-    .evaluateAll((els) =>
-      els.map(
-        (el) => el.getAttribute("aria-label") ?? el.textContent?.trim() ?? ""
-      )
-    );
+/**
+ * Every element the person can actually SEE a ring on, with the shadow that
+ * draws it.
+ *
+ * The class is not the claim — the paint is. A screen that has gone inert
+ * behind a scrim keeps rendering the mark it last painted, and the stylesheet
+ * is what takes it away; counting `.is-guided` would have called that two
+ * marks on screen. (It did: this spec is what found it.)
+ */
+function rings(page: Page): Promise<{ label: string; shadow: string }[]> {
+  return page.locator(".is-guided").evaluateAll((els) =>
+    els
+      .map((el) => ({
+        label: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "",
+        shadow: getComputedStyle(el).boxShadow,
+      }))
+      .filter((r) => r.shadow !== "none")
+  );
 }
 
-const ringOf = (page: Page) =>
-  page.locator(".is-guided").evaluate((el) => getComputedStyle(el).boxShadow);
+/** The accessible names of everything visibly ringed, in document order. */
+const guided = async (page: Page): Promise<string[]> =>
+  (await rings(page)).map((r) => r.label);
+
+/** The one visible ring's shadow — fails loudly if there is not exactly one. */
+async function ringOf(page: Page): Promise<string> {
+  const found = await rings(page);
+  expect(found, "expected exactly one visible guide ring").toHaveLength(1);
+  return found[0]!.shadow;
+}
 
 test("the ring moves through the chain and marks exactly one control at a time", async ({
   page,
@@ -41,7 +58,7 @@ test("the ring moves through the chain and marks exactly one control at a time",
 
   // Step 1 — an empty shelf. The header + is hidden here, so the invite's own
   // CTA is the only create control on the screen.
-  await expect(page.locator(".is-guided")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
   expect(await guided(page)).toEqual(["New book"]);
   // The cascade half: the rule reached the element, in the accent, inside the
   // control's own box.
@@ -88,10 +105,19 @@ test("the ring moves through the chain and marks exactly one control at a time",
   ).toBeVisible();
   expect(await guided(page)).toEqual(["Add segment"]);
 
-  // Step 7 — the recorder over a segment with no audio: Record. Drawn OUTSIDE
-  // the red button, which is the one exception in the stylesheet and the
-  // reason is measured there.
+  // The hop the issue's list skips: a segment exists with nothing recorded into
+  // it, and the row's own red Record is the only door to the recorder. Drawn
+  // OUTSIDE the red, which is the stylesheet's one exception — keyed on the
+  // variant, so it covers this control and the recorder's alike.
   await page.getByRole("button", { name: "Add segment" }).click();
+  await expect(
+    page.getByRole("button", { name: "Record segment 1" })
+  ).toBeVisible();
+  expect(await guided(page)).toEqual(["Record segment 1"]);
+  expect(await ringOf(page)).toContain("rgb(46, 125, 246)");
+  expect(await ringOf(page)).not.toContain("inset");
+
+  // Step 7 — the recorder over a segment with no audio: Record.
   await page.getByRole("button", { name: "Record segment 1" }).click();
   await expect(
     page.getByRole("button", { name: "Close recorder" })
@@ -101,13 +127,15 @@ test("the ring moves through the chain and marks exactly one control at a time",
   expect(await ringOf(page)).not.toContain("inset");
 });
 
-test("the guide ends: a segment that already has audio is not guided, and neither is the shelf behind it", async ({
+test("the shelf stops once its book has been worked in, and the mark is on the row instead", async ({
   page,
 }) => {
-  // The terminal state, reached without recording: a chapter that HOLDS
-  // segments is past the shelf's step, so nothing on Books is marked either.
-  // What this cannot reach without a microphone is a segment with a take —
-  // that half is `tests/guided-step.test.ts`'s `hasAudio` case.
+  // The half of the terminal rule reachable without a microphone: a chapter
+  // that HOLDS segments is past the shelf's step, so the chapter row that was
+  // marked two steps ago is plain again and the only mark left is on the
+  // Segments screen. The other half — a segment that HAS a take, where the
+  // guide ends outright — needs a recording, so it is pinned from the input
+  // in `tests/guided-step.test.ts` (`hasClip`, `hasAudio`) and not here.
   await page.goto("/");
   await page.getByRole("button", { name: "New book" }).click();
   await page.getByRole("button", { name: "Create book" }).click();
@@ -118,9 +146,9 @@ test("the guide ends: a segment that already has audio is not guided, and neithe
     page.getByRole("button", { name: "Record segment 1" })
   ).toBeVisible();
 
-  // A chapter with a segment in it: the chain has handed off to the recorder,
-  // and the list marks nothing.
-  await expect(page.locator(".is-guided")).toHaveCount(0);
+  // A chapter with a segment and no audio in it marks the row's Record, and
+  // nothing else — one mark, not a list of them.
+  expect(await guided(page)).toEqual(["Record segment 1"]);
 
   // Back on the shelf, nothing is marked — including the row that was guided
   // one step ago. The shelf comes back collapsed (its expanded set is screen
@@ -128,12 +156,13 @@ test("the guide ends: a segment that already has audio is not guided, and neithe
   // "nothing is guided" must be a row that is on screen and plain, not a row
   // that is absent.
   await page.getByRole("button", { name: "Back to books" }).click();
-  await expect(page.locator(".is-guided")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
+  expect(await guided(page)).toEqual([]);
   await page
     .getByRole("button", { name: /^Book .*, 1 chapter, collapsed$/ })
     .click();
   await expect(
     page.getByRole("button", { name: "Open Chapter 1" })
   ).toBeVisible();
-  await expect(page.locator(".is-guided")).toHaveCount(0);
+  expect(await guided(page)).toEqual([]);
 });
