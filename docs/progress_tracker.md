@@ -11,6 +11,95 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-22 (late, Mac session) — Tester D's replies parsed: the failure log likely shares #593's dead end, the chapter-share "no row" was an untaken second tap, and the #683 chapter-menu glyph put to the requirements owner
+
+Short session on the Mac checkout with the dev lead: start-of-day health check, then tester replies and one design question. **No code, no merges, no promotions.** The parallel sessions' merges today (#618, #632, #634's rounds, #658 and the rest) are theirs to record.
+
+### Posted
+
+| Where                                                                                  | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#593](https://github.com/unfoldingWord/tc-mobile/issues/593#issuecomment-5783597525)  | **The failure log's send takes the same native route as Share Chapter** (`selectLogShareShape` returns `"native"` first in the shell), so on the APK the only error channel (#205) is probably stuck behind this bug. This comes from reading the code and has not been observed. **The `chrome://inspect` trace can't be taken on a release APK**: `capacitor.config.ts` sets no `webContentsDebuggingEnabled`. The log is IndexedDB in private app storage, not a file, and uninstalling wipes it. |
+| [#286](https://github.com/unfoldingWord/tc-mobile/issues/286#issuecomment-5783597818)  | Tester D's "there is no row on click" screenshot shows the **`ready` check**, meaning the first tap was done and the second tap was never made. #354 made the state visible, but a check reads as "done", not "tap again".                                                                                                                                                                                                                                                                           |
+| [#374](https://github.com/unfoldingWord/tc-mobile/issues/374#issuecomment-5783598050)  | Possible field sighting, unconfirmed: stop, swipe away from recents, reopen, then Books with the menu open "seemed locked up".                                                                                                                                                                                                                                                                                                                                                                       |
+| [#245](https://github.com/unfoldingWord/tc-mobile/issues/245#issuecomment-5783598297)  | Tester D's answers to the evening session's three asks, tabulated, plus what is still open with them for tonight.                                                                                                                                                                                                                                                                                                                                                                                    |
+| [#683](https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5784512148) D1 | Put to the requirements owner, with the dev lead's recommendation **keep ⋮** for the Segments chapter menu. Segments has no global menu, so ≡ in its top-right corner would make one glyph in one corner open two different menus. #608 was filed on the Menu screen's back chevron, and it names the global menu as canonical. His 22 Aug mockup, #589's first option, pivot-plan G5 and ADR 0010 all draw ⋮. The recorder's two ≡ remain open (half of #589).                                      |
+
+### Open with Tester D (asked in the Signal thread; not on an issue yet)
+
+- Tap the green check on Share Chapter: does a share sheet appear?
+- Do the two taps on "1 problem recorded": does the log's share sheet appear?
+- Did the menu screenshot come before or after the reinstall?
+- Their later "I tried that each time it happened but it acted locked up": **was "that" the log's send or closing the menu?** The log's send points to #593 (the first observation of the log being stuck); closing the menu points to #374. It goes on whichever one after they answer.
+
+### Decisions owed
+
+1. **The DRI:** a debuggable Android tester build, the only way to get #593's trace from a tester's phone.
+2. **The requirements owner:** #683 D1 (⋮ or ≡ in the chapter header). #683's merge and the icon-recognition training material wait on it.
+
+### Learnings
+
+1. **zsh does not word-split an unquoted `$VAR`**, so `R="--repo x/y"; gh ... $R` passes one argument and `gh` rejects it. Inline the flag, or use an array.
+2. **zsh's `$VAR:path` modifier trap fired again**, the second time in one day (the day entry's learning 4). `git show $S:src/...` became `git show $S` and printed a commit instead of a file. Always `"${S}:path"`.
+3. **A tester's "it doesn't do anything" needs the screenshot read against the state table first.** The "no row" report was the documented ready state, not a failure. It is still a real affordance finding, just not the bug it first looked like.
+
+### Later in the session — state changes after the entry above was first written
+
+- **#686** (this entry's first version) merged on green by the DRI's instruction.
+- **The evening entry's first steps are done:** #634 (native Back) merged 20:26Z, #624 merged 20:35Z, #618 merged 17:33Z, and **#588 (T1, schema v6 → v7) merged 20:52Z**. `develop` is 61+ merges ahead of `staging` (v0.2.9).
+- **The Mac checkout's `core.bare=true` was unset** with the DRI's approval. It is a normal working tree on `develop` again.
+- **Board (org project 7):** snapshotted first (Mac scratchpad `board-snapshot-before-fix.json`). Statuses set: #374, #608, #589, #591, #604 → In review; #554 → Blocked (on the #560 pick); #666, #674, #677 → Todo. Queue set: #674 = 44, #677 = 45. 330 of 335 items have a status (327 before, plus those three).
+- **Assigned to the DRI (code issues):** #336, #612, #555, #557, #556, #554, and **#593**, which he takes on the condition that the debuggable build below is set up and walked through with him. **#613 moved to Jesse** (his PR is #671).
+
+### Scoreboard for the training (2026-09-22 evening)
+
+**v1-required: 20 open, 35 closed since 09-15.**
+
+- Fixed on develop, needing a device check: #374, #608.
+- PR in flight: #614 (#681, draft), #621 (#656), #591 (#675), #604 (#672), #589 (#683, D1 with the requirements owner), #613 (#671), #554 (#560, waiting on the pick).
+- No open PR: #593/#336, #605, #612/#555/#269, #557, #556, #59. This is the risk; four of them are Android-first, and Android is the training platform. "No PR" comes from matching PR titles, not from a full check.
+- Umbrellas: #262, #245.
+
+**v1-desired in v0.3.0: 9.** #172, #247, #248, #249, #592, #629, and three waiting on a decision: #594, #602, #640. Another 10 are in v1.0.0. #590 is in v0.3.0 with no v1 label; label it or move it.
+
+### Batch plan — the next session runs this (DRI-approved shape, 2026-09-22)
+
+**Batch 1: four code lanes, none needs a phone to build.** One worktree per lane, cut from `develop`. Review tier per AGENTS.md, and merge one lane at a time with a rebase between. The freeze budget (`docs/review/dual-review.md`) applies.
+
+| Lane   | Issues             | Scope                                                                                                                                                                                                                                                                                                                                                                                                                           | Files / collision                                            |
+| ------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **L1** | #557 + #554        | Edit entry: one tap on `[ ]` from record/playback opens the selection envelope, and the seed selection's left edge sits at the playhead. One code path, so one lane. **Gate: the DRI's #560 tail-rule pick.** #560's table rejects the issue's literal rule A (the selection narrows to a hairline near the end, and the 24 px handles cover each other). Without the pick, L1 runs #557 alone and #554 stays Blocked.          | `recorder.tsx` (edit entry, seed selection); supersedes #560 |
+| **L2** | #614               | **A draft already exists: #681** (`fix/614-stop-commits-in-place`, opened from a parallel session), so L2 means taking #681 through review, not cutting a new branch. The waveform pans again right after recording. The requirements owner picked **Option A**, on the condition that Record at the end still appends. A code read shows it does: `insertionOffset` locks to the centerline sample at the idle→recording edge. | `recorder.tsx` (pan writers); a different region from L1     |
+| **L3** | #555 / #612 / #269 | Quiet or silent playback of **stored / decoded** audio. The fresh capture buffer plays at normal volume; see #555's table. First a code-read diagnosis of the `channelCount` hypothesis, then a fix with a test at the audio boundary. Final proof is a device run (batch 2, L6). T2.                                                                                                                                           | `hooks/audio-io.ts`, the decode path                         |
+| **L4** | #556 + #643        | The iOS text-selection callout on a double-tap or long-press of the waveform and header, plus #632's batched P3 test tweaks (#643; the wiring half landed in #664). T3.                                                                                                                                                                                                                                                         | CSS / touch policy; `tests/menu-hamburger-header.test.ts`    |
+
+**Collision rule:** L1 and L2 both edit `recorder.tsx`, and so do #656 (#621) and Jesse's #160 recorder drafts (#657, #661, #662, #668). Those drafts stay held (the evening entry's item 5). Merge whichever of L1/L2 is clean first, then rebase the other.
+
+**Batch 2 (2026-09-23).** It opens with **v0.2.10**. That is a sequence, not a lane:
+
+1. A staging pass of **v0.2.9 data upgrading under #588's v6 → v7 migration**, before any tester's recordings go through it.
+2. The `chore(release): v0.2.10` PR, carrying #634, #618, #624, #632, #637, #648, #599, #597, #588 and the docs PRs since v0.2.9.
+3. Promote, then `npm run check:deploy`, then both native lanes cut from staging, then the pre-release with the APK and a QR.
+4. Release notes: every line says what to do and what to look at, walked on the screen before it is written (the day entry's learning 1).
+
+| Lane   | Issues         | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L5** | #593 / #336    | **The debuggable APK, then a walkthrough with the DRI.** `android-apk.yml` today builds only a signed release, and `capacitor.config.ts` does not set `android.webContentsDebuggingEnabled`, so `chrome://inspect` cannot attach. Plan: a `workflow_dispatch` input that sets it `true` for that build only (at `cap sync`), and a distinct version suffix (e.g. `0.2.10-debug`) so it can never be mistaken for the training build. The change is a process artifact (a native lane), so both reviewers run. Then: USB debugging on, `chrome://inspect`, and a trace of where `Share.share` settles. Also run Tester D's log test (does the log's two-tap send open a share sheet?). |
+| **L6** | device session | On v0.2.10: confirm #374, #608, #601 and #606. #606 is the shriek, likely closed by #618's rest-at-start; if it still reproduces, label it v1-required. Reproduce #605 (which of the two readings) and #59 (interruption on Android). Run L3's fix on Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **L7** | #621           | Take #656 through George's re-run (round 1 fixes are at `c6c67b6`) to merge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **L8** | batch 1        | L1–L4 through Frank and George, merged one at a time.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+**Not in the lanes (the DRI's non-code items):** #629, #248, #249, #245 and #262. Fit them around L6.
+
+### Next session — in order
+
+1. **Ask the DRI for the #560 pick**, then start batch 1 (L1–L4).
+2. File Tester D's answers when they arrive (#593 or #374, per the question above).
+3. Batch 2: v0.2.10 first, then L5–L8.
+4. Decisions still owed: #683 D1 (the requirements owner); label or move #590.
+
+---
+
 ## 2026-09-22 (evening, Mac session) — Tester D's v0.2.9 pass triaged live: one announcement issue, one display issue, four evidence comments on open issues, and the two parked repro worktrees read and reported
 
 Dev lead's evening session on the Mac checkout, with the dev lead present and pasting the tester thread as it arrived. **The parallel Docker session kept merging through the evening** (#622, #625, #626, #627, #632, #641, #644, #645, #648 since the day entry, plus the #160 refactor wave #628–#661 opened and #634's native-Back fix opened). That work is not recorded here beyond this pointer.
