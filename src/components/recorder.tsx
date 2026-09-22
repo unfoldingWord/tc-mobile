@@ -13,6 +13,7 @@ import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
+import { guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
@@ -2440,6 +2441,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // live take reaches Edit (it commits first), so Edit's `takeActive` input is
     // split into `committing` (the real commit window) and `hasTake`.
     const starting = state === "requesting";
+    // Hoisted out of the Record control's JSX so the guide can read the same
+    // answer the button does (#604) — the gate itself is unchanged and is
+    // still enumerated in `recordDisabled`.
+    const recordInert = recordDisabled({
+      busy,
+      isClosing,
+      hasView: view !== null,
+      playingBuffer: audio.playingBuffer,
+      paused,
+      dragging,
+    });
+    // The guided chain's answer inside the recorder (#604). `hasAudio` is the
+    // WORKING buffer, so it covers an existing clip and an edit alike: the ring
+    // is for a segment that has never been recorded, and the guide ends the
+    // moment one has.
+    const guide = guidedStep({
+      screen: "recorder",
+      loaded: view !== null,
+      hasAudio,
+    });
     const editReason = editRowReason({
       hasView: view !== null,
       // A live take no longer blocks Edit (#134) — entering Edit commits it
@@ -3302,13 +3323,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // tap (F9), so it stayed live over a sounding preview (George
                     // R3 #4). #614 ended the paused take, so the exception is
                     // gone rather than loosened.
-                    disabled={recordDisabled({
-                      busy,
-                      isClosing,
-                      hasView: view !== null,
-                      playingBuffer: audio.playingBuffer,
-                      dragging,
-                    })}
+                    disabled={recordInert}
+                    // The last link in the guided chain (#604): the ring sits
+                    // on Record until this segment has audio, which — because a
+                    // take splices only on close — means it stays through the
+                    // take rather than blinking out at the first tap. Never on
+                    // an inert control: a ring on something that cannot be
+                    // tapped is the guide telling a first-time user to do
+                    // something the app is refusing.
+                    guided={guide?.kind === "record" && !recordInert}
                     onClick={onRecordButton}
                   />
                   <Control
