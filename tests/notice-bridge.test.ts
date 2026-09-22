@@ -29,9 +29,10 @@ import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
  * three fields load-bearing rather than decorative.
  *
  * Bounded honestly: it compares DECLARED values in source, a rule-by-rule text
- * read, not a computed style in a browser. What the cascade actually resolves
- * for a mounted `Notice` is a renderer question and there is no renderer here
- * (#197).
+ * read, not a computed style in a browser. The #197 harness (`tests/render.ts`)
+ * does not close that gap and is not meant to — it renders markup, and has no
+ * stylesheet and no cascade. What a mounted `Notice` actually resolves to is a
+ * browser question, and the Playwright suite is where it would be asked.
  */
 const CSS = readFileSync(
   path.resolve(

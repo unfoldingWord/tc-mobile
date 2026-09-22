@@ -13,8 +13,10 @@ import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
  * the same wait/retry glyph the translator had just seen for "Preparing the
  * chapter".
  *
- * No renderer here (this repo has no jsdom); the JSX around these values is
- * review surface. What is pinned is the tone → presentation table itself.
+ * What is pinned here is the tone → presentation table itself, not any JSX:
+ * this file knows nothing about which branch picks which tone. That question
+ * belongs to whoever renders — `tests/recorder-status.test.ts` answers it for
+ * the recorder's commit window through the #197 harness (`tests/render.ts`).
  */
 
 // Enumerated here rather than exported from the module: production has no use

@@ -104,7 +104,7 @@ export function SegmentRow({
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   const [menuOpen, setMenuOpen] = useState(false);
-  // The same fact as `menuOpen`, as a ref, for the unmount path below only —
+  // The same fact as `menuOpen`, as a ref, for committed cleanup paths —
   // never read during render (`react-hooks/refs`).
   const menuOpenRef = useRef(false);
   // Latest-refs for the two callbacks, so the unmount cleanup can stay an
@@ -145,6 +145,12 @@ export function SegmentRow({
     []
   );
   const hasClip = row.hasClip;
+  // Losing the clip removes the Menu without unmounting this row. Release its
+  // layer after that prop change commits, using the latest callback ref above.
+  // Never notify the parent during render or from dependency-change cleanup.
+  useLayoutEffect(() => {
+    if (!hasClip && menuOpenRef.current) closeMenu();
+  }, [hasClip, closeMenu]);
   const durationMs = row.durationMs ?? 0;
   const ordinal = row.ordinal;
 

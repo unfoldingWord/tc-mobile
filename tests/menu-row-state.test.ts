@@ -21,9 +21,10 @@ import { strings } from "@/components/strings";
  * gate — (2) which reason wins when several hold, and (3) which reasons carry a
  * glyph cue.
  *
- * No renderer here (this repo has no jsdom); `Control`'s badge markup and the
- * menu's reachability — and the commit-then-edit wiring itself — are review +
- * on-device surface.
+ * Nothing here renders: `Control`'s badge markup is pinned separately, by
+ * `tests/control-render.test.ts` through the #197 harness, and it consumes
+ * `rowHint` rather than restating it. The menu's reachability — and the
+ * commit-then-edit wiring itself — are still review + on-device surface.
  */
 
 const editOpen = {

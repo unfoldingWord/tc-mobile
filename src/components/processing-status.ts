@@ -20,9 +20,11 @@ import type { RecorderState } from "@/hooks/use-recorder";
  *
  * Like `hooks/save-failure.ts`, the words a translator reads live in
  * `strings.ts`; this picks only which state applies. Lifting the whole gate
- * here — not just the two-way classification — is deliberate: the recorder's
- * JSX has no test runner in this repo, so the mount predicate would otherwise
- * be pinned by nothing (Frank R1).
+ * here — not just the two-way classification — is deliberate: nothing could
+ * reach the recorder's JSX, so the mount predicate would otherwise be pinned by
+ * nothing (Frank R1). The other half of that — which TONE each branch renders —
+ * stayed unpinned for as long, and is now `components/recorder-status.tsx`,
+ * rendered by `tests/recorder-status.test.ts` through the #197 harness.
  */
 export type RecorderStatusKind = "saving" | "interrupted";
 

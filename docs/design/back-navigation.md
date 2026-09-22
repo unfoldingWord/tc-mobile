@@ -631,6 +631,13 @@ object literal to destabilize.
 >    hidden. It is **bounded** — `onConfirmErase` clears `eraseTarget` on both
 >    `"ok"` and `"failed"`, so the window is one IndexedDB delete long and ends
 >    with the dialog gone either way — and it is **unreachable**, which is (2).
+>    If a future path opened the recorder during this window, the confirm's
+>    `document.body` portal (`.confirm-scrim`, z-index 90) would paint above
+>    `.recorder-scrim` (z-index 60). Back would see an empty layer stack on
+>    `"recorder"` and route `"commit-close-recorder"` while `clearSegmentTake`
+>    was still committing. A leftover chapter Menu (z-index 80) or ShareProgress
+>    (z-index 90) would likewise paint above the recorder. These are consequences
+>    of that counterfactual path, not a reachable defect in the current UI.
 >
 > 2. **Assert `listInert`'s unreachability: yes**, precisely because of (1).
 >    Point 1 above made the decision free; (1) makes the unreachability

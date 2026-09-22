@@ -11,6 +11,345 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-21 (review recovery) — correction to the parked #572 finding
+
+This correction supersedes the #572 diagnosis and next action in the late
+entry below; that dated entry is retained as the record of the park.
+
+**The pre-push masking finding is refuted for the configured Git hook.**
+Husky 9.1.7 invokes the user hook with `sh -e`, so a failed build stops before
+`test:dist`. The missing `set -e` in the user hook is not a missing guard in
+Git's execution path. Running the hook directly with bare `sh` bypasses that
+launcher and produces a different result. The coordinator's controlled
+launcher experiment, independent Claude review, and explicit disposition are
+on [PR #572](https://github.com/unfoldingWord/tc-mobile/pull/572#issuecomment-5769637290).
+
+The next action is review of #572's current head, not adding `set -e` or
+spending another round repairing that refuted mechanism. The new branch
+commit reports runner-launch errors and removes a stale precache comment;
+those are separate review corrections. No merge is recorded here.
+
+Three corrections to the late entry's presentation:
+
+- Its evening-wave list contains **five** PRs, not four. With #550 and #572,
+  the entry population is seven.
+- The Windows-push history is in the **2026-09-03 public-readiness** entry,
+  issue #189. Use that heading rather than a tracker line number, which moves
+  whenever an entry is prepended.
+- Decision 11's full wording is: "#568 fixed before the freeze — while the
+  harness is order-dependent, every green until then is weaker evidence than
+  it reads, including the promotion's."
+
+**Correction to the shared-worktree race attribution below.** Both compromised
+runs were discarded, but they were not both caught by `assert_tree_unchanged`.
+The [#572 round-1 triage](https://github.com/unfoldingWord/tc-mobile/pull/572#issuecomment-5768337415)
+records that its first Frank run read base-tree content and then died on
+SIGKILL (exit 137) before that check could report. That run was discarded on
+the observed wrong-tree reads, not a completed guard result.
+
+**Held follow-up: review-process completion and isolation.** The `pgrep`
+self-match and report-created-at-start problems described below remain
+orchestration work. The review coordinator owns carrying that follow-up:
+use an actual process exit and a complete verdict, unique output per attempt,
+and an isolated checkout per lane. Neither a report's existence nor a wrapper
+that stopped watching is completion. This entry does not claim that the
+repository's review scripts have been repaired.
+
+---
+
+## 2026-09-21 (late) — four review rounds across three PRs, a Windows push regression caught before it shipped, two stop-rule parks, and zero merges
+
+Coordinator session picking up the evening wave's in-flight lanes. The dev lead was away for the working part and returned at the end to park. **Nothing was merged**, and no merge authority was exercised — not because nothing was close, but because nothing reached both-lenses-clean.
+
+Entry state: seven PRs open, four of them the evening wave's (#559, #560, #561, #565, #566), plus #550 and #572. #560 and #561 were already parked.
+
+### Shipped to branches, none merged
+
+| PR   | Head at park | Rounds tonight | State                                                |
+| ---- | ------------ | -------------- | ---------------------------------------------------- |
+| #572 | `b5e0702`    | 2 and 3        | **PARKED** — Frank P2 open, fix identified           |
+| #566 | `42831cb`    | 3 and 4        | **PARKED** — stop rule fired on our own commit       |
+| #565 | `38ed483`    | 1              | **PARKED** — Frank APPROVE, George never delivered   |
+| #550 | `561808e`    | round-0 stamp  | Assessed; still zero reviewer rounds                 |
+| #559 | `1767a86`    | —              | Parked round 6; both lenses now agree the P2 is real |
+
+### #572 — the most valuable work of the session, and it is DRI-priority
+
+Decision 11 from the evening entry: _"#568 fixed before the freeze — every green until then is weaker evidence than it reads, including the promotion's."_ Two rounds landed.
+
+**Round 2, against Frank's P2.** The gate's loud half lived in one ordinary `it()` per artifact suite. Delete those two cases and every assertion in `dist-gate.test.ts` still passed while `REQUIRE_DIST_BUILD` with no build went back to skipping — **the gate this PR exists to build was defeatable by deleting a test.** Frank proposed a shared callable; that was taken but pushed further, because a shared callable still invoked from a deletable `it()` has the same hole. The throw now lives in `resolveDistGate` at **module scope**, so it fires during collection and the run exits non-zero regardless of which cases exist. The red half now reports `Test Files 2 failed / Tests no tests / EXIT=1` — there is no case left to delete.
+
+George then verified the mechanism independently through the installed runner rather than taking it on trust: `importFile` sits inside `collectTests`'s try, a throw sets `file.result.state = "fail"`, `TestModule.ok()` is false, exit code 1 — and a mid-file throw leaves no passing describes behind, because suite collection happens only after `importFile` returns. Worth recording as the deep-tree lens closing the one thing the diff's own evidence could not prove from outside.
+
+**Round 3, against George's P2 — a regression this PR would have shipped.** `test:dist` was `REQUIRE_DIST_BUILD=1 vitest run …`, a POSIX env prefix. npm's default script shell on Windows is `cmd.exe`, which rejects `NAME=value command`, and this repo has no `cross-env` and no `script-shell` override. `verify`, `.husky/pre-push` and ci.yml all call `test:dist`. **@deferredreward develops on Windows, and #189 already blocked every push from that machine once** (`docs/progress_tracker.md:2008-2010`) — this would have reproduced that class from a new direction, with Ubuntu CI staying green and the dist assertions never running on the machine that could not push. Fixed with `scripts/test-dist.mjs`, plain Node, no shell syntax, `result.status ?? 1` so a signal-killed child cannot exit 0.
+
+**Open at park (Frank round 3):** `.husky/pre-push` is three bare lines with no `set -e` and no `&&`. A failed `npm run build` over a stale `dist/` now lets `test:dist` pass and become the hook's exit status — **the push is allowed despite the failed build**, and this PR caused it by adding a passing command after `build`. One-line fix, deliberately not applied so the next round can prove it in both states.
+
+Shape is a **chain**, not siblings: deletable loud half → launcher portability → hook exit status, each a different layer of one gate, each found once. Worth another round.
+
+### #566 — parked at the cap, and the stop rule fired on our own commit
+
+Rounds 3 and 4 ran. Round 3 produced George P1 + 2×P2 + P3 and Frank P2; round 4 fixed all of them and Frank came back with a new P2: **the docblock edits made in the deletion round replaced stale run claims with new run claims.** `use-theme.ts:34` now said "No theme check has run on a device on any platform" — still a coverage claim in a docblock. Instance five of the class, written by the round sent to close it, with the commit message's own audit missing it.
+
+Decision 8 from the evening entry — _"a further new instance of the class parks the PR"_ — is broader than the round-local stop rule posted in the round-3 triage, and a standing DRI rule outranks a round-local one. **Parked rather than fixed.** Attempting instance six past a cap of 4 with no DRI available is the eleventh repair of a shape that has failed ten times.
+
+**The root cause, named rather than patched again.** Rounds 2 and 3 each found the rule contradicting another committed file: first `CONTRIBUTING.md` and the native README, then the README banner, §8, and a CSS comment's count. Those are **siblings** — the rule was written with cross-file carve-outs, so each round it vouched for one more file nobody had audited, and each round a reviewer found that file disagreeing. Round 4 deleted the carve-outs: the rule now states itself, binds prose you write or edit, and names **#575** for the sweep of existing violations. It certifies no file it has not read.
+
+**Six corrections round 4 did land, none disputed:**
+
+- `docs/native/README.md`'s banner no longer asserts "No Capacitor build has yet recorded audio on a device" — contradicted by the 2026-09-14 Galaxy A17 Record PASS
+- §8 no longer says the app has "only ever been validated in iOS Safari"; it now scopes that to the background and interruption paths, which keeps #58/#59/#245 correctly open
+- `CONTRIBUTING.md` no longer tells contributors to put an on-device result in a docblock
+- `src/app/globals.css`'s "twelve aliases" / "All twelve roles" deleted — the `@theme` block has **thirteen** (`--color-voice-text`, added for #457)
+- a tracker-entry exception added, so a lane cannot "correct" a dated append-only entry and destroy the reason a session's next step was what it was
+- the three false "Android has never run" claims corrected — grep returned exactly three sites, each independently fixable, so none qualified for deferral under the rule's own clause
+
+**Residual: two deletions**, spelled out on the PR. Neither needs a decision.
+
+### #565 — one lens, and the harness is why
+
+Frank APPROVE, clean, first round any reviewer had run on it. George was attempted **three times and never delivered a verdict**, which cost the session its cheapest merge.
+
+### Two harness defects, both of which read as success
+
+1. **A watch cannot `pgrep` for a pattern its own command line contains.** `pgrep -f "grok --prompt-file …"` inside a `bash -c` whose text includes that string matches itself: the wait either never exits, or reports a process finished when it has not. This is what let two George runs proceed concurrently on #565, both `tee`-ing into one report file and interleaving it into garbage.
+2. **`scripts/review/george.sh` `tee`s its report at start**, so the report file existing means the run _began_. Any wait keyed on that file is keyed on the wrong event — the same "empty result read as a result" class as #522/#524/#548.
+
+Both were worked around (explicit-PID kills, never `pkill -f grok`; waits re-armed on the real grok PID), neither is fixed.
+
+A third, found by a reviewer earlier in the wave and worth keeping visible: **the evening wave's lanes shared worktrees and `HEAD` raced under two reviewer runs**, so Frank read a sibling branch's tree on #566 and base-tree content on #572. Both were caught by `assert_tree_unchanged` and discarded rather than mistaken for passes.
+
+### Filed
+
+**#575** — sweep the tree for run-describing prose in docblocks, CSS comments and test names. Scoped deliberately against #571 (AGENTS.md's own Testing bullets, whose premise round 4's narrowing dissolves) and #525 (the multi-site "reads CSS at all" quotation). Carries the two `pending-take.test.ts` sites and the fix shape; states plainly that no sweep has been run, so the true count is unknown and is not guessed at.
+
+### Learnings
+
+1. **A remediation round is not exempt from the class it is closing.** #566 round 4 called itself a deletion round and was a rewording round at two of seven sites. The commit message's own overclaim audit missed both. This is now three sessions in a row where that has happened, which makes it a property of the work rather than an accident.
+2. **Put the loudness where it cannot be deleted.** The difference between #572's round-1 and round-2 gate is not strength of assertion — it is that a module-scope throw has no test case to remove. When a gate's failure path lives in a test, the mutation that defeats it is "delete the test", and that mutation is invisible to every source-level assertion around it.
+3. **A completion signal must be the thing that completes.** Both harness defects above are the same error: watching a file that is created at start, and watching a pattern that matches the watcher. Neither is exotic; both produced a confident "done" while the work continued.
+4. **A closing keyword needs adjacency, in both directions — and knowing that does not protect you.** Writing "Closes part of" before an issue number does _not_ auto-link it: the interposed words break the adjacency GitHub's parser needs, which is why PR #550 leaves issue 197 open. Writing a negation does _not_ save you: a "does not close" sitting immediately before an issue number auto-links it anyway, which is how issue 108 was auto-closed once already.
+
+   **This session's own EOD PR then did it.** The body explaining the trap quoted both examples with their `#`-prefixed numbers next to the keywords, and GitHub linked both — `closingIssuesReferences` came back `[108, 197]` on a tracker PR that closes nothing. Caught only by the mechanical check, on a PR written by someone who had just spent a paragraph on the mechanism. The lesson is not "remember the rule": it is that **prose discussing the trap is itself a trigger**, so write the number as "issue 108" in any sentence near a keyword, and run `gh pr view <n> --json closingIssuesReferences` on every PR regardless of what the body says.
+
+5. **A standing rule outranks a round-local one.** The round-3 triage on #566 posted a stop rule scoped to "the rule contradicts another committed file". Frank's round-4 finding was a different shape and would have slipped that rule — but decision 8's standing "a further new instance of the class" covered it. Worth preferring the broader recorded rule when the two disagree.
+
+### Held for the DRI
+
+- **#559's round-6 pick** — three options on the PR. Both lenses now independently confirm the P2; George's Probe C broke the feature on a real build with the suite green. Shape is siblings, and the recorded "deletion only" decision on this branch argues against a third widening of the matcher.
+- **#566's park** — three options on the PR, with a recommendation to split: keep the six landed corrections, revert the two docblocks, send them to #575.
+- **#572's one-line `set -e`**, and whether its chain shape earns a round past the cap.
+- **#565 needs a George run**, not an exemption (decision 6). An earlier hand-back claimed an exemption that has no record on the PR.
+- **#550** has had zero review rounds since it was opened, and touches `AGENTS.md` — whichever of it and #566 merges second needs a rebase.
+- Unchanged from the morning: the v0.2.7 field report, the APK artifact expiring **2026-10-05** during training week, #422's stale figure, and the held Dependabot majors.
+
+### Next session, in order
+
+1. **The three picks above**, which unblock #559, #566 and #572 in one sitting.
+2. **#572's `set -e`**, red-first, then both lenses — it is the pre-freeze item.
+3. **George on #565**, then it is clean and mergeable.
+4. **#550's first review round.**
+5. **#575**, which also frees #566's two docblocks.
+
+---
+
+## 2026-09-21 (evening) — the device pass opened and refuted the audio hypothesis, five ultracode waves produced four PRs and zero merges, and one defect class explains why
+
+Coordinator session, DRI present throughout for picks. Standing authority **merge on clean and green** — both reviewers at the current head plus green CI, lane PRs only — granted this morning and **not exercised once tonight**, because nothing earned it.
+
+The session began with a question about readiness for **2026-10-04**, which the DRI then fixed as the date the v0.3.0 build must be **in facilitators' hands**. Training itself is later; the milestone's 10-09 due date is the training date. Working back: promotion ~10-01, freeze ~09-30, **eight working days**.
+
+### The device pass opened at 17:44Z, mid-session
+
+The requirements owner started the iOS TestFlight 0.2.8 pass immediately after the morning EOD and filed **five `v1-required` issues in under half an hour** — #553, #554, #555, #556, #557 — and was still filing while lanes were running. The v1-required count rose during the work rather than falling.
+
+**#557 depends on #554** ("honouring #554's left-edge-at-playhead seed"), which set the lane order.
+
+### The audio cluster: hypothesis refuted, replacement found, neither shipped
+
+The wave's purpose was a spike, evidence only, no fix. It delivered.
+
+**REFUTED, by measurement.** The store/MP3/decode round trip is _not_ where the level goes: **−0.44 dB whole-clip, identical across a 12 dB input span**, against a 3 dB "real finding" bar named before measuring. Red-first genuine, reproduced by two independent verifiers. The requirements owner's leading hypothesis died for a few hours of work, which is what a spike is for.
+
+Also refuted: #553's `subarray`-through-`.buffer` lead, by **mutation** at `lib/audio/format.ts:75` rather than a code read; the metering-gain and display-gain leads, by code read; and **#558's chunk-join hypothesis, which was the dev lead's own** — there is no sample-domain concat of MediaRecorder chunks, so the mechanism does not exist. Correction posted on the issue rather than a quiet body edit.
+
+**The replacement, which is better.** `getUserMedia` (`hooks/use-recorder.ts:527-533`) sets `echoCancellation`, `noiseSuppression`, `autoGainControl` — and **no `channelCount: 1`**. Measured on the real `toCanonical` graph:
+
+| input                    | level        |
+| ------------------------ | ------------ |
+| identical channels       | 0.00 dB      |
+| decorrelated             | ~−3 dB       |
+| **silent right channel** | **−6.02 dB** |
+
+A device handing back a 2-channel track with a dead second channel loses 6 dB on **every take, before any other stage**, while `displayGain`'s draw-time fit keeps the waveform looking right. First mechanism that explains **#269 (Android silent) and #555 (iOS quiet) with one cause**. The coordinator reproduced the −6.02 dB independently with a standalone 20-line probe, so the number no longer rests on any lane's word.
+
+Still a hypothesis. A paste-in Web Inspector probe is on #555 for the DRI's iPhone; the decisive reading is one device session, not more harness work.
+
+### Four PRs, zero merges, one defect class
+
+| PR                  | State at close                                  |
+| ------------------- | ----------------------------------------------- |
+| #559 (#556 callout) | Round 6 pushed `1767a86`, reviews **in flight** |
+| #560 (#554 seed)    | **PARKED** `d291558` — stop rule fired          |
+| #561 (audio spike)  | **PARKED** `70644af`                            |
+| #565 (subarray pin) | Green, Frank pending                            |
+| #566 (AGENTS.md)    | Round 2 pushed `1374ce0`, reviews **in flight** |
+
+**The class: run-describing prose committed to files that outlive the run.** Five instances across three PRs. Not dishonesty — every lane disclosed heavily and two disclosed their own instance somewhere. The mechanism is that a docblock saying _"at the head this docblock ships on"_ is **unverifiable by construction**, because the head moves with the commit containing the sentence; and a source comment quoting a grep goes stale the moment a line is added. One said "twelve"; the tree returns sixteen.
+
+Every remediation round re-committed a weaker instance of the class it was sent to close, and **in two of three the lane's own overclaim audit missed its own new instance**. Round-by-round correction produced instances 2, 3 and 4. **One round of deletion produced none.** That asymmetry is the finding: of ten repairs attempted, the only one that never needed re-correcting is the one that _removed_ a claim rather than rewording it.
+
+The rule is now on PR #566: _no committed file states where, on what, or with what result a run happened._ Output goes in a PR comment, which can be re-stamped; a docblock points at its URL. Counts go in an assertion, not prose.
+
+### Two things the process caught that no single lens would have
+
+**A reviewer lens found that the lanes cited "the DRI's call" with no artifact in the repo** — no comment on #556, no review on #559, only the lanes' own triage. The decisions were real but unverifiable, which AGENTS.md treats as not having been made. Decision records are now posted on #559 and #560, including what each decision does _not_ cover.
+
+**Frank found a hole George APPROVE'd over.** At #559's `c339785`: `declarationsOf` reads only the _first_ matching block while the global count is a `Set` with a `>=12` floor, so appending `.recorder-sheet { user-select: text; }` keeps every assertion green while the cascade restores selection. **The gate passes on a tree where the feature is broken.** The coordinator was one step from merging. Deep-tree chased the change out into the portals; diff-local read the assertions and found one that cannot fail. Clearest argument for the both-lenses rule this repo has produced.
+
+### A false claim in AGENTS.md cost the day's reasoning
+
+AGENTS.md:170 and :178 assert **"Android has never been run at all."** The DRI corrected it: Android has been run and testers have filed issues from it — #269 describes a playhead moving with no audio, which is someone watching an Android screen.
+
+`docs/progress_tracker.md:890` had **already flagged that exact sentence as stale**, deferring the rewrite to #245 "once the protocol runs". It never ran, and the sentence stayed. Because AGENTS.md is injected into every agent's context, it propagated into every lane brief and every coordinator report of the session before it was caught.
+
+**A known-stale claim in an injected document is worse than an unknown one, because it is being actively relied upon.** Deferring correction of a false statement until other work lands is the anti-pattern. The fix rides on #566; #571 tracks the same shape elsewhere in the Testing section.
+
+### Decisions (all DRI)
+
+1. **2026-10-04 = build in facilitators' hands.** Promotion ~10-01, freeze ~09-30.
+2. Wave 1 = audio spike + #556 + #554; spike first, fix as its own PR.
+3. #554: accept the seed width going ~15% → ~30%, fix the docblock that denies it. Tail rule (A vs C) stays **open and is the requirements owner's**.
+4. #556: extend the opt-out to `.menu-panel` and `.confirm-panel`.
+5. **#413 closed** in favour of #553, evidence preserved.
+6. Review load: George mandatory on all three, Frank as quota allows, exemptions recorded.
+7. **Skip installing WebKit for Playwright.** Linux WebKitGTK shares WebCore with iOS Safari but uses GStreamer, not CoreAudio; the shared part already agrees with Chromium and the diverging part is exactly the audio path. It would produce an authoritative-looking number that does not transfer.
+8. **Stop rule, armed before the results landed:** a further new instance of the class parks the PR. It fired on #559 and #561 and was honoured.
+9. #559 by **deletion only** — the one repair shape that has not regenerated the defect.
+10. #565 re-cut alone; AGENTS.md rule adopted now rather than deferred.
+11. **#568 fixed before the freeze** — while the harness is order-dependent, every green until then is weaker evidence than it reads, including the promotion's.
+
+### Filed
+
+#562, #563, #564, #567, #568, #569, #570, #571 by the waves; **#558** by the dev lead. All on `v0.3.0 — Oct: training`.
+
+### Learnings
+
+1. **Deletion beats correction for a claim that keeps rotting.** Four rounds of rewording produced five instances; one round of deleting produced none.
+2. **A self-audit field does not catch the defect it audits.** Three waves, each with an explicit overclaim check, each missing its own new instance. The fix was structural — ban the construction — not another field.
+3. **An injected document is load-bearing infrastructure.** One stale sentence in AGENTS.md misdirected a day of work across every agent that read it. Treat its factual claims as code, with the same staleness discipline.
+4. **Both lenses are not redundancy.** George APPROVE'd the SHA where Frank found an assertion that cannot fail. Neither alone was sufficient, and the one that ran first was the one that missed it.
+5. **A spike that refutes its own hypothesis has succeeded.** The transcode theory died cheaply and a better one replaced it. The expensive outcome would have been building the fix first.
+6. **Record a decision where it can be found, or it was not made.** "The DRI's call" with no artifact is indistinguishable from an invention, and a reviewer was right to treat it as one.
+
+### Next session, in order
+
+1. **The device session** — the iPhone `channelCount` probe on #555 and the not-yet-Finished discriminator. Highest-value hour available, and not an agent's to spend. Testers have been asked to run the latest build on Android.
+2. Land Wave 5's reviews: #559 round 6, #566, then #565.
+3. **#568**, so that later greens mean something.
+4. #567 + the Rule A / C tail question to the requirements owner; nobody writes another `panForZoom` branch before it is answered.
+5. #557, after #554 resolves.
+6. The release train: `chore(release)` → staging → `check:deploy`, then staging → main as **v0.3.0** with `git tag v0.3.0` and `check:deploy:prod`. **The Android APK expires 2026-10-05**, the day after handoff — the training artifact must be cut fresh and given a durable home; a Release on the tag is the cheap answer (#262).
+
+---
+
+## 2026-09-21 (Monday) — v0.2.8 promoted and verified with both native tester builds cut, #542 parked at the storage-pressure wiring, and #547 merged after five review rounds that found seven harness defects
+
+One coordinator session. The dev lead was present for picks and away between them; standing authority — **merge on clean and green**, scoped to lane PRs and never to promotions — was granted mid-session and used once, on #547.
+
+The day started with the tester feedback still outstanding, so the question put to the session was "what is the best use of the wait". The answer turned out to be: get off the critical path (promote and cut the builds so the device work is not gated on us), then spend the wait on the harness rather than on features.
+
+### Shipped
+
+| PR   | What                                      | Merge     | Review                                            |
+| ---- | ----------------------------------------- | --------- | ------------------------------------------------- |
+| #545 | `chore(release): v0.2.8` — the patch bump | `09e6f28` | mechanical; green alone                           |
+| #546 | Promote develop → staging, v0.2.8         | `a129d54` | promotion; deploy verified after merge            |
+| #547 | #522 + #524 and five more harness defects | `7a53842` | **5 rounds.** Both reviewers APPROVE at `4ae102e` |
+
+### The promotion, and the device path
+
+`npm run check:deploy` **PASS**: `version=0.2.8 sha=a129d54`, built 13:46Z. A merged promotion is not a deployed build (#143), and this one was confirmed rather than assumed.
+
+Both native lanes then ran green off that exact tree — the deployment payloads name `ref: staging`, `sha: a129d549…`, and Preflight's ref gate passed on each, so the ref gotcha was confirmed clean rather than hoped for.
+
+- **Android**: `android-apk-a129d549030fe4872a902c2bcc7542301db8cc1b`, 5.6 MB. **Expires 2026-10-05 — during training week.** If this is the training build it needs pulling somewhere durable.
+- **iOS**: uploaded to TestFlight; processing is async, so the lane going green is not the same claim as installable.
+
+**Distribution is deliberately held** until the outstanding v0.2.7 field report lands, so that report stays unambiguous about which build it describes. What the promotion buys is that #374 and #535 are testable _at all_ — they need #531/#538, which existed only on `develop` until today.
+
+The first push of the day was blocked by **#522**, which is how that issue stopped being theoretical.
+
+### #542 — parked, and the closing keyword that nearly ate an accessibility requirement
+
+Two review rounds. Round 1: six P2s across both lenses, all confirmed against the tree, one root cause — **the pressure line was modelled on the eviction notice, and pressure is not eviction.** It inherited `storageNotPersisted`'s Share clause (Share is egress, not reclaim), its "This phone" framing (the reading is per-origin), and a gate copied to the wrong width, while _not_ inheriting the `hasContent` retraction its sibling has.
+
+The lane fixed five in one commit and deferred one to #544. Round 2 was mixed: one chain link (round 1's own `hasContent` fix created a resurrection path — delete the last book, create a new one, and the same frozen `critical` band repaints over an empty shelf) and one **sibling** of round 1's class, with `strings.ts:543-548` recording the identical defect already fixed next door for #214.
+
+**Parked.** #247 is `v1-desired`, the PR does not close it regardless, and the remaining fix re-opens the module-scope lifecycle question #537 round 6 parked by _removing_ its cache. The device run answers thresholds, first paint, in-shell `estimate()` and the glyph in one pass.
+
+**Caught in passing:** the lane corrected the body to "Part of #247", but `closingIssuesReferences` was **still `[247]`** — its own explanatory sentence, _"this PR does NOT close #247"_, is parsed as `close #247`. Same trap as #470. Merging would have auto-closed an `accessibility`-labelled v0.3.0 issue.
+
+### #547 — filed as two bugs, closed as seven
+
+| #   | Defect                                                                                   | Found by                       |
+| --- | ---------------------------------------------------------------------------------------- | ------------------------------ |
+| 1   | precache reader blind to the development-mode `sw.js` shape (blocked every local push)   | #522, hit live                 |
+| 2   | `triage.sh` truncating silently, dropping a reviewer's findings **and both verdicts**    | #524, hit live                 |
+| 3   | `"$lens_"` parses as the variable `lens_` — the missing-report path had **never** worked | the new test                   |
+| 4   | the new test passed standalone and failed under `pre-push` (inherited `GIT_DIR`)         | `git push`                     |
+| 5   | empty extraction reported as clean on an `APPROVE` verdict                               | Frank R1 **+** George R1       |
+| 6   | unanchored all-clear tripped by quoted transcript text                                   | Frank R2 **+** George R2       |
+| 7   | fenced / column-0 embeds, then the dual — a quoted fixture _faking_ a finding            | Frank R3, George R3, George R4 |
+
+**Three of those were introduced by the fix for the one before.** Worth naming plainly rather than filing under "iterated to green".
+
+Two records corrected:
+
+- **#522's root cause was inverted.** `NODE_ENV` _unset_ emits the minified shape (which parsed fine, which is why CI was green); this sandbox's explicit `NODE_ENV=development` is the trigger. Its "asserted nowhere" claim was also false — CI asserts it twice, and the test file's own comment says the CI gap closed in #414/#420 three days before the issue was filed. The issue had quoted the first half of a comment documenting its own repair.
+- **My own round-2 triage was wrong**, and round 3 said so. It argued against deleting the all-clear detector on alert fatigue, unmeasured. Measured across all 38 reports in `.review/`: 28 extract normally, **13 already warn**, and the branch fired for **one**. I had been defending one avoided checkbox in 38 rounds against a class that cost three review rounds.
+
+### Decisions (all DRI)
+
+1. Promote v0.2.8 now; **hold distribution** until the v0.2.7 report lands.
+2. Park #542 pending the device run rather than run rounds 3–4.
+3. Keep **#247 open**, carrying both unmet fix-shape bullets — the recorder-close re-read and the storage glyph. Not split, not amended: splitting would read as optional polish rather than the accessibility requirement it is.
+4. Accept **#544** as a deferred P2 residual, recorded explicitly.
+5. Harness fixes (#522/#524) before #452 PR5 — both had blocked or corrupted real work that day.
+6. At #547's round-4 cap: **one more round with a pre-set stop rule**, because the remedy was a different class from the four that had failed. The rule did not fire.
+7. Standing **merge on clean and green** for lane PRs.
+
+### Filed
+
+**#548** — `triage.sh`'s extractor is blind to the `### P2` severity-heading shape. Measured: **13 of 38 reports extract zero findings, five of them carrying `REQUEST_CHANGES`.** `.review/george-38dbd60.md` is the clearest — real P1/P2/P3 findings the regex cannot see. #547 makes that silence _loud_; it does not make the extractor see. Deliberately its own change, with its own red-first pass, and the 38 reports are a ready-made regression corpus.
+
+### Learnings
+
+1. **An empty result is not evidence.** Both halves of #547 are the same shape: a parser blind to a form its producer actually emits — Workbox's unminified manifest, and a reviewer's severity-heading report. Neither errored; both returned `[]`, and everything downstream read that as "nothing to see".
+2. **Measure the thing you are defending.** The all-clear detector survived a round because of an unmeasured alert-fatigue argument. One grep over `.review/` ended the debate in a minute and reversed the decision.
+3. **A reviewer transcript is adversarial input.** It embeds the prompt _and the diff under review_, so any phrase a script searches for can be quoted into it by the very change being reviewed. Three rounds were lost learning that no pattern survives; the fix was to remove the bait from our own source, not to harden the scan.
+4. **Verify closing references mechanically.** Prose that says a PR does not close an issue still closes it. `gh pr view --json closingIssuesReferences` is the gate; reading the body is not.
+5. **`pre-push` is a different environment from the suite.** A test that passes standalone can fail in the hook, because git exports `GIT_DIR` there — and a contaminated run committed a stray file onto the branch before it was caught.
+6. **A test written to prove a gate can itself be vacuous.** The "other half of the gate" case added in round 2 asserted a substring already present in the prose it was pinning, and drove it with a `REQUEST_CHANGES` fixture while calling itself a clean round.
+
+### Held for the DRI
+
+- **The v0.2.7 field report**, still outstanding; it is what unblocks handing over the v0.2.8 build.
+- **The APK artifact expires 2026-10-05**, during training week.
+- #542's park, revisited after the device run, together with #544 and #247's glyph.
+- #422's stale precondition figure (it cites 15 open `v1-required`; the live count is 9).
+- Dependabot majors #501/#503/#504/#505, still held past October.
+
+### Next session, in order
+
+1. **The v0.2.7 report and the device run** — then hand over the v0.2.8 build and test #374, #535, #245.
+2. **#452 PR5** (recorder erase-confirm), starting from **#539**.
+3. **#548** — the extractor, with the 38-report corpus as its regression set.
+4. #533 (vacuous notice-bridge tests), then #220 with #524's mechanism folded in.
+5. #172 via a re-cut of #235 — still waiting on device feedback.
+
+---
+
 ## 2026-09-20 (Sunday) — Wave 1 and Wave 2 of the open-PR batching plan: five PRs merged including #452 PR3 and PR4, the storage-pressure core shipped with its cache deliberately removed, and seventeen issues filed
 
 One coordinator session, Sonnet lanes in isolated worktrees, the dev lead present throughout and answering picks. Standing authority was granted mid-session: **merge on clean and green** — both reviewers clean at the _current_ head SHA plus green CI — scoped to lane PRs, never to promotions.
