@@ -14,8 +14,8 @@ import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
-import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
@@ -42,7 +42,6 @@ import {
   eraseRowReason,
   heldTakeIsBusy,
   markRowReason,
-  rowHint,
   toolbarEditHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
@@ -3661,107 +3660,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             </>
           )}
         </div>
-        <Menu
+        <RecorderMenu
           open={menuShown}
           onClose={() => setMenuOpen(false)}
-          title={strings.recorderMenuTitle}
-        >
-          {mode === "record" ? (
-            <>
-              <Control
-                icon="edit"
-                label={strings.enterEdit}
-                variant="quiet"
-                // Editable when there is audio to edit, a full clipboard to paste
-                // — a never-recorded segment with a pending clip must still open
-                // edit mode to receive it, or the chapter-wide clipboard (G3) could
-                // never land on an empty segment (George R2) — OR a live/paused
-                // take, which `onEnterEdit` commits first, then edits (#134). Only
-                // the commit window itself blocks it now, not every non-idle state.
-                // Never while `denied`: the permission panel owns the body, and
-                // entering edit there strands the edit toolbar over a Retry that
-                // starts the mic (George R3, with onRetryRecord as the other half).
-                // The gate lives in `editRowReason` so the grey row can say WHY
-                // (#135): a take mid-commit shows the `alert` badge — a state mark
-                // that names no control — and the reason joins the row's
-                // accessible name.
-                disabled={editReason !== null}
-                hint={rowHint(editReason)}
-                onClick={onEnterEdit}
-              />
-              <Control
-                icon="check"
-                // Green AND the mark/unmark label both key on `finishedState`, the
-                // resolved state the store will actually write — NOT the raw
-                // `displayedFinished` intent. They diverge on an emptied segment:
-                // mark finished, Edit, cut all, Done → `finishedState` is
-                // "disabled" (a 0-frame take cannot be finished, and close writes
-                // `finished: false`), but `displayedFinished` is still true, so
-                // keying the paint on it would show a green, "Unmark finished" row
-                // that lies until close (George R1). `finishedState === "finished"`
-                // is true only when the mark will stick.
-                label={
-                  view && finishedState === "finished"
-                    ? strings.markUnfinished(view.ordinal)
-                    : strings.markFinished(view?.ordinal ?? 0)
-                }
-                variant="quiet"
-                // Same `onToggleFinished`/`finishedIntent` semantics the header
-                // checkbox carried (D1) — only the trigger moved. It does NOT close
-                // the menu: the row re-renders in place so the check turns green as
-                // the translator taps, the record-and-mark-done-in-one-sheet flow.
-                // Frozen through the requesting/processing/close window exactly as
-                // Record is (G10), plus the never-recorded `finishedState ===
-                // "disabled"` the Checkbox encoded via `state`.
-                className={finishedState === "finished" ? "is-done" : undefined}
-                // Gate + reason from `markRowReason` (#135 round 3): this row greyed
-                // silently while Edit and Erase beside it explained themselves.
-                disabled={markReason !== null}
-                hint={rowHint(markReason)}
-                onClick={onToggleFinished}
-              />
-              <Control
-                icon="trash"
-                label={strings.eraseSegment}
-                variant="quiet"
-                // Only when there is stored audio to erase (a first, uncommitted
-                // recording has nothing on disk yet) AND only at idle: erasing the
-                // stored take out from under a live capture is nonsensical, and the
-                // menu opener stays reachable mid-take (Edit commits-then-edits a
-                // live/paused take, #134), so this entry must refuse there itself
-                // (George R-B6). Gate + reason from `eraseRowReason` (#135).
-                disabled={eraseReason !== null}
-                hint={rowHint(eraseReason)}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmOpen(true);
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <Control
-                icon="check"
-                label={strings.doneEditing}
-                variant="quiet"
-                onClick={onExitEdit}
-              />
-              <Control
-                icon="trash"
-                label={strings.eraseSegment}
-                variant="quiet"
-                // Kept reachable from edit mode too — erasing is a segment-level op
-                // useful in either mode. Same idle + has-stored-clip guard.
-                disabled={eraseReason !== null}
-                hint={rowHint(eraseReason)}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmOpen(true);
-                }}
-              />
-            </>
-          )}
-        </Menu>
+          mode={mode}
+          ordinal={view?.ordinal ?? null}
+          finishedState={finishedState}
+          editReason={editReason}
+          markReason={markReason}
+          eraseReason={eraseReason}
+          onEnterEdit={onEnterEdit}
+          onToggleFinished={onToggleFinished}
+          onErase={() => {
+            setMenuOpen(false);
+            setConfirmOpen(true);
+          }}
+          onExitEdit={onExitEdit}
+        />
         <EraseConfirm
           open={confirmOpen}
           title={strings.eraseConfirmTitle}
