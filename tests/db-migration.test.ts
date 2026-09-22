@@ -124,6 +124,31 @@ async function openLegacyV5() {
   });
 }
 
+/**
+ * Stand up the v6 schema — v5 plus #205's `failures` store. This is what every
+ * device that has run a build since v0.1.14 holds, so a v6 → v7 open is the
+ * upgrade the next promotion actually performs in the field. It is also the
+ * only path on which v7's backfill runs ALONE: `oldVersion` 6 skips the v3
+ * recreate, the v6 create and the v4 clip stamp, leaving v7's cursor as the
+ * whole of the upgrade.
+ */
+async function openLegacyV6() {
+  return openDB(DB_NAME, 6, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+      db.createObjectStore("failures", { autoIncrement: true });
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
 
@@ -432,20 +457,40 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
   });
 });
 
-describe("v6 → v7 transcode-stall count backfill", () => {
-  it("stamps pre-existing clip metadata with transcodeStallCount: 0", async () => {
+describe("the v7 transcode-stall count backfill", () => {
+  const fieldlessMeta = (id: string) => ({
+    id,
+    sampleRate: 44100,
+    frameCount: 10,
+    durationMs: 1,
+    createdAt: 7,
+    encoding: "pcm" as const,
+    generation: 0,
+    byteLength: 20,
+    peaks: null,
+  });
+
+  // The path every shipped device takes, and the only one where v7's cursor is
+  // the entire upgrade — a v5 start runs the v6 create first and would pass
+  // whatever v7 did with an already-open store.
+  it("stamps a v6 device's clip metadata, leaving the failure log alone", async () => {
+    const v6 = await openLegacyV6();
+    await v6.put("clipMeta", fieldlessMeta("c1"));
+    await v6.add("failures", { context: "save-take", at: 1 } as never);
+    v6.close();
+
+    const v7 = await getDb();
+    expect(v7.version).toBe(APP_VERSION);
+    expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
+      0
+    );
+    // Append-only: the upgrade touches clip metadata and nothing else.
+    expect(await v7.count("failures")).toBe(1);
+  });
+
+  it("stamps a v5 device's clip metadata, which gains `failures` in the same open", async () => {
     const v5 = await openLegacyV5();
-    await v5.put("clipMeta", {
-      id: "c1",
-      sampleRate: 44100,
-      frameCount: 10,
-      durationMs: 1,
-      createdAt: 7,
-      encoding: "pcm",
-      generation: 0,
-      byteLength: 20,
-      peaks: null,
-    });
+    await v5.put("clipMeta", fieldlessMeta("c1"));
     v5.close();
 
     const v7 = await getDb();
@@ -453,6 +498,7 @@ describe("v6 → v7 transcode-stall count backfill", () => {
     expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
       0
     );
+    expect(Array.from(v7.objectStoreNames)).toContain("failures");
   });
 });
 
