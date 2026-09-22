@@ -35,13 +35,9 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * `performSaveTake` and `performDiscardTake`, the orchestration minus React —
  * is covered in Node by `tests/use-save-take.test.ts` since #180; what has NO
  * automated coverage is the React state around it (the `useState` slot, the
- * `savingRef` guard), and the specific on-device check that has still not been
- * run: fill the device, record, and confirm the recovery screen appears and
- * that Retry reuses the same clip. Record → playback has been exercised on a
- * phone (`docs/progress_tracker.md` is the record of what ran where) — but a
- * *successful* save exercises none of this. The failure path only opens when
- * the write actually rejects, which on a phone with room to spare it never
- * does.
+ * `savingRef` guard). A successful save exercises none of the failure path;
+ * that path only opens when the write rejects.
+ * Device evidence: `docs/progress_tracker.md`.
  */
 
 const SEGMENT = "seg-1" as SegmentId;
