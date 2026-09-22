@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
+
+import { Control } from "@/components/control";
+import { EmptyState } from "@/components/empty-state";
+import { NameEdit } from "@/components/name-edit";
+
+import { one, render } from "./render";
 
 /**
  * The guide's ONE visual, and the wiring that carries it (#604).
@@ -13,9 +20,11 @@ import { describe, expect, it } from "vitest";
  * is a comment; a ring drawn from a colour primitive is a theme that cannot
  * switch (AGENTS.md's styling boundary).
  *
- * Source text, not a computed style: the cascade and the real build are the
- * Playwright suite's job (`e2e/theme-toggle.spec.ts` is the precedent), and
- * nothing here claims the ring has been SEEN.
+ * The stylesheet half reads source text; the wiring half renders each carrier
+ * once through `tests/render.ts` and reads the class it emits. Neither is the
+ * cascade or the real build — that is the Playwright suite's job
+ * (`e2e/theme-toggle.spec.ts` is the precedent) — and nothing here claims the
+ * ring has been SEEN.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
@@ -125,5 +134,58 @@ describe("every step of the chain reaches a control (#604)", () => {
     // `Control`/`EmptyState`/`NameEdit`, whose prop is covered by the render
     // harness in `tests/control-render.test.ts`.
     expect(read("src/components/books-screen.tsx")).toContain("is-guided");
+  });
+});
+
+describe("the mark reaches the control it is given to (#604)", () => {
+  // Three carriers, because the chain's targets are not all the same
+  // component: a bare `Control` (Add chapter, Record), an `EmptyState` CTA
+  // (New book, Add segment) and `NameEdit`'s commit (Create book). Each
+  // forwards the flag to the one button it owns, and each must leave the mark
+  // off when it is not the step — the half that keeps the ring from lingering.
+  it("Control paints the ring only while guided", () => {
+    const control = (guided?: boolean) =>
+      one(
+        render(
+          createElement(Control, { icon: "plus", label: "New book", guided })
+        ),
+        "button"
+      ).className;
+
+    expect(control(true)).toContain("is-guided");
+    expect(control(false)).not.toContain("is-guided");
+    expect(control()).not.toContain("is-guided");
+  });
+
+  it("EmptyState hands the mark to its CTA and nothing else", () => {
+    const container = render(
+      createElement(EmptyState, {
+        headline: "Start your first book",
+        teach: "A book holds the chapters you record.",
+        ctaLabel: "New book",
+        ctaIcon: "plus",
+        onCta: () => {},
+        guided: true,
+      })
+    );
+    expect(one(container, "button").className).toContain("is-guided");
+    expect(container.querySelectorAll(".is-guided")).toHaveLength(1);
+  });
+
+  it("NameEdit hands the mark to its commit control, never the field", () => {
+    // The field arrives pre-filled (#314), so Confirm is the next REQUIRED
+    // action and the typing is optional — the ring says which.
+    const container = render(
+      createElement(NameEdit, {
+        initialValue: "Book 001",
+        fieldLabel: "Book name",
+        saveLabel: "Create book",
+        onSave: () => {},
+        onCancel: () => {},
+        guided: true,
+      })
+    );
+    expect(one(container, "button").className).toContain("is-guided");
+    expect(one(container, "input").className).not.toContain("is-guided");
   });
 });

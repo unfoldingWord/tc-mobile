@@ -43,6 +43,13 @@ interface NameEditProps {
    * write, on either caller.
    */
   busy?: boolean;
+  /**
+   * The commit control is the next required action in the guided chain (#604).
+   * Only New Book passes it: the field arrives pre-filled with the placeholder
+   * (#314), so Confirm alone completes the create and the typing is the
+   * optional part. The rename call sites are not steps in the chain.
+   */
+  guided?: boolean;
 }
 
 /**
@@ -73,6 +80,7 @@ export function NameEdit({
   onSave,
   onCancel,
   busy = false,
+  guided,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
   const selectedInitialValue = useRef(false);
@@ -161,6 +169,7 @@ export function NameEdit({
         label={busy ? strings.savingName : saveLabel}
         variant="default"
         busy={affordance.busy}
+        guided={guided}
         onClick={() => onSave(value)}
       />
     </form>
