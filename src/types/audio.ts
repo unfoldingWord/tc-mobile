@@ -54,6 +54,8 @@ export interface ClipMeta {
   readonly generation: number;
   /** Bytes held in `clipData` — PCM frames × 2, or the MP3's length. */
   readonly byteLength: number;
+  /** How many times this clip has wedged the MP3 encoder while awaiting D3. */
+  readonly transcodeStallCount: number;
   /**
    * Row-resolution waveform peaks, kept ONLY on an `mp3` clip: the Segments list
    * draws its bars from these so listing a chapter never has to decode audio.

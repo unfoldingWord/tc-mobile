@@ -49,6 +49,7 @@ import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
   commitTranscode,
   listPcmFinishedSegments,
+  recordTranscodeStall,
 } from "@/lib/storage/transcode";
 import type { SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS } from "@/types/view";
@@ -329,6 +330,11 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // otherwise starve every other finished segment (George R1 P2-2, R2 P2).
       if (cause instanceof EncoderStalledError) {
         stalledSegmentIds.add(segmentId);
+        try {
+          await recordTranscodeStall(clipId);
+        } catch (accountingCause) {
+          reportFailure(accountingCause, "transcode-stall-accounting");
+        }
         return segmentId;
       }
     }

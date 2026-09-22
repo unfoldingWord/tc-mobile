@@ -12,7 +12,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -401,6 +401,7 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
       generation: 0,
       byteLength: 20,
       peaks: null,
+      transcodeStallCount: 0,
     });
   });
 
@@ -427,6 +428,31 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     expect(meta?.encoding).toBe("mp3");
     expect(meta?.generation).toBe(2);
     expect(meta?.byteLength).toBe(5);
+    expect(meta?.transcodeStallCount).toBe(0);
+  });
+});
+
+describe("v6 → v7 transcode-stall count backfill", () => {
+  it("stamps pre-existing clip metadata with transcodeStallCount: 0", async () => {
+    const v5 = await openLegacyV5();
+    await v5.put("clipMeta", {
+      id: "c1",
+      sampleRate: 44100,
+      frameCount: 10,
+      durationMs: 1,
+      createdAt: 7,
+      encoding: "pcm",
+      generation: 0,
+      byteLength: 20,
+      peaks: null,
+    });
+    v5.close();
+
+    const v7 = await getDb();
+    expect(v7.version).toBe(APP_VERSION);
+    expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
+      0
+    );
   });
 });
 

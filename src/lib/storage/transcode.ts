@@ -67,16 +67,57 @@ export async function listPcmFinishedSegments(): Promise<
 
   const takeById = new Map(takes.map((t) => [t.id, t]));
   const metaById = new Map(metas.map((m) => [m.id, m]));
-  const owed: Array<{ segmentId: SegmentId; clipId: ClipId }> = [];
+  const owed: Array<{
+    segmentId: SegmentId;
+    clipId: ClipId;
+    stallCount: number;
+    order: number;
+  }> = [];
   for (const segment of segments) {
     if (!isFinished(segment.status) || segment.activeTakeId === null) continue;
     const take = takeById.get(segment.activeTakeId);
     if (!take) continue;
     const meta = metaById.get(take.clipId);
     if (!meta || meta.encoding !== "pcm") continue;
-    owed.push({ segmentId: segment.id, clipId: take.clipId });
+    owed.push({
+      segmentId: segment.id,
+      clipId: take.clipId,
+      stallCount: meta.transcodeStallCount,
+      order: owed.length,
+    });
   }
-  return owed;
+  return owed
+    .sort((a, b) => a.stallCount - b.stallCount || a.order - b.order)
+    .map(({ segmentId, clipId }) => ({ segmentId, clipId }));
+}
+
+/**
+ * Durably remember that this PCM clip stalled the encoder, so a later launch can
+ * put healthier clips ahead of it instead of repeating a head-of-line block.
+ */
+export async function recordTranscodeStall(clipId: ClipId): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction("clipMeta", "readwrite", { durability: "strict" });
+  try {
+    const meta = await tx.objectStore("clipMeta").get(clipId);
+    if (!meta || meta.encoding !== "pcm") {
+      await tx.done;
+      return;
+    }
+    await tx.objectStore("clipMeta").put({
+      ...meta,
+      transcodeStallCount: meta.transcodeStallCount + 1,
+    });
+    await tx.done;
+  } catch (cause) {
+    try {
+      tx.abort();
+    } catch {
+      // Already settled — the original cause is what the caller needs.
+    }
+    await tx.done.catch(() => {});
+    throw cause;
+  }
 }
 
 /**

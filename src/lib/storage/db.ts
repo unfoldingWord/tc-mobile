@@ -60,6 +60,14 @@
  * Out-of-line auto-increment keys, so insertion order is key order and the ring
  * in `failures.ts` can prune the oldest from the front of a cursor without
  * trusting a phone's clock.
+ *
+ * ── v7 (#404): durable transcode-stall accounting — append-only ──
+ *
+ * `ClipMeta` gained `transcodeStallCount`, stamped to 0 for existing clips. The
+ * Finished transcode sweep increments it when a clip wedges the encoder and
+ * orders future owed clips by the count, so poison clips near the head of a
+ * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
+ * still kept; this is scheduling metadata only.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -79,7 +87,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -496,9 +504,28 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 encoding: "pcm",
                 generation: 0,
                 byteLength: legacy.frameCount * 2,
+                transcodeStallCount: 0,
                 peaks: null,
               };
               await cursor.update(stamped);
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v7 (#404): every pre-existing clip starts with no recorded encoder
+        // stalls. Additive — only the missing field is added, and only to the
+        // metadata row. A fresh install has no clip rows; clips stamped by the
+        // v4 step above already carry the field and are left alone.
+        if (oldVersion < 7) {
+          const store = tx.objectStore("clipMeta");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as ClipMeta & {
+              transcodeStallCount?: number;
+            };
+            if (legacy.transcodeStallCount === undefined) {
+              await cursor.update({ ...legacy, transcodeStallCount: 0 });
             }
             cursor = await cursor.continue();
           }
