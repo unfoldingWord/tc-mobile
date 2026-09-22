@@ -362,7 +362,7 @@ export function SegmentRow({
       {hasClip && (
         <>
           <Control
-            icon="menu"
+            icon="more"
             label={strings.segmentMenu(ordinal)}
             variant="quiet"
             size={20}
