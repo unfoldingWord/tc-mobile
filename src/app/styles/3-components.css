@@ -50,11 +50,8 @@
  * That selector is written here WITHOUT its leading dot on purpose. The test
  * finds its block with a raw `indexOf` over this whole file, so a comment
  * containing the literal selector is found first and the slice becomes comment
- * text with no declarations in it. Not a hypothetical: an earlier draft of this
- * very paragraph did exactly that and turned the test red in review round 3.
- * Its `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is what
- * caught it rather than the assertion silently passing over an empty block —
- * which is the difference between a gate and a comment.
+ * text with no declarations in it. The declaration-count floor keeps an empty
+ * block from passing the value assertions vacuously.
  *
  * touch-policy reads this file whole and
  * regexes the raw string — and the paragraph above names the five colour
@@ -65,12 +62,6 @@
  * identifiers. For the same reason no sentence in this header writes `var(`
  * immediately followed by a primitive name: a line count of primitive
  * references over this file would otherwise count the prose describing them.
- *
- * AGENTS.md's knip blind-spot #2 still says nothing in this repo reads CSS at
- * all. That is stale, and tracked in #525 — where the work is a grep, not a
- * one-line edit: four places lean on the sentence today (three test docblocks
- * and `globals.css`'s `@theme inline` comment) and no two of them quote it
- * identically.
  *
  * Numbers here come from `ui-craft`: control padding is about half the control
  * height, radius is related to height, spacing sits on named relationship
@@ -788,29 +779,10 @@
        centers exactly as before — `safe` only changes behaviour once the
        column already does not fit.
 
-       That last clause used to be false (George R7 P2-1, round 8, measured
-       with a real browser layout, not argued): `.recorder-canvas` carries
-       the `overflow-hidden` UTILITY class, and CSS Flexbox §4.5 gives a
-       flex item with `overflow` other than `visible` an AUTOMATIC MINIMUM
-       SIZE of 0 — not its content size. `.recorder-paste` and
-       `.recorder-cut` cannot shrink below their own content, but nothing
-       stopped `.recorder-canvas` shrinking all the way to 0 with default
-       `flex-shrink: 1`, so ordinary flex-shrink absorbed the ENTIRE deficit
-       into the canvas alone, silently, long before this column was ever
-       tall enough to overflow its container and make `safe center` do
-       anything. Measured: a 151px stage shrank the canvas wrapper to 55px
-       (its own `<canvas>` stayed a fixed 150px box, so it was CLIPPED, not
-       redrawn — the amplitude midline ended up 20px below the visible box)
-       while the group and the stage summed to exactly 151px each — no
-       overflow, so `safe center` above was a complete no-op. The activation
-       boundary this used to leave was the sum of `.recorder-paste`'s and
-       `.recorder-cut`'s own floors (96px in this file's current button
-       sizes) rather than the group's full ~246px intrinsic height — nearly
-       the entire intended range did nothing. `flex-shrink: 0` below, on all
-       three stage children, is what makes "the column already does not
-       fit" a real, reachable state instead of one flex-shrink quietly
-       prevented: with it, a short stage genuinely overflows and THIS rule's
-       `safe center` clips Cut, as this comment has claimed since round 3.
+       The canvas wrapper has hidden overflow and an automatic flex minimum
+       of zero, so default shrinking can clip its fixed-size canvas before the
+       group overflows. `flex-shrink: 0` on all three stage children preserves
+       their intrinsic height and lets `safe center` handle the overflow.
 
        The base rule below is plain `center`, NOT `center` then `safe
        center` in the same declaration block (George R4 P2-1's original fix,

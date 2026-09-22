@@ -19,13 +19,6 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * runs in the Node environment here and the project has no renderer, so a
  * regression in any of these transitions used to ship with the suite green.
  *
- * Written against mutations rather than by inspection: when this file was
- * written, each guard in `pending-take.ts` was removed or inverted in turn and
- * confirmed to fail at least one test below — the samples dropped on the
- * failure path, the retry minting a fresh `clipId`, the re-entry guard, both
- * `clipId` match guards, the attempt counter, the displacement guard, and the
- * orphan report.
- *
  * What is NOT covered here: everything the hook does with the results. The
  * `saveTake` write (clip + take in one transaction), the `deleteClip` of the
  * orphan, the `useState` slot surviving a re-render, and the recovery screen

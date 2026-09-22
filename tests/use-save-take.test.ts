@@ -47,9 +47,6 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * Node — so what these tests assert about it is whether it is ASKED for, which
  * is the decision (D3: only a Finished commit, only after it lands).
  *
- * Written against mutations, not by inspection. Each guard was broken in turn
- * and confirmed to fail a test here — see the PR body for which test died for
- * which mutation.
  */
 
 const samples = (length: number, value = 1000): Int16Array =>
