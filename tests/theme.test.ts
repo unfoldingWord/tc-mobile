@@ -118,9 +118,11 @@ describe("the light theme is reachable (#171)", () => {
    * The global menu's opening tag, matched by the props this file is actually
    * about — `open={menuOpen}` and a close handler of some kind — rather than by
    * one exact expression. The two cases below both need to FIND that tag; what
-   * they assert is what is inside it.
+   * they assert is what is inside it. Any further prop the tag grows (today
+   * `hamburger`, #608) is allowed through for the same reason the close
+   * handler is: neither is what this file is about.
    */
-  const GLOBAL_MENU_OPEN_TAG = String.raw`<Menu open=\{menuOpen\} onClose=\{[^}]*\}>`;
+  const GLOBAL_MENU_OPEN_TAG = String.raw`<Menu open=\{menuOpen\} onClose=\{[^}]*\}[^>]*>`;
 
   it("something in src actually writes data-theme", () => {
     // The literal grep from #171's evidence, which returned no hits.

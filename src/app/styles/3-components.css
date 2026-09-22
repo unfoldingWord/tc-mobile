@@ -76,7 +76,6 @@
     --c-gap-parts: var(--p-space-2);
     --c-gap-items: var(--p-space-4);
     --c-gap-blocks: var(--p-space-6);
-    --c-gap-sections: var(--p-space-8);
 
     /* Touch targets never go below 44px — with one standing exception, named
        here rather than left as a claim the tokens contradict (George R5 P3):
@@ -104,8 +103,6 @@
        read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
-    --c-tile-sm: 48px;
-    --c-tile-lg: 56px;
 
     /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
        two parts this file gained in #457. Their geometry is named here, not
@@ -865,13 +862,11 @@
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
-    /* A thin bar centred in a wide, finger-sized target. */
+    /* A thin bar centred in a wide, finger-sized target. Its inward focus
+       offset lives beside the unlayered default in globals.css, like
+       `.paste-marker`'s: a layered copy here never won (#635). */
     background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
       100% no-repeat;
-  }
-  .selection-handle:focus-visible {
-    outline: 2px solid var(--s-focus);
-    outline-offset: -2px;
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
@@ -910,18 +905,8 @@
     padding-bottom: var(--p-space-2);
     flex-shrink: 0;
   }
-  /* Sized to the 44px touch floor explicitly (#164/#362) rather than relying
-     on padding around the 26px glyph, which alone falls short of it.
-
-     States copied from `.control` rather than rendered through it (George
-     R3 P3): as an in-canvas overlay `.paste-marker` never needed hover/
-     active/focus states of its own — it is now a first-class sibling of Cut
-     in the stage column, and the file's own header says every interactive
-     part styles all of its states. `:focus-visible` uses an INWARD offset
-     like `.selection-handle` above, not `.control`'s outward one — this
-     button can sit at the very top edge of `.recorder-stage`'s
-     `overflow: hidden` box, and an outward ring would be the first thing
-     clipped. */
+  /* The paste action has a 44px touch target with hover and pressed states.
+     Its inward focus offset lives beside the unlayered default in globals.css. */
   .paste-marker {
     display: grid;
     place-items: center;
@@ -930,7 +915,7 @@
     color: var(--s-voice);
     background: var(--s-raised);
     border: 1px solid var(--s-voice);
-    border-radius: 999px;
+    border-radius: var(--p-radius-full);
     cursor: pointer;
     pointer-events: auto;
     transition:
@@ -942,10 +927,6 @@
   }
   .paste-marker:active {
     transform: translateY(1px);
-  }
-  .paste-marker:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: -2px;
   }
   .recorder-cut {
     padding-top: var(--p-space-2);
