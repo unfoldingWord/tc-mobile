@@ -97,6 +97,19 @@ let quiesced = false;
 const pauseReasons = new Set<string>();
 let requestedDuringPause = false;
 
+/**
+ * Ask for a sweep when the encoder RECOVERS.
+ *
+ * A module-scoped subscription with no unsubscribe: there is one sweep per page
+ * and it lives as long as the module does. Health only returns to `ok` on an
+ * encode that actually produced bytes, so this never fires on a hunch — but
+ * that encode may well be a Share's, and then the sweep goes back at a clip
+ * that wedged the worker earlier in this page. `stalledSegmentIds` puts it
+ * behind the healthy ones; when it is the ONLY clip owed, it is retried
+ * straight away. That is the intended trade — the encoder has just been
+ * demonstrated to work — and not the #290 case, which is about going back at a
+ * stall with nothing having changed.
+ */
 let lastEncoderHealth = encoderHealth();
 subscribeToEncoderHealth((health) => {
   const recovered = lastEncoderHealth === "failing" && health === "ok";
@@ -232,11 +245,13 @@ async function runSweeps(): Promise<void> {
 /**
  * Move the segment that stalled last time to the BACK of this pass.
  *
- * `listPcmFinishedSegments` promises no order and delivers a stable `getAll`
- * walk, so a clip that wedges the worker every time keeps the head of the queue
- * and — since a stall ends the run — nothing behind it is ever attempted
- * (George R1 P2-2). Pure, so the reordering is pinned by a test rather than by
- * reading the loop.
+ * `listPcmFinishedSegments` already orders by the DURABLE stall count (#404),
+ * which is what survives a reload. This is the same move for stalls this PAGE
+ * has seen and not yet written down — the count is stamped after the stall, and
+ * a clip that wedges the worker every time would otherwise keep the head of the
+ * queue within the run, where a stall ends the pass and nothing behind it is
+ * ever attempted (George R1 P2-2). Pure, so the reordering is pinned by a test
+ * rather than by reading the loop.
  */
 export function afterStalledSegment<
   T extends { readonly segmentId: SegmentId },

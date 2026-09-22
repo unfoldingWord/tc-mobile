@@ -45,9 +45,16 @@ export type TranscodeOutcome = "committed" | "already" | "stale";
 
 /**
  * Segments whose audio still owes a transcode: Finished, with an active take
- * whose clip is PCM. In no particular order — the caller encodes them one at a
- * time and each commit re-verifies its own segment, so a segment that stops
- * qualifying between this read and its commit is simply skipped there.
+ * whose clip is PCM.
+ *
+ * ORDERED by `transcodeStallCount` ascending, ties broken by the order the rows
+ * were read (#404): a clip that has wedged the encoder before goes behind the
+ * clips that have not, on this launch and every later one. Without it a poison
+ * clip at the head of a stable `getAll` walk starved every finished segment
+ * behind it — the in-page `stalledSegmentIds` set could not help, because a
+ * reload zeroes it. The caller still encodes them one at a time and each commit
+ * re-verifies its own segment, so a segment that stops qualifying between this
+ * read and its commit is simply skipped there.
  *
  * A read, not a snapshot: it runs three cheap `getAll`s rather than a walk per
  * segment, because on the first launch after the v4 upgrade EVERY finished

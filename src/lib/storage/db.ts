@@ -467,15 +467,16 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // shape an upgrade has. Guarded on `oldVersion < 6` like its siblings
         // so a fresh install creates it once and a v5 device gains it once.
         //
-        // ORDER IS LOAD-BEARING: this runs BEFORE the two backfills below, and
+        // ORDER IS LOAD-BEARING: this runs BEFORE every backfill below, and
         // therefore before the upgrade has awaited anything (George #2, round
         // 1). A `versionchange` transaction stays alive across awaited IDB
         // requests — idb's documented pattern, and what the backfills rely on —
         // but a STRUCTURE change after the handler has yielded is a different
         // thing, and some WebKit versions refuse it with `InvalidStateError`,
-        // aborting the whole upgrade. On a fresh install both backfills below
-        // open a cursor unconditionally, so a v6 create placed after them sits
-        // behind two awaits on every new phone — and iOS is the October target.
+        // aborting the whole upgrade. On a fresh install every backfill below
+        // opens a cursor unconditionally, so a v6 create placed after them sits
+        // behind those awaits on every new phone — and iOS is the October
+        // target. Keep it first as backfills are added; do not count them here.
         // The create depends on no awaited result, so keeping it up here costs
         // nothing and removes the question. Pinned by
         // `tests/db-migration.test.ts`, which fails the upgrade if a structure

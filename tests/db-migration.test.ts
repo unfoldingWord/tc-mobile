@@ -289,7 +289,7 @@ describe("v5 → v6 failure log (append-only, a new store)", () => {
 describe("no structure change after the upgrade has yielded (George #2, R1)", () => {
   /**
    * A `versionchange` transaction stays alive across awaited IDB requests, and
-   * the v4/v5 backfills depend on that. A STRUCTURE change after the handler has
+   * the backfills depend on that. A STRUCTURE change after the handler has
    * yielded is a different thing: some WebKit versions refuse it with
    * `InvalidStateError` and abort the whole upgrade, which would leave `getDb()`
    * rejecting and nothing able to record. `fake-indexeddb` permits it, so the
@@ -331,10 +331,10 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
   }
 
   it("opens on a FRESH install under an engine that refuses a late create", async () => {
-    // oldVersion 0 runs the v3 recreate and then BOTH backfills, each of which
+    // oldVersion 0 runs the v3 recreate and then every backfill, each of which
     // opens a cursor unconditionally even over an empty store — so this is the
-    // path where a v6 create placed after them sits behind two awaits, on every
-    // new phone.
+    // path where a v6 create placed after them sits behind those awaits, on
+    // every new phone.
     const restore = refuseStructureChangeAfterYield();
     try {
       const db = await getDb();
@@ -346,10 +346,11 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
   });
 
   it("opens on a v3 UPGRADE carrying rows, under the same refusal", async () => {
-    // The other entry that actually yields. A v5 → v6 upgrade runs ONLY the v6
-    // block — no backfill, so no cursor and no await — and would pass this
-    // whatever the order. A v3 device is the real case: both backfills run, over
-    // NON-EMPTY stores, so the upgrade genuinely yields before it finishes.
+    // The other entry that actually yields with the create still ahead of it.
+    // An upgrade that starts at or above the newest create runs backfills only,
+    // so it would pass this whatever the order. A v3 device is the real case:
+    // every backfill runs, over NON-EMPTY stores, so the upgrade genuinely
+    // yields — after the v6 create, which is what the ordering is about.
     const v3 = await openLegacyV3();
     await v3.put("chapters", {
       id: "ch1",
