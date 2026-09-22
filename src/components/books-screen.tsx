@@ -42,6 +42,7 @@ import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
+import { useRowNodes } from "@/hooks/use-row-nodes";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 /**
@@ -271,12 +272,10 @@ export function BooksScreen({
   // falls to the document and the first header stop takes over — on a chapter
   // that would be Back, one activation from leaving. Hand focus to the new row.
   const pendingFocus = useRef<string | null>(null);
-  const nodes = useRef(new Map<string, HTMLElement>());
-
-  const setNode = useCallback((id: string, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
+  // Registry + pending-scroll shared with SegmentsScreen (#160, L-15). The
+  // focus hand-off below stays here: its `inert` hold and its three-key
+  // dependency array are this screen's, and are argued in place.
+  const { setNode, nodeFor, scrollPending } = useRowNodes<string>();
 
   // ── System Back: this screen's overlays as layers (#452 PR3, #374) ────────
   //
@@ -484,11 +483,7 @@ export function BooksScreen({
   }, [layers]);
 
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
+    scrollPending(pendingScroll);
     const focusId = pendingFocus.current;
     // HOLD the hand-off while the delete confirm is up. The shelf is `inert`
     // then (see the wrapper below), and an element inside an inert subtree
@@ -512,7 +507,7 @@ export function BooksScreen({
       // the row — visible immediately, undone by one more tap, and it writes
       // nothing — so it is the safe landing spot even though Add-chapter is
       // the more useful one Tab further on.
-      nodes.current.get(focusId)?.querySelector<HTMLElement>("button")?.focus();
+      nodeFor(focusId)?.querySelector<HTMLElement>("button")?.focus();
       pendingFocus.current = null;
     }
     // Keyed on ALL THREE: `books` covers create/add-chapter and a successful
@@ -525,7 +520,7 @@ export function BooksScreen({
     // effect before the refs below were set and the focus would be lost for
     // good. Re-running on either close edge makes the order irrelevant; a run
     // with nothing pending is a no-op.
-  }, [books, deleteTargetId, newBookSeed]);
+  }, [books, deleteTargetId, newBookSeed, scrollPending, nodeFor]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {

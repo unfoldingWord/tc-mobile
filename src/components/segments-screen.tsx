@@ -31,6 +31,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useRowNodes } from "@/hooks/use-row-nodes";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -693,7 +694,9 @@ export const SegmentsScreen = forwardRef<
   // for `encoder` and for no error, which is `Notice`'s own default.
   const shareErrorMark = shareErrorGlyph(share.error);
 
-  const nodes = useRef(new Map<SegmentId, HTMLElement>());
+  // Registry + pending-scroll shared with BooksScreen (#160, L-15). The focus
+  // hand-off below stays here: this screen's is ungated and targets `.row-open`.
+  const { setNode, nodeFor, scrollPending } = useRowNodes<SegmentId>();
   const didInitialScroll = useRef(false);
   // What to scroll to once `rows` next includes it — a freshly appended
   // segment. A ref, not state: `addSegment` already re-renders us.
@@ -702,38 +705,25 @@ export const SegmentsScreen = forwardRef<
   // hand focus to the new row rather than let it fall to Back in the header.
   const pendingFocus = useRef<SegmentId | null>(null);
 
-  const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
-
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded
     // (F5). All finished, or an empty chapter, leaves the view at the top.
     if (loading || didInitialScroll.current) return;
     didInitialScroll.current = true;
     const target = firstNotFinished(rows);
-    if (target)
-      nodes.current.get(target.segmentId)?.scrollIntoView({ block: "nearest" });
-  }, [loading, rows]);
+    if (target) nodeFor(target.segmentId)?.scrollIntoView({ block: "nearest" });
+  }, [loading, rows, nodeFor]);
 
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
+    scrollPending(pendingScroll);
     const focusId = pendingFocus.current;
     if (focusId !== null) {
       // Target the row's open/record control explicitly (not DOM order) — the
       // right next move on a never-recorded row (George R3 P3).
-      nodes.current
-        .get(focusId)
-        ?.querySelector<HTMLElement>(".row-open")
-        ?.focus();
+      nodeFor(focusId)?.querySelector<HTMLElement>(".row-open")?.focus();
       pendingFocus.current = null;
     }
-  }, [rows]);
+  }, [rows, scrollPending, nodeFor]);
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
