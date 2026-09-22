@@ -509,6 +509,55 @@ artifact and publishes it by hand as a pre-release with that file attached.
 Sharing the artifact through a team drive (the previously documented path)
 still works when USB or a browser download is not the constraint.
 
+### Tester announcement template
+
+Use this template for the manually published release body and its tester-chat
+copy. It covers all three channels even though the attached asset is an APK.
+Fill the placeholders from the actual distributed builds; mark a channel as
+pending if it is not yet available. A green upload job is not evidence of
+on-device acceptance.
+
+```markdown
+This is the shared tC Mobile v<VERSION> tester announcement for Android,
+iPhone and browser. Android's APK is attached here; iPhone testers use
+TestFlight; browser testers use the staging link below.
+
+Source: <commit and promotion>. Changes since <last version handed to testers>.
+
+**Android — install/update:** Download app-release.apk below. <Confirmed
+signing compatibility and minimum Android version>. If uninstalling is
+necessary, share any recordings you need to keep first: uninstall deletes them.
+
+**iPhone — install/update:** Open TestFlight using your invitation and select
+<version/build>. <Availability or invitation instructions>.
+
+**Browser — open:** <staging URL>. Check the app's displayed build before testing.
+
+**With every report:** Include the app build, steps, expected result and what
+happened. Android: phone model, Android version and Android System WebView
+version. iPhone: model and iOS version. Browser: device, OS, browser/version,
+and whether opened in a tab or installed to the home screen.
+
+**Changes:** <Symptom, affected platforms and evidence limits for each change>.
+
+**What to test:**
+
+- <Platforms> — <action>. Look for: <observable expected result>.
+
+**Known limits:** <Unverified behavior and checks still owed per platform>.
+```
+
+Name a symptom rather than a phone in change notes, and label every test with
+its platforms. For the #556 text-selection fix, say: "Long-press text-selection
+popup: suppression added; symptom seen on iPhone, Android not yet checked."
+Ask iPhone and Android testers to try it; do not turn that request into a claim
+that either platform passed. Android system Back, the app's Back control and a
+browser's Back are different actions; name the one a check requires.
+
+Keep existing `android-release-vX.Y.Z` tags and release URLs unchanged so
+shared links and QR codes continue to work. A prefix for future all-platform
+announcements remains a DRI decision (#629).
+
 ### One-time setup
 
 1. **Create the release keystore** (§5 step 1) and store it in the team secret
