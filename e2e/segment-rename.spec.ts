@@ -69,3 +69,38 @@ test("a segment's label shows after its ordinal on the row and in the recorder, 
   await renameTo(page, "   ");
   await expect(rowHeading(page)).toHaveText("1");
 });
+
+/** The accessible name of whatever holds focus, or "BODY" when nothing does. */
+function focusedName(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el || el === document.body) return "BODY";
+    return el.getAttribute("aria-label") ?? el.tagName;
+  });
+}
+
+test("focus stays on a control when rename mode ends: Rename after Escape, the row's ≡ after a save", async ({
+  page,
+}) => {
+  await seedOneSegment(page);
+
+  await page
+    .getByRole("button", { name: "More actions for segment 1" })
+    .click();
+  await page.getByRole("button", { name: "Rename segment" }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Segment name" })
+  ).toBeFocused();
+  // Escape leaves rename mode, not the menu: the field unmounts, so focus must
+  // be put somewhere or it falls to <body> behind a modal.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "More" })).toBeVisible();
+  await expect.poll(() => focusedName(page)).toBe("Rename segment");
+
+  // A save closes the menu; focus returns to the control that opened it.
+  await page.getByRole("button", { name: "Rename segment" }).click();
+  await page.getByRole("textbox", { name: "Segment name" }).fill("verses 3–4");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "More" })).toHaveCount(0);
+  await expect.poll(() => focusedName(page)).toBe("More actions for segment 1");
+});

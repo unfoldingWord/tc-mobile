@@ -203,6 +203,35 @@ describe("segment row rename (#591)", () => {
     expect(dialog()?.textContent).toContain(strings.renameSegmentFailed);
   });
 
+  it("returns focus to Rename when Escape leaves rename mode", async () => {
+    await render(recorded);
+    await click(strings.segmentMenu(3));
+    await click(strings.renameSegment);
+    await act(async () => {
+      field()!.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+        })
+      );
+    });
+    expect(field()).toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      strings.renameSegment
+    );
+  });
+
+  it("returns focus to the row's ≡ once a save closes the menu", async () => {
+    await render({ ...recorded, label: "verse 3" });
+    await click(strings.segmentMenu(3));
+    await click(strings.renameSegment);
+    await click(strings.saveName);
+    expect(dialog()).toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      strings.segmentMenu(3)
+    );
+  });
+
   it("does not let a rename that settles late close a menu opened after it", async () => {
     let settle: (ok: boolean) => void = () => {};
     const onRename = vi.fn(

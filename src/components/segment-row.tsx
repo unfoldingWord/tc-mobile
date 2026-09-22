@@ -135,6 +135,14 @@ export function SegmentRow({
   // the translator has moved on cannot close, or mark as failed, a menu it no
   // longer belongs to — the chapter menu's session token, for the same reason.
   const menuSession = useRef(0);
+  // Where focus goes once leaving rename mode has committed. `Menu` places
+  // focus only on its open edge, so without this the unmounting field drops
+  // focus to <body>: behind a modal on Cancel, or on a page with nothing
+  // focused after a save. Set by the two exits, read by the layout effect
+  // below.
+  const pendingFocus = useRef<"rename" | "menu" | null>(null);
+  const renameControlRef = useRef<HTMLButtonElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   // The same fact as `menuOpen`, as a ref, for committed cleanup paths —
   // never read during render (`react-hooks/refs`).
   const menuOpenRef = useRef(false);
@@ -201,8 +209,12 @@ export function SegmentRow({
     const settle = (ok: boolean) => {
       if (menuSession.current !== session) return;
       setSavingLabel(false);
-      if (ok) closeMenu();
-      else setRenameFailed(true);
+      if (ok) {
+        // Back to the ≡ that opened the menu, so the next move starts from
+        // this row rather than from the top of the page.
+        pendingFocus.current = "menu";
+        closeMenu();
+      } else setRenameFailed(true);
     };
     // `onRename` is not expected to reject (the hook catches), but if it ever
     // does the field must not sit on "Saving…" forever: a rejection is a rename
@@ -215,9 +227,23 @@ export function SegmentRow({
   // Cancel / Escape: back to the action list. NameEdit makes this a no-op while
   // a write is in flight, so there is no settle left to orphan here.
   const onCancelRename = () => {
+    pendingFocus.current = "rename";
     setRenaming(false);
     setRenameFailed(false);
   };
+  // After the commit that brings the action list back (Cancel), or that closes
+  // the menu and lifts the list's `inert` (a save) — a node inside an inert
+  // subtree cannot take focus, which is why this waits for the commit.
+  useLayoutEffect(() => {
+    const target = pendingFocus.current;
+    if (target === "rename" && !renaming) {
+      pendingFocus.current = null;
+      renameControlRef.current?.focus();
+    } else if (target === "menu" && !menuOpen) {
+      pendingFocus.current = null;
+      menuButtonRef.current?.focus();
+    }
+  }, [renaming, menuOpen]);
 
   // The resting scrub position, [0,1]. While playing, the dot tracks the take's
   // elapsed instead; a hand stop rests it where it reached, so `position`
@@ -413,6 +439,7 @@ export function SegmentRow({
           from an empty row. The same Erase hook and confirm the recorder menu
           uses live in the screen, so both entry points erase one way. */}
       <Control
+        ref={menuButtonRef}
         icon="more"
         label={strings.segmentMenu(ordinal)}
         variant="quiet"
@@ -476,6 +503,7 @@ export function SegmentRow({
               </>
             )}
             <Control
+              ref={renameControlRef}
               icon="edit"
               label={strings.renameSegment}
               variant="quiet"
