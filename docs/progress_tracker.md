@@ -50,7 +50,7 @@ Applied, with the DRI's approval at each step:
 - **Eight drafts closed** — #191, #216, #217, #218, #235, #237, #257 (and #261, which its author's session closed on reading the triage two minutes ahead of us): each with a triage comment carrying the evidence, and every open finding and re-cut note copied to the linked issue (#163, #159, #161, #172, #233, #253, #246). Branches and author credit kept. Not one had a fresh reviewer round; four carried QA reviews from 2026-09-04 nobody had answered.
 - **The "no common ancestor" claim on #235 was false** and is corrected there: `git merge-base` gives `72a3b6f`, and `c3574cb` is on the branch. The decision (re-cut, not rebase) stands on the 12-of-13-file overlap, not on ancestry. The bot session that made the claim most likely ran on a shallow or single-branch clone.
 - **#588 (T1, schema v6 → v7) round 1** at `f6354d9`: Frank two P2s (the source-level test matches one of four `readRecorderState() === "paused"` sites; a run claim in a test docblock), George one P2 (AGENTS.md:353 and the runbook still describe #514 as open) and three P3s (stale comments). **All six confirmed against the tree**, none refuted; fixes are the author's; P3s fold into round 2 or batch into one issue.
-- **#501** (fastlane patch, feeds the iOS lane → process artifact): Frank APPROVE, no findings, static only. George was still running at EOD.
+- **#501** (fastlane patch, feeds the iOS lane → process artifact): **Frank APPROVE, George APPROVE, no findings at any severity** at `a2bd35a`; George traced every changed gem into the lane and found the only runtime consumer is `bundle exec fastlane ios beta`. Residual named on the PR: CI never runs fastlane, so the first TestFlight dispatch after merge is the real test. Review-clean; merge is the DRI's call.
 - **#600** (Jesse, T3): first round scheduled after a rebase; it conflicted within hours of opening.
 - Still open and owned: #542 (one round after the R2 reading, then merge), #471 (R1 log), #560 (**DRI pick on #554**, not a phone), #144 (post-training), Dependabot #503–#505 (held).
 
@@ -73,7 +73,7 @@ Applied, with the DRI's approval at each step:
 
 ### Next session (Docker) — in order
 
-1. **#501**: George's verdict and the round-1 triage; merge only on both lenses at `a2bd35a`.
+1. **#501** is review-clean at `a2bd35a`; merge it (DRI), then watch the next TestFlight dispatch.
 2. **#588 round 2** when the author pushes the four P2 fixes; both lenses again (T1).
 3. **DRI picks owed:** #560's #554 geometry; who re-cuts #172 and by when (or move it to v1.0.0 explicitly).
 4. **#374 native Back** — the training-platform bug with a code-read fix shape and nobody assigned. And #601 (+ #606 if the repro holds), #605, #593: all v1-required, all on the v0.2.9 APK, all with an Android volunteer waiting for instructions.
