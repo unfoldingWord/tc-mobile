@@ -11,6 +11,99 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-21 (late) — four review rounds across three PRs, a Windows push regression caught before it shipped, two stop-rule parks, and zero merges
+
+Coordinator session picking up the evening wave's in-flight lanes. The dev lead was away for the working part and returned at the end to park. **Nothing was merged**, and no merge authority was exercised — not because nothing was close, but because nothing reached both-lenses-clean.
+
+Entry state: seven PRs open, four of them the evening wave's (#559, #560, #561, #565, #566), plus #550 and #572. #560 and #561 were already parked.
+
+### Shipped to branches, none merged
+
+| PR   | Head at park | Rounds tonight | State                                                |
+| ---- | ------------ | -------------- | ---------------------------------------------------- |
+| #572 | `b5e0702`    | 2 and 3        | **PARKED** — Frank P2 open, fix identified           |
+| #566 | `42831cb`    | 3 and 4        | **PARKED** — stop rule fired on our own commit       |
+| #565 | `38ed483`    | 1              | **PARKED** — Frank APPROVE, George never delivered   |
+| #550 | `561808e`    | round-0 stamp  | Assessed; still zero reviewer rounds                 |
+| #559 | `1767a86`    | —              | Parked round 6; both lenses now agree the P2 is real |
+
+### #572 — the most valuable work of the session, and it is DRI-priority
+
+Decision 11 from the evening entry: _"#568 fixed before the freeze — every green until then is weaker evidence than it reads, including the promotion's."_ Two rounds landed.
+
+**Round 2, against Frank's P2.** The gate's loud half lived in one ordinary `it()` per artifact suite. Delete those two cases and every assertion in `dist-gate.test.ts` still passed while `REQUIRE_DIST_BUILD` with no build went back to skipping — **the gate this PR exists to build was defeatable by deleting a test.** Frank proposed a shared callable; that was taken but pushed further, because a shared callable still invoked from a deletable `it()` has the same hole. The throw now lives in `resolveDistGate` at **module scope**, so it fires during collection and the run exits non-zero regardless of which cases exist. The red half now reports `Test Files 2 failed / Tests no tests / EXIT=1` — there is no case left to delete.
+
+George then verified the mechanism independently through the installed runner rather than taking it on trust: `importFile` sits inside `collectTests`'s try, a throw sets `file.result.state = "fail"`, `TestModule.ok()` is false, exit code 1 — and a mid-file throw leaves no passing describes behind, because suite collection happens only after `importFile` returns. Worth recording as the deep-tree lens closing the one thing the diff's own evidence could not prove from outside.
+
+**Round 3, against George's P2 — a regression this PR would have shipped.** `test:dist` was `REQUIRE_DIST_BUILD=1 vitest run …`, a POSIX env prefix. npm's default script shell on Windows is `cmd.exe`, which rejects `NAME=value command`, and this repo has no `cross-env` and no `script-shell` override. `verify`, `.husky/pre-push` and ci.yml all call `test:dist`. **@deferredreward develops on Windows, and #189 already blocked every push from that machine once** (`docs/progress_tracker.md:2008-2010`) — this would have reproduced that class from a new direction, with Ubuntu CI staying green and the dist assertions never running on the machine that could not push. Fixed with `scripts/test-dist.mjs`, plain Node, no shell syntax, `result.status ?? 1` so a signal-killed child cannot exit 0.
+
+**Open at park (Frank round 3):** `.husky/pre-push` is three bare lines with no `set -e` and no `&&`. A failed `npm run build` over a stale `dist/` now lets `test:dist` pass and become the hook's exit status — **the push is allowed despite the failed build**, and this PR caused it by adding a passing command after `build`. One-line fix, deliberately not applied so the next round can prove it in both states.
+
+Shape is a **chain**, not siblings: deletable loud half → launcher portability → hook exit status, each a different layer of one gate, each found once. Worth another round.
+
+### #566 — parked at the cap, and the stop rule fired on our own commit
+
+Rounds 3 and 4 ran. Round 3 produced George P1 + 2×P2 + P3 and Frank P2; round 4 fixed all of them and Frank came back with a new P2: **the docblock edits made in the deletion round replaced stale run claims with new run claims.** `use-theme.ts:34` now said "No theme check has run on a device on any platform" — still a coverage claim in a docblock. Instance five of the class, written by the round sent to close it, with the commit message's own audit missing it.
+
+Decision 8 from the evening entry — _"a further new instance of the class parks the PR"_ — is broader than the round-local stop rule posted in the round-3 triage, and a standing DRI rule outranks a round-local one. **Parked rather than fixed.** Attempting instance six past a cap of 4 with no DRI available is the eleventh repair of a shape that has failed ten times.
+
+**The root cause, named rather than patched again.** Rounds 2 and 3 each found the rule contradicting another committed file: first `CONTRIBUTING.md` and the native README, then the README banner, §8, and a CSS comment's count. Those are **siblings** — the rule was written with cross-file carve-outs, so each round it vouched for one more file nobody had audited, and each round a reviewer found that file disagreeing. Round 4 deleted the carve-outs: the rule now states itself, binds prose you write or edit, and names **#575** for the sweep of existing violations. It certifies no file it has not read.
+
+**Six corrections round 4 did land, none disputed:**
+
+- `docs/native/README.md`'s banner no longer asserts "No Capacitor build has yet recorded audio on a device" — contradicted by the 2026-09-14 Galaxy A17 Record PASS
+- §8 no longer says the app has "only ever been validated in iOS Safari"; it now scopes that to the background and interruption paths, which keeps #58/#59/#245 correctly open
+- `CONTRIBUTING.md` no longer tells contributors to put an on-device result in a docblock
+- `src/app/globals.css`'s "twelve aliases" / "All twelve roles" deleted — the `@theme` block has **thirteen** (`--color-voice-text`, added for #457)
+- a tracker-entry exception added, so a lane cannot "correct" a dated append-only entry and destroy the reason a session's next step was what it was
+- the three false "Android has never run" claims corrected — grep returned exactly three sites, each independently fixable, so none qualified for deferral under the rule's own clause
+
+**Residual: two deletions**, spelled out on the PR. Neither needs a decision.
+
+### #565 — one lens, and the harness is why
+
+Frank APPROVE, clean, first round any reviewer had run on it. George was attempted **three times and never delivered a verdict**, which cost the session its cheapest merge.
+
+### Two harness defects, both of which read as success
+
+1. **A watch cannot `pgrep` for a pattern its own command line contains.** `pgrep -f "grok --prompt-file …"` inside a `bash -c` whose text includes that string matches itself: the wait either never exits, or reports a process finished when it has not. This is what let two George runs proceed concurrently on #565, both `tee`-ing into one report file and interleaving it into garbage.
+2. **`scripts/review/george.sh` `tee`s its report at start**, so the report file existing means the run _began_. Any wait keyed on that file is keyed on the wrong event — the same "empty result read as a result" class as #522/#524/#548.
+
+Both were worked around (explicit-PID kills, never `pkill -f grok`; waits re-armed on the real grok PID), neither is fixed.
+
+A third, found by a reviewer earlier in the wave and worth keeping visible: **the evening wave's lanes shared worktrees and `HEAD` raced under two reviewer runs**, so Frank read a sibling branch's tree on #566 and base-tree content on #572. Both were caught by `assert_tree_unchanged` and discarded rather than mistaken for passes.
+
+### Filed
+
+**#575** — sweep the tree for run-describing prose in docblocks, CSS comments and test names. Scoped deliberately against #571 (AGENTS.md's own Testing bullets, whose premise round 4's narrowing dissolves) and #525 (the multi-site "reads CSS at all" quotation). Carries the two `pending-take.test.ts` sites and the fix shape; states plainly that no sweep has been run, so the true count is unknown and is not guessed at.
+
+### Learnings
+
+1. **A remediation round is not exempt from the class it is closing.** #566 round 4 called itself a deletion round and was a rewording round at two of seven sites. The commit message's own overclaim audit missed both. This is now three sessions in a row where that has happened, which makes it a property of the work rather than an accident.
+2. **Put the loudness where it cannot be deleted.** The difference between #572's round-1 and round-2 gate is not strength of assertion — it is that a module-scope throw has no test case to remove. When a gate's failure path lives in a test, the mutation that defeats it is "delete the test", and that mutation is invisible to every source-level assertion around it.
+3. **A completion signal must be the thing that completes.** Both harness defects above are the same error: watching a file that is created at start, and watching a pattern that matches the watcher. Neither is exotic; both produced a confident "done" while the work continued.
+4. **A closing keyword needs adjacency, in both directions.** "Closes part of #197" on #550 does **not** close #197 — `closingIssuesReferences` is empty — because "part of" breaks the keyword-number adjacency. That is the same mechanism as #470's "does not close #108", which _did_ close it. The rule is adjacency, not sentiment, and it should be checked mechanically either way.
+5. **A standing rule outranks a round-local one.** The round-3 triage on #566 posted a stop rule scoped to "the rule contradicts another committed file". Frank's round-4 finding was a different shape and would have slipped that rule — but decision 8's standing "a further new instance of the class" covered it. Worth preferring the broader recorded rule when the two disagree.
+
+### Held for the DRI
+
+- **#559's round-6 pick** — three options on the PR. Both lenses now independently confirm the P2; George's Probe C broke the feature on a real build with the suite green. Shape is siblings, and the recorded "deletion only" decision on this branch argues against a third widening of the matcher.
+- **#566's park** — three options on the PR, with a recommendation to split: keep the six landed corrections, revert the two docblocks, send them to #575.
+- **#572's one-line `set -e`**, and whether its chain shape earns a round past the cap.
+- **#565 needs a George run**, not an exemption (decision 6). An earlier hand-back claimed an exemption that has no record on the PR.
+- **#550** has had zero review rounds since it was opened, and touches `AGENTS.md` — whichever of it and #566 merges second needs a rebase.
+- Unchanged from the morning: the v0.2.7 field report, the APK artifact expiring **2026-10-05** during training week, #422's stale figure, and the held Dependabot majors.
+
+### Next session, in order
+
+1. **The three picks above**, which unblock #559, #566 and #572 in one sitting.
+2. **#572's `set -e`**, red-first, then both lenses — it is the pre-freeze item.
+3. **George on #565**, then it is clean and mergeable.
+4. **#550's first review round.**
+5. **#575**, which also frees #566's two docblocks.
+
+---
+
 ## 2026-09-21 (evening) — the device pass opened and refuted the audio hypothesis, five ultracode waves produced four PRs and zero merges, and one defect class explains why
 
 Coordinator session, DRI present throughout for picks. Standing authority **merge on clean and green** — both reviewers at the current head plus green CI, lane PRs only — granted this morning and **not exercised once tonight**, because nothing earned it.
