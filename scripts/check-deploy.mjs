@@ -54,9 +54,9 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Exported (round-2 George P3-4): `package.json`'s `check:deploy:prod` script
 // and this file's `remoteRefForOrigin` used to be two unshared strings — a
@@ -457,11 +457,28 @@ export function compareDeployed(deployed, expected) {
  * character) never matches and `main()` silently never runs — a safety gate
  * that exits 0 having checked nothing (round-1 Frank F1). `pathToFileURL`
  * applies the same encoding Node used to produce `import.meta.url`, so the
- * two sides compare like for like. Exported for tests.
+ * two sides compare like for like. Both sides are also resolved through
+ * `realpathSync`: Node resolves the entry module's `import.meta.url` through
+ * symlinks, `process.argv[1]` is the path as typed, so a checkout or tmpdir
+ * reached through a symlink (macOS's `/var` is one, to `/private/var`) would
+ * otherwise never match — the same silent exit 0. Exported for tests.
  */
 export function isMainEntry(moduleUrl, argvPath) {
   if (!argvPath) return false;
-  return moduleUrl === pathToFileURL(argvPath).href;
+  return (
+    canonicalFileUrl(fileURLToPath(moduleUrl)) === canonicalFileUrl(argvPath)
+  );
+}
+
+function canonicalFileUrl(fsPath) {
+  let resolved = fsPath;
+  try {
+    resolved = realpathSync(fsPath);
+  } catch {
+    // A path that does not exist cannot be the running module; comparing it
+    // as given keeps the answer "not the entry point" instead of throwing.
+  }
+  return pathToFileURL(resolved).href;
 }
 
 /**
