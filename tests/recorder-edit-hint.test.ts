@@ -126,8 +126,7 @@ for (const [state, reason] of [
       container.querySelectorAll(".recorder-toolbar .control-hint")
     ).toHaveLength(0);
     await act(async () => edit!.click());
-    expect(
-      container.querySelector('[aria-label="Selection start"]')
-    ).toBeNull();
+    expect(edit!.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector(".recorder-toolbar.pair")).not.toBeNull();
   });
 }
