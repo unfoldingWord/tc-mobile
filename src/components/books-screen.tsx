@@ -720,8 +720,9 @@ export function BooksScreen({
   // row's ≡ one tap from stacking a second `aria-modal` panel.
   //
   // `nextChapterNumber` is the same pure function `addChapter`'s own write
-  // transaction calls, over the same numbers, so the name the field offers is
-  // the ordinal the write then derives.
+  // transaction calls, so the name the field offers is the ordinal the write
+  // then derives as long as this shelf is current — `onConfirmNewChapter`
+  // says what happens when another copy of the app has moved it.
   const onNewChapter = useCallback(
     (bookId: BookId) => {
       const card = books.find((b) => b.bookId === bookId);
