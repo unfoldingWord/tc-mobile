@@ -287,15 +287,10 @@ test("(d) a rapid double Back from the recorder issues exactly one history.back(
 /**
  * ── #452 PR3: Books' overlays are Back layers (#374) ──────────────────────
  *
- * Books is the app's FLOOR: it pushes no entry of its own, so before this PR a
- * Back on the shelf had nothing to consume and the document simply left. That
- * was measured, not assumed, on the pre-PR3 build: with the hamburger menu
- * open, `history.length` was 2 (`about:blank` + the app), `history.state` was
- * `{tc:true,index:0}` — the app's own top entry, with no entry of the app's
- * BELOW it — and `page.goBack()` navigated the document to `about:blank` with
- * NO `popstate` fired. So registering a Layer alone could not have helped: the
- * layer stack is consulted from the `popstate` handler, and there was no
- * `popstate`.
+ * Books is the app's FLOOR. With no protective entry, Back can navigate away
+ * from the document instead of producing an in-app popstate. Registering a
+ * layer alone cannot intercept that navigation: layer routing runs from the
+ * popstate handler.
  *
  * Hence the floor entry (Amendment G, `lib/nav/layer-stack.ts`'s
  * `floorEntryForLayerChange`): once the FLOOR screen's layer stack goes

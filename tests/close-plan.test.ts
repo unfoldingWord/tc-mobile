@@ -32,10 +32,6 @@ import {
  * anything else committed. Two of those interactions are the whole reason the
  * plan exists (see "a superseded capture" below).
  *
- * Written against mutations, not by inspection: each guard in `close-plan.ts`
- * was inverted or removed in turn and confirmed to fail at least one test here.
- * The mutation table is in the PR body for #180.
- *
  * NOT covered here, and nothing below should be read as covering it: the
  * component wiring that calls these functions. `recorder.tsx` needs a renderer,
  * which this repo does not have, so which effect each action actually runs is

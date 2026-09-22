@@ -7,12 +7,8 @@ import { describe, expect, it } from "vitest";
  * The AA gate for the roles that paint SMALL TEXT (#164 R-9, and the contrast
  * caveat #171 asked to land with the light theme).
  *
- * Why a gate and not a one-time fix: the ratios in #164 were computed by hand,
- * once, and nothing in the tree re-derived them — AGENTS.md says outright that
- * "nothing in this repo reads CSS at all", so a later token nudge in layer 1 or
- * layer 2 could put a text role back under AA with every check green. This
- * reads the SOURCE token values and recomputes the ratios, so the next nudge
- * fails here.
+ * This reads source token values and recomputes contrast ratios so changes to
+ * layer 1 or layer 2 cannot silently put a small-text role below AA.
  *
  * What it does NOT claim: nothing here is measured on a screen. WCAG's formula
  * over the declared sRGB values is what this computes, exactly as #164's own

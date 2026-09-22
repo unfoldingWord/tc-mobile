@@ -197,9 +197,8 @@ describe("overlayBlocksClose", () => {
 
 describe("overlayDismissal", () => {
   it("does NOT dismiss the confirm while an erase is in flight (Frank R4-1)", () => {
-    // The load-bearing R4 row: clearing `confirmOpen` mid-erase un-inerts the
-    // sheet and exposes Record, whose new capture the erase completion discards.
-    // While erasing, the confirm is left alone — the erase tears itself down.
+    // The erase owns its confirmation until completion. Independently,
+    // `erasing` keeps the overlay gate up: header inert always, sheet at idle.
     expect(overlayDismissal(false, true, true)).toEqual({
       closeMenu: false,
       closeConfirm: false,
