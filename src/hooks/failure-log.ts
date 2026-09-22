@@ -8,7 +8,8 @@ import {
   readFailures,
 } from "@/lib/storage/failures";
 import { reportFailure, subscribeToFailures } from "./report-failure";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import { FAILURE_LOG_LIMIT } from "@/lib/storage/failures";
+import type { StoredFailure } from "@/types/failure";
 
 /**
  * The durable end of the failure funnel (#205), and the seam the UI reads it

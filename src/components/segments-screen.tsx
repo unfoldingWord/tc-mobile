@@ -36,7 +36,7 @@ import { useScreenLayers } from "@/hooks/use-screen-layers";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { firstNotFinished } from "@/types/view";
+import { firstNotFinished } from "@/lib/view/segment-rows";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer

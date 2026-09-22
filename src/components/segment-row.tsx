@@ -12,7 +12,7 @@ import { Menu } from "./menu";
 import { strings } from "./strings";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
-import { segmentRowState } from "@/types/view";
+import { segmentRowState } from "@/lib/view/segment-rows";
 import type { SegmentRow as SegmentRowModel } from "@/types/view";
 
 interface SegmentRowProps {

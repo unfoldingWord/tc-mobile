@@ -12,7 +12,7 @@ import { computePeaks } from "@/lib/audio/peaks";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
-import { ROW_PEAK_BUCKETS } from "@/types/view";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 
 /**
  * Transcode on Finished (B8, D3) — the SWEEP, in Node (#181).

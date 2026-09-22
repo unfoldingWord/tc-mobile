@@ -36,7 +36,15 @@
  */
 
 import { getDb } from "./db";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import type { StoredFailure } from "@/types/failure";
+
+/**
+ * How many entries the durable log keeps. Oldest are dropped past this.
+ *
+ * Declared beside the append that enforces it, rather than in `types/`, so the
+ * cap and the prune cannot drift apart and `types/` stays erasable (#160, L-17).
+ */
+export const FAILURE_LOG_LIMIT = 50;
 
 /**
  * Append one entry, then drop the oldest rows until the log is within its

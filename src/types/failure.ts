@@ -7,10 +7,11 @@
  * refuses several of those outright while others would drag megabytes into the
  * log. So the sink renders the cause to text at the boundary and stores THIS,
  * which is plain data by construction.
+ *
+ * Shapes only — the ring's cap, `FAILURE_LOG_LIMIT`, moved to
+ * `lib/storage/failures.ts`, which is the transaction that enforces it
+ * (#160, L-17).
  */
-
-/** How many entries the durable log keeps. Oldest are dropped past this. */
-export const FAILURE_LOG_LIMIT = 50;
 
 /**
  * One durable failure entry.
