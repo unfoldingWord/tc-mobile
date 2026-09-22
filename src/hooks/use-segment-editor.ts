@@ -19,11 +19,8 @@ import {
   type EditLog,
   type EditOp,
 } from "@/lib/audio/edit-log";
-import { computePeaks } from "@/lib/audio/peaks";
+import { computePeaks, EDITOR_PEAK_BUCKETS } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
-
-/** Waveform resolution, matched to `useRecorderSegment` so the redraw is stable. */
-const PEAK_BUCKETS = 400;
 
 const EMPTY = new Int16Array(0);
 
@@ -134,7 +131,8 @@ export function useSegmentEditor(
   const { working, log } = hist;
 
   const peaks = useMemo(
-    () => (working.length > 0 ? computePeaks(working, PEAK_BUCKETS) : null),
+    () =>
+      working.length > 0 ? computePeaks(working, EDITOR_PEAK_BUCKETS) : null,
     [working]
   );
 

@@ -67,7 +67,7 @@ import { auditionPlan } from "@/lib/audio/audition";
 import { mergeTake } from "@/lib/audio/edit";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
-import { computePeaks } from "@/lib/audio/peaks";
+import { computePeaks, EDITOR_PEAK_BUCKETS } from "@/lib/audio/peaks";
 import {
   effectivePan,
   panForZoom,
@@ -91,9 +91,6 @@ import type { SegmentId } from "@/types/domain";
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
 const ZOOM_QUARTER = 4;
-
-/** Peak resolution for the paused-take preview (#101), matched to the editor's. */
-const PREVIEW_PEAK_BUCKETS = 400;
 
 interface RecorderProps {
   segmentId: SegmentId;
@@ -1406,7 +1403,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           );
           const peaks =
             buffer.length > 0
-              ? computePeaks(buffer, PREVIEW_PEAK_BUCKETS)
+              ? computePeaks(buffer, EDITOR_PEAK_BUCKETS)
               : null;
           // Re-check after the synchronous splice/peaks, which are not instant on a
           // long take: a transport tap can land in that window too.

@@ -40,10 +40,15 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  */
 export function App() {
   const [chapterId, setChapterId] = useState<ChapterId | null>(null);
-  const [recorder, setRecorder] = useState<{
-    segmentId: SegmentId;
-    ordinal: number;
-  } | null>(null);
+  // Which segment the sheet is open over, or null when it is closed. Just the
+  // id: this used to carry the ordinal too, set from the same argument as
+  // `recordingOrdinal` below and read by nobody (#160, L-11). The two are not
+  // interchangeable and collapsing the wrong one would have been a bug — this
+  // slot is cleared the moment the sheet closes, which is exactly when the
+  // recovery screen needs the ordinal — so the unread copy is the one that goes.
+  const [recorderSegmentId, setRecorderSegmentId] = useState<SegmentId | null>(
+    null
+  );
 
   const segmentsRef = useRef<SegmentsScreenHandle>(null);
   // System-Back handling (#168) lives in the `useNavStack` adapter below:
@@ -118,10 +123,10 @@ export function App() {
     () =>
       holdsUnsavedAudio({
         pendingTake,
-        recorderOpen: recorder !== null,
+        recorderOpen: recorderSegmentId !== null,
         clipboard,
       }),
-    [pendingTake, recorder, clipboard]
+    [pendingTake, recorderSegmentId, clipboard]
   );
   const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
 
@@ -140,7 +145,10 @@ export function App() {
   // panel up and runs `backToBooks`, which clears the slot.
   const databasePanel =
     databaseStatus === "ok" ||
-    panelWouldLoseAudio({ pendingTake, recorderOpen: recorder !== null })
+    panelWouldLoseAudio({
+      pendingTake,
+      recorderOpen: recorderSegmentId !== null,
+    })
       ? null
       : databaseStatus;
 
@@ -181,7 +189,7 @@ export function App() {
     (id: ChapterId) => {
       leave();
       setClipboard(null); // chapter-scoped (G3)
-      setRecorder(null);
+      setRecorderSegmentId(null);
       setChapterId(id);
     },
     [leave, setClipboard]
@@ -190,7 +198,7 @@ export function App() {
   const backToBooks = useCallback(() => {
     leave();
     setClipboard(null); // chapter-scoped (G3)
-    setRecorder(null);
+    setRecorderSegmentId(null);
     setChapterId(null);
   }, [leave, setClipboard]);
 
@@ -214,7 +222,7 @@ export function App() {
       // Priming it here spares the common transient case that failed open.
       primeAudioContext();
       setRecordingOrdinal(ordinal);
-      setRecorder({ segmentId, ordinal });
+      setRecorderSegmentId(segmentId);
     },
     [leave, primeAudioContext]
   );
@@ -227,7 +235,7 @@ export function App() {
       // flag toggled — so a look-and-close does not pay for peak recomputation.
       leave();
       if (dirty) segmentsRef.current?.reload();
-      setRecorder(null);
+      setRecorderSegmentId(null);
     },
     [leave]
   );
@@ -241,7 +249,7 @@ export function App() {
     commitCloseRecorder,
   } = useNavStack({
     hasChapter: chapterId !== null,
-    recorderOpen: recorder !== null,
+    recorderOpen: recorderSegmentId !== null,
     recovering,
     databasePanel: databasePanel !== null,
     getRecorderHandle: () => recorderRef.current,
@@ -311,7 +319,7 @@ export function App() {
           take with no recovery screen (G8). `display: contents` (the `contents`
           utility) keeps this wrapper layout-transparent; inertness still
           propagates to its flat-tree descendants. */}
-      <div className="contents" inert={recorder !== null || undefined}>
+      <div className="contents" inert={recorderSegmentId !== null || undefined}>
         {chapterId === null ? (
           /* Both screens' overlays register as system-Back layers (Books #452
              PR3, Segments PR4; #374), so a Back over a menu, a dialog or a
@@ -336,16 +344,16 @@ export function App() {
         )}
       </div>
 
-      {recorder && (
+      {recorderSegmentId !== null && (
         // Keyed on the segment: opening the sheet on a different segment (via a
         // list Record that was reachable before `inert`, or any future path)
         // must REMOUNT, not reuse the prior segment's loaded `view.samples` —
         // splicing those into the new segment's save would write one segment's
         // audio into another (G8).
         <Recorder
-          key={recorder.segmentId}
+          key={recorderSegmentId}
           ref={recorderRef}
-          segmentId={recorder.segmentId}
+          segmentId={recorderSegmentId}
           audio={audio}
           saveRecording={saveRecording}
           saveEditedSegment={saveEditedSegment}

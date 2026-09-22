@@ -19,8 +19,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: true,
-  peaks: null,
-  lengthSamples: original.length,
   samples: original,
 };
 vi.mock("@/hooks/use-recorder-segment", () => ({
