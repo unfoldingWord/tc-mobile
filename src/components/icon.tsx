@@ -208,9 +208,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
   // who cannot read the labels could not tell one ≡ from another (#589).
   more: (
     <>
-      <circle cx="11" cy="6" r="1.7" fill="currentColor" />
-      <circle cx="11" cy="11" r="1.7" fill="currentColor" />
-      <circle cx="11" cy="16" r="1.7" fill="currentColor" />
+      <circle cx="11" cy="6" r="2" fill="currentColor" />
+      <circle cx="11" cy="11" r="2" fill="currentColor" />
+      <circle cx="11" cy="16" r="2" fill="currentColor" />
     </>
   ),
   // Edit: a pencil over its stroke. The row menu's "Edit" entry, which reopens
