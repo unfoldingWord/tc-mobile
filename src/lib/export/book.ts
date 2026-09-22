@@ -43,7 +43,7 @@ import {
 import { getClipMeta } from "@/lib/storage/clips";
 import { filenameSafe } from "@/lib/utils";
 import type { AudioCodec } from "@/types/audio";
-import type { BookId, Chapter } from "@/types/domain";
+import type { Book, BookId, Chapter } from "@/types/domain";
 import { Zip, ZipPassThrough } from "fflate";
 
 /**
@@ -417,6 +417,13 @@ function folderStem(label: string, position: number): string {
 }
 
 /**
+ * What a library export hands its naming callbacks about a book: the
+ * facilitator's name, or `null` with the placeholder slot to render (#169).
+ * The words stay the caller's — this layer holds no copy.
+ */
+export type BookLabel = Pick<Book, "name" | "number">;
+
+/**
  * Share your work (#987): every book in one zip, one folder per book, each
  * folder holding exactly the entries Share Book would put in that book's own
  * zip. Books go in shelf order (`listBooks`). Returns `null` for an empty
@@ -424,7 +431,8 @@ function folderStem(label: string, position: number): string {
  * part-way — a clean no-op for the caller, not an error.
  *
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
- * the book's display name (and, for an MP3, the chapter's number and name):
+ * the book's label — its own name, or `null` and the placeholder slot the
+ * caller renders (#169) — and, for an MP3, the chapter's number and name:
  * copy is injected, as for `exportBookZip`. A folder name is disambiguated
  * against its siblings with ` (2)`, ` (3)`, … so two books with one name keep
  * both books' audio. Names that differ only in case
@@ -440,9 +448,9 @@ function folderStem(label: string, position: number): string {
  * share.
  */
 export async function exportLibraryZip(
-  nameBook: (bookName: string) => string,
+  nameBook: (book: BookLabel) => string,
   nameChapter: (
-    bookName: string,
+    book: BookLabel,
     chapterNumber: number,
     chapterName: string | null
   ) => string,
@@ -464,7 +472,7 @@ export async function exportLibraryZip(
     );
     const folder = uniqueName(
       takenFolders,
-      folderStem(nameBook(book.name), index + 1),
+      folderStem(nameBook(book), index + 1),
       "",
       folderKey
     );
@@ -472,7 +480,7 @@ export async function exportLibraryZip(
       zip,
       chapters,
       `${folder}/`,
-      (n, name) => nameChapter(book.name, n, name),
+      (n, name) => nameChapter(book, n, name),
       codec,
       shouldContinue
     );

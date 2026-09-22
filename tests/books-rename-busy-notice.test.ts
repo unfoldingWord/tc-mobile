@@ -23,11 +23,14 @@ import type { BookCard } from "@/types/view";
 
 const bookId = "book-0000-4000-8000-000000000001" as BookId;
 const bookName = "Mark";
-const shelf = (): BookCard[] => [{ bookId, name: bookName, chapters: [] }];
+const shelf = (): BookCard[] => [
+  { bookId, name: bookName, number: 1, chapters: [] },
+];
 
 const fakeBook = (): Book => ({
   id: bookId,
   name: bookName,
+  number: 1,
   languageCode: null,
   chapterIds: [],
   createdAt: 0,
@@ -54,7 +57,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: shelf(),
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: mocks.error,

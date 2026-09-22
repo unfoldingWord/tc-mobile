@@ -152,7 +152,7 @@ export function BooksScreen({
 }: BooksScreenProps) {
   const {
     books,
-    newBookPlaceholder,
+    newBookNumber,
     loading,
     loaded,
     error,
@@ -259,8 +259,9 @@ export function BooksScreen({
     reload();
   }, [reload]);
   // The New Book dialog (#314). `null` is closed; a string is open, and IS the
-  // value the name field is seeded with — the "Book NNN" placeholder the hook
-  // derives from the loaded shelf. Held as the seed rather than a boolean so the
+  // value the name field is seeded with — the placeholder rendered from the
+  // slot the hook derives off the loaded shelf. Held as the seed rather than a
+  // boolean so the
   // field's starting text and the dialog's open state cannot disagree, so each
   // open remounts `NameEdit` with a fresh seed (Menu unmounts its children when
   // closed, which is what resets a half-typed name), and so Confirm can tell an
@@ -860,13 +861,16 @@ export function BooksScreen({
     creatingBook.current = false;
     setCreatingBookBusy(false);
     setNewBookError(null); // a fresh dialog starts with nothing to report
-    setNewBookSeed(newBookPlaceholder);
+    // The words, rendered here and only here: the hook hands over the slot
+    // (#169), and the seed is what the field shows AND what Confirm compares a
+    // typed name against, so both halves read the same rendering.
+    setNewBookSeed(strings.bookHeading(null, newBookNumber));
     // Registered in the SAME handler that opens it (invariant 6), and after
     // the state above for the same reason that ordering is documented as
     // unobservable in `use-nav-stack.ts`'s `openChapter`: the layer is on the
     // stack before this gesture returns either way.
     layers.open("books:new-book");
-  }, [layers, newBookPlaceholder]);
+  }, [layers, newBookNumber]);
 
   // Cancel, Escape, the panel's Close, a scrim tap: all the same outcome —
   // nothing is created, and focus goes back where it came from. See
@@ -901,11 +905,13 @@ export function BooksScreen({
       setCreatingBookBusy(true);
       setNewBookError(null);
       // An untouched field means "the placeholder is fine", so send "" and let
-      // the store derive the name INSIDE its write transaction — the one-tap
-      // create the corner + used to be, race-safety and all. Sending the
-      // rendered string instead would take the supplied-name path, which is
-      // deliberately never made unique: two documents open on the same shelf
-      // both render "Book 001" and would both write it (George R1 P2-3).
+      // the store write the book UNNAMED, with the slot derived inside its own
+      // write transaction — the one-tap create the corner + used to be,
+      // race-safety and all. Sending the rendered string instead would take the
+      // supplied-name path, which is deliberately never made unique: two
+      // documents open on the same shelf both render the same placeholder and
+      // would both write it as a name (George R1 P2-3) — and it would freeze
+      // this locale's words onto the row, which is what #169 removed.
       //
       // Compared TRIMMED, because the caret lands in the pre-filled text and a
       // stray trailing space would otherwise slip "Book 001 " down the supplied
@@ -1086,6 +1092,13 @@ export function BooksScreen({
     : null;
   const shareMenuCoverHex =
     shareMenuCoverKey === null ? "" : coverColourHex(shareMenuCoverKey);
+  // The words for the book this menu is about: its own name, or the placeholder
+  // its slot renders (#169). One resolution for the rename seed and the share
+  // filename, so the label the translator reads and the file they receive are
+  // the same. `""` when no book is current — every use is guarded on one.
+  const shareMenuBookName = shareMenuBook
+    ? strings.bookHeading(shareMenuBook.name, shareMenuBook.number)
+    : "";
   // The teardown the vanish effect below runs, behind a latest-ref ON PURPOSE.
   // It has to reset the share, and `useBookShare()` returns a fresh object
   // literal every render (`use-book-share.ts`) — putting that in an effect's
@@ -1210,6 +1223,16 @@ export function BooksScreen({
       // in flight" synchronously, for `Layer.busy()`'s own sync read (see its
       // declaration above) — reusing it costs no new state.
       if (savingBookNameRef.current) return;
+      // An untouched field means "leave the label as it is", so send "" and let
+      // the store keep what it holds — `onConfirmNewBook`'s mapping, compared
+      // trimmed for the same reason (the caret lands in the pre-filled text).
+      //
+      // It carries more weight here. An unnamed book's field is pre-filled with
+      // the RENDERED placeholder, so passing that straight through would write
+      // this locale's words back onto the row #169 just took them off — and the
+      // book would be named "Book 001" in English forever, by a Confirm the
+      // translator meant as "no change".
+      const typed = name.trim() === shareMenuBookName ? "" : name;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu, reopened another book's menu, or armed a share
       // — all of which advance the token — so close ONLY if we are still the
@@ -1220,7 +1243,7 @@ export function BooksScreen({
       // what makes the menu layer's `busy()` honest for a system Back landing
       // in the same task as this tap (invariant 4).
       setSavingName(true);
-      void renameBook(shareMenuBookId, name)
+      void renameBook(shareMenuBookId, typed)
         .then((book) => {
           if (book && bookMenuSession.current === session) onCloseShareMenu();
         })
@@ -1231,7 +1254,13 @@ export function BooksScreen({
           if (bookMenuSession.current === session) setSavingName(false);
         });
     },
-    [renameBook, setSavingName, shareMenuBookId, onCloseShareMenu]
+    [
+      renameBook,
+      setSavingName,
+      shareMenuBookId,
+      shareMenuBookName,
+      onCloseShareMenu,
+    ]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingBookName` like every other exit from this
@@ -1319,13 +1348,20 @@ export function BooksScreen({
     void bookShare
       .prepare(
         shareMenuBook.bookId,
-        strings.shareBookFilename(shareMenuBook.name),
-        (n, name) => strings.shareFilename(shareMenuBook.name, n, name)
+        strings.shareBookFilename(shareMenuBookName),
+        (n, name) => strings.shareFilename(shareMenuBookName, n, name)
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
       });
-  }, [focusRestore, bookShare, setSavingName, shareMenuBook, onCloseShareMenu]);
+  }, [
+    focusRestore,
+    bookShare,
+    setSavingName,
+    shareMenuBook,
+    shareMenuBookName,
+    onCloseShareMenu,
+  ]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).
@@ -2198,7 +2234,7 @@ export function BooksScreen({
             Delete is only reachable from the action list. */}
         {o4DeleteArmed && shareMenuBook && (
           <O4BookDeleteAsk
-            name={shareMenuBook.name}
+            name={shareMenuBookName}
             coverHex={shareMenuCoverHex}
             busy={deleting}
             keepRef={keepDeleteRef}
@@ -2211,7 +2247,7 @@ export function BooksScreen({
             {/* Rename the book in place (#264). The store seeds the field with
                 the current name so a small fix is an edit, not a retype. */}
             <NameEdit
-              initialValue={shareMenuBook.name}
+              initialValue={shareMenuBookName}
               fieldLabel={strings.bookNameField}
               onSave={onSaveBookName}
               onCancel={onCancelRenameBook}
@@ -2260,10 +2296,7 @@ export function BooksScreen({
           // tiles for #957's picker in the same sheet; a choice writes and
           // comes back here.
           <>
-            <O4BookHead
-              name={shareMenuBook?.name ?? ""}
-              coverHex={shareMenuCoverHex}
-            >
+            <O4BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
               {!pickingCover && (
                 <Control
                   icon="pencil"
@@ -2366,7 +2399,11 @@ export function BooksScreen({
           card opens for the current look only. */}
       <EraseConfirm
         open={deleteTargetId !== null && !o4}
-        title={strings.deleteBookConfirmTitle(deleteTarget?.name ?? "")}
+        title={strings.deleteBookConfirmTitle(
+          deleteTarget
+            ? strings.bookHeading(deleteTarget.name, deleteTarget.number)
+            : ""
+        )}
         confirmLabel={strings.deleteBookConfirm}
         cancelLabel={strings.eraseCancel}
         busy={deleting}
@@ -2479,6 +2516,9 @@ function BookItem({
     },
   });
   const drag = gesture.drag;
+  // The facilitator's name (#264), else the placeholder its slot renders
+  // (#169) — `ChapterItem`'s `heading` one level up the tree.
+  const heading = strings.bookHeading(book.name, book.number);
   return (
     <li
       className={o4 ? "books-card" : undefined}
@@ -2496,11 +2536,7 @@ function BookItem({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={listId}
-          aria-label={strings.bookRow(
-            book.name,
-            book.chapters.length,
-            expanded
-          )}
+          aria-label={strings.bookRow(heading, book.chapters.length, expanded)}
           // The toggle carries the guide class itself, like the chapter row —
           // it is a plain button, not a `Control`.
           className={cn(
@@ -2541,7 +2577,7 @@ function BookItem({
                 />
               </span>
               <span className="books-name" dir="auto">
-                {book.name}
+                {heading}
               </span>
             </>
           ) : (
@@ -2556,14 +2592,14 @@ function BookItem({
                 className="t-title text-ink min-w-0 flex-1 truncate"
                 dir="auto"
               >
-                {book.name}
+                {heading}
               </span>
             </>
           )}
         </button>
         <Control
           icon="plus"
-          label={strings.addChapter(book.name)}
+          label={strings.addChapter(heading)}
           variant="quiet"
           className={o4 ? "books-ghost" : undefined}
           guided={guidedAddChapter}
@@ -2576,7 +2612,7 @@ function BookItem({
             read/visual order: expand, add, manage. */}
         <Control
           icon="more"
-          label={strings.bookMenuOpen(book.name)}
+          label={strings.bookMenuOpen(heading)}
           variant="quiet"
           className={o4 ? "books-ghost" : undefined}
           onClick={onOpenShareMenu}

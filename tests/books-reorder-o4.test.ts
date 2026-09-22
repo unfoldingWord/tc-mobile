@@ -47,7 +47,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: state.books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,
@@ -105,10 +105,11 @@ const shelf = (): BookCard[] => [
   {
     bookId: mark,
     name: "Mark",
+    number: 1,
     coverColourKey: "teal",
     chapters: [chapter(0), chapter(1), chapter(2, { name: "Mark 3" })],
   },
-  { bookId: ruth, name: "Ruth", coverColourKey: null, chapters: [] },
+  { bookId: ruth, name: "Ruth", number: 1, coverColourKey: null, chapters: [] },
 ];
 
 function rect(top: number, height: number): DOMRect {

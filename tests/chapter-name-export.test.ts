@@ -150,8 +150,8 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
     await bookNamed("Mark", ["The sower", null]);
     const sink = memoryArchiveSink();
     const result = await exportLibraryZip(
-      (book) => book,
-      strings.shareFilename,
+      (book) => book.name ?? "",
+      (book, n, name) => strings.shareFilename(book.name ?? "", n, name),
       testCodec(),
       sink
     );
