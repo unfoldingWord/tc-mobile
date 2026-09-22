@@ -26,6 +26,7 @@ import {
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
+import { ThemeControl } from "./theme-control";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
@@ -38,7 +39,6 @@ import {
   type ScreenLayerBehavior,
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
-import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
@@ -145,11 +145,6 @@ export function BooksScreen({
   // rejected query) says nothing.
   const storage = useStoragePersistence(loaded && books.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
-  // #171. The global menu is the only place a theme switch belongs: it is a
-  // once-per-session decision about the light you are standing in, not a
-  // per-screen action, and putting it in the header would spend a header slot
-  // on a control nobody taps twice a day.
-  const theme = useTheme();
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -1216,19 +1211,11 @@ export function BooksScreen({
           on #457). The panel is mounted only while the log holds something,
           so a phone that has never failed opens on the toggle, as before.
 
-          The toggle (#171): a complete light theme has existed in
-          `2-semantic.css` since the pivot with nothing able to select it,
-          written for the one condition that makes this app unusable — direct
-          equatorial sun on a dark screen.
-
-          ONE control that flips, not two rows or a three-state cycle: its
-          label names the DESTINATION so AT does not announce the state a user
-          already has, and `nextTheme` is an involution so the only promise a
-          text-free glyph can make — tap twice and you are back — holds. The
-          menu stays OPEN across the tap, so the translator sees the screen
-          change behind the scrim and can tap straight back if they guessed
-          wrong; that is the affordance doing the explaining, which is the
-          `state-in-place` rule this repo prefers over a message. */}
+          The toggle (#171) is `ThemeControl`, which is also mounted in the
+          chapter and recorder menus (#149) — its own docblock holds why it is
+          one shared component, why the glyph names the destination, and why
+          the tap leaves this menu open. What stays Books-only is the panel
+          above it, for the two reasons recorded there. */}
       <Menu open={menuOpen} onClose={closeGlobalMenu}>
         {failureCount > 0 && (
           <FailureLogPanel
@@ -1238,16 +1225,7 @@ export function BooksScreen({
             onClearConfirmClose={onClearConfirmClose}
           />
         )}
-        <Control
-          icon={theme.theme === "dark" ? "sun" : "moon"}
-          label={
-            theme.theme === "dark"
-              ? strings.useLightTheme
-              : strings.useDarkTheme
-          }
-          variant="quiet"
-          onClick={theme.toggle}
-        />
+        <ThemeControl />
       </Menu>
 
       {/* New Book asks for the name before it creates anything (#314). The same

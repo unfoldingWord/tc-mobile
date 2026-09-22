@@ -145,12 +145,14 @@ describe("the light theme is reachable (#171)", () => {
   });
 
   it("the toggle is mounted in the global menu, not just written", () => {
-    // The hook could exist and be called by nothing. `books-screen.tsx` holds
-    // the only global menu (its reachability from the Segments screen is a
-    // separate question, #149).
+    // The hook could exist and be called by nothing. Since #149 the control
+    // itself is `ThemeControl` — one component mounted in three menus — so the
+    // wiring lives in that file and the MOUNT is what each screen shows.
+    const control = read("src/components/theme-control.tsx");
+    expect(control).toMatch(/useTheme\(\)/);
+    expect(control).toMatch(/onClick=\{theme\.toggle\}/);
     const screen = read("src/components/books-screen.tsx");
-    expect(screen).toMatch(/useTheme\(\)/);
-    expect(screen).toMatch(/onClick=\{theme\.toggle\}/);
+    expect(screen).toMatch(/<ThemeControl\s*\/>/);
     // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
     //
     // The close handler is matched loosely on purpose (#452 PR3): it was the
@@ -176,7 +178,10 @@ describe("the light theme is reachable (#171)", () => {
     expect(menu).toBeGreaterThan(-1);
     const body = screen.slice(menu);
     const panel = body.indexOf("<FailureLogPanel");
-    const toggle = body.indexOf("onClick={theme.toggle}");
+    // `<ThemeControl`, with the angle bracket, so a prose mention of the
+    // component in a nearby comment can never stand in for the mount — the
+    // capture-by-comment trap AGENTS.md records from #529 round 3.
+    const toggle = body.indexOf("<ThemeControl");
     expect(panel, "FailureLogPanel is not in the global menu").toBeGreaterThan(
       -1
     );
@@ -185,6 +190,32 @@ describe("the light theme is reachable (#171)", () => {
       panel,
       "the theme toggle is mounted ahead of the failure-log panel"
     ).toBeLessThan(toggle);
+  });
+
+  it("follows the translator into a chapter and into the recorder (#149)", () => {
+    // WHAT THIS IS AND IS NOT. The behavioural claim — that the toggle is
+    // reachable from the chapter `≡` and the recorder `≡` and repaints the
+    // shipped cascade from each — is `e2e/theme-toggle.spec.ts`, in real
+    // Chromium against `dist/`. This is the cheap Node companion that fails
+    // fast when a mount is DELETED, which is the way this regresses: both
+    // screens are large, and neither reviewer's eye is a gate.
+    //
+    // COUNTED, not merely present. The recorder menu has two mutually
+    // exclusive branches — record mode and edit mode — and each mounts the
+    // toggle, so a `toMatch` over the file passes with one of them deleted:
+    // the first draft of this case was mutated that way and survived. The
+    // e2e spec drives the sheet in RECORD mode only, so the edit-mode mount
+    // has no other gate at all.
+    //
+    // Matched as `<ThemeControl`, never as the bare identifier, for the
+    // comment-capture reason above.
+    const mounts = (file: string) =>
+      read(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
+    // The chapter `≡`'s one action branch (the stale and rename branches are
+    // transient sub-states with no action list of their own).
+    expect(mounts("src/components/segments-screen.tsx")).toBe(1);
+    // Record mode and edit mode.
+    expect(mounts("src/components/recorder.tsx")).toBe(2);
   });
 
   it("is applied before React renders, not in an effect", () => {

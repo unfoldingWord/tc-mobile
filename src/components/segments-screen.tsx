@@ -25,6 +25,7 @@ import {
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
+import { ThemeControl } from "./theme-control";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -1017,6 +1018,18 @@ export const SegmentsScreen = forwardRef<
                 {shareErrorText}
               </Notice>
             )}
+            {/* The theme toggle, the one global entry that follows you into a
+                chapter (#149). LAST on purpose: `Menu` lands focus on its
+                first actionable child, and that must stay Rename/Share — the
+                reasons you opened this menu — not a control that repaints the
+                screen. Books-only was right while the global menu held a
+                licence notice; it stopped being right when the menu grew a
+                control for direct sun, which arrives mid-session.
+
+                It is inside the panel's `inert` subtree above (#491), so a
+                share overlay that owns the screen covers this too, with no
+                guard of its own. */}
+            <ThemeControl />
           </>
         )}
       </Menu>

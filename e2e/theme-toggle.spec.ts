@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { seedToRecorder, seedToSegments } from "./support/seed";
+
 /**
  * The light theme, actually reached — in a real browser (#171).
  *
@@ -300,5 +302,97 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
       stored,
       "the write did not actually fail, so this proved nothing"
     ).toBeNull();
+  });
+});
+
+test.describe("the theme is reachable from the screens you work on (#149)", () => {
+  /**
+   * #149 asked whether Books-only was acceptable for the global menu. It was,
+   * while the menu's only entry was a licence notice nobody needs mid-session.
+   * The theme toggle (#171, #457) is the opposite: `2-semantic.css`'s header
+   * says the light theme exists because direct equatorial sun makes the dark
+   * screen unreadable, and that condition arrives WHILE you are recording. On
+   * a Books-only toggle the way out is back out of the recorder, back out of
+   * Segments, open the hamburger, tap, and navigate back in — four screens,
+   * in the one condition where the screen is hardest to read.
+   *
+   * So these two cases assert the toggle is reachable from the chapter's `≡`
+   * and the recorder's `≡`, and that tapping it there actually repaints. They
+   * fail on a Books-only toggle at the locator: the control is not in those
+   * menus at all.
+   *
+   * WHY NOT A SECOND HAMBURGER on those screens. Both already carry their own
+   * `≡` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
+   * opener beside them is the worse option on a 320px header that #370 already
+   * reports wrapping — so the global entry joins the existing menu rather than
+   * arriving with an opener of its own.
+   *
+   * WHAT THIS DOES NOT COVER, and what the Books cases above still own: the
+   * `theme-color`/status-bar metas, persistence across a reload, and the
+   * failed-write path. Those are properties of `use-theme.ts`, which is one
+   * store for every caller — proving them once is the point of that store.
+   * What is new here is only REACHABILITY plus a real repaint at each site.
+   */
+  test("the chapter ≡ carries the toggle, and it repaints from there", async ({
+    page,
+  }) => {
+    await seedToSegments(page);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    await page
+      .getByRole("button", {
+        name: "More actions for this chapter",
+        exact: true,
+      })
+      .click();
+    const menu = page.getByRole("dialog", { name: "Chapter", exact: true });
+    await expect(menu).toBeVisible();
+
+    const toLight = menu.getByRole("button", { name: /light screen/i });
+    await expect(toLight).toBeVisible();
+    await toLight.click();
+
+    // The repaint, not just the attribute: the shipped cascade is what the
+    // person in the sun actually gets.
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
+
+    // Same affordance as on Books: the menu stays open, so the control is its
+    // own undo and a wrong guess costs one more tap in the same spot.
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: /dark screen/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
+  });
+
+  test("the recorder ≡ carries the toggle, and it repaints from inside the sheet", async ({
+    page,
+  }) => {
+    // The case the reframing of #149 turns on: the sheet is where a translator
+    // spends the session, and it is `aria-modal` over an `inert` Segments —
+    // so a toggle that lives anywhere else is unreachable without leaving the
+    // recording behind.
+    await seedToRecorder(page);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    // `exact`, because the Segments `≡` behind the sheet ("More actions for
+    // this chapter") is still in the DOM and a substring match would find two.
+    await page
+      .getByRole("button", { name: "More actions", exact: true })
+      .click();
+    const menu = page.getByRole("dialog", { name: "More", exact: true });
+    await expect(menu).toBeVisible();
+
+    const toLight = menu.getByRole("button", { name: /light screen/i });
+    await expect(toLight).toBeVisible();
+    await toLight.click();
+
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
+
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: /dark screen/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
   });
 });

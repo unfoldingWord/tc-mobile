@@ -36,6 +36,7 @@ import {
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
+import { ThemeControl } from "./theme-control";
 import { LiveScope } from "./live-scope";
 import {
   editRowReason,
@@ -3737,6 +3738,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   setConfirmOpen(true);
                 }}
               />
+              {/* The theme toggle (#149). LAST in both branches, so the
+                  open-edge focus still lands on Edit / Done — what the
+                  translator opened this menu for — and never on a control
+                  that repaints the screen.
+
+                  This is the site the reframing of #149 turns on: the sheet
+                  is `aria-modal` over an `inert` Segments, so while it is up
+                  the Books hamburger is four screens away, and direct sun is
+                  exactly the condition that arrives while you are recording.
+                  The `≡` that opens this menu is itself closed through the
+                  close window, while `denied`, and while a take is held —
+                  the panels those states raise own the body — so the toggle
+                  inherits those gates rather than adding its own.
+
+                  ONE CONSEQUENCE, STATED RATHER THAN GLOSSED. `Menu` lands
+                  open-edge focus on the first ACTIONABLE child, skipping the
+                  `aria-disabled` hinted rows (#135). On a segment with
+                  nothing recorded and an empty clipboard all three rows above
+                  are hinted, so this control — always actionable — is now
+                  what focus lands on, where it used to fall back to Edit and
+                  its reason. That is `Menu`'s own rule applied to a menu that
+                  finally has something actionable in that state, and the
+                  hinted rows keep their place in the Tab order and still
+                  announce their reasons; but it IS a change to what an AT
+                  user hears first there, and it is #149's to own. */}
+              <ThemeControl />
             </>
           ) : (
             <>
@@ -3759,6 +3786,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   setConfirmOpen(true);
                 }}
               />
+              {/* Same entry, same last position, in edit mode too — see the
+                  record-mode branch above for why. */}
+              <ThemeControl />
             </>
           )}
         </Menu>
