@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
@@ -24,6 +24,26 @@ import { strings } from "./strings";
  */
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Every `Menu` currently in its exit motion, by the callback that ends the
+ * motion early (#621, fix class C1 on PR 656).
+ *
+ * A dismissed drawer stays mounted while it slides out, and Books alone
+ * renders three `Menu`s — so a tap that closes one and opens another inside
+ * that window (Create book, then a row's ≡) would otherwise leave two drawers
+ * on screen at once. The rule is one drawer whenever any drawer is open, and
+ * it has two halves because the two events can land in either order: the
+ * opening instance ends every other instance's exit on its open edge, and an
+ * instance dismissed while a sibling is ALREADY open skips its exit entirely
+ * (Create book resolves its write and closes the dialog after the new row —
+ * and its ≡ — is already on the shelf, so the row menu can be open first).
+ * No locator that finds a menu by role or class, and no assistive technology,
+ * sees two. Module-scoped because the instances share no parent — each caller
+ * mounts its own `<Menu>`.
+ */
+const openMenus = new Set<symbol>();
+const exitingMenus = new Set<() => void>();
 
 interface MenuProps {
   open: boolean;
@@ -154,11 +174,19 @@ export function Menu({
   // open (`setState` inside an effect is refused as a cascading render;
   // `recorder.tsx`'s `prevDenied` is the precedent). Reopening mid-exit is
   // just `open` changing again, so it cancels the exit by the same line.
+  const [self] = useState(() => Symbol("menu"));
   const [prevOpen, setPrevOpen] = useState(open);
   const [exiting, setExiting] = useState(false);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    setExiting(!open);
+    // No exit motion when a SIBLING drawer is already open (`openMenus`
+    // above; this instance is still counted there until its own effect
+    // cleans up, hence the `!== self`): decided HERE, in the same render that
+    // sees `open` drop, so no commit ever holds two drawers — an effect would
+    // let one frame through, and a locator's strict check lands in exactly
+    // that frame.
+    const siblingOpen = [...openMenus].some((id) => id !== self);
+    setExiting(!open && !siblingOpen);
   }
 
   // Unmount when the exit motion settles — and what "settles" means is the
@@ -174,18 +202,49 @@ export function Menu({
   // animation is cancelled mid-run (its element restyled or removed), which
   // `allSettled` treats as done too — so nothing here can strand a closed
   // drawer on screen.
+  //
+  // The motion also ends EARLY when a sibling `Menu` opens mid-exit: `finish`
+  // stays registered in `exitingMenus` for as long as this instance is
+  // exiting, and the sibling's open edge calls it (below). Both paths end in
+  // the same `setExiting(false)`, so there is one unmount, not two. (The
+  // other order — a sibling ALREADY open when this one is dismissed — never
+  // starts the motion at all; see the render adjustment above.)
+  //
+  // LAYOUT effects, both of them, on purpose: a `setState` from a layout
+  // effect re-renders synchronously, inside the same commit and before the
+  // browser paints, so the sibling's open edge removes this drawer in the
+  // very task that opened the sibling. From a passive effect the removal
+  // landed one frame later, and that frame is where a locator's strict check
+  // found two drawers (PR 656 CI; measured at ~9 ms in a Chromium probe).
   const scrimRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!exiting) return;
+    const finish = () => setExiting(false);
+    exitingMenus.add(finish);
     const running = scrimRef.current?.getAnimations?.({ subtree: true }) ?? [];
     let cancelled = false;
     void Promise.allSettled(running.map((a) => a.finished)).then(() => {
-      if (!cancelled) setExiting(false);
+      if (!cancelled) finish();
     });
     return () => {
       cancelled = true;
+      exitingMenus.delete(finish);
     };
   }, [exiting]);
+
+  // While open, this instance is counted in `openMenus`, and its open edge
+  // ends every other drawer's exit at once (#621 C1). Its own `finish` is
+  // never in the set here: reopening mid-exit clears `exiting` in the render
+  // adjustment above, and that effect's cleanup has already removed it by the
+  // time this one runs.
+  useLayoutEffect(() => {
+    if (!open) return;
+    openMenus.add(self);
+    for (const finish of exitingMenus) finish();
+    return () => {
+      openMenus.delete(self);
+    };
+  }, [open, self]);
 
   // Land focus inside the panel ONCE on the open edge — first ENABLED control,
   // never a disabled one (focusing it is a no-op that strands the user behind
@@ -276,7 +335,15 @@ export function Menu({
       <div
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        // While exiting, the panel is paint and nothing else: hidden from the
+        // accessibility tree and no longer modal the instant it is dismissed,
+        // so a role query — Playwright's or a screen reader's — finds only the
+        // drawer that is actually open (#621 C1). `inert` on the scrim above
+        // did not do that on its own: a role query still resolved the inert
+        // panel, which is the fact PR 656's CI failures established.
+        // `aria-hidden` is the ARIA-defined "not there", which both honour.
+        aria-hidden={exiting || undefined}
+        aria-modal={exiting ? undefined : "true"}
         aria-label={title}
         className="menu-panel"
       >
