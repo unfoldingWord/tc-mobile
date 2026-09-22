@@ -30,6 +30,7 @@ import {
   warmEncoder,
   withEncoder,
 } from "@/hooks/mp3-codec";
+import { decodeToCanonical } from "@/hooks/audio-io";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -131,6 +132,59 @@ async function encodeAndDecode(
     fittedHeadRms: rms(fitted, 0, window),
     fittedTailRms: rms(fitted, Math.max(0, fitted.length - window), window),
     sourceRms,
+  };
+}
+
+/** Synthetic stereo input only: no capture hardware or output route is measured. */
+async function measureCanonicalise(
+  right: "identical" | "decorrelated" | "silent"
+) {
+  const frames = CANONICAL_SAMPLE_RATE * 3;
+  const left = syntheticPcm(frames);
+  const bytes = new ArrayBuffer(44 + frames * 4);
+  const wav = new DataView(bytes);
+  const ascii = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i++)
+      wav.setUint8(offset + i, value.charCodeAt(i));
+  };
+  ascii(0, "RIFF");
+  wav.setUint32(4, bytes.byteLength - 8, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  wav.setUint32(16, 16, true);
+  wav.setUint16(20, 1, true);
+  wav.setUint16(22, 2, true);
+  wav.setUint32(24, CANONICAL_SAMPLE_RATE, true);
+  wav.setUint32(28, CANONICAL_SAMPLE_RATE * 4, true);
+  wav.setUint16(32, 4, true);
+  wav.setUint16(34, 16, true);
+  ascii(36, "data");
+  wav.setUint32(40, frames * 4, true);
+  for (let i = 0; i < frames; i++) {
+    const second =
+      right === "identical"
+        ? left[i]!
+        : right === "silent"
+          ? 0
+          : Math.round(
+              Math.sin((2 * Math.PI * 631 * i) / CANONICAL_SAMPLE_RATE) * 8_000
+            );
+    wav.setInt16(44 + i * 4, left[i]!, true);
+    wav.setInt16(46 + i * 4, second, true);
+  }
+  // This is the app's decode and single downmix/resample render, not a second
+  // observer context. The non-identical rows distinguish render from channel-0 passthrough.
+  const output = await decodeToCanonical(
+    new Blob([bytes], { type: "audio/wav" })
+  );
+  const sourceRms = rms(left, 0, frames);
+  const outputRms = rms(output, 0, output.length);
+  return {
+    sourceRms,
+    outputRms,
+    deltaDb: 20 * Math.log10(outputRms / sourceRms),
+    inputFrames: frames,
+    outputFrames: output.length,
   };
 }
 
@@ -437,6 +491,7 @@ function watchVersionChange(): void {
 declare global {
   interface Window {
     __e2e?: {
+      measureCanonicalise: typeof measureCanonicalise;
       encodeAndDecode: typeof encodeAndDecode;
       encodeWithHeartbeat: typeof encodeWithHeartbeat;
       encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
@@ -451,6 +506,7 @@ declare global {
 }
 
 window.__e2e = {
+  measureCanonicalise,
   encodeAndDecode,
   encodeWithHeartbeat,
   encodeAfterAbortRebuild,
