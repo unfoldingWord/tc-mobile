@@ -58,6 +58,7 @@ import {
 } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
@@ -68,12 +69,7 @@ import { mergeTake } from "@/lib/audio/edit";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { computePeaks } from "@/lib/audio/peaks";
-import {
-  effectivePan,
-  panForZoom,
-  playbackStrip,
-  viewportWindow,
-} from "@/lib/audio/viewport";
+import { panForZoom, playbackStrip } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
 import { failureExit } from "@/lib/takes/failure-exit";
 import {
@@ -276,17 +272,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // and the restore effect below `menuShown`.
     const focusRestore = useFocusRestore();
 
-    // `null` ⇒ resting at the end of the existing audio (append-ready, F7). A
-    // derived rest, rather than a value set in an effect once `view` loads: the
-    // sheet mounts fresh on every open, so `null` is the open state, and a drag
-    // is what replaces it with an absolute sample position.
-    const [panState, setPanState] = useState<number | null>(null);
-    // Where the zoom moved the view to keep an open selection on screen (#91).
-    // A VIEW value only — see `viewPan` below for why it must never be
-    // `panState`. Cleared when a selection opens (a fresh span has not been
-    // zoomed yet), when a drag takes the pan over, and on leaving edit.
-    const [zoomPan, setZoomPan] = useState<number | null>(null);
-    const [zoom, setZoom] = useState(ZOOM_WHOLE);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
     const dragStartX = useRef(0);
@@ -553,22 +538,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const displayedFinished =
       finishedIntent ?? (pendingDemote ? false : (view?.finished ?? false));
 
-    // Which pan is drawn — and, in record mode, spliced at. The gate that keeps
-    // the zoom's view fit out of the record insertion offset (the round-1 P1)
-    // lives in `effectivePan`, pure and table-tested, rather than as an
-    // expression here where nothing could reach it: the George stand-in showed
-    // that reintroducing the P1 at the setter left all 512 tests green. Its
-    // docblock carries the full reasoning, including the upper-only clamp, which
-    // is what a cut shortening `working` past an older `panState` needs.
-    const pan = effectivePan({
-      mode,
-      selectionActive: editor.selectionActive,
+    // The pan/zoom viewport: its three pieces of state and the derivation over
+    // them (#160, L-1). `pan` is NOT `panState` — it goes through
+    // `effectivePan`, the gate that keeps a zoom's view fit out of the record
+    // insertion offset (the round-1 P1 of #346), which stays pure and
+    // table-tested in `lib/audio/viewport` rather than being an expression here
+    // that nothing could reach: the George stand-in showed that reintroducing
+    // that P1 at the setter left all 512 tests green. `pan` is for drawing,
+    // `insertionPan` for splicing, and the hook's docblock carries the rest.
+    const {
+      // `panState` itself is deliberately NOT destructured: after this
+      // extraction the component reads the raw record offset NOWHERE — it
+      // takes `pan` to draw and `insertionPan` to splice. What #346 fixed by
+      // convention is now structural, and `tsc` is what holds it.
+      setPanState,
       zoomPan,
-      panState,
+      setZoomPan,
+      zoom,
+      setZoom,
+      pan,
+      win,
+      insertionPan,
+      windowAt,
+    } = useRecorderViewport(
+      mode,
+      editor.selectionActive,
       length,
-    });
-    const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
-    const insertionPan = Math.min(panState ?? length, length);
+      CENTER_FRACTION
+    );
     // Reloads must reach their committed buffer first. Cut/Undo/Redo clear the
     // old frame, so reseed from the remapped insertion pan before painting.
     // Empty buffers have no usable frame; Undo or Paste can make one again.
@@ -580,12 +577,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         editor.working === selectionEntry.samples)
     ) {
       if (length > 0) {
-        const seedWindow = viewportWindow(
-          length,
-          insertionPan,
-          zoom,
-          CENTER_FRACTION
-        );
+        const seedWindow = windowAt(insertionPan);
         const half = seedWindow.visibleSamples * 0.15;
         editor.openSelection({
           start: seedWindow.centerlineSample - half,
@@ -844,7 +836,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // anything saw was the range's start, and writing it turned the default
       // Play from the F7 rest into a punch-in at sample 0.
       if (frozen.kind === "pan") setPanState(frozen.pan);
-    }, [length]);
+    }, [length, setPanState]);
 
     /**
      * Stop buffer playback, sampling the true position and freezing it.
@@ -1181,7 +1173,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // point.
         setZoomPan(null);
       },
-      [dragging, recording, paused, busy, win.visibleSamples, length]
+      [
+        dragging,
+        recording,
+        paused,
+        busy,
+        win.visibleSamples,
+        length,
+        setPanState,
+        setZoomPan,
+      ]
     );
 
     /**
@@ -1731,7 +1732,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlayback, setZoom, setZoomPan]);
 
     // Zoom, keeping the picked span on screen (#91).
     //
@@ -1753,7 +1754,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setZoomPan(panForZoom(length, pan, next, CENTER_FRACTION, span));
       }
       setZoom(next);
-    }, [zoom, editor.selectionActive, editor.selection, length, pan]);
+    }, [
+      zoom,
+      editor.selectionActive,
+      editor.selection,
+      length,
+      pan,
+      setZoom,
+      setZoomPan,
+    ]);
 
     // Every edit action stops an audition first (#284), through the ONE stop path
     // the sheet already uses (`stopBuffer`, a no-op when nothing is sounding).
@@ -1796,7 +1805,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (undoneOp !== null) {
         setPanState((p) => panAfterUndo(p, undoneOp, length));
       }
-    }, [editor, stopPlaybackDroppingPan, length]);
+    }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
@@ -1804,7 +1813,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (redoneOp !== null) {
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
-    }, [editor, stopPlaybackDroppingPan, length]);
+    }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onCut = useCallback(() => {
       stopPlayback();
@@ -1822,7 +1831,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           p === null ? null : panAfterCutRest(p, removed, length)
         );
       }
-    }, [editor, stopPlayback, length]);
+    }, [editor, stopPlayback, length, setPanState]);
 
     // Paste inserts at the recording offset, never the selection or zoom-fit
     // pan. The marker is hidden while a fitted view would imply another point.
