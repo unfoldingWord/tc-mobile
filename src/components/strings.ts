@@ -76,10 +76,12 @@ export const strings = {
   // and the Add-chapter prompt a book row's + opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
+  renameSegment: "Rename segment",
   // The inline text field's accessible name (the whole text layer of the input)
   // and its placeholder.
   bookNameField: "Book name",
   chapterNameField: "Chapter name",
+  segmentNameField: "Segment name",
   // The check control that commits the typed name on a RENAME.
   saveName: "Save name",
   // The New Book dialog's heading, and so its accessible name (#314). It says
@@ -134,6 +136,18 @@ export const strings = {
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   markFinished: (n: number): string => `Mark segment ${n} finished`,
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  /**
+   * The segment's display heading (#591): the ordinal, then the facilitator's
+   * label when set — "3 · verses 3–4". The ordinal always stays, because it is
+   * the one handle a translator who cannot read the label still has. One place
+   * both the Segments row and the recorder breadcrumb resolve it.
+   */
+  segmentHeading: (n: number, label: string | null): string =>
+    label === null ? `${n}` : `${n} · ${label}`,
+  // A segment rename that did not land. Shown inside the row's menu, where the
+  // field stays up for another try — the screen's own Notice is behind the
+  // scrim. Plain words, never the store's exception text (#172).
+  renameSegmentFailed: "The name was not saved. Try again.",
 
   // ── Recorder sheet (B4) ──────────────────────────────────────────────────
   // The recorder sheet's own accessible name (#198). It matched no name at all
@@ -156,8 +170,13 @@ export const strings = {
   recorderBreadcrumb: (
     book: string,
     chapter: number,
-    segment: number
-  ): string => `${book} > ${strings.chapterName(chapter)} > ${segment}`,
+    segment: number,
+    segmentLabel: string | null
+  ): string =>
+    `${book} > ${strings.chapterName(chapter)} > ${strings.segmentHeading(
+      segment,
+      segmentLabel
+    )}`,
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
   // (#614). It was "Pause"/"Resume" while a take could be suspended and

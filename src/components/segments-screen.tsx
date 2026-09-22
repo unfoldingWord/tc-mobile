@@ -138,6 +138,7 @@ export const SegmentsScreen = forwardRef<
     setFinished,
     eraseRow,
     renameChapter,
+    renameSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
@@ -321,7 +322,11 @@ export const SegmentsScreen = forwardRef<
       // Edit, Finished and Erase all hand off to the screen and close; none of
       // them holds a write open behind this panel, so there is nothing for Back
       // to wait on. (`onSetFinished`'s store write fires and forgets, with its
-      // own failure channel — the row menu is already gone by then.)
+      // own failure channel — the row menu is already gone by then.) Rename
+      // (#591) can still be saving when Back lands, and closing over it is
+      // safe: the row's session token drops the late settle, and the hook
+      // patches the label, or puts a failure in the screen Notice, whether or
+      // not the menu is still up.
       busy: () => false,
       // The row's own close, which also reports back up through `onMenuClose`.
       // `?.` covers only the window in which the row unmounted without this
@@ -463,9 +468,10 @@ export const SegmentsScreen = forwardRef<
       isErasing()
     );
     if (closeMenu) onCloseChapterMenu();
-    // The row menu has no in-flight state of its own, so it is not a row in
-    // `overlayDismissal`'s table; it comes down unconditionally, and its own
-    // close reports up and unregisters it.
+    // The row menu is not a row in `overlayDismissal`'s table: the one write it
+    // can hold, a rename, survives its menu closing (see its layer above). It
+    // comes down unconditionally, and its own close reports up and
+    // unregisters it.
     rowMenuDismiss.current?.();
     if (closeConfirm) closeErase();
   }, [chapterMenuOpen, closeErase, eraseTarget, isErasing, onCloseChapterMenu]);
@@ -848,6 +854,7 @@ export const SegmentsScreen = forwardRef<
                     onSetFinished(row.segmentId, finished)
                   }
                   onErase={() => armErase(row.segmentId)}
+                  onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
                 />

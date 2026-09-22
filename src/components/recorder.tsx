@@ -2847,7 +2847,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 ? strings.recorderBreadcrumb(
                     view.bookName,
                     view.chapterNumber,
-                    view.ordinal
+                    view.ordinal,
+                    view.segmentLabel
                   )
                 : ""}
             </span>
