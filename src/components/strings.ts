@@ -593,6 +593,8 @@ export const strings = {
   // The log emptied between the render that offered Share and the tap.
   shareFailureLogNothing: "There is nothing to send now.",
   shareFailureLogFailed: "Could not send the problem report. Try again.",
+  shareFailureLogRestart:
+    "Cannot use this copy any more. Restart the app to use the new version.",
   clearFailureLog: "Clear problem report",
   // Behind the bin: the same two-tap confirm the segment Erase and the book
   // Delete use, not a second dialog (George R2 P3-3). Clearing is the one

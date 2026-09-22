@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { boundText, describeCause } from "@/lib/failure-text";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import {
   appendFailure,
   clearFailures,
@@ -515,7 +516,13 @@ export function clearFailureLog(): Promise<void> {
     try {
       await clearFailures();
     } catch (clearFailure) {
-      reportFailure(clearFailure, "failure-log-clear");
+      if (
+        !isTerminalOpenRefusal(
+          (clearFailure as { name?: string } | null)?.name ?? null
+        )
+      ) {
+        reportFailure(clearFailure, "failure-log-clear");
+      }
       throw clearFailure;
     }
     markLogCleared();

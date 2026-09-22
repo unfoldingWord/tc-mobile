@@ -7,6 +7,7 @@ import { Notice } from "./notice";
 import { strings } from "./strings";
 import { clearFailureLog } from "@/hooks/failure-log";
 import { readSharePlatform } from "@/hooks/share-target";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import type { ScreenLayerBehavior } from "@/hooks/use-screen-layers";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 
@@ -67,6 +68,7 @@ export function FailureLogPanel({
   // directly under the Share the thumb has just been using.
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<"restart" | null>(null);
   // The live half of `clearing`, for the confirm's `Layer.busy()` (#452 PR3,
   // invariant 4): the system-Back handler reads it from a `popstate`, with no
   // render between the flip below and the read. `clearing` above stays the
@@ -105,6 +107,7 @@ export function FailureLogPanel({
 
   // Tap 1 — read the log and render it to a text File, arming the send gesture.
   const onPrepare = useCallback(() => {
+    setClearError(null);
     void share.prepare();
   }, [share]);
 
@@ -137,6 +140,7 @@ export function FailureLogPanel({
     // The ref flips first and synchronously — a Back landing in this same task
     // must already see the clear as in flight.
     clearingRef.current = true;
+    setClearError(null);
     setClearing(true);
     void clearFailureLog().then(
       () => {
@@ -147,9 +151,16 @@ export function FailureLogPanel({
         clearingRef.current = false;
         onDone();
       },
-      () => {
+      (cause) => {
         clearingRef.current = false;
         setClearing(false);
+        if (
+          isTerminalOpenRefusal(
+            (cause as { name?: string } | null)?.name ?? null
+          )
+        ) {
+          setClearError("restart");
+        }
         setConfirmingClear(false);
         // The confirm comes down on a failed clear, so its layer does too.
         onClearConfirmClose();
@@ -173,7 +184,9 @@ export function FailureLogPanel({
       ? strings.shareFailureLogNothing
       : share.error === "failed"
         ? strings.shareFailureLogFailed
-        : null;
+        : share.error === "restart"
+          ? strings.shareFailureLogRestart
+          : null;
   // The platform's own share mark (#490), so this build never shows a
   // different share glyph here than on the chapter and book menus — unless
   // the last send was unconfirmed (Frank at `238820a` P2, #491), which
@@ -217,6 +230,9 @@ export function FailureLogPanel({
         <Notice tone="busy">{strings.shareFailureLogPreparing}</Notice>
       )}
       {errorText && <Notice>{errorText}</Notice>}
+      {clearError === "restart" && (
+        <Notice>{strings.shareFailureLogRestart}</Notice>
+      )}
 
       {/* Discard, after the send. Below Share on purpose: the destructive
           action is never the first thing under the thumb, and it is never the

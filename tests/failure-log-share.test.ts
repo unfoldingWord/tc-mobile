@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  classifyFailureLogOpenError,
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
@@ -280,6 +281,73 @@ describe("use-failure-log-share.ts: sendUnconfirmed reaches both idle Send contr
   it("the returned object carries sendUnconfirmed through", () => {
     expect(hook).toMatch(
       /return \{ status, error, sendUnconfirmed, prepare, send, reset \};/
+    );
+  });
+});
+
+describe("use-failure-log-share.ts and failure-log-panel.tsx: terminal DB refusals ask for restart, not retry (#455)", () => {
+  it("classifies DatabaseDowngradeError as the restart-only failure-log error", () => {
+    expect(
+      classifyFailureLogOpenError({ name: "DatabaseDowngradeError" })
+    ).toBe("restart");
+    expect(classifyFailureLogOpenError({ name: "DatabaseBlockedError" })).toBe(
+      "failed"
+    );
+    expect(classifyFailureLogOpenError(new Error("ordinary failure"))).toBe(
+      "failed"
+    );
+  });
+
+  it("prepare() surfaces the restart-only error and does not route a terminal open refusal through the failure funnel", () => {
+    const hook = read("src/hooks/use-failure-log-share.ts");
+    const catchAt = hook.indexOf(
+      "} catch (cause) {",
+      hook.indexOf("const prepare = useCallback")
+    );
+    const finallyAt = hook.indexOf("} finally {", catchAt);
+    const catchBody = hook.slice(catchAt, finallyAt);
+    expect(catchBody).toMatch(
+      /const classified = classifyFailureLogOpenError\(cause\);/
+    );
+    expect(catchBody).toMatch(/setError\(classified\);/);
+    expect(catchBody).toMatch(/if \(classified !== "restart"\) \{/);
+    expect(catchBody).toMatch(
+      /reportFailure\(cause, "failure-log-share-prepare"\);/
+    );
+  });
+
+  for (const file of [
+    "src/components/failure-log-panel.tsx",
+    "src/components/send-log-control.tsx",
+  ] as const) {
+    const name = file.split("/").pop();
+
+    it(`${name}: maps the failure-log restart error to restart copy, not the Try again line`, () => {
+      const source = read(file);
+      const errorTextAt = source.indexOf("const errorText =");
+      expect(errorTextAt).toBeGreaterThan(-1);
+      const errorTextEnd = source.indexOf(";", errorTextAt);
+      const errorText = source.slice(errorTextAt, errorTextEnd);
+      expect(errorText).toMatch(/share\.error === "restart"/);
+      expect(errorText).toMatch(/strings\.shareFailureLogRestart/);
+    });
+  }
+
+  it("FailureLogPanel clear classifies a terminal clear rejection and renders the same restart copy", () => {
+    const source = read("src/components/failure-log-panel.tsx");
+    expect(source).toMatch(
+      /import \{ isTerminalOpenRefusal \} from "@\/lib\/storage\/db";/
+    );
+    expect(source).toMatch(
+      /const \[clearError, setClearError\] = useState<"restart" \| null>\(null\);/
+    );
+    expect(source).toMatch(/setClearError\(null\);/);
+    expect(source).toMatch(
+      /isTerminalOpenRefusal\([\s\S]*\(cause as \{ name\?: string \} \| null\)[\s\S]*\?\.name \?\? null[\s\S]*\)/
+    );
+    expect(source).toMatch(/setClearError\("restart"\);/);
+    expect(source).toMatch(
+      /clearError === "restart" && \([\s\S]*?<Notice>\{strings\.shareFailureLogRestart\}<\/Notice>[\s\S]*?\)/
     );
   });
 });
