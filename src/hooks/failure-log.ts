@@ -522,6 +522,11 @@ export function clearFailureLog(): Promise<void> {
         )
       ) {
         reportFailure(clearFailure, "failure-log-clear");
+      } else {
+        console.error(
+          "[failure-log-clear] Terminal database refusal",
+          clearFailure
+        );
       }
       throw clearFailure;
     }

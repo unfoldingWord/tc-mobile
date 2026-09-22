@@ -382,6 +382,11 @@ export function useFailureLogShare(): UseFailureLogShare {
       // not a real offer (#455).
       if (classified !== "restart") {
         reportFailure(cause, "failure-log-share-prepare");
+      } else {
+        console.error(
+          "[failure-log-share-prepare] Terminal database refusal",
+          cause
+        );
       }
       setError(classified);
       setStatus("idle");

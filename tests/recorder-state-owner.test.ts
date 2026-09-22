@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 const audioSession = readFileSync("src/hooks/use-audio-session.ts", "utf8");
 const recorder = readFileSync("src/hooks/use-recorder.ts", "utf8");
 
-/** Every `//`-comment line, so prose that names an identifier cannot stand in for code. */
+/** Strip whole-line `//` comments and docblock continuation lines before checking code. */
 function withoutComments(source: string): string {
   return source
     .split("\n")

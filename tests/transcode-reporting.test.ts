@@ -21,7 +21,7 @@ import type { SegmentId } from "@/types/domain";
  *     head of a stable `getAll` walk and starved every other finished segment
  *     for the life of the page (George R1 P2-2). The next pass puts it last.
  *
- * `vi.resetModules()` gives each case a fresh `lastStalledSegmentId`; because
+ * `vi.resetModules()` gives each case a fresh `stalledSegmentIds`; because
  * that also rebuilds every MOCKED dependency, each case re-imports those too and
  * drives the fresh spies — a `vi.mocked()` on a statically imported one would
  * configure an instance the reloaded sweep never sees.
