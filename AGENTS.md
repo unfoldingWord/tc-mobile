@@ -159,6 +159,23 @@ without a browser or a microphone.
 
 If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 
+**`lib/` also holds the one string table**, `lib/strings.ts`. It is neither audio
+nor storage, and it is down there because imports never go upward: while it sat
+in `components/` it was unreachable from `hooks/`, so every sentence a hook
+raises was a literal beside the code that raised it — and three of them had been
+typed out a second time (#169). It is pure data and pure functions, so it
+compiles under `tsconfig.lib.json` with the rest of the layer.
+`tests/strings-one-table.test.ts` keeps those literals from coming back: no
+fixed sentence in the table may appear again in `app/`, `components/` or
+`hooks/`. `lib/`'s own `Error` messages are deliberately outside that check —
+they are for whoever reads the failure log, not for the screen, and that test's
+docblock names the one pair where the two wordings overlap on purpose. What
+#169 still asks for beyond this is a `strings[locale]` dimension, a plural rule
+that is not English's two forms, sentences that are not assembled from
+translated fragments, book names stored as numbers rather than written into
+IndexedDB as English data, and `lang`/`dir` driven by the locale — none of which
+is done.
+
 ## Testing
 
 - `tests/` at the repo root, `*.test.ts`, run in the Node environment.

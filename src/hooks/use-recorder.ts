@@ -14,6 +14,7 @@ import {
   classifyStopDecode,
   type StopDecodeError,
 } from "@/lib/audio/stop-decode";
+import { strings } from "@/lib/strings";
 
 import {
   createLevelTap,
@@ -27,14 +28,15 @@ import {
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
 
-/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
- *  here beside the recorder's other error copy; the classifier stays UI-free. */
+/** The translator-facing sentence for each `classifyStopDecode` error class.
+ *  The classifier stays UI-free; the words are the one string table
+ *  (`lib/strings.ts`), which this layer can reach since #169. */
 function stopDecodeMessage(error: StopDecodeError): string | null {
   switch (error) {
     case "silence":
-      return "No sound was recorded. Try again.";
+      return strings.captureSilent;
     case "undecodable":
-      return "Recording could not be decoded on this device.";
+      return strings.captureUndecodable;
     case null:
       return null;
   }
@@ -61,20 +63,20 @@ async function queryMicPermission(): Promise<MicPermissionState> {
   }
 }
 
-/** The honest sentence for each refusal (#203). Inline here, like the recorder's
- *  other error copy, because `hooks/` cannot reach the components' string table. */
+/** The honest sentence for each refusal (#203). The words live in the one string
+ *  table; this maps the pure classifier's verdict onto them. */
 function micRefusalMessage(refusal: MicRefusal): string {
   switch (refusal) {
     case "no-device":
-      return "No microphone was found on this device.";
+      return strings.micNoDevice;
     case "site-blocked":
-      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
+      return strings.micSiteBlocked;
     case "os-blocked":
-      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
+      return strings.micOsBlocked;
     case "prompt":
-      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
+      return strings.micPrompt;
     case "other":
-      return "Could not start recording.";
+      return strings.micStartFailed;
   }
 }
 
@@ -236,9 +238,10 @@ export interface UseRecorder {
    * path reports `"recorder-stop-flush"`, seals whatever slices are already in
    * hand and resolves through the same tail as a flush timeout — the take, a
    * held `blob`, or (only when the seal is empty) `{ samples: null, error:
-   * "Could not finish this recording.", blob: null }` — with state back at
-   * `idle` when current and the recorder ref dropped, so `start()` is free
-   * again (#485).
+   * strings.captureUnfinished, blob: null }` — with state back at `idle` when
+   * current and the recorder ref dropped, so `start()` is free again (#485).
+   * The key rather than its sentence, so a copy edit does not leave this
+   * docblock quoting words the code no longer produces (#169).
    */
   stop: () => Promise<StopResult>;
   /**
@@ -1023,8 +1026,8 @@ export function useRecorder(): UseRecorder {
         // backstop uses, and the one the facilitator runbook names.
         error: current
           ? flushThrew
-            ? "Could not finish this recording."
-            : "No sound was recorded. Try again."
+            ? strings.captureUnfinished
+            : strings.captureSilent
           : null,
         blob: null, // nothing was captured — no bytes to keep
       };
@@ -1082,14 +1085,11 @@ export function useRecorder(): UseRecorder {
         // (George R3 G-1). So this is just another retry failure — the caller
         // keeps the bytes and surfaces the message; it never drops them.
         if (samples.length === 0) {
-          return { samples: null, error: "No sound was recorded. Try again." };
+          return { samples: null, error: strings.captureSilent };
         }
         return { samples, error: null };
       } catch {
-        return {
-          samples: null,
-          error: "Recording could not be decoded on this device.",
-        };
+        return { samples: null, error: strings.captureUndecodable };
       }
     },
     []

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { strings } from "@/lib/strings";
+
 /**
  * Three release-on-throw properties in `use-recorder.ts` (#59, PR #474,
  * #485):
@@ -473,6 +475,14 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // names that sentence as written down), not "No sound was recorded"
     // (which reads as the translator's silence). `flushThrew` is declared
     // in stop()'s body before the try, so the flag is per invocation.
+    //
+    // The sentences moved into the one string table when it moved down to
+    // `lib/` (#169), so this asserts the SAME claim in two halves: the
+    // source text below pins WHICH key each arm picks, and the two
+    // expectations here pin what those keys say. Either half alone would
+    // pass while the pairing was wrong — swapping the two table entries
+    // leaves the source shape intact, and swapping the two arms leaves the
+    // table intact.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);
@@ -481,8 +491,10 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     );
     const afterElse = stopBody.slice(elseBraceClose + 1);
     expect(afterElse).toMatch(
-      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
+      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*strings\.captureUnfinished\s*:\s*strings\.captureSilent/
     );
+    expect(strings.captureUnfinished).toBe("Could not finish this recording.");
+    expect(strings.captureSilent).toBe("No sound was recorded. Try again.");
   });
 
   it("every exit of the tail returns React state to idle when current — the property #485 finding 1 is named for (panel r2 P2)", () => {

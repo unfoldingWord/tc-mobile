@@ -27,6 +27,7 @@ import {
 } from "@/lib/audio/playback-position";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
+import { strings } from "@/lib/strings";
 import type { SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
@@ -366,7 +367,7 @@ export function useAudioSession(): UseAudioSession {
             const fault = danglingReason(audio);
             if (fault) {
               console.error("Nothing to play for this take:", fault);
-              setPlaybackError("Could not play this recording.");
+              setPlaybackError(strings.playbackFailed);
             }
             session.release(token);
             setPlaying(null);
@@ -408,7 +409,7 @@ export function useAudioSession(): UseAudioSession {
           if (session.isCurrent(token)) {
             session.release(token);
             setPlaying(null);
-            setPlaybackError("Could not play this recording.");
+            setPlaybackError(strings.playbackFailed);
           }
         }
       })();
@@ -550,7 +551,7 @@ export function useAudioSession(): UseAudioSession {
           if (session.isCurrent(token)) {
             session.release(token);
             setPlayingBuffer(false);
-            setPlaybackError("Could not play this recording.");
+            setPlaybackError(strings.playbackFailed);
             // The third exit from a preview: it never sounded at all. Leaving the
             // floor empty here is the same #129 gap as the other two (George G1).
             micTokenRef.current = reclaimAfterPreview(
@@ -649,7 +650,7 @@ export function useAudioSession(): UseAudioSession {
     // The reclaim's `claim("mic")` stopped a still-sounding preview handle; clear
     // the React flag it left behind (a plain pause→resume reclaimed nothing).
     if (reclaim.reclaimed) setPlayingBuffer(false);
-    // A failed preview left a playback Notice ("Could not play this recording.");
+    // A failed preview left a playback Notice (`strings.playbackFailed`);
     // clear it so it does not survive over the resumed take (George R2 P3-6).
     setPlaybackError(null);
     resumeCapture();
@@ -674,7 +675,7 @@ export function useAudioSession(): UseAudioSession {
       console.error("Stopping the recorder failed", cause);
       return {
         samples: null,
-        error: "Could not finish this recording.",
+        error: strings.captureUnfinished,
         blob: null,
       };
     } finally {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Icon, type IconName } from "@/components/icon";
 import { Menu } from "@/components/menu";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 import { one, render as renderStatic } from "./render";
 

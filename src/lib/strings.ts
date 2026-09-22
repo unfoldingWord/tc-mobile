@@ -7,6 +7,17 @@
  * one record keeps that layer attachable and keeps wording out of the markup,
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
+ *
+ * WHY IT LIVES IN `lib/` and not beside the components it mostly serves: the
+ * onion rule runs one way, so `hooks/` cannot import from `components/`. While
+ * this table sat in `components/`, every sentence a hook had to produce was
+ * stranded as a literal beside the code that raised it — `use-recorder.ts` said
+ * so in its own comment, "`hooks/` cannot reach the components' string table" —
+ * and three of those sentences had already been typed out a second time
+ * further down the same file, which is the drift this table exists to prevent.
+ * `lib/` is the one layer every other layer can reach, and the table is pure
+ * data and pure functions, so it costs the DOM-free core nothing: it compiles
+ * under `tsconfig.lib.json` with the rest of `lib/`. #169.
  */
 import { filenameSafe } from "@/lib/utils";
 
@@ -23,6 +34,25 @@ import { filenameSafe } from "@/lib/utils";
  */
 function couldNotBeIncluded(subject: string): string {
   return `${subject} could not be included.`;
+}
+
+/**
+ * A count and the noun it counts: "1 segment", "3 segments".
+ *
+ * The plurals in this table were inline `n === 1 ? … : …` ternaries that spelled
+ * the count out on both arms, and that shape is how `menuOpenWithFailures` came
+ * to carry a byte-for-byte copy of `failuresMarker`'s wording — the same
+ * duplicate-not-alias defect `shareBookPartial` records below. English's two
+ * forms are all this does; a language whose plural rule is not one-versus-many
+ * needs a different function here rather than a different ternary at each call
+ * site (#169).
+ *
+ * `shareBookMissingAndPartial` keeps a `segments === 1` branch of its own and is
+ * not a call site for this: its two arms are different SENTENCES, not two forms
+ * of one noun, and its own comment says why each is worded as it is.
+ */
+function counted(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 export const strings = {
@@ -56,7 +86,7 @@ export const strings = {
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
+    `${name}, ${counted(chapters, "chapter", "chapters")}, ${
       expanded ? "expanded" : "collapsed"
     }`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
@@ -247,6 +277,49 @@ export const strings = {
   takeRecoverDiscardArmed: "Tap again to delete this recording for good",
   takeRecoverDiscardHint: "Tap again to delete it.",
 
+  // ── What the recorder and the audio session raise (#169) ─────────────────
+  // These sentences are produced in `hooks/`, not in a component: they ride a
+  // `StopResult` or a `playbackError` up to whichever surface is mounted. They
+  // were literals beside the code that raised them until this table moved down
+  // into `lib/` (see the file header), and three of them had been typed out a
+  // second time further down the same file.
+
+  // Proven silence: `classifyStopDecode` decoded the take and found no samples,
+  // or the seal was empty with nothing thrown behind it. It says "try again"
+  // because trying again is the whole remedy.
+  captureSilent: "No sound was recorded. Try again.",
+  // The bytes exist and would not decode. Names the DEVICE, not the recording,
+  // because the recording is usually fine — a transient iOS "interrupted"
+  // AudioContext (#106) is the common cause, and `retryDecode` commonly
+  // succeeds on the next gesture.
+  captureUndecodable: "Recording could not be decoded on this device.",
+  // An empty seal AFTER the flush arm threw (#485). That is the engine failing,
+  // which is not the translator's silence, so it must never be `captureSilent`.
+  // Both sites that can produce it use this one key — the recorder's own
+  // empty-capture exit and `stopRecording`'s backstop (`use-audio-session.ts`,
+  // #480) — so a tester reading the sentence off a phone gets the same words
+  // whichever raised it, and `docs/training/facilitator-runbook.md` names it as
+  // written down.
+  captureUnfinished: "Could not finish this recording.",
+  // Playback could not sound: a decode that failed, or a take whose clip the
+  // database no longer has. One sentence for both, because from where the
+  // translator stands they are the same event — the tap made no sound.
+  playbackFailed: "Could not play this recording.",
+  // The honest sentence for each `classifyMicRefusal` class (#203). The
+  // classifier itself stays UI-free; these are its words. Each names the one
+  // place the translator (or the facilitator beside them) can act, because a
+  // refusal the app cannot lift is only useful if it says who can.
+  micNoDevice: "No microphone was found on this device.",
+  micSiteBlocked:
+    "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.",
+  micOsBlocked:
+    "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.",
+  micPrompt:
+    "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.",
+  // The residual class: `getUserMedia` refused and said nothing usable about
+  // why, so this claims nothing about the cause.
+  micStartFailed: "Could not start recording.",
+
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
   // the action is stop (D4), so the label says "Stop playing".
@@ -403,7 +476,7 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
+    couldNotBeIncluded(counted(n, "segment", "segments")),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -424,7 +497,7 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
+    couldNotBeIncluded(counted(n, "chapter", "chapters")),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -509,6 +582,48 @@ export const strings = {
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+
+  // ── The save that failed (#38) ───────────────────────────────────────────
+  // The text layer of the screen that stands between a failed save and losing
+  // the recording. Its two paths — a fresh recording, or the edited buffer of
+  // one — are a PARAMETER rather than two blocks of keys, because on the edit
+  // path the previously stored recording is untouched on disk and a line that
+  // said "recording" would misname what a discard destroys.
+  //
+  // The headline, the safety line and the attempt count are deliberately NOT
+  // here: they are `components/recovery-copy.ts`, a pure module with tests of
+  // its own, and folding a second, differently-shaped table into this one is
+  // not what #169 asks for.
+  saveFailedDialog: (editOnly: boolean): string =>
+    editOnly ? "Your changes are not saved" : "This recording is not saved",
+  // In place of the headline while a retry is in flight.
+  saveFailedSaving: "Saving",
+  // The one promise this screen makes, and the reason it can make it: the commit
+  // is ONE transaction (#38), so a failed save left the take in the RAM slot
+  // `useSaveTake` holds. Names the segment when the held take belongs to the
+  // chapter on screen, and says nothing about it when it does not.
+  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string => {
+    const subject = editOnly ? "edited recording" : "recording";
+    return ordinal === null
+      ? `Your ${subject} is still here.`
+      : `Your ${subject} of segment ${ordinal} is still here.`;
+  },
+  // NOT `tryAgain` and NOT `loadRetry`: this retries a WRITE, and on an
+  // icon-only `Control` the label is the whole thing a screen reader speaks.
+  saveFailedRetry: "Try saving again",
+  // The two-tap discard, and the fainter line beneath it once armed. "for good"
+  // only on the record path — there the held take is the only copy; on the edit
+  // path the stored recording survives and only the edit goes.
+  saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
+    armed
+      ? editOnly
+        ? "Tap again to discard these changes"
+        : "Tap again to delete this recording for good"
+      : editOnly
+        ? "Discard these changes"
+        : "Delete this recording",
+  saveFailedDiscardHint: (editOnly: boolean): string =>
+    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
@@ -601,11 +716,15 @@ export const strings = {
   // a facilitator sending something to a maintainer, and the noun has to name
   // the thing they are sending, not the file format it happens to be.
   failuresMarker: (n: number): string =>
-    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+    counted(n, "problem recorded", "problems recorded"),
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
+  //
+  // It CALLS `failuresMarker` rather than repeating its wording, for the reason
+  // `shareBookPartial` gives: the two were byte-for-byte copies, so a tightening
+  // of one would have left the other saying the old thing (#169).
   menuOpenWithFailures: (n: number): string =>
-    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+    `Open menu. ${strings.failuresMarker(n)}.`,
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.
