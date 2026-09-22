@@ -316,7 +316,7 @@ describe("the native share session", () => {
   });
 
   it("stops a cancelled write before the sheet, and takes the partial with it", async () => {
-    // George R5 P2. The staging write is the slow half — a book zip in 768 KB
+    // George R5 P2. The staging write is the slow half — a book zip in 384 KiB
     // chunks — and it now runs on tap 1, where closing the menu is a normal
     // thing to do. `reset()` aborts; nothing may reach the OS after that, and
     // the half-written file must not be left behind.

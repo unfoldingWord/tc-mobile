@@ -233,7 +233,7 @@ export interface NativeShareSession {
    *
    * **This is the slow half, and it is deliberately separate from {@link send}**
    * (George R5 P2). A book zip is tens of megabytes and crosses the bridge in
-   * 768 KB chunks, so this runs for seconds. Every caller already has a place
+   * 384 KiB chunks, so this runs for seconds. Every caller already has a place
    * for slow work — `useShareFlow`'s tap 1, which paints `preparing` — and none
    * of them has a place for it in the gesture that opens the sheet. Putting it
    * there made "Share now" look like a dead button and left the flow `ready`
@@ -300,7 +300,7 @@ export function createNativeShareSession(
       try {
         // Checked IMMEDIATELY BEFORE each bridge call, never merely before the
         // read that precedes it (Frank R6 P2). Reading and base64-encoding a
-        // 768 KB slice is itself an await, so a cancel arriving during the read
+        // 384 KiB slice is itself an await, so a cancel arriving during the read
         // would otherwise still buy one more native write — the expensive half —
         // on exactly the slow device this cancel exists for.
         throwIfAborted(signal);
