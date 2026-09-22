@@ -219,6 +219,37 @@ export function App() {
     [leave, primeAudioContext]
   );
 
+  // ── The finished flag's one reconciliation point (#160, L-10) ────────────
+  //
+  // Recorded here because this `reload()` is the whole of it, and the next
+  // person to make the recorder non-modal has to find this first. Verified at
+  // this head rather than restated from the issue:
+  //
+  //   THREE writer paths, all landing in `lib/storage/books.ts`:
+  //     - a take commit — `writeTakeInTx` stamps the status atomically with the
+  //       take, so `addTake`/`saveTake` set it on every recording;
+  //     - `clearSegmentTake`, which returns an erased segment to "not-started";
+  //     - `setSegmentFinished`, the explicit toggle.
+  //
+  //   THREE in-memory mirrors, none of which observes the others:
+  //     - `SegmentRow.finished`        (hooks/use-chapter-segments.ts)
+  //     - `RecorderSegmentView.finished` (hooks/use-recorder-segment.ts)
+  //     - the sheet's `displayedFinished`, which is `finishedIntent` over
+  //       `pendingDemote` over the view's flag (components/recorder.tsx)
+  //
+  // Nothing subscribes to the store. The mirrors are reconciled by exactly one
+  // event: this `reload()`, when the sheet closes having changed something.
+  //
+  // It is correct today for one reason — the sheet is MODAL. While it is open
+  // the screens behind it are `inert` (the wrapper below), so the list's mirror
+  // cannot be read or acted on during the window in which it is stale; and the
+  // list's own toggle patches its row in place only after a landed write, so it
+  // never diverges from the store on its own.
+  //
+  // The moment any of that stops holding — a non-modal sheet, a second surface
+  // showing the flag, a background write — a `reload()` on close is no longer
+  // enough and this wants a store-change subscription instead. That is the
+  // replacement L-10 names; it is not worth building while the premise holds.
   const recorderClosedState = useCallback(
     (dirty: boolean) => {
       // The recorder has already stopped and committed any take before this

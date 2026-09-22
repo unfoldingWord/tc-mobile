@@ -22,6 +22,12 @@ export interface RecorderSegmentView {
   readonly bookName: string;
   readonly chapterNumber: number;
   readonly ordinal: number;
+  /**
+   * The stored flag as it was at open — one of three mirrors of it (#160,
+   * L-10; the seam is recorded at `recorderClosedState` in `app/App.tsx`). The
+   * sheet does not render this directly: `displayedFinished` puts the
+   * translator's un-committed intent over it.
+   */
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
   readonly hasClip: boolean;
