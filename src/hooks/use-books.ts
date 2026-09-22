@@ -536,11 +536,18 @@ export function useBooks() {
   const addingChapterFor = useRef<Set<BookId>>(new Set());
 
   const addChapter = useCallback(
-    async (bookId: BookId): Promise<Chapter | null> => {
+    async (bookId: BookId, name: string): Promise<Chapter | null> => {
       if (!canStartAddChapter(addingChapterFor.current, bookId)) return null;
       addingChapterFor.current.add(bookId);
       try {
-        const chapter = await addChapterToBook(bookId);
+        // `name` is what the Add-chapter prompt confirmed (#609) — "" for an
+        // untouched "Chapter N" default, which the store writes as no label at
+        // all. Required rather than defaulted, so a call site that forgets to
+        // forward the field is a `tsc` error and not a silently unnamed
+        // chapter. `undefined` for the ordinal: only the export suites pin an
+        // explicit `number`, and the default (max + 1, derived in the write's
+        // own transaction) is what the product path wants.
+        const chapter = await addChapterToBook(bookId, undefined, name);
         report(null); // a successful write clears the slot — see `createBook`
         // Patch the row on THIS book's card in the same turn as the write —
         // see `patchNewChapter` — so the control's own repeated activations

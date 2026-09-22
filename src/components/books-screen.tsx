@@ -40,6 +40,7 @@ import {
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
+import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -51,10 +52,12 @@ import type { BookCard, ChapterRow } from "@/types/view";
  * that no longer exists, is a `tsc` error rather than a Back that silently
  * does nothing.
  *
- * Five, matching the design's "PR3 — Books' overlays" (the book ≡ menu and its
- * rename mode are ONE overlay: rename is a mode inside the same panel, so it
- * opens no second layer and Back from the rename field closes the menu, just
- * as the panel's own Close does).
+ * The design's "PR3 — Books' overlays" listed five; `books:new-chapter` is the
+ * sixth, added with the Add-chapter prompt (#609) for the same reason
+ * `books:new-book` exists — a naming dialog Back must close rather than walk
+ * out of the app from. The book ≡ menu and its rename mode remain ONE overlay:
+ * rename is a mode inside the same panel, so it opens no second layer and Back
+ * from the rename field closes the menu, just as the panel's own Close does.
  *
  * `books:log-clear-confirm` is the one the design's overlay catalogue does not
  * list: `FailureLogPanel`'s Clear confirm (#205) portals OVER the global menu
@@ -75,6 +78,7 @@ type BooksLayerId =
   | "books:global-menu"
   | "books:log-clear-confirm"
   | "books:new-book"
+  | "books:new-chapter"
   | "books:book-menu"
   | "books:delete-confirm";
 
@@ -215,6 +219,29 @@ export function BooksScreen({
   // does not drop focus to the document (the dialog's own controls unmount).
   // Cleared on a successful create, where `pendingFocus` takes over instead.
   const newBookReturnFocus = useRef<HTMLElement | null>(null);
+  // The Add-chapter prompt (#609). `null` is closed; an open prompt carries
+  // BOTH the book it will add to and the "Chapter N" the field is seeded with,
+  // in one value, for the same reason `newBookSeed` holds the seed rather than
+  // a boolean: the field's starting text and the dialog's open state cannot
+  // disagree, each open remounts `NameEdit` with a fresh seed, and Confirm can
+  // tell an untouched field from a typed one.
+  const [newChapter, setNewChapter] = useState<{
+    readonly bookId: BookId;
+    readonly seed: string;
+  } | null>(null);
+  // The in-flight latch and its visual half — `creatingBook`/`creatingBookBusy`
+  // above, one prompt down. Same lifetime: set on Confirm, reset on the next
+  // open edge, never in a `finally`, so the window between the write resolving
+  // and the panel unmounting cannot take a second Confirm.
+  const creatingChapter = useRef(false);
+  const [creatingChapterBusy, setCreatingChapterBusy] = useState(false);
+  // Where focus was when the prompt opened — the row's `+`. Restored on EVERY
+  // close, unlike New Book's: the `+` survives the create (the book row does
+  // not unmount), so the trigger is still the right landing spot afterwards,
+  // and it is where focus already stayed before this prompt existed. It is
+  // also the safe one — a held Enter re-activating it reopens a prompt, where
+  // before #609 it wrote another undeletable chapter per key-repeat.
+  const newChapterReturnFocus = useRef<HTMLElement | null>(null);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
@@ -341,6 +368,20 @@ export function BooksScreen({
   }, []);
 
   /**
+   * The Add-chapter prompt's state half. Same contract as
+   * `cancelNewBookState`: nothing is created, and `false` means the prompt is
+   * HELD mid-create so the caller keeps its layer registered. A chapter cannot
+   * be deleted at all on this tree, so letting a dismissal through mid-write
+   * would be worse here than for a book — the layer's `busy()` reads the same
+   * ref, so a system Back never reaches this early return.
+   */
+  const cancelNewChapterState = useCallback(() => {
+    if (creatingChapter.current) return false;
+    setNewChapter(null);
+    return true;
+  }, []);
+
+  /**
    * Closing the book ≡ menu (scrim, Escape, close button, a system Back) ends
    * the flow: drop any armed File so a stale "ready" cannot linger behind a
    * closed menu (mirrors Segments).
@@ -430,6 +471,12 @@ export function BooksScreen({
       busy: () => creatingBook.current,
       dismiss: () => {
         cancelNewBookState();
+      },
+    },
+    "books:new-chapter": {
+      busy: () => creatingChapter.current,
+      dismiss: () => {
+        cancelNewChapterState();
       },
     },
     "books:book-menu": {
@@ -525,7 +572,11 @@ export function BooksScreen({
     // effect before the refs below were set and the focus would be lost for
     // good. Re-running on either close edge makes the order irrelevant; a run
     // with nothing pending is a no-op.
-  }, [books, deleteTargetId, newBookSeed]);
+    // `newChapter` is in the list for the same reason `newBookSeed` is: the
+    // Add-chapter prompt sets `pendingScroll` and closes itself in one async
+    // continuation alongside the hook's own `setBooks`, and this hand-off must
+    // not depend on React batching those into one commit.
+  }, [books, deleteTargetId, newBookSeed, newChapter]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {
@@ -646,14 +697,91 @@ export function BooksScreen({
     [createBook, layers, newBookSeed]
   );
 
+  // A book row's `+` no longer creates anything either: it opens the naming
+  // prompt first (#609), the chapter parallel of what #314 did to the corner +.
+  // The field is pre-filled with the "Chapter N" the row would have shown
+  // anyway, so the one-tap add is still one tap — Confirm — and a facilitator
+  // who wants "Mark 6" types it here instead of hunting for Rename afterwards.
+  //
+  // Synchronous, for the reason `onNewBook` is: the ordinal is already in hand
+  // from the loaded shelf, so the prompt opens in the SAME commit as the tap
+  // and the shelf is never left live and un-`inert` across an await, with a
+  // row's ≡ one tap from stacking a second `aria-modal` panel.
+  //
+  // `nextChapterNumber` is the same pure function `addChapter`'s own write
+  // transaction calls, over the same numbers, so the name the field offers is
+  // the ordinal the write then derives.
   const onNewChapter = useCallback(
-    async (bookId: BookId) => {
-      const chapter = await addChapter(bookId);
-      if (!chapter) return; // failed create surfaced through the hook's Notice
+    (bookId: BookId) => {
+      const card = books.find((b) => b.bookId === bookId);
+      if (!card) return; // the row is gone from under the tap; nothing to add to
+      newChapterReturnFocus.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      // The open edge is where the in-flight latch resets — a reused prompt
+      // starts clean, exactly as `onNewBook` resets `creatingBook`.
+      creatingChapter.current = false;
+      setCreatingChapterBusy(false);
+      setNewChapter({
+        bookId,
+        seed: strings.chapterName(
+          nextChapterNumber(card.chapters.map((c) => c.number))
+        ),
+      });
+      layers.open("books:new-chapter");
+    },
+    [books, layers]
+  );
+
+  const onCancelNewChapter = useCallback(() => {
+    if (cancelNewChapterState()) layers.close("books:new-chapter");
+  }, [cancelNewChapterState, layers]);
+
+  // Return focus to the `+` that opened the prompt, once it is gone. In an
+  // effect rather than in the handler, because the shelf is `inert` while the
+  // prompt is up and focusing inside an inert subtree does nothing — this has
+  // to wait for the render that removes `inert`. Unlike New Book this runs on
+  // the create path too; see the ref's declaration for why the trigger is the
+  // right landing spot there.
+  useEffect(() => {
+    if (newChapter !== null) return;
+    const el = newChapterReturnFocus.current;
+    newChapterReturnFocus.current = null;
+    if (el?.isConnected) el.focus();
+  }, [newChapter]);
+
+  const onConfirmNewChapter = useCallback(
+    async (typed: string) => {
+      if (newChapter === null || creatingChapter.current) return;
+      creatingChapter.current = true;
+      setCreatingChapterBusy(true);
+      const { bookId } = newChapter;
+      // An untouched field means "the default is fine", so send "" and let the
+      // store write no label at all — the row then displays the ordinal its own
+      // transaction derived, which is what the field was showing. Compared
+      // TRIMMED because the caret lands in the pre-filled text and a stray
+      // trailing space would otherwise store "Chapter 3 " as a literal name
+      // (the same mapping `onConfirmNewBook` makes, for the same reason).
+      const name = typed.trim() === newChapter.seed ? "" : typed;
+      const chapter = await addChapter(bookId, name);
+      // The prompt comes down either way. On failure the hook has already put
+      // the reason on the screen's own Notice — where an add-chapter failure
+      // has always been spoken — and that Notice sits BEHIND this panel's
+      // scrim, so holding the panel open would hide the only report there is.
+      // A chapter, unlike a book, has no dialog-scoped failure channel; giving
+      // it one means changing what the hook returns, which is its own change.
+      setNewChapter(null);
+      layers.close("books:new-chapter");
+      if (!chapter) return;
       setExpanded((prev) => new Set(prev).add(bookId));
       pendingScroll.current = chapter.id;
+      // No `finally`: the latch stays held until the next open edge, so the
+      // window between the write resolving and the panel unmounting cannot
+      // take a second Confirm and write a chapter nothing on this tree can
+      // delete.
     },
-    [addChapter]
+    [addChapter, layers, newChapter]
   );
 
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
@@ -1067,6 +1195,7 @@ export function BooksScreen({
         shareMenuBook !== null ||
         deleteTargetId !== null ||
         newBookSeed !== null ||
+        newChapter !== null ||
         // The share overlay joins the shelf's inert conditions (George r1 P2
         // #1/#2, #491): AT gesture navigation does not dispatch the `Tab`
         // keydowns `<ShareProgress>` intercepts, so this is what keeps that
@@ -1196,7 +1325,7 @@ export function BooksScreen({
                 book={book}
                 expanded={expanded.has(book.bookId)}
                 onToggle={() => toggle(book.bookId)}
-                onNewChapter={() => void onNewChapter(book.bookId)}
+                onNewChapter={() => onNewChapter(book.bookId)}
                 onOpenShareMenu={() => onOpenShareMenu(book.bookId)}
                 onOpenChapter={onOpenChapter}
                 setNode={setNode}
@@ -1274,6 +1403,31 @@ export function BooksScreen({
             also carries a failed addChapter or rename and would announce one
             here as if naming had gone wrong. */}
         {newBookError && <Notice>{newBookError}</Notice>}
+      </Menu>
+
+      {/* Add chapter asks for the name before it creates anything (#609). The
+          same panel, the same NameEdit and the same "Confirm alone is the old
+          one-tap" contract the New Book dialog above holds — the field arrives
+          pre-filled with the "Chapter N" the new row would show anyway.
+
+          No dialog-scoped Notice here, unlike New Book: a failed add-chapter
+          has always spoken through the screen's own Notice, and this panel
+          closes on failure so that Notice is visible rather than behind its
+          scrim. See `onConfirmNewChapter`. */}
+      <Menu
+        open={newChapter !== null}
+        onClose={onCancelNewChapter}
+        title={strings.newChapterTitle}
+        closeLabel={strings.newChapterClose}
+      >
+        <NameEdit
+          initialValue={newChapter?.seed ?? ""}
+          fieldLabel={strings.chapterNameField}
+          saveLabel={strings.createChapter}
+          onSave={(name) => void onConfirmNewChapter(name)}
+          onCancel={onCancelNewChapter}
+          busy={creatingChapterBusy}
+        />
       </Menu>
 
       {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
