@@ -123,8 +123,9 @@ jobs:
       # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
       # Swift package through xcodebuild, so it must use the same toolchain gym
       # archives with, or SPM resolves against one Xcode and the archive runs on
-      # another. Choose the newest stable Xcode 26 by numeric version, and fail
-      # closed if the runner has no matching versioned application.
+      # another. Target the iOS 26 SDK for App Store Connect uploads, choosing
+      # the newest stable Xcode 26 by numeric version rather than relying on
+      # the runner image default. Fail closed if no matching application exists.
       - name: Select Xcode
         run: |
           set -euo pipefail
@@ -162,11 +163,15 @@ jobs:
           const config = readFileSync('vite.config.ts', 'utf8');
           const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
           const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
-          if (patterns.length === 0) throw new Error('No globPatterns found in vite.config.ts');
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
           const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
           const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
           if (thumbnailsEmitted !== jpgConfigured) {
-            throw new Error('Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
           }
           NODE
           for tok in "e2e-harness" "__e2e"; do
