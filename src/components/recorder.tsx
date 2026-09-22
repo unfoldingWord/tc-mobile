@@ -26,7 +26,8 @@ import {
   heldByDrag,
   liftOutcome,
   liveScopeShown,
-  panAfterCutRest,
+  panAfterCutCollapse,
+  selectionReseed,
   panAfterDragMove,
   panAfterRedo,
   panAfterUndo,
@@ -286,6 +287,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // `panState`. Cleared when a selection opens (a fresh span has not been
     // zoomed yet), when a drag takes the pan over, and on leaving edit.
     const [zoomPan, setZoomPan] = useState<number | null>(null);
+    // A cut has collapsed the frame to the centerline (#613). It suspends the
+    // render-time reseed below — which is what re-drew the band the cut had
+    // just dropped, in the same commit — so the state after a cut is the one
+    // the requirements owner asked for: one red line, on the sample a paste
+    // lands at, with the scissors gone. It is a latch and not a derived value
+    // because "no frame is open" is also the state the reseed EXISTS to fill;
+    // only the cut knows the difference. Everything that should bring a frame
+    // back clears it (`reopenFrame`).
+    const [cutCollapsed, setCutCollapsed] = useState(false);
+    /**
+     * Lift the #613 collapse: the next render may seed a frame again.
+     *
+     * Called from every route that leaves the translator wanting one — a
+     * paste, an undo, a redo, leaving edit mode, and the lift of a stage drag
+     * (the waveform came to rest somewhere new, which is where the next span
+     * is picked). It is NOT called from the cut itself, and there is no timer:
+     * the collapsed state is the resting state after a cut, not a flash.
+     */
+    const reopenFrame = useCallback(() => setCutCollapsed(false), []);
     const [zoom, setZoom] = useState(ZOOM_WHOLE);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -569,17 +589,29 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
     const insertionPan = Math.min(panState ?? length, length);
-    // Reloads must reach their committed buffer first. Cut/Undo/Redo clear the
-    // old frame, so reseed from the remapped insertion pan before painting.
-    // Empty buffers have no usable frame; Undo or Paste can make one again.
-    if (
-      mode === "edit" &&
-      !editor.selectionActive &&
-      (!selectionEntry ||
+    // Reloads must reach their committed buffer first. Undo/Redo clear the old
+    // frame, so reseed from the remapped insertion pan before painting. Empty
+    // buffers have no usable frame; Undo or Paste can make one again. A CUT
+    // clears the frame too and is the one case that is NOT reseeded (#613):
+    // the collapsed line is the paste target, and the band coming back over it
+    // is the reported bug.
+    //
+    // The three-valued answer, and why a cut suspends the seed while still
+    // taking the clear, is `selectionReseed`'s own docblock (recorder-stage.ts,
+    // #613) — the enumerated rule lives there, where a truth table can reach
+    // it, rather than as a condition here where nothing could.
+    const reseed = selectionReseed({
+      mode,
+      selectionActive: editor.selectionActive,
+      entrySettled:
+        !selectionEntry ||
         selectionEntry.samples === null ||
-        editor.working === selectionEntry.samples)
-    ) {
-      if (length > 0) {
+        editor.working === selectionEntry.samples,
+      length,
+      collapsedByCut: cutCollapsed,
+    });
+    if (reseed !== "none") {
+      if (reseed === "seed") {
         const seedWindow = viewportWindow(
           length,
           insertionPan,
@@ -1232,8 +1264,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setDragging(outcome.dragging);
         resumeAfterDragRef.current = outcome.keepOwed;
         if (outcome.resume) soundRange(from, length);
+        // The stage has come to rest somewhere the translator chose, so a
+        // frame may be seeded there again (#613). On the owner's lift only:
+        // a second finger leaving mid-drag has not ended the gesture. This is
+        // what keeps a second cut reachable without leaving edit mode — the
+        // collapsed line survives until the waveform is touched again.
+        if (wasOwner) reopenFrame();
       },
-      [length, soundRange, takeActive]
+      [length, soundRange, takeActive, reopenFrame]
     );
 
     // Abort an in-flight decode and drop the synchronous guard, but KEEP a prepared
@@ -1723,6 +1761,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // is the sentence that says so.
       stopPlayback();
       editor.closeSelection();
+      // Leaving edit ends the collapsed state too (#613): the next entry into
+      // edit mode opens on a frame, as it always has, rather than inheriting
+      // the last session's cut. This is also the route a translator takes to
+      // pick a second span deliberately — `[ ]` off, `[ ]` on.
+      reopenFrame();
       setZoom(ZOOM_WHOLE);
       // The zoom's view pan is edit-only, exactly as the zoom itself is. The
       // `viewPan` gate already makes it inert here (mode leaves "edit"), so this
@@ -1731,7 +1774,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
-    }, [editor, stopPlayback]);
+    }, [editor, stopPlayback, reopenFrame]);
 
     // Zoom, keeping the picked span on screen (#91).
     //
@@ -1796,7 +1839,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (undoneOp !== null) {
         setPanState((p) => panAfterUndo(p, undoneOp, length));
       }
-    }, [editor, stopPlaybackDroppingPan, length]);
+      // Undoing the cut puts the audio back, so the collapse it latched is
+      // over (#613) — and so is the collapse a LATER undo steps past, since
+      // the frame it reseeds is measured against the buffer that comes back.
+      reopenFrame();
+    }, [editor, stopPlaybackDroppingPan, length, reopenFrame]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
@@ -1804,23 +1851,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (redoneOp !== null) {
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
-    }, [editor, stopPlaybackDroppingPan, length]);
+      reopenFrame();
+    }, [editor, stopPlaybackDroppingPan, length, reopenFrame]);
 
     const onCut = useCallback(() => {
       stopPlayback();
       const removed = editor.cut();
-      // Keep the centerline on the same audio: a cut before it shortens the
-      // buffer to its left, so shift an absolute pan by what was removed
-      // (George R5), through the rest rule (#473) — a cut that runs to the
-      // end must not leave `panState` holding the number `newLength` instead
-      // of the F7 rest, or a later Paste/Record punches into the pasted
-      // audio. A null/resting pan already follows the new end. `length` is
-      // the PRE-cut closure value; `panAfterCutRest` derives the post-cut
-      // length from `removed` itself.
+      // Collapse to the cut point (#613): the band is gone, so the line left
+      // on the stage has to be the one thing that state means — where a paste
+      // will land. Unconditional, a rested `null` pan included: the rest is
+      // "the end", and after a cut in the middle the paste target is the cut,
+      // not the end. It goes through the rest rule (#442/#473) all the same —
+      // a cut that runs to the end must not leave `panState` holding the
+      // number `newLength`, or a later Paste/Record punches into the pasted
+      // audio. `length` is the PRE-cut closure value; `panAfterCutCollapse`
+      // derives the post-cut length from `removed` itself.
       if (removed !== null) {
-        setPanState((p) =>
-          p === null ? null : panAfterCutRest(p, removed, length)
-        );
+        setPanState(panAfterCutCollapse(removed, length));
+        setCutCollapsed(true);
       }
     }, [editor, stopPlayback, length]);
 
@@ -1829,7 +1877,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onPaste = useCallback(() => {
       stopPlayback();
       editor.paste(insertionPan);
-    }, [editor, insertionPan, stopPlayback]);
+      // The paste target has been used, so the collapsed line has said what it
+      // was there to say (#613) — the next render seeds a frame again, over
+      // the audio that just landed.
+      reopenFrame();
+    }, [editor, insertionPan, stopPlayback, reopenFrame]);
 
     const onToggleFinished = useCallback(() => {
       if (!view) return;
@@ -3372,32 +3424,46 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 {mode === "edit" && (
                   <div className="recorder-cut flex justify-center">
                     {/* The Cut affordance sits under the frame (mockup 4). Cutting
-                      reseeds the frame and makes the clipboard available. Edit-mode
-                      only — the block is absent from the record-mode tree — but
+                      collapses the frame to the centerline and makes the
+                      clipboard available. Edit-mode only — the block is absent
+                      from the record-mode tree — but
                       still `disabled` on the same `idleEditable` safety: without
                       it a Cut tapped during the async close would mutate the
                       working buffer after close() already captured the pre-cut
                       one — a silently dropped edit.
 
+                      The button is MOUNTED only while a frame is open (#613),
+                      the way the paste marker above is: with no span there is
+                      nothing to cut, and after a cut the scissors leaves rather
+                      than sitting dimmed over the line that now marks the paste
+                      target. The ROW stays mounted either way and reserves the
+                      control's height (`.recorder-cut`'s `min-height`,
+                      3-components.css) — `.recorder-stage` is a centred column,
+                      so a row that collapsed with its child would recentre the
+                      group and jump the canvas, which is the same lesson
+                      `.recorder-paste` was taught in #414.
+
                       `heldByDrag` is the same #317 stage lock Undo/Redo carry
-                      (#512 George R1 P2-1): `onCut` writes `panAfterCutRest`
+                      (#512 George R1 P2-1): `onCut` writes `panAfterCutCollapse`
                       into `panState`, and a finger still down from a stage
                       drag keeps writing `onPointerMove`'s
                       `panAfterDragMove(panAtDragStart, …)` afterwards — a
                       PRE-cut origin against the POST-cut length, clobbering
                       the cut's own write. Cut does not clear `dragging` on
                       its own, so the gate is what has to. */}
-                    <Control
-                      icon="scissors"
-                      label={strings.cut}
-                      variant="quiet"
-                      size={26}
-                      disabled={heldByDrag(
-                        dragging,
-                        !idleEditable || !editor.canCut
-                      )}
-                      onClick={onCut}
-                    />
+                    {editor.selectionActive && (
+                      <Control
+                        icon="scissors"
+                        label={strings.cut}
+                        variant="quiet"
+                        size={26}
+                        disabled={heldByDrag(
+                          dragging,
+                          !idleEditable || !editor.canCut
+                        )}
+                        onClick={onCut}
+                      />
+                    )}
                   </div>
                 )}
                 {(recording || paused) && (

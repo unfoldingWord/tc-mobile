@@ -931,6 +931,14 @@
   .recorder-cut {
     padding-top: var(--p-space-2);
     color: var(--s-voice);
+    /* The scissors is mounted only while a selection frame is open (#613), so
+       this row reserves its box the way `.recorder-paste` reserves the paste
+       marker's (#414 R3 P3): `.recorder-stage` is a centred column and a row
+       that collapsed with its child would recentre the group, jumping the
+       canvas on every cut. `--c-control-sm` is what `.control--quiet` — the
+       scissors — is sized by, read as the token rather than repeated as 40px
+       (the #362 40-to-44 question above is exactly that kind of change). */
+    min-height: var(--c-control-sm);
     /* `flex-shrink: 0` (George R7 P2-1, round 8): this row's `min-height:
        auto` (unset, and it is not `overflow: hidden`) already gives it an
        automatic minimum size equal to its own content, so it could not
