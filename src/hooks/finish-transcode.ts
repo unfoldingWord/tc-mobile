@@ -85,14 +85,40 @@ let lastStalledSegmentId: SegmentId | null = null;
  * segment left untranscoded keeps its PCM and is picked up by the next launch or
  * the next Finished transition — dying half-way is already documented as safe.
  * And the only exit from the crash screen is a reload, which is a new page with
- * a fresh launch sweep, so there is nothing to resume: no `resume` exists,
- * because a one-way flag with no reader for its other half would be a stub.
+ * a fresh launch sweep, so there is nothing for this quiesce path to resume: a
+ * quiesce-specific `resume` would be a stub.
  */
 let quiesced = false;
+const pauseReasons = new Set<string>();
+let requestedDuringPause = false;
+
+function paused(): boolean {
+  return pauseReasons.size > 0;
+}
 
 /** Called from the error boundary. See {@link quiesced}. */
 export function quiesceTranscodeSweep(): void {
   quiesced = true;
+  pauseReasons.clear();
+  requestedDuringPause = false;
+}
+
+/**
+ * Temporarily stop new transcode work while a live screen needs the failure log
+ * to stay stable. Unlike {@link quiesceTranscodeSweep}, this is reversible.
+ */
+export function pauseTranscodeSweep(reason: string): void {
+  if (quiesced) return;
+  pauseReasons.add(reason);
+}
+
+/** Resume work paused by {@link pauseTranscodeSweep}. */
+export function resumeTranscodeSweep(reason: string): void {
+  if (quiesced) return;
+  pauseReasons.delete(reason);
+  if (paused() || !requestedDuringPause) return;
+  requestedDuringPause = false;
+  void requestTranscodeSweep();
 }
 
 /**
@@ -115,6 +141,10 @@ export function requestTranscodeSweep(): Promise<void> {
   // `void`s this, and a rejection would reach the funnel and append the very
   // kind of row this is here to stop.
   if (quiesced) return Promise.resolve();
+  if (paused()) {
+    requestedDuringPause = true;
+    return Promise.resolve();
+  }
   if (running) {
     requestedDuringRun = true;
     return running;
@@ -163,7 +193,7 @@ async function runSweeps(): Promise<void> {
     let poison: SegmentId | null = null;
     do {
       requestedDuringRun = false;
-      if (quiesced) break;
+      if (quiesced || paused()) break;
       const stalled = await sweepOnce(poison);
       if (stalled !== null) {
         // Second stall in this run: the encoder has stopped. End the run.
@@ -203,7 +233,7 @@ export function afterStalledSegment<
  * `skip` leaves one segment out entirely — the drain pass's poison clip.
  */
 async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
-  if (quiesced) return null;
+  if (quiesced || paused()) return null;
   let owed: Awaited<ReturnType<typeof listPcmFinishedSegments>>;
   try {
     owed = await listPcmFinishedSegments();
@@ -222,7 +252,10 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
     // stops at the next clip rather than running the backlog to the end. One
     // segment already inside `withEncoder` finishes — it holds the lane and its
     // commit is a transaction — so at most one further row can land.
-    if (quiesced) return null;
+    if (quiesced || paused()) {
+      if (paused()) requestedDuringPause = true;
+      return null;
+    }
     if (segmentId === skip) continue;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
