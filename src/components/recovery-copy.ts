@@ -89,8 +89,8 @@ export function recoverySafetyLine(
   }
   if (kind === "stale") {
     return editOnly
-      ? "The chapter was deleted in another copy of the app. Discard is the only exit."
-      : "The chapter was deleted in another copy of the app. Delete this recording to leave.";
+      ? "This book was deleted in another copy of the app. Discard is the only exit."
+      : "This book was deleted in another copy of the app. Delete this recording to leave.";
   }
   return editOnly
     ? "This screen has the only copy of your changes. Don't close the app."

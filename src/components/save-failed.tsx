@@ -230,7 +230,7 @@ export function SaveFailed({
               silently skip the post-retry sweep a successful Finished retry
               still owes (D3). Needs an explicit pause/resume, tracked in the
               linked issue; documented, not silently reused. */}
-          {!terminal && !stale && <SendLogControl />}
+          {!terminal && <SendLogControl />}
 
           {safetyLine && (
             <p className="text-ink-muted text-[13px]">{safetyLine}</p>

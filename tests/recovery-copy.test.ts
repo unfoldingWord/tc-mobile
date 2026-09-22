@@ -95,10 +95,10 @@ describe("recoverySafetyLine", () => {
 
   it("does not tell a stale-target save to retry", () => {
     expect(recoverySafetyLine(false, "stale")).toBe(
-      "The chapter was deleted in another copy of the app. Delete this recording to leave."
+      "This book was deleted in another copy of the app. Delete this recording to leave."
     );
     expect(recoverySafetyLine(true, "stale")).toBe(
-      "The chapter was deleted in another copy of the app. Discard is the only exit."
+      "This book was deleted in another copy of the app. Discard is the only exit."
     );
   });
 

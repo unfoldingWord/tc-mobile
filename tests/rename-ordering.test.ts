@@ -13,52 +13,10 @@ import {
 } from "@/lib/storage/books";
 
 /**
- * The ordering guarantee #394 rides on (#394, deferred from #384 round 4).
- *
- * Frank's scenario: rename a book to "Mark", close the menu, reopen, and
- * rename it to "Luke" before "Mark" settles — if "Mark"'s write settles
- * second, the newer name is silently lost, and no latch anywhere would have
- * stopped it. The resolution chosen here is the documented one the issue
- * itself offered ("accept last-write-wins as a documented, deliberate
- * trade-off"), because the spec already makes last-write-wins the only
- * ordering this app can produce, on every engine:
- *
- * > All implementations have a strict ordering of transactions with
- * > overlapping scopes; ... the read/write transactions similarly block later
- * > read/write and read-only transactions.
- *
- * (`w3c/IndexedDB` PR #319, merged into the spec.)
- *
- * `renameBook` and `renameChapter` both do get-then-put inside ONE readwrite
- * transaction per call, created immediately on call. So creation order is
- * tap order, overlapping readwrite transactions run sequentially in creation
- * order, and the later-typed rename must therefore commit last — the feared
- * "older name wins" outcome is not merely unobserved, it is unreachable. The
- * same holds across two tabs of the same origin: ordering is enforced at the
- * database level, not the connection level, so even there the chronologically
- * later rename lands last.
- *
- * What that leaves, deliberately NOT built:
- *
- *  1. A per-target ref-latch or promise lane (the issue's other option). It
- *     would serialize nothing the engine does not already serialize, and
- *     this repo's rule is that a guard must go red when what it guards is
- *     removed — a lane here has no red path, because its absence cannot
- *     change any observed outcome.
- *  2. Queueing (rather than last-write-wins) for cross-tab renames — two
- *     renames typed on different devices are two different intents, and the
- *     spec already orders them chronologically.
- *
- * If either rename is ever refactored into separate read-tx/write-tx halves,
- * or into a read outside its transaction, these cases are what go red: they
- * pin the OUTCOME (the second call's value is what the store holds), not the
- * mechanism, which is the property the menu's tap sequence actually needs.
- *
- * Red-first line: `tests/storage.test.ts` covers rename idempotency and the
- * single-rename write; this file exists because nothing covered two
- * overlapping calls at all until now — the probe version of these cases was
- * written BEFORE any production change and passed without one, which is
- * precisely why the commit for #394 is docs + this pin, not a new guard.
+ * #394 deliberately accepts transaction-order last-write-wins. These cases use
+ * one cached database connection and pin the observed same-tab call ordering,
+ * plus overlapping book/chapter writes preserving each other's fields.
+ * They do not establish typing-time ordering across tabs or devices.
  */
 beforeEach(clearAllStores);
 

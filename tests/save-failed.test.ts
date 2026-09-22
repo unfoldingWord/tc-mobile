@@ -73,7 +73,7 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     expect(html).toContain("This book is gone");
     expect(html).not.toContain('aria-label="Try saving again"');
     expect(html).not.toContain("Restart the app");
-    expect(html).not.toContain(`aria-label="${strings.shareFailureLog}"`);
+    expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
     expect(html).toContain("control--primary");
   });
 });
