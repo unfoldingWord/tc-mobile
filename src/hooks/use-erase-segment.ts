@@ -87,11 +87,6 @@ export interface UseEraseSegment {
    *
    * Identity-stable (`useCallback([])`), because a `Layer`'s `busy` is
    * captured when the overlay opens and called much later.
-   *
-   * The recorder's own erase confirm still reads `erase.erasing` at
-   * `recorder.tsx` — that call site is #452 PR5's single-line fix, and this
-   * accessor is the thing it switches to. Named here so the two do not drift
-   * into two different ideas of "in flight".
    */
   isErasing: () => boolean;
   /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */

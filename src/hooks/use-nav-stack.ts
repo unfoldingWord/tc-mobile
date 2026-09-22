@@ -49,10 +49,7 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
  *     seed from `resumeNavIndex` on mount (Amendment B): a reload mid-stack
  *     ADOPTS the entry already there rather than rewriting it to 0.
- *   - `layerStack` — the screen-scoped overlay stack (invariant 1/3). Books'
- *     five overlays register here as of PR3 (#374); Segments' follow in PR4, so
- *     above the floor the two layer tags are still unreachable-by-construction
- *     and every Back there routes exactly as `develop` does today.
+ *   - `layerStack` — the screen-scoped overlay stack (invariant 1/3).
  *   - `floorArmed` / `atFloor` — Amendment G (#452 PR3). Books pushes no entry
  *     of its own, so before PR3 a Back with a Books overlay open was a document
  *     navigation with NO `popstate` — measured, see
@@ -153,8 +150,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // Monotonic depth stamp (invariant 9). Seeded on mount by Amendment B.
   const navIndex = useRef(0);
   const nextIndex = useRef(0);
-  // Screen-scoped overlay stack (invariant 1/3). Books' overlays push onto it
-  // as of PR3; Segments' follow in PR4.
+  // Screen-scoped overlay stack (invariant 1/3).
   const layerStack = useRef<Layer[]>([]);
   // Amendment G (#452 PR3): whether this adapter is holding the FLOOR screen's
   // protective entry. At most one, for as long as the floor screen has any
