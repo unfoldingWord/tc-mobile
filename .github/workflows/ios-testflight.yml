@@ -115,8 +115,8 @@ jobs:
       - name: Build the web bundle
         run: npm run build
 
-      # The canonical artifact checks include the reader-gated OBS precache
-      # policy, so a future thumbnail reader follows the same contract as CI.
+      # These checks enforce the reader-gated OBS glob policy. The synced
+      # bundle guard below also checks what the build actually precaches.
       - name: Check the built artifacts
         run: npm run test:dist
 
@@ -155,6 +155,20 @@ jobs:
           set -euo pipefail
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          # test:dist requires jpg exactly when source readers need thumbnails.
+          # Check emitted output too: includeAssets can bypass globPatterns.
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) throw new Error('No globPatterns found in vite.config.ts');
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            throw new Error('Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+          }
+          NODE
           for tok in "e2e-harness" "__e2e"; do
             if grep -rq "$tok" dist/; then
               echo "::error::e2e harness ($tok) leaked into dist/"

@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -32,9 +38,10 @@ function step(name: string): string {
   return script.join("\n");
 }
 
-function run(script: string, env: Record<string, string> = {}) {
+function run(script: string, env: Record<string, string> = {}, cwd?: string) {
   return spawnSync("bash", ["-c", script], {
     encoding: "utf8",
+    cwd,
     env: { ...process.env, ...env },
   });
 }
@@ -145,4 +152,66 @@ it.each([0, 23])("propagates the artifact suite exit status %i", (status) => {
       ARTIFACT_STATUS: String(status),
     }).status
   ).toBe(status);
+});
+
+describe("the emitted iOS thumbnail precache", () => {
+  const current = 'globPatterns: ["**/*.{js,css,html,svg,png,woff2}"]';
+  const restored = 'globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2}"]';
+  it.each([
+    {
+      name: "current policy without thumbnails",
+      config: current,
+      thumbnails: false,
+      status: 0,
+    },
+    {
+      name: "rogue includeAssets or additionalManifestEntries thumbnail",
+      config: current,
+      thumbnails: true,
+      status: 1,
+    },
+    {
+      name: "restored jpg policy with thumbnails",
+      config: restored,
+      thumbnails: true,
+      status: 0,
+    },
+    {
+      name: "restored jpg policy missing thumbnails",
+      config: restored,
+      thumbnails: false,
+      status: 1,
+    },
+    {
+      name: "missing config declaration",
+      config: "",
+      thumbnails: false,
+      status: 1,
+    },
+    {
+      name: "empty config declaration",
+      config: "globPatterns: []",
+      thumbnails: false,
+      status: 1,
+    },
+  ])("$name", ({ config, thumbnails, status }) => {
+    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-gate-"));
+    fixtures.push(root);
+    mkdirSync(path.join(root, "dist"));
+    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
+    writeFileSync(path.join(root, "vite.config.ts"), config);
+    writeFileSync(
+      path.join(root, "dist/sw.js"),
+      'precacheAndRoute([{url:"index.html",revision:"a"}' +
+        (thumbnails ? ',{url:"obs/thumbs/01/01.jpg",revision:"b"}' : "") +
+        "],{});"
+    );
+    writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
+    writeFileSync(
+      path.join(root, "ios/App/App/public/index.html"),
+      "<!doctype html>"
+    );
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status, result.stderr + result.stdout).toBe(status);
+  });
 });
