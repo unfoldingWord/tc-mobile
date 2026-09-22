@@ -2690,13 +2690,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // the #134/#135 gate the ≡ row and this control otherwise share verbatim.
     // Instead the toolbar copy ORs in `menuShown` on top of the shared reason.
     const editToolbarDisabled = editReason !== null || menuShown;
-    // No hint here (#610): the ≡ menu's `alert` badge means "blocked, look
-    // here", and on this toolbar the same glyph read as a failure mark over an
-    // ordinary state — an empty segment, a mic still starting. Neither is a
-    // failure, and the rest of the sheet already shows both (the empty
-    // waveform, Record's own starting state). The control is a plain native
-    // `disabled` button; the ≡ row keeps its badge (`rowHint`, unchanged)
-    // because the glyph vocabulary there is #589, not this one.
+    // Keep the blocked reason reachable to keyboard and switch users without
+    // painting an alert badge for an empty segment or a starting microphone.
+    // The commit Notice already explains uncommitted-take; its menu-specific
+    // "Close menu" hint does not describe this toolbar.
+    const editHint = rowHint(editReason);
+    const editToolbarHint =
+      editReason === "uncommitted-take" || editHint === null
+        ? null
+        : { label: editHint.label };
 
     // A full-body panel owns the sheet body — the permission panel, the
     // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
@@ -3519,6 +3521,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant="default"
                     busy={isClosing}
                     disabled={editToolbarDisabled}
+                    hint={editToolbarHint}
                     onClick={onEnterEdit}
                   />
                 </div>
@@ -3645,13 +3648,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     icon="selection"
                     label={strings.enterEdit}
                     pressed={true}
-                    // No `hint` prop, matching the record-mode twin above: the
-                    // two share `key="edit-toggle"` so React keeps ONE button
-                    // across the mode switch, and `Control` roots a hinted
-                    // control in a wrapper span. Passing `hint` on one side and
-                    // not the other makes the two elements different types
-                    // under the same key — a remount, and the focus the one tap
-                    // was holding is gone (#610's first CI run).
+                    // Both twins keep the hinted root so their shared key
+                    // preserves the button and focus across the mode switch.
+                    hint={null}
                     variant="default"
                     disabled={!idleEditable || dragging}
                     onClick={onExitEdit}
