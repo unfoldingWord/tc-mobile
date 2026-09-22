@@ -131,16 +131,20 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
 ### If a recording will not save
 
-Keep the app open. **Try saving again** retries the work already held in
+Keep the app open. When offered, **Try saving again** retries the work held in
 memory; do not record it again first. If it fails again, keep the screen open
 and ask the facilitator for help. The small share icon sends a problem report,
 **not the unsaved recording**. Do not restart or leave the app expecting that
 report to preserve the audio. <!-- source: src/components/save-failed.tsx; src/hooks/use-save-take.ts -->
 
-Discard asks for confirmation and abandons the pending work. For an edit,
-the previously saved recording remains; a new unsaved recording is lost.
+Discard asks for confirmation and abandons the pending work. After an ordinary
+save failure, discarding an edit leaves the previously saved recording intact;
+a new unsaved recording is lost. If another open copy of the app deleted the
+book, its saved recordings are gone too. The save screen then offers confirmed
+Discard instead of Try saving again: it cannot save into the deleted book or
+restore it. The problem report contains no audio.
 A screen offering Restart instead of Try saving again cannot retry the save;
-restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard and downgrade paths) -->
+restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard, stale and downgrade paths); src/lib/storage/books.ts (deleteBook, saveTake) -->
 
 ### The flip side of "nothing leaves the phone"
 
