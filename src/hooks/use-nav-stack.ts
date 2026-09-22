@@ -25,6 +25,8 @@ import {
 } from "@/lib/nav/travel-guard";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
+import { reportFailure } from "./report-failure";
+
 /**
  * The history adapter for the pivot's system-Back model (#452 PR2,
  * docs/design/back-navigation.md "PR split" item 2). It is the ONE file that
@@ -118,6 +120,8 @@ export interface NativeBackPlugin {
     listener: (event: { canGoBack: boolean }) => void
   ): Promise<PluginListenerHandle>;
   exitApp(): Promise<void>;
+  /** Android only — iOS resolves this with `unimplemented`, so it is gated. */
+  toggleBackButtonHandler(options: { enabled: boolean }): Promise<void>;
 }
 
 export interface NativeBackRoute {
@@ -139,15 +143,19 @@ export interface NativeBackRoute {
  * routing of its own: it asks the SAME `popAction` the `popstate` handler
  * consults, and then does one of three things —
  *
- *   - `"exit-app"` → `exitApp()`. The shelf with nothing open is the one
- *     place Back leaves. This also covers the floor entry left standing by an
- *     overlay closed with its own control (Amendment G, #535): the browser must
- *     spend one silent Back consuming it, the shell can simply leave.
- *   - anything else, when the WebView has an entry to pop → `goBack()`, so the
- *     press becomes the `popstate` the handler already routes (layer dismissal,
- *     re-arms, the recorder's commit-close), through the same travel guard the
- *     on-screen Back uses.
- *   - anything else, with NOTHING to pop → hold. Only a global trap on the bare
+ *   - the WebView has an entry to pop → `goBack()`, whatever the route said.
+ *     The press becomes the `popstate` the handler already routes (layer
+ *     dismissal, re-arms, the recorder's commit-close), through the same travel
+ *     guard the on-screen Back uses. That includes the routes the handler
+ *     settles SILENTLY — the floor entry left standing by an overlay closed
+ *     with its own control (Amendment G, #535), and the deeper index a reload
+ *     adopts above the shelf — where `popAction` says `"exit-app"` but the
+ *     recorded contract is that this press stays: only the one that lands on
+ *     physical depth 0 leaves. `popAction` cannot tell those from a bare shelf;
+ *     `canGoBack` can, so it is read first.
+ *   - nothing to pop, and the route says `"exit-app"` → `exitApp()`. The shelf
+ *     with nothing open and nothing beneath it is the one place Back leaves.
+ *   - nothing to pop, anything else → hold. Only a global trap on the bare
  *     shelf reaches here (`popAction` returns the trap before it ever reads the
  *     screen), and a `history.back()` there would be a no-op by spec: no
  *     `popstate`, so `goBack`'s guard would never settle and every later Back
@@ -158,30 +166,69 @@ export interface NativeBackRoute {
  * anything", read from the event the plugin delivers, rather than re-derived
  * here from `floorArmed` — one source of truth for the physical stack.
  *
+ * The plugin's Android `OnBackPressedCallback` is enabled only while this
+ * listener is registered. It ships DISABLED (`capacitor.config.ts`,
+ * `disableBackButtonHandler`), because an enabled callback with no listener
+ * consumes a root Back and does nothing — the crash screen, which unmounts
+ * this hook, would lose Back as its exit, and so would the window before the
+ * first paint's effects. `toggleAndroidHandler` flips it on once the plugin
+ * has the listener (not before: a press in between would reach the plugin's
+ * no-listener branch), and off again on detach so the press falls through to
+ * the activity default. iOS has no such callback and reports the method as
+ * unimplemented, so the toggle is gated on the platform, not attempted.
+ *
+ * Every plugin promise has a channel: a rejection anywhere here would
+ * otherwise be an unhandled rejection with no context, so each is routed to
+ * `reportFailure` under its own name.
+ *
  * Returns the detach. The plugin resolves its listener handle asynchronously,
  * so a detach that runs first marks the handle for removal the moment it lands.
  */
 export function attachNativeBack(
   plugin: NativeBackPlugin,
-  route: NativeBackRoute
+  route: NativeBackRoute,
+  toggleAndroidHandler = false
 ): () => void {
   let detached = false;
   let handle: PluginListenerHandle | undefined;
-  void plugin
+  const setHandler = (enabled: boolean): void => {
+    if (!toggleAndroidHandler) return;
+    plugin
+      .toggleBackButtonHandler({ enabled })
+      .catch((cause: unknown) => reportFailure(cause, "native-back-handler"));
+  };
+  plugin
     .addListener("backButton", ({ canGoBack }) => {
-      if (route.decide() === "exit-app") {
-        void plugin.exitApp();
+      const action = route.decide();
+      if (canGoBack) {
+        route.goBack();
         return;
       }
-      if (canGoBack) route.goBack();
+      if (action === "exit-app") {
+        plugin
+          .exitApp()
+          .catch((cause: unknown) => reportFailure(cause, "native-back-exit"));
+      }
     })
     .then((resolved) => {
-      if (detached) void resolved.remove();
-      else handle = resolved;
-    });
+      if (detached) {
+        resolved
+          .remove()
+          .catch((cause: unknown) =>
+            reportFailure(cause, "native-back-remove")
+          );
+        return;
+      }
+      handle = resolved;
+      setHandler(true);
+    })
+    .catch((cause: unknown) => reportFailure(cause, "native-back-listener"));
   return () => {
     detached = true;
-    void handle?.remove();
+    setHandler(false);
+    handle
+      ?.remove()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-remove"));
   };
 }
 
@@ -757,18 +804,22 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // `goBack` is `useCallback([])`, so this subscribes once for the hook's life.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    return attachNativeBack(App, {
-      decide: () =>
-        popAction(
-          "back",
-          screenRef.current,
-          transitionInFlight.current,
-          recoveringRef.current,
-          databasePanelRef.current,
-          layerStack.current
-        ),
-      goBack,
-    });
+    return attachNativeBack(
+      App,
+      {
+        decide: () =>
+          popAction(
+            "back",
+            screenRef.current,
+            transitionInFlight.current,
+            recoveringRef.current,
+            databasePanelRef.current,
+            layerStack.current
+          ),
+        goBack,
+      },
+      Capacitor.getPlatform() === "android"
+    );
   }, [goBack]);
 
   return {
