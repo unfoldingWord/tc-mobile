@@ -55,6 +55,16 @@ export interface ClipMeta {
   /** Bytes held in `clipData` — PCM frames × 2, or the MP3's length. */
   readonly byteLength: number;
   /**
+   * How many times a transcode of this clip ended in an encoder stall.
+   *
+   * Scheduling metadata, not a verdict on the audio: a stall is the WORKER
+   * going silent, and a clip that merely happened to be first when the worker
+   * died is counted the same as one that reliably wedges it. Never decays, so
+   * an unlucky clip stays behind the others — harmless, because the order only
+   * decides who is attempted first and every clip keeps its PCM either way.
+   */
+  readonly transcodeStallCount: number;
+  /**
    * Row-resolution waveform peaks, kept ONLY on an `mp3` clip: the Segments list
    * draws its bars from these so listing a chapter never has to decode audio.
    * `null` on PCM, where peaks are computed from the samples on load.

@@ -596,8 +596,14 @@ export function useAudioSession(): UseAudioSession {
   useEffect(() => {
     // Backstop only. `startRecording` releases a refused claim on the completion
     // path; this still covers a recorder that reaches idle by some route that
-    // never resolved a `start()` at all. Paused is not idle, so it does not
-    // trip this.
+    // never resolved a `start()` at all. `processing` is not idle, so a take
+    // still being committed does not trip this.
+    //
+    // The RENDERED state, deliberately, not `readState()` (#173): an effect
+    // runs after the commit that carries the value, so the rendered one is the
+    // one that matches the tree this effect is reconciling. The owner-owned
+    // read is for a SYNCHRONOUS caller inside a handler, which is what the
+    // mirror #173 deleted used to answer wrongly.
     if (recorderState === "idle" && session.live === "mic") session.stopAll();
   }, [recorderState, session]);
 

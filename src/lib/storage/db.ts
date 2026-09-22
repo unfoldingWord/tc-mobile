@@ -60,6 +60,14 @@
  * Out-of-line auto-increment keys, so insertion order is key order and the ring
  * in `failures.ts` can prune the oldest from the front of a cursor without
  * trusting a phone's clock.
+ *
+ * ── v7 (#404): durable transcode-stall accounting — append-only ──
+ *
+ * `ClipMeta` gained `transcodeStallCount`, stamped to 0 for existing clips. The
+ * Finished transcode sweep increments it when a clip wedges the encoder and
+ * orders future owed clips by the count, so poison clips near the head of a
+ * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
+ * still kept; this is scheduling metadata only.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -79,7 +87,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -202,8 +210,9 @@ function isVersionError(cause: unknown): boolean {
  *
  * First caller: the crash screen's Restart (`components/error-boundary.tsx`),
  * which must not hold a reload on a refusal that can never clear (George R7
- * P2-1). The other three failure-log surfaces that still offer a retry after a
- * yield are #455, deliberately not swept here.
+ * P2-1). Failure-log prepare and clear also use this classification (#455):
+ * they show the restart sentence instead of inviting a retry of a terminal
+ * refusal. The controls remain share/clear actions, not reload actions.
  */
 export function isTerminalOpenRefusal(name: string | null): boolean {
   return name === "DatabaseDowngradeError";
@@ -459,15 +468,16 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // shape an upgrade has. Guarded on `oldVersion < 6` like its siblings
         // so a fresh install creates it once and a v5 device gains it once.
         //
-        // ORDER IS LOAD-BEARING: this runs BEFORE the two backfills below, and
+        // ORDER IS LOAD-BEARING: this runs BEFORE every backfill below, and
         // therefore before the upgrade has awaited anything (George #2, round
         // 1). A `versionchange` transaction stays alive across awaited IDB
         // requests — idb's documented pattern, and what the backfills rely on —
         // but a STRUCTURE change after the handler has yielded is a different
         // thing, and some WebKit versions refuse it with `InvalidStateError`,
-        // aborting the whole upgrade. On a fresh install both backfills below
-        // open a cursor unconditionally, so a v6 create placed after them sits
-        // behind two awaits on every new phone — and iOS is the October target.
+        // aborting the whole upgrade. On a fresh install every backfill below
+        // opens a cursor unconditionally, so a v6 create placed after them sits
+        // behind those awaits on every new phone — and iOS is the October
+        // target. Keep it first as backfills are added; do not count them here.
         // The create depends on no awaited result, so keeping it up here costs
         // nothing and removes the question. Pinned by
         // `tests/db-migration.test.ts`, which fails the upgrade if a structure
@@ -496,9 +506,28 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 encoding: "pcm",
                 generation: 0,
                 byteLength: legacy.frameCount * 2,
+                transcodeStallCount: 0,
                 peaks: null,
               };
               await cursor.update(stamped);
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v7 (#404): every pre-existing clip starts with no recorded encoder
+        // stalls. Additive — only the missing field is added, and only to the
+        // metadata row. A fresh install has no clip rows; clips stamped by the
+        // v4 step above already carry the field and are left alone.
+        if (oldVersion < 7) {
+          const store = tx.objectStore("clipMeta");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as ClipMeta & {
+              transcodeStallCount?: number;
+            };
+            if (legacy.transcodeStallCount === undefined) {
+              await cursor.update({ ...legacy, transcodeStallCount: 0 });
             }
             cursor = await cursor.continue();
           }

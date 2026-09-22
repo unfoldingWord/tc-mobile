@@ -564,6 +564,25 @@ describe("the durable sink", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("a terminal clear rejection rejects without trying to append", async () => {
+    reportFailure(new Error("boom"), "a");
+    await settle(1);
+    const appendSpy = vi.spyOn(failuresStore, "appendFailure");
+    vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
+      Object.assign(new Error("the database has moved on"), {
+        name: "DatabaseDowngradeError",
+      })
+    );
+
+    await expect(clearFailureLog()).rejects.toMatchObject({
+      name: "DatabaseDowngradeError",
+    });
+    await flushFailureLog();
+
+    expect(appendSpy).not.toHaveBeenCalled();
+    expect(await readFailures()).toHaveLength(1);
+  });
+
   it("a failed clear does not poison the lane", async () => {
     vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
       new Error("connection closed")
