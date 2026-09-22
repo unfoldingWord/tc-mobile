@@ -325,3 +325,91 @@ it("leaves the line at the end of the take, so the next Record appends", async (
     false
   );
 });
+
+it("a Stop whose decode failed stays in place when Try again succeeds", async () => {
+  // Frank R1 P2. The recovery panel's retry used to read ONE boolean, "was this
+  // an Edit-entry commit?", and treat every false as a Back — so a Stop whose
+  // first decode failed, recovered by Try again, exited to Segments. Stop is not
+  // a Back: the take it recovers belongs to the segment the translator is still
+  // in. The destination now has three answers, and this is the one the boolean
+  // could not express.
+  const s = await setup();
+  const grown = new Int16Array([...original, ...captured]);
+  boundary.reloads = [{ samples: grown, lengthSamples: grown.length }];
+
+  // The first decode fails but the container bytes survive — the #165 "hold"
+  // verdict, the take's only copy.
+  const bytes = new Blob(["kept"]);
+  s.audio.stopRecording = vi.fn(async () => {
+    s.audio.recorderState = "idle";
+    return { samples: null, blob: bytes, error: null };
+  });
+  s.audio.recorderState = "recording";
+  await s.render();
+  await s.click(strings.stop);
+  await s.render();
+
+  // The panel owns the body; nothing has been saved and nothing has exited.
+  expect(s.saveRecording).not.toHaveBeenCalled();
+  expect(s.onExit).not.toHaveBeenCalled();
+
+  s.audio.retryDecode = vi
+    .fn()
+    .mockResolvedValue({ samples: captured, error: null });
+  await s.click(strings.takeRecoverRetry);
+  await s.render();
+
+  expect(s.saveRecording).toHaveBeenCalledOnce();
+  // The whole point: still here, still in record mode, with the panel gone.
+  expect(s.onExit).not.toHaveBeenCalled();
+  expect(document.body.textContent).not.toContain(strings.modepillEditing);
+  expect(s.button(strings.record)).toBeDefined();
+});
+
+it("an Edit-entry recovery still reaches edit mode, and a Back's still exits", async () => {
+  // The other two destinations, so the three-way discriminator is pinned in
+  // every arm rather than only the new one. Same held-bytes shape as above.
+  const s = await setup();
+  boundary.reloads = [{ samples: original, lengthSamples: original.length }];
+  const bytes = new Blob(["kept"]);
+  s.audio.stopRecording = vi.fn(async () => {
+    s.audio.recorderState = "idle";
+    return { samples: null, blob: bytes, error: null };
+  });
+  s.audio.retryDecode = vi
+    .fn()
+    .mockResolvedValue({ samples: captured, error: null });
+
+  s.audio.recorderState = "recording";
+  await s.render();
+  await s.click(strings.enterEdit);
+  await s.render();
+  await s.click(strings.takeRecoverRetry);
+  await s.render();
+
+  expect(s.onExit).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain(strings.modepillEditing);
+});
+
+it("a Back's recovery exits to Segments, unchanged", async () => {
+  const s = await setup();
+  const bytes = new Blob(["kept"]);
+  s.audio.stopRecording = vi.fn(async () => {
+    s.audio.recorderState = "idle";
+    return { samples: null, blob: bytes, error: null };
+  });
+  s.audio.retryDecode = vi
+    .fn()
+    .mockResolvedValue({ samples: captured, error: null });
+
+  s.audio.recorderState = "recording";
+  await s.render();
+  await act(async () => {
+    expect(await s.ref.current!.requestClose()).toBe(false);
+  });
+  await s.render();
+  await s.click(strings.takeRecoverRetry);
+  await s.render();
+
+  expect(s.onExit).toHaveBeenCalledOnce();
+});
