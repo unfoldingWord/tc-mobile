@@ -22,6 +22,13 @@ interface SegmentRowProps {
   /** Milliseconds into the sounding take; meaningful only while `playing`. */
   playbackElapsedMs: number;
   /**
+   * The take that just stopped RAN OUT, rather than being stopped by hand.
+   * Read on the commit where `playing` goes false — the session reports both
+   * facts together — and it is the one thing this row cannot work out for
+   * itself: the two endings arrive here as the same prop change (#601).
+   */
+  ranOut?: boolean;
+  /**
    * Toggle playback from a scrub offset (seconds). Maps to `playTake`, which
    * toggles: called while this row plays, it stops — so the offset is read
    * only when starting.
