@@ -190,6 +190,21 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   `AudioCodec`, but the worker, the share sheet and the decode are verified only
   in a browser or on a device. **Neither has been run on a phone as of
   2026-09-02.**
+- **There is a render harness now, and it is narrow on purpose (#197).**
+  `tests/render.ts` runs one component through `renderToStaticMarkup` and parses
+  the result with `jsdom`, so a test can read the attributes a component's JSX
+  actually emits. The Vitest environment stays `node` — the harness brings its
+  own document rather than swapping the global one, so `lib/`'s DOM ban and
+  `typecheck:lib` are untouched. What it gives is **one render, no effects, no
+  `act()`, no events, no layout and no cascade**: enough for a props → attribute
+  guarantee (`tests/recorder-status.test.ts`, `tests/control-render.test.ts`),
+  and nothing else. Where the CASCADE or the real build is what is under test,
+  the answer is still the Playwright suite against `dist/`
+  (`e2e/theme-toggle.spec.ts`); where a HOOK's effects or focus are, it is still
+  on-device. Existing claims in `src/` and `tests/` still need individual
+  review (#549): hook, focus and cascade limitations survive this harness,
+  but statements that jsdom or a renderer is absent are now stale. The local
+  corrections in this PR do not complete that sweep.
 - `fake-indexeddb` backs the storage tests. Reset between cases by **clearing
   every object store**, not by `deleteDatabase`: deletion blocks indefinitely
   while any connection is open, and a harness that resolves on `onblocked`
