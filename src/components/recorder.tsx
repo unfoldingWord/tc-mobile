@@ -58,6 +58,7 @@ import {
 } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { usePausedPreview } from "@/hooks/use-paused-preview";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
@@ -66,13 +67,7 @@ import { panelRecoveryFocus } from "@/lib/a11y/panel-recovery";
 import { auditionPlan } from "@/lib/audio/audition";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
-import {
-  buildPreview,
-  previewOnStage,
-  stateAfterAbort,
-  type PreparedPreview,
-  type PreviewState,
-} from "@/lib/takes/paused-preview";
+import { previewOnStage } from "@/lib/takes/paused-preview";
 import {
   effectivePan,
   panForZoom,
@@ -96,9 +91,6 @@ import type { SegmentId } from "@/types/domain";
 /** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
 const ZOOM_WHOLE = 1;
 const ZOOM_QUARTER = 4;
-
-/** Peak resolution for the paused-take preview (#101), matched to the editor's. */
-const PREVIEW_PEAK_BUCKETS = 400;
 
 interface RecorderProps {
   segmentId: SegmentId;
@@ -433,35 +425,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * not decode the paused container (iOS writes the moov atom only on stop) — Play
      * then degrades to disabled with a Notice rather than a false or silent preview.
      */
-    const [preview, setPreview] = useState<PreparedPreview | null>(null);
-    const [previewState, setPreviewState] = useState<PreviewState>("none");
-    /**
-     * The preview request epoch (#101). A first paused Play decodes asynchronously
-     * (`previewCapture` + `mergeTake`); this is bumped by every transport tap
-     * (`onRecordButton`) and by `close()`, and the decode IIFE captures it at the
-     * start and bails if it changed. Without it a resume/Back landing mid-decode
-     * would let the stale promise repopulate the preview and play it — into a
-     * now-live take (the Frank+George R1 finding: a resumed mic with no floor
-     * holder, the preview bleeding into the recording). `previewCapture`'s own
-     * generation does not move on resume, so the guard must live here.
-     */
-    const previewGenRef = useRef(0);
-    /**
-     * A preview decode is in flight, written SYNCHRONOUSLY so a second Play tap that
-     * lands before the `"decoding"` state commits cannot start a second decode —
-     * the same reason `playingBufferRef` exists (#101 / George R2). Cleared when the
-     * decode settles or the epoch is bumped.
-     */
-    const previewDecodeRef = useRef(false);
-    /**
-     * The most recent preview decode promise, so the NEXT paused Play chains behind
-     * it (#101 / George R5 #1): a Play→Resume→Play loop leaves the first
-     * `decodeToCanonical` running (resume cannot abort it), and chaining keeps the
-     * two from allocating a full PCM buffer at once. `close()` deliberately does NOT
-     * await this — that would delay `stop()`'s pagehide-safe capture-steal (George R7
-     * P1). Null when none is in flight.
-     */
-    const previewPromiseRef = useRef<Promise<void> | null>(null);
     /**
      * Where the sounding buffer starts inside the buffer that is DRAWN, in
      * milliseconds (#284). Zero for every record-mode play — the working buffer
@@ -474,6 +437,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * at the play tap so a selection changing underneath cannot move a line that
      * is already travelling.
      */
+    const {
+      preview,
+      previewState,
+      requestPreview,
+      abortPreview,
+      cancelPreview,
+      dropPreviewPcm,
+      invalidateDecode,
+    } = usePausedPreview(audio);
+
     const soundingOffsetRef = useRef(0);
 
     // The edit-aware length: the working buffer, not the loaded clip, is the
@@ -1249,21 +1222,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // lighter subset (epoch + guard + `stopBuffer`, no state reset) to stay out of
     // set-state-in-effect; its leftover `previewState` is inert (`playDisabled` gates
     // it only while paused).
-    const abortPreview = useCallback(() => {
-      previewGenRef.current++;
-      previewDecodeRef.current = false;
-      setPreviewState(stateAfterAbort);
-    }, []);
-
-    // Discard the preview outright — abort the decode AND drop the prepared buffer
-    // and state. Only a resume or a new record uses this: the take GROWS, so the
-    // next Play must re-decode rather than replay stale audio.
-    const cancelPreview = useCallback(() => {
-      previewGenRef.current++;
-      previewDecodeRef.current = false;
-      setPreview(null);
-      setPreviewState("none");
-    }, []);
 
     // Any exit that never reaches a transport handler — chiefly a #59 mic
     // interruption freezing the take to "processing" while a preview is sounding —
@@ -1282,10 +1240,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // every cut, paste and undo and stop a playback nobody asked it to stop.
     useEffect(() => {
       if (paused) return;
-      previewGenRef.current++;
-      previewDecodeRef.current = false;
+      invalidateDecode();
       stopPlaybackDroppingPan();
-    }, [paused, stopPlaybackDroppingPan]);
+    }, [paused, invalidateDecode, stopPlaybackDroppingPan]);
 
     const onRecordButton = useCallback(() => {
       if (closing.current || !view) return;
@@ -1371,76 +1328,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // never a false preview. `preemptPausedMic` takes the floor from the paused
       // mic (approach B). `previewDecodeRef` guards a second tap landing before the
       // `"decoding"` state commits — a second decode of a long take (George R2 #3).
-      if (previewState === "decoding" || previewDecodeRef.current) return;
-      if (preview) {
-        audio.playBuffer(preview.buffer, 0, { preemptPausedMic: true });
-        return;
-      }
-      const gen = previewGenRef.current;
-      const previous = previewPromiseRef.current;
-      previewDecodeRef.current = true;
-      setPreviewState("decoding");
-      // CHAINED behind any prior decode so two decodeToCanonical passes never
-      // allocate together (George R5 #1): a Play→Resume→Play loop leaves the first
-      // decode still running (resume does not abort it), and replacing the promise
-      // would drop that serialisation. `close()` deliberately does NOT await this —
-      // that delayed stop()'s pagehide-safe capture-steal (George R7 P1).
-      previewPromiseRef.current = (async () => {
-        try {
-          // Wait out a prior preview decode's WORK; its RESULT is dropped by the
-          // epoch. One full PCM buffer exists at a time, not two.
-          if (previous) await previous;
-          if (gen !== previewGenRef.current) return;
-          const pcm = await audio.previewCapture();
-          // A resume/close/re-record/menu/interruption during the decode bumped the
-          // epoch: this take is no longer the one being previewed. Drop the result
-          // silently — writing `preview`/`playBuffer` now would play stale audio
-          // into a live take (Frank+George R1).
-          if (gen !== previewGenRef.current) return;
-          if (pcm === null) {
-            setPreviewState("failed");
-            return;
-          }
-          const prepared = buildPreview(
-            editor.working,
-            pcm,
-            insertionOffset.current,
-            PREVIEW_PEAK_BUCKETS
-          );
-          // Re-check after the synchronous splice/peaks, which are not instant on a
-          // long take: a transport tap can land in that window too.
-          if (gen !== previewGenRef.current) return;
-          setPreview(prepared);
-          setPreviewState("none");
-          // Auto-play only if the context is audible NOW. This runs after the decode
-          // await, OUTSIDE the Play tap's gesture, so an iOS context left
-          // "interrupted" by a route change/Siri/background DURING the decode would
-          // sound a silent preview that looks like it is playing (George R9). When it
-          // needs a gesture, leave the prepared preview on stage (Play stays enabled,
-          // the waveform shows) so the next tap replays it in-gesture and sounds.
-          if (!audio.audioNeedsGesture()) {
-            audio.playBuffer(prepared.buffer, 0, { preemptPausedMic: true });
-          }
-        } catch (cause) {
-          // mergeTake/computePeaks allocate the full result and can throw on a
-          // low-memory device (the OOM class the save path already guards). Surface
-          // it as a failed preview rather than leaving Play stuck on "decoding"
-          // (George R1 P5); only when this epoch still owns the state.
-          console.error("Could not prepare the take preview", cause);
-          if (gen === previewGenRef.current) setPreviewState("failed");
-        } finally {
-          // Release the synchronous guard only if this decode still owns the epoch;
-          // a cancel already cleared it, and a newer decode would own it next.
-          if (gen === previewGenRef.current) previewDecodeRef.current = false;
-        }
-      })();
+      requestPreview(editor.working, insertionOffset.current);
     }, [
       audio,
       editor,
       paused,
       playPlan,
-      preview,
-      previewState,
+      requestPreview,
       soundRange,
       stopPlayback,
     ]);
@@ -1519,9 +1413,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // peaks on stage through the commit — exactly the pair `close()` runs, so a
       // first take does not blank while it saves.
       abortPreview();
-      setPreview((p) =>
-        p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
-      );
+      dropPreviewPcm();
       void (async () => {
         const result = await audio.stopRecording();
         // The SAME four-way reading of a stop result `close()` takes, by calling
@@ -1644,6 +1536,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       });
     }, [
       audio,
+      dropPreviewPcm,
       stopPlayback,
       recording,
       paused,
@@ -2126,9 +2019,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // Waveform reads `peaks`, the overlay is inactive while closing, so holding
           // the ~5.3 MB/min Int16Array across stop()'s decode + mergeTake buys nothing
           // (George R5 #2); `previewShown` still draws the peaks, so no blank.
-          setPreview((p) =>
-            p ? { buffer: new Int16Array(0), peaks: p.peaks } : p
-          );
+          dropPreviewPcm();
           const result = await audio.stopRecording();
           capture = {
             samples: result.samples,
@@ -2232,6 +2123,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       onExit,
       abortPreview,
       cancelPreview,
+      dropPreviewPcm,
       pendingWork,
       executeTail,
       stayOpen,
