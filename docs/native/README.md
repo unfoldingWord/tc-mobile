@@ -555,8 +555,9 @@ that either platform passed. Android system Back, the app's Back control and a
 browser's Back are different actions; name the one a check requires.
 
 Keep existing `android-release-vX.Y.Z` tags and release URLs unchanged so
-shared links and QR codes continue to work. A prefix for future all-platform
-announcements remains a DRI decision (#629).
+shared links and QR codes continue to work. Use `tester-build-vX.Y.Z` for
+future all-platform tester announcements, starting with the next published
+build (DRI decision, #629).
 
 ### One-time setup
 
