@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
  * test would be asserting over a harness rather than over the gesture. What is
  * decidable from the text is that the two guards read the same predicate and
  * that the abandon happens before the commit's first `await`. Each assertion
- * below names the mutation it dies on, and each was observed dying.
+ * below names the mutation it must die on.
  */
 describe("a drag cannot survive a commit (George r1 pass C P1)", () => {
   const stripComments = (text: string) =>
@@ -75,10 +75,9 @@ describe("a drag cannot survive a commit (George r1 pass C P1)", () => {
   });
 
   it("freezes a moving drag on the same predicate that refuses a new one", () => {
-    // Mutation: spell the terms out here again (`recording || busy`) and drop
-    // `isClosing`, which is what the tree did before this round — the pure
-    // cases in `recorder-stage.test.ts` stay green, because they only ever see
-    // `panGesture`.
+    // Mutation: spell the terms out here again as `recording || busy`, which
+    // drops `isClosing` — the pure cases in `recorder-stage.test.ts` stay
+    // green under it, because they only ever see `panGesture`.
     expect(move).toMatch(
       /captureLocksPan\(\s*\{\s*recording,\s*busy,\s*isClosing,?\s*\}\s*\)/
     );

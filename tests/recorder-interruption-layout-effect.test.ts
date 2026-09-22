@@ -35,14 +35,14 @@ import { describe, expect, it } from "vitest";
  * time. What is decidable from the text is the spelling, plus the property the
  * spelling only buys if the body keeps it: the commit has to be reached
  * SYNCHRONOUSLY. `useLayoutEffect(() => { ...; setTimeout(commit, 0); })` is
- * back in the same after-paint window with the hook name reading right (Frank
- * P2 on this commit), so the assertion pins the whole body, not its opener.
+ * back in the same after-paint window with the hook name reading right, so the
+ * assertion pins the whole body, not its opener.
  *
- * Mutations that must go red, each observed: `useLayoutEffect(` ->
- * `useEffect(`; a statement inserted ahead of the guard; the commit deferred
- * behind a `setTimeout`. The body is matched exactly, so a legitimate rewrite
- * of this effect fails here on purpose — the replacement has to be re-argued
- * against the pagehide window above, not re-typed.
+ * Mutations that must go red: `useLayoutEffect(` -> `useEffect(`; a statement
+ * inserted ahead of the guard; the commit deferred behind a `setTimeout`. The
+ * body is matched exactly, so a legitimate rewrite of this effect fails here on
+ * purpose — the replacement has to be re-argued against the pagehide window
+ * above, not re-typed.
  */
 describe("the #59 interruption commit is a layout effect (George r1 pass B P2)", () => {
   const source = readFileSync(
