@@ -89,6 +89,9 @@ export interface CaptureOutcome<TBytes = unknown> {
  * — one exits, the other opens edit mode. That agreement used to be a comment
  * ("Mirror close()'s precedence exactly"), which is the kind of claim that
  * rots; it is now one function they both call.
+ * Their write policy also agrees: a superseded capture withholds pending edits,
+ * clear and Finished. The component carries that verdict across an Edit-commit
+ * to later no-capture exits, until a fresh take is successfully saved (#527).
  *
  * The payload rides the verdict so neither caller re-checks what the classifier
  * has already established: `samples` is proved non-empty, `bytes` proved
