@@ -130,9 +130,15 @@ export const strings = {
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,
   recordSegment: (n: number): string => `Record segment ${n}`,
-  editSegment: (n: number): string => `Edit segment ${n}`,
-  editSegmentFinished: (n: number): string => `Edit segment ${n}, finished`,
-  openSegment: (n: number): string => `Open segment ${n}`,
+  // These three are the row's open control's accessible name, which REPLACES
+  // its visible text, so they carry the same heading the row paints — label
+  // included (#591, WCAG 2.5.3). Unlabelled, the heading is the bare ordinal.
+  editSegment: (n: number, label: string | null): string =>
+    `Edit segment ${strings.segmentHeading(n, label)}`,
+  editSegmentFinished: (n: number, label: string | null): string =>
+    `Edit segment ${strings.segmentHeading(n, label)}, finished`,
+  openSegment: (n: number, label: string | null): string =>
+    `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   markFinished: (n: number): string => `Mark segment ${n} finished`,
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,

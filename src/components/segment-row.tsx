@@ -315,10 +315,10 @@ export function SegmentRow({
   // record button's "Record segment N" so the two do not collide.
   const openLabel =
     state === "finished"
-      ? strings.editSegmentFinished(ordinal)
+      ? strings.editSegmentFinished(ordinal, row.label)
       : hasClip
-        ? strings.editSegment(ordinal)
-        : strings.openSegment(ordinal);
+        ? strings.editSegment(ordinal, row.label)
+        : strings.openSegment(ordinal, row.label);
 
   return (
     <div className={cn("row", state === "finished" && "row--finished")}>
@@ -441,7 +441,7 @@ export function SegmentRow({
               <>
                 <Control
                   icon="edit"
-                  label={strings.editSegment(ordinal)}
+                  label={strings.editSegment(ordinal, row.label)}
                   variant="quiet"
                   onClick={() => {
                     closeMenu();

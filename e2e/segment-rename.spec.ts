@@ -22,9 +22,12 @@ async function seedOneSegment(page: Page) {
   await expect(rowHeading(page)).toHaveText("1");
 }
 
-/** The row's left zone: its accessible name is the action, its text the heading. */
+/**
+ * The row's left zone. Its accessible name is the action plus the heading
+ * ("Open segment 1 · verses 3–4"), its text the heading alone.
+ */
 function rowHeading(page: Page) {
-  return page.getByRole("button", { name: "Open segment 1" });
+  return page.getByRole("button", { name: /^Open segment 1( · .*)?$/ });
 }
 
 async function renameTo(page: Page, label: string) {
@@ -44,6 +47,9 @@ test("a segment's label shows after its ordinal on the row and in the recorder, 
 
   await renameTo(page, "verses 3–4");
   await expect(rowHeading(page)).toHaveText("1 · verses 3–4");
+  await expect(rowHeading(page)).toHaveAccessibleName(
+    "Open segment 1 · verses 3–4"
+  );
 
   await page.getByRole("button", { name: "Record segment 1" }).click();
   const sheet = page.getByRole("dialog", { name: "Recorder" });

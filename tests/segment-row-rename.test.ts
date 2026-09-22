@@ -103,11 +103,40 @@ describe("segment row rename (#591)", () => {
     expect(heading()).toBe("3 · verses 3–4");
   });
 
+  it("carries the label into the row's accessible names, so AT hears what is painted", async () => {
+    // WCAG 2.5.3: the open button's aria-label replaces its visible text, so a
+    // label missing from it is a label a screen reader never reads.
+    const labelled = { ...recorded, label: "verses 3–4" };
+    await render({ ...empty, label: "verses 3–4" });
+    expect(button("Open segment 3 · verses 3–4")).toBeDefined();
+    await render(labelled);
+    expect(button("Edit segment 3 · verses 3–4")).toBeDefined();
+    await click(strings.segmentMenu(3));
+    // The menu's Edit item names the same segment the same way.
+    expect(
+      [...document.querySelectorAll('[role="dialog"] button')].some(
+        (b) => b.getAttribute("aria-label") === "Edit segment 3 · verses 3–4"
+      )
+    ).toBe(true);
+    await click(strings.menuClose);
+    await render({ ...labelled, finished: true });
+    expect(button("Edit segment 3 · verses 3–4, finished")).toBeDefined();
+  });
+
+  it("leaves an unlabelled row's accessible names exactly as they were", async () => {
+    await render(empty);
+    expect(button("Open segment 3")).toBeDefined();
+    await render(recorded);
+    expect(button("Edit segment 3")).toBeDefined();
+    await render({ ...recorded, finished: true });
+    expect(button("Edit segment 3, finished")).toBeDefined();
+  });
+
   it("offers Rename on an empty row, with none of the audio items", async () => {
     await render(empty);
     await click(strings.segmentMenu(3));
     expect(button(strings.renameSegment)).toBeDefined();
-    expect(button(strings.editSegment(3))).toBeUndefined();
+    expect(button(strings.editSegment(3, null))).toBeUndefined();
     expect(button(strings.markFinished(3))).toBeUndefined();
     expect(button(strings.eraseSegment)).toBeUndefined();
   });
@@ -116,7 +145,7 @@ describe("segment row rename (#591)", () => {
     await render(recorded);
     await click(strings.segmentMenu(3));
     for (const label of [
-      strings.editSegment(3),
+      strings.editSegment(3, null),
       strings.markFinished(3),
       strings.renameSegment,
       strings.eraseSegment,
