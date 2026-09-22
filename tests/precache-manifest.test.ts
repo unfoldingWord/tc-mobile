@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { resolveDistGate } from "./dist-gate";
+
 // The Workbox precache manifest is generated at build time from the
 // `workbox.globPatterns` in vite.config.ts, so what it contains cannot be
 // asserted without a full production build. This pins the one knob that
@@ -77,14 +79,9 @@ const SW = path.join(ROOT, "dist", "sw.js");
 // that surfaces as a failure at all — and it surfaces as a confusing one,
 // since the manifest is fine and the reader is broken.
 //
-// This matters locally, not in CI. GitHub Actions leaves `NODE_ENV` unset, so
-// CI builds the minified shape and this file's Build-job step (ci.yml,
-// `REQUIRE_DIST_BUILD=1`) has always parsed it correctly. The uw-sandbox
-// container this repo is developed in exports `NODE_ENV=development`, so a
-// local `npm run build` emits the second shape — and because `.husky/pre-push`
-// runs the suite, `git push` then fails on a tree whose only sin is having
-// been built. That is #522, and its "the assertion is made nowhere" reading is
-// corrected on the issue: it is made in CI, twice.
+// The build-artifact caller (`npm run test:dist`) reads whichever shape the
+// preceding build emitted. Support both development and production output;
+// `NODE_ENV` must not change whether this parser can inspect the manifest.
 //
 // Matching both shapes is what makes this a reader of the manifest rather than
 // a reader of the minifier.
@@ -208,14 +205,15 @@ describe("navigateFallbackDenylist keeps /version.json off the SPA shell", () =>
 // TWO limitations, stated rather than glossed, because a reader must not take
 // a green run here for more than it is:
 //
-//   1. It needs a build. `npm run verify` runs the suite BEFORE `npm run
-//      build`, and CI builds in a separate job that runs no tests — so on a
-//      tree that has never been built there is nothing to read and this is
-//      skipped rather than failing a fresh clone or CI's quality job.
-//   2. What it reads is the LAST build's output, which within a single
-//      `verify` is the build from before the current source change. A green
-//      result is therefore a statement about that build, not a proof about
-//      uncommitted source. Two consecutive verifies converge.
+//   1. It needs a build, so it runs only where one is guaranteed to precede
+//      it — `npm run test:dist`, which `npm run verify` invokes after `npm
+//      run build` and which ci.yml's build-artifact step calls after its own.
+//      Everywhere else it skips, and it skips whether or not a `dist/`
+//      happens to be lying around. See `./dist-gate` for why the artifact's
+//      presence decides nothing (#568).
+//   2. What it reads is the last build's output. A green result is a
+//      statement about that build, not an unconditional proof about source
+//      that was never rebuilt.
 //
 // The always-on half of the invariant is the exact-allowlist assertion above:
 // `json` cannot enter globPatterns without failing that, unskippably and with
@@ -274,7 +272,12 @@ describe("the precache manifest reader (#522)", () => {
   });
 });
 
-describe.skipIf(!existsSync(SW))(
+// Which of these two build-artifact suites runs is decided by the caller,
+// never by whether a `dist/` happens to be lying around from an earlier
+// command — see `./dist-gate` (#568).
+const GATE = resolveDistGate(existsSync(SW), "dist/sw.js");
+
+describe.skipIf(GATE === "skip")(
   "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
   () => {
     it("never contains version.json", () => {
@@ -292,29 +295,16 @@ describe.skipIf(!existsSync(SW))(
   }
 );
 
-// `describe.skipIf(!existsSync(SW))` above is a convenience for a developer
-// running the suite on an unbuilt tree — a missing `dist/sw.js` skips rather
-// than fails, so `npm run verify`'s pre-build test pass and a fresh clone's
-// `npm test` both exit 0 with nothing built yet. Unguarded, that is also how
-// this file behaves inside CI: the Quality job runs `npm test` before any
-// build exists, so this describe block has been skipping there on every run
-// since it landed (#436) — and the Build job that actually produces
-// `dist/sw.js` never re-asks the question at all. Round 7 (#414/#420, same
-// gap Frank found for tests/dist-css.test.ts) closes that with a dedicated
-// CI step (`.github/workflows/ci.yml`, Build job, after `npm run build`)
-// that re-runs this file with `REQUIRE_DIST_BUILD=1` set — a purpose-built
-// env var, not GitHub Actions' ambient `CI` (`true` in every job, including
-// Quality, where skipping is still correct). Only that one step sets it, so
-// local dev, Quality, and `npm run verify`'s pre-build pass are unaffected.
-it("fails, rather than silently skips, when required to find a build and does not", () => {
-  if (process.env.REQUIRE_DIST_BUILD && !existsSync(SW)) {
-    throw new Error(
-      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — this step " +
-        "must run in ci.yml's Build job, after `npm run build`, not before " +
-        "it and not in the Quality job."
-    );
-  }
-});
+// The skip above is a convenience for anyone running the suite without a
+// build: a missing `dist/sw.js` skips rather than fails, so a plain `npm
+// test` exits 0 with nothing built. A skip is also indistinguishable from a
+// pass, so the gate makes the other half loud — `npm run test:dist` promises
+// a build, and the shared resolver turns that promise into a module-scope
+// throw rather than a case in this file that could be deleted.
+// `REQUIRE_DIST_BUILD` is a purpose-built flag rather than the ambient `CI`
+// variable, which is true wherever tests run, including the passes that
+// legitimately have no build yet. See `./dist-gate` for why the loud half
+// does not live here.
 
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
   const readers = obsThumbnailReaders();
