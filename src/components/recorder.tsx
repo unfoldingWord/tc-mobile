@@ -330,6 +330,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * refused rather than double-committing the same take.
      */
     const closing = useRef(false);
+    // An Edit-commit can settle superseded and leave this sheet mounted at idle.
+    // Its later no-capture exits still owe the no-writes policy (#527), including
+    // pending edits/clear and Finished. A successfully saved fresh take restores
+    // a current base; a refused start or another empty stop does not.
+    const supersededCapture = useRef(false);
     /**
      * Which entry set `heldTake` — the failed-decode recovery panel (#165) now has
      * two setters with different post-conditions, the second-setter split George's
@@ -1570,6 +1575,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // just-saved `view.finished` (true) until an edit sets `pendingDemote`.
           // (Confirmed by Tim 2026-09-09: "Re-record should drop to draft until
           // finished is manually chosen again.")
+          supersededCapture.current = false;
           setFinishedIntent(null);
           // Re-read the segment and AWAIT the fresh view, so the editor re-bases on
           // the committed samples (`useSegmentEditor` resets when `view.samples`
@@ -1618,6 +1624,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           closing.current = false;
           setIsClosing(false);
           return;
+        }
+        if (verdict.kind === "superseded") {
+          supersededCapture.current = true;
         }
         if (verdict.kind === "notice") {
           setStopError(verdict.error);
@@ -1903,6 +1912,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // in place).
     const executeTail = useCallback(
       async (plan: TailPlan): Promise<boolean> => {
+        // Shared by idle Back and held-take discard. Do not let either turn a
+        // superseded Edit-commit into a delayed write against the old take.
+        if (supersededCapture.current) {
+          onExit(dirty.current);
+          return true;
+        }
         try {
           switch (plan.action) {
             case "clear": {
@@ -2285,6 +2300,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // pre-take `working` buffer, and a Record or punch-in Erase in that
               // window 1:1-replaces the take just recovered (George R4 #1, a data-loss
               // race). Swap panel → edit mode in ONE batched render after the reload.
+              supersededCapture.current = false;
               setFinishedIntent(null);
               const next = await reloadView();
               setHeldTake(null);
