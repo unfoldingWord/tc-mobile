@@ -119,6 +119,13 @@ function wash(fg: string, over: string, pct: number): string {
 /** WCAG AA for text below 18.66px bold / 24px regular. Every site below is 11–16px. */
 const AA_SMALL_TEXT = 4.5;
 
+/**
+ * WCAG 2.1 non-text contrast (1.4.11), the floor for a visual boundary that
+ * identifies a control rather than spelling anything. The guide ring (#604)
+ * is exactly that: a mark on a control's own shape, never text.
+ */
+const AA_NON_TEXT = 3;
+
 describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)", () => {
   // The surfaces `--s-ink-faint` is ACTUALLY painted on today, each with the
   // call site that puts it there — so this list is falsifiable by reading the
@@ -195,6 +202,58 @@ describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)
       // And separated by more than a rounding error at each step.
       expect(steps[0]! - steps[1]!).toBeGreaterThan(1);
       expect(steps[1]! - steps[2]!).toBeGreaterThan(1);
+    });
+  }
+});
+
+describe("the guide ring is visible on every surface it is drawn on (#604)", () => {
+  // The ring is INSET on a control's own box and on the chapter row, and
+  // OUTSET on the record button — so what it has to stand out from differs by
+  // call site, and each one is scored against what is actually behind it.
+  const behind = [
+    [
+      "--s-raised",
+      "inset on a `.control` — the header + and both empty-state CTAs",
+    ],
+    ["--s-surface", "inset on a control that sits on a panel"],
+    [
+      "--s-floor",
+      "inset on the transparent chapter row; outset around the record button",
+    ],
+  ] as const;
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const [surface, site] of behind) {
+      it(`${theme}: --s-guide on ${surface} — ${site}`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-guide"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+
+    it(`${theme}: the guide and the focus ring are not the same mark`, () => {
+      // A keyboard user has to be able to tell "focused" from "guided". They
+      // differ in three ways and this pins the one that is a token: the hues
+      // are far enough apart that neither can be mistaken for the other, which
+      // a luminance ratio between them is a crude but falsifiable stand-in for.
+      // (The other two are geometry — inside the shape versus an outline
+      // outside it — and are pinned in `tests/guided-ring.test.ts`.)
+      expect(resolve(theme, "--s-guide")).not.toBe(resolve(theme, "--s-focus"));
+    });
+
+    it(`${theme}: the ring cannot live INSIDE the record button — the reason it is outset`, () => {
+      // The measured reason `3-components.css` gives for the one exception to
+      // the inset ring. Blue on the live red is a hue difference with almost no
+      // luminance difference, so an inset ring there is a ring a low-vision
+      // user does not get. If a future accent clears the floor here, the
+      // exception can go — and this assertion is what says so.
+      const ratio = contrast(
+        resolve(theme, "--s-guide"),
+        resolve(theme, "--s-live")
+      );
+      expect(ratio).toBeLessThan(AA_NON_TEXT);
     });
   }
 });
