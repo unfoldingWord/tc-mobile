@@ -3830,9 +3830,7 @@ function SaveDecodeFailedPanel({
         <Control
           icon="trash"
           label={
-            showArmed
-              ? strings.takeRecoverDiscardArmed
-              : strings.takeRecoverDiscard
+            showArmed ? strings.discardRecordingArmed : strings.discardRecording
           }
           variant="quiet"
           className={showArmed ? "text-live" : undefined}
@@ -3841,7 +3839,7 @@ function SaveDecodeFailedPanel({
         />
         {showArmed ? (
           <p className="text-live text-[12px]">
-            {strings.takeRecoverDiscardHint}
+            {strings.discardRecordingHint}
           </p>
         ) : null}
       </div>

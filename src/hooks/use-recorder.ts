@@ -8,12 +8,9 @@ import {
 import {
   classifyMicRefusal,
   type MicPermissionState,
-  type MicRefusal,
 } from "@/lib/audio/mic-refusal";
-import {
-  classifyStopDecode,
-  type StopDecodeError,
-} from "@/lib/audio/stop-decode";
+import { classifyStopDecode } from "@/lib/audio/stop-decode";
+import { messages, micRefusalMessage, stopDecodeMessage } from "@/lib/messages";
 
 import {
   createLevelTap,
@@ -26,19 +23,6 @@ import {
   resumeAudioContext,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
-
-/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
- *  here beside the recorder's other error copy; the classifier stays UI-free. */
-function stopDecodeMessage(error: StopDecodeError): string | null {
-  switch (error) {
-    case "silence":
-      return "No sound was recorded. Try again.";
-    case "undecodable":
-      return "Recording could not be decoded on this device.";
-    case null:
-      return null;
-  }
-}
 
 /**
  * The permission state for the microphone, or `"unknown"` where the platform
@@ -58,23 +42,6 @@ async function queryMicPermission(): Promise<MicPermissionState> {
   } catch {
     // Firefox rejects a microphone query outright; treat that like an absent API.
     return "unknown";
-  }
-}
-
-/** The honest sentence for each refusal (#203). Inline here, like the recorder's
- *  other error copy, because `hooks/` cannot reach the components' string table. */
-function micRefusalMessage(refusal: MicRefusal): string {
-  switch (refusal) {
-    case "no-device":
-      return "No microphone was found on this device.";
-    case "site-blocked":
-      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
-    case "os-blocked":
-      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
-    case "prompt":
-      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
-    case "other":
-      return "Could not start recording.";
   }
 }
 
@@ -465,7 +432,7 @@ export function useRecorder(): UseRecorder {
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
-      setError("This device cannot record audio.");
+      setError(messages.recordUnsupported);
       return false;
     }
     // Refuse to open a SECOND microphone while one is already live. Unreachable
@@ -960,8 +927,8 @@ export function useRecorder(): UseRecorder {
         // backstop uses, and the one the facilitator runbook names.
         error: current
           ? flushThrew
-            ? "Could not finish this recording."
-            : "No sound was recorded. Try again."
+            ? messages.recordStopFailed
+            : messages.recordSilent
           : null,
         blob: null, // nothing was captured — no bytes to keep
       };
@@ -1019,14 +986,11 @@ export function useRecorder(): UseRecorder {
         // (George R3 G-1). So this is just another retry failure — the caller
         // keeps the bytes and surfaces the message; it never drops them.
         if (samples.length === 0) {
-          return { samples: null, error: "No sound was recorded. Try again." };
+          return { samples: null, error: messages.recordSilent };
         }
         return { samples, error: null };
       } catch {
-        return {
-          samples: null,
-          error: "Recording could not be decoded on this device.",
-        };
+        return { samples: null, error: messages.recordUndecodable };
       }
     },
     []
