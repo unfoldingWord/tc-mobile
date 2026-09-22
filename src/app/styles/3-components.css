@@ -76,7 +76,6 @@
     --c-gap-parts: var(--p-space-2);
     --c-gap-items: var(--p-space-4);
     --c-gap-blocks: var(--p-space-6);
-    --c-gap-sections: var(--p-space-8);
 
     /* Touch targets never go below 44px — with one standing exception, named
        here rather than left as a claim the tokens contradict (George R5 P3):
@@ -104,8 +103,6 @@
        read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
-    --c-tile-sm: 48px;
-    --c-tile-lg: 56px;
 
     /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
        two parts this file gained in #457. Their geometry is named here, not
@@ -920,7 +917,7 @@
     color: var(--s-voice);
     background: var(--s-raised);
     border: 1px solid var(--s-voice);
-    border-radius: 999px;
+    border-radius: var(--p-radius-full);
     cursor: pointer;
     pointer-events: auto;
     transition:
