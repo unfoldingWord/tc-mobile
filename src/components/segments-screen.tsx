@@ -27,7 +27,7 @@ import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
@@ -100,7 +100,7 @@ interface SegmentsScreenProps {
    * navigation. The screen reads playback state from it and plays through it;
    * "only one row plays at a time" falls out of that single floor for free.
    */
-  audio: UseAudioSession;
+  audio: SegmentsAudio;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */

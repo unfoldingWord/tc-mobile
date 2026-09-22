@@ -186,6 +186,63 @@ export interface UseAudioSession {
 }
 
 /**
+ * The two narrow views of {@link UseAudioSession} the screens actually take
+ * (#160, L-18).
+ *
+ * One 26-member object was drilled to both screens, which use disjoint
+ * subsets: the recorder reads 21 of them, the Segments list 7, overlapping in
+ * three. So the list screen's prop type admitted `startRecording`,
+ * `stopRecording` and `previewCapture` — the whole microphone — to a screen
+ * whose only job with audio is to play a row back. Nothing called them, and
+ * the type is what stops the next change from being able to: a list that can
+ * start the microphone has no sheet up to stop it, and the floor arbiter would
+ * be holding "mic" with nothing on screen able to release it.
+ *
+ * `Pick` rather than two hand-written interfaces, deliberately: the member
+ * lists here are an allow-list over one declaration, so a view cannot drift
+ * from the session's own types, and every member keeps the docblock it has
+ * above rather than acquiring a second, staler copy.
+ *
+ * `primeAudioContext` is on neither, correctly: App calls it itself, in the
+ * tap that opens the recorder.
+ */
+export type SegmentsAudio = Pick<
+  UseAudioSession,
+  | "error"
+  | "leave"
+  | "playTake"
+  | "playbackElapsedMs"
+  | "playingBuffer"
+  | "playingId"
+  | "stopBuffer"
+>;
+
+export type RecorderAudio = Pick<
+  UseAudioSession,
+  | "audioNeedsGesture"
+  | "elapsedMs"
+  | "error"
+  | "meterFailed"
+  | "pauseRecording"
+  | "peekScope"
+  | "playBuffer"
+  | "playingBuffer"
+  | "previewCapture"
+  | "readLevel"
+  | "readMeterAvailable"
+  | "readPlaybackPosition"
+  | "readScope"
+  | "recorderError"
+  | "recorderState"
+  | "resumeRecording"
+  | "retryDecode"
+  | "startRecording"
+  | "stopBuffer"
+  | "stopRecording"
+  | "supported"
+>;
+
+/**
  * Everything on screen that can make or capture sound, under one owner.
  *
  * The arbitration lives in `lib/audio/session.ts`, which is pure; this is only
