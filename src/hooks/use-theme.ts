@@ -31,10 +31,9 @@ import {
  *   - NOT COVERED: `readTheme`'s catch path (an accessor that throws on READ,
  *     as opposed to on write), and `applyTheme`'s empty-`--s-floor` early
  *     return. Both are engine-specific states this suite cannot produce.
- *   - NOT COVERED, and not coverable here: any of it on a phone. Capacitor's
- *     Android WebView has never run this app at all (#245), and headless
- *     Chromium in a container is not the sunlit screen the light theme exists
- *     for. `lib/theme.ts`'s Node table remains what pins the decision.
+ *   - NOT COVERED, and not coverable here: any of it on a phone.
+ *     `lib/theme.ts`'s Node table remains what pins the decision.
+ *     Device evidence: `docs/progress_tracker.md` and #245.
  *
  * WHY `localStorage` AND NOT IndexedDB. Every byte this app stores in IndexedDB
  * is a translator's recording or the structure around it: losing it is

@@ -30,8 +30,8 @@ describe("the viewport does not forbid pinch zoom (#164 R-11)", () => {
 
   // `user-scalable=no` was here to protect the drag gestures and never did:
   // iOS has ignored it since iOS 10, so the only platform it restricted is
-  // Android — never yet run (#245), and the one whose testers report capture
-  // quiet enough to squint at (#359). The gesture surfaces declare their own
+  // Android (#245), and the one whose testers report capture quiet enough to
+  // squint at (#359). The gesture surfaces declare their own
   // `touch-action`, which is what actually protects them.
   it("does not set user-scalable=no", () => {
     expect(viewport?.[1] ?? "").not.toMatch(/user-scalable\s*=\s*no/i);

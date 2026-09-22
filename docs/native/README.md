@@ -19,12 +19,11 @@ just the native shell and the pipeline to produce installable builds.
 > with the native toolchains and are Seth's to run; the CI lanes in
 > [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) and
 > [§5a](#5a-android--apk-via-ci-automated-no-mac-step) run on GitHub-hosted
-> runners instead (the iOS lane is proven end to end, the Android lane has not
-> yet been dispatched). **No Capacitor build has yet recorded audio on a
-> device.** The only on-device observation so far is a _failure_: the
-> 2026-09-14 debug APK on Android installed, prompted for the microphone, and
-> was refused by the WebView (§5, the `MODIFY_AUDIO_SETTINGS` paragraph). The
-> fix for that has not been run on a device either; §8 still applies in full.
+> runners instead. A Capacitor debug APK was once refused the microphone by
+> the Android WebView, which is why §5's `MODIFY_AUDIO_SETTINGS` paragraph
+> exists — that is a reason the permission stays, not a coverage claim. For
+> what has and has not run on a device, read `docs/progress_tracker.md` and
+> #245; do not read it out of this banner. §8 still applies in full.
 
 ---
 
@@ -614,7 +613,8 @@ Two operational notes:
 ## 8. The one real risk (do not skip)
 
 The recommendation and counter-case (#86) agree the **audio boundary** is the
-decider: the app has only ever been validated in **iOS Safari**, and a
+decider: the background and interruption paths have only ever been validated
+in **iOS Safari**, and a
 Capacitor app runs in **WKWebView** (iOS) / the system WebView (Android), which
 differ in `getUserMedia`/MediaRecorder behavior, background capture, and storage
 eviction. **Record → background → interruption must be re-tested inside the
