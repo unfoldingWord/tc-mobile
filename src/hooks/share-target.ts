@@ -35,7 +35,9 @@ export const SHARE_CACHE_DIR = "tc-mobile-share";
  * Blob the browser backs itself — `use-book-share.ts` builds it from fflate's
  * stream chunks precisely so no archive-sized buffer is ever allocated. Reading
  * it whole would undo that and add ~1.33x of base64 on top, in the JS heap of a
- * 4 GB phone. So it goes a slice at a time and the peak stays ~1.8 MB.
+ * 4 GB phone. Each 384 KiB slice produces at most 512 KiB of base64,
+ * leaving room for the native bridge envelope below a 1 MiB payload budget.
+ * This bounds each call; it does not establish a device-specific bridge limit.
  *
  * A MULTIPLE OF 3 on purpose: base64 encodes three bytes to four characters, so
  * an aligned chunk carries no `=` padding. The plugin decodes each call's data
@@ -45,7 +47,7 @@ export const SHARE_CACHE_DIR = "tc-mobile-share";
  * padding-free chunks concatenate to the original bytes whether the native side
  * decodes per call or joins the strings first.
  */
-export const SHARE_CHUNK_BYTES = 768 * 1024;
+export const SHARE_CHUNK_BYTES = 384 * 1024;
 
 /** What the platform can do, read at the moment of the decision. */
 export interface ShareEnvironment {
