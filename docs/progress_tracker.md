@@ -11,6 +11,47 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-22 (late, Mac session) — Tester D's replies parsed: the failure log likely shares #593's dead end, the chapter-share "no row" was an untaken second tap, and the #683 chapter-menu glyph put to the requirements owner
+
+Short session on the Mac checkout with the dev lead: start-of-day health check, then tester replies and one design question. **No code, no merges, no promotions.** The parallel sessions' merges today (#618, #632, #634's rounds, #658 and the rest) are theirs to record.
+
+### Posted
+
+| Where                                                                                  | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#593](https://github.com/unfoldingWord/tc-mobile/issues/593#issuecomment-5783597525)  | **The failure log's send takes the same native route as Share Chapter** (`selectLogShareShape` returns `"native"` first in the shell), so on the APK the only error channel (#205) is probably stuck behind this bug. This comes from reading the code and has not been observed. **The `chrome://inspect` trace can't be taken on a release APK**: `capacitor.config.ts` sets no `webContentsDebuggingEnabled`. The log is IndexedDB in private app storage, not a file, and uninstalling wipes it. |
+| [#286](https://github.com/unfoldingWord/tc-mobile/issues/286#issuecomment-5783597818)  | Tester D's "there is no row on click" screenshot shows the **`ready` check**, meaning the first tap was done and the second tap was never made. #354 made the state visible, but a check reads as "done", not "tap again".                                                                                                                                                                                                                                                                           |
+| [#374](https://github.com/unfoldingWord/tc-mobile/issues/374#issuecomment-5783598050)  | Possible field sighting, unconfirmed: stop, swipe away from recents, reopen, then Books with the menu open "seemed locked up".                                                                                                                                                                                                                                                                                                                                                                       |
+| [#245](https://github.com/unfoldingWord/tc-mobile/issues/245#issuecomment-5783598297)  | Tester D's answers to the evening session's three asks, tabulated, plus what is still open with them for tonight.                                                                                                                                                                                                                                                                                                                                                                                    |
+| [#683](https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5784512148) D1 | Put to the requirements owner, with the dev lead's recommendation **keep ⋮** for the Segments chapter menu. Segments has no global menu, so ≡ in its top-right corner would make one glyph in one corner open two different menus. #608 was filed on the Menu screen's back chevron, and it names the global menu as canonical. His 22 Aug mockup, #589's first option, pivot-plan G5 and ADR 0010 all draw ⋮. The recorder's two ≡ remain open (half of #589).                                      |
+
+### Open with Tester D (asked in the Signal thread; not on an issue yet)
+
+- Tap the green check on Share Chapter: does a share sheet appear?
+- Do the two taps on "1 problem recorded": does the log's share sheet appear?
+- Did the menu screenshot come before or after the reinstall?
+- Their later "I tried that each time it happened but it acted locked up": **was "that" the log's send or closing the menu?** The log's send points to #593 (the first observation of the log being stuck); closing the menu points to #374. It goes on whichever one after they answer.
+
+### Decisions owed
+
+1. **The DRI:** a debuggable Android tester build, the only way to get #593's trace from a tester's phone.
+2. **The requirements owner:** #683 D1 (⋮ or ≡ in the chapter header). #683's merge and the icon-recognition training material wait on it.
+
+### Learnings
+
+1. **zsh does not word-split an unquoted `$VAR`**, so `R="--repo x/y"; gh ... $R` passes one argument and `gh` rejects it. Inline the flag, or use an array.
+2. **zsh's `$VAR:path` modifier trap fired again**, the second time in one day (the day entry's learning 4). `git show $S:src/...` became `git show $S` and printed a commit instead of a file. Always `"${S}:path"`.
+3. **A tester's "it doesn't do anything" needs the screenshot read against the state table first.** The "no row" report was the documented ready state, not a failure. It is still a real affordance finding, just not the bug it first looked like.
+
+### Next session — in order
+
+The evening entry's list still stands (#634 round 4 at the cap → merge → #624 → promote v0.2.10 → re-cut the APK). Add:
+
+1. File Tester D's answers when they arrive (#593 or #374, per the question above).
+2. The two decisions owed above.
+
+---
+
 ## 2026-09-22 (evening, Mac session) — Tester D's v0.2.9 pass triaged live: one announcement issue, one display issue, four evidence comments on open issues, and the two parked repro worktrees read and reported
 
 Dev lead's evening session on the Mac checkout, with the dev lead present and pasting the tester thread as it arrived. **The parallel Docker session kept merging through the evening** (#622, #625, #626, #627, #632, #641, #644, #645, #648 since the day entry, plus the #160 refactor wave #628–#661 opened and #634's native-Back fix opened). That work is not recorded here beyond this pointer.
