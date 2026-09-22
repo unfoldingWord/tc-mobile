@@ -310,14 +310,11 @@
      focus outline. Here the ring is on the same side as focus, so that
      separation has to be MADE rather than inherited: at the base offset the
      guide covers 0-3px outside the box and the outline starts at 3px, and the
-     two touch. Pushed out by the ring's own width plus a gap below, so a
+     two touch. Pushed out by the unlayered exception in globals.css, so a
      keyboard user sees blue, a gap, then amber — and the two move together if
      either token changes. */
   .control--record.is-guided {
     box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
-  }
-  .control--record.is-guided:focus-visible {
-    outline-offset: calc(var(--c-focus-offset) + var(--c-guide-ring) + 2px);
   }
   /* A control nobody can tap is nobody's next action. The screens keep
      rendering behind a scrim — the Segments list stays mounted and inert under

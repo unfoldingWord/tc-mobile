@@ -33,6 +33,7 @@ const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
 
 const semantic = read("src/app/styles/2-semantic.css");
 const components = read("src/app/styles/3-components.css");
+const globals = read("src/app/globals.css");
 
 /** The declaration block that follows `selector`, by its first `{`…`}` pair. */
 function ruleBlock(css: string, selector: string): string {
@@ -117,12 +118,16 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     // 0-3px out and the outline starts at 3px. The offset has to be pushed by
     // at least the ring's own width for the two to read as two.
     const block = ruleBlock(
-      components,
+      globals,
       ".control--record.is-guided:focus-visible"
     );
     expect(block).toMatch(/outline-offset:\s*calc\(/);
     expect(block).toContain("--c-focus-offset");
     expect(block).toContain("--c-guide-ring");
+    expect(globals.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/@layer\b/);
+    expect(components).not.toContain(
+      ".control--record.is-guided:focus-visible"
+    );
   });
 });
 
@@ -155,8 +160,15 @@ describe("every step of the chain reaches a control (#604)", () => {
       const source = read(file);
       expect(source, "does not call guidedStep").toMatch(/guidedStep\(/);
       expect(source, "marks no control").toMatch(/guided=\{/);
-      for (const kind of kinds)
-        expect(source, `never reads the "${kind}" step`).toContain(`"${kind}"`);
+      for (const kind of kinds) {
+        if (kind === "record") {
+          expect(source).toMatch(/guidedRecordShown\(/);
+        } else {
+          expect(source, `never reads the "${kind}" step`).toContain(
+            `"${kind}"`
+          );
+        }
+      }
     });
   }
 

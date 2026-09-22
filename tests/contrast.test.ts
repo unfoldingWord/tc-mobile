@@ -215,11 +215,11 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
   const behind = [
     [
       "--s-raised",
-      "inset on a `.control` — the header + and both empty-state CTAs",
+      "inset on raised controls — Create book and both empty-state CTAs",
     ],
     [
       "--s-surface",
-      "outset around the segment row's red Record — `.row`'s own surface",
+      "Add chapter and the segment row's red Record — `.row`'s own surface",
     ],
     [
       "--s-floor",
