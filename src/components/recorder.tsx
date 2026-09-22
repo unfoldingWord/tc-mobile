@@ -3664,7 +3664,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         <Menu
           open={menuShown}
           onClose={() => setMenuOpen(false)}
+          // Still the drawer's name for a screen reader; never painted (#621).
           title={strings.recorderMenuTitle}
+          // `hamburger` (#621, the requirements owner's call on this panel,
+          // after #608 set the rule on the global menu): the ≡ that opens this
+          // drawer stays a ≡ inside it, top-right, and is what dismisses it —
+          // no "More" heading, and no chevron, because a chevron pointing LEFT
+          // reads as "move left" on a drawer that slides back to the RIGHT.
+          // #589's pick on how the three ≡ menus should differ still stands
+          // for the other two; this one has its answer.
+          hamburger
         >
           {mode === "record" ? (
             <>

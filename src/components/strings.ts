@@ -280,6 +280,9 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // The recorder drawer's dialog name for a screen reader — never painted
+  // (#621, the rule #608 set for `menuTitle`): it opens from a ≡ that stays a
+  // ≡, so the glyph is its only visible label.
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
