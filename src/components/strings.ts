@@ -175,8 +175,19 @@ export const strings = {
   // frozen take is held in memory until the recorder is closed — so the copy
   // names the real control, "Close recorder" (nothing is named "Back"), the
   // same wording #139 rewrites `previewUnavailable` to.
+  //
+  // It names that control TWICE, on purpose (#620). "Close recorder" is the
+  // accessible name of an icon-only `Control`, so it is what AT speaks and
+  // NOT a word anyone can see: a tester on Android read 'Use "Close recorder"
+  // to save it' and found nothing on screen so labelled. So the cue also says
+  // what the control looks like and where it is — "the back arrow at the
+  // top" — which is how the facilitator runbook already refers to it. The
+  // same rule holds for `previewUnavailable` and `blockedByTake` below, and
+  // `tests/menu-row-state.test.ts` ties "back arrow" to the header control's
+  // actual glyph, so a change to either half fails the suite.
   recorderSaving: "Saving…",
-  recorderInterrupted: 'Recording finished. Use "Close recorder" to save it.',
+  recorderInterrupted:
+    'Recording finished. Tap the back arrow at the top ("Close recorder") to save it.',
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
@@ -274,9 +285,11 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
-  // Same rule as `blockedByTake`: name the control, do not invent "Back".
+  // Same rule as `blockedByTake`: name the control, do not invent "Back" — and
+  // say what it looks like as well as what AT calls it (`recorderInterrupted`
+  // has the reasoning, #620).
   previewUnavailable:
-    'Can\'t preview this yet. Use "Close recorder" to save it, then play it.',
+    'Can\'t preview this yet. Tap the back arrow at the top ("Close recorder") to save it, then play it.',
 
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
@@ -295,8 +308,12 @@ export const strings = {
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
+  // The recorder step also says what the control looks like, the same way
+  // `recorderInterrupted` does (#620): this label is mostly spoken, but a
+  // low-vision user who both hears the row and looks for the control gets one
+  // description everywhere, not two.
   blockedByTake:
-    'Use "Close menu", then "Close recorder", to save the recording.',
+    'Use "Close menu", then the back arrow at the top ("Close recorder"), to save the recording.',
   // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
   // resolves. No audio exists yet, so this must NOT promise a save — and must
   // not send anyone to a control that would abandon the in-flight start.

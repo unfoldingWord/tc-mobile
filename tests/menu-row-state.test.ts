@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -186,6 +188,41 @@ describe("rowHint — which reasons carry a cue", () => {
       strings.recorderInterrupted,
     ]) {
       expect(copy).toContain(`"${strings.closeRecorder}"`);
+    }
+  });
+
+  // The test above proves the SPOKEN half: "Close recorder" is a name AT can
+  // find. It says nothing about the SEEN half, and that is the gap #620 fell
+  // through: `closeRecorder` is the accessible name of an icon-only `Control`,
+  // so nothing on screen is labelled "Close recorder", and a sighted tester
+  // reading 'Use "Close recorder" to save it' found no such control (Android,
+  // v0.2.9). Every cue that names the control therefore names it BOTH ways —
+  // how it looks ("the back arrow at the top") and how it is spoken — so a
+  // reader and a screen-reader user each get a match. "back arrow" is tied to
+  // the glyph the header control actually renders, read from the source the
+  // way `tests/nav-commit-close-race-guards.test.ts` isolates the same control
+  // (`recorder.tsx` mounts the audio hook graph, so no test renders it): if
+  // that `icon` ever changes, these words are stale and this fails.
+  it("hint copy also describes the control the way a sighted user sees it (#620)", () => {
+    const recorderSource = readFileSync(
+      new URL("../src/components/recorder.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const glyph = /icon="([\w-]+)"\s*label=\{strings\.closeRecorder\}/.exec(
+      recorderSource
+    );
+    expect(glyph?.[1]).toBe("back");
+
+    for (const copy of [
+      strings.blockedByTake,
+      strings.previewUnavailable,
+      strings.recorderInterrupted,
+    ]) {
+      expect(copy).toContain(
+        `the back arrow at the top ("${strings.closeRecorder}")`
+      );
     }
   });
 
