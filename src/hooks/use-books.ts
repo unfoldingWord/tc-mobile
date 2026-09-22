@@ -556,8 +556,7 @@ export function useBooks() {
         report(null); // a successful write clears the slot — see `createBook`
         // Patch the row on THIS book's card in the same turn as the write —
         // see `patchNewChapter` — so the control's own repeated activations
-        // (fast taps, a held Enter's key-repeat landing here after a New Book
-        // success) see the row that landed instead of an empty card that
+        // after a reopened prompt see the row that landed instead of a card that
         // reads as "nothing happened" (George R3/R4 P2). `reload()` still
         // follows — see `createBook`'s matching comment (George R7 P2): the
         // patch is what the control sees immediately, `reload()` is what

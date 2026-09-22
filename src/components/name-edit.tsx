@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Control } from "./control";
 import { confirmControlAffordance } from "./control-affordance";
@@ -8,6 +8,8 @@ interface NameEditProps {
   /** The name to seed the field with — the current name, the default a new book
    *  (#314) or chapter (#609) would get, or "" to type a fresh one. */
   initialValue: string;
+  /** Select the offered default once, so initial typing replaces it. */
+  selectInitialValue?: boolean;
   /** The field's accessible name AND placeholder — the whole text layer of the input. */
   fieldLabel: string;
   /**
@@ -65,6 +67,7 @@ interface NameEditProps {
  */
 export function NameEdit({
   initialValue,
+  selectInitialValue = false,
   fieldLabel,
   saveLabel = strings.saveName,
   onSave,
@@ -72,6 +75,7 @@ export function NameEdit({
   busy = false,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
+  const selectedInitialValue = useRef(false);
   const affordance = confirmControlAffordance(busy);
   return (
     <form
@@ -103,6 +107,12 @@ export function NameEdit({
         // arrives pre-filled, so the caret lands on text the translator can
         // accept as it stands.
         autoFocus
+        onFocus={(event) => {
+          if (selectInitialValue && !selectedInitialValue.current) {
+            selectedInitialValue.current = true;
+            event.currentTarget.select();
+          }
+        }}
         // Frozen while the write is in flight (George R1 P2, #384): `onSave`
         // already closed over the value it was called with, so a keystroke
         // typed after that tap (the field keeps focus; nothing moves it to

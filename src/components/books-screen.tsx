@@ -236,8 +236,8 @@ export function BooksScreen({
   const creatingChapter = useRef(false);
   const [creatingChapterBusy, setCreatingChapterBusy] = useState(false);
   // Where focus was when the prompt opened — the row's `+`. Restored when the
-  // prompt closes WITHOUT creating, so a cancel does not drop focus to the
-  // document; CLEARED on a successful create, where `pendingFocus` takes over.
+  // prompt is cancelled, so focus does not drop to the document. A failed
+  // create targets the book toggle; success uses `pendingFocus` instead.
   // Exactly New Book's split, and for a reason this prompt shares: returning
   // focus to the `+` after a create leaves a live control that reopens this
   // panel under the key that just confirmed it, and `NameEdit` autofocuses, so
@@ -759,8 +759,18 @@ export function BooksScreen({
     if (newChapter !== null) return;
     const el = newChapterReturnFocus.current;
     newChapterReturnFocus.current = null;
-    if (el?.isConnected) el.focus();
-  }, [newChapter]);
+    if (!el) return;
+    if (el.isConnected) {
+      el.focus();
+    } else {
+      // A second copy can delete the trigger's book while this prompt is up.
+      const fallback = books[0]?.bookId ?? EMPTY_STATE_NODE;
+      nodes.current
+        .get(fallback)
+        ?.querySelector<HTMLElement>("button")
+        ?.focus();
+    }
+  }, [newChapter, books]);
 
   const onConfirmNewChapter = useCallback(
     async (typed: string) => {
@@ -790,9 +800,14 @@ export function BooksScreen({
       // one means changing what the hook returns, which is its own change.
       setNewChapter(null);
       layers.close("books:new-chapter");
-      // A failure leaves `newChapterReturnFocus` set, so focus goes back to the
-      // `+` that opened this — the control a retry starts from.
-      if (!chapter) return;
+      // A held Enter must land on a control that cannot write another chapter.
+      // If the book vanished, the return-focus effect chooses a shelf fallback.
+      if (!chapter) {
+        newChapterReturnFocus.current =
+          nodes.current.get(bookId)?.querySelector<HTMLElement>("button") ??
+          newChapterReturnFocus.current;
+        return;
+      }
       // On success it is cleared and `pendingFocus` takes over, for the reason
       // the ref's declaration gives. The chapter row's only button is
       // "Open Chapter N": a stray re-activation navigates into the chapter,
@@ -1449,6 +1464,7 @@ export function BooksScreen({
       >
         <NameEdit
           initialValue={newChapter?.seed ?? ""}
+          selectInitialValue
           fieldLabel={strings.chapterNameField}
           saveLabel={strings.createChapter}
           onSave={(name) => void onConfirmNewChapter(name)}

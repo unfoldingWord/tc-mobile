@@ -304,13 +304,44 @@ it("hands focus to the new chapter row after a create, never back to the +", asy
   expect(document.activeElement).not.toBe(plus);
 });
 
-it("returns focus to the + when the create fails, so a retry starts there", async () => {
+it("hands failed-create focus to the book toggle, so held Enter cannot create", async () => {
   mocks.addChapter.mockResolvedValue(null);
   await mount();
   const plus = await openPrompt();
   await click(strings.createChapter);
   expect(field()).toBeNull();
-  expect(document.activeElement).toBe(plus);
+  expect(document.activeElement).not.toBe(plus);
+  expect(document.activeElement?.getAttribute("aria-expanded")).not.toBeNull();
+  await act(async () => (document.activeElement as HTMLButtonElement).click());
+  expect(field()).toBeNull();
+  expect(mocks.addChapter).toHaveBeenCalledTimes(1);
+});
+
+it("selects the offered chapter name on opening so typing can replace it", async () => {
+  await mount();
+  await openPrompt();
+  const input = field()!;
+  expect(input.selectionStart).toBe(0);
+  expect(input.selectionEnd).toBe(input.value.length);
+  input.setSelectionRange(2, 2);
+  await act(async () => {
+    input.blur();
+    input.focus();
+  });
+  expect(input.selectionStart).toBe(2);
+  expect(input.selectionEnd).toBe(2);
+});
+
+it("lands on the empty shelf control when the book disappears during create", async () => {
+  mocks.addChapter.mockImplementation(async () => {
+    books = [];
+    return null;
+  });
+  await mount();
+  await openPrompt();
+  await click(strings.createChapter);
+  expect(field()).toBeNull();
+  expect(document.activeElement).toBe(button(strings.newBook));
 });
 
 /**
