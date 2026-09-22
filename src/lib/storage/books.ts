@@ -179,6 +179,18 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  * `updatedAt`, so a re-run is a true no-op that never reshuffles the shelf.
  * Any real rename bumps `updatedAt` — labelling a book is activity, and
  * `listBooks` sorts by it, so the book just named floats to the top.
+ *
+ * Concurrent renames of the same book (two rapid save taps, close-and-reopen
+ * between them — #394) are DECIDED, not patched: every implementation runs
+ * overlapping readwrite transactions sequentially in creation order (w3c
+ * IndexedDB PR #319, spec text), this call's transaction is created promptly
+ * on call, and the payload comes from the caller, not from the row. So the
+ * later-typed rename must commit last, on one tab and across tabs of one
+ * origin alike — there is no latch or lane here on purpose, because its
+ * absence cannot change any outcome a test could observe. THAT IS WHY the
+ * read stays INSIDE the one transaction: splitting it (or queueing the calls
+ * in app code) would only hand determinism a second ownership, never a
+ * second guarantee. `tests/rename-ordering.test.ts` pins the outcome.
  */
 export async function renameBook(
   id: BookId,
@@ -468,6 +480,17 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * `updatedAt`, so the book floats up the shelf exactly as `addChapter`,
  * `renameBook`, and recording do (G4). The no-op path skips the bump, so a
  * re-run never reshuffles the shelf.
+ *
+ * Concurrent renames land the same way {@link renameBook} resolves them (#394,
+ * see its own docblock): overlapping readwrite transactions run in creation
+ * order, so the later-typed label is always the stored one. Renaming a chapter
+ * while its book is itself renamed mid-flight is covered by the same rule —
+ * this transaction's scope (`chapters` + `books`) overlaps `renameBook`'s, so
+ * the engine, never app code, picks the order, and each lands complete or not
+ * at all. A rename racing a parent-BOOK delete is a different shape entirely
+ * — it throws `No such chapter` or is erased after the fact, depending on
+ * which transaction was created first — and THAT mismatch between a stale
+ * screen and a dead target is #378's subject, not this call's.
  */
 export async function renameChapter(
   id: ChapterId,
