@@ -190,6 +190,19 @@ describe("segment row rename (#591)", () => {
     expect(dialog()?.textContent).toContain(strings.renameSegmentFailed);
   });
 
+  it("treats a rename that rejects as not landed, never as still saving", async () => {
+    await render({ ...recorded, label: "verse 3" }, () =>
+      Promise.reject(new Error("boom"))
+    );
+    await click(strings.segmentMenu(3));
+    await click(strings.renameSegment);
+    await click(strings.saveName);
+    // Confirm is back to its idle name, not stuck on "Saving…".
+    expect(button(strings.saveName)).toBeDefined();
+    expect(button(strings.savingName)).toBeUndefined();
+    expect(dialog()?.textContent).toContain(strings.renameSegmentFailed);
+  });
+
   it("does not let a rename that settles late close a menu opened after it", async () => {
     let settle: (ok: boolean) => void = () => {};
     const onRename = vi.fn(

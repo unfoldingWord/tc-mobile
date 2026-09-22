@@ -12,6 +12,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { strings } from "./strings";
+import { reportFailure } from "@/hooks/report-failure";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/types/view";
@@ -197,11 +198,18 @@ export function SegmentRow({
     const session = menuSession.current;
     setSavingLabel(true);
     setRenameFailed(false);
-    void onRename(value).then((ok) => {
+    const settle = (ok: boolean) => {
       if (menuSession.current !== session) return;
       setSavingLabel(false);
       if (ok) closeMenu();
       else setRenameFailed(true);
+    };
+    // `onRename` is not expected to reject (the hook catches), but if it ever
+    // does the field must not sit on "Saving…" forever: a rejection is a rename
+    // that did not land, and its cause still reaches the log.
+    void onRename(value).then(settle, (cause: unknown) => {
+      reportFailure(cause, "segment-rename");
+      settle(false);
     });
   };
   // Cancel / Escape: back to the action list. NameEdit makes this a no-op while
