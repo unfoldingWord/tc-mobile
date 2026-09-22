@@ -1230,6 +1230,7 @@ export function BooksScreen({
     loaded,
     naming: newBookSeed !== null,
     books,
+    expandedBooks: expanded,
   });
 
   // The encoder's own health (#166). Module state, not hook state — every
@@ -1399,6 +1400,9 @@ export function BooksScreen({
                 onOpenChapter={onOpenChapter}
                 guidedAddChapter={
                   guide?.kind === "add-chapter" && guide.bookId === book.bookId
+                }
+                guidedToggle={
+                  guide?.kind === "expand-book" && guide.bookId === book.bookId
                 }
                 guidedChapterId={
                   guide?.kind === "open-chapter" ? guide.chapterId : null
@@ -1695,6 +1699,11 @@ interface BookItemProps {
   onOpenChapter: (chapterId: ChapterId) => void;
   /** This book's `+` is the guided step (#604). */
   guidedAddChapter: boolean;
+  /**
+   * This book's expand toggle is the guided step (#604) — the chapter row the
+   * chain wants is inside a list this book has closed.
+   */
+  guidedToggle: boolean;
   /** The chapter row that is the guided step, if it is one of this book's. */
   guidedChapterId: ChapterId | null;
   setNode: (id: string, el: HTMLElement | null) => void;
@@ -1708,6 +1717,7 @@ function BookItem({
   onOpenShareMenu,
   onOpenChapter,
   guidedAddChapter,
+  guidedToggle,
   guidedChapterId,
   setNode,
 }: BookItemProps) {
@@ -1725,7 +1735,12 @@ function BookItem({
             book.chapters.length,
             expanded
           )}
-          className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left"
+          // The toggle carries the guide class itself, like the chapter row —
+          // it is a plain button, not a `Control`.
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left",
+            guidedToggle && "is-guided"
+          )}
         >
           <span className="text-ink-muted flex-none">
             <Icon

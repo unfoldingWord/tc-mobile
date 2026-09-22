@@ -13,6 +13,7 @@ export type GuidedStep =
   | { readonly kind: "new-book" }
   | { readonly kind: "create-book" }
   | { readonly kind: "add-chapter"; readonly bookId: BookId }
+  | { readonly kind: "expand-book"; readonly bookId: BookId }
   | { readonly kind: "open-chapter"; readonly chapterId: ChapterId }
   | { readonly kind: "add-segment" }
   | { readonly kind: "open-segment"; readonly segmentId: SegmentId }
@@ -31,6 +32,12 @@ export type GuideView =
       /** The New Book naming dialog (#314) is open. */
       readonly naming: boolean;
       readonly books: readonly BookCard[];
+      /**
+       * The books whose chapter lists are open. Screen state, not stored: it
+       * resets every time the shelf remounts — coming Back from Segments, or
+       * on a reload — which is why the guide has to ask.
+       */
+      readonly expandedBooks: ReadonlySet<BookId>;
     }
   | {
       readonly screen: "segments";
@@ -51,8 +58,9 @@ export type GuideView =
  * Which control is the next REQUIRED action, for a first-time user walking the
  * app from an empty shelf to a first recording (#604).
  *
- * The chain is: New Book -> Create book -> Add chapter -> open that chapter ->
- * Add segment -> that segment's Record -> the recorder's Record. It ends there, and that is a decision rather than an
+ * The chain is: New Book -> Create book -> Add chapter -> (open the book) ->
+ * open that chapter -> Add segment -> that segment's Record -> the recorder's
+ * Record. It ends there, and that is a decision rather than an
  * omission: the guide exists to reach a first recording without instruction,
  * and once a recording exists in the book there is no further step the app can
  * call required — marking a segment Finished is the translator's judgement, not
@@ -73,8 +81,9 @@ export function guidedStep(view: GuideView): GuidedStep | null {
       return segmentsStep(view);
     case "recorder":
       // Steps 7 and 8 in one condition. A take is spliced into the working
-      // buffer only when the sheet closes (Model A, commit-on-close — see
-      // `recorder.tsx`'s `onPlayButton`), so `hasAudio` stays false for the
+      // buffer only when the sheet closes (Model A, commit-on-close — the
+      // `Recorder` component's own docblock, "a take is committed when the
+      // sheet closes (F8)"), so `hasAudio` stays false for the
       // whole of a first take and the ring does not blink out the instant
       // Record is tapped. It turns true on the next open, where the guide is
       // over.
@@ -123,5 +132,44 @@ function booksStep(
   // of "this book has been worked in" available on the shelf.
   if (book.chapters.some((chapter) => chapter.totalCount > 0)) return null;
   const first = book.chapters[0];
-  return first ? { kind: "open-chapter", chapterId: first.chapterId } : null;
+  if (!first) return null;
+  // A collapsed book renders no chapter rows, so the row this step names is
+  // not on screen to be marked and the accent would simply vanish — which is
+  // what happens on the two most ordinary paths there are: Back from Segments,
+  // and a reload. Both remount the shelf and reset `expanded`. The step before
+  // it is then the required one: open the book.
+  return view.expandedBooks.has(book.bookId)
+    ? { kind: "open-chapter", chapterId: first.chapterId }
+    : { kind: "expand-book", bookId: book.bookId };
+}
+
+/**
+ * Whether the recorder's Record wears the ring right now (#604 step 8).
+ *
+ * Separate from {@link guidedStep} because the two answers come apart. The
+ * step stays `record` for the whole of a first take — that is the chain's
+ * answer and it is correct — while the BUTTON goes inert twice on the way
+ * there and back: once while `getUserMedia` is in flight (`requesting`) and
+ * once while the take is being sealed (`processing`). A gate keyed on the
+ * button's inertness alone blinked the ring off at the tap and again at the
+ * end, which is exactly what step 8 says must not happen.
+ *
+ * So: a take in flight keeps the ring, whatever the button's own state; at
+ * idle the ring follows the button, because an idle control that is refusing
+ * taps (a sounding preview, a finger on the stage) is the guide asking for
+ * something the app is declining; and the closing sheet drops it, because that
+ * is the one reason that outlasts the tap rather than resolving in a moment.
+ */
+export function guidedRecordShown(input: {
+  readonly step: GuidedStep | null;
+  /** The recorder is not idle — requesting, recording, paused or processing. */
+  readonly takeInFlight: boolean;
+  /** The sheet is committing and leaving. */
+  readonly isClosing: boolean;
+  /** `recordDisabled(...)` — the button's own gate. */
+  readonly recordInert: boolean;
+}): boolean {
+  if (input.step?.kind !== "record") return false;
+  if (input.isClosing) return false;
+  return input.takeInFlight || !input.recordInert;
 }

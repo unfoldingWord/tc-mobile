@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { guidedStep, type GuideView } from "@/components/guided-step";
+import {
+  guidedRecordShown,
+  guidedStep,
+  type GuideView,
+} from "@/components/guided-step";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow, SegmentRow } from "@/types/view";
 
@@ -51,6 +55,11 @@ const books = (
   loaded: true,
   naming: false,
   books: [],
+  // Expanded by default, because that is the state a book is in the moment it
+  // is created and the moment a chapter is added to it (`books-screen.tsx`
+  // adds the id to the set on both). The collapsed branch is asked for by
+  // name below.
+  expandedBooks: new Set([bookId(1)]),
   ...view,
 });
 
@@ -97,6 +106,36 @@ describe("the Books screen's link in the chain (#604)", () => {
     expect(step).toEqual({ kind: "open-chapter", chapterId: chapterId(1) });
   });
 
+  it("guides the book open when the chapter it wants is not rendered", () => {
+    // The shelf is a remounting screen: coming Back from Segments, or
+    // reloading, resets `expanded`, and a collapsed book renders no chapter
+    // rows at all. Pointing at one would be pointing at nothing, so the step
+    // before it — open the book — becomes the required action.
+    const step = guidedStep(
+      books({ books: [book(1, [chapter(1)])], expandedBooks: new Set() })
+    );
+    expect(step).toEqual({ kind: "expand-book", bookId: bookId(1) });
+  });
+
+  it("still guides Add chapter on a collapsed book — that + is on the row", () => {
+    // The `+` lives on the book row beside the toggle, not inside the list the
+    // toggle opens, so a collapsed book does not hide it and this step needs no
+    // expansion.
+    expect(
+      guidedStep(books({ books: [book(1)], expandedBooks: new Set() }))
+    ).toEqual({ kind: "add-chapter", bookId: bookId(1) });
+  });
+
+  it("stops on a collapsed book that has been worked in — the stop comes first", () => {
+    // Terminal rule unchanged: expansion is about whether the TARGET is on
+    // screen, and it is only asked once there is still a step to point at.
+    expect(
+      guidedStep(
+        books({ books: [book(1, [chapter(1, 2)])], expandedBooks: new Set() })
+      )
+    ).toBeNull();
+  });
+
   it("stops once any chapter holds segments — the work has started", () => {
     // The shelf's view model carries segment COUNTS and no take information
     // (`types/view.ts`), and the guide adds no storage read of its own, so
@@ -125,6 +164,7 @@ describe("the Books screen's link in the chain (#604)", () => {
       books({ books: [book(1)] }),
       books({ books: [book(1)], naming: true }),
       books({ books: [book(1, [chapter(1)])] }),
+      books({ books: [book(1, [chapter(1)])], expandedBooks: new Set() }),
       books({ books: [book(1, [chapter(1, 2)])] }),
       books({ books: [book(1), book(2)] }),
     ];
@@ -134,6 +174,7 @@ describe("the Books screen's link in the chain (#604)", () => {
         step?.kind === "new-book",
         step?.kind === "create-book",
         step?.kind === "add-chapter",
+        step?.kind === "expand-book",
         step?.kind === "open-chapter",
       ].filter(Boolean);
       expect(marks.length, JSON.stringify(state)).toBeLessThanOrEqual(1);
@@ -199,8 +240,9 @@ describe("the recorder's link in the chain (#604)", () => {
 
   it("steps 7 and 8: a segment with no audio guides Record, and keeps it there through the take", () => {
     // One input covers both steps because a take is spliced into the working
-    // buffer only on close (Model A, commit-on-close — `recorder.tsx`'s
-    // `onPlayButton` docblock), so `hasAudio` is still false while the take is
+    // buffer only on close (Model A, commit-on-close — the `Recorder`
+    // component docblock, "a take is committed when the sheet closes (F8)"),
+    // so `hasAudio` is still false while the take is
     // in flight and the ring does not blink out the moment Record is tapped.
     expect(guidedStep(recorder(true, false))).toEqual({ kind: "record" });
   });
@@ -210,5 +252,50 @@ describe("the recorder's link in the chain (#604)", () => {
     // and the per-segment Finished switch is not a REQUIRED step, so nothing
     // downstream of the first take is marked.
     expect(guidedStep(recorder(true, true))).toBeNull();
+  });
+});
+
+describe("the Record ring's own gate (#604 step 8)", () => {
+  // The chain says WHICH control; this says whether the recorder is in a state
+  // where showing the ring is honest. It is its own table because the two
+  // answers come apart: the step stays `record` for the whole of a first take,
+  // while the button underneath goes inert twice on the way — once while
+  // `getUserMedia` is in flight, once while the take is being processed.
+  const shown = (over: Partial<Parameters<typeof guidedRecordShown>[0]> = {}) =>
+    guidedRecordShown({
+      step: { kind: "record" },
+      takeInFlight: false,
+      isClosing: false,
+      recordInert: false,
+      ...over,
+    });
+
+  it("is off whenever the step is not Record", () => {
+    expect(shown({ step: null })).toBe(false);
+    expect(shown({ step: { kind: "add-segment" } })).toBe(false);
+  });
+
+  it("is on at idle, when the control is live", () => {
+    expect(shown()).toBe(true);
+  });
+
+  it("STAYS on through the take, including the two states that inert the button", () => {
+    // The defect this table exists for: `requesting` (permission in flight)
+    // and `processing` (the take being sealed) both disable Record, so a gate
+    // keyed on the button's own inertness blinked the ring off at the tap and
+    // again at the end — step 8 says it stays.
+    expect(shown({ takeInFlight: true, recordInert: true })).toBe(true);
+  });
+
+  it("is off while the sheet is closing — the one lasting reason", () => {
+    expect(shown({ takeInFlight: true, isClosing: true })).toBe(false);
+    expect(shown({ isClosing: true })).toBe(false);
+  });
+
+  it("is off for an idle control that is refusing taps", () => {
+    // A sounding preview or a finger on the stage: no take is in flight, the
+    // button will not answer, and pointing at it would be the guide asking for
+    // something the app is declining.
+    expect(shown({ recordInert: true })).toBe(false);
   });
 });

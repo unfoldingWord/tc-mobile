@@ -98,16 +98,31 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
   });
 
   it("keeps the record ring OUTSIDE the red, and every other ring inside", () => {
-    // Not a taste call. The accent on `--s-live` is ~1.05:1 (see
-    // `tests/contrast.test.ts`), so a ring drawn inside the red button is a
-    // ring almost nobody can see; on the sheet's floor behind it, it clears
-    // the non-text floor. Everywhere else the ring must stay inside its own
-    // box, because a full-bleed row is flush with a scroll container that
-    // clips anything drawn outside it.
+    // Not a taste call. The accent on `--s-live` is well under the non-text
+    // floor in both themes — `tests/contrast.test.ts` asserts it — so a ring
+    // drawn inside the red button is a ring almost nobody can see; on the
+    // sheet's floor around it, it clears that floor. Everywhere else the ring
+    // must stay inside its own box, because a full-bleed row is flush with a
+    // scroll container that clips anything drawn outside it.
     expect(ruleBlock(components, ".is-guided")).toMatch(/box-shadow:\s*inset/);
     expect(ruleBlock(components, ".control--record.is-guided")).toMatch(
       /box-shadow:\s*0/
     );
+  });
+
+  it("holds the focus ring off the record ring, which shares its side", () => {
+    // Everywhere else the guide is inside the box and focus is outside it, so
+    // they are separated by construction. On the record button both are
+    // outside, and at the base offset they would touch: the guide covers
+    // 0-3px out and the outline starts at 3px. The offset has to be pushed by
+    // at least the ring's own width for the two to read as two.
+    const block = ruleBlock(
+      components,
+      ".control--record.is-guided:focus-visible"
+    );
+    expect(block).toMatch(/outline-offset:\s*calc\(/);
+    expect(block).toContain("--c-focus-offset");
+    expect(block).toContain("--c-guide-ring");
   });
 });
 
@@ -118,6 +133,7 @@ describe("every step of the chain reaches a control (#604)", () => {
       "new-book",
       "create-book",
       "add-chapter",
+      "expand-book",
       "open-chapter",
     ],
     "src/components/segments-screen.tsx": ["add-segment", "open-segment"],
@@ -144,11 +160,12 @@ describe("every step of the chain reaches a control (#604)", () => {
     });
   }
 
-  it("marks the chapter row, which is a plain button and not a Control", () => {
-    // The row carries the class itself; every other target goes through
-    // `Control`/`EmptyState`/`NameEdit`, whose prop is covered by the render
-    // harness in `tests/control-render.test.ts`.
-    expect(read("src/components/books-screen.tsx")).toContain("is-guided");
+  it("marks the two plain buttons on the shelf, which are not Controls", () => {
+    // The chapter row and the book's expand toggle carry the class themselves;
+    // every other target goes through `Control`/`EmptyState`/`NameEdit`/
+    // `SegmentRow`, whose props are covered by the render cases above.
+    const source = read("src/components/books-screen.tsx");
+    expect(source.match(/guided\w* && "is-guided"/g) ?? []).toHaveLength(2);
   });
 });
 
@@ -236,5 +253,25 @@ describe("the mark reaches the control it is given to (#604)", () => {
     );
     expect(one(container, "button").className).toContain("is-guided");
     expect(one(container, "input").className).not.toContain("is-guided");
+  });
+
+  it("NameEdit drops the mark while the create is in flight", () => {
+    // Same rule the recorder's Record and the row's Record follow: a control
+    // that is swallowing activations is not a control anyone should be pointed
+    // at. `busy` keeps Confirm focusable and on screen (#137), so without this
+    // the ring would sit on a button that answers nothing for the length of
+    // the write.
+    const container = render(
+      createElement(NameEdit, {
+        initialValue: "Book 001",
+        fieldLabel: "Book name",
+        saveLabel: "Create book",
+        onSave: () => {},
+        onCancel: () => {},
+        busy: true,
+        guided: true,
+      })
+    );
+    expect(one(container, "button").className).not.toContain("is-guided");
   });
 });

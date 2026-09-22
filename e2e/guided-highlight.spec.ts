@@ -27,7 +27,7 @@ import { expect, test, type Page } from "@playwright/test";
  * The class is not the claim — the paint is. A screen that has gone inert
  * behind a scrim keeps rendering the mark it last painted, and the stylesheet
  * is what takes it away; counting `.is-guided` would have called that two
- * marks on screen. (It did: this spec is what found it.)
+ * marks on screen.
  */
 function rings(page: Page): Promise<{ label: string; shadow: string }[]> {
   return page.locator(".is-guided").evaluateAll((els) =>
@@ -165,4 +165,49 @@ test("the shelf stops once its book has been worked in, and the mark is on the r
     page.getByRole("button", { name: "Open Chapter 1" })
   ).toBeVisible();
   expect(await guided(page)).toEqual([]);
+});
+
+test("a collapsed book is guided OPEN, because the row the chain wants is not rendered", async ({
+  page,
+}) => {
+  // The shelf remounts on the two most ordinary paths there are — Back from
+  // Segments, and a reload — and `expanded` is screen state, so the book comes
+  // back closed and its chapter rows are not in the DOM at all. Before this
+  // branch the accent simply vanished here, mid-chain, on a screen a
+  // first-time user has already been walked through once.
+  await page.goto("/");
+  await page.getByRole("button", { name: "New book" }).click();
+  await page.getByRole("button", { name: "Create book" }).click();
+  await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page.getByRole("button", { name: "Open Chapter 1" }).click();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Back to books" }).click();
+  const toggle = page.getByRole("button", { name: /, 1 chapter, collapsed$/ });
+  await expect(toggle).toBeVisible();
+  // The target of the step that WOULD have been next is not on screen.
+  await expect(
+    page.getByRole("button", { name: "Open Chapter 1" })
+  ).toHaveCount(0);
+  expect(await guided(page)).toEqual([await toggle.getAttribute("aria-label")]);
+
+  // One tap later the list is open and the accent has moved on to the row.
+  await toggle.click();
+  await expect(
+    page.getByRole("button", { name: "Open Chapter 1" })
+  ).toBeVisible();
+  expect(await guided(page)).toEqual(["Open Chapter 1"]);
+
+  // A reload is the same branch, reached the other way.
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: /, 1 chapter, collapsed$/ })
+  ).toBeVisible();
+  expect(await guided(page)).toEqual([
+    await page
+      .getByRole("button", { name: /, 1 chapter, collapsed$/ })
+      .getAttribute("aria-label"),
+  ]);
 });
