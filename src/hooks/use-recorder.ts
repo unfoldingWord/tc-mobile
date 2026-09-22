@@ -505,7 +505,7 @@ export function useRecorder(): UseRecorder {
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
-      setError("This device cannot record audio.");
+      setError(strings.recordingUnsupported);
       return false;
     }
     // Refuse to open a SECOND microphone while one is already live. Unreachable

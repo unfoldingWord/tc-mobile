@@ -330,6 +330,11 @@ export const strings = {
   // The residual class: `getUserMedia` refused and said nothing usable about
   // why, so this claims nothing about the cause.
   micStartFailed: "Could not start recording.",
+  // Not a refusal at all — `isRecordingSupported()` is false, so there is no
+  // MediaRecorder to ask. Says the DEVICE rather than the app, and offers no
+  // remedy, because none of the mic sentences above applies: nothing in
+  // settings turns this on.
+  recordingUnsupported: "This device cannot record audio.",
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
