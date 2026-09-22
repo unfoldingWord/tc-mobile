@@ -50,11 +50,8 @@
  * That selector is written here WITHOUT its leading dot on purpose. The test
  * finds its block with a raw `indexOf` over this whole file, so a comment
  * containing the literal selector is found first and the slice becomes comment
- * text with no declarations in it. Not a hypothetical: an earlier draft of this
- * very paragraph did exactly that and turned the test red in review round 3.
- * Its `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is what
- * caught it rather than the assertion silently passing over an empty block —
- * which is the difference between a gate and a comment.
+ * text with no declarations in it. The declaration-count floor keeps an empty
+ * block from passing the value assertions vacuously.
  *
  * touch-policy reads this file whole and
  * regexes the raw string — and the paragraph above names the five colour
@@ -65,12 +62,6 @@
  * identifiers. For the same reason no sentence in this header writes `var(`
  * immediately followed by a primitive name: a line count of primitive
  * references over this file would otherwise count the prose describing them.
- *
- * AGENTS.md's knip blind-spot #2 still says nothing in this repo reads CSS at
- * all. That is stale, and tracked in #525 — where the work is a grep, not a
- * one-line edit: four places lean on the sentence today (three test docblocks
- * and `globals.css`'s `@theme inline` comment) and no two of them quote it
- * identically.
  *
  * Numbers here come from `ui-craft`: control padding is about half the control
  * height, radius is related to height, spacing sits on named relationship
@@ -85,7 +76,6 @@
     --c-gap-parts: var(--p-space-2);
     --c-gap-items: var(--p-space-4);
     --c-gap-blocks: var(--p-space-6);
-    --c-gap-sections: var(--p-space-8);
 
     /* Touch targets never go below 44px — with one standing exception, named
        here rather than left as a claim the tokens contradict (George R5 P3):
@@ -113,8 +103,6 @@
        read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
-    --c-tile-sm: 48px;
-    --c-tile-lg: 56px;
 
     /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
        two parts this file gained in #457. Their geometry is named here, not
@@ -788,29 +776,10 @@
        centers exactly as before — `safe` only changes behaviour once the
        column already does not fit.
 
-       That last clause used to be false (George R7 P2-1, round 8, measured
-       with a real browser layout, not argued): `.recorder-canvas` carries
-       the `overflow-hidden` UTILITY class, and CSS Flexbox §4.5 gives a
-       flex item with `overflow` other than `visible` an AUTOMATIC MINIMUM
-       SIZE of 0 — not its content size. `.recorder-paste` and
-       `.recorder-cut` cannot shrink below their own content, but nothing
-       stopped `.recorder-canvas` shrinking all the way to 0 with default
-       `flex-shrink: 1`, so ordinary flex-shrink absorbed the ENTIRE deficit
-       into the canvas alone, silently, long before this column was ever
-       tall enough to overflow its container and make `safe center` do
-       anything. Measured: a 151px stage shrank the canvas wrapper to 55px
-       (its own `<canvas>` stayed a fixed 150px box, so it was CLIPPED, not
-       redrawn — the amplitude midline ended up 20px below the visible box)
-       while the group and the stage summed to exactly 151px each — no
-       overflow, so `safe center` above was a complete no-op. The activation
-       boundary this used to leave was the sum of `.recorder-paste`'s and
-       `.recorder-cut`'s own floors (96px in this file's current button
-       sizes) rather than the group's full ~246px intrinsic height — nearly
-       the entire intended range did nothing. `flex-shrink: 0` below, on all
-       three stage children, is what makes "the column already does not
-       fit" a real, reachable state instead of one flex-shrink quietly
-       prevented: with it, a short stage genuinely overflows and THIS rule's
-       `safe center` clips Cut, as this comment has claimed since round 3.
+       The canvas wrapper has hidden overflow and an automatic flex minimum
+       of zero, so default shrinking can clip its fixed-size canvas before the
+       group overflows. `flex-shrink: 0` on all three stage children preserves
+       their intrinsic height and lets `safe center` handle the overflow.
 
        The base rule below is plain `center`, NOT `center` then `safe
        center` in the same declaration block (George R4 P2-1's original fix,
@@ -893,13 +862,11 @@
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
-    /* A thin bar centred in a wide, finger-sized target. */
+    /* A thin bar centred in a wide, finger-sized target. Its inward focus
+       offset lives beside the unlayered default in globals.css, like
+       `.paste-marker`'s: a layered copy here never won (#635). */
     background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
       100% no-repeat;
-  }
-  .selection-handle:focus-visible {
-    outline: 2px solid var(--s-focus);
-    outline-offset: -2px;
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
@@ -938,18 +905,8 @@
     padding-bottom: var(--p-space-2);
     flex-shrink: 0;
   }
-  /* Sized to the 44px touch floor explicitly (#164/#362) rather than relying
-     on padding around the 26px glyph, which alone falls short of it.
-
-     States copied from `.control` rather than rendered through it (George
-     R3 P3): as an in-canvas overlay `.paste-marker` never needed hover/
-     active/focus states of its own — it is now a first-class sibling of Cut
-     in the stage column, and the file's own header says every interactive
-     part styles all of its states. `:focus-visible` uses an INWARD offset
-     like `.selection-handle` above, not `.control`'s outward one — this
-     button can sit at the very top edge of `.recorder-stage`'s
-     `overflow: hidden` box, and an outward ring would be the first thing
-     clipped. */
+  /* The paste action has a 44px touch target with hover and pressed states.
+     Its inward focus offset lives beside the unlayered default in globals.css. */
   .paste-marker {
     display: grid;
     place-items: center;
@@ -958,7 +915,7 @@
     color: var(--s-voice);
     background: var(--s-raised);
     border: 1px solid var(--s-voice);
-    border-radius: 999px;
+    border-radius: var(--p-radius-full);
     cursor: pointer;
     pointer-events: auto;
     transition:
@@ -970,10 +927,6 @@
   }
   .paste-marker:active {
     transform: translateY(1px);
-  }
-  .paste-marker:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: -2px;
   }
   .recorder-cut {
     padding-top: var(--p-space-2);

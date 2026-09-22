@@ -19,13 +19,6 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * runs in the Node environment here and the project has no renderer, so a
  * regression in any of these transitions used to ship with the suite green.
  *
- * Written against mutations rather than by inspection: when this file was
- * written, each guard in `pending-take.ts` was removed or inverted in turn and
- * confirmed to fail at least one test below — the samples dropped on the
- * failure path, the retry minting a fresh `clipId`, the re-entry guard, both
- * `clipId` match guards, the attempt counter, the displacement guard, and the
- * orphan report.
- *
  * What is NOT covered here: everything the hook does with the results. The
  * `saveTake` write (clip + take in one transaction), the `deleteClip` of the
  * orphan, the `useState` slot surviving a re-render, and the recovery screen
@@ -162,16 +155,19 @@ describe("retrySave", () => {
     expect(retrySave(null)).toBeNull();
   });
 
-  it("refuses a downgrade, which no attempt can clear", () => {
-    // A newer copy of the app has moved the database past this build, so
-    // `getDb()` fails the version check before any transaction — identically,
-    // every time. Arming a save here spins the recovery screen through "Saving"
-    // and back for as long as someone keeps tapping. Refused by returning the
-    // slot UNCHANGED, which is the same "refused" every caller already reads
-    // (George R2 P2-1).
+  it("refuses non-retryable kinds, which no attempt can clear", () => {
+    // `downgrade`: a newer copy of the app has moved the database past this
+    // build, so `getDb()` fails before any transaction — identically, every
+    // time. `stale`: another live copy deleted the row this take belongs to, so
+    // there is no valid target for the held PCM (#378). Arming a save for either
+    // spins the recovery screen through "Saving" and back for as long as someone
+    // keeps tapping. Refused by returning the slot UNCHANGED, which is the same
+    // "refused" every caller already reads (George R2 P2-1).
     const { take } = held();
-    const failed = failSave(take, CLIP, "downgrade");
-    expect(retrySave(failed)).toBe(failed);
+    const downgraded = failSave(take, CLIP, "downgrade");
+    expect(retrySave(downgraded)).toBe(downgraded);
+    const stale = failSave(take, CLIP, "stale");
+    expect(retrySave(stale)).toBe(stale);
     // And the retryable kinds are untouched by the guard.
     const blip = failSave(take, CLIP, "unknown");
     expect(retrySave(blip)).not.toBe(blip);

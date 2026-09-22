@@ -578,7 +578,10 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     const liveRegionAt = source.indexOf("{liveRegion}", panelAt);
     const wrapperAt = source.indexOf("inert={inert || undefined}", panelAt);
     const headerAt = source.indexOf("ref={headerRef}", panelAt);
-    const closeControlAt = source.indexOf('icon="back"', panelAt);
+    // The dismiss control is anchored by its accessible name, not its glyph:
+    // the glyph is conditional since #608 (≡ on the global menu, a chevron
+    // everywhere else) while `closeLabel` is what it is called in every state.
+    const closeControlAt = source.indexOf("label={closeLabel}", panelAt);
     const childrenAt = source.indexOf("{children}", panelAt);
     expect(liveRegionAt).toBeGreaterThan(panelAt);
     // `liveRegion` renders BEFORE (outside) the inert wrapper — deleting the
@@ -724,14 +727,14 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       );
       expect(source).toMatch(liveRegionPropRe);
       // A PROP of <Menu ...>, so it appears before `children` starts —
-      // found by the ternary that opens the rename-vs-action-list split.
+      // found by the ternary that opens the stale/rename/action-list split.
       const menuOpenAt = source.indexOf(
         `title={strings.${scope === "chapter" ? "chapterMenuTitle" : "bookMenuTitle"}}`
       );
       expect(menuOpenAt).toBeGreaterThan(-1);
       const childrenStartAt = source.indexOf(
         scope === "chapter"
-          ? "{renamingChapter ? ("
+          ? "{staleTarget ? ("
           : "{renamingBook && shareMenuBook ? (",
         menuOpenAt
       );

@@ -29,8 +29,9 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
 1. **Install the app.** Follow [`tester-install.md`](../tester-install.md) for
    the phone type. On Android, the phone will warn about installing from
-   outside the Play Store — this is expected; the guide shows exactly what to
-   tap.
+   outside the Play Store. Wording and settings vary by phone and language.
+   If downloading or installing stops, record the message and the step where
+   it stopped; do not guess which extra settings to change.
 2. **Allow the microphone when asked.** The first time someone taps record,
    the phone will ask for microphone access. Tap **Allow**. Without it,
    recording will not work at all.
@@ -51,6 +52,12 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
+- **Agree where to send recordings before the exercise.** The participant
+  chooses an app or destination in the phone's share sheet. Check that chosen
+  app to confirm the file arrived; tC Mobile does not keep a destination
+  history. Sharing again prepares a new file from the current recordings; it
+  does not update a copy already sent. How a destination handles matching file
+  names depends on that destination. <!-- source: src/hooks/share-target.ts; src/hooks/share-flow.ts -->
 - **What the screen shows while sharing, and after.** Share is two taps: the
   first gets the file ready, the second ("Share now", the big tick) opens the
   phone's share sheet. While the app is working, and while the sheet is open,
@@ -83,28 +90,33 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   joined dots); on iPhone and in the browser it is the box with an arrow. It
   does the same thing on both. <!-- source: src/components/share-outcome-glyph.ts (the marks), src/hooks/share-progress.ts (MIN_BUSY_MS, OUTCOME_HOLD_MS = 1800 ms, ShareSettled's "partial" outcome), src/components/control-affordance.ts shareControlGlyph (#490, decided 2026-09-19); not device-verified as of 2026-09-19 -->
 
-- **Known problem: Share may fail on the installed Android app right now**,
-  with a message like "Could not share this chapter/book. Try again." This
-  was seen on 2026-09-14 and a fix is being worked on. <!-- source: gh issue #336, open as of 2026-09-15 --> On the Chrome web
-  version, Share Book specifically can fail the same way even when Share
-  Chapter works. <!-- source: gh issue #272, open as of 2026-09-15 -->
-  **If this happens:**
-  1. Do not uninstall the app and do not delete the recording.
-  2. Write it down on the problem report sheet (which chapter or book, what
-     the message said).
-  3. The recording is still safely on the phone — it can be shared again
-     later once this is fixed.
+- **If sharing fails:**
+  1. Keep the app installed and keep the recording.
+  2. Write down the build stamp, chapter or book, message, and whether the
+     phone's share sheet opened.
+  3. Check that the saved recording still plays. A failed share does not ask
+     the app to erase it; sharing can be tried again. Native share changes
+     still need acceptance on the training phones. <!-- source: src/hooks/share-flow.ts; issues #336 and #245 -->
 
-## 4. Known limits (as of 2026-09-15)
+## 4. Known limits (as of 2026-09-22)
 
-- **No way to delete a whole book yet.** Have each participant practice
-  inside one throwaway book and simply ignore it afterward, rather than
-  trying to clean it up. <!-- source: gh issue #337, open -->
-- **You cannot listen to a cut before you commit it.** While editing a
-  segment, there is no Play button inside edit mode — you have to leave edit
-  mode to hear the result, then go back in if you want to change it more. <!-- source: gh issue #284, open -->
-- **One recording per segment.** A new take replaces the old one; there is no
-  version history.
+- **Do not switch apps or lock the phone while a recording is running.** If
+  the app is sent to the background mid-take (a call, a notification tap,
+  the Home gesture), the take in progress may be lost. Before switching apps,
+  tap the recorder's Back arrow ("Close recorder") and wait for the saved
+  recording to appear in the segment list. Pause alone does not save. If a
+  save or recovery screen appears, keep the app open and resolve it before
+  leaving. <!-- source: src/components/recorder.tsx close(), src/hooks/use-save-take.ts; https://github.com/unfoldingWord/tc-mobile/issues/58#issuecomment-5770432574 (accepted for training; #471 and #484 are post-training follow-ups) -->
+- **Use a practice book.** Create it with New book and give it a recognizable
+  name. To remove it later, open that book's menu, choose Delete, and confirm
+  only after checking the book. Deleting a book removes its recordings.
+  <!-- source: src/components/books-screen.tsx (NewBookDialog and book deletion confirmation) -->
+- **You can listen to the selected audio while editing.** Use Play the
+  selection to hear the selected span before changing it. This plays that
+  span, not a preview of how the recording will sound after removing it.
+  <!-- source: src/components/recorder.tsx; src/components/strings.ts auditionSelection -->
+- **One current recording per segment.** Recording and editing can add to or
+  change it; there is no version history to restore an earlier saved version.
 - **Editing a finished segment re-compresses the audio.** Once a segment is
   marked Finished, its audio is compressed to save space. Editing it again
   decompresses it, and re-finishing it compresses it a second time. Each
@@ -112,9 +124,27 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   a JPEG twice does. This is expected, not a bug. <!-- source: docs/decisions/0009-transcode-on-finished.md, section 3 (generation count) -->
 - **English only.** The app's menus and messages are in English; there is no
   other language option yet. <!-- source: gh issue #169, open -->
-- **If a saved recording plays back with no sound, check the phone's media
-  volume first.** This has been reported once and may have been a device
-  volume setting rather than an app problem — it is not confirmed either way. <!-- source: gh issue #269, open, most recent comment (2026-09-14) reports the opposite (playback worked) and an earlier comment suspects an overlooked device volume setting -->
+- **If playback is silent or too quiet, check the phone's media volume
+  first.** If it persists, record the build, the screen used for playback,
+  and whether it happened before or after marking the segment Finished.
+  Do not assume volume explains every report. <!-- source: issues #269 and #555 -->
+
+### If a recording will not save
+
+Keep the app open. When offered, **Try saving again** retries the work held in
+memory; do not record it again first. If it fails again, keep the screen open
+and ask the facilitator for help. The small share icon sends a problem report,
+**not the unsaved recording**. Do not restart or leave the app expecting that
+report to preserve the audio. <!-- source: src/components/save-failed.tsx; src/hooks/use-save-take.ts -->
+
+Discard asks for confirmation and abandons the pending work. After an ordinary
+save failure, discarding an edit leaves the previously saved recording intact;
+a new unsaved recording is lost. If another open copy of the app deleted the
+book, its saved recordings are gone too. The save screen then offers confirmed
+Discard instead of Try saving again: it cannot save into the deleted book or
+restore it. The problem report contains no audio.
+A screen offering Restart instead of Try saving again cannot retry the save;
+restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard, stale and downgrade paths); src/lib/storage/books.ts (deleteBook, saveTake) -->
 
 ### The flip side of "nothing leaves the phone"
 

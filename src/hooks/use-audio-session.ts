@@ -49,6 +49,20 @@ export interface UseAudioSession {
    * (0) throughout a buffer preview.
    */
   readonly playbackElapsedMs: number;
+  /**
+   * The list take that last stopped RAN OUT, rather than being stopped by hand
+   * or superseded. Reported in the same commit as `playingId` going null, so a
+   * row reads the two together.
+   *
+   * Only `playSamples`' `onEnded` knows this — it never fires on a hand stop
+   * (`audio-io.ts` sets `stopped` before `source.stop()`) — and it cannot be
+   * reconstructed from the elapsed a row last saw: the ~60 ms push above lands
+   * a tick short of the duration, so "at the end" is a guess and this is not.
+   * The Segments row rests its scrub dot at the start on a run-out and where it
+   * reached on a hand stop, which is the difference between a segment that can
+   * be played twice and one that cannot (#601).
+   */
+  readonly playbackRanOut: boolean;
   readonly recorderState: RecorderState;
   readonly elapsedMs: number;
   readonly supported: boolean;
@@ -229,6 +243,7 @@ export function useAudioSession(): UseAudioSession {
   const [playingBuffer, setPlayingBufferState] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
+  const [playbackRanOut, setPlaybackRanOut] = useState(false);
 
   // Mirrored in a ref because it is read from inside a tap handler to decide
   // whether the tap means "start" or "stop". A second tap can land before React
@@ -250,9 +265,14 @@ export function useAudioSession(): UseAudioSession {
    */
   const micTokenRef = useRef<number | null>(null);
 
-  const setPlaying = useCallback((id: SegmentId | null) => {
+  // `ranOut` travels with the id so the two land in one commit: a row reads the
+  // reason on the same render that tells it playback stopped. Every other call
+  // site takes the default — a start, a hand stop, a superseded claim and a
+  // teardown are all "not a run-out" — so only `onEnded` ever passes true.
+  const setPlaying = useCallback((id: SegmentId | null, ranOut = false) => {
     playingIdRef.current = id;
     setPlayingId(id);
+    setPlaybackRanOut(ranOut);
     // The handle belongs to a single playing segment; when playback ends the
     // position resets so a resting scrub dot never reads a stale elapsed.
     if (id === null) {
@@ -362,7 +382,7 @@ export function useAudioSession(): UseAudioSession {
             onEnded: () => {
               if (!session.isCurrent(token)) return;
               session.release(token);
-              setPlaying(null);
+              setPlaying(null, true);
             },
           });
           // A `false` here means the handle was built for a claim that has since
@@ -695,6 +715,7 @@ export function useAudioSession(): UseAudioSession {
     playingId,
     playingBuffer,
     playbackElapsedMs,
+    playbackRanOut,
     recorderState,
     elapsedMs,
     supported,

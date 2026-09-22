@@ -517,7 +517,7 @@ export function useShareFlow(): UseShareFlow {
           return;
         }
         // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
-        // It is the slow half — a book zip crosses the bridge in 768 KB chunks —
+        // It is the slow half — a book zip crosses the bridge in 384 KiB chunks —
         // and this is the gesture that already has a busy state for slow work.
         // Doing it in `send` left the menu reading `ready` with no sign anything
         // was happening, and made "hands the file to the sheet in this gesture"
