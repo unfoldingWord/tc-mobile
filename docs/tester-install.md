@@ -35,8 +35,10 @@ normal, and the steps below show you exactly what to tap.
 The app needs **Android 7.0 (2016) or newer** — an older phone cannot install
 it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
 
-1. **Open the download link** we send you in your phone's web browser
-   (`<placeholder: download URL>`).
+1. **Open the download link** we send you in your phone's web browser, or
+   scan the QR code we post with it. Every tester build is listed at
+   <https://github.com/unfoldingWord/tc-mobile/releases> — open the newest
+   one marked **Pre-release** and tap `app-release.apk`. <!-- source: each tester build is a pre-release tagged android-release-vX.Y.Z with app-release.apk attached, from android-release-v0.2.3 on; the repo is public so the asset link needs no login -->
 2. **Download the file.** It ends in `.apk` — that is the app.
 3. **Your phone will warn you** that it does not usually install apps from this
    place. This is expected. Tap **Settings** on that warning, turn on **Allow
