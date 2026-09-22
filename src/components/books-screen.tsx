@@ -764,11 +764,16 @@ export function BooksScreen({
       el.focus();
     } else {
       // A second copy can delete the trigger's book while this prompt is up.
-      const fallback = books[0]?.bookId ?? EMPTY_STATE_NODE;
-      nodes.current
-        .get(fallback)
-        ?.querySelector<HTMLElement>("button")
-        ?.focus();
+      const firstBook = books[0];
+      if (firstBook) {
+        nodes.current
+          .get(firstBook.bookId)
+          ?.querySelector<HTMLElement>("button")
+          ?.focus();
+      } else {
+        // Held Enter must not open and submit New Book after the last book disappears.
+        nodes.current.get(EMPTY_STATE_NODE)?.focus();
+      }
     }
   }, [newChapter, books]);
 
@@ -1350,7 +1355,13 @@ export function BooksScreen({
           // Registered as a focus target like a book row: deleting the last book
           // unmounts the row that had focus, and this CTA is the only control
           // left to hand it to (#337).
-          <div className="h-full" ref={(el) => setNode(EMPTY_STATE_NODE, el)}>
+          <div
+            className="h-full"
+            role="group"
+            aria-label={strings.booksEmpty}
+            tabIndex={-1}
+            ref={(el) => setNode(EMPTY_STATE_NODE, el)}
+          >
             <EmptyState
               headline={strings.booksEmpty}
               teach={strings.booksEmptyTeach}

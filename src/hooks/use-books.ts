@@ -585,10 +585,8 @@ export function useBooks() {
         }
         return null;
       } finally {
-        // Released unconditionally, success or failure: unlike `creatingBook`
-        // there is no dialog to reopen and no reset to reach the next attempt
-        // through — the Add-chapter control stays mounted and reachable, so
-        // "released when this attempt is done" is the whole contract.
+        // This per-book write latch releases when the attempt settles. The
+        // screen's separate prompt latch stays held until a new prompt opens.
         addingChapterFor.current.delete(bookId);
       }
     },

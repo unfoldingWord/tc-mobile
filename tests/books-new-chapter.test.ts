@@ -332,7 +332,7 @@ it("selects the offered chapter name on opening so typing can replace it", async
   expect(input.selectionEnd).toBe(2);
 });
 
-it("lands on the empty shelf control when the book disappears during create", async () => {
+it("lands on a non-activating empty shelf target when the book disappears during create", async () => {
   mocks.addChapter.mockImplementation(async () => {
     books = [];
     return null;
@@ -341,7 +341,11 @@ it("lands on the empty shelf control when the book disappears during create", as
   await openPrompt();
   await click(strings.createChapter);
   expect(field()).toBeNull();
-  expect(document.activeElement).toBe(button(strings.newBook));
+  expect(document.activeElement?.getAttribute("role")).toBe("group");
+  expect(document.activeElement?.getAttribute("aria-label")).toBe(
+    strings.booksEmpty
+  );
+  expect(document.activeElement?.tagName).toBe("DIV");
 });
 
 /**
