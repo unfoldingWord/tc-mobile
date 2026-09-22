@@ -209,8 +209,8 @@ export function useChapterSegments(chapterId: ChapterId) {
       return segment;
     } catch (cause) {
       // A missing chapter means another live copy deleted this book under this
-      // screen (#378). Do not speak the raw store string; let the screen pop to
-      // Books, the only target still known to exist.
+      // screen (#378). Do not speak the raw store string; let the screen show
+      // its stale state and retain an explicit Back to Books.
       if (isMissingChapterFailure(cause, chapterId)) {
         setStaleTarget(true);
         setError(null);

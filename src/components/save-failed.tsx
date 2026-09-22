@@ -59,11 +59,10 @@ interface SaveFailedProps {
  *
  * It takes the whole screen and offers no way out that is not a decision.
  * There is no backdrop to tap through and no Escape to press, because the only
- * two honest answers are "try again" and "throw this away", and the second one
- * costs a translator work that cannot be recovered — the audio only ever
- * existed on this device, in this session.
+ * exits must acknowledge held work that cannot be recovered after discard.
  *
- * Discard is two taps for the same reason. Retry is the large one.
+ * Discard takes two taps. Retry is primary for retryable failures; downgrade
+ * offers Restart, and a stale target makes Discard the primary exit.
  */
 export function SaveFailed({
   state,
