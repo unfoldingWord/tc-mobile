@@ -26,6 +26,7 @@ import {
   isStaleBookFailure,
   listBooks,
   nextBookName,
+  nextChapterNumber,
   renameBook,
   renameChapter,
   resolveChapterClipIds,
@@ -655,6 +656,81 @@ describe("book auto-naming (#314, #360)", () => {
 
   it("trims a typed name, like renameBook does", async () => {
     expect((await createBook("  Mark  ")).name).toBe("Mark");
+  });
+});
+
+/**
+ * Naming a chapter at creation (#609) — the chapter parallel to #314.
+ *
+ * Add Chapter now prompts, pre-filled with "Chapter N" for the ordinal the new
+ * chapter is about to get, so a one-tap Confirm still adds a chapter and a
+ * facilitator who wants "Mark 6" types it once instead of hunting for Rename.
+ *
+ * The two halves this pins:
+ *
+ *   - `nextChapterNumber` is the ONE derivation of that ordinal, called both
+ *     inside `addChapter`'s write transaction and by the screen over the
+ *     chapters it has already loaded — the same "one pure function both go
+ *     through" shape `nextBookName` holds for books. Unlike `nextBookName` it
+ *     is `max + 1`, NOT the first unused: a chapter's `number` is its export
+ *     position, not a label, so filling a hole would reorder the concatenation
+ *     a Share Chapter/Book produces.
+ *   - `addChapter`'s `name` normalises exactly as `renameChapter` does: trimmed
+ *     when typed, `null` when blank. `null` is also what an untouched default
+ *     stores, because the screen sends "" rather than the "Chapter N" string it
+ *     rendered — so the row keeps displaying the ordinal the transaction
+ *     derived, and a one-tap create changes nothing on disk.
+ */
+describe("chapter naming at creation (#609)", () => {
+  it("numbers the first chapter 1 and counts up from the highest", () => {
+    expect(nextChapterNumber([])).toBe(1);
+    expect(nextChapterNumber([1, 2])).toBe(3);
+  });
+
+  it("extends past the highest rather than filling a hole (max + 1, not first unused)", () => {
+    // Deliberately NOT `nextBookName`'s rule. `number` is the export ordinal:
+    // a new chapter placed at 2 would land in the middle of the concatenation.
+    expect(nextChapterNumber([1, 3])).toBe(4);
+    expect(nextChapterNumber([5])).toBe(6);
+  });
+
+  it("seeds the field with the number the write transaction then derives", async () => {
+    // The screen pre-fills from the chapters it has loaded; `addChapter`
+    // derives the same ordinal inside its own transaction. Same function, same
+    // numbers, same answer — which is why a bare Confirm adds the chapter the
+    // field said it would.
+    const book = await createBook("b");
+    const first = await addChapter(book.id);
+    const second = await addChapter(book.id);
+    const displayed = nextChapterNumber([first.number, second.number]);
+    expect(displayed).toBe(3);
+    expect((await addChapter(book.id)).number).toBe(displayed);
+  });
+
+  it("stores a typed name, trimmed, like renameChapter does", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id, undefined, "  Mark 6  ");
+    expect(chapter.name).toBe("Mark 6");
+    expect((await getChapter(chapter.id))?.name).toBe("Mark 6");
+  });
+
+  it("stores null for a blank, whitespace-only, or omitted name", async () => {
+    const book = await createBook("b");
+    // Blank is what an untouched "Chapter N" default confirms as, and what an
+    // emptied field sends: both keep the row on the ordinal display.
+    expect((await addChapter(book.id, undefined, "")).name).toBeNull();
+    expect((await addChapter(book.id, undefined, "  \t\n ")).name).toBeNull();
+    // The no-name call sites (every other suite, and the store's own default)
+    // are unchanged.
+    expect((await addChapter(book.id)).name).toBeNull();
+  });
+
+  it("does not let a name displace the ordinal", async () => {
+    // The name is a label OVER `number`, exactly as `renameChapter` leaves it.
+    const book = await createBook("b");
+    const first = await addChapter(book.id, undefined, "Mark 6");
+    const second = await addChapter(book.id, undefined, "Mark 7");
+    expect([first.number, second.number]).toEqual([1, 2]);
   });
 });
 

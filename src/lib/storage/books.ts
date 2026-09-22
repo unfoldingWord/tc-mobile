@@ -410,13 +410,46 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
 // ── Chapters ─────────────────────────────────────────────────────────────
 
 /**
- * Add a chapter to a book. `number` defaults to the next ordinal (max existing
- * in this book + 1), computed inside the one transaction that also writes the
- * chapter and bumps the book — never a read-tx-then-write-tx seam.
+ * The ordinal a new chapter gets: one past the highest already in the book, and
+ * 1 for an empty one.
+ *
+ * Pure, and the single definition of that number — `addChapter` calls it inside
+ * its own write transaction, and the Books screen calls it over the chapters it
+ * has already loaded to pre-fill the Add-chapter prompt (#609). One function,
+ * so the "Chapter N" the field offers and the `number` the write derives cannot
+ * drift, the way {@link nextBookName} already ties the New Book field to
+ * {@link createBook}.
+ *
+ * **`max + 1`, deliberately NOT {@link nextBookName}'s first-unused rule.** A
+ * book's placeholder is a label and reusing a freed one is the point (#360); a
+ * chapter's `number` is its position in the export concatenation, so filling a
+ * hole left by a removed chapter would drop the new recording into the middle
+ * of the book rather than at the end.
+ */
+export function nextChapterNumber(existingNumbers: Iterable<number>): number {
+  let max = 0;
+  for (const n of existingNumbers) if (n > max) max = n;
+  return max + 1;
+}
+
+/**
+ * Add a chapter to a book. `number` defaults to the next ordinal
+ * ({@link nextChapterNumber}), computed inside the one transaction that also
+ * writes the chapter and bumps the book — never a read-tx-then-write-tx seam.
+ *
+ * `name` is the label the translator typed at the Add-chapter prompt (#609),
+ * normalised exactly as {@link renameChapter} normalises a rename: trimmed, and
+ * `null` when blank or whitespace-only. `null` is also what an untouched prompt
+ * writes, because the screen sends `""` rather than the "Chapter N" string it
+ * displayed — so a one-tap create stores nothing new and the row goes on
+ * showing the ordinal this transaction derived. Unlike `createBook`'s blank
+ * fallback there is nothing to derive here and so no race to be safe from: the
+ * default is an absence, not a name.
  */
 export async function addChapter(
   bookId: BookId,
-  number?: number
+  number?: number,
+  name = ""
 ): Promise<Chapter> {
   const db = await getDb();
   const tx = db.transaction(["books", "chapters"], "readwrite");
@@ -428,21 +461,20 @@ export async function addChapter(
     const existing = await Promise.all(
       book.chapterIds.map((id) => tx.objectStore("chapters").get(id))
     );
-    const maxNumber = existing.reduce(
-      (max, chapter) =>
-        chapter && chapter.number > max ? chapter.number : max,
-      0
+    resolvedNumber = nextChapterNumber(
+      existing.flatMap((chapter) => (chapter ? [chapter.number] : []))
     );
-    resolvedNumber = maxNumber + 1;
   }
 
+  const trimmed = name.trim();
   const chapter: Chapter = {
     id: uuid() as ChapterId,
     bookId,
     number: resolvedNumber,
-    // Unnamed by default — the display falls back to "Chapter {number}" until
-    // the facilitator renames it for the passage (#264).
-    name: null,
+    // Blank stays unnamed, and the display falls back to "Chapter {number}"
+    // until the facilitator names it — at this prompt (#609) or later through
+    // Rename (#264).
+    name: trimmed === "" ? null : trimmed,
     segmentIds: [],
   };
   await tx.objectStore("chapters").put(chapter);
