@@ -149,7 +149,10 @@ export const strings = {
    * both the Segments row and the recorder breadcrumb resolve it.
    */
   segmentHeading: (n: number, label: string | null): string =>
-    label === null ? `${n}` : `${n} · ${label}`,
+    // `== null`, not `=== null`: a row whose upgrade stamp was skipped reads
+    // back with no `label` key at all, and must paint the ordinal alone rather
+    // than "3 · undefined".
+    label == null ? `${n}` : `${n} · ${label}`,
   // A segment rename that did not land. Shown inside the row's menu, where the
   // field stays up for another try — the screen's own Notice is behind the
   // scrim. Plain words, never the store's exception text (#172).

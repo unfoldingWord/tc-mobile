@@ -12,6 +12,17 @@ describe("segment heading (#591)", () => {
     expect(strings.segmentHeading(3, null)).toBe("3");
   });
 
+  it("is the ordinal alone when a stored row has no label key", () => {
+    // A segment whose upgrade backfill never ran reads back with `label`
+    // absent; the type says `string | null`, the store can still hand back
+    // `undefined`.
+    const missing = undefined as unknown as string | null;
+    expect(strings.segmentHeading(3, missing)).toBe("3");
+    expect(strings.recorderBreadcrumb("Mark", 6, 3, missing)).toBe(
+      "Mark > Chapter 6 > 3"
+    );
+  });
+
   it("puts the label after the ordinal", () => {
     expect(strings.segmentHeading(3, "verses 3–4")).toBe("3 · verses 3–4");
   });
