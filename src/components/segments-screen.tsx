@@ -325,7 +325,7 @@ export const SegmentsScreen = forwardRef<
       // own failure channel — the row menu is already gone by then.) Rename
       // (#591) can still be saving when Back lands, and closing over it is
       // safe: the row's session token drops the late settle, and the hook
-      // patches the label, or puts a failure in the screen Notice, whether or
+      // patches the label, or reports a failure to the failure log, whether or
       // not the menu is still up.
       busy: () => false,
       // The row's own close, which also reports back up through `onMenuClose`.

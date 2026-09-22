@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   addSegment as addSegmentToChapter,
@@ -283,6 +284,10 @@ export function useChapterSegments(chapterId: ChapterId) {
     async (segmentId: SegmentId, label: string): Promise<boolean> => {
       // The chapter rename's shape (#591): no audio moves, so patch the one row
       // in place with the label the store actually kept, never reload().
+      //
+      // A failure goes to the funnel and NOT to `error`: the screen Notice would
+      // show the store's exception text (#172), and the row already says it in
+      // plain words (`renameSegmentFailed`) — this `false` is what tells it to.
       try {
         const segment = await renameSegmentInStore(segmentId, label);
         setRows((rs) =>
@@ -297,7 +302,7 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          reportFailure(cause, "segment-rename");
         }
         return false;
       }
