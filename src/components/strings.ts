@@ -181,10 +181,11 @@ export const strings = {
   // NOT a word anyone can see: a tester on Android read 'Use "Close recorder"
   // to save it' and found nothing on screen so labelled. So the cue also says
   // what the control looks like and where it is — "the back arrow at the
-  // top" — which is how the facilitator runbook already refers to it. The
-  // same rule holds for `previewUnavailable` and `blockedByTake` below, and
+  // top" — which is how the facilitator runbook already refers to it.
+  // `previewUnavailable` below follows the same rule, and
   // `tests/menu-row-state.test.ts` ties "back arrow" to the header control's
-  // actual glyph, so a change to either half fails the suite.
+  // actual glyph, so a change to either half fails the suite. `blockedByTake`
+  // deliberately does NOT follow it — its own comment says why.
   recorderSaving: "Saving…",
   recorderInterrupted:
     'Recording finished. Tap the back arrow at the top ("Close recorder") to save it.',
@@ -308,12 +309,17 @@ export const strings = {
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
-  // The recorder step also says what the control looks like, the same way
-  // `recorderInterrupted` does (#620): this label is mostly spoken, but a
-  // low-vision user who both hears the row and looks for the control gets one
-  // description everywhere, not two.
+  // This one names the controls by name ONLY and does not borrow
+  // `recorderInterrupted`'s "the back arrow at the top" (#620): it is spoken
+  // inside the ≡ menu, where the recorder header — and so "Close recorder" —
+  // is `inert` and the one live back chevron on screen is the menu's own
+  // dismiss. Describing the save control by its looks here would point at the
+  // dismiss, the exact collision the round-1 `back` badge had
+  // (`menu-row-state.ts`, `rowHint`'s docblock); #648 round 1 (George P2)
+  // caught the words repeating it. `tests/menu-row-state.test.ts` pins both
+  // halves: the body notices describe the glyph, this hint never does.
   blockedByTake:
-    'Use "Close menu", then the back arrow at the top ("Close recorder"), to save the recording.',
+    'Use "Close menu", then "Close recorder", to save the recording.',
   // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
   // resolves. No audio exists yet, so this must NOT promise a save — and must
   // not send anyone to a control that would abandon the in-flight start.
