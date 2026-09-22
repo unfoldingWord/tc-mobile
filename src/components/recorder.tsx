@@ -43,7 +43,6 @@ import {
   heldTakeIsBusy,
   markRowReason,
   rowHint,
-  toolbarEditHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
@@ -2689,19 +2688,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     //
     // `editReason` alone must not gain a `menuShown` clause — that would split
     // the #134/#135 gate the ≡ row and this control otherwise share verbatim.
-    // Instead the toolbar copy ORs in `menuShown` on top of the shared reason,
-    // and drops to no hint (a plain native disable, matching how the rest of
-    // the un-exempted sheet is unreachable) whenever `menuShown` is the only
-    // thing blocking it — there is nothing surface-specific to say beyond "the
-    // menu owns the screen right now", and the menu itself already says that.
+    // Instead the toolbar copy ORs in `menuShown` on top of the shared reason.
     const editToolbarDisabled = editReason !== null || menuShown;
-    // `toolbarEditHint` only has an opinion when `editReason` itself disables
-    // the control (#315 round 1, George P2-1) — see its own docblock in
-    // `menu-row-state.ts` for why `"uncommitted-take"` drops the ≡ row's
-    // "Close menu" copy here. When `menuShown` alone is what disables it,
-    // `editReason` is null and there is no reason-shaped hint to show.
-    const editToolbarHint =
-      editReason !== null ? toolbarEditHint(editReason) : null;
+    // No hint here (#610): the ≡ menu's `alert` badge means "blocked, look
+    // here", and on this toolbar the same glyph read as a failure mark over an
+    // ordinary state — an empty segment, a mic still starting. Neither is a
+    // failure, and the rest of the sheet already shows both (the empty
+    // waveform, Record's own starting state). The control is a plain native
+    // `disabled` button; the ≡ row keeps its badge (`rowHint`, unchanged)
+    // because the glyph vocabulary there is #589, not this one.
 
     // A full-body panel owns the sheet body — the permission panel, the
     // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
@@ -3524,7 +3519,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     variant="default"
                     busy={isClosing}
                     disabled={editToolbarDisabled}
-                    hint={editToolbarHint}
                     onClick={onEnterEdit}
                   />
                 </div>
