@@ -347,7 +347,7 @@ describe("use-failure-log-share.ts and failure-log-panel.tsx: terminal DB refusa
     );
     expect(source).toMatch(/setClearError\("restart"\);/);
     expect(source).toMatch(
-      /clearError === "restart" && \([\s\S]*?<Notice>\{strings\.shareFailureLogRestart\}<\/Notice>[\s\S]*?\)/
+      /clearError === "restart" && share\.error !== "restart" && \([\s\S]*?<Notice>\{strings\.shareFailureLogRestart\}<\/Notice>[\s\S]*?\)/
     );
   });
 });

@@ -59,12 +59,11 @@ let requestedDuringRun = false;
 /**
  * Segments whose encode stalled in this page.
  *
- * Not a blocklist — a deprioritisation. The owed list comes back "in no
- * particular order" but in practice a stable `getAll` walk, and a stall ends the
- * RUN (#290), so poison clips near the head can starve every healthy segment
- * behind them. Moving stalled ids to the BACK of later same-page passes lets the
- * healthy tail through and still retries the poison clips, rather than abandoning
- * audio nothing else will ever pick up (#404).
+ * Not a blocklist — a deprioritisation. The owed list is sorted by durable
+ * stall count; this same-page set moves stalled ids behind its healthy tail.
+ * A stall ends the RUN (#290), so poison clips near the head would otherwise
+ * starve healthy segments. Poison clips are still retried after recovery (#404):
+ * they can therefore consume another encoder timeout before later Share work.
  */
 const stalledSegmentIds = new Set<SegmentId>();
 

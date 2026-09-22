@@ -12,8 +12,6 @@ import { readFileSync } from "node:fs";
  * reachable in this suite. What IS reachable, and what actually broke here
  * before, is the COUPLING — a write that reaches the render but not the ref, or
  * a second consumer growing its own copy. Both are visible in the text.
- *
- * Each assertion below has been watched failing against the mutation it names.
  */
 const audioSession = readFileSync("src/hooks/use-audio-session.ts", "utf8");
 const recorder = readFileSync("src/hooks/use-recorder.ts", "utf8");
@@ -65,8 +63,8 @@ describe("recorder state ownership (#173)", () => {
     expect(audioSession).not.toMatch(/recorderStateRef/);
     expect(audioSession).toMatch(/readState: readRecorderState,/);
     // Read through the owner at each use, never snapshotted into a local.
-    expect(withoutComments(audioSession)).toMatch(
-      /readRecorderState\(\) === "paused"/
-    );
+    expect(
+      withoutComments(audioSession).match(/readRecorderState\(\) === "paused"/g)
+    ).toHaveLength(4);
   });
 });

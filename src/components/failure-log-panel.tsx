@@ -164,17 +164,10 @@ export function FailureLogPanel({
         setConfirmingClear(false);
         // The confirm comes down on a failed clear, so its layer does too.
         onClearConfirmClose();
-        // A failed clear leaves the log exactly as it was, which is the safe
-        // side of this write — nothing is lost, and the marker keeps its count,
-        // so the panel stays put and a second tap can try again. Deliberately
-        // no copy: a fourth string for a case a retry resolves is not worth the
-        // reading load on a screen built for people who may not read.
-        //
-        // NOT silent, which is what AGENTS.md forbids: `clearFailureLog`
-        // reports the reason through the funnel on its way past, so it lands in
-        // the very log the clear failed to empty and leaves with the next send
-        // (Frank #2 ≡ George #4, round 1 for the channel; Frank, takeover round
-        // 9, for making that channel the durable one rather than the console).
+        // A retryable clear failure leaves the panel and log intact. Its
+        // report goes through the funnel; no extra copy is needed here.
+        // A terminal open refusal instead shows the restart notice above and
+        // skips the funnel write, which the unavailable database cannot store.
       }
     );
   }, [onClearConfirmClose, onDone]);
@@ -230,7 +223,7 @@ export function FailureLogPanel({
         <Notice tone="busy">{strings.shareFailureLogPreparing}</Notice>
       )}
       {errorText && <Notice>{errorText}</Notice>}
-      {clearError === "restart" && (
+      {clearError === "restart" && share.error !== "restart" && (
         <Notice>{strings.shareFailureLogRestart}</Notice>
       )}
 

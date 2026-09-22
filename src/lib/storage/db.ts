@@ -210,8 +210,9 @@ function isVersionError(cause: unknown): boolean {
  *
  * First caller: the crash screen's Restart (`components/error-boundary.tsx`),
  * which must not hold a reload on a refusal that can never clear (George R7
- * P2-1). The other three failure-log surfaces that still offer a retry after a
- * yield are #455, deliberately not swept here.
+ * P2-1). Failure-log prepare and clear also use this classification (#455):
+ * they show the restart sentence instead of inviting a retry of a terminal
+ * refusal. The controls remain share/clear actions, not reload actions.
  */
 export function isTerminalOpenRefusal(name: string | null): boolean {
   return name === "DatabaseDowngradeError";
