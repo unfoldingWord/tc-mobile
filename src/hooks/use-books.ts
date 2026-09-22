@@ -170,14 +170,15 @@ interface Failure {
  * `loadBookCards` finished, and on this tree there is no way to delete the
  * extra chapter a second confirm writes.
  *
- * The repeat that reaches this is now a deliberate one — reopen the prompt
- * from the row's `+`, confirm again before the reload lands (#609). The
- * key-repeat half is gone with the prompt: a held Enter through Confirm lands
- * on the new chapter row, not on a control that writes. The caller (`addChapter`) still
- * `reload()`s after patching — see its own comment (George R7 P2) — for the
- * two-copy shelf-reconciliation `reportUnlessStale` is built around;
- * `isLoadCurrent` (below) is what stops that reload's own read from landing
- * on top of a newer patch.
+ * The repeat that reaches this is a deliberate one — reopen the prompt from the
+ * row's `+` and confirm again before the reload lands (#609). The key-repeat
+ * half is gone with the prompt: a held Enter through Confirm now lands on the
+ * new chapter row, not on a control that writes.
+ *
+ * The caller (`addChapter`) still `reload()`s after patching — see its own
+ * comment (George R7 P2) — for the two-copy shelf-reconciliation
+ * `reportUnlessStale` is built around; `isLoadCurrent` (below) is what stops
+ * that reload's own read from landing on top of a newer patch.
  *
  * The patched card also moves to the FRONT of the shelf. `addChapterToBook`
  * bumps the book's `updatedAt` in the same write (`lib/storage/books.ts`,
