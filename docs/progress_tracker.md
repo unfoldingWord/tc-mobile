@@ -34,6 +34,15 @@ Galaxy S26, Android 16, Android System WebView 152.0.7977.87. Every item routed 
 - **#59** — "locked up" after leaving the app mid-test; the screenshot shows the `recorderInterrupted` notice, reachable only through `state === "processing"` with no close in flight, transport frozen by design, Close saves. Asked whether Stop had been tapped before leaving (would be the first run of the "background right after Stop" case) and for the failure log (#478's row is in v0.2.9).
 - **#629** — follow-up evidence: the tester did not know an iPhone group exists (_"unless you have a parallel iPhone review"_). TestFlight has run every tester build since v0.2.3.
 
+### Later the same evening — release readiness, the refactor wave, and a board that says who is on what
+
+- **v0.2.10 is not ready, on evidence.** Develop since staging `0ca5441` carries #648 (#620 banner), #632 (#608 hamburger), #622 and #638 (focus rings), #597 (races), #599 (share payload bound), #641, #501. Neither bug that stopped both Android testers is on it: #374's fix #634 is parked (George failed twice at `9399c76`, Frank unrecorded), and #614 has no PR. Recommendation given and not yet acted on: hold the promotion until #634 merges; run its round first, then #618 at its new head `0c25708` (both APPROVEs are at the previous head), then #624, then promote. #656 is CI red and stays out.
+- **The sixteen refactor PRs** (#628, #630, #631, #633, #639, #642, #646, #649, #651, #652, #653, #654, #655, #657, #660, #661) are one issue, #160, cut by Jesse's agent session between 15:55 and 17:44. Milestone v1.0.0, so none is due before the training. Three kinds: deletions (#628, #646, #633), moves (#630, #631 — T1 storage, #655, #653, #654) and restructures of the recorder and the two screens (#657 on #655, #660 on #646, #661, #649 **and** #652 for the same seam, #651 waiting on #588). Every one lands in files the freeze-week fixes are editing. Recommendation: hold as drafts until after the training; Jesse to pick one of #649/#652 and stop opening more.
+- **What is left for the training**, from the v0.3.0 milestone (43 open, 22 v1-required): four fixes already merged and waiting on a close or a device check (#608, #557, #556, #262); five in open PRs (#374/#634, #609/#637, #610/#624, #554/#560, #621/#656); seven tester bugs with no PR (#614, #605, #593+#336, #612+#555, #59, #269 probably closable); four unstarted features (#591, #604, #589, #613); two evidence and docs items (#245, #248). The rest is decisions and P3 batches.
+- **The board.** The org already had project 7, "tC-mobile Roadmap" (Elsy, 2026-09-02, auto-adds issues, 296 items); a duplicate project created before finding it was deleted empty. Status gained **In review** and **Blocked**; a **Queue** number field was added and set 1–43 across the milestone in the order above; all 31 open PRs were added (drafts In Progress, ready PRs In review); twenty issues named by an open PR flipped to In Progress. **Priority** is the org's own issue field (Urgent / High / Medium / Low), set on all 120 open issues: Urgent for the five that stop a tester or the build (#374, #614, #593, #336, #605), High for v1-required, Medium for v1-desired, Low otherwise. Seth's View 1 (filter `-status:Done`, columns incl. Queue and Priority) is the who-is-on-what screen; it needs a sort on Queue, which the API cannot set.
+- **Two traps recorded in memory:** `updateProjectV2Field` with new single-select options **cleared the status of all 296 items** (restored from a snapshot taken seconds earlier; counts matched); `setIssueFieldValue` hits GraphQL resource limits above four per request.
+- **The rules that make the board true**, stated to the DRI: assign yourself before branching; every PR body names its issue (`Part of #N` / `Fixes #N`). 76 of 119 open issues had no assignee at the start of the evening, and 13 of Jesse's 16 drafts named no issue.
+
 ### Decisions (this session, labelling only — no DRI picks were asked)
 
 1. Tester feedback on an announcement is `documentation` + `source: tester`, neither `bug` nor `post-v1`; the convention names only the other two kinds.
@@ -48,11 +57,13 @@ Galaxy S26, Android 16, Android System WebView 152.0.7977.87. Every item routed 
 
 ### Next session — in order
 
-1. **Tester D's three open asks** (Share row screenshot; whether Stop preceded the background; the failure log from Books ≡). Post the paste-ready reply from this session's transcript to the thread if not already sent.
-2. **Publish the v0.2.9 release correction** (#629 A5). #644 says it is drafted and unpublished; the body still reads as Android-only at EOD.
-3. **#634** (native Back) through both lenses, then re-cut the APK: Tester D and the developer are both on v0.2.9 with Back broken.
+1. **#634** (native Back): rerun both lenses, merge if clean, then **#618** at `0c25708`, **#624**, and promote **v0.2.10**. Re-cut the APK; both Android testers are on v0.2.9 with Back broken.
+2. **Tester D's three open asks** (Share row screenshot; whether Stop preceded the background; the failure log from Books ≡).
+3. **Publish the v0.2.9 release correction** (#629 A5), drafted and unpublished per #644.
 4. **#640** DRI pick between O1 and O3; **#614** fix, with "tap `[ ]` twice" in the next announcement until then.
-5. Everything the day entry listed still stands: #501 merge, #588 round 2, the #560/#172 picks, #245 R1–R6 owners, uw-dev-skills #3.
+5. **Refactor wave:** tell Jesse to hold #160's sixteen PRs until after the training and to close one of #649/#652.
+6. **Board hygiene:** everyone self-assigns; renumber Queue where the DRI disagrees; turn on the project's auto-add for PRs.
+7. Everything the day entry listed still stands: #501 merged; #588 round 2, the #560/#172 picks, #245 R1–R6 owners, uw-dev-skills #3.
 
 ---
 
