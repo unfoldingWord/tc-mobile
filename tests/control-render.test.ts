@@ -11,11 +11,11 @@ import { one, render } from "./render";
  * the attributes they actually emit.
  *
  * All three are contracts about *how* a control is made inert, and every one of
- * them is a single expression on `control.tsx:disabled`. Inverting it to
- * `(disabled || busy) && !softDisabled` left the whole suite green, because no
- * `tests/` file rendered the component — the cell is also unreachable in the
- * tree today (no caller passes both `busy` and `disabled`), so `Control.busy`
- * could spread to one before anything noticed.
+ * them rides a single expression on `control.tsx:disabled`. Before this file,
+ * no `tests/` file rendered `Control` at all, so that expression was reachable
+ * by nothing — and the busy × disabled cell is *also* unreachable in the tree
+ * today, since no caller passes both. A cell with neither a caller nor a test
+ * is one `Control.busy` can spread to before anything notices.
  *
  * `tests/control-affordance.test.ts` covers the neighbouring question — which
  * glyph and label a busy control wears — from the pure table. This file is the

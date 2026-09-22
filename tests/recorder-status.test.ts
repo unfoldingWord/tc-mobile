@@ -12,10 +12,10 @@ import { one, render } from "./render";
  *
  * `tests/notice-tone.test.ts` proves the three tones are distinct
  * presentations, and `tests/processing-status.test.ts` proves
- * `recorderStatusKind` picks the right kind. Neither says the interrupted kind
- * is rendered as `info` — that was one JSX attribute (#154) with nothing behind
- * it, and a probe flipping it back to `busy` left all tests green. These
- * assertions are what that probe now dies on.
+ * `recorderStatusKind` picks the right kind. Neither reaches the question this
+ * file answers: which tone the branch actually passes. That is one JSX
+ * attribute (#154), and until `RecorderStatus` was lifted out of `recorder.tsx`
+ * no test could render the code that carries it.
  *
  * `data-tone` is the attribute under test rather than a colour or a class:
  * `Notice` writes it from its `tone` prop and `tests/notice-bridge.test.ts`

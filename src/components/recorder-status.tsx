@@ -17,13 +17,12 @@ import type { RecorderState } from "@/hooks/use-recorder";
  * there is no hand-rolled `aria-busy` to leave stuck.
  *
  * **Why this is a module and not an inline block in `recorder.tsx` (#197).**
- * The tone each branch passes was pinned by nothing: flipping the interrupted
- * branch back to `tone="busy"` — the exact change #154 made — left the whole
- * suite green, because `recorder.tsx` mounts the audio hook graph and no test
- * renders it. `recorderStatusKind` was already lifted out for that reason, and
- * this is the same reasoning taken the one step further that makes the
- * *rendering* reachable too: `tests/recorder-status.test.ts` renders this
- * component directly and reads the `data-tone` that comes out.
+ * `recorder.tsx` mounts the audio hook graph, so no `tests/` file renders it —
+ * which left the tone each branch passes reachable by nothing.
+ * `recorderStatusKind` was already lifted out for that reason; this is the same
+ * reasoning taken the one step further that makes the *rendering* reachable
+ * too, so `tests/recorder-status.test.ts` can render this component directly
+ * and read the `data-tone` that comes out.
  */
 export function RecorderStatus({
   state,
