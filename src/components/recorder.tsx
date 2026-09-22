@@ -196,7 +196,8 @@ export interface RecorderHandle {
  * trio (#315) with the menu opener in the header; the finished toggle lives in
  * that menu. EDIT mode — entered deliberately, from either the record menu's
  * "Edit recording" row or the toolbar Edit control (#315), both firing
- * `onEnterEdit` — is the [play] [zoom] [select] [undo] [redo] [menu] spread
+ * `onEnterEdit` — has Play, Zoom, Undo, Redo and Menu beside the stable
+ * pressed Edit toggle
  * with the selection frame over the canvas, the paste marker in its own
  * reserved row above the canvas (#414 — no longer an overlay drawn on top of
  * the waveform), and Cut in its own reserved row below, marked by a header
@@ -263,6 +264,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // the toolbar control — and a live/paused take does not block it: entering
     // commits the take first (#134), so entry is not "strictly idle" anymore.
     const [mode, setMode] = useState<"record" | "edit">("record");
+    const [selectionEntry, setSelectionEntry] = useState<{
+      samples: Int16Array | null;
+    } | null>(null);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
     // Focus back to whatever opened an overlay, once the overlay is gone (#97).
@@ -559,6 +563,21 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       length,
     });
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
+    // A commit reload resets the editor during render. Wait for that exact
+    // buffer before opening the frame, so the seed cannot target the old take.
+    // This adjusts this component's own state before React commits the frame.
+    if (
+      selectionEntry &&
+      (selectionEntry.samples === null ||
+        editor.working === selectionEntry.samples)
+    ) {
+      const half = win.visibleSamples * 0.15;
+      editor.openSelection({
+        start: win.centerlineSample - half,
+        end: win.centerlineSample + half,
+      });
+      setSelectionEntry(null);
+    }
 
     // The prepared preview, shown on the stage across the whole take-in-flight
     // window — paused, `busy` (a #59 interruption's `processing`), and `isClosing`
@@ -1468,6 +1487,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // else reaches the commit branch below.
       if (!(recording || paused)) {
         cancelPreview();
+        setSelectionEntry({ samples: editor.working });
         setMode("edit");
         return;
       }
@@ -1560,6 +1580,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             onExit(dirty.current);
             return;
           }
+          setSelectionEntry({ samples: next.samples });
           setMode("edit");
           return;
         }
@@ -1720,25 +1741,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // as it was — audio the segment no longer contains, under a waveform that has
     // already changed shape, with a playhead travelling over samples that moved.
     // Moving the span the audition was OF is the same class.
-    const onToggleSelection = useCallback(() => {
-      stopPlayback();
-      if (editor.selectionActive) {
-        editor.closeSelection();
-        return;
-      }
-      // A fresh span has not been zoomed yet, so drop any view pan a PREVIOUS
-      // selection's zoom left behind — otherwise re-opening a selection later
-      // would jump the view to where an earlier one had been fitted (#91).
-      setZoomPan(null);
-      // Seed a grabbable span around the centerline (~30% of the visible window),
-      // so the frame opens with handles under the finger rather than collapsed.
-      const half = win.visibleSamples * 0.15;
-      editor.openSelection({
-        start: win.centerlineSample - half,
-        end: win.centerlineSample + half,
-      });
-    }, [editor, win.centerlineSample, win.visibleSamples, stopPlayback]);
-
     // A handle drag moves the span the audition is OF, so it silences it too.
     // `stopBuffer` returns immediately when nothing is sounding, so this costs a
     // predicate per pointermove, not a stop.
@@ -2300,6 +2302,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 onExit(dirty.current);
                 return;
               }
+              setSelectionEntry({ samples: next.samples });
               setMode("edit");
               return;
             }
@@ -3445,61 +3448,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {audio.error && <Notice>{audio.error}</Notice>}
 
               {mode === "record" ? (
-                // Record mode: the centered hero trio. Record (xl 68px) is THE
-                // action; Play (lg 52px) sits to its right, dead while any take is
-                // live/committing or the mic is spinning up, live at idle with
-                // audio. The menu opener is in the header, not here.
-                //
-                // Edit/select (md 44px, #315) is the third member — the requirements
-                // owner's TestFlight report that the only path into edit mode was
-                // the hidden ≡ menu row. It fires the SAME `onEnterEdit` the ≡ row
-                // does, gated by the SAME `editReason` (computed once, above, and
-                // shared by both Controls) — one decision, two affordances, never a
-                // second gate that could fall out of step (AGENTS.md's #135 rule).
-                // The ≡ row stays: this is a second trigger, not a replacement, so
-                // nothing that worked stops working.
-                //
-                // Always rendered (never hidden) so a legible-disabled grey with a
-                // reason (#84/#135) is what a not-yet-recorded segment shows,
-                // exactly like the ≡ row it mirrors — matching `onEnterEdit`'s own
-                // commit-then-edit reach (#134): a live or paused take does NOT
-                // disable it, since entering edit here commits that take first,
-                // same as tapping the menu row would.
-                //
-                // `editToolbarDisabled`/`editToolbarHint` (computed above, #315
-                // round 1, George P2-1/P2-2), NOT the raw `editReason`/`rowHint`
-                // pair the ≡ row uses: the toolbar control is a sheet-body sibling
-                // of Record and Play, reachable to AT under the ≡-menu scrim during
-                // a live/paused take (the sheet's own `inert` exemption is scoped
-                // to "exactly Record/Pause and Play" — see that comment below,
-                // which this control would otherwise silently widen), so it also
-                // disables while `menuShown`; and `"uncommitted-take"`'s ≡-only
-                // "Close menu" copy is wrong here, where the Saving/Interrupted
-                // `Notice` already explains the same wait with no menu in sight.
-                // See `menu-row-state.ts`'s `toolbarEditHint` for the reasoning
-                // and `tests/menu-row-state.test.ts` for the red-first pins. The
-                // GATE (which reasons block it) is still one shared derivation;
-                // only the toolbar's presentation of it differs.
-                //
-                // Icon `selection` (the `[ ]` brackets, mockup 4) rather than the
-                // ≡ row's pencil — the two entry points read as the same
-                // DESTINATION (edit mode) via one shared accessible name
-                // (`strings.enterEdit`), but this one is visually the mockup's
-                // selection glyph so it reads as "the tool that lets you pick a
-                // span" rather than a second unrelated pencil icon on the bar.
-                //
-                // Variant `default` (--c-control-md, 44px — the touch floor,
-                // #362/#164) rather than `quiet` (40px, under the floor): this is
-                // new work, so it does not inherit the edit toolbar's existing
-                // sub-floor debt. Precedent: `name-edit.tsx`'s Save/Create control
-                // is the only other `default`-variant Control in the app.
-                //
-                // It does NOT persist into edit mode — the whole toolbar swaps to
-                // the edit toolbar below, exactly as Record and Play already do —
-                // so there is no second "leave edit" control to keep in sync with
-                // the header "Editing" pill (D2): the pill stays the one
-                // non-reader-legible mode marker and Done exit, unchanged.
-                <div className="recorder-toolbar pair flex items-center px-[16px]">
+                // Both modes reserve the same right-hand slot for the toggle.
+                <div className="recorder-toolbar pair grid items-center px-[16px]">
                   <Control
                     icon={recording ? "pause" : "record"}
                     label={
@@ -3568,9 +3518,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     onClick={onPlayButton}
                   />
                   <Control
+                    key="edit-toggle"
                     icon="selection"
                     label={strings.enterEdit}
+                    pressed={false}
                     variant="default"
+                    busy={isClosing}
                     disabled={editToolbarDisabled}
                     hint={editToolbarHint}
                     onClick={onEnterEdit}
@@ -3579,7 +3532,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               ) : (
                 // Edit mode: the spread editing toolbar. Redo is a visible button
                 // here (out of the menu); the menu opener lives at the end.
-                <div className="recorder-toolbar edit flex items-center px-[16px]">
+                <div className="recorder-toolbar edit grid items-center px-[16px]">
                   <Control
                     // The audition (#284) — the SAME glyph pair the record bar
                     // uses, play/pause, because it is the same act: a non-reader
@@ -3648,36 +3601,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     onClick={onToggleZoom}
                   />
                   <Control
-                    icon="selection"
-                    label={
-                      editor.selectionActive
-                        ? strings.selectStop
-                        : strings.selectStart
-                    }
-                    variant={editor.selectionActive ? "primary" : "quiet"}
-                    size={24}
-                    // A window control, and the one this class was found through
-                    // (George R4 P2-1). The reason has CHANGED shape again since
-                    // #418 (George round-1 P3): the line now hides for a loaded
-                    // edit-mode span, and is always visible otherwise
-                    // (`centerlineOverlayShown` in `recorder-stage.ts`) — it is
-                    // not true any more that "the line is never hidden". Select
-                    // stays inert regardless, in BOTH directions: (a) opening
-                    // seeds from `win.centerlineSample`, which is `panState` —
-                    // and while the stage SCROLLS the drawn line is the
-                    // sounding sample while `panState` is still the pre-play
-                    // value, stale until the freeze. Seeding from it would put
-                    // the span where the take was parked (at the F7 rest, the
-                    // END) while the translator is hearing the middle. (b)
-                    // closing an open frame mid-`inPlace` audition flips
-                    // `render` out from under the sound, since a picked span is
-                    // what keeps the pan window.
-                    disabled={
-                      !idleEditable || !hasAudio || stage.windowControlsInert
-                    }
-                    onClick={onToggleSelection}
-                  />
-                  <Control
                     icon="undo"
                     label={strings.undo}
                     variant="quiet"
@@ -3715,6 +3638,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     size={24}
                     disabled={!view || isClosing}
                     onClick={openMenu}
+                  />
+                  <Control
+                    key="edit-toggle"
+                    icon="selection"
+                    label={strings.enterEdit}
+                    pressed={true}
+                    hint={null}
+                    variant="default"
+                    disabled={!idleEditable || dragging}
+                    onClick={onExitEdit}
                   />
                 </div>
               )}
