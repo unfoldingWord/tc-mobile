@@ -79,14 +79,9 @@ const SW = path.join(ROOT, "dist", "sw.js");
 // that surfaces as a failure at all — and it surfaces as a confusing one,
 // since the manifest is fine and the reader is broken.
 //
-// This matters locally, not in CI. GitHub Actions leaves `NODE_ENV` unset, so
-// CI builds the minified shape and this file's Build-job step (ci.yml,
-// `REQUIRE_DIST_BUILD=1`) has always parsed it correctly. The uw-sandbox
-// container this repo is developed in exports `NODE_ENV=development`, so a
-// local `npm run build` emits the second shape — and because `.husky/pre-push`
-// runs the suite, `git push` then fails on a tree whose only sin is having
-// been built. That is #522, and its "the assertion is made nowhere" reading is
-// corrected on the issue: it is made in CI, twice.
+// The build-artifact caller (`npm run test:dist`) reads whichever shape the
+// preceding build emitted. Support both development and production output;
+// `NODE_ENV` must not change whether this parser can inspect the manifest.
 //
 // Matching both shapes is what makes this a reader of the manifest rather than
 // a reader of the minifier.

@@ -28,6 +28,8 @@ const result = spawnSync(
   { stdio: "inherit", env: process.env }
 );
 
+if (result.error) console.error(result.error);
+
 // A signal-killed child reports `status === null`; treat anything that is not
 // a clean 0 as a failure rather than letting the gate exit 0 on it.
 process.exit(result.status ?? 1);
