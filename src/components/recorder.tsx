@@ -16,6 +16,7 @@ import { EraseConfirm } from "./erase-confirm";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
@@ -2076,7 +2077,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // (`reclaimAfterPreview`, #129) — it never ENDS a capture, which is the
       // property that makes it safe ahead of the `stopRecording` commit path:
       // `claim("mic")` moves the floor, it does not touch the MediaRecorder, and
-      // `stopRecording`'s `finally` stops whichever claim is current (George G4).
+      // `stopRecording`'s `finally` stops the claim it SNAPSHOTTED before its
+      // await, and only while that claim is still current (George G4). Equivalent
+      // here — `stopBuffer()` runs before `stopRecording()` takes its snapshot —
+      // but "whichever claim is current", which this said until #147, describes a
+      // guard that would release a NEWER recording's claim, which is the bug the
+      // token exists to prevent (`use-audio-session.ts`, `stopRecording`).
       stopPlayback();
       return (async () => {
         // Commit on close (F8): if the mic is live or paused, stop it, then
@@ -3104,7 +3110,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // disabled alongside; the take itself is unaffected — Back commits
                 // it and it plays from the Segments list.
                 <div className="px-[12px] pt-[8px]">
-                  <Notice>{strings.previewUnavailable}</Notice>
+                  <Notice tone={NOTHING_FAILED_TONE}>
+                    {strings.previewUnavailable}
+                  </Notice>
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />

@@ -74,6 +74,9 @@ describe("shareOutcomeGlyph (#178)", () => {
 
   it("keeps the tones exactly as they are — this lane changes marks, not tones", () => {
     // Pins the #178/#147 boundary so a later "tidy-up" cannot quietly re-tone
+    // it. `nothing` reads `NOTHING_FAILED_TONE` since #147's audit, so this is
+    // also the assertion that goes red when that constant is flipped — i.e. the
+    // line to change when #147 is answered, for all three of its call sites.
     // `nothing` and close Tim's open question by accident.
     expect(shareOutcomeGlyph("partial").tone).toBe("info");
     expect(shareOutcomeGlyph("nothing").tone).toBe("alert");

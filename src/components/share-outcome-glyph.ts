@@ -1,5 +1,5 @@
 import type { IconName } from "./icon";
-import type { NoticeTone } from "./notice-tone";
+import { NOTHING_FAILED_TONE, type NoticeTone } from "./notice-tone";
 import type { ShareError } from "@/hooks/share-flow";
 import type { ShareSettled } from "@/hooks/share-progress";
 
@@ -26,6 +26,13 @@ import type { ShareSettled } from "@/hooks/share-progress";
  * by the back door. Three marks, existing tones; the tone question stays where
  * it is owned. `tests/share-outcome-glyph.test.ts` pins that boundary so a
  * later tidy-up cannot cross it by accident.
+ *
+ * Which is why `nothing` now takes its tone from `NOTHING_FAILED_TONE` rather
+ * than spelling `alert` out: #147's audit found this is one of THREE sites
+ * saying "nothing failed" on the failure tone, and the other two are screens
+ * this module never sees. The value is unchanged — the constant IS `alert` —
+ * so nothing is settled here; what changes is that the day it is settled, the
+ * three move together instead of one of them being found later.
  *
  * A table, not a ternary at the call site, for the reason `share-error-copy.ts`
  * gives in its own header: a nested ternary ending in `: null` means widening
@@ -94,7 +101,7 @@ export function shareOutcomeGlyph(outcome: ShareOutcome): ShareOutcomeGlyph {
     // None of it could go, and nothing failed to do it — there is no audio yet.
     // The struck-through tray, so it is not the failure triangle.
     case "nothing":
-      return { icon: "share-empty", tone: "alert" };
+      return { icon: "share-empty", tone: NOTHING_FAILED_TONE };
     // It genuinely failed. Keeps the alert triangle, which is what that mark is
     // for and what the translator has already learned it means.
     case "failed":

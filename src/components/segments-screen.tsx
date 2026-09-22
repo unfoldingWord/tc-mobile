@@ -15,6 +15,7 @@ import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
+import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { SegmentRow } from "./segment-row";
 import { segmentsListInert } from "./segments-inert";
 import {
@@ -808,7 +809,7 @@ export const SegmentsScreen = forwardRef<
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
-        <Notice>{strings.staleChapter}</Notice>
+        <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
       ) : (error ??
         audio.error ??
         (erase.error ? strings.eraseFailed : null)) ? (
@@ -915,7 +916,7 @@ export const SegmentsScreen = forwardRef<
         }
       >
         {staleTarget ? (
-          <Notice>{strings.staleChapter}</Notice>
+          <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
         ) : renamingChapter ? (
           <>
             {/* Rename the chapter in place (#264). Seeded with the current
