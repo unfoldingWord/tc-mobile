@@ -178,7 +178,7 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   build).** Record → playback works. Backgrounding mid-take still records, and an
   incoming call mid-take (dialed in via Google Voice) stopped capture but **saved
   the partial take as a playable segment** — the #59 interruption fix, verified
-  on iOS. **These two cases are still iOS Safari only** — no Android pass has
+  on iOS. **Backgrounding and interruption are still iOS Safari only** — no Android pass has
   reached interruption or background capture (#245), so #59 and #58 (pagehide)
   remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
