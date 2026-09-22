@@ -125,6 +125,7 @@ export const SegmentsScreen = forwardRef<
 ) {
   const {
     bookName,
+    bookNumber,
     chapterNumber,
     chapterName,
     rows,
@@ -142,6 +143,9 @@ export const SegmentsScreen = forwardRef<
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
   const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
+  // Its book, resolved the same way one level up: the facilitator's name, else
+  // the placeholder the book's slot renders (#169).
+  const bookHeading = strings.bookHeading(bookName, bookNumber);
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -505,7 +509,7 @@ export const SegmentsScreen = forwardRef<
     setSavingName(false);
     void share.prepare(
       chapterId,
-      strings.shareFilename(bookName, chapterNumber)
+      strings.shareFilename(bookHeading, chapterNumber)
     );
   }, [
     focusRestore,
@@ -513,7 +517,7 @@ export const SegmentsScreen = forwardRef<
     share,
     setSavingName,
     chapterId,
-    bookName,
+    bookHeading,
     chapterNumber,
   ]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
@@ -778,7 +782,7 @@ export const SegmentsScreen = forwardRef<
             `--c-control-md` every other control does. */}
         <button type="button" onClick={onBack} className="breadcrumb">
           <span>
-            {bookName} &gt; {chapterHeading}
+            {bookHeading} &gt; {chapterHeading}
           </span>
         </button>
         {!showEmpty && (

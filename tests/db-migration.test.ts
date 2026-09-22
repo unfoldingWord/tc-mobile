@@ -12,7 +12,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -148,6 +148,41 @@ async function openLegacyV6() {
     },
   });
 }
+
+/**
+ * Stand up the v7 schema — v6's stores, unchanged (v7 was a clip-metadata
+ * backfill, not a structure change), holding books the way v7 and earlier
+ * wrote them: the placeholder rendered into `name`, and no `number`.
+ *
+ * This is the only path on which v8's pass is the whole upgrade: `oldVersion`
+ * 7 skips the v3 recreate, the v6 create and both clip backfills.
+ */
+async function openLegacyV7() {
+  return openDB(DB_NAME, 7, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+      db.createObjectStore("failures", { autoIncrement: true });
+    },
+  });
+}
+
+/** A v7 `books` row: a name (placeholder or chosen) and no slot. */
+const v7Book = (id: string, name: string, chapterIds: string[] = []) => ({
+  id,
+  name,
+  languageCode: null,
+  chapterIds,
+  createdAt: 0,
+  updatedAt: 0,
+});
 
 beforeEach(wipe);
 afterEach(wipe);
@@ -411,7 +446,12 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
 
     // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
     // onward. A v3 device's recordings come through.
-    expect((await v4.get("books", "b1" as never))?.name).toBe("Book 001");
+    // …and the v8 pass on the way up un-freezes the placeholder this v3 row
+    // stored as English, which is the shape a reader meets from here on.
+    expect(await v4.get("books", "b1" as never)).toMatchObject({
+      name: null,
+      number: 1,
+    });
     const data = await v4.get("clipData", "c1" as never);
     expect(Array.from(new Int16Array(data!))).toEqual(Array.from(pcm));
 
@@ -560,5 +600,111 @@ describe("v2 → v3 destructive recreate", () => {
     // endorsement of data loss as a pattern; append-only resumes from v3.
     expect(await v3.getAll("clipMeta")).toEqual([]);
     expect(await v3.count("takes")).toBe(0);
+  });
+});
+
+describe("the v7 → v8 book placeholder migration (#169)", () => {
+  it("turns a placeholder name into a slot, keeping every other field", async () => {
+    // What every device in the field holds: a book nobody named, carrying the
+    // English the old writer rendered into it. After v8 the words are gone and
+    // the slot they encoded is stored instead, so the screen renders them
+    // again — in whatever language it is running.
+    const v7 = await openLegacyV7();
+    await v7.put("books", {
+      ...v7Book("b1", "Book 003", ["ch1"]),
+      languageCode: "swh",
+      createdAt: 11,
+      updatedAt: 22,
+    });
+    v7.close();
+
+    const v8 = await getDb();
+    expect(v8.version).toBe(APP_VERSION);
+    expect(await v8.get("books", "b1" as never)).toEqual({
+      id: "b1",
+      name: null,
+      number: 3,
+      languageCode: "swh",
+      chapterIds: ["ch1"],
+      createdAt: 11,
+      updatedAt: 22,
+    });
+  });
+
+  it("never rewrites a name a facilitator chose, and parks each on a FREE slot", async () => {
+    // The half that would be unrecoverable if it were wrong: "Mark" is a
+    // person's work, not copy. Each named row keeps its name and takes a slot
+    // no other row holds — the placeholders first, then the named ones in
+    // order — so no two rows on the shelf can claim the same one.
+    //
+    // The shelf is arranged so that "the next free slot" is never simply 1 and
+    // never simply "one per row": 1 and 3 are already showing, so the two
+    // named books have to step over them to 2 and 4.
+    const v7 = await openLegacyV7();
+    await v7.put("books", v7Book("b1", "Book 001"));
+    await v7.put("books", v7Book("b2", "Book 003"));
+    await v7.put("books", v7Book("b3", "Mark"));
+    await v7.put("books", v7Book("b4", "Ruth"));
+    v7.close();
+
+    const v8 = await getDb();
+    const rows = await v8.getAll("books");
+    expect(
+      Object.fromEntries(rows.map((r) => [r.id, [r.name, r.number]]))
+    ).toEqual({
+      b1: [null, 1],
+      b2: [null, 3],
+      b3: ["Mark", 2],
+      b4: ["Ruth", 4],
+    });
+    // And no slot is handed out twice, which is the property the numbers above
+    // are only one arrangement of.
+    expect(new Set(rows.map((r) => r.number)).size).toBe(rows.length);
+  });
+
+  it("keeps an unpadded look-alike as the typed name it is", async () => {
+    // "Book 1" is not a string this database ever wrote — the writer padded to
+    // three digits — so it is a name somebody typed, exactly as the pre-#169
+    // placeholder rule already treated it (it never blocked "Book 001").
+    const v7 = await openLegacyV7();
+    await v7.put("books", v7Book("b1", "Book 1"));
+    await v7.put("books", v7Book("b2", "Book 0001"));
+    v7.close();
+
+    const v8 = await getDb();
+    expect((await v8.get("books", "b1" as never))?.name).toBe("Book 1");
+    expect((await v8.get("books", "b2" as never))?.name).toBe("Book 0001");
+  });
+
+  it("leaves a row that already carries a slot alone", async () => {
+    // Keys on `number` being ABSENT, like every backfill before it, so a row
+    // written by a newer build before an older one reopened the database is
+    // not re-derived — and a name of "Book 004" that a person typed AFTER v8
+    // stays theirs.
+    const v7 = await openLegacyV7();
+    await v7.put("books", { ...v7Book("b1", "Book 004"), number: 9 });
+    v7.close();
+
+    const v8 = await getDb();
+    expect(await v8.get("books", "b1" as never)).toMatchObject({
+      name: "Book 004",
+      number: 9,
+    });
+  });
+
+  it("runs over an empty shelf, and on a fresh install, without complaint", async () => {
+    // The two paths with nothing to convert: a v7 device that never made a
+    // book, and oldVersion 0, where the v3 recreate has just emptied the store
+    // the pass then reads.
+    const v7 = await openLegacyV7();
+    v7.close();
+    const v8 = await getDb();
+    expect(v8.version).toBe(APP_VERSION);
+    expect(await v8.count("books")).toBe(0);
+
+    await wipe();
+    const fresh = await getDb();
+    expect(fresh.version).toBe(APP_VERSION);
+    expect(await fresh.count("books")).toBe(0);
   });
 });

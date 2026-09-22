@@ -33,7 +33,8 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
   );
   await tx.objectStore("books").put({
     id: bid("b1"),
-    name: "Book 001",
+    name: null,
+    number: 1,
     languageCode: null,
     chapterIds: [chid("ch1")],
     createdAt: 0,

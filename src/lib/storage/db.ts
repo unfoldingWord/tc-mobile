@@ -68,6 +68,22 @@
  * orders future owed clips by the count, so poison clips near the head of a
  * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
  * still kept; this is scheduling metadata only.
+ *
+ * ── v8 (#169): the book placeholder is a slot, not English — append-only ──
+ *
+ * `Book.name` became nullable and `Book.number` (the placeholder slot) was
+ * added, the same shape `Chapter` has held since v5. Until v8 an unnamed book
+ * stored the rendered "Book 001", which is UI copy: a phone that switched UI
+ * language kept English names on every book already on its shelf, and no
+ * locale change could rewrite them.
+ *
+ * The v8 step un-freezes exactly that. A row whose stored name is the English
+ * placeholder EXACTLY — `Book ` plus its own zero-padded number — becomes
+ * `{ name: null, number: <that slot> }`, so what the screen shows is rendered
+ * again. Every other row keeps the name a facilitator typed, untouched, and is
+ * stamped with a slot no unnamed book is showing. Additive: no store is
+ * dropped, no name a person chose is rewritten, and a v7 device's recordings
+ * come through intact.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -87,7 +103,39 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
+
+/**
+ * A `books` row as v7 and earlier stored it: the placeholder rendered into
+ * `name`, and no `number` at all. Only the v8 backfill reads it — the typed
+ * store below already speaks the v8 shape.
+ */
+type BookV7 = Omit<Book, "name" | "number"> & {
+  readonly name: string | null;
+  readonly number?: number;
+};
+
+/**
+ * The slot a v7 `books` row's stored name is the English placeholder FOR, or
+ * `null` when the name is one a facilitator chose.
+ *
+ * Exact on the rendering the old writer produced — `Book ` plus the slot,
+ * zero-padded to at least three digits — because that is the only string this
+ * database ever wrote by itself. "Book 1" and "Book 0001" are names somebody
+ * typed, and the pre-#169 rule already treated them that way (they never
+ * blocked "Book 001"), so they survive as names here. The English lives in
+ * this one-time step, which is reading English data; nothing live renders from
+ * it.
+ */
+function legacyPlaceholderSlot(name: string | null): number | null {
+  if (name === null) return null;
+  const match = /^Book (\d+)$/.exec(name);
+  if (!match?.[1]) return null;
+  const slot = Number(match[1]);
+  return slot >= 1 && name === `Book ${String(slot).padStart(3, "0")}`
+    ? slot
+    : null;
+}
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -547,6 +595,44 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
               await cursor.update({ ...legacy, name: null });
             }
             cursor = await cursor.continue();
+          }
+        }
+
+        // v8 (#169): give every book a placeholder slot, and take the rendered
+        // English back off the rows that were only ever showing one. Additive —
+        // a name a facilitator typed is never rewritten, and the pass keys on
+        // `number` being ABSENT, so a row already carrying one (from a newer
+        // build) is left alone.
+        //
+        // `getAll` and two passes, not one cursor walk, because the slot a
+        // NAMED row gets has to avoid every slot the unnamed rows claim — and
+        // those are only all known once the whole shelf has been read. The
+        // store holds book metadata alone (no clip bytes), so reading it whole
+        // inside the upgrade costs what listing the shelf already costs.
+        if (oldVersion < 8) {
+          const store = tx.objectStore("books");
+          const rows = (await store.getAll()) as unknown as BookV7[];
+          const taken = new Set<number>();
+          const named: BookV7[] = [];
+          for (const row of rows) {
+            if (row.number !== undefined) continue; // already v8
+            const slot = legacyPlaceholderSlot(row.name);
+            if (slot === null) {
+              named.push(row);
+              continue;
+            }
+            taken.add(slot);
+            await store.put({ ...row, name: null, number: slot } as Book);
+          }
+          // The named rows take what is left, lowest first. Their slot is
+          // dormant (nothing renders it while a name is set), but it is a real
+          // free slot rather than a filler value, so the field means the same
+          // thing on every row on the shelf.
+          let next = 1;
+          for (const row of named) {
+            while (taken.has(next)) next++;
+            taken.add(next);
+            await store.put({ ...row, number: next } as Book);
           }
         }
       },

@@ -60,10 +60,11 @@ interface NameEditProps {
  * This field never validates and never disables its own commit: it passes the
  * raw value straight through, and what a blank one MEANS belongs to the caller's
  * store, which is the only place that knows. The four are deliberately
- * different — `renameBook` keeps the current name, `renameChapter` clears the
- * label back to the "Chapter N" default, `createBook` falls back to the
- * "Book NNN" placeholder, `addChapter` stores no label at all — so do not read
- * any one of them as this component's contract (George R1 P3-5).
+ * different — `renameBook` keeps the current value (a name, or no name at
+ * all), `renameChapter` clears the label back to the "Chapter N" default,
+ * `createBook` stores the book unnamed so its placeholder stays rendered
+ * (#169), `addChapter` stores no label at all — so do not read any one of them
+ * as this component's contract (George R1 P3-5).
  */
 export function NameEdit({
   initialValue,

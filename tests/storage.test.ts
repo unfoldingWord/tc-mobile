@@ -25,7 +25,7 @@ import {
   isFinished,
   isStaleBookFailure,
   listBooks,
-  nextBookName,
+  nextBookNumber,
   nextChapterNumber,
   renameBook,
   renameChapter,
@@ -39,7 +39,7 @@ import {
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { BookId, RecordingStatus } from "@/types/domain";
+import type { Book, BookId, RecordingStatus } from "@/types/domain";
 import { samplesOf } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
@@ -172,16 +172,15 @@ describe("clip storage", () => {
 });
 
 describe("book tree", () => {
-  it("auto-names concurrent blank New Book confirms distinctly (race-safe)", async () => {
-    // Two confirms before the first write lands must not both become
-    // "Book 001": the fallback name is derived from what is on disk INSIDE the
-    // one readwrite transaction that writes the row, and IndexedDB serialises
-    // overlapping readwrite transactions, so the second sees the first.
+  it("gives concurrent blank New Book confirms distinct slots (race-safe)", async () => {
+    // Two confirms before the first write lands must not both take slot 1: the
+    // fallback is derived from what is on disk INSIDE the one readwrite
+    // transaction that writes the row, and IndexedDB serialises overlapping
+    // readwrite transactions, so the second sees the first.
     const [a, b] = await Promise.all([createBook(""), createBook("")]);
-    const names = [a.name, b.name].sort();
-    expect(names).toEqual(["Book 001", "Book 002"]);
+    expect([a.number, b.number].sort()).toEqual([1, 2]);
     const third = await createBook("");
-    expect(third.name).toBe("Book 003");
+    expect(third.number).toBe(3);
   });
 
   it("creates and lists books newest-updated first", async () => {
@@ -551,111 +550,152 @@ describe("book tree", () => {
   });
 });
 
-/** The placeholder for ordinal `n`, as this namer spells it. */
-const nextBookNameFor = (n: number): string =>
-  `Book ${String(n).padStart(3, "0")}`;
+/** An unnamed book holding slot `n` — what `nextBookNumber` counts. */
+const unnamed = (n: number): Pick<Book, "name" | "number"> => ({
+  name: null,
+  number: n,
+});
+
+/** A book a facilitator named, parked on slot `n`. */
+const named = (name: string, n: number): Pick<Book, "name" | "number"> => ({
+  name,
+  number: n,
+});
 
 /**
- * The "Book NNN" placeholder — computed, shown, and fallen back to (#314, #360).
+ * The book placeholder — computed, shown, and fallen back to (#314, #360, #169).
  *
  * #314 moved the placeholder from "what a book is silently named" to "what the
- * New Book field is pre-filled with", so the same computation now has two
- * callers: the Books screen, which renders it off the shelf it has already
- * loaded, and `createBook`'s blank fallback inside the write transaction.
- * `nextBookName` is the one pure function both go through.
+ * New Book field is pre-filled with", so the same computation has two callers:
+ * the Books screen, which renders it off the shelf it has already loaded, and
+ * `createBook`'s blank fallback inside the write transaction. `nextBookNumber`
+ * is the one pure function both go through.
  *
- * The rendered name is DISPLAY only — an untouched field is confirmed as `""` —
- * so the name that actually lands is always the transaction's, never the
+ * What the field shows is DISPLAY only — an untouched field is confirmed as
+ * `""` — so the row that actually lands is always the transaction's, never the
  * snapshot's. That is what keeps the one-tap create as race-safe as the
  * pre-#314 `createNextBook` was.
  *
- * #360 is the rule the namer encodes: the first UNUSED name, not `count + 1`.
- * Once a book can be deleted, a count-based name repeats — and the delete
- * confirm names the book in its accessible name, so two identical rows make a
+ * #360 is the rule it encodes: the first UNUSED slot, not `count + 1`. Once a
+ * book can be deleted, a count-based name repeats — and the delete confirm
+ * names the book in its accessible name, so two identical rows make a
  * destructive dialog unable to say which book it is about to destroy.
+ *
+ * #169 is what it counts over. The placeholder's WORDS are copy and are
+ * rendered at the screen (`strings.bookHeading`); the store keeps a slot, so a
+ * phone that switches UI language renames the books already on its shelf.
  */
-describe("book auto-naming (#314, #360)", () => {
-  it("starts at Book 001 on an empty shelf", () => {
-    expect(nextBookName([])).toBe("Book 001");
+describe("book placeholder slots (#314, #360, #169)", () => {
+  it("starts at slot 1 on an empty shelf", () => {
+    expect(nextBookNumber([])).toBe(1);
   });
 
-  it("zero-pads to three digits and counts up past the padding", () => {
-    expect(nextBookName(["Book 001", "Book 002"])).toBe("Book 003");
-    // Not capped at 999: the padding is a minimum width, not a limit.
-    const upTo999 = Array.from({ length: 999 }, (_, i) =>
-      nextBookNameFor(i + 1)
-    );
-    expect(nextBookName(upTo999)).toBe("Book 1000");
+  it("counts up past the padding the screen renders", () => {
+    expect(nextBookNumber([unnamed(1), unnamed(2)])).toBe(3);
+    // Not capped at 999: the screen's zero-padding is a minimum width, and the
+    // slot itself has no limit.
+    const upTo999 = Array.from({ length: 999 }, (_, i) => unnamed(i + 1));
+    expect(nextBookNumber(upTo999)).toBe(1000);
   });
 
-  it("picks the FIRST unused name, so a delete does not make one repeat (#360)", () => {
-    // The #360 reproduction, as data: 001 and 002 exist, 001 is deleted. A
-    // count-based namer sees one book and says "Book 002" — a duplicate row.
-    expect(nextBookName(["Book 002"])).toBe("Book 001");
-    expect(nextBookName(["Book 002"])).not.toBe("Book 002");
+  it("picks the FIRST unused slot, so a delete does not make one repeat (#360)", () => {
+    // The #360 reproduction, as data: 1 and 2 exist, 1 is deleted. A
+    // count-based namer sees one book and says 2 — a duplicate row.
+    expect(nextBookNumber([unnamed(2)])).toBe(1);
+    expect(nextBookNumber([unnamed(2)])).not.toBe(2);
     // A hole in the middle is filled before the end is extended.
-    expect(nextBookName(["Book 001", "Book 003"])).toBe("Book 002");
+    expect(nextBookNumber([unnamed(1), unnamed(3)])).toBe(2);
   });
 
-  it("ignores names that are not placeholders, and unpadded look-alikes", () => {
-    // A facilitator's real names ("Mark") occupy no placeholder slot — the
-    // shelf is not a numbering authority, the placeholder set is.
-    expect(nextBookName(["Mark", "Luke"])).toBe("Book 001");
-    // "Book 1" is not the string this namer would ever write, so it does not
-    // block "Book 001". Exact match on the stored name is the whole rule.
-    expect(nextBookName(["Book 1"])).toBe("Book 001");
+  it("ignores the slot parked under a name (#169)", () => {
+    // A facilitator's real names ("Mark") occupy no slot — the shelf is not a
+    // numbering authority, the set of placeholders actually on SHOW is.
+    expect(nextBookNumber([named("Mark", 1), named("Luke", 2)])).toBe(1);
+    // Including a name that reads like this locale's placeholder. Before #169
+    // the comparison was on the stored string, so typing "Book 001" reserved
+    // it; now nothing a person types is a placeholder, in any language.
+    expect(nextBookNumber([named("Book 001", 1)])).toBe(1);
   });
 
-  it("does not repeat a name after a book is deleted from the shelf (#360)", async () => {
+  it("does not repeat a slot after a book is deleted from the shelf (#360)", async () => {
     // The same rule end to end, through storage. `deleteBook` is #344 and is not
-    // on develop yet, so the row is removed directly — this pins the NAMER
+    // on develop yet, so the row is removed directly — this pins the DERIVATION
     // against a shelf with a hole in it, which is the state any delete leaves.
     const first = await createBook("");
     const second = await createBook("");
-    expect([first.name, second.name]).toEqual(["Book 001", "Book 002"]);
+    expect([first.number, second.number]).toEqual([1, 2]);
 
     const db = await getDb();
     await db.delete("books", first.id);
 
     const third = await createBook("");
-    expect(third.name).toBe("Book 001");
-    expect(third.name).not.toBe(second.name);
+    expect(third.number).toBe(1);
+    expect(third.number).not.toBe(second.number);
   });
 
-  it("names the shelf the screen would render the same as the next blank create", async () => {
-    // The screen derives the pre-fill by calling this namer over the books it
-    // has loaded; the store derives the written name by calling it over the
-    // books in its write transaction. Same function, same shelf, same answer —
-    // which is why a bare Confirm lands on the name the field displayed.
+  it("offers the shelf the screen would render the same slot as the next blank create", async () => {
+    // The screen derives the pre-fill by calling this over the books it has
+    // loaded; the store derives the written slot by calling it over the books
+    // in its write transaction. Same function, same shelf, same answer — which
+    // is why a bare Confirm lands on the placeholder the field displayed.
     await createBook("");
     const shelf = await listBooks();
-    const displayed = nextBookName(shelf.map((b) => b.name));
-    expect(displayed).toBe("Book 002");
-    expect((await createBook("")).name).toBe(displayed);
+    const displayed = nextBookNumber(shelf);
+    expect(displayed).toBe(2);
+    expect((await createBook("")).number).toBe(displayed);
+  });
+
+  it("stores no words for an unnamed book (#169)", async () => {
+    // The whole point: nothing on disk is in a UI language, so switching
+    // language renames every book that never got a name of its own.
+    const first = await createBook("");
+    expect(first.name).toBeNull();
+    expect(JSON.stringify(first)).not.toContain("Book");
+    // And it survives the round trip — the read is not re-deriving a name.
+    expect((await getBook(first.id))?.name).toBeNull();
+  });
+
+  it("gives a NAMED book a real free slot, dormant behind its name (#169)", async () => {
+    // Every row carries a slot, so the field means one thing on the whole
+    // shelf. It is free for the next unnamed book, because nothing shows it.
+    const mark = await createBook("Mark");
+    expect(mark.number).toBe(1);
+    expect((await createBook("")).number).toBe(1);
   });
 
   it("does not make a SUPPLIED name unique", async () => {
     // Deliberate, and long-standing: a facilitator may have two books called
     // "Mark", and renameBook has always allowed it. It is also why the New Book
-    // dialog sends "" rather than the "Book NNN" string it displayed — a
-    // supplied placeholder would take THIS path and two documents open on the
-    // same shelf would both write "Book 001" (George R1 P2-3).
+    // dialog sends "" rather than the placeholder string it displayed — a
+    // supplied placeholder would take THIS path (George R1 P2-3).
     const first = await createBook("Mark");
     const second = await createBook("Mark");
     expect([first.name, second.name]).toEqual(["Mark", "Mark"]);
     expect(first.id).not.toBe(second.id);
   });
 
-  it("falls back to the placeholder for a blank or whitespace-only name (#314)", async () => {
+  it("leaves a blank or whitespace-only name unnamed (#314)", async () => {
     // "Empty or whitespace-only input falls back to the placeholder, never
     // errors" — enforced in the store, next to renameBook's own normalisation,
     // so the rule holds however the name arrives.
-    expect((await createBook("   ")).name).toBe("Book 001");
-    expect((await createBook("\t\n ")).name).toBe("Book 002");
+    expect(await createBook("   ")).toMatchObject({ name: null, number: 1 });
+    expect(await createBook("\t\n ")).toMatchObject({ name: null, number: 2 });
   });
 
   it("trims a typed name, like renameBook does", async () => {
     expect((await createBook("  Mark  ")).name).toBe("Mark");
+  });
+
+  it("keeps an unnamed book unnamed through a blank rename (#169)", async () => {
+    // `renameBook`'s "blank keeps what is there" now has a second job: it must
+    // not turn the rendered placeholder into a stored name. The screen sends
+    // "" for an untouched field, and this is the half of that contract the
+    // store owns.
+    const book = await createBook("");
+    const after = await renameBook(book.id, "   ");
+    expect(after.name).toBeNull();
+    expect(after.number).toBe(book.number);
+    expect(after.updatedAt).toBe(book.updatedAt); // a no-op, so no recency bump
   });
 });
 
@@ -671,7 +711,7 @@ describe("book auto-naming (#314, #360)", () => {
  *   - `nextChapterNumber` is the ONE derivation of that ordinal, called both
  *     inside `addChapter`'s write transaction and by the screen over the
  *     chapters it has already loaded — the same "one pure function both go
- *     through" shape `nextBookName` holds for books. Unlike `nextBookName` it
+ *     through" shape `nextBookNumber` holds for books. Unlike it, this one
  *     is `max + 1`, NOT the first unused: a chapter's `number` is its export
  *     position, not a label, so filling a hole would reorder the concatenation
  *     a Share Chapter/Book produces.

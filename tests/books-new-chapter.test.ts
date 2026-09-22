@@ -42,6 +42,7 @@ const shelf = (): BookCard[] => [
   {
     bookId,
     name: bookName,
+    number: 1,
     chapters: [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
@@ -86,7 +87,7 @@ function landChapter() {
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,

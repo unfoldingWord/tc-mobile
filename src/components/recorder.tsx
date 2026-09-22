@@ -2993,7 +2993,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             <span className="text-ink min-w-0 flex-1 truncate">
               {view
                 ? strings.recorderBreadcrumb(
-                    view.bookName,
+                    strings.bookHeading(view.bookName, view.bookNumber),
                     view.chapterNumber,
                     view.ordinal
                   )
