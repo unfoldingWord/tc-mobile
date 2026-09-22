@@ -13,7 +13,7 @@ import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
-import { guidedStep } from "./guided-step";
+import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
@@ -2461,6 +2461,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       loaded: view !== null,
       hasAudio,
     });
+    // Whether that answer is drawn right now. `recordInert` alone was the wrong
+    // gate: `requesting` and `processing` both disable Record, so the ring
+    // blinked off at the tap and again while the take was sealed, against step
+    // 8. The table is in `guided-step.ts`.
+    const guidedRecord = guidedRecordShown({
+      step: guide,
+      takeInFlight: state !== "idle",
+      isClosing,
+      recordInert,
+    });
     const editReason = editRowReason({
       hasView: view !== null,
       // A live take no longer blocks Edit (#134) — entering Edit commits it
@@ -3327,11 +3337,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // The last link in the guided chain (#604): the ring sits
                     // on Record until this segment has audio, which — because a
                     // take splices only on close — means it stays through the
-                    // take rather than blinking out at the first tap. Never on
-                    // an inert control: a ring on something that cannot be
-                    // tapped is the guide telling a first-time user to do
-                    // something the app is refusing.
-                    guided={guide?.kind === "record" && !recordInert}
+                    // whole take, the permission wait and the seal included.
+                    // `guidedRecordShown` above owns the whole rule.
+                    guided={guidedRecord}
                     onClick={onRecordButton}
                   />
                   <Control

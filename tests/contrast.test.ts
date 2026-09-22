@@ -238,22 +238,23 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
       });
     }
 
-    it(`${theme}: the guide and the focus ring are not the same mark`, () => {
-      // A keyboard user has to be able to tell "focused" from "guided". They
-      // differ in three ways and this pins the one that is a token: the hues
-      // are far enough apart that neither can be mistaken for the other, which
-      // a luminance ratio between them is a crude but falsifiable stand-in for.
-      // (The other two are geometry — inside the shape versus an outline
-      // outside it — and are pinned in `tests/guided-ring.test.ts`.)
+    it(`${theme}: the guide and the focus role resolve to different colours`, () => {
+      // Exactly that and no more: the two roles are not the same value in this
+      // theme. It is not a claim about hue distance, or about whether the two
+      // marks are distinguishable to any particular eye — that rests on the
+      // geometry (inside the shape against an outline outside it, with a gap
+      // where both are outside), which `tests/guided-ring.test.ts` pins.
       expect(resolve(theme, "--s-guide")).not.toBe(resolve(theme, "--s-focus"));
     });
 
     it(`${theme}: the ring cannot live INSIDE the record button — the reason it is outset`, () => {
-      // The measured reason `3-components.css` gives for the one exception to
-      // the inset ring. Blue on the live red is a hue difference with almost no
-      // luminance difference, so an inset ring there is a ring a low-vision
-      // user does not get. If a future accent clears the floor here, the
-      // exception can go — and this assertion is what says so.
+      // The reason `3-components.css` gives for the one exception to the inset
+      // ring, asserted here rather than quoted there. Blue on the live red is
+      // a hue difference with almost no luminance difference, so an inset ring
+      // there is a ring a low-vision user does not get. Both themes, because
+      // the red differs between them and the exception is unconditional. If a
+      // future accent clears the floor here, the exception can go — and this
+      // assertion is what says so.
       const ratio = contrast(
         resolve(theme, "--s-guide"),
         resolve(theme, "--s-live")

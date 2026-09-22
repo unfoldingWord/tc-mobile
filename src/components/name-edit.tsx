@@ -169,7 +169,11 @@ export function NameEdit({
         label={busy ? strings.savingName : saveLabel}
         variant="default"
         busy={affordance.busy}
-        guided={guided}
+        // Not while the write is in flight: a busy Control stays on screen and
+        // focusable but swallows activations (`control.tsx`), so a ring on it
+        // would be pointing at a tap that does nothing. Same rule the
+        // recorder's Record and the segment row's follow.
+        guided={guided && !busy}
         onClick={() => onSave(value)}
       />
     </form>
