@@ -204,8 +204,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
     />
   ),
   // Three dots, stacked — an object's own menu (a book, a chapter, a segment).
-  // Kept apart from the three rules so ≡ means only the global menu: a tester
-  // who cannot read the labels could not tell one ≡ from another (#589).
+  // Distinguishes these object menus from the global ≡. The recorder still
+  // uses ≡; its separate affordance remains open in #589.
   more: (
     <>
       <circle cx="11" cy="6" r="2" fill="currentColor" />
