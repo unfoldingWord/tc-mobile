@@ -14,24 +14,26 @@ import { closeDb, getDb } from "@/lib/storage/db";
 import {
   addChapter,
   addSegment,
-  addTake,
   chapterProgress,
-  clearSegmentTake,
   createBook,
   getBook,
   getChapter,
   getSegment,
   getSegmentsOfChapter,
-  isFinished,
   isStaleBookFailure,
   listBooks,
   nextBookName,
   renameBook,
   renameChapter,
   resolveChapterClipIds,
+} from "@/lib/storage/books";
+import {
+  addTake,
+  clearSegmentTake,
+  isFinished,
   saveTake,
   setSegmentFinished,
-} from "@/lib/storage/books";
+} from "@/lib/storage/takes";
 import {
   danglingReason,
   loadSegmentClip,

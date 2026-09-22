@@ -9,16 +9,14 @@ import { computePeaks } from "@/lib/audio/peaks";
 import {
   addChapter,
   addSegment,
-  addTake,
   createBook,
   deleteBook,
   getBook,
   getChapter,
   getSegment,
   listBooks,
-  setSegmentFinished,
-  saveTake,
 } from "@/lib/storage/books";
+import { addTake, setSegmentFinished, saveTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";

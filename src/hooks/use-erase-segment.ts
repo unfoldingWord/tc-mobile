@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-import { clearSegmentTake } from "@/lib/storage/books";
+import { clearSegmentTake } from "@/lib/storage/takes";
 import { reportFailure } from "./report-failure";
 import type { SegmentId } from "@/types/domain";
 

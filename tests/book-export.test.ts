@@ -11,8 +11,8 @@ import {
   addSegment,
   createBook,
   resolveBookChapters,
-  saveTake,
 } from "@/lib/storage/books";
+import { saveTake } from "@/lib/storage/takes";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import type { BookId } from "@/types/domain";

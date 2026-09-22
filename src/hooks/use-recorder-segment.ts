@@ -4,13 +4,8 @@ import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { computePeaks } from "@/lib/audio/peaks";
-import {
-  getBook,
-  getChapter,
-  getSegment,
-  isFinished,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { getBook, getChapter, getSegment } from "@/lib/storage/books";
+import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
 import type { Peaks } from "@/types/audio";

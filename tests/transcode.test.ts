@@ -8,12 +8,14 @@ import { computePeaks } from "@/lib/audio/peaks";
 import {
   addChapter,
   addSegment,
-  clearSegmentTake,
   createBook,
   resolveChapterClipIds,
+} from "@/lib/storage/books";
+import {
+  clearSegmentTake,
   saveTake,
   setSegmentFinished,
-} from "@/lib/storage/books";
+} from "@/lib/storage/takes";
 import {
   getClip,
   getClipMeta,

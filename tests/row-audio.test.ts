@@ -6,13 +6,8 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
 import { rowAudio } from "@/hooks/use-chapter-segments";
-import {
-  addChapter,
-  addSegment,
-  createBook,
-  saveTake,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
 import { newClipId } from "@/lib/storage/clips";
 import * as segmentAudio from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";

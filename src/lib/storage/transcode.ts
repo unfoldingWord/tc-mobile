@@ -25,7 +25,7 @@
  *     is durably written" (#34) is what the transaction promises, not a hope.
  */
 
-import { isFinished } from "./books";
+import { isFinished } from "./takes";
 import { getDb } from "./db";
 import type { Peaks } from "@/types/audio";
 import type { ClipId, SegmentId } from "@/types/domain";

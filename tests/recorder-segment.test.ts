@@ -3,13 +3,8 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
-import {
-  addChapter,
-  addSegment,
-  addTake,
-  createBook,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import { addTake, setSegmentFinished } from "@/lib/storage/takes";
 import { newClipId, putClip } from "@/lib/storage/clips";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { closeDb, getDb } from "@/lib/storage/db";

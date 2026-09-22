@@ -6,10 +6,10 @@ import { performErase } from "@/hooks/use-erase-segment";
 import {
   addSegment,
   addChapter,
-  addTake,
   createBook,
   getSegment,
 } from "@/lib/storage/books";
+import { addTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";

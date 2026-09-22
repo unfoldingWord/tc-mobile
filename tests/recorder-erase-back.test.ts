@@ -19,8 +19,8 @@ vi.mock("@/lib/nav/navigation", async (importOriginal) => {
   };
 });
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
-vi.mock("@/lib/storage/books", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/storage/books")>()),
+vi.mock("@/lib/storage/takes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/storage/takes")>()),
   clearSegmentTake: storage.clear,
 }));
 const view = {
