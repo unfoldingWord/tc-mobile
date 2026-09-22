@@ -187,6 +187,12 @@ Capacitor 8:
   compatible with Gradle 8.14.3 (**JDK 21** recommended).
 - `git clone` the repo, then `npm ci` at the repo root.
 
+**Local workflow tests:** `tests/ios-workflow-gates.test.ts` runs extracted Bash
+steps with real Node and Ruby executables. `ruby` (with RubyGems for
+`Gem::Version`) must be on `PATH` when running `npm test` or `npm run verify`,
+including in a devcontainer. These tests do not require Xcode or signing
+credentials and do not dispatch a native build.
+
 ```bash
 git clone https://github.com/unfoldingWord/tc-mobile.git
 cd tc-mobile
@@ -242,8 +248,9 @@ iOS TestFlight → Run workflow**, choosing the branch to build. It never runs o
 push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
 and adds no required check to normal PRs.
 
-**What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
-`App` scheme (Release) → upload to TestFlight. **A green run means the binary
+**What a run does:** `npm ci` → `npm run build` → `npm run test:dist` → select
+Xcode 26 → `npx cap sync ios` → guard the synced bundle (including emitted OBS
+thumbnail policy) → archive the `App` scheme (Release) → upload to TestFlight. **A green run means the binary
 uploaded, not that a tester received it:** the lane sets
 `skip_waiting_for_build_processing` (it does not hold the billed runner open for
 Apple's processing) and assigns no tester group, so it cannot observe a later
