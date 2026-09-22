@@ -712,6 +712,13 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
+**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v0.3.0
+handoff, T3 and docs changes take one George round (P1/P2 only), harness and
+meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
+triggers a round on any tier — it is batched into one follow-up issue at
+triage. T1 and T2 are unchanged. The table is in
+`docs/review/dual-review.md` ("Freeze budget").
+
 **Decompose before any post-cap round (decided 2026-09-18).** The DRI's pick
 at the cap is made from a _judgment sheet_, not from the round narrative:
 break "is this PR right?" into atomic yes/no and choice judgments, answer each

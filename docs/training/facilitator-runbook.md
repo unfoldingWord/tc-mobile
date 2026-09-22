@@ -95,8 +95,15 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   3. The recording is still safely on the phone — it can be shared again
      later once this is fixed.
 
-## 4. Known limits (as of 2026-09-15)
+## 4. Known limits (as of 2026-09-21)
 
+- **Do not switch apps or lock the phone while a recording is running.** If
+  the app is sent to the background mid-take (a call, a notification tap,
+  the Home gesture), the take in progress may be lost. Before switching apps,
+  tap the recorder's Back arrow ("Close recorder") and wait for the saved
+  recording to appear in the segment list. Pause alone does not save. If a
+  save or recovery screen appears, keep the app open and resolve it before
+  leaving. <!-- source: src/components/recorder.tsx close(), src/hooks/use-save-take.ts; https://github.com/unfoldingWord/tc-mobile/issues/58#issuecomment-5770432574 (accepted for training; #471 and #484 are post-training follow-ups) -->
 - **No way to delete a whole book yet.** Have each participant practice
   inside one throwaway book and simply ignore it afterward, rather than
   trying to clean it up. <!-- source: gh issue #337, open -->
