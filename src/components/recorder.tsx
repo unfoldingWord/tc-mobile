@@ -1355,10 +1355,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * immediately while one is in flight — which matters because `editor`'s
      * identity churns.
      *
+     * A LAYOUT effect, and that is the load-bearing half (George r1 pass B on
+     * PR #681). Nobody tapped anything here, so the only thing between the
+     * captured slices and `cancel()` is WHEN this runs. `stop()` snapshots
+     * `chunksRef.current` at the moment it is called; `cancel()` replaces that
+     * array and bumps the generation, and a `pagehide` reaches it through
+     * `leave()` -> `cancelRecording()`. A passive effect flushes after paint, so
+     * a `pagehide` delivered in that gap cancels first and the interrupted take
+     * is gone -- either the late `stop()` reads the fresh empty array and
+     * reports an empty capture, or React discards the stale effect and nothing
+     * commits at all. As a layout effect the `stop()` lands in the same commit
+     * as the `"processing"` render, before the browser can deliver anything. A
+     * Stop TAP has no such window: `commitTake` calls `stop()` synchronously
+     * inside the click, which is why only this path needed it.
+     *
+     * A `pagehide` that arrives BEFORE the interruption handler is a different
+     * case and not a bug: that is the standing "backgrounding abandons an
+     * unconfirmed take" contract, unchanged here.
+     *
      * A callback, not a set-state in the effect body: the same shape the frozen-
      * pan layout effect uses to stay inside the hooks rules.
      */
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (state !== "processing" || closing.current) return;
       commitTake("stay");
     }, [state, commitTake]);
