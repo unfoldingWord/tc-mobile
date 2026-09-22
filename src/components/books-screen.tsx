@@ -235,12 +235,16 @@ export function BooksScreen({
   // and the panel unmounting cannot take a second Confirm.
   const creatingChapter = useRef(false);
   const [creatingChapterBusy, setCreatingChapterBusy] = useState(false);
-  // Where focus was when the prompt opened — the row's `+`. Restored on EVERY
-  // close, unlike New Book's: the `+` survives the create (the book row does
-  // not unmount), so the trigger is still the right landing spot afterwards,
-  // and it is where focus already stayed before this prompt existed. It is
-  // also the safe one — a held Enter re-activating it reopens a prompt, where
-  // before #609 it wrote another undeletable chapter per key-repeat.
+  // Where focus was when the prompt opened — the row's `+`. Restored when the
+  // prompt closes WITHOUT creating, so a cancel does not drop focus to the
+  // document; CLEARED on a successful create, where `pendingFocus` takes over.
+  // Exactly New Book's split, and for a reason this prompt shares: returning
+  // focus to the `+` after a create leaves a live control that reopens this
+  // panel under the key that just confirmed it, and `NameEdit` autofocuses, so
+  // the NEXT repeat submits — the pre-#609 held-Enter loop with one more
+  // keystroke per turn rather than none, still writing chapters this tree
+  // cannot delete. It also undid the `pendingScroll` that had just brought the
+  // new row into view, by focusing the row above it.
   const newChapterReturnFocus = useRef<HTMLElement | null>(null);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
@@ -546,7 +550,14 @@ export function BooksScreen({
     // lesson, learned twice: a focus fix that ignores `inert` is dead code
     // (#364; docs/progress_tracker.md).
     if (focusId !== null && deleteTargetId === null) {
-      // The row's first <button> is the expand/collapse toggle. Landing here
+      // Two kinds of row reach this now. For a BOOK id (New Book) the first
+      // <button> is the expand/collapse toggle; for a CHAPTER id (#609's
+      // Add-chapter prompt) it is that row's only button, "Open Chapter N".
+      // Both satisfy the rule the rest of this comment establishes: a stray
+      // re-activation writes nothing — one re-collapses a row, the other
+      // navigates into the chapter, which one Back undoes.
+      //
+      // Landing on the toggle
       // instead of the add-chapter Control is a DELIBERATE step back from an
       // earlier round: targeting `.control` put a live, activating native
       // button under focus as the direct continuation of Confirm's own Enter
@@ -741,9 +752,8 @@ export function BooksScreen({
   // Return focus to the `+` that opened the prompt, once it is gone. In an
   // effect rather than in the handler, because the shelf is `inert` while the
   // prompt is up and focusing inside an inert subtree does nothing — this has
-  // to wait for the render that removes `inert`. Unlike New Book this runs on
-  // the create path too; see the ref's declaration for why the trigger is the
-  // right landing spot there.
+  // to wait for the render that removes `inert`. A successful create clears the
+  // ref, so this is the cancel/dismiss/failure path only.
   useEffect(() => {
     if (newChapter !== null) return;
     const el = newChapterReturnFocus.current;
@@ -759,23 +769,39 @@ export function BooksScreen({
       const { bookId } = newChapter;
       // An untouched field means "the default is fine", so send "" and let the
       // store write no label at all — the row then displays the ordinal its own
-      // transaction derived, which is what the field was showing. Compared
-      // TRIMMED because the caret lands in the pre-filled text and a stray
-      // trailing space would otherwise store "Chapter 3 " as a literal name
-      // (the same mapping `onConfirmNewBook` makes, for the same reason).
+      // transaction derived. That is the same ordinal the field offered as long
+      // as this shelf is current; another copy of the app adding a chapter
+      // between the render and the write moves it, and storing no label is
+      // exactly what keeps the row right when it does. Compared TRIMMED because
+      // the caret lands in the pre-filled text and a stray trailing space would
+      // otherwise store "Chapter 3 " as a literal name (the same mapping
+      // `onConfirmNewBook` makes, for the same reason).
       const name = typed.trim() === newChapter.seed ? "" : typed;
       const chapter = await addChapter(bookId, name);
-      // The prompt comes down either way. On failure the hook has already put
-      // the reason on the screen's own Notice — where an add-chapter failure
-      // has always been spoken — and that Notice sits BEHIND this panel's
-      // scrim, so holding the panel open would hide the only report there is.
-      // A chapter, unlike a book, has no dialog-scoped failure channel; giving
-      // it one means changing what the hook returns, which is its own change.
+      // The prompt comes down either way. A REPORTED failure goes to the
+      // screen's own Notice — where an add-chapter failure has always been
+      // spoken — and that Notice sits BEHIND this panel's scrim, so holding
+      // the panel open would hide the only report there is. `null` does not
+      // always mean a reported failure: `canStartAddChapter` refuses a second
+      // overlapping call for the same book silently, and a stale-delete race
+      // is swallowed on purpose (`use-books.ts`). A chapter, unlike a book,
+      // has no dialog-scoped failure channel to tell those apart in; giving it
+      // one means changing what the hook returns, which is its own change.
       setNewChapter(null);
       layers.close("books:new-chapter");
+      // A failure leaves `newChapterReturnFocus` set, so focus goes back to the
+      // `+` that opened this — the control a retry starts from.
       if (!chapter) return;
+      // On success it is cleared and `pendingFocus` takes over, for the reason
+      // the ref's declaration gives. The chapter row's only button is
+      // "Open Chapter N": a stray re-activation navigates into the chapter,
+      // which writes nothing and one Back undoes — the same "land on something
+      // recoverable, not something that writes" rule George R4 P2-1 established
+      // for New Book's own hand-off.
+      newChapterReturnFocus.current = null;
       setExpanded((prev) => new Set(prev).add(bookId));
       pendingScroll.current = chapter.id;
+      pendingFocus.current = chapter.id;
       // No `finally`: the latch stays held until the next open edge, so the
       // window between the write resolving and the panel unmounting cannot
       // take a second Confirm and write a chapter nothing on this tree can

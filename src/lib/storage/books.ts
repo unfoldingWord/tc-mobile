@@ -442,9 +442,10 @@ export function nextChapterNumber(existingNumbers: Iterable<number>): number {
  * `null` when blank or whitespace-only. `null` is also what an untouched prompt
  * writes, because the screen sends `""` rather than the "Chapter N" string it
  * displayed — so a one-tap create stores nothing new and the row goes on
- * showing the ordinal this transaction derived. Unlike `createBook`'s blank
- * fallback there is nothing to derive here and so no race to be safe from: the
- * default is an absence, not a name.
+ * showing the ordinal this transaction derived, which is the right number even
+ * when another copy of the app moved it after the prompt rendered. Unlike
+ * `createBook`'s blank fallback there is nothing to derive here and so no race
+ * to be safe from: the default is an absence, not a name.
  */
 export async function addChapter(
   bookId: BookId,

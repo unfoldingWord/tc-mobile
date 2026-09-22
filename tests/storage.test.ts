@@ -698,7 +698,9 @@ describe("chapter naming at creation (#609)", () => {
     // The screen pre-fills from the chapters it has loaded; `addChapter`
     // derives the same ordinal inside its own transaction. Same function, same
     // numbers, same answer — which is why a bare Confirm adds the chapter the
-    // field said it would.
+    // field offered, whenever the loaded shelf still matches disk. When it does
+    // not, the write's number wins and the row shows it, because a one-tap
+    // create stores no label to contradict it.
     const book = await createBook("b");
     const first = await addChapter(book.id);
     const second = await addChapter(book.id);

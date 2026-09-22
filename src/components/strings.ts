@@ -102,10 +102,10 @@ export const strings = {
   newChapterTitle: "Name your new chapter",
   newChapterClose: "Close without creating a chapter",
   createChapter: "Create chapter",
-  // Shown in place of `saveName`/`createBook` while the write is in flight
-  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
-  // already do, so a screen reader focused on Confirm does not read it as idle
-  // for the whole write, on either caller.
+  // Shown in place of `saveName`/`createBook`/`createChapter` while the write is
+  // in flight (#383) — the same in-place busy relabel
+  // `loadRetrying`/`takeRecoverRetrying` already do, so a screen reader focused
+  // on Confirm does not read it as idle for the whole write, on any caller.
   savingName: "Saving…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
