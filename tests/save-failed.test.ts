@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { SaveFailed } from "@/components/save-failed";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * SaveFailed carries the same Send-log control the crash screen has (#456).
@@ -39,7 +39,7 @@ describe("SaveFailed — the Send-log control (#456)", () => {
 
     // Retry is the primary action and comes first; Send is second, matching
     // `ErrorBoundary`'s documented order (RestartControl then SendLogControl).
-    expect(html.indexOf('aria-label="Try saving again"')).toBeLessThan(
+    expect(html.indexOf(`aria-label="${strings.saveRetry}"`)).toBeLessThan(
       html.indexOf(`aria-label="${strings.shareFailureLog}"`)
     );
   });
@@ -71,7 +71,7 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     );
 
     expect(html).toContain("This book is gone");
-    expect(html).not.toContain('aria-label="Try saving again"');
+    expect(html).not.toContain(`aria-label="${strings.saveRetry}"`);
     expect(html).not.toContain("Restart the app");
     expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
     expect(html).toContain("control--primary");

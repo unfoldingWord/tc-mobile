@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";

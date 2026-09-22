@@ -9,7 +9,7 @@ import {
   markRowReason,
   rowHint,
 } from "@/components/menu-row-state";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * #135 — a disabled recorder-menu row must carry its reason.

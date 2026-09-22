@@ -1,5 +1,5 @@
 /**
- * Every visible and accessible string these screens show, in one flat table.
+ * Every visible and accessible string the app shows, in one flat table.
  *
  * On a screen built for people who may not read, the `aria-label` is not a
  * courtesy — it is the entire text layer a screen reader speaks and the only
@@ -7,6 +7,29 @@
  * one record keeps that layer attachable and keeps wording out of the markup,
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
+ *
+ * WHY IT LIVES IN `lib/` AND NOT IN `components/` (#169). It sat in
+ * `components/` until this change, and the onion rule — imports never go
+ * upward — meant `hooks/` could not reach it. So the copy the hooks own was
+ * written inline instead, and `use-recorder.ts` said so in as many words:
+ * "Inline here, like the recorder's other error copy, because `hooks/` cannot
+ * reach the components' string table." Every sentence the hooks own ended up
+ * outside the one table that exists to hold them, and the ones two screens
+ * share were typed out once per site. A second table would have been the same
+ * defect twice, so the table moved down instead of the strings moving out.
+ *
+ * It belongs here on the layer's own terms, not only by elimination: this is a
+ * pure, DOM-free module that imports `lib/` and nothing else, which is what
+ * `lib/` is for and what `npm run typecheck:lib` compiles it against. Keep it
+ * that way — a string table that reaches for `window` stops being reachable
+ * from `hooks/`, which is the whole point of it being here.
+ *
+ * What is NOT here: `components/recovery-copy.ts`, `share-error-copy.ts`,
+ * `encoder-notice.ts` and `menu-row-state.ts` are composition modules that pick
+ * between wordings from a state. The last three already compose FROM this
+ * table; `recovery-copy.ts` still carries its own literals, and folding it in
+ * is the rest of #169, along with `strings[locale]`, a plural helper and the
+ * persisted book name.
  */
 import { filenameSafe } from "@/lib/utils";
 
@@ -200,6 +223,52 @@ export const strings = {
   recorderSaving: "Saving…",
   recorderInterrupted:
     'Recording finished. Tap the back arrow at the top ("Close recorder") to save it.',
+
+  // ── Recorder and playback failures (#169) ────────────────────────────────
+  // The copy `hooks/use-recorder.ts` and `hooks/use-audio-session.ts` own.
+  // These were written inline in those two hooks until this table moved down
+  // to `lib/` (see the header): `hooks/` cannot import from `components/`, so
+  // the one place wording is supposed to live was the one place they could not
+  // reach. The words are unchanged by the move — only where they are written
+  // down, and that three of them stopped being typed out once per site.
+  //
+  // Each hook still decides WHICH of these a translator sees, from its own
+  // pure classifier (`lib/audio/stop-decode.ts`, `lib/audio/mic-refusal.ts`).
+  // The classifiers stay UI-free; this is the one table that turns a class
+  // into a sentence.
+
+  // `classifyStopDecode`'s two classes. `stopDecodeSilence` is also what a
+  // zero-sample decode says on the #165 retry path, where it is a retry
+  // failure rather than proven silence — the held bytes are never dropped on
+  // it (`use-recorder.ts`, the held-blob decode).
+  stopDecodeSilence: "No sound was recorded. Try again.",
+  stopDecodeUndecodable: "Recording could not be decoded on this device.",
+  // The engine failed, as against the translator being silent: an empty seal
+  // after the flush arm threw (#485), and `stopRecording`'s own backstop for a
+  // `stop()` that rejected (#480). Chosen over `stopDecodeSilence` at both
+  // sites for that reason: the engine failing is not the same news as a
+  // microphone that heard nothing, and both sites write a failure row.
+  recordFinishFailed: "Could not finish this recording.",
+  // There is no MediaRecorder here at all, so the permission panel's retry has
+  // nothing to ask for.
+  recordUnsupported: "This device cannot record audio.",
+
+  // `classifyMicRefusal`'s five classes, one honest sentence each (#203).
+  micNoDevice: "No microphone was found on this device.",
+  micSiteBlocked:
+    "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.",
+  micOsBlocked:
+    "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.",
+  micPrompt:
+    "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.",
+  micStartFailed: "Could not start recording.",
+
+  // Playback that never sounded: a stored clip that would not decode, a
+  // dangling take with nothing behind it, or a graph that rejected. One
+  // sentence for all three — the cause is a maintainer's and goes to
+  // `console.error`, and what the translator can do about it is the same
+  // either way.
+  playbackFailed: "Could not play this recording.",
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
@@ -520,6 +589,62 @@ export const strings = {
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+
+  // ── The save-failure screen (#169) ───────────────────────────────────────
+  // `components/save-failed.tsx`'s remaining literals. The wordings that pick
+  // between themselves from a failure KIND are not here — they are pure
+  // functions in `components/recovery-copy.ts`, lifted out of the JSX for the
+  // same reason and covered by `tests/recovery-copy.test.ts`. What is here is
+  // what the component was still spelling out inline.
+  //
+  // Every line names the held work correctly. On the edit path the previously
+  // stored recording is untouched on disk, so discarding drops only the edit —
+  // "delete this recording for good" would be a lie about an edit, which is
+  // why each of these is a whole sentence per path rather than one sentence
+  // with a noun slotted into it.
+
+  // The screen's own accessible name, in each path.
+  saveFailedDialog: (editOnly: boolean): string =>
+    editOnly ? "Your changes are not saved" : "This recording is not saved",
+  // The heading while a retry is in flight. Not `savingName`/`recorderSaving`:
+  // those relabel a control in place, this is the screen's title, and it
+  // carries no ellipsis because the Icon beside it is the motion.
+  saveFailedSaving: "Saving",
+  // The retry control. NOT `tryAgain`: on the Books shelf that label means
+  // "run the load that just failed again", and a screen reader speaks the
+  // label and nothing else, so the two must not share one — the same rule
+  // `appReload` follows against `tryAgain`.
+  saveRetry: "Try saving again",
+  // Under the title: what is still in hand. Four whole sentences rather than
+  // one built from a subject and an optional clause — a fragment glued in the
+  // English order is the shape that does not survive a second language (#169),
+  // and `ordinal` is null whenever the held take belongs to another chapter.
+  saveHeld: (editOnly: boolean, ordinal: number | null): string => {
+    if (editOnly) {
+      return ordinal === null
+        ? "Your edited recording is still here."
+        : `Your edited recording of segment ${ordinal} is still here.`;
+    }
+    return ordinal === null
+      ? "Your recording is still here."
+      : `Your recording of segment ${ordinal} is still here.`;
+  },
+  // The two-tap discard, in both paths and both taps. The same armed
+  // second-tap shape as `takeRecoverDiscard` on the recovery panel — a stray
+  // tap never deletes.
+  saveDiscard: (editOnly: boolean, armed: boolean): string => {
+    if (armed) {
+      return editOnly
+        ? "Tap again to discard these changes"
+        : "Tap again to delete this recording for good";
+    }
+    return editOnly ? "Discard these changes" : "Delete this recording";
+  },
+  // The line beside an armed discard, shorter than the label for the reason
+  // `restartConsequence` is shorter than `restartLabel`: the label is the
+  // thing being tapped, this is the confirmation next to it.
+  saveDiscardHint: (editOnly: boolean): string =>
+    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and

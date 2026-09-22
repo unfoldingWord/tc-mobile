@@ -9,7 +9,8 @@ import tseslint from "typescript-eslint";
  * app/        → Screens (can import from: components, hooks, lib, types)
  * components/ → UI Components (can import from: hooks, lib, types)
  * hooks/      → Browser/stateful glue (can import from: lib, types)
- * lib/        → Pure audio + storage core (can import from: types only)
+ * lib/        → Pure core: audio, storage and the string table
+ *               (can import from: types only)
  * types/      → Domain types (no internal dependencies)
  *
  * Rule: Never import "upward" in the hierarchy.

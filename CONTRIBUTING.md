@@ -77,7 +77,7 @@ the same file in the same week.
 Shared files, where collisions actually happen:
 
 - `src/components/recorder.tsx`
-- `src/components/strings.ts`
+- `src/lib/strings.ts`
 - `src/hooks/use-audio-session.ts`
 - `src/components/icon.tsx`
 - `AGENTS.md`

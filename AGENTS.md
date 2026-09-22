@@ -159,6 +159,23 @@ without a browser or a microphone.
 
 If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 
+**Copy lives in `lib/strings.ts`, not in `components/` (#169).** Every visible
+and accessible string is one flat table, and it sits at the bottom of the onion
+for a reason the rule above produced: `hooks/` cannot import from
+`components/`, so while the table lived there the hooks' own sentences — the
+mic refusals, the stop-decode outcomes, the playback failure — were written
+inline instead, and `use-recorder.ts` said as much in a comment. The table
+moved down rather than a second table growing beside it. It is pure and
+DOM-free like the rest of `lib/`, which is what keeps it reachable from every
+layer; a `window` in there would undo the move.
+
+That move is not all of #169. `components/recovery-copy.ts` still carries its
+own literals — it is a composition module, picking a wording from a failure
+kind, and folding it in is its own change. So are `strings[locale]`, a plural
+helper in place of the English ternaries, and the persisted `Book NNN` name,
+which is the one piece of #169 that is data rather than copy. Read the issue
+for the current list rather than this paragraph.
+
 ## Testing
 
 - `tests/` at the repo root, `*.test.ts`, run in the Node environment.

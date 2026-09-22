@@ -9,7 +9,7 @@ import { recorderStatusKind } from "@/components/processing-status";
  * unmounts the instant decode finishes, before `close()`'s IndexedDB write —
  * and a classifier that only mapped a boolean to a word could not catch it.
  *
- * The words themselves live in `components/strings.ts`; nothing below asserts
+ * The words themselves live in `lib/strings.ts`; nothing below asserts
  * copy. That the interruption path actually freezes into `processing`, and that
  * `close()` holds `isClosing` across the save, are `use-recorder`/`recorder`
  * behaviours — browser surface, no DOM runner here.

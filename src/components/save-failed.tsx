@@ -11,7 +11,7 @@ import {
   restartLabel,
 } from "./recovery-copy";
 import { SendLogControl } from "./send-log-control";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
 import {
   pauseTranscodeSweep,
@@ -128,29 +128,18 @@ export function SaveFailed({
   const terminal = kind === "downgrade";
   const stale = kind === "stale";
 
-  // The held work: a fresh recording, or the edited buffer of one. Every visible
-  // line names it correctly, because on the edit path the previously stored
-  // recording is untouched — discarding drops only the edit.
-  const subject = editOnly ? "edited recording" : "recording";
-  const stillHere =
-    ordinal === null
-      ? `Your ${subject} is still here.`
-      : `Your ${subject} of segment ${ordinal} is still here.`;
-  const discardLabel = armed
-    ? editOnly
-      ? "Tap again to discard these changes"
-      : "Tap again to delete this recording for good"
-    : editOnly
-      ? "Discard these changes"
-      : "Delete this recording";
+  // The held work: a fresh recording, or the edited buffer of one. Both lines
+  // name it correctly, because on the edit path the previously stored recording
+  // is untouched — discarding drops only the edit. The wording is the table's
+  // (#169); the two bits that choose between wordings are this screen's.
+  const stillHere = strings.saveHeld(editOnly, ordinal);
+  const discardLabel = strings.saveDiscard(editOnly, armed);
 
   return (
     <div
       role="alertdialog"
       aria-modal="true"
-      aria-label={
-        editOnly ? "Your changes are not saved" : "This recording is not saved"
-      }
+      aria-label={strings.saveFailedDialog(editOnly)}
       className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
       <span className={saving ? "text-ink-muted" : "text-live"}>
@@ -158,7 +147,9 @@ export function SaveFailed({
       </span>
 
       <p className="t-title text-ink">
-        {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
+        {saving
+          ? strings.saveFailedSaving
+          : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
       <p className="text-ink-muted text-[13px]">{stillHere}</p>
@@ -177,7 +168,7 @@ export function SaveFailed({
                         restartArmed,
                         holdsCutAudio
                       )
-                  : "Try saving again"
+                  : strings.saveRetry
               }
               variant="primary"
               size={30}
@@ -256,9 +247,7 @@ export function SaveFailed({
             />
             {armed && (
               <p className="text-live text-[12px]">
-                {editOnly
-                  ? "Tap again to discard them."
-                  : "Tap again to delete it."}
+                {strings.saveDiscardHint(editOnly)}
               </p>
             )}
           </div>

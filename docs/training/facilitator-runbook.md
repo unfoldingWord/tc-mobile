@@ -81,7 +81,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
     back which happened. If the words say the app could not confirm what
     happened, do not assume nothing was sent: check the app you meant to send
     it to (WhatsApp, Drive, whichever was chosen) before sharing again, so the
-    same chapter or book is not sent twice. <!-- source: src/hooks/share-target.ts resolveProvesDelivery, src/hooks/share-flow.ts resolveSendOutcome, src/components/strings.ts shareUnproven (Frank a446708 P2, #491); not device-verified as of 2026-09-19 -->
+    same chapter or book is not sent twice. <!-- source: src/hooks/share-target.ts resolveProvesDelivery, src/hooks/share-flow.ts resolveSendOutcome, src/lib/strings.ts shareUnproven (Frank a446708 P2, #491); not device-verified as of 2026-09-19 -->
   - a **bare tray** (no arrow) means there was nothing recorded to share yet.
   - a **red triangle** means it failed — try again. The menu keeps the message
     after the picture goes.
@@ -114,7 +114,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **You can listen to the selected audio while editing.** Use Play the
   selection to hear the selected span before changing it. This plays that
   span, not a preview of how the recording will sound after removing it.
-  <!-- source: src/components/recorder.tsx; src/components/strings.ts auditionSelection -->
+  <!-- source: src/components/recorder.tsx; src/lib/strings.ts auditionSelection -->
 - **One current recording per segment.** Recording and editing can add to or
   change it; there is no version history to restore an earlier saved version.
 - **Editing a finished segment re-compresses the audio.** Once a segment is

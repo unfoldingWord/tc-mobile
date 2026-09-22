@@ -25,7 +25,7 @@ import {
 } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
