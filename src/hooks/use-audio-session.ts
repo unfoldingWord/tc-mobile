@@ -306,6 +306,50 @@ export function useAudioSession(): UseAudioSession {
     [session, setPlaying, setPlayingBuffer]
   );
 
+  /**
+   * The tail both playback paths share (#160, L-15): hand the samples to the
+   * graph, keep the handle only if this claim still owns the floor, and let the
+   * clip's own end reach the caller only while it does.
+   *
+   * `playTake` and `playBuffer` were ~80 % the same, and this is the part that
+   * was identical rather than merely similar. What stays with each caller is
+   * everything they genuinely disagree about: what a second tap means (stop the
+   * segment vs `stopBuffer`), whether a disk read and an MP3 decode come first,
+   * which optimistic state the tap sets, and — the reason `onEnded` is a
+   * parameter and not a flag — what ending means. `playTake` gives the floor
+   * back; `playBuffer` also notifies its caller BEFORE the state update (#416)
+   * and hands the floor to a still-paused microphone (#129).
+   *
+   * The supersession guard IS here, because both wrote it and neither could
+   * correctly omit it: a handle or an end belonging to a claim someone else has
+   * taken over must not touch this screen's state. `settle` returning false
+   * means the handle was built for a superseded claim and has already been
+   * stopped for us.
+   */
+  const startPlayback = useCallback(
+    async (
+      samples: Int16Array,
+      token: number,
+      offsetSeconds: number,
+      onEnded: () => void
+    ): Promise<void> => {
+      const handle = await playSamples(samples, {
+        offsetSeconds,
+        isStillCurrent: () => session.isCurrent(token),
+        onEnded: () => {
+          if (!session.isCurrent(token)) return;
+          onEnded();
+        },
+      });
+      // A `false` here means the handle was built for a claim that has since
+      // been superseded; `settle` has already stopped it.
+      if (session.settle(token, handle)) {
+        playbackHandleRef.current = handle;
+      }
+    },
+    [session]
+  );
+
   const playTake = useCallback(
     (row: SegmentRow, offsetSeconds = 0) => {
       if (playingIdRef.current === row.segmentId) {
@@ -366,20 +410,10 @@ export function useAudioSession(): UseAudioSession {
                 );
           if (!session.isCurrent(token)) return;
 
-          const handle = await playSamples(samples, {
-            offsetSeconds,
-            isStillCurrent: () => session.isCurrent(token),
-            onEnded: () => {
-              if (!session.isCurrent(token)) return;
-              session.release(token);
-              setPlaying(null);
-            },
+          await startPlayback(samples, token, offsetSeconds, () => {
+            session.release(token);
+            setPlaying(null);
           });
-          // A `false` here means the handle was built for a claim that has since
-          // been superseded; `settle` has already stopped it.
-          if (session.settle(token, handle)) {
-            playbackHandleRef.current = handle;
-          }
         } catch (cause) {
           console.error("Playing a take failed", cause);
           // Inside the guard: a failure that belongs to a superseded claim is
@@ -393,7 +427,7 @@ export function useAudioSession(): UseAudioSession {
         }
       })();
     },
-    [claimFloor, session, setPlaying]
+    [claimFloor, session, setPlaying, startPlayback]
   );
 
   const stopBuffer = useCallback(() => {
@@ -486,43 +520,33 @@ export function useAudioSession(): UseAudioSession {
 
       void (async () => {
         try {
-          const handle = await playSamples(samples, {
-            offsetSeconds,
-            isStillCurrent: () => session.isCurrent(token),
-            onEnded: () => {
-              if (!session.isCurrent(token)) return;
-              // The clip RAN OUT — this fires only from a source that was not
-              // stopped by hand (`audio-io.ts` guards it with its `stopped`
-              // flag) and only while this claim still owns the floor. The
-              // recorder needs that distinction and cannot infer it: the
-              // position is gone the moment the handle is cleared below, and a
-              // playback that never started looks identical from outside
-              // (Frank R2 P2, #416). Called BEFORE the state update, so a
-              // caller's flag is set by the time the re-render reads it.
-              opts?.onEnded?.();
-              session.release(token);
-              setPlayingBuffer(false);
-              // A preview of a PAUSED take borrowed the mic's floor (approach
-              // B, above). When it ends on its own, hand the floor back to the
-              // still paused-alive mic — the same reclaim `resumeRecording`
-              // does — so "a paused mic holds the floor" is an invariant rather
-              // than something only Resume/Back restore. Without this a later
-              // `claim("take")` that did not pass `preemptPausedMic` would be
-              // admitted under an open paused mic, and Resume would then stop
-              // it mid-sound (#129). Replay is unaffected: `playBuffer(..., {
-              // preemptPausedMic: true })` handles `live === "mic"`.
-              micTokenRef.current = reclaimAfterPreview(
-                session,
-                recorderStateRef.current === "paused",
-                micTokenRef.current
-              );
-            },
+          await startPlayback(samples, token, offsetSeconds, () => {
+            // The clip RAN OUT — `startPlayback` only calls this from a source
+            // that was not stopped by hand (`audio-io.ts` guards it with its
+            // `stopped` flag) and only while this claim still owns the floor.
+            // The recorder needs that distinction and cannot infer it: the
+            // position is gone the moment the handle is cleared, and a
+            // playback that never started looks identical from outside
+            // (Frank R2 P2, #416). Called BEFORE the state update, so a
+            // caller's flag is set by the time the re-render reads it.
+            opts?.onEnded?.();
+            session.release(token);
+            setPlayingBuffer(false);
+            // A preview of a PAUSED take borrowed the mic's floor (approach
+            // B, above). When it ends on its own, hand the floor back to the
+            // still paused-alive mic — the same reclaim `resumeRecording`
+            // does — so "a paused mic holds the floor" is an invariant rather
+            // than something only Resume/Back restore. Without this a later
+            // `claim("take")` that did not pass `preemptPausedMic` would be
+            // admitted under an open paused mic, and Resume would then stop
+            // it mid-sound (#129). Replay is unaffected: `playBuffer(..., {
+            // preemptPausedMic: true })` handles `live === "mic"`.
+            micTokenRef.current = reclaimAfterPreview(
+              session,
+              recorderStateRef.current === "paused",
+              micTokenRef.current
+            );
           });
-          // A `false` here means the handle was built for a claim that has since
-          // been superseded; `settle` has already stopped it.
-          if (session.settle(token, handle)) {
-            playbackHandleRef.current = handle;
-          }
         } catch (cause) {
           console.error("Playing the buffer failed", cause);
           // Inside the guard, exactly as in `playTake`: a failure that belongs
@@ -542,7 +566,7 @@ export function useAudioSession(): UseAudioSession {
         }
       })();
     },
-    [claimFloor, session, setPlayingBuffer, stopBuffer]
+    [claimFloor, session, setPlayingBuffer, startPlayback, stopBuffer]
   );
 
   // The buffer-playback position, PULLED on the caller's own clock. The handle's
