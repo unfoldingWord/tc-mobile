@@ -250,6 +250,29 @@ describe("attachNativeBack — every plugin promise has a channel (Frank r1 P2 o
     expect(reportFailure).toHaveBeenCalledWith(cause, "native-back-listener");
   });
 
+  it("(m) a callback the plugin failed to remove is inert after detach — a press routes nothing (Frank r2 P2)", async () => {
+    reportFailure.mockClear();
+    const back = fakeBack();
+    const goBack = vi.fn();
+    back.remove.mockImplementationOnce(() =>
+      Promise.reject(new Error("handle gone"))
+    );
+    const detach = attachNativeBack(back.plugin, {
+      decide: decideFor("segments", []),
+      goBack,
+    });
+    await back.settleHandle();
+    detach();
+    await flush();
+
+    // The plugin still holds the listener; a hardware Back reaches it.
+    back.press(true);
+    back.press(false);
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(back.exitApp).not.toHaveBeenCalled();
+  });
+
   it("(i) a rejected remove() on detach reaches the funnel", async () => {
     reportFailure.mockClear();
     const back = fakeBack();

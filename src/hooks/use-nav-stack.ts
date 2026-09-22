@@ -179,7 +179,9 @@ export interface NativeBackRoute {
  *
  * Every plugin promise has a channel: a rejection anywhere here would
  * otherwise be an unhandled rejection with no context, so each is routed to
- * `reportFailure` under its own name.
+ * `reportFailure` under its own name. A rejected `remove()` is also the one
+ * failure that leaves state behind — the callback stays registered — so the
+ * listener checks `detached` itself and does nothing after the detach.
  *
  * Returns the detach. The plugin resolves its listener handle asynchronously,
  * so a detach that runs first marks the handle for removal the moment it lands.
@@ -199,6 +201,10 @@ export function attachNativeBack(
   };
   plugin
     .addListener("backButton", ({ canGoBack }) => {
+      // Inert once detached, whatever the plugin did with `remove()`: a
+      // removal that rejected leaves this callback registered, and the next
+      // mount registers a second one — one press must not route twice.
+      if (detached) return;
       const action = route.decide();
       if (canGoBack) {
         route.goBack();
