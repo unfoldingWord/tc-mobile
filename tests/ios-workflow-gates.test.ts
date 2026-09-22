@@ -116,9 +116,12 @@ describe("iOS Xcode selection", () => {
       `SELECTED:xcode-select -s /Applications/Xcode_${expected}.app/Contents/Developer`
     );
   });
-  it.each([[], ["260.1", "26.10_beta"]])(
-    "fails closed without a stable Xcode 26 candidate: %j",
-    (...versions) => {
+  it.each([
+    { name: "no installed candidates", versions: [] },
+    { name: "only unsupported candidates", versions: ["260.1", "26.10_beta"] },
+  ])(
+    "fails closed without a stable Xcode 26 candidate: $name",
+    ({ versions }) => {
       const result = select(versions);
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("Xcode 26 not found");
@@ -213,5 +216,17 @@ describe("the emitted iOS thumbnail precache", () => {
     );
     const result = run(step("Guard the synced bundle"), {}, root);
     expect(result.status, result.stderr + result.stdout).toBe(status);
+    if (status === 1) {
+      const message =
+        config === "" || config === "globPatterns: []"
+          ? "No globPatterns found in vite.config.ts"
+          : "Emitted OBS thumbnails disagree with the reader-gated jpg policy";
+      expect(result.stderr).toContain(`::error::${message}`);
+      expect(result.stderr).not.toContain("at file:");
+      expect(result.stdout).not.toContain("Bundle built, clean, and synced");
+    } else {
+      expect(result.stderr + result.stdout).not.toContain("::error::");
+      expect(result.stdout).toContain("Bundle built, clean, and synced");
+    }
   });
 });
