@@ -92,7 +92,8 @@ export default defineConfig({
       // its cascade is not the one anyone installs, and a light theme dropped
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
-      testMatch: /(service-worker-precache|theme-toggle)\.spec\.ts$/,
+      testMatch:
+        /(service-worker-precache|theme-toggle|recorder-selection)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

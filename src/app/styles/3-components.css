@@ -552,14 +552,7 @@
     flex-direction: column;
     gap: var(--c-gap-items);
     overflow-y: auto;
-    /* The same opt-out the recorder sheet carries (#556), repeated rather than
-       inherited: this panel portals to `document.body`, so no ancestor rule on
-       the sheet reaches it. The recorder's own ≡ drawer is one of these, and
-       its title is a bare `t-title` span — the same kind of ordinary text the
-       report caught selected. Repeating three declarations on the shared class
-       also takes every other screen's drawer with it, which is the honest cost
-       of not inventing a recorder-only panel class for it. The rename field
-       inside this drawer opts back IN below. */
+    /* Shared drawer portals outside the recorder sheet (#556). */
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -598,21 +591,7 @@
        standing between a focused rename field and a zoomed sheet. Do not
        lower it. */
     font-size: 16px;
-    /* Opted back IN (#556). `menu-panel` above suppresses selection and the
-       platform callout for the whole drawer, and this field is a descendant of
-       it — `books-screen.tsx` and `segments-screen.tsx` both render `NameEdit`
-       as a `Menu` child. A rename is an edit: the caret, dragging a selection
-       and the platform's own Cut/Copy/Paste callout all have to work here, and
-       this is the one surface in the app where that is true. Before #556 no
-       such escape hatch was needed, because the suppression stopped at the
-       recorder sheet and this field was never inside it.
-
-       A PRECAUTION, NOT A MEASUREMENT. That an inherited `user-select: none`
-       would actually break this input on iOS has not been observed here — no
-       device, no DOM runner — and nothing in this repo records it. The rule is
-       cheap and the failure it guards against is expensive, which is why it
-       ships ahead of the evidence; #564 step 7 is the check that would supply
-       the evidence. Do not restate the premise as fact until it does. */
+    /* Keep name editing selectable inside the drawer (#556). */
     -webkit-user-select: text;
     user-select: text;
     -webkit-touch-callout: default;
@@ -650,11 +629,7 @@
     align-items: center;
     gap: var(--c-gap-items);
     text-align: center;
-    /* Same opt-out, same reason as the drawer above (#556): portalled to
-       `document.body`, raised by the recorder among others, and holding only a
-       glyph, a title and two controls — nothing anyone copies, and Erase is
-       exactly the moment a long-press must not raise a callout over the two
-       buttons. */
+    /* Confirm panels portal outside the recorder sheet (#556). */
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -779,73 +754,8 @@
        indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
-    /* Nothing on this sheet is text anyone would copy, and double-tap and
-       long-press are the two gestures a non-reader uses to probe an unfamiliar
-       control. What was REPORTED in #556, from the requirements owner on iOS
-       0.2.8 with a screenshot: a double-tap or long-press on the waveform
-       raised the selection callout (Copy · Look Up · Translate) and blue
-       handles, and the breadcrumb — ordinary text — had been selected. That
-       report is the whole evidence base for this rule; no one here has
-       reproduced it, and the platform's rules for when it fires are not
-       written down anywhere in this repo.
-
-       The stage's existing `touch-action` gesture policy did not prevent it:
-       those declarations were already in the tree when #556 was reported. That
-       is an observation from the report, not a claim about what `touch-action`
-       is specified to do. (Spelled without its value on purpose —
-       `touch-policy.test.ts` counts that property-and-value pair raw, comments
-       included, and a third occurrence here turns it red.)
-
-       Declared here, on the sheet, rather than on the stage: both properties
-       inherit, so one rule covers the header, the breadcrumb, the canvas, the
-       selection handles and the toolbar — none of which has a class of its
-       own.
-
-       Inheritance reaches the sheet's INLINE subtree and nothing else, and the
-       recorder raises two surfaces that are outside it: the ≡ drawer and the
-       erase confirm each `createPortal` to `document.body` (`menu.tsx`,
-       `erase-confirm.tsx`), so they are siblings of `#root`, not descendants of
-       this rule. The same three declarations are repeated on `menu-panel` and
-       `confirm-panel` below for that reason. Round 1 of this change used only
-       one edge of that portal fact — it argued the rename field needed no
-       exclusion because its menu portals away — and missed that the identical
-       mechanism strands the recorder's own chrome: the drawer's title is a bare
-       `t-title` span, the same kind of element as the breadcrumb in the report,
-       one tap on the hamburger away. Both edges now hold, and the field DOES
-       need an exclusion; see `name-input` below.
-
-       Deliberately NOT global. BuildStamp's version and sha and the database
-       panel render at the top level of `App.tsx`, outside all three roots, and
-       stay selectable. The failure log panel does NOT: it renders inside the
-       ≡ drawer, so its count marker and its teaching line are suppressed with
-       the rest of the drawer. Accepted rather than missed — the log's entries
-       leave the phone by the share sheet, never by being read off the screen —
-       but it is a real consequence of using the shared panel classes, and the
-       drawers and confirms of every other screen take the same opt-out along
-       with the recorder's. `recorder-selection.test.ts` holds both halves: that
-       the opt-out reaches all three roots, and that across every `.css` file
-       discovered under `src/` these properties are declared on exactly four
-       selectors — the three roots and the rename field's opt-back-in. A fifth
-       CSS RULE, in any of those files and whatever its selector, fails that
-       test until someone decides it belongs (Frank R2 P2: the round-2 version
-       of that half read `globals.css` alone, so a `body` rule added to THIS
-       file would have passed it).
-
-       The bound on that gate, stated because the round-3 wording overstated it:
-       it reads stylesheets, so a suppression written as an inline `style` prop
-       or as a Tailwind utility (`select-none`, `[user-select:none]`) in a
-       `.tsx` file would not be seen by it.
-
-       Both spellings of `user-select`, with NO claim here about which engine
-       shipped which name when. Round 1 gave a specific first-unprefixed Safari
-       version as flat fact; round 2 replaced it with "WebKit shipped the
-       prefixed name long before the unprefixed one", which is the same
-       unverified recollection with the number filed off. Both are retracted and
-       neither is restated. What is checkable in this repo is that it pins no
-       minimum browser anywhere — `package.json`'s `engines` names only Node,
-       and there is no browserslist — so nothing in the tree shows either
-       spelling to be unnecessary. That, and only that, is why the pair is
-       kept. */
+    /* Suppress selection on recorder chrome (#556); keep this scoped to the
+       sheet and the two shared portal panels, not the application root. */
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
