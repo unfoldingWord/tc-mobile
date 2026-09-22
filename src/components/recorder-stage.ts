@@ -254,12 +254,47 @@ type PanGesture =
   /** A pan that must PAUSE playback first, and resume it on lift (#317). */
   | "interrupt";
 
-interface PanGestureInput {
-  /** `length > 0` — there is a waveform to slide (F11). */
-  readonly hasAudio: boolean;
+interface CaptureLock {
   readonly recording: boolean;
   /** `requesting` or `processing`. */
   readonly busy: boolean;
+  /**
+   * A commit is in flight: the post-stop save and reload. NOT covered by
+   * `busy` — `stop()` sets the recorder back to `idle` before it returns, so
+   * the whole multi-second write happens with `busy` false.
+   */
+  readonly isClosing: boolean;
+}
+
+/**
+ * Whether a capture or its commit owns the insertion offset right now (#61,
+ * F9), and therefore whether the centerline may move.
+ *
+ * One predicate, two callers, because the window they have to agree on is the
+ * same window: `onPointerDown` (through {@link panGesture}) decides whether a
+ * finger may START a pan, and `onPointerMove` decides whether a pan already in
+ * flight may continue. A term present in one and missing from the other is a
+ * pan that cannot begin but can still be finished, which is what George's pass
+ * C P1 found: `isClosing` was in neither, and `busy` goes false at `stop()`
+ * while `saveRecording` + `reloadView` are still running. With the sheet now
+ * STAYING open across that write (#614 — before Option A it closed, so there
+ * was no stage to touch), the translator sees a frozen waveform and a
+ * "Saving…" notice for a multi-megabyte write, and a finger landing on it
+ * panned: the drag origin was the pre-splice end, the commit then wrote
+ * {@link panAfterCommit}'s rest, and the next move overwrote that rest with an
+ * absolute sample derived from the OLD origin — leaving Record splicing inside
+ * the take just saved, so two appends came out in the wrong order.
+ *
+ * `recordDisabled` already reads the commit as locked. This is the same
+ * reading for the gesture.
+ */
+export function captureLocksPan(input: CaptureLock): boolean {
+  return input.recording || input.busy || input.isClosing;
+}
+
+interface PanGestureInput extends CaptureLock {
+  /** `length > 0` — there is a waveform to slide (F11). */
+  readonly hasAudio: boolean;
   /** A buffer is sounding right now. */
   readonly playingBuffer: boolean;
   /** How the stage is drawn — see {@link StageRender}. */
@@ -292,12 +327,13 @@ interface PanGestureInput {
  * suspended with its offset still locked, and Resume would continue there.
  * Option A (the requirements owner, 2026-09-22) ends that state — the tap that
  * ends a recording commits it, so a take is either live or committed, and a
- * committed take is ordinary audio the finger may move. Nothing else about the
- * gesture changed: `recording` and `busy` still refuse, because the offset is
- * still locked while a capture or its commit is in flight.
+ * committed take is ordinary audio the finger may move. What did not change is
+ * that the offset stays locked while a capture OR ITS COMMIT is in flight; the
+ * terms that say so are {@link captureLocksPan}'s, and `isClosing` is among
+ * them precisely because a take is "committed" only once that write lands.
  */
 export function panGesture(input: PanGestureInput): PanGesture {
-  if (!input.hasAudio || input.recording || input.busy) return "ignore";
+  if (!input.hasAudio || captureLocksPan(input)) return "ignore";
   if (!input.playingBuffer) return "pan";
   return input.render === "scroll" ? "interrupt" : "ignore";
 }

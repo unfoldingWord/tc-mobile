@@ -32,9 +32,17 @@ import { describe, expect, it } from "vitest";
  * `pagehide` landing between commit and paint, and `act()` flushes layout and
  * passive effects together — so a jsdom test that "interrupted, then fired
  * pagehide" would pass against BOTH spellings and would be a comment costing CI
- * time. What is decidable from the text is the spelling itself, which is the
- * whole of the fix. Observed red against `e03a7b4`'s `useEffect(` before the
- * change.
+ * time. What is decidable from the text is the spelling, plus the property the
+ * spelling only buys if the body keeps it: the commit has to be reached
+ * SYNCHRONOUSLY. `useLayoutEffect(() => { ...; setTimeout(commit, 0); })` is
+ * back in the same after-paint window with the hook name reading right (Frank
+ * P2 on this commit), so the assertion pins the whole body, not its opener.
+ *
+ * Mutations that must go red, each observed: `useLayoutEffect(` ->
+ * `useEffect(`; a statement inserted ahead of the guard; the commit deferred
+ * behind a `setTimeout`. The body is matched exactly, so a legitimate rewrite
+ * of this effect fails here on purpose — the replacement has to be re-argued
+ * against the pagehide window above, not re-typed.
  */
 describe("the #59 interruption commit is a layout effect (George r1 pass B P2)", () => {
   const source = readFileSync(
@@ -54,28 +62,49 @@ describe("the #59 interruption commit is a layout effect (George r1 pass B P2)",
     expect(source.split(GUARD)).toHaveLength(2);
   });
 
+  /**
+   * Walk back to the hook call that OPENS this effect, rather than searching
+   * forward from some anchor: the guard is the effect's first statement, so
+   * the nearest preceding `use*Effect(` is its own.
+   */
+  const guardIndex = source.indexOf(GUARD);
+  const before = source.slice(0, guardIndex);
+  const openerIndex = before.lastIndexOf("Effect(");
+  const hook = before.slice(before.lastIndexOf("use", openerIndex));
+
+  const matchingBraceClose = (text: string, openIndex: number): number => {
+    let depth = 0;
+    for (let i = openIndex; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  };
+
+  const braceOpen = source.indexOf("{", openerIndex);
+  const braceClose = matchingBraceClose(source, braceOpen);
+  const body = source.slice(braceOpen, braceClose + 1);
+
   it("opens with useLayoutEffect, so stop() snapshots the slices in-commit", () => {
-    const guardIndex = source.indexOf(GUARD);
-    expect(guardIndex).toBeGreaterThan(-1);
-
-    // Walk back to the hook call that OPENS this effect body, rather than
-    // searching forward from some anchor: the guard is the effect's first
-    // statement, so the nearest preceding `use*Effect(` is its own.
-    const before = source.slice(0, guardIndex);
-    const opener = before.lastIndexOf("Effect(");
-    expect(opener).toBeGreaterThan(-1);
-    const hook = before.slice(before.lastIndexOf("use", opener), opener + 7);
-
     // The kill: `useEffect(` here is the pre-fix tree, and it is what lets a
     // `pagehide` between commit and paint cancel the mic before `stop()` has
     // taken the chunks.
-    expect(hook).toBe("useLayoutEffect(");
-    expect(hook).not.toBe("useEffect(");
+    expect(hook.startsWith("useLayoutEffect(")).toBe(true);
+    expect(hook.startsWith("useEffect(")).toBe(false);
+  });
 
-    // And nothing may sit between the opener and the guard: an `await`, a
-    // `setTimeout` or a `queueMicrotask` introduced there would put the
-    // `stop()` back after paint while this file still read green.
-    const body = source.slice(opener + "Effect(".length, guardIndex);
-    expect(body).toMatch(/^\s*\(\)\s*=>\s*\{\s*if\s*\(\s*$/);
+  it("reaches the commit synchronously — the whole body, not just the opener", () => {
+    // A layout effect that defers is a passive effect wearing the right name,
+    // so the hook name above is only half the claim. An `await`, a
+    // `setTimeout`, a `queueMicrotask` or any statement at all beyond these two
+    // puts the `stop()` back after paint; the exact match is what says so.
+    expect(braceOpen).toBeGreaterThan(openerIndex);
+    expect(braceClose).toBeGreaterThan(braceOpen);
+    expect(body.replace(/\s+/g, " ").trim()).toBe(
+      `{ if (${GUARD}) return; commitTake("stay"); }`
+    );
   });
 });

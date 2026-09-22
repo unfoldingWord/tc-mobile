@@ -352,8 +352,8 @@ describe("stageView", () => {
 const gesture = {
   hasAudio: true,
   recording: false,
-  paused: false,
   busy: false,
+  isClosing: false,
   playingBuffer: false,
   render: "static",
 } as const;
@@ -375,6 +375,28 @@ describe("panGesture", () => {
     expect(panGesture({ ...gesture, busy: true })).toBe("ignore");
   });
 
+  it("refuses through the COMMIT, which `busy` does not cover (George pass C P1)", () => {
+    // `stop()` returns the recorder to `idle` before `saveRecording` and
+    // `reloadView` have run, so this whole multi-megabyte window has
+    // `recording` and `busy` both false — and #614 keeps the sheet open across
+    // it, frozen scope and "Saving…" notice, with a waveform under the finger.
+    // A pan started here would be rebased over `panAfterCommit`'s rest on the
+    // next move, putting the next Record's splice inside the take being saved.
+    // Mutation: drop `isClosing` from `captureLocksPan` and this dies while
+    // every case around it stays green — which is exactly how it was missed.
+    expect(panGesture({ ...gesture, isClosing: true })).toBe("ignore");
+    // And it is the take term, not a playback term: it refuses ahead of the
+    // one sounding state #317 reversed, the same way `recording` does.
+    expect(
+      panGesture({
+        ...gesture,
+        isClosing: true,
+        playingBuffer: true,
+        render: "scroll",
+      })
+    ).toBe("ignore");
+  });
+
   it("pans a take that has just been committed — #614's whole point", () => {
     // The reported bug: right after recording, the waveform would not scroll.
     // The refusal that caused it was a fourth term, `paused`, beside the three
@@ -389,6 +411,9 @@ describe("panGesture", () => {
         hasAudio: true,
         recording: false,
         busy: false,
+        // COMMITTED, not committing: the write has landed. The case above is
+        // the other half of that line.
+        isClosing: false,
         playingBuffer: false,
         render: "static",
       })

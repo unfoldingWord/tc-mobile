@@ -31,6 +31,7 @@ import {
   panAfterRedo,
   panAfterUndo,
   panAfterCommit,
+  captureLocksPan,
   panGesture,
   recordDisabled,
   stageView,
@@ -989,6 +990,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           hasAudio,
           recording,
           busy,
+          // The commit too, not just the capture (George pass C P1): `busy` is
+          // already false while the take is being written, and with the sheet
+          // staying open across that write there is a frozen waveform under
+          // the finger. `captureLocksPan` holds the reasoning.
+          isClosing,
           playingBuffer: audio.playingBuffer,
           render: stage.render,
         });
@@ -1035,6 +1041,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         hasAudio,
         recording,
         busy,
+        isClosing,
         audio,
         stage.render,
         pan,
@@ -1067,7 +1074,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // second finger this sentence claimed was blocked could in fact tap
         // Play, Undo or Redo. The resume this gesture owes happens on LIFT, and
         // any other stop in between voids it (`stopPlayback`).
-        if (!dragging || recording || busy) return;
+        // The SAME terms that refuse a new pan refuse to continue this one —
+        // one predicate, not two hand-kept lists (George pass C P1). A term in
+        // the pointer-down guard and missing here is a pan that cannot begin
+        // but can still be finished.
+        if (!dragging || captureLocksPan({ recording, busy, isClosing }))
+          return;
         const width = stageRef.current?.clientWidth ?? 1;
         // Drag right reveals earlier audio: the sample under the centerline
         // decreases. The move is scaled by what the viewport spans at this zoom,
@@ -1105,7 +1117,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // point.
         setZoomPan(null);
       },
-      [dragging, recording, busy, win.visibleSamples, length]
+      [dragging, recording, busy, isClosing, win.visibleSamples, length]
     );
 
     /**
@@ -1185,6 +1197,20 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         if (closing.current) return;
         closing.current = true;
         setIsClosing(true);
+        // Abandon a drag still in flight, here at the START rather than when
+        // the write lands (George pass C P1). The guards above freeze a drag
+        // for the duration of the commit; they cannot decide what it means
+        // afterwards, and a frozen drag that simply THAWS resumes from an
+        // origin captured before the splice — writing an absolute sample over
+        // the rest `panAfterCommit` is about to leave, at the far end of the
+        // very take this is saving. The pointer keeps its capture, so its
+        // moves land on the owner check above and its lift still settles the
+        // stage; only the pan it owned is gone. The owed resume goes with it,
+        // for the reason every other stop voids one: the sound it would return
+        // to is not the audio on screen any more.
+        ownerRef.current = null;
+        setDragging(false);
+        resumeAfterDragRef.current = false;
         // This commit followed a real capture, so the stage keeps the live
         // scope's frozen last frame through the wait instead of flashing the
         // pre-take clip (`captureClosing`'s own docblock).
