@@ -88,14 +88,19 @@ describe("the drawer's exit (#621)", () => {
     const { finish, getAnimations } = animate(scrim()!);
 
     await mount(false);
-    // Still on screen — paint only.
+    // Still on screen — paint only. The scrim stays a hit target (it is the
+    // shield over the screen behind); the panel's contents are what go inert.
     expect(scrim()).not.toBeNull();
     expect(panel()).not.toBeNull();
     expect(scrim()!.hasAttribute("data-closing")).toBe(true);
-    expect(scrim()!.hasAttribute("inert")).toBe(true);
-    // Asked the whole drawer, not one element of it: the scrim fades while the
-    // panel slides, and both have to finish.
-    expect(getAnimations).toHaveBeenCalledWith({ subtree: true });
+    expect(scrim()!.hasAttribute("inert")).toBe(false);
+    expect(panel()!.querySelector(".contents")!.hasAttribute("inert")).toBe(
+      true
+    );
+    // Asked the scrim for ITS OWN animations (the panel is asked separately) —
+    // never the subtree, where a child's infinite spin would hold the exit.
+    expect(getAnimations).toHaveBeenCalled();
+    expect(getAnimations).not.toHaveBeenCalledWith({ subtree: true });
 
     await act(async () => finish());
     expect(scrim()).toBeNull();

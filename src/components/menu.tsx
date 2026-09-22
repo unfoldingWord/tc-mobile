@@ -177,8 +177,16 @@ export function Menu({
   const [self] = useState(() => Symbol("menu"));
   const [prevOpen, setPrevOpen] = useState(open);
   const [exiting, setExiting] = useState(false);
+  // Which open this is. `children` are keyed on it, so every open edge
+  // remounts them — the contract the callers already rely on ("`Menu` unmounts
+  // its children when closed", `books-screen.tsx`, which is how an untouched
+  // New Book field sends "" and a cancelled half-typed name never comes back).
+  // Staying mounted through the exit would otherwise carry that state into a
+  // reopen that lands inside the motion (George r1 P1 on PR 656).
+  const [generation, setGeneration] = useState(0);
   if (open !== prevOpen) {
     setPrevOpen(open);
+    if (open) setGeneration((g) => g + 1);
     // No exit motion when a SIBLING drawer is already open (`openMenus`
     // above; this instance is still counted there until its own effect
     // cleans up, hence the `!== self`): decided HERE, in the same render that
@@ -190,10 +198,11 @@ export function Menu({
   }
 
   // Unmount when the exit motion settles — and what "settles" means is the
-  // stylesheet's call, not this file's. `getAnimations` returns whatever
-  // `.menu-scrim[data-closing]` is animating (the panel's slide and the
-  // scrim's fade, `3-components.css`), and their `finished` promises end the
-  // exit together. Under `prefers-reduced-motion` the stylesheet sets
+  // stylesheet's call, not this file's. The scrim and the panel are each asked
+  // for their OWN animations (the scrim's fade and the panel's slide,
+  // `.menu-scrim[data-closing]` / `.menu-scrim[data-closing] .menu-panel` in
+  // `3-components.css`), and their `finished` promises end the exit
+  // together. Under `prefers-reduced-motion` the stylesheet sets
   // `animation: none`, the list is empty, and the drawer is gone on the next
   // microtask: reduced motion is honoured by this same path, not a second
   // one, and no duration is written here, so the `--p-dur-*` token stays the
@@ -221,7 +230,14 @@ export function Menu({
     if (!exiting) return;
     const finish = () => setExiting(false);
     exitingMenus.add(finish);
-    const running = scrimRef.current?.getAnimations?.({ subtree: true }) ?? [];
+    // The drawer's OWN motion — the scrim's fade and the panel's slide, the
+    // two rules the stylesheet keys on `[data-closing]` — never the subtree.
+    // A child may animate forever (the Confirm control's `aria-busy` spin,
+    // which New Book leaves on after a successful create): waiting on it
+    // held the dialog mounted indefinitely, and the next one-tap create sent
+    // the previous name (George r1 P1 on PR 656).
+    const own = (el: Element | null) => el?.getAnimations?.() ?? [];
+    const running = [...own(scrimRef.current), ...own(panelRef.current)];
     let cancelled = false;
     void Promise.allSettled(running.map((a) => a.finished)).then(() => {
       if (!cancelled) finish();
@@ -321,15 +337,19 @@ export function Menu({
     <div
       ref={scrimRef}
       className="menu-scrim"
-      // On the way out the drawer is paint only (#621): `inert` takes it out
-      // of reach and out of the accessibility tree the instant it is
-      // dismissed — the exit is something to see, never something to tap or
-      // hear — and `data-closing` is what the stylesheet keys the motion on.
-      inert={exiting || undefined}
+      // On the way out the drawer is paint only (#621): the exit is something
+      // to see, never something to tap or hear. `data-closing` is what the
+      // stylesheet keys the motion on. The scrim itself stays a HIT TARGET
+      // while it is still painted — it is the full-screen shield, and the
+      // callers lift their own background `inert` the moment `open` drops, so
+      // an `inert` scrim would let the second tap of a double-tap through to
+      // Play or Record underneath for the whole motion (George r1 P2 on PR
+      // 656). Reach and the accessibility tree are cut on the panel instead.
       data-closing={exiting || undefined}
-      // A tap on the scrim, but not on the panel, closes.
+      // A tap on the scrim, but not on the panel, closes — while it is open.
+      // A tap on an exiting scrim is absorbed: the close already happened.
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !exiting) onClose();
       }}
     >
       <div
@@ -351,8 +371,15 @@ export function Menu({
         {/* `display: contents` (Tailwind `contents`): this node carries
             `inert` without owning a box of its own, so the header and
             `children` stay direct flex items of `.menu-panel` above —
-            `inert` changes reachability, never layout. */}
-        <div className="contents" inert={inert || undefined}>
+            `inert` changes reachability, never layout. It is also inert for
+            the whole exit — nothing in a departing drawer is tappable or
+            focusable — and keyed on the open generation, so every open edge
+            mounts fresh children (see `generation`). */}
+        <div
+          key={generation}
+          className="contents"
+          inert={inert || exiting || undefined}
+        >
           {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
               ≡ that opened this panel was; `justify-between` alone would slide

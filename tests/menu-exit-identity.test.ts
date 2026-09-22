@@ -1,4 +1,4 @@
-import { act, createElement, Fragment } from "react";
+import { act, createElement, Fragment, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -116,6 +116,96 @@ it("a menu dismissed while a sibling is ALREADY open skips its exit — the orde
 
   expect(panels()).toBe(1);
   expect(dialogs()).toEqual(["Second"]);
+});
+
+/**
+ * The exit is the DRAWER's motion, not its contents' (George r1 P1 on PR 656).
+ * A child that animates forever — the Confirm control's `aria-busy` spin,
+ * which New Book leaves on after a successful create — must not hold the
+ * drawer mounted. This stub answers a subtree query with a never-settling
+ * animation (the shape the old wait asked for) and the scrim's and panel's own
+ * queries with nothing, so the case is red against a subtree wait and green
+ * against a wait on the two elements the stylesheet actually animates.
+ */
+function holdChildAnimationsOnly(dom: JSDOM): void {
+  const pending = { finished: new Promise<never>(() => undefined) };
+  Object.defineProperty(dom.window.HTMLElement.prototype, "getAnimations", {
+    configurable: true,
+    value(this: HTMLElement, options?: { subtree?: boolean }) {
+      if (options?.subtree) return [pending];
+      const own =
+        this.classList.contains("menu-scrim") ||
+        this.classList.contains("menu-panel");
+      return own ? [] : [pending];
+    },
+  });
+}
+
+let probeMounts = 0;
+function Probe() {
+  const [mount] = useState(() => ++probeMounts);
+  return createElement("span", { "data-mount": mount });
+}
+
+async function renderWithProbe(open: boolean): Promise<void> {
+  await act(async () => {
+    root.render(
+      createElement(
+        Menu,
+        { open, onClose: noop, title: "First" },
+        createElement(Probe)
+      )
+    );
+  });
+}
+
+it("a child animating forever (the busy Confirm's spin) does not hold the exit — the drawer is gone once its own motion is", async () => {
+  holdChildAnimationsOnly(dom);
+  await render(true, false);
+  expect(panels()).toBe(1);
+
+  await render(false, false);
+
+  expect(panels()).toBe(0);
+});
+
+it("reopening mid-exit remounts the children — a cancelled half-typed name never comes back", async () => {
+  holdAnimations(dom);
+  await renderWithProbe(true);
+  const first = document
+    .querySelector("[data-mount]")!
+    .getAttribute("data-mount");
+  await renderWithProbe(false);
+  expect(panels()).toBe(1);
+
+  await renderWithProbe(true);
+
+  const second = document
+    .querySelector("[data-mount]")!
+    .getAttribute("data-mount");
+  expect(second).not.toBe(first);
+});
+
+it("while exiting, the scrim still shields the screen (hit-testable, click ignored) and only the contents are inert", async () => {
+  holdAnimations(dom);
+  const onClose = vi.fn();
+  await act(async () => {
+    root.render(createElement(Menu, { open: true, onClose, title: "First" }));
+  });
+  await act(async () => {
+    root.render(createElement(Menu, { open: false, onClose, title: "First" }));
+  });
+  const scrim = document.querySelector(".menu-scrim")!;
+  expect(scrim.hasAttribute("inert")).toBe(false);
+  expect(scrim.hasAttribute("data-closing")).toBe(true);
+  expect(
+    document.querySelector(".menu-panel > .contents")!.hasAttribute("inert")
+  ).toBe(true);
+
+  await act(async () => {
+    (scrim as HTMLElement).click();
+  });
+  expect(onClose).not.toHaveBeenCalled();
 });
 
 it("reopening the same menu mid-exit cancels the exit and it presents as a dialog again", async () => {
