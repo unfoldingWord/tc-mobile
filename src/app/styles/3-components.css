@@ -552,6 +552,10 @@
     flex-direction: column;
     gap: var(--c-gap-items);
     overflow-y: auto;
+    /* Shared drawer portals outside the recorder sheet (#556). */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */
@@ -587,6 +591,10 @@
        standing between a focused rename field and a zoomed sheet. Do not
        lower it. */
     font-size: 16px;
+    /* Keep name editing selectable inside the drawer (#556). */
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
   .name-input::placeholder {
     color: var(--s-ink-faint);
@@ -621,6 +629,10 @@
     align-items: center;
     gap: var(--c-gap-items);
     text-align: center;
+    /* Confirm panels portal outside the recorder sheet (#556). */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   /* The subject glyph, tinted destructive so the dialog reads as "delete"
      before a word is parsed. */
@@ -742,6 +754,11 @@
        indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
+    /* Suppress selection on recorder chrome (#556); keep this scoped to the
+       sheet and the two shared portal panels, not the application root. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   /* The waveform stage. `position: relative` anchors the recording indicator
      and every overlay the recorder lays over the canvas — the centerline
