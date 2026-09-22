@@ -107,6 +107,18 @@ let loadSegmentClip: SegmentAudioModule["loadSegmentClip"];
 let encodeMp3: ReturnType<typeof vi.fn>;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
+/** Twenty owed segments p00..p19, each clip holding its own index. */
+function twentyOwedSegments(): void {
+  const ids = Array.from({ length: 20 }, (_, i) => String(i).padStart(2, "0"));
+  vi.mocked(listPcmFinishedSegments).mockResolvedValue(
+    ids.map((n) => ({ segmentId: sid(`p${n}`), clipId: cid(`c${n}`) }))
+  );
+  vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) => {
+    const n = segmentId.slice(1);
+    return resolvedPcm(segmentId, cid(`c${n}`), Int16Array.of(Number(n)));
+  });
+}
+
 /** Two owed segments, s1 then s2, each with its own one-sample clip. */
 function twoOwedSegments(): void {
   vi.mocked(listPcmFinishedSegments).mockResolvedValue([
@@ -233,6 +245,29 @@ describe("a stalled segment does not block the queue (George R1 P2-2)", () => {
       sid("s1"),
       sid("s2"),
     ]);
+  });
+
+  it("keeps both poison clips at the back on a later same-page sweep", async () => {
+    twentyOwedSegments();
+    encodeMp3.mockImplementation(async (s: Int16Array) => {
+      if (s[0] === 0 || s[0] === 5) throw new StalledError(15_000);
+      return new Uint8Array([s[0] ?? 0]);
+    });
+
+    await requestTranscodeSweep();
+    vi.mocked(loadSegmentClip).mockClear();
+
+    await requestTranscodeSweep();
+
+    const loaded = vi.mocked(loadSegmentClip).mock.calls.map((c) => c[0]);
+    expect(loaded[0]).toBe(sid("p01"));
+    expect(loaded).toContain(sid("p06"));
+    expect(loaded.indexOf(sid("p00"))).toBeGreaterThan(
+      loaded.indexOf(sid("p06"))
+    );
+    expect(loaded.indexOf(sid("p05"))).toBeGreaterThan(
+      loaded.indexOf(sid("p06"))
+    );
   });
 
   it("stops deprioritising a segment once its turn completes", async () => {

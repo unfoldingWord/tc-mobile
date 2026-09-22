@@ -38,7 +38,12 @@
  */
 
 import { reportFailure } from "./report-failure";
-import { EncoderStalledError, withEncoder } from "./mp3-codec";
+import {
+  EncoderStalledError,
+  encoderHealth,
+  subscribeToEncoderHealth,
+  withEncoder,
+} from "./mp3-codec";
 import { computePeaks } from "@/lib/audio/peaks";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
@@ -51,17 +56,16 @@ import { ROW_PEAK_BUCKETS } from "@/types/view";
 let running: Promise<void> | null = null;
 let requestedDuringRun = false;
 /**
- * The segment whose encode last stalled, if any.
+ * Segments whose encode stalled in this page.
  *
  * Not a blocklist — a deprioritisation. The owed list comes back "in no
  * particular order" but in practice a stable `getAll` walk, and a stall ends the
- * RUN (#290), so a single clip that wedges the worker every time sat at the head
- * of that list and every other finished segment behind it never got a turn for
- * the life of the page (George R1 P2-2). Moving it to the BACK of the next
- * pass's list lets the other nineteen through and still retries it, rather than
- * abandoning a segment nothing else will ever pick up.
+ * RUN (#290), so poison clips near the head can starve every healthy segment
+ * behind them. Moving stalled ids to the BACK of later same-page passes lets the
+ * healthy tail through and still retries the poison clips, rather than abandoning
+ * audio nothing else will ever pick up (#404).
  */
-let lastStalledSegmentId: SegmentId | null = null;
+const stalledSegmentIds = new Set<SegmentId>();
 
 /**
  * Stop sweeping, for the life of this page. One-way (George R5 P2-3).
@@ -91,6 +95,13 @@ let lastStalledSegmentId: SegmentId | null = null;
 let quiesced = false;
 const pauseReasons = new Set<string>();
 let requestedDuringPause = false;
+
+let lastEncoderHealth = encoderHealth();
+subscribeToEncoderHealth((health) => {
+  const recovered = lastEncoderHealth === "failing" && health === "ok";
+  lastEncoderHealth = health;
+  if (recovered) void requestTranscodeSweep();
+});
 
 function paused(): boolean {
   return pauseReasons.size > 0;
@@ -219,11 +230,21 @@ async function runSweeps(): Promise<void> {
  */
 export function afterStalledSegment<
   T extends { readonly segmentId: SegmentId },
->(owed: readonly T[], stalled: SegmentId | null): readonly T[] {
+>(
+  owed: readonly T[],
+  stalled: SegmentId | null | ReadonlySet<SegmentId>
+): readonly T[] {
   if (stalled === null || owed.length < 2) return owed;
-  const index = owed.findIndex((entry) => entry.segmentId === stalled);
-  if (index < 0) return owed;
-  return [...owed.slice(0, index), ...owed.slice(index + 1), owed[index]!];
+  const stalledIds = stalled instanceof Set ? stalled : new Set([stalled]);
+  if (stalledIds.size === 0) return owed;
+  const ready: T[] = [];
+  const deprioritised: T[] = [];
+  for (const entry of owed) {
+    if (stalledIds.has(entry.segmentId)) deprioritised.push(entry);
+    else ready.push(entry);
+  }
+  if (deprioritised.length === 0) return owed;
+  return [...ready, ...deprioritised];
 }
 
 /**
@@ -246,7 +267,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
   }
   for (const { segmentId, clipId } of afterStalledSegment(
     owed,
-    lastStalledSegmentId
+    stalledSegmentIds
   )) {
     // Checked per segment, so a pass already in flight when the boundary catches
     // stops at the next clip rather than running the backlog to the end. One
@@ -282,7 +303,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // This clip is no longer the one that wedged the worker, so it stops being
       // deprioritised. Cleared on ANY completed turn: a skip proves nothing
       // about the clip, but it does mean the head of the queue moved on.
-      if (lastStalledSegmentId === segmentId) lastStalledSegmentId = null;
+      stalledSegmentIds.delete(segmentId);
     } catch (cause) {
       // To the app's ONE sink, not the console alone (#167). The segment id
       // rides in a wrapper rather than in the context, because `context` is the
@@ -307,7 +328,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // head-of-line block: one poison clip at the front of a stable list would
       // otherwise starve every other finished segment (George R1 P2-2, R2 P2).
       if (cause instanceof EncoderStalledError) {
-        lastStalledSegmentId = segmentId;
+        stalledSegmentIds.add(segmentId);
         return segmentId;
       }
     }
