@@ -122,11 +122,103 @@ test.describe("edit mode toggle", () => {
       expect(returned).not.toBeNull();
       expect(Math.abs(returned!.x - before!.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(returned!.y - before!.y)).toBeLessThanOrEqual(1);
+      // Pan the paused-capture case to a nonzero insertion point before entry.
+      if (width === 390) {
+        const canvas = page.locator(".recorder-canvas");
+        const box = await canvas.boundingBox();
+        await canvas.dragTo(canvas, {
+          sourcePosition: { x: box!.width * 0.25, y: 60 },
+          targetPosition: { x: box!.width * 0.5, y: 60 },
+        });
+      }
       // The committed buffer opens a frame without another capture or second tap.
       await toggle.press("Enter");
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toBeVisible();
+      const startHandle = page.getByLabel("Selection start", { exact: true });
+      const endHandle = page.getByLabel("Selection end", { exact: true });
+      const expectUsableFrame = async () => {
+        await expect(startHandle).toBeVisible();
+        await expect(endHandle).toBeVisible();
+        const start = Number(await startHandle.getAttribute("aria-valuenow"));
+        const end = Number(await endHandle.getAttribute("aria-valuenow"));
+        expect(end).toBeGreaterThan(start);
+        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(
+          page.getByRole("button", { name: "Cut the selection", exact: true })
+        ).toBeEnabled();
+        return Number(await endHandle.getAttribute("aria-valuemax"));
+      };
+      const originalLength = await expectUsableFrame();
+      if (width === 390) {
+        await page
+          .getByRole("button", {
+            name: "Zoomed to the whole segment. Zoom in to a quarter.",
+            exact: true,
+          })
+          .click();
+      }
+      await page
+        .getByRole("button", { name: "Cut the selection", exact: true })
+        .click();
+      const firstCutLength = await expectUsableFrame();
+      expect(firstCutLength).toBeLessThan(originalLength);
+      await page
+        .getByRole("button", { name: "Cut the selection", exact: true })
+        .click();
+      const secondCutLength = await expectUsableFrame();
+      expect(secondCutLength).toBeLessThan(firstCutLength);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await expectUsableFrame()).toBe(firstCutLength);
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
+      expect(await expectUsableFrame()).toBe(secondCutLength);
+      await page
+        .getByRole("button", { name: "Paste at the line", exact: true })
+        .click();
+      expect(await expectUsableFrame()).toBe(firstCutLength);
+      if (width === 320) {
+        // Center the whole buffer, then drag both handles to its boundaries.
+        await toggle.click();
+        const canvas = page.locator(".recorder-canvas");
+        const box = await canvas.boundingBox();
+        await canvas.dragTo(canvas, {
+          sourcePosition: { x: box!.width * 0.1, y: 60 },
+          targetPosition: { x: box!.width * 0.6, y: 60 },
+        });
+        await toggle.click();
+        for (const [handle, x] of [
+          [startHandle, box!.x],
+          [endHandle, box!.x + box!.width],
+        ] as const) {
+          const handleBox = await handle.boundingBox();
+          await page.mouse.move(
+            handleBox!.x + handleBox!.width / 2,
+            handleBox!.y + handleBox!.height / 2
+          );
+          await page.mouse.down();
+          await page.mouse.move(x, handleBox!.y + handleBox!.height / 2);
+          await page.mouse.up();
+        }
+        await expect(startHandle).toHaveAttribute("aria-valuenow", "0");
+        await expect(endHandle).toHaveAttribute(
+          "aria-valuenow",
+          String(firstCutLength)
+        );
+        await page
+          .getByRole("button", { name: "Cut the selection", exact: true })
+          .click();
+        await expect(startHandle).toHaveCount(0);
+        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await page.getByRole("button", { name: "Undo", exact: true }).click();
+        expect(await expectUsableFrame()).toBe(firstCutLength);
+        await page.getByRole("button", { name: "Redo", exact: true }).click();
+        await expect(startHandle).toHaveCount(0);
+        await page
+          .getByRole("button", { name: "Paste at the line", exact: true })
+          .click();
+        expect(await expectUsableFrame()).toBe(firstCutLength);
+      }
       await page
         .getByRole("button", { name: "Done editing", exact: true })
         .click();

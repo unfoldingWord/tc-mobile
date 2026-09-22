@@ -563,20 +563,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       length,
     });
     const win = viewportWindow(length, pan, zoom, CENTER_FRACTION);
-    // A commit reload resets the editor during render. Wait for that exact
-    // buffer before opening the frame, so the seed cannot target the old take.
-    // This adjusts this component's own state before React commits the frame.
+    const insertionPan = Math.min(panState ?? length, length);
+    // Reloads must reach their committed buffer first. Cut/Undo/Redo clear the
+    // old frame, so reseed from the remapped insertion pan before painting.
+    // Empty buffers have no usable frame; Undo or Paste can make one again.
     if (
-      selectionEntry &&
-      (selectionEntry.samples === null ||
+      mode === "edit" &&
+      !editor.selectionActive &&
+      (!selectionEntry ||
+        selectionEntry.samples === null ||
         editor.working === selectionEntry.samples)
     ) {
-      const half = win.visibleSamples * 0.15;
-      editor.openSelection({
-        start: win.centerlineSample - half,
-        end: win.centerlineSample + half,
-      });
-      setSelectionEntry(null);
+      if (length > 0) {
+        const seedWindow = viewportWindow(
+          length,
+          insertionPan,
+          zoom,
+          CENTER_FRACTION
+        );
+        const half = seedWindow.visibleSamples * 0.15;
+        editor.openSelection({
+          start: seedWindow.centerlineSample - half,
+          end: seedWindow.centerlineSample + half,
+        });
+      }
+      if (selectionEntry) setSelectionEntry(null);
+      if (zoomPan !== null) setZoomPan(null);
     }
 
     // The prepared preview, shown on the stage across the whole take-in-flight
@@ -1803,27 +1815,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       }
     }, [editor, stopPlayback, length]);
 
-    // Paste at the drawn centerline — which is ALSO the record insertion offset,
-    // and that is not a coincidence to leave unstated (George stand-in P3).
-    //
-    // `win` is built from `effectivePan`, so with a selection open the line sits
-    // at the zoom's VIEW pan while `panState` is elsewhere. Pasting there would
-    // insert before the record offset and shift every later sample under it —
-    // and `panAfterCut` has no paste companion to correct for that, so the next
-    // take would splice wrong: the round-1 P1's consequence class, by a different
-    // route. It cannot happen today, because the only entry point is the paste
-    // marker below, which renders on `!editor.selectionActive` — the exact
-    // negation of the condition that makes the view pan live. So whenever this
-    // runs, `win.centerlineSample` IS the `panState` line.
-    //
-    // That safety is a render gate ~900 lines away, not a local property. A
-    // second paste entry point, or a "paste replaces the selection" feature,
-    // would flip it — and would have to take the pan from `panState` rather than
-    // from `win`.
+    // Paste inserts at the recording offset, never the selection or zoom-fit
+    // pan. The marker is hidden while a fitted view would imply another point.
     const onPaste = useCallback(() => {
       stopPlayback();
-      editor.paste(win.centerlineSample);
-    }, [editor, win.centerlineSample, stopPlayback]);
+      editor.paste(insertionPan);
+    }, [editor, insertionPan, stopPlayback]);
 
     const onToggleFinished = useCallback(() => {
       if (!view) return;
@@ -3126,26 +3123,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       canvas's own pan handler. */}
                     {idleEditable &&
                       editor.canPaste &&
-                      !editor.selectionActive &&
+                      zoomPan === null &&
                       !stage.windowControlsInert && (
-                        // Unmounted, not merely `disabled` like Cut, on either
-                        // gate — each guards a different way tapping it would
-                        // insert at the wrong sample, not just draw wrong:
-                        //
-                        // - `windowControlsInert` (#284): under a swapped view
-                        //   the drawn line reads as "the middle of the clip"
-                        //   while `onPaste` still inserts at the pan window's
-                        //   `win.centerlineSample`. `recorder-stage.ts` carries
-                        //   the rest of that class.
-                        // - `!editor.selectionActive`: with a selection open,
-                        //   `win` is built from the zoom's view pan rather than
-                        //   `panState`, so `win.centerlineSample` would not be
-                        //   the record insertion offset the drawn line implies
-                        //   (the `onPaste` callback's own comment, above,
-                        //   spells out why this render gate is load-bearing).
-                        //
-                        // `disabled` would leave the wrong implication on
-                        // screen either way; removing the button removes it.
+                        // A zoom-fitted viewport need not be centered on the
+                        // insertion point. Reseeding or panning clears that fit.
                         <button
                           type="button"
                           className="paste-marker"
@@ -3373,7 +3354,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 {mode === "edit" && (
                   <div className="recorder-cut flex justify-center">
                     {/* The Cut affordance sits under the frame (mockup 4). Cutting
-                      drops the selection and turns the paste marker on. Edit-mode
+                      reseeds the frame and makes the clipboard available. Edit-mode
                       only — the block is absent from the record-mode tree — but
                       still `disabled` on the same `idleEditable` safety: without
                       it a Cut tapped during the async close would mutate the
