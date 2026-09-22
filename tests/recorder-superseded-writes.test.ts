@@ -281,8 +281,8 @@ it.each(["discard", "retry"])(
     });
     expect(s.onExit).not.toHaveBeenCalled();
     if (action === "discard") {
-      await s.click(strings.takeRecoverDiscard);
-      await s.click(strings.takeRecoverDiscardArmed);
+      await s.click(strings.discardRecording);
+      await s.click(strings.discardRecordingArmed);
       expect(s.saveEditedSegment).not.toHaveBeenCalled();
       expect(s.saveRecording).not.toHaveBeenCalled();
     } else {

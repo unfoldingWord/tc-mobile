@@ -468,11 +468,14 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
 
   it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its sentence on flushThrew (#485, panel r1)', () => {
     // One row key, one site: a second site would double-report the same
-    // throw. The sentence: an empty seal after a throw is "Could not finish
-    // this recording." (the engine failed, and the facilitator runbook
-    // names that sentence as written down), not "No sound was recorded"
-    // (which reads as the translator's silence). `flushThrew` is declared
-    // in stop()'s body before the try, so the flag is per invocation.
+    // throw. The sentence: an empty seal after a throw is
+    // `messages.recordStopFailed` — "Could not finish this recording.", the
+    // engine having failed, and the sentence the facilitator runbook names —
+    // not `messages.recordSilent`, which reads as the translator's silence.
+    // The two are matched by KEY since #169 moved them into `lib/messages.ts`;
+    // the words themselves are pinned there, and `strings-centralised.test.ts`
+    // is what stops either being written out here again. `flushThrew` is
+    // declared in stop()'s body before the try, so the flag is per invocation.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);
@@ -481,7 +484,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     );
     const afterElse = stopBody.slice(elseBraceClose + 1);
     expect(afterElse).toMatch(
-      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
+      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*messages\.recordStopFailed\s*:\s*messages\.recordSilent/
     );
   });
 
