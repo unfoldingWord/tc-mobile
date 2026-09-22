@@ -103,15 +103,19 @@ export function SaveFailed({
   const safetyLine = saving ? null : recoverySafetyLine(editOnly, kind);
   const attemptsLine = saving ? null : recoveryAttempts(kind, attempts);
 
-  // The one failure this screen cannot offer a retry for: a newer copy of the
-  // app has moved the database past this build, so `getDb()` fails the version
-  // check before any transaction and will do so on every attempt. Offering "Try
-  // saving again" here teaches retry-and-stay for a condition that is already
-  // decided, and leaves the honest exit reachable only through Discard — which
-  // deletes the only copy (George R2 P2-1). The control becomes the same
-  // restart `DatabasePanel` and `ErrorBoundary` offer, which is what picks up
-  // the newer build. Discard stays, unchanged and still two taps.
+  // Two failures this screen cannot offer a retry for:
+  //
+  // - `downgrade`: a newer copy of the app has moved the database past this
+  //   build, so `getDb()` fails before any transaction and will do so on every
+  //   attempt. The control becomes the same restart `DatabasePanel` and
+  //   `ErrorBoundary` offer, which is what picks up the newer build (George R2
+  //   P2-1).
+  // - `stale`: another live copy deleted the chapter/segment this take belongs
+  //   to (#378). There is no row a Retry could write, and a restart would only
+  //   lose the held RAM audio under a different label, so no retry/restart
+  //   control is rendered; Discard is promoted to the primary exit.
   const terminal = kind === "downgrade";
+  const stale = kind === "stale";
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
@@ -150,38 +154,40 @@ export function SaveFailed({
 
       {!saving && (
         <>
-          <Control
-            icon="retry"
-            label={
-              terminal
-                ? restarting
-                  ? strings.appReloading
-                  : restartLabel(
-                      editOnly ? "changes" : "recording",
-                      restartArmed,
-                      holdsCutAudio
-                    )
-                : "Try saving again"
-            }
-            variant="primary"
-            size={30}
-            className={terminal && restartArmed ? "text-live" : undefined}
-            busy={terminal && restarting}
-            autoFocus
-            onClick={
-              terminal
-                ? () =>
-                    restartArmed
-                      ? void restartAfterFlush(
-                          restarting,
-                          () => setRestarting(true),
-                          flushFailureLog,
-                          reload
-                        )
-                      : setRestartArmedAt(attempts)
-                : onRetry
-            }
-          />
+          {!stale && (
+            <Control
+              icon="retry"
+              label={
+                terminal
+                  ? restarting
+                    ? strings.appReloading
+                    : restartLabel(
+                        editOnly ? "changes" : "recording",
+                        restartArmed,
+                        holdsCutAudio
+                      )
+                  : "Try saving again"
+              }
+              variant="primary"
+              size={30}
+              className={terminal && restartArmed ? "text-live" : undefined}
+              busy={terminal && restarting}
+              autoFocus
+              onClick={
+                terminal
+                  ? () =>
+                      restartArmed
+                        ? void restartAfterFlush(
+                            restarting,
+                            () => setRestarting(true),
+                            flushFailureLog,
+                            reload
+                          )
+                        : setRestartArmedAt(attempts)
+                  : onRetry
+              }
+            />
+          )}
 
           {terminal && restarting && (
             <Notice tone="busy">{strings.appReloading}</Notice>
@@ -224,7 +230,7 @@ export function SaveFailed({
               silently skip the post-retry sweep a successful Finished retry
               still owes (D3). Needs an explicit pause/resume, tracked in the
               linked issue; documented, not silently reused. */}
-          {!terminal && <SendLogControl />}
+          {!terminal && !stale && <SendLogControl />}
 
           {safetyLine && (
             <p className="text-ink-muted text-[13px]">{safetyLine}</p>
@@ -238,8 +244,9 @@ export function SaveFailed({
             <Control
               icon="trash"
               label={discardLabel}
-              variant="quiet"
+              variant={stale ? "primary" : "quiet"}
               className={armed ? "text-live" : undefined}
+              autoFocus={stale}
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (

@@ -132,6 +132,7 @@ export const SegmentsScreen = forwardRef<
     loaded,
     refreshing,
     error,
+    staleTarget,
     reload,
     addSegment,
     setFinished,
@@ -705,6 +706,15 @@ export const SegmentsScreen = forwardRef<
     if (el) nodes.current.set(id, el);
     else nodes.current.delete(id);
   }, []);
+
+  useEffect(() => {
+    // Another live copy can delete this book while this screen is still open
+    // (#378). IndexedDB does not push that fact here, so the hook can only know
+    // once a read/write hits `No such chapter`/`No such segment`; when it does,
+    // leave the dead chapter instead of painting the raw store string or
+    // inviting more writes onto a target that cannot exist.
+    if (staleTarget) onBack();
+  }, [onBack, staleTarget]);
 
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded

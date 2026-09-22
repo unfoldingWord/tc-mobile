@@ -39,6 +39,11 @@ export function recoveryTitle(
       ? "Your changes need the new version of the app."
       : "This recording needs the new version of the app.";
   }
+  if (kind === "stale") {
+    return editOnly
+      ? "This book is gone. Your changes cannot be saved."
+      : "This book is gone. This recording cannot be saved.";
+  }
   return editOnly
     ? "Your changes could not be saved."
     : "This recording could not be saved.";
@@ -81,6 +86,11 @@ export function recoverySafetyLine(
     return editOnly
       ? "This copy of the app cannot save them. Restart to get the new version."
       : "This copy of the app cannot save it. Restart to get the new version.";
+  }
+  if (kind === "stale") {
+    return editOnly
+      ? "The chapter was deleted in another copy of the app. Discard is the only exit."
+      : "The chapter was deleted in another copy of the app. Delete this recording to leave.";
   }
   return editOnly
     ? "This screen has the only copy of your changes. Don't close the app."
@@ -180,14 +190,15 @@ function lossPhrase(subject: RestartSubject, alsoCutAudio: boolean): string {
  * single blip needs no count. Never stands in for the safety line above — it is
  * an extra line beside it.
  *
- * Suppressed for `downgrade` for a stronger reason than for `quota`. A count is
- * a nudge to try once more, and here once more cannot work however many times it
- * is tried — the title already says what is actually needed.
+ * Suppressed for `downgrade` and `stale` for a stronger reason than for
+ * `quota`. A count is a nudge to try once more, and here once more cannot work
+ * however many times it is tried — the title already says what is actually
+ * needed.
  */
 export function recoveryAttempts(
   kind: SaveFailureKind | null,
   attempts: number
 ): string | null {
-  if (kind === "quota" || kind === "downgrade") return null;
+  if (kind === "quota" || kind === "downgrade" || kind === "stale") return null;
   return attempts > 1 ? `Attempts: ${attempts}` : null;
 }

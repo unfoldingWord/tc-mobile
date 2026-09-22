@@ -40,6 +40,15 @@ describe("recoveryTitle", () => {
     }
   });
 
+  it("names a stale target as gone, not retryable", () => {
+    expect(recoveryTitle("stale", false)).toBe(
+      "This book is gone. This recording cannot be saved."
+    );
+    expect(recoveryTitle("stale", true)).toBe(
+      "This book is gone. Your changes cannot be saved."
+    );
+  });
+
   it("names what could not be saved for an unknown failure", () => {
     expect(recoveryTitle("unknown", false)).toBe(
       "This recording could not be saved."
@@ -82,6 +91,15 @@ describe("recoverySafetyLine", () => {
         "close the app"
       );
     }
+  });
+
+  it("does not tell a stale-target save to retry", () => {
+    expect(recoverySafetyLine(false, "stale")).toBe(
+      "The chapter was deleted in another copy of the app. Delete this recording to leave."
+    );
+    expect(recoverySafetyLine(true, "stale")).toBe(
+      "The chapter was deleted in another copy of the app. Discard is the only exit."
+    );
   });
 
   it("words the warning for everything RAM-only, not just the new fragment (George G1, G5)", () => {
@@ -243,11 +261,13 @@ describe("recoveryAttempts", () => {
     expect(recoveryAttempts("quota", 5)).toBeNull();
   });
 
-  it("never shows a count for a downgrade — the count would be a nudge to retry", () => {
+  it("never shows a count for non-retryable failures — the count would be a nudge to retry", () => {
     // Stronger than the quota case: there the next attempt might land once space
     // is freed, here it cannot land at all, so a rising count is an invitation
     // to keep trying something that is already decided.
-    expect(recoveryAttempts("downgrade", 2)).toBeNull();
-    expect(recoveryAttempts("downgrade", 9)).toBeNull();
+    for (const kind of ["downgrade", "stale"] as const) {
+      expect(recoveryAttempts(kind, 2)).toBeNull();
+      expect(recoveryAttempts(kind, 9)).toBeNull();
+    }
   });
 });

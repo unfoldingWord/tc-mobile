@@ -15,6 +15,10 @@ import {
   loadSegmentClip,
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
+import {
+  isMissingChapterFailure,
+  isMissingSegmentFailure,
+} from "@/lib/storage/stale-target";
 import type { ClipMeta, Peaks } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
@@ -141,6 +145,7 @@ export function useChapterSegments(chapterId: ChapterId) {
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staleTarget, setStaleTarget] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -154,10 +159,16 @@ export function useChapterSegments(chapterId: ChapterId) {
         setChapterName(view.chapterName);
         setRows(view.rows);
         setError(null);
+        setStaleTarget(false);
         setLoaded(true);
       } catch (cause) {
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        if (isMissingChapterFailure(cause, chapterId)) {
+          setStaleTarget(true);
+          setError(null);
+        } else {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -197,8 +208,15 @@ export function useChapterSegments(chapterId: ChapterId) {
       setError(null);
       return segment;
     } catch (cause) {
-      // A failed append reaches the same Notice a load failure does.
-      setError(cause instanceof Error ? cause.message : String(cause));
+      // A missing chapter means another live copy deleted this book under this
+      // screen (#378). Do not speak the raw store string; let the screen pop to
+      // Books, the only target still known to exist.
+      if (isMissingChapterFailure(cause, chapterId)) {
+        setStaleTarget(true);
+        setError(null);
+      } else {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
       return null;
     }
   }, [chapterId]);
@@ -222,7 +240,12 @@ export function useChapterSegments(chapterId: ChapterId) {
         // duration do not change when it lands.
         if (finished) void requestTranscodeSweep();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        if (isMissingSegmentFailure(cause, segmentId)) {
+          setStaleTarget(true);
+          setError(null);
+        } else {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
       }
     },
     []
@@ -241,7 +264,12 @@ export function useChapterSegments(chapterId: ChapterId) {
         setError(null);
         return true;
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        if (isMissingChapterFailure(cause, chapterId)) {
+          setStaleTarget(true);
+          setError(null);
+        } else {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
         return false;
       }
     },
@@ -280,6 +308,7 @@ export function useChapterSegments(chapterId: ChapterId) {
     loaded,
     refreshing,
     error,
+    staleTarget,
     reload,
     addSegment,
     setFinished,

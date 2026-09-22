@@ -300,9 +300,12 @@ describe("performSaveTake — a commit that fails", () => {
   /** A segment id with no row: `saveTake` throws "No such segment: …". */
   const bogusSegment = () => newClipId() as unknown as SegmentId;
 
-  it("keeps the recording held for retry rather than dropping it", async () => {
+  it("keeps the recording held on a stale target rather than dropping it", async () => {
     // THE regression this file exists for. A `finally` that empties the slot,
     // or a rethrow that unwinds past it, loses the only copy of field audio.
+    // Since #378 this exact store error is not retryable — the segment row is
+    // gone — but the recovery screen still has to own the samples until the
+    // translator confirms Discard.
     const clipId = newClipId();
     const recorded = samples(10, 4242);
     const take = heldTake({ segmentId: bogusSegment(), clipId, recorded });
@@ -323,7 +326,7 @@ describe("performSaveTake — a commit that fails", () => {
     const held = s.held();
     expect(held).not.toBeNull();
     expect(held?.state).toBe("failed");
-    expect(held?.kind).toBe("unknown");
+    expect(held?.kind).toBe("stale");
     expect(held?.attempts).toBe(1);
     // The samples are carried through untouched — the recipe a retry re-runs.
     expect(held?.recorded).toBe(recorded);

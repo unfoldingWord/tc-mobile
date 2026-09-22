@@ -9,6 +9,7 @@
  * which of them applies.
  */
 
+import { isMissingChapterOrSegmentFailure } from "@/lib/storage/stale-target";
 import type { SaveFailureKind } from "@/lib/takes/pending-take";
 
 /**
@@ -48,5 +49,8 @@ export function saveFailureKind(cause: unknown): SaveFailureKind {
   // screen must stop counting attempts at something that cannot succeed
   // (George R1 P2-1).
   if (isDatabaseDowngrade(cause)) return "downgrade";
+  // A save target that is gone cannot be recreated by Retry: segment/chapter ids
+  // are not reusable, and the held PCM has no valid row to land on (#378).
+  if (isMissingChapterOrSegmentFailure(cause)) return "stale";
   return "unknown";
 }

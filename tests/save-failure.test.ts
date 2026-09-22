@@ -48,6 +48,15 @@ describe("saveFailureKind", () => {
     expect(isQuotaExceeded({ name: "DatabaseDowngradeError" })).toBe(false);
   });
 
+  it("recognises a missing save target as stale, which no retry can clear", () => {
+    expect(saveFailureKind(new Error("No such segment: segment-1"))).toBe(
+      "stale"
+    );
+    expect(saveFailureKind(new Error("No such chapter: chapter-1"))).toBe(
+      "stale"
+    );
+  });
+
   it("treats anything else as unknown", () => {
     expect(saveFailureKind({ name: "VersionError" })).toBe("unknown");
     expect(saveFailureKind(new Error("boom"))).toBe("unknown");
