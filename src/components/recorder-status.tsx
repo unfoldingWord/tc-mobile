@@ -9,12 +9,11 @@ import type { RecorderState } from "@/hooks/use-recorder";
  *
  * #39: the commit window used to draw no status — no dot, no timer, no copy —
  * so the stop → decode → save wait (and a #59 interruption's frozen take) read
- * as a dead app. The exit (header Back) was always there; the status was the
- * missing half. The gate spans `isClosing`, not just `processing`, because
- * state flips to idle mid-save (Frank/George R1); it lives in the pure
- * `recorderStatusKind` so the predicate is tested, not just the wording. As a
- * `Notice` each carries the glyph a non-reader needs and its own `role`, so
- * there is no hand-rolled `aria-busy` to leave stuck.
+ * as a dead app. The status was the missing half. The gate spans `isClosing`,
+ * not just `processing`, because state flips to idle mid-save (Frank/George
+ * R1); it lives in the pure `recorderStatusKind` so the predicate is tested,
+ * not just the wording. As a `Notice` it carries the glyph a non-reader needs
+ * and its own `role`, so there is no hand-rolled `aria-busy` to leave stuck.
  *
  * **Why this is a module and not an inline block in `recorder.tsx` (#197).**
  * `recorder.tsx` mounts the audio hook graph, so no `tests/` file renders it —
@@ -35,16 +34,7 @@ export function RecorderStatus({
   if (!status) return null;
   return (
     <div className="px-[12px] pt-[8px]">
-      {status === "saving" ? (
-        <Notice tone="busy">{strings.recorderSaving}</Notice>
-      ) : (
-        // `info` (#140/#112): a heads-up about something already done — full
-        // ink, its own glyph, `role="status"`. NOT `alert` (nothing failed; the
-        // recording is safe) and NOT `busy` (it is not a wait — the take is
-        // finished, waiting only on the Close it names). Exactly the tone
-        // `info` was added for.
-        <Notice tone="info">{strings.recorderInterrupted}</Notice>
-      )}
+      <Notice tone="busy">{strings.recorderSaving}</Notice>
     </div>
   );
 }

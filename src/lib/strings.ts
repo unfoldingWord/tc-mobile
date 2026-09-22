@@ -189,8 +189,10 @@ export const strings = {
     segment: number
   ): string => `${book} > ${strings.chapterName(chapter)} > ${segment}`,
   record: "Record",
-  pause: "Pause",
-  resume: "Resume",
+  // The second tap on the record control ENDS the take and commits it in place
+  // (#614). It was "Pause"/"Resume" while a take could be suspended and
+  // continued; that state is gone, so the name says what the tap now does.
+  stop: "Stop recording",
   // The zoom toggle's two names (#91). Each says the STATE first and the ACTION
   // second, because the first external tester read the old glyph as the state
   // and the old labels ("Zoom: whole segment" / "Zoom: quarter view") named only
@@ -210,26 +212,19 @@ export const strings = {
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
-  // The recorder's commit-window status (#39). "saving": a take is committing
-  // (stop → decode → the IndexedDB write, spanned by `isClosing`, not just the
-  // `processing` state). "interrupted": the mic was lost mid-take (#59) and the
-  // frozen take is held in memory until the recorder is closed — so the copy
-  // names the real control, "Close recorder" (nothing is named "Back"), the
-  // same wording #139 rewrites `previewUnavailable` to.
+  // The recorder's commit-window status (#39): a take is committing — stop →
+  // decode → the IndexedDB write, spanned by `isClosing`, not just the
+  // `processing` state.
   //
-  // It names that control TWICE, on purpose (#620). "Close recorder" is the
-  // accessible name of an icon-only `Control`, so it is what AT speaks and
-  // NOT a word anyone can see: a tester on Android read 'Use "Close recorder"
-  // to save it' and found nothing on screen so labelled. So the cue also says
-  // what the control looks like and where it is — "the back arrow at the
-  // top" — which is how the facilitator runbook already refers to it.
-  // `previewUnavailable` below follows the same rule, and
-  // `tests/menu-row-state.test.ts` ties "back arrow" to the header control's
-  // actual glyph, so a change to either half fails the suite. `blockedByTake`
-  // deliberately does NOT follow it — its own comment says why.
+  // It had a second line, `recorderInterrupted`, for a #59 interruption's
+  // frozen take: 'Recording finished. Tap the back arrow at the top ("Close
+  // recorder") to save it.' #614 made that false — an interruption ends the
+  // take and the sheet commits it in place, with nothing asked of the
+  // translator — so the line is gone rather than reworded. Its #620 rule
+  // survives it and is stated on `blockedByTake` below, which still names a
+  // control: say what the control LOOKS LIKE as well as what AT calls it, since
+  // an icon-only `Control`'s accessible name is not a word anyone can see.
   recorderSaving: "Saving…",
-  recorderInterrupted:
-    'Recording finished. Tap the back arrow at the top ("Close recorder") to save it.',
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
@@ -375,16 +370,10 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
-  // Same rule as `blockedByTake`: name the control, do not invent "Back" — and
-  // say what it looks like as well as what AT calls it (`recorderInterrupted`
-  // has the reasoning, #620).
-  previewUnavailable:
-    'Can\'t preview this yet. Tap the back arrow at the top ("Close recorder") to save it, then play it.',
-
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
-  // hand. Short and literal, like `previewUnavailable`.
+  // hand. Short and literal.
   // Names both steps in the order the overlay allows — while this menu is open
   // the sheet's control is behind the scrim (and, at idle, behind its `inert`
   // too), so it is out of reach until the menu closes. Mid-take the SHEET is no
@@ -398,15 +387,15 @@ export const strings = {
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
-  // This one names the controls by name ONLY and does not borrow
-  // `recorderInterrupted`'s "the back arrow at the top" (#620): it is spoken
+  // This one names the controls by name ONLY and does not describe their
+  // glyphs the way the body notices do (#620): it is spoken
   // inside the ≡ menu, where the recorder header — and so "Close recorder" —
   // is `inert` and the one live back chevron on screen is the menu's own
   // dismiss. Describing the save control by its looks here would point at the
   // dismiss, the exact collision the round-1 `back` badge had
   // (`menu-row-state.ts`, `rowHint`'s docblock); #648 round 1 (George P2)
-  // caught the words repeating it. `tests/menu-row-state.test.ts` pins both
-  // halves: the body notices describe the glyph, this hint never does.
+  // caught the words repeating it. `tests/menu-row-state.test.ts` pins this
+  // half: the hint never describes a glyph.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
   // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
