@@ -1,5 +1,5 @@
-import type { BookId, ChapterId } from "@/types/domain";
-import type { BookCard } from "@/types/view";
+import type { BookId, ChapterId, SegmentId } from "@/types/domain";
+import type { BookCard, SegmentRow } from "@/types/view";
 
 /**
  * The control the guide is pointing at right now, or `null` for "nothing".
@@ -15,6 +15,7 @@ export type GuidedStep =
   | { readonly kind: "add-chapter"; readonly bookId: BookId }
   | { readonly kind: "open-chapter"; readonly chapterId: ChapterId }
   | { readonly kind: "add-segment" }
+  | { readonly kind: "open-segment"; readonly segmentId: SegmentId }
   | { readonly kind: "record" };
 
 /**
@@ -35,7 +36,8 @@ export type GuideView =
       readonly screen: "segments";
       /** The chapter read has completed. */
       readonly loaded: boolean;
-      readonly segmentCount: number;
+      /** The rows the screen is already rendering. */
+      readonly segments: readonly SegmentRow[];
     }
   | {
       readonly screen: "recorder";
@@ -50,7 +52,7 @@ export type GuideView =
  * app from an empty shelf to a first recording (#604).
  *
  * The chain is: New Book -> Create book -> Add chapter -> open that chapter ->
- * Add segment -> Record. It ends there, and that is a decision rather than an
+ * Add segment -> that segment's Record -> the recorder's Record. It ends there, and that is a decision rather than an
  * omission: the guide exists to reach a first recording without instruction,
  * and once a recording exists in the book there is no further step the app can
  * call required — marking a segment Finished is the translator's judgement, not
@@ -68,9 +70,7 @@ export function guidedStep(view: GuideView): GuidedStep | null {
     case "books":
       return booksStep(view);
     case "segments":
-      return view.loaded && view.segmentCount === 0
-        ? { kind: "add-segment" }
-        : null;
+      return segmentsStep(view);
     case "recorder":
       // Steps 7 and 8 in one condition. A take is spliced into the working
       // buffer only when the sheet closes (Model A, commit-on-close — see
@@ -80,6 +80,24 @@ export function guidedStep(view: GuideView): GuidedStep | null {
       // over.
       return view.loaded && !view.hasAudio ? { kind: "record" } : null;
   }
+}
+
+function segmentsStep(
+  view: Extract<GuideView, { screen: "segments" }>
+): GuidedStep | null {
+  if (!view.loaded) return null;
+  const { segments } = view;
+  if (segments.length === 0) return { kind: "add-segment" };
+  // The terminal rule on this screen. `hasClip` and not `activeTakeId`: a
+  // dangling or undecodable clip reads as never-recorded in the row itself
+  // (F3, `types/view.ts`), and a guide that disagreed with the row would point
+  // at a finished-looking segment or skip a broken one.
+  if (segments.some((segment) => segment.hasClip)) return null;
+  // The hop between "Add segment" and the recorder. A segment with no audio is
+  // not the end of the chain — the row's red Record is the only door to the
+  // recorder, and a first-time user has never seen it.
+  const first = segments.find((segment) => !segment.hasClip);
+  return first ? { kind: "open-segment", segmentId: first.segmentId } : null;
 }
 
 function booksStep(

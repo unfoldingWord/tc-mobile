@@ -676,11 +676,7 @@ export const SegmentsScreen = forwardRef<
   // The guided chain's answer for this screen (#604). The append `+` in the
   // header is hidden while the invite is up, so the CTA below is the only
   // control this step can mean.
-  const guide = guidedStep({
-    screen: "segments",
-    loaded,
-    segmentCount: rows.length,
-  });
+  const guide = guidedStep({ screen: "segments", loaded, segments: rows });
 
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
@@ -856,6 +852,10 @@ export const SegmentsScreen = forwardRef<
                   }
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)
+                  }
+                  guided={
+                    guide?.kind === "open-segment" &&
+                    guide.segmentId === row.segmentId
                   }
                   onErase={() => armErase(row.segmentId)}
                   onMenuOpen={onRowMenuOpen}

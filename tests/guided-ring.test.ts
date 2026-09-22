@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { Control } from "@/components/control";
 import { EmptyState } from "@/components/empty-state";
 import { NameEdit } from "@/components/name-edit";
+import { SegmentRow } from "@/components/segment-row";
+import type { SegmentRow as SegmentRowModel } from "@/types/view";
 
 import { one, render } from "./render";
 
@@ -82,6 +84,19 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     }
   });
 
+  it("drops the ring inside an inert subtree, and does so last", () => {
+    // Composition, not decision: a screen that goes inert behind a scrim keeps
+    // rendering the mark it last painted, so the ring has to be killed where
+    // the subtree is, not where the step is. Source order is the assertion —
+    // this rule ties with the record exception on specificity, so it only wins
+    // by coming after it.
+    const block = ruleBlock(components, "[inert] .is-guided");
+    expect(block).toMatch(/box-shadow:\s*none/);
+    expect(components.indexOf("[inert] .is-guided")).toBeGreaterThan(
+      components.indexOf(".control--record.is-guided")
+    );
+  });
+
   it("keeps the record ring OUTSIDE the red, and every other ring inside", () => {
     // Not a taste call. The accent on `--s-live` is ~1.05:1 (see
     // `tests/contrast.test.ts`), so a ring drawn inside the red button is a
@@ -105,7 +120,7 @@ describe("every step of the chain reaches a control (#604)", () => {
       "add-chapter",
       "open-chapter",
     ],
-    "src/components/segments-screen.tsx": ["add-segment"],
+    "src/components/segments-screen.tsx": ["add-segment", "open-segment"],
     "src/components/recorder.tsx": ["record"],
   } as const;
 
@@ -170,6 +185,40 @@ describe("the mark reaches the control it is given to (#604)", () => {
     );
     expect(one(container, "button").className).toContain("is-guided");
     expect(container.querySelectorAll(".is-guided")).toHaveLength(1);
+  });
+
+  it("SegmentRow hands the mark to the red Record that opens the recorder", () => {
+    // The row's own Record is the door to the recorder, and it is a
+    // `--record` control, so the ring lands on it through the outset rule the
+    // recorder's Record uses — the stylesheet keys that on the variant, not on
+    // the screen, so both red controls are covered by one exception.
+    const row: SegmentRowModel = {
+      segmentId: "segment-1" as SegmentRowModel["segmentId"],
+      ordinal: 1,
+      hasClip: false,
+      finished: false,
+      clipId: null,
+      peaks: null,
+      durationMs: null,
+    };
+    const container = (guided: boolean) =>
+      render(
+        createElement(SegmentRow, {
+          row,
+          playing: false,
+          playbackElapsedMs: 0,
+          onPlay: () => {},
+          onOpenRecorder: () => {},
+          onSetFinished: () => {},
+          onErase: () => {},
+          guided,
+        })
+      );
+
+    const marked = one(container(true), ".is-guided");
+    expect(marked.getAttribute("aria-label")).toBe("Record segment 1");
+    expect(marked.className).toContain("control--record");
+    expect(container(false).querySelectorAll(".is-guided")).toHaveLength(0);
   });
 
   it("NameEdit hands the mark to its commit control, never the field", () => {

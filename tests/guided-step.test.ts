@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { guidedStep, type GuideView } from "@/components/guided-step";
 import type { BookId, ChapterId } from "@/types/domain";
-import type { BookCard, ChapterRow } from "@/types/view";
+import type { BookCard, ChapterRow, SegmentRow } from "@/types/view";
 
 /**
  * The guided chain (#604), as a table.
@@ -26,6 +26,16 @@ const chapter = (n: number, totalCount = 0): ChapterRow => ({
   name: null,
   finishedCount: 0,
   totalCount,
+});
+
+const segment = (n: number, hasClip = false): SegmentRow => ({
+  segmentId: `segment-${n}` as SegmentRow["segmentId"],
+  ordinal: n,
+  hasClip,
+  finished: false,
+  clipId: null,
+  peaks: null,
+  durationMs: null,
 });
 
 const book = (n: number, chapters: readonly ChapterRow[] = []): BookCard => ({
@@ -132,22 +142,45 @@ describe("the Books screen's link in the chain (#604)", () => {
 });
 
 describe("the Segments screen's link in the chain (#604)", () => {
-  const segments = (loaded: boolean, segmentCount: number): GuideView => ({
-    screen: "segments",
-    loaded,
-    segmentCount,
-  });
+  const segments = (
+    loaded: boolean,
+    rows: readonly SegmentRow[]
+  ): GuideView => ({ screen: "segments", loaded, segments: rows });
 
   it("guides nothing while the chapter is still being read", () => {
-    expect(guidedStep(segments(false, 0))).toBeNull();
+    expect(guidedStep(segments(false, []))).toBeNull();
   });
 
   it("steps 5 and 6: an empty chapter guides Add segment", () => {
-    expect(guidedStep(segments(true, 0))).toEqual({ kind: "add-segment" });
+    expect(guidedStep(segments(true, []))).toEqual({ kind: "add-segment" });
   });
 
-  it("stops once a segment exists", () => {
-    expect(guidedStep(segments(true, 1))).toBeNull();
+  it("hands the chain on to the row that opens the recorder", () => {
+    // The hop the issue's own list skips: a segment exists, nothing has been
+    // recorded into it, and the next required action is the row's red Record —
+    // the only door to the recorder. Without this the guide goes dark exactly
+    // where a first-time user has never been.
+    expect(guidedStep(segments(true, [segment(1)]))).toEqual({
+      kind: "open-segment",
+      segmentId: segment(1).segmentId,
+    });
+  });
+
+  it("names the FIRST segment with no take, not the last row added", () => {
+    expect(guidedStep(segments(true, [segment(1), segment(2)]))).toEqual({
+      kind: "open-segment",
+      segmentId: segment(1).segmentId,
+    });
+  });
+
+  it("stops once any segment has audio — the terminal rule, on this screen", () => {
+    // `hasClip`, not `activeTakeId`: a dangling or undecodable clip reads as
+    // never-recorded everywhere else in this screen (F3 in `types/view.ts`),
+    // and the guide agrees with the row rather than with the database.
+    expect(guidedStep(segments(true, [segment(1, true)]))).toBeNull();
+    expect(
+      guidedStep(segments(true, [segment(1, true), segment(2)]))
+    ).toBeNull();
   });
 });
 

@@ -208,14 +208,19 @@ describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)
 
 describe("the guide ring is visible on every surface it is drawn on (#604)", () => {
   // The ring is INSET on a control's own box and on the chapter row, and
-  // OUTSET on the record button — so what it has to stand out from differs by
-  // call site, and each one is scored against what is actually behind it.
+  // OUTSET on either red Record — the recorder's and the segment row's, which
+  // the stylesheet covers with one variant-keyed rule. What the ring has to
+  // stand out from therefore differs by call site, and each one is scored
+  // against what is actually behind it.
   const behind = [
     [
       "--s-raised",
       "inset on a `.control` — the header + and both empty-state CTAs",
     ],
-    ["--s-surface", "inset on a control that sits on a panel"],
+    [
+      "--s-surface",
+      "outset around the segment row's red Record — `.row`'s own surface",
+    ],
     [
       "--s-floor",
       "inset on the transparent chapter row; outset around the record button",
