@@ -164,12 +164,11 @@ interface Failure {
 /**
  * Fold a freshly added chapter into its book's card, in the same turn as the
  * write — patched immediately, the same contract `createBook`'s optimistic
- * insert and `useChapterSegments.addSegment` both follow, so the control's
- * own repeated activations (fast taps, a held Enter's key-repeat) see the row
- * that landed instead of an empty card that reads as "nothing happened"
- * (George R3/R4 P2): without the patch, the row stayed empty until
+ * insert and `useChapterSegments.addSegment` both follow, so a repeated confirm
+ * sees the row that landed instead of an empty card that reads as "nothing
+ * happened" (George R3/R4 P2): without the patch, the row stayed empty until
  * `loadBookCards` finished, and on this tree there is no way to delete the
- * extra chapter a second tap writes. The caller (`addChapter`) still
+ * extra chapter a second confirm writes. The caller (`addChapter`) still
  * `reload()`s after patching — see its own comment (George R7 P2) — for the
  * two-copy shelf-reconciliation `reportUnlessStale` is built around;
  * `isLoadCurrent` (below) is what stops that reload's own read from landing
