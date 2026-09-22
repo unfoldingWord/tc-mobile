@@ -7,6 +7,7 @@ import {
   heldByDrag,
   liftOutcome,
   liveScopeShown,
+  panAfterCommit,
   panAfterCutRest,
   panAfterDragMove,
   panAfterInsert,
@@ -35,26 +36,29 @@ import {
 } from "@/lib/audio/viewport";
 
 /**
- * Base state: idle, empty segment, tap healthy, no preview. Every case overrides
- * only the fields it is about, so a reader sees exactly what drives the branch.
+ * Base state: idle, empty segment, tap healthy. Every case overrides only the
+ * fields it is about, so a reader sees exactly what drives the branch.
  */
 function stage(overrides: Partial<StageState> = {}): StageState {
   return {
     recording: false,
-    paused: false,
     processing: false,
     isClosing: false,
     hasAudio: false,
     meterFailed: false,
-    previewShown: false,
     ...overrides,
   };
 }
 
-/** The four take-in-flight states, each of which should drive the live scope. */
+/**
+ * The take-in-flight states, each of which should drive the live scope.
+ *
+ * It was four. `{ paused: true }` was the fourth, and #614 removed the state
+ * itself: the tap that ends a recording commits it, so a take is live, being
+ * committed, or on the waveform — never suspended.
+ */
 const IN_FLIGHT: Array<Partial<StageState>> = [
   { recording: true },
-  { paused: true },
   { processing: true },
   { isClosing: true },
 ];
@@ -87,10 +91,9 @@ describe("liveScopeShown — an append renders exactly like a first take (#283)"
     );
   });
 
-  it("freezes (not blank / not the old clip) when a second take pauses or closes", () => {
+  it("freezes (not blank / not the old clip) while a second take commits", () => {
     // George R1 P2: gating the frozen arm on hasAudio swapped LiveScope→Waveform
     // here and flashed blank then the pre-take clip. The live scope must stay.
-    expect(liveScopeShown(stage({ paused: true, hasAudio: true }))).toBe(true);
     expect(liveScopeShown(stage({ processing: true, hasAudio: true }))).toBe(
       true
     );
@@ -107,22 +110,15 @@ describe("liveScopeShown — the stage-owning states win", () => {
     }
   });
 
-  it("never shows it when a preview is up, with or without existing audio", () => {
-    // George round 2 (the re-run after `a96a81e`): an append's own preview must
-    // ALSO win the stage, not just a first take's. `#101` Play-while-paused
-    // `mergeTake`s and sounds the merged buffer regardless of `hasAudio`, so
-    // leaving the live scope up here would play audio the stage does not draw,
-    // with no playhead over it. Reintroduce a `!hasAudio` condition on this
-    // guard (the round-1, `a96a81e` mistake) and the `hasAudio: true` half of
-    // this table dies.
-    for (const s of IN_FLIGHT) {
-      expect(
-        liveScopeShown(stage({ ...s, previewShown: true, hasAudio: false }))
-      ).toBe(false);
-      expect(
-        liveScopeShown(stage({ ...s, previewShown: true, hasAudio: true }))
-      ).toBe(false);
-    }
+  it("hands the stage back the moment the take leaves the in-flight window", () => {
+    // #614's visible half. Everything that made the recorder's own state
+    // special — the frozen ring, the refused pan, the preview — ended at the
+    // commit; the second `liveScopeShown` term used to keep it alive through an
+    // open paused take instead. With every in-flight flag down the ordinary
+    // `Waveform` path drives the stage, which is what makes the just-recorded
+    // take pannable, playable and editable at once.
+    expect(liveScopeShown(stage({ hasAudio: true }))).toBe(false);
+    expect(liveScopeShown(stage())).toBe(false);
   });
 });
 
@@ -257,45 +253,25 @@ describe("stageView", () => {
     });
   });
 
-  it("draws the whole clip for a paused-take preview, span or not", () => {
-    // The preview draws its own peaks across the whole stage (#101), so it is
-    // never shown through the pan window — and it is the ONE state that still
-    // does, now that a sounding buffer scrolls instead of swapping.
-    expect(stageView({ ...base, mode: "record", previewShown: true })).toEqual({
-      render: "whole",
-      windowControlsInert: false,
-    });
-    expect(
-      stageView({ ...base, previewShown: true, selectionActive: true })
-    ).toEqual({
-      render: "whole",
-      windowControlsInert: false,
-    });
-  });
-
-  it("a sounding preview is whole, never in-place and never scrolled", () => {
-    // A preview outranks both: it is a different buffer (the merged take, #101)
-    // whose samples have no relationship to the working buffer's pan, so
-    // neither the pan window nor a position within `working` means anything
-    // here. Mutation: ordering the preview test after the sounding ones — or
-    // dropping it from the scroll rule — flips exactly this case, since nothing
-    // else in the table sets `playingBuffer` and `previewShown` together.
-    expect(
-      stageView({
-        ...base,
-        playingBuffer: true,
-        previewShown: true,
-        selectionActive: true,
-      }).render
-    ).toBe("whole");
-    expect(
-      stageView({
-        ...base,
-        mode: "record",
-        playingBuffer: true,
-        previewShown: true,
-      }).render
-    ).toBe("whole");
+  it("has no fourth, whole-clip render left (#614)", () => {
+    // `"whole"` drew the #101 paused-take preview at clip fractions 0..1, and
+    // it was the ONE render in which the pan meant nothing — which is why
+    // `panGesture` had to refuse a drag under it. The preview went with the
+    // paused take, so every state this table can reach is drawn THROUGH the pan
+    // window or scrolled under the line, and a finger always has something real
+    // to move. Mutation: reintroduce any arm that answers `"whole"` and this
+    // dies, because nothing else can produce it.
+    const renders = new Set(
+      [
+        stageView(base),
+        stageView({ ...base, mode: "record" }),
+        stageView({ ...base, playingBuffer: true }),
+        stageView({ ...base, playingBuffer: true, selectionActive: true }),
+        stageView({ ...base, selectionActive: true }),
+        stageView({ ...base, dragging: true }),
+      ].map((v) => v.render)
+    );
+    expect(renders).toEqual(new Set(["static", "scroll", "inPlace"]));
   });
 
   it("never draws the whole clip for a sounding buffer (the #415 regression)", () => {
@@ -332,12 +308,6 @@ describe("stageView", () => {
       stageView({ ...base, playingBuffer: true, selectionActive: true })
         .windowControlsInert
     ).toBe(true);
-    // A preview on the stage is not a sounding buffer: Play is what sounds it,
-    // and the paused transport owns those controls (`idleEditable` is already
-    // false there).
-    expect(stageView({ ...base, previewShown: true }).windowControlsInert).toBe(
-      false
-    );
   });
 
   it("inerts the window controls while a finger owns the stage (#317)", () => {
@@ -360,8 +330,8 @@ describe("stageView", () => {
     // from under the finger.
     expect(stageView({ ...base, dragging: true }).render).toBe("static");
     expect(
-      stageView({ ...base, dragging: true, previewShown: true }).render
-    ).toBe("whole");
+      stageView({ ...base, dragging: true, playingBuffer: true }).render
+    ).toBe("scroll");
   });
 });
 
@@ -397,13 +367,32 @@ describe("panGesture", () => {
   });
 
   it("refuses without audio, and through a live or committing take", () => {
-    // F11 (nothing to slide), #61 (the insertion offset is locked at the Record
-    // tap, so the line must not move out from under it during `requesting`),
-    // and a paused take for the same reason.
+    // F11 (nothing to slide) and #61 (the insertion offset is locked at the
+    // Record tap, so the line must not move out from under it while the
+    // capture or its commit is in flight).
     expect(panGesture({ ...gesture, hasAudio: false })).toBe("ignore");
     expect(panGesture({ ...gesture, recording: true })).toBe("ignore");
-    expect(panGesture({ ...gesture, paused: true })).toBe("ignore");
     expect(panGesture({ ...gesture, busy: true })).toBe("ignore");
+  });
+
+  it("pans a take that has just been committed — #614's whole point", () => {
+    // The reported bug: right after recording, the waveform would not scroll.
+    // The refusal that caused it was a fourth term, `paused`, beside the three
+    // above — the take was still open with its offset locked for a Resume, so
+    // the line could not move. Option A ends the take at the tap, so with the
+    // mic idle and nothing sounding a finger on the stage PANS. Mutation: add
+    // any term that stays true after the tap that ends a recording and this
+    // dies; the other three cases above stay green, which is exactly how the
+    // bug survived.
+    expect(
+      panGesture({
+        hasAudio: true,
+        recording: false,
+        busy: false,
+        playingBuffer: false,
+        render: "static",
+      })
+    ).toBe("pan");
   });
 
   it("takes a scrolling playback over: the touch pauses it (#317)", () => {
@@ -412,15 +401,12 @@ describe("panGesture", () => {
     ).toBe("interrupt");
   });
 
-  it("still refuses the two sounding states #317 did not reverse", () => {
-    // A paused-take preview draws a DIFFERENT buffer, whose pan means nothing;
-    // a picked-span audition would slide the band and its handles off the audio
-    // they mark while that audio sounds. Neither is what the requirements owner
-    // described, and D4 stands for both. Mutation: widen the rule to "any
-    // sounding buffer can be taken over" and both of these die.
-    expect(
-      panGesture({ ...gesture, playingBuffer: true, render: "whole" })
-    ).toBe("ignore");
+  it("still refuses the sounding state #317 did not reverse", () => {
+    // A picked-span audition would slide the band and its handles off the audio
+    // they mark while that audio sounds. That is not what the requirements
+    // owner described, and D4 stands. Mutation: widen the rule to "any sounding
+    // buffer can be taken over" and this dies. (The other refused state,
+    // `"whole"`, went with the #101 preview at #614.)
     expect(
       panGesture({ ...gesture, playingBuffer: true, render: "inPlace" })
     ).toBe("ignore");
@@ -428,7 +414,7 @@ describe("panGesture", () => {
 
   it("never takes over a take — the mic outranks the gesture", () => {
     // `render` cannot be "scroll" during a live take today (Record and Play are
-    // mutually exclusive), but the take terms are checked FIRST regardless: a
+    // mutually exclusive), but the take term is checked FIRST regardless: a
     // gesture that stopped playback while the mic was live would still be
     // moving the locked insertion offset. Mutation: order the playback branch
     // above the take terms and this dies.
@@ -440,13 +426,6 @@ describe("panGesture", () => {
         render: "scroll",
       })
     ).toBe("ignore");
-  });
-
-  it("does not take over a NON-sounding preview left on the stage", () => {
-    // `previewShown` outlives the sound (it stays up through `busy` and the
-    // close window, #101). With nothing sounding there is nothing to pause, so
-    // this is an ordinary pan, exactly as it was before #317.
-    expect(panGesture({ ...gesture, render: "whole" })).toBe("pan");
   });
 });
 
@@ -1054,6 +1033,55 @@ describe("panOrRest", () => {
  * #317 lift decision) needs the raw numeric sample even at the end, and
  * `panState` needs the F7 rest instead of a stale absolute index.
  */
+/**
+ * Where the line lands once a take commits in place (#614).
+ *
+ * The requirements owner said yes to Option A on one condition: "append by
+ * moving the playhead to the end and hitting Record again" must still work. The
+ * sheet no longer closes between takes, so SOMETHING has to place the line, and
+ * this is it — the end of what was just recorded, which is the end of the clip
+ * for the ordinary append and the far edge of the insert otherwise.
+ *
+ * Both wrong answers are pinned below, because both look right from one case:
+ * "leave the pan alone" is right for an append (the rest already follows the
+ * end) and reverses two consecutive mid-clip takes; "go to the end of the clip"
+ * is right for an append and throws away the insert position entirely.
+ */
+describe("panAfterCommit", () => {
+  it("rests at the end for an append — the F7 rest, not the number", () => {
+    // 1000 samples of clip, a 500-sample take appended at the end. The line
+    // must come back as `null`: the REST, which follows the end through a later
+    // Paste or Undo. Returning 1500 would be a stale absolute index the moment
+    // anything changes the buffer — the #442 class, and the reason `panOrRest`
+    // exists at all. Mutation: return the bare clamped sample and this dies
+    // while the insert case below stays green.
+    expect(panAfterCommit(1_000, 500, 1_500)).toBeNull();
+  });
+
+  it("lands past a mid-clip insert, so the next take continues it", () => {
+    // A take spliced at 400 into a 1000-sample clip, 500 samples long: the clip
+    // is now 1500 and the new audio occupies [400, 900). The line goes to 900.
+    // Mutation: return the offset instead of offset+takeLength and this dies —
+    // that is the "record twice in the middle and get them in reverse order"
+    // defect, which the append case cannot see.
+    expect(panAfterCommit(400, 500, 1_500)).toBe(900);
+  });
+
+  it("rests for a first take into an empty segment", () => {
+    // Offset 0, nothing behind it: the take IS the clip, so the line rests at
+    // its end and a second Record appends.
+    expect(panAfterCommit(0, 800, 800)).toBeNull();
+  });
+
+  it("clamps rather than trusting the arithmetic", () => {
+    // Defence, not a reachable case: a take reported longer than the committed
+    // buffer would otherwise write a pan past the end, which `effectivePan`
+    // would then clamp silently every render instead of once, here.
+    expect(panAfterCommit(1_000, 9_999, 1_500)).toBeNull();
+    expect(panAfterCommit(-50, 100, 1_000)).toBe(50);
+  });
+});
+
 describe("panAfterDragMove", () => {
   it("keeps an absolute sample when the drag stops short of the end", () => {
     const { raw, pan } = panAfterDragMove({
@@ -1565,20 +1593,15 @@ describe("recordDisabled", () => {
 
   it("is dead while a buffer sounds at idle — the drawn line is not the offset", () => {
     // Under `"scroll"` the line marks the SOUNDING sample while `panState` is
-    // still the pre-play value, and under `"whole"` it marks nothing in the
-    // working buffer at all. Either way a take started here would splice
-    // somewhere the translator cannot see.
+    // still the pre-play value, so a take started here would splice somewhere
+    // the translator cannot see.
+    //
+    // This used to carry ONE exemption: a paused take, where the button was
+    // Resume and its offset had been locked at the original Record tap (George
+    // R3 #4 on #101). #614 ended the paused take, so a sounding buffer now
+    // disables this outright. Mutation: restore any exemption to this term and
+    // it dies.
     expect(recordDisabled({ ...live, playingBuffer: true })).toBe(true);
-  });
-
-  it("stays LIVE as Resume, even with a preview sounding", () => {
-    // While PAUSED this button is Resume, whose offset was locked at the
-    // original Record tap (F9) — resuming stops the preview and continues the
-    // take, so gating it would strand a paused take (George R3 #4 on #101).
-    expect(recordDisabled({ ...live, paused: true, playingBuffer: true })).toBe(
-      false
-    );
-    expect(recordDisabled({ ...live, paused: true })).toBe(false);
   });
 
   it("is dead while a finger owns the stage (#317)", () => {
@@ -1587,11 +1610,11 @@ describe("recordDisabled", () => {
     // be tappable by a second finger until the first one lifts, or the offset
     // locks to a pan that is still moving.
     expect(recordDisabled({ ...live, dragging: true })).toBe(true);
-    // And a drag cannot resurrect it while a take is paused either — that is
-    // the `dragging` term standing on its own, not riding `playingBuffer`.
-    expect(recordDisabled({ ...live, dragging: true, paused: true })).toBe(
-      true
-    );
+    // And it stands on its own, not riding `playingBuffer`: a drag with nothing
+    // sounding still holds the control down.
+    expect(
+      recordDisabled({ ...live, dragging: true, playingBuffer: false })
+    ).toBe(true);
   });
 });
 
