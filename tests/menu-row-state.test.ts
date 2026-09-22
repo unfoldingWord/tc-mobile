@@ -371,7 +371,7 @@ describe("the starting race — all three rows, distinct words", () => {
  * whose decode failed, so every operation holding that take has to block it.
  * `sharing` joined `retrying` when the native share route landed: there the
  * chooser does NOT open in the tap — the file is written to the app cache first,
- * in 768 KB chunks, each returning to the event loop with the panel mounted and
+ * in 384 KiB chunks, each returning to the event loop with the panel mounted and
  * clickable (George R5 P1).
  *
  * The predicate is shared by the control's `disabled`, by the armed-confirm

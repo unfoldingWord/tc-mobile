@@ -35,7 +35,9 @@ export const SHARE_CACHE_DIR = "tc-mobile-share";
  * Blob the browser backs itself — `use-book-share.ts` builds it from fflate's
  * stream chunks precisely so no archive-sized buffer is ever allocated. Reading
  * it whole would undo that and add ~1.33x of base64 on top, in the JS heap of a
- * 4 GB phone. So it goes a slice at a time and the peak stays ~1.8 MB.
+ * 4 GB phone. Each 384 KiB slice produces at most 512 KiB of base64,
+ * leaving room for the native bridge envelope below a 1 MiB payload budget.
+ * This bounds each call; it does not establish a device-specific bridge limit.
  *
  * A MULTIPLE OF 3 on purpose: base64 encodes three bytes to four characters, so
  * an aligned chunk carries no `=` padding. The plugin decodes each call's data
@@ -45,7 +47,7 @@ export const SHARE_CACHE_DIR = "tc-mobile-share";
  * padding-free chunks concatenate to the original bytes whether the native side
  * decodes per call or joins the strings first.
  */
-export const SHARE_CHUNK_BYTES = 768 * 1024;
+export const SHARE_CHUNK_BYTES = 384 * 1024;
 
 /** What the platform can do, read at the moment of the decision. */
 export interface ShareEnvironment {
@@ -231,7 +233,7 @@ export interface NativeShareSession {
    *
    * **This is the slow half, and it is deliberately separate from {@link send}**
    * (George R5 P2). A book zip is tens of megabytes and crosses the bridge in
-   * 768 KB chunks, so this runs for seconds. Every caller already has a place
+   * 384 KiB chunks, so this runs for seconds. Every caller already has a place
    * for slow work — `useShareFlow`'s tap 1, which paints `preparing` — and none
    * of them has a place for it in the gesture that opens the sheet. Putting it
    * there made "Share now" look like a dead button and left the flow `ready`
@@ -298,7 +300,7 @@ export function createNativeShareSession(
       try {
         // Checked IMMEDIATELY BEFORE each bridge call, never merely before the
         // read that precedes it (Frank R6 P2). Reading and base64-encoding a
-        // 768 KB slice is itself an await, so a cancel arriving during the read
+        // 384 KiB slice is itself an await, so a cancel arriving during the read
         // would otherwise still buy one more native write — the expensive half —
         // on exactly the slow device this cancel exists for.
         throwIfAborted(signal);
