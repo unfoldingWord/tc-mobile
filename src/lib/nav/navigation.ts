@@ -192,7 +192,7 @@ export type PopAction =
  * described PR2 after PR3 had shipped, and a reader who trusted it would treat
  * `"rearm-layer-dismiss"` as inert and copy "always `pushHistoryEntry()`" onto
  * the floor path — the exact mutant `e2e` case (e) exists to kill). Books'
- * overlays push as of PR3; Segments' follow in PR4. Both layer tags are
+ * and Segments' overlays push onto it. Both layer tags are
  * reachable on any Back landing with an overlay open, and what the adapter owes
  * each of them — including Amendment G's one exception at the floor, the
  * paragraph above — is the contract to read, not an unreachable branch.
@@ -278,7 +278,8 @@ export function overlayBlocksClose(
 
 /**
  * When a system Back is absorbed by an open recorder overlay (`overlayBlocksClose`
- * is true), WHICH overlays `close()` may dismiss (Frank R4-1). The ≡ menu and a
+ * is true), WHICH overlays `close()` may dismiss (Frank R4-1). Segments also uses
+ * this table for its `dismissOverlays` confirm row (Amendment C). The ≡ menu and a
  * confirm dialog still awaiting the user are dismissed; but a confirm whose erase
  * is ALREADY IN FLIGHT is NOT. `onConfirmErase` deliberately holds `confirmOpen`
  * true across the whole IndexedDB delete precisely to keep the sheet `inert`, and

@@ -1849,6 +1849,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // offered on a segment that has stored audio — a first, uncommitted recording
     // in this session has nothing on disk to erase.
     const erase = useEraseSegment();
+    const isErasing = erase.isErasing;
     const onConfirmErase = useCallback(() => {
       // Stop any buffer playback before the delete: EraseConfirm latches its
       // in-flight guard synchronously and the sheet is inert, so Play — the only
@@ -2044,7 +2045,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // screen, the Back must dismiss IT and stay, never commit over an in-flight
       // erase (the R-B6 last-writer race) or a menu selection. Resolve false so
       // App keeps the sheet's protective history entry and the sheet itself.
-      if (overlayBlocksClose(menuOpen, confirmOpen, erase.erasing)) {
+      const erasing = isErasing();
+      if (overlayBlocksClose(menuOpen, confirmOpen, erasing)) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
         // un-inerts the sheet, exposing Record, whose new capture the erase's
@@ -2052,7 +2054,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // down. The sheet's gate is now `overlayUp && !takeActive` (#75), not
         // `confirmOpen` alone — but `overlayUp` folds in `erase.erasing`, and an
         // erase is only ever reachable at idle, so R4-1 still holds exactly.
-        const dismiss = overlayDismissal(menuOpen, confirmOpen, erase.erasing);
+        const dismiss = overlayDismissal(menuOpen, confirmOpen, erasing);
         if (dismiss.closeMenu) setMenuOpen(false);
         if (dismiss.closeConfirm) setConfirmOpen(false);
         return Promise.resolve(false);
@@ -2236,7 +2238,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       stayOpen,
       menuOpen,
       confirmOpen,
-      erase.erasing,
+      isErasing,
       heldTake,
     ]);
 
