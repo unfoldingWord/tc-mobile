@@ -79,7 +79,7 @@ const codec = (): AudioCodec => ({
 });
 
 describe("the transcode sweep pause/resume gate", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks();
     vi.mocked(withEncoder).mockImplementation(async (_signal, work) =>
       work(codec())
@@ -88,6 +88,14 @@ describe("the transcode sweep pause/resume gate", () => {
       resolvedPcm(segmentId, cid(`clip-${segmentId}`))
     );
     vi.mocked(commitTranscode).mockResolvedValue("committed");
+    // The sweep's state is module-scoped, so a run an earlier case left in
+    // flight would spend THIS case's mocks. Join it on an empty owed list —
+    // `requestTranscodeSweep` returns the run in progress when there is one —
+    // and only then let the case start counting.
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue([]);
+    await requestTranscodeSweep();
+    vi.mocked(listPcmFinishedSegments).mockClear();
+    vi.mocked(commitTranscode).mockClear();
   });
 
   it("defers requested work while paused, then resumes it", async () => {
@@ -128,6 +136,40 @@ describe("the transcode sweep pause/resume gate", () => {
 
     await vi.waitFor(() => {
       expect(commitTranscode).toHaveBeenCalledTimes(2);
+    });
+  });
+  it("hands a request that arrived during the run to the resume", async () => {
+    // The pause lands while the LAST segment of the pass commits, so
+    // `sweepOnce`'s per-segment check never runs again and `runSweeps` is where
+    // the pause is noticed — with `requestedDuringRun` set by the transition
+    // that asked for another pass. Nothing else will ask again: the resume is
+    // the only thing left that can spend it.
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue([
+      { segmentId: sid("s1"), clipId: cid("clip-s1") },
+      { segmentId: sid("s2"), clipId: cid("clip-s2") },
+    ]);
+    let commits = 0;
+    vi.mocked(commitTranscode).mockImplementation(async () => {
+      commits += 1;
+      if (commits === 2) {
+        // A Finished transition asks for another pass, and the save-failure
+        // screen mounts, both while this commit is in flight.
+        void requestTranscodeSweep();
+        pauseTranscodeSweep("save-failed");
+      }
+      return "committed";
+    });
+
+    await requestTranscodeSweep();
+    expect(commitTranscode).toHaveBeenCalledTimes(2);
+
+    resumeTranscodeSweep("save-failed");
+
+    // Polled, never joined. `requestTranscodeSweep` would START the run this
+    // case exists to observe — awaiting it here would pass whether or not the
+    // resume did anything, which is the whole assertion.
+    await vi.waitFor(() => {
+      expect(vi.mocked(commitTranscode).mock.calls.length).toBeGreaterThan(2);
     });
   });
 });

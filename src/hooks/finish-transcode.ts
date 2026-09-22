@@ -205,7 +205,16 @@ async function runSweeps(): Promise<void> {
     let poison: SegmentId | null = null;
     do {
       requestedDuringRun = false;
-      if (quiesced || paused()) break;
+      if (quiesced) break;
+      // A pause noticed HERE, rather than inside `sweepOnce`, still ends a run
+      // that has work owed: `requestedDuringRun` was cleared one line above,
+      // and the stall budget's drain pass is scheduled through that same flag.
+      // Unlike the quiesce, the pause is reversible, so the owed pass has a
+      // reader — hand it over, or it is lost until the next launch.
+      if (paused()) {
+        requestedDuringPause = true;
+        break;
+      }
       const stalled = await sweepOnce(poison);
       if (stalled !== null) {
         // Second stall in this run: the encoder has stopped. End the run.
