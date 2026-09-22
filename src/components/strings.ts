@@ -25,6 +25,52 @@ function couldNotBeIncluded(subject: string): string {
   return `${subject} could not be included.`;
 }
 
+/** What a restart destroys, named — the subject of the two restart sentences. */
+export type RestartSubject = "recording" | "changes" | "cutAudio";
+
+/**
+ * Whether the cut phrase has to be named ON TOP of the subject.
+ *
+ * `cutAudio` already IS the cut phrase — `DatabasePanel` passes it with nothing
+ * else in hand — so adding the clause there would say the same thing twice.
+ */
+function carriesCutAudio(
+  subject: RestartSubject,
+  alsoCutAudio: boolean
+): boolean {
+  return alsoCutAudio && subject !== "cutAudio";
+}
+
+/**
+ * What a restart destroys, as the words that go inside both restart sentences.
+ *
+ * Composed rather than enumerated (George R5 P2): `SaveFailed` outranks
+ * `DatabasePanel` while a take is held, so on the terminal `downgrade` screen
+ * the restart is reached with a cut phrase in the clipboard that the reload
+ * drops too — and the panel that would have named it cannot mount. Enumerating
+ * that would have taken a three-value subject to six cases and made the next
+ * axis twelve; the phrase is built instead, so a third thing to lose costs one
+ * clause rather than doubling the table.
+ *
+ * It is composed HERE, beside the sentences it goes into, rather than in the
+ * component module that owned it before (#169). A fragment assembled outside
+ * the table is one a locale cannot re-order or re-inflect, so "a second UI
+ * language is a data change" would stop being true at exactly these two
+ * sentences. The full strings live in `tests/recovery-copy.test.ts`, which is
+ * where to grep for them.
+ */
+function lossPhrase(subject: RestartSubject, alsoCutAudio: boolean): string {
+  const base =
+    subject === "changes"
+      ? "these changes"
+      : subject === "cutAudio"
+        ? "the audio you cut"
+        : "this recording";
+  return carriesCutAudio(subject, alsoCutAudio)
+    ? `${base} and the audio you cut`
+    : base;
+}
+
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -269,6 +315,111 @@ export const strings = {
       ? `Your ${subject} is still here.`
       : `Your ${subject} of segment ${ordinal} is still here.`;
   },
+
+  // ── The save-failure screen's wording (#38) ──────────────────────────────
+  // The sentences below used to live in `recovery-copy.ts`, which held both the
+  // words and the rules that choose between them. The rules stayed there; the
+  // words are here (#169), so translating this screen is a change to this table
+  // and nothing else. `recovery-copy.ts` says which of them a given failure
+  // gets, and why.
+
+  /**
+   * The headline, by failure kind. `quota` reads the same either way — the
+   * phone is full whether the held work is a recording or an edit — while the
+   * other three name what could not be saved, so the two paths read honestly.
+   */
+  recoveryTitleQuota: "No room left on this phone.",
+  /**
+   * Named as the condition it is, not as a failure that might go the other way
+   * next time: another copy of the app has moved the data past this build, so
+   * every further attempt from here fails the same way. The line says what is
+   * needed rather than what went wrong, because that is the only thing left
+   * that is true (George R1 P2-1).
+   */
+  recoveryTitleDowngrade: (editOnly: boolean): string =>
+    editOnly
+      ? "Your changes need the new version of the app."
+      : "This recording needs the new version of the app.",
+  recoveryTitleStale: (editOnly: boolean): string =>
+    editOnly
+      ? "This book is gone. Your changes cannot be saved."
+      : "This book is gone. This recording cannot be saved.",
+  recoveryTitleUnknown: (editOnly: boolean): string =>
+    editOnly
+      ? "Your changes could not be saved."
+      : "This recording could not be saved.",
+
+  /**
+   * The safety line under Retry, shown on EVERY failed save — never an
+   * instruction to leave the app.
+   *
+   * Worded for what is actually RAM-only. Under Model A the working buffer
+   * being saved also carries any in-session cut/paste edits, and `discardSave`
+   * drops the whole recipe, so "your unsaved work" covers both the new
+   * recording and those edits (George G5), where "what you just recorded" was
+   * silent about the cuts. The edit path's subject is the edited buffer, whose
+   * prior stored take likewise survives.
+   */
+  recoverySafetyHeld: (editOnly: boolean): string =>
+    editOnly
+      ? "This screen has the only copy of your changes. Don't close the app."
+      : "This screen has the only copy of your unsaved work. Don't close the app.",
+  /**
+   * The ONE exception to "never send them out of the app", and it exists
+   * because the rule's premise fails here: staying is what keeps the work
+   * unsaveable. This build cannot open the store at all — a newer copy has
+   * moved the data past it — so "Don't close the app" would forbid the only
+   * thing that can help, while the headline asks for exactly that (George R2
+   * P2-1).
+   *
+   * What this line does NOT say is what becomes of the held recording across
+   * that restart. It is RAM-only and does not survive, and whether this screen
+   * should say so — and whether anything can be done to rescue it first — is a
+   * product question tracked on #441, not one to settle in a copy string.
+   */
+  recoverySafetyDowngrade: (editOnly: boolean): string =>
+    editOnly
+      ? "This copy of the app cannot save them. Restart to get the new version."
+      : "This copy of the app cannot save it. Restart to get the new version.",
+  recoverySafetyStale: (editOnly: boolean): string =>
+    editOnly
+      ? "This book was deleted in another copy of the app. Discard is the only exit."
+      : "This book was deleted in another copy of the app. Delete this recording to leave.",
+
+  /**
+   * The ARMED restart label, on a control that would destroy audio held only in
+   * memory.
+   *
+   * It names the loss rather than only the action: it is the last thing the
+   * translator reads before the audio is gone, so it does not say "restart" and
+   * leave them to work the rest out. Unarmed, the same control says
+   * `appReload` — `restartLabel` in `recovery-copy.ts` is the branch, and it is
+   * armed in two taps for the reason the Discard beside it is.
+   */
+  restartArmedLabel: (subject: RestartSubject, alsoCutAudio: boolean): string =>
+    `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`,
+  /**
+   * The line beside an ARMED restart, saying what the next tap costs. Shorter
+   * than the label on purpose: the label is the thing being tapped, this is the
+   * confirmation beside it. Both surfaces that offer the restart had this
+   * inline and identical in shape before it was shared, and they must not
+   * drift — they make the same claim.
+   *
+   * The verb agrees with the phrase, which is English grammar and therefore
+   * this table's business rather than a caller's (#169).
+   */
+  restartLossLine: (subject: RestartSubject, alsoCutAudio: boolean): string => {
+    const phrase = lossPhrase(subject, alsoCutAudio);
+    const plural =
+      subject === "changes" || carriesCutAudio(subject, alsoCutAudio);
+    return `Tap again and ${phrase} ${plural ? "are" : "is"} gone.`;
+  },
+  /**
+   * A faint attempt count, beside the safety line and never in place of it.
+   * Whether it shows at all is `recoveryAttempts` in `recovery-copy.ts`, which
+   * is where the suppression rules are.
+   */
+  recoveryAttemptsLine: (attempts: number): string => `Attempts: ${attempts}`,
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but

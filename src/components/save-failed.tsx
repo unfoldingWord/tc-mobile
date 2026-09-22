@@ -7,7 +7,6 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
-  restartConsequence,
   restartLabel,
 } from "./recovery-copy";
 import { SendLogControl } from "./send-log-control";
@@ -192,7 +191,7 @@ export function SaveFailed({
 
           {terminal && restartArmed && !restarting && (
             <p className="text-live text-[12px]">
-              {restartConsequence(
+              {strings.restartLossLine(
                 editOnly ? "changes" : "recording",
                 holdsCutAudio
               )}

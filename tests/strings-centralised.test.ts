@@ -33,9 +33,9 @@ import { messages } from "../src/lib/messages";
  *   - It reads string and template literals. Copy typed straight into JSX text
  *     (`<p>Tap again to delete it.</p>`) is not a literal and is not seen. Every
  *     occurrence #169 found was a literal; this is the shape that recurs.
- *   - `recovery-copy.ts`, `share-error-copy.ts` and `encoder-notice.ts` hold
- *     parameterised copy that is deliberately in neither table. Sentences only
- *     they have are outside the set — a sentence a TABLE also holds is not.
+ *   - It is about the TABLES' sentences. A sentence no table holds is outside
+ *     the set however plainly it is copy. The modules where that gap used to
+ *     matter most are covered by the second gate below.
  */
 
 const SRC = join(import.meta.dirname, "..", "src");
@@ -45,6 +45,35 @@ const TABLES = ["components/strings.ts", "lib/messages.ts"];
 
 /** Under this length, or with no space in it, a value is a word, not a sentence. */
 const SENTENCE_MIN = 12;
+
+/**
+ * The modules that CHOOSE copy without holding any.
+ *
+ * Each maps a domain value to words a table holds — a `SaveFailureKind` to a
+ * headline, a `ShareError` to a menu line, an `EncoderHealth` to a notice — and
+ * has no other kind of text in it. That makes a stronger claim testable here
+ * than the gate above can make anywhere else: not merely that a table's
+ * sentence is not repeated, but that these three files hold NO sentence at all,
+ * which catches a brand-new one too. `recovery-copy.ts` held fourteen of its
+ * own until #169 moved them into `strings.ts`.
+ *
+ * Their own discriminators (`"quota"`, `"cutAudio"`, `"chapter"`) are words
+ * rather than sentences, and `SENTENCE_MIN` is what keeps them out of the net —
+ * pinned below, since without it this gate would demand a union be "moved into
+ * a table".
+ */
+const COPY_MAPPERS = [
+  "components/encoder-notice.ts",
+  "components/recovery-copy.ts",
+  "components/share-error-copy.ts",
+];
+
+/** The sentence-shaped literals in `source` — the shape both gates look for. */
+function heldSentences(source: string): string[] {
+  return stringLiterals(source).filter(
+    (text) => text.includes(" ") && text.length >= SENTENCE_MIN
+  );
+}
 
 /**
  * The text of every string literal in `source`, comments skipped.
@@ -233,4 +262,33 @@ describe("centralised copy is not also inline", () => {
       expect(offenders).toEqual([]);
     });
   }
+});
+
+describe("the copy mappers choose words without holding them", () => {
+  it("names modules that are actually there", () => {
+    // Renaming one of these away must not silently retire its gate.
+    expect(sourceFiles()).toEqual(expect.arrayContaining(COPY_MAPPERS));
+  });
+
+  for (const file of COPY_MAPPERS) {
+    it(`${file} holds no sentence of its own`, () => {
+      expect(heldSentences(readFileSync(join(SRC, file), "utf8"))).toEqual([]);
+    });
+  }
+
+  it("does not read a discriminator as a sentence", () => {
+    // The legitimate state this gate has to stay green on: these modules are
+    // built out of string unions, and every one of them is a word.
+    expect(
+      heldSentences('type S = "cutAudio" | "chapter" | "downgrade";')
+    ).toEqual([]);
+  });
+
+  it("reads a sentence put back into one of them", () => {
+    // The state it exists to catch, on a fixture rather than on the tree, so
+    // the claim is checkable without editing a source file.
+    expect(heldSentences('const t = "No room left on this phone.";')).toEqual([
+      "No room left on this phone.",
+    ]);
+  });
 });

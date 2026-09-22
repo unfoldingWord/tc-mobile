@@ -4,9 +4,9 @@ import {
   recoveryAttempts,
   recoverySafetyLine,
   recoveryTitle,
-  restartConsequence,
   restartLabel,
 } from "@/components/recovery-copy";
+import { strings } from "@/components/strings";
 
 /**
  * The recovery-screen wording, isolated from the component so it can be exercised
@@ -197,36 +197,38 @@ describe("restartLabel", () => {
   });
 });
 
-describe("restartConsequence", () => {
+describe("strings.restartLossLine", () => {
   const subjects = ["recording", "changes", "cutAudio"] as const;
 
   it("says what the next tap costs, on each surface", () => {
-    expect(restartConsequence("recording")).toBe(
+    expect(strings.restartLossLine("recording", false)).toBe(
       "Tap again and this recording is gone."
     );
-    expect(restartConsequence("changes")).toBe(
+    expect(strings.restartLossLine("changes", false)).toBe(
       "Tap again and these changes are gone."
     );
     // The database panel's own line, now from the same place as its label so the
     // two cannot drift (George R4 P1, then R5 P2).
-    expect(restartConsequence("cutAudio")).toBe(
+    expect(strings.restartLossLine("cutAudio", false)).toBe(
       "Tap again and the audio you cut is gone."
     );
   });
 
   it("names both losses, and agrees with itself about number", () => {
-    expect(restartConsequence("recording", true)).toBe(
+    expect(strings.restartLossLine("recording", true)).toBe(
       "Tap again and this recording and the audio you cut are gone."
     );
-    expect(restartConsequence("changes", true)).toBe(
+    expect(strings.restartLossLine("changes", true)).toBe(
       "Tap again and these changes and the audio you cut are gone."
     );
     // Two things are gone, so "are" — a composed line is exactly where that slips.
     for (const subject of ["recording", "changes"] as const) {
-      expect(restartConsequence(subject, true)).toMatch(/ are gone\.$/);
-      expect(restartConsequence(subject, true)).toContain("the audio you cut");
+      expect(strings.restartLossLine(subject, true)).toMatch(/ are gone\.$/);
+      expect(strings.restartLossLine(subject, true)).toContain(
+        "the audio you cut"
+      );
     }
-    expect(restartConsequence("recording")).toMatch(/ is gone\.$/);
+    expect(strings.restartLossLine("recording", false)).toMatch(/ is gone\.$/);
   });
 
   it("matches the label about what is lost, on every combination", () => {
@@ -235,7 +237,7 @@ describe("restartConsequence", () => {
     for (const subject of subjects) {
       for (const alsoCutAudio of [false, true]) {
         const label = restartLabel(subject, true, alsoCutAudio);
-        const line = restartConsequence(subject, alsoCutAudio);
+        const line = strings.restartLossLine(subject, alsoCutAudio);
         for (const phrase of [
           "this recording",
           "these changes",
