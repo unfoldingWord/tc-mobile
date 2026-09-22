@@ -274,12 +274,50 @@ export const strings = {
   // the Done exit — the recording is off the phone, so leaving loses nothing.
   takeRecoverShared: "Recording shared.",
   takeRecoverDone: "Done",
-  // The two-tap discard on the recovery panel (George R1 G1 / Frank F2): the
-  // panel is otherwise a dead end when the decode never succeeds. Same armed
-  // second-tap shape as the SaveFailed screen — a stray tap never deletes.
-  takeRecoverDiscard: "Delete this recording",
-  takeRecoverDiscardArmed: "Tap again to delete this recording for good",
-  takeRecoverDiscardHint: "Tap again to delete it.",
+  // ── Discarding held work (#165 recovery panel, #38 SaveFailed) ───────────
+  // The two-tap discard. Both screens that offer it are a dead end otherwise —
+  // the recovery panel when the decode never succeeds, `SaveFailed` when the
+  // translator will not retry — and both destroy the only copy, so a stray tap
+  // never deletes. ONE set of keys, not one per screen: the two screens carried
+  // byte-identical copies of these three sentences until #169, and the comment
+  // that noted they were "the same armed second-tap shape" was the only thing
+  // keeping a wording edit to either from silently diverging them.
+  discardRecording: "Delete this recording",
+  discardRecordingArmed: "Tap again to delete this recording for good",
+  discardRecordingHint: "Tap again to delete it.",
+  // The edit path's siblings (`SaveFailed` with `editOnly`). Worded honestly:
+  // the previously stored recording survives a failed edit-save on disk, so
+  // "delete this recording for good" would be a lie about an edit.
+  discardChanges: "Discard these changes",
+  discardChangesArmed: "Tap again to discard these changes",
+  discardChangesHint: "Tap again to discard them.",
+
+  // ── A save that failed (#38) ──────────────────────────────────────────────
+  // The screen that stands between a failed save and losing the recording. Its
+  // headline, safety line and restart copy are the pure functions in
+  // `recovery-copy.ts` (they branch on `SaveFailureKind`); these are the rest.
+  /** The dialog's accessible name — the first thing a screen reader speaks. */
+  saveFailedLabel: (editOnly: boolean): string =>
+    editOnly ? "Your changes are not saved" : "This recording is not saved",
+  /** Shown in place of the headline while a retry is in flight. */
+  saveFailedSaving: "Saving",
+  /**
+   * The primary control. Never "free some space and try again": a failed save
+   * is RAM-only (#38), so sending the translator out of the app risks the OS
+   * discarding the only copy — see `recovery-copy.ts`.
+   */
+  saveFailedRetry: "Try saving again",
+  /**
+   * The reassurance line, under the headline. Names the segment when the held
+   * work belongs to one in this chapter, and says "edited recording" on the
+   * edit path, where only the edit is at stake.
+   */
+  saveFailedStillHere: (editOnly: boolean, ordinal: number | null): string => {
+    const subject = editOnly ? "edited recording" : "recording";
+    return ordinal === null
+      ? `Your ${subject} is still here.`
+      : `Your ${subject} of segment ${ordinal} is still here.`;
+  },
 
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but

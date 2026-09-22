@@ -17,6 +17,7 @@
  * holds the only copy, and leave the acting to the Retry/Discard controls.
  */
 
+import { strings } from "./strings";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 
 /**
@@ -134,7 +135,12 @@ export function restartLabel(
   armed: boolean,
   alsoCutAudio = false
 ): string {
-  if (!armed) return "Restart the app";
+  // The unarmed label is the SAME control the crash screen and the database
+  // panel offer, so it reads from their key rather than repeating it here
+  // (#169). A screen reader speaks the label and nothing else; two copies of it
+  // would mean one surface could start saying something different from the
+  // others after a wording edit, with nothing to notice.
+  if (!armed) return strings.appReload;
   return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
 }
 

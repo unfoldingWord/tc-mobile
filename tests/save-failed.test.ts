@@ -71,9 +71,36 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     );
 
     expect(html).toContain("This book is gone");
-    expect(html).not.toContain('aria-label="Try saving again"');
-    expect(html).not.toContain("Restart the app");
+    expect(html).not.toContain(`aria-label="${strings.saveFailedRetry}"`);
+    expect(html).not.toContain(strings.appReload);
     expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
     expect(html).toContain("control--primary");
+  });
+
+  /**
+   * The other half of the case above, and the reason it is worth having: the
+   * two assertions that Retry and Restart are ABSENT are negative, and a
+   * negative assertion against copy goes vacuous the moment the copy moves.
+   * Reading `strings.saveFailedRetry` and `strings.appReload` rather than their
+   * text (#169) is what keeps them honest; this case adds the positive half, so
+   * a render that dropped every control would not pass as "no Retry".
+   *
+   * Discard is the promoted exit on a stale target, so its wording is the thing
+   * a translator is left reading, and it must still name the held work
+   * correctly: the recording on the record path, the changes on the edit path,
+   * where the stored recording survives on disk and only the edit is at stake.
+   */
+  it("still names the held work on the promoted Discard, both paths (#378, #169)", () => {
+    const record = renderToStaticMarkup(
+      createElement(SaveFailed, { ...props, kind: "stale" })
+    );
+    expect(record).toContain(`aria-label="${strings.discardRecording}"`);
+    expect(record).not.toContain(strings.discardChanges);
+
+    const edit = renderToStaticMarkup(
+      createElement(SaveFailed, { ...props, kind: "stale", editOnly: true })
+    );
+    expect(edit).toContain(`aria-label="${strings.discardChanges}"`);
+    expect(edit).not.toContain(strings.discardRecording);
   });
 });
