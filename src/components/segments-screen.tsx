@@ -33,6 +33,7 @@ import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
+import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import type { ChapterId, SegmentId } from "@/types/domain";
@@ -693,19 +694,11 @@ export const SegmentsScreen = forwardRef<
   // for `encoder` and for no error, which is `Notice`'s own default.
   const shareErrorMark = shareErrorGlyph(share.error);
 
-  const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
-  // What to scroll to once `rows` next includes it — a freshly appended
-  // segment. A ref, not state: `addSegment` already re-renders us.
-  const pendingScroll = useRef<SegmentId | null>(null);
-  // See books-screen: the invite CTA unmounts on the append it triggers, so
-  // hand focus to the new row rather than let it fall to Back in the header.
-  const pendingFocus = useRef<SegmentId | null>(null);
-
-  const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
+  // The row registry and the arm-then-reveal pair, shared with Books (#160
+  // L-15). Focus lands on the row's open/record control explicitly (not DOM
+  // order) — the right next move on a never-recorded row (George R3 P3).
+  const rowReveal = useScrollToNew<SegmentId>(".row-open");
 
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded
@@ -713,27 +706,15 @@ export const SegmentsScreen = forwardRef<
     if (loading || didInitialScroll.current) return;
     didInitialScroll.current = true;
     const target = firstNotFinished(rows);
-    if (target)
-      nodes.current.get(target.segmentId)?.scrollIntoView({ block: "nearest" });
-  }, [loading, rows]);
+    if (target) rowReveal.scrollTo(target.segmentId);
+  }, [loading, rows, rowReveal]);
 
+  // Nothing on this screen holds the hand-off: focus is armed from one site
+  // only — the empty chapter's invite — and no overlay is up over it. Books
+  // passes a hold here, for a delete confirm that leaves the list `inert`.
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
-    const focusId = pendingFocus.current;
-    if (focusId !== null) {
-      // Target the row's open/record control explicitly (not DOM order) — the
-      // right next move on a never-recorded row (George R3 P3).
-      nodes.current
-        .get(focusId)
-        ?.querySelector<HTMLElement>(".row-open")
-        ?.focus();
-      pendingFocus.current = null;
-    }
-  }, [rows]);
+    rowReveal.reveal();
+  }, [rows, rowReveal]);
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
@@ -741,11 +722,11 @@ export const SegmentsScreen = forwardRef<
     const fromEmpty = rows.length === 0;
     const segment = await addSegment();
     if (!segment) return; // failed append surfaced through the hook's Notice
-    // The new <li> is not committed yet, so scroll once `rows` includes it —
-    // the same pending-id + effect pattern BooksScreen uses.
-    pendingScroll.current = segment.id;
-    if (fromEmpty) pendingFocus.current = segment.id;
-  }, [addSegment, rows]);
+    // The new <li> is not committed yet, so arm it and let the effect above
+    // scroll once `rows` includes it — the same hook BooksScreen uses.
+    rowReveal.armScroll(segment.id);
+    if (fromEmpty) rowReveal.armFocus(segment.id);
+  }, [addSegment, rows, rowReveal]);
 
   const onSetFinished = useCallback(
     (segmentId: SegmentId, finished: boolean) => {
@@ -833,7 +814,10 @@ export const SegmentsScreen = forwardRef<
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {rows.map((row) => (
-              <li key={row.segmentId} ref={(el) => setNode(row.segmentId, el)}>
+              <li
+                key={row.segmentId}
+                ref={(el) => rowReveal.setNode(row.segmentId, el)}
+              >
                 <SegmentRow
                   row={row}
                   playing={audio.playingId === row.segmentId}

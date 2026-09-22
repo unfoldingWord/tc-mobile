@@ -33,6 +33,7 @@ import { readSharePlatform } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
   useScreenLayers,
   type ScreenLayerBehavior,
@@ -213,7 +214,7 @@ export function BooksScreen({
   // Where focus was when the New Book dialog opened — the corner + or the empty
   // state's CTA. Restored when the dialog closes WITHOUT creating, so a cancel
   // does not drop focus to the document (the dialog's own controls unmount).
-  // Cleared on a successful create, where `pendingFocus` takes over instead.
+  // Cleared on a successful create, where the row hand-off takes over instead.
   const newBookReturnFocus = useRef<HTMLElement | null>(null);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
@@ -261,22 +262,25 @@ export function BooksScreen({
   const bookShare = useBookShare();
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
-  // What to scroll to once the list next reloads — a freshly made book or
-  // chapter. A ref, not state: creating one patches `books` directly (no
-  // `reload()` needed — see `useBooks.createBook`/`addChapter`, George R4
-  // P2-2), so the `books` change already re-renders us; clearing a ref here
-  // avoids a setState-in-effect cascade.
-  const pendingScroll = useRef<string | null>(null);
-  // The empty-state CTA unmounts on the create it triggers. Without this, focus
-  // falls to the document and the first header stop takes over — on a chapter
-  // that would be Back, one activation from leaving. Hand focus to the new row.
-  const pendingFocus = useRef<string | null>(null);
-  const nodes = useRef(new Map<string, HTMLElement>());
-
-  const setNode = useCallback((id: string, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
+  // The row registry and the arm-then-reveal pair, shared with Segments (#160
+  // L-15). Refs inside, not state: creating a book or chapter patches `books`
+  // directly (no `reload()` needed — see `useBooks.createBook`/`addChapter`,
+  // George R4 P2-2), so the change already re-renders us and an arm does not
+  // have to.
+  //
+  // The row's first `<button>` is the expand/collapse toggle, and it is the
+  // focus target on purpose — a DELIBERATE step back from an earlier round.
+  // Targeting `.control` put a live, activating native button under focus as
+  // the direct continuation of Confirm's own Enter — and a still-held Enter
+  // key-repeats `click` on whatever is focused, so a facilitator holding Enter
+  // through Confirm wrote MULTIPLE undeletable chapters before the per-book
+  // latch could catch up (the latch only stops OVERLAPPING calls; it releases
+  // the instant each write resolves, and a `put` is typically faster than OS
+  // key-repeat — George R4 P2-1). A stray re-activation of the toggle just
+  // re-collapses the row — visible immediately, undone by one more tap, and it
+  // writes nothing — so it is the safe landing spot even though Add-chapter is
+  // the more useful one Tab further on.
+  const rowReveal = useScrollToNew<string>("button");
 
   // ── System Back: this screen's overlays as layers (#452 PR3, #374) ────────
   //
@@ -406,9 +410,9 @@ export function BooksScreen({
    * would land on `document`. Do not "simplify" that layout effect back.
    */
   const closeDeleteConfirmState = useCallback(() => {
-    if (deleteTargetId !== null) pendingFocus.current = deleteTargetId;
+    if (deleteTargetId !== null) rowReveal.armFocus(deleteTargetId);
     setDeleteTargetId(null);
-  }, [deleteTargetId]);
+  }, [deleteTargetId, rowReveal]);
 
   const layers = useScreenLayers<BooksLayerId>(pushLayer, popLayer, {
     "books:global-menu": {
@@ -484,37 +488,16 @@ export function BooksScreen({
   }, [layers]);
 
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
-    const focusId = pendingFocus.current;
     // HOLD the hand-off while the delete confirm is up. The shelf is `inert`
     // then (see the wrapper below), and an element inside an inert subtree
-    // cannot take focus at all — so focusing here would be a silent no-op and
-    // the pending target would be consumed and lost. `deleteTargetId` going
-    // null is exactly the moment `inert` comes off, and it is in this effect's
-    // deps, so the hand-off runs on that render instead. This is the repo's own
-    // lesson, learned twice: a focus fix that ignores `inert` is dead code
-    // (#364; docs/progress_tracker.md).
-    if (focusId !== null && deleteTargetId === null) {
-      // The row's first <button> is the expand/collapse toggle. Landing here
-      // instead of the add-chapter Control is a DELIBERATE step back from an
-      // earlier round: targeting `.control` put a live, activating native
-      // button under focus as the direct continuation of Confirm's own Enter
-      // — and a still-held Enter key-repeats `click` on whatever is focused,
-      // so a facilitator holding Enter through Confirm wrote MULTIPLE
-      // undeletable chapters before the per-book latch could catch up (the
-      // latch only stops OVERLAPPING calls; it releases the instant each
-      // write resolves, and a `put` is typically faster than OS key-repeat —
-      // George R4 P2-1). A stray re-activation of the toggle just re-collapses
-      // the row — visible immediately, undone by one more tap, and it writes
-      // nothing — so it is the safe landing spot even though Add-chapter is
-      // the more useful one Tab further on.
-      nodes.current.get(focusId)?.querySelector<HTMLElement>("button")?.focus();
-      pendingFocus.current = null;
-    }
+    // cannot take focus at all — so focusing there would be a silent no-op and
+    // the pending target would be consumed and lost. The hook RETAINS a held
+    // target rather than spending it (`lib/a11y/pending-reveal`, table-tested),
+    // and `deleteTargetId` going null is exactly the moment `inert` comes off —
+    // it is in this effect's deps, so the hand-off runs on that render instead.
+    // This is the repo's own lesson, learned twice: a focus fix that ignores
+    // `inert` is dead code (#364; docs/progress_tracker.md).
+    rowReveal.reveal(deleteTargetId !== null);
     // Keyed on ALL THREE: `books` covers create/add-chapter and a successful
     // delete, `deleteTargetId` covers the render on which the delete confirm
     // comes down, and `newBookSeed` covers the render on which the New Book
@@ -522,10 +505,12 @@ export function BooksScreen({
     // and closes the dialog (here) as two setStates in one async continuation;
     // React batches those into a single commit, but this hand-off must not
     // DEPEND on that — if they ever split, the `books` render would run this
-    // effect before the refs below were set and the focus would be lost for
-    // good. Re-running on either close edge makes the order irrelevant; a run
-    // with nothing pending is a no-op.
-  }, [books, deleteTargetId, newBookSeed]);
+    // effect before the hand-off below was armed and the focus would be lost
+    // for good. Re-running on either close edge makes the order irrelevant; a run
+    // with nothing pending is a no-op. `rowReveal` is a fourth dependency but
+    // never a trigger: it is memoised (`use-scroll-to-new.ts`), so it is there
+    // for exhaustiveness, not because anything keys on it.
+  }, [books, deleteTargetId, newBookSeed, rowReveal]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {
@@ -580,11 +565,11 @@ export function BooksScreen({
   // Return focus to the trigger once the dialog is gone. In an effect, not in
   // the handler: the shelf is `inert` while the dialog is open, and focusing an
   // element inside an inert subtree does nothing — so this has to wait for the
-  // render that removes `inert`. A create clears the ref, because `pendingFocus`
-  // hands focus to the new row's toggle button instead (George R5 P3 — this
-  // comment used to say "add-chapter control", which is what an earlier round
-  // targeted before George R4 P2-1 moved the landing to the toggle; see the
-  // `pendingFocus` effect above for why).
+  // render that removes `inert`. A create clears the ref, because the row
+  // hand-off (`rowReveal`) focuses the new row's toggle button instead (George
+  // R5 P3 — this comment used to say "add-chapter control", which is what an
+  // earlier round targeted before George R4 P2-1 moved the landing to the
+  // toggle; see `rowReveal`'s declaration above for why).
   useEffect(() => {
     if (newBookSeed !== null) return;
     const el = newBookReturnFocus.current;
@@ -637,13 +622,13 @@ export function BooksScreen({
       // not: it unmounts on Confirm, so without this hand-off focus falls to
       // the document and the first header stop takes over.
       setExpanded((prev) => new Set(prev).add(book.id));
-      pendingScroll.current = book.id;
-      pendingFocus.current = book.id;
+      rowReveal.armScroll(book.id);
+      rowReveal.armFocus(book.id);
       // No `finally`: on success the latch stays held until the next open edge.
       // See its declaration — releasing it here reopens the double-create window
       // between the write resolving and the panel actually unmounting.
     },
-    [createBook, layers, newBookSeed]
+    [createBook, layers, newBookSeed, rowReveal]
   );
 
   const onNewChapter = useCallback(
@@ -651,9 +636,9 @@ export function BooksScreen({
       const chapter = await addChapter(bookId);
       if (!chapter) return; // failed create surfaced through the hook's Notice
       setExpanded((prev) => new Set(prev).add(bookId));
-      pendingScroll.current = chapter.id;
+      rowReveal.armScroll(chapter.id);
     },
-    [addChapter]
+    [addChapter, rowReveal]
   );
 
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
@@ -864,13 +849,13 @@ export function BooksScreen({
   // against. `deleteTarget` resolving to null already takes the dialog and
   // `inert` down (both now key off `deleteTargetId` directly, below), but
   // nothing cleared `deleteTargetId` itself, so the focus hold stayed latched
-  // with no confirm left to close it and no `pendingFocus` ever recorded —
+  // with no confirm left to close it and no focus target ever armed —
   // silently swallowing the NEXT hand-off too (George R10 P2-3).
   //
   // The setState is pushed past a microtask so it is not SYNCHRONOUS within
   // the effect body — `react-hooks/set-state-in-effect` flags exactly that
-  // shape, and refs (`pendingFocus`, `armedShelf`) may not be read or written
-  // during render (`react-hooks/refs`), which rules out doing this inline in
+  // shape, and refs (`armedShelf`, and `rowReveal`'s own) may not be read or
+  // written during render (`react-hooks/refs`), which rules out doing this in
   // the render body instead. Matches how every other effect in this hook
   // already only calls its setters from inside an async callback (the load
   // effect's `void (async () => { ... })()`, below).
@@ -878,10 +863,8 @@ export function BooksScreen({
     if (deleteTargetId === null || deleteTarget !== null) return;
     const targetId = deleteTargetId;
     void Promise.resolve().then(() => {
-      pendingFocus.current = focusTargetAfterDelete(
-        "ok",
-        targetId,
-        armedShelf.current
+      rowReveal.armFocus(
+        focusTargetAfterDelete("ok", targetId, armedShelf.current)
       );
       setDeleteTargetId(null);
       // The confirm comes down here without any tap, so its layer has to come
@@ -891,12 +874,13 @@ export function BooksScreen({
       // This is an EFFECT closing a layer, which invariant 6 does NOT forbid:
       // what it forbids is REGISTRATION keyed on an effect, because that is
       // what an unstable dependency can fire spuriously. Both deps here are
-      // plain state values and `layers` is memoized (`use-screen-layers.ts`),
-      // so there is no hook-returned object literal to destabilise the array —
-      // the round-6 P1 shape cannot occur.
+      // plain state values, and `layers` and `rowReveal` are both memoized
+      // (`use-screen-layers.ts`, `use-scroll-to-new.ts`), so there is no
+      // per-render object literal to destabilise the array — the round-6 P1
+      // shape cannot occur.
       layers.close("books:delete-confirm");
     });
-  }, [deleteTarget, deleteTargetId, layers]);
+  }, [deleteTarget, deleteTargetId, layers, rowReveal]);
   // The SAME class for the book ≡ menu (George R1 P3-2). `<Menu>` is open on
   // `shareMenuBook !== null`, which is resolved from the shelf — so when
   // another tab deletes the open book the panel unmounts on its own, while
@@ -1022,10 +1006,8 @@ export function BooksScreen({
       // unmounts, so it falls to the document just the same. Which node each
       // case wants is decided by `focusTargetAfterDelete`, which is pure and has
       // a test table — the ordering below is the half no test here can observe.
-      pendingFocus.current = focusTargetAfterDelete(
-        result,
-        deleteTargetId,
-        shelfBefore
+      rowReveal.armFocus(
+        focusTargetAfterDelete(result, deleteTargetId, shelfBefore)
       );
       setDeleteTargetId(null);
       // Both outcomes take the confirm down, so both take its layer down.
@@ -1033,7 +1015,7 @@ export function BooksScreen({
       // right: the first delete still owns them.
       layers.close("books:delete-confirm");
     })();
-  }, [books, deleteBook, deleteTargetId, layers]);
+  }, [books, deleteBook, deleteTargetId, layers, rowReveal]);
 
   // `deleteFailed` only ever RELABELS the hook's current error — they are one
   // state there, so the label cannot outlive what it labels. A *reload* no
@@ -1179,7 +1161,10 @@ export function BooksScreen({
           // Registered as a focus target like a book row: deleting the last book
           // unmounts the row that had focus, and this CTA is the only control
           // left to hand it to (#337).
-          <div className="h-full" ref={(el) => setNode(EMPTY_STATE_NODE, el)}>
+          <div
+            className="h-full"
+            ref={(el) => rowReveal.setNode(EMPTY_STATE_NODE, el)}
+          >
             <EmptyState
               headline={strings.booksEmpty}
               teach={strings.booksEmptyTeach}
@@ -1199,7 +1184,7 @@ export function BooksScreen({
                 onNewChapter={() => void onNewChapter(book.bookId)}
                 onOpenShareMenu={() => onOpenShareMenu(book.bookId)}
                 onOpenChapter={onOpenChapter}
-                setNode={setNode}
+                setNode={rowReveal.setNode}
               />
             ))}
           </ul>
