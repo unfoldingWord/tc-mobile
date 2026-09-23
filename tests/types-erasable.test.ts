@@ -94,6 +94,15 @@ describe("the erasability predicate", () => {
   ])("reports %s as erasable", (_label, source) => {
     expect(runtimeEmit(source, "probe.ts")).toBe("");
   });
+
+  // The THIRD state the predicate must not collapse into "erasable": a file
+  // that does not transpile at all. `ts.transpileModule` reports this as a
+  // diagnostic, not an exception, so a caller that reads only `outputText`
+  // never sees it — and a truncated type alias transpiles to the same
+  // `export {};` marker a legitimate type-only file does (#708 item 1).
+  it("reports a file that fails to transpile as a failure, not as erasable", () => {
+    expect(() => runtimeEmit("export type Foo = ", "probe.ts")).toThrow();
+  });
 });
 
 describe("src/types is erasable", () => {
