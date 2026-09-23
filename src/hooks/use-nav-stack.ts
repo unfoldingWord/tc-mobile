@@ -132,6 +132,13 @@ export interface NativeBackRoute {
 }
 
 /**
+ * The most recent `attachNativeBack` call, so a draining listener can tell
+ * whether a newer one has begun (#674). Module scope because the successor is
+ * a separate call — a remount — with nothing else shared between the two.
+ */
+let latestNativeBackAttach = 0;
+
+/**
  * Route a hardware Back inside the Capacitor shell (#374, design Amendment F).
  *
  * In a browser, system Back IS a history pop: the `popstate` handler below
@@ -181,43 +188,76 @@ export interface NativeBackRoute {
  * otherwise be an unhandled rejection with no context, so each is routed to
  * `reportFailure` under its own name. A rejected `remove()` is also the one
  * failure that leaves state behind — the callback stays registered — so the
- * listener checks `detached` itself and does nothing after the detach.
+ * listener checks its own phase and does nothing once the detach completes.
  *
  * Returns the detach. The plugin resolves its listener handle asynchronously,
  * so a detach that runs first marks the handle for removal the moment it lands.
+ *
+ * The disable is a bridge round trip (#674), and until it is applied the
+ * Android callback is still enabled, so a Back in that window still reaches
+ * this listener. Going inert there would swallow the press; routing it in-app
+ * would too, because the detach runs as the hook unmounts — the crash screen
+ * is the reachable case — and the `popstate` router goes with it. So the
+ * detach has two steps. While the disable is in flight the listener is
+ * DRAINING: a press gets what it would get a moment later from the activity
+ * default once the disable lands, which is leaving (`exitApp()`), whatever
+ * the WebView could pop. Only after the disable has settled — resolved or
+ * rejected, since a refused disable is reported and there is nothing further
+ * to wait for — does the listener go inert and the remove get posted. The
+ * remove therefore still follows the disable, as #634 round 3 relied on.
+ * Draining exists only where the window does: on Android, after the enable
+ * was posted (that is, once the handle resolved). Earlier, or off Android,
+ * the callback is not enabled and the detach is inert at once.
+ *
+ * A draining press leaves only while no newer `attachNativeBack` has begun.
+ * `exitApp()` beside a live successor would finish the activity under a
+ * running app — the variant #634 round 3 rejected — so with a successor the
+ * draining listener is inert instead.
  */
 export function attachNativeBack(
   plugin: NativeBackPlugin,
   route: NativeBackRoute,
   toggleAndroidHandler = false
 ): () => void {
-  let detached = false;
+  const attach = ++latestNativeBackAttach;
+  let phase: "live" | "draining" | "detached" = "live";
   let handle: PluginListenerHandle | undefined;
-  const setHandler = (enabled: boolean): void => {
-    if (!toggleAndroidHandler) return;
-    plugin
+  const setHandler = (enabled: boolean): Promise<void> => {
+    if (!toggleAndroidHandler) return Promise.resolve();
+    return plugin
       .toggleBackButtonHandler({ enabled })
       .catch((cause: unknown) => reportFailure(cause, "native-back-handler"));
+  };
+  const exitApp = (): void => {
+    plugin
+      .exitApp()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-exit"));
+  };
+  const release = (): void => {
+    phase = "detached";
+    handle
+      ?.remove()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-remove"));
   };
   plugin
     .addListener("backButton", ({ canGoBack }) => {
       // Inert once detached, whatever the plugin did with `remove()`: a
       // removal that rejected leaves this callback registered, and the next
       // mount registers a second one — one press must not route twice.
-      if (detached) return;
+      if (phase === "detached") return;
+      if (phase === "draining") {
+        if (attach === latestNativeBackAttach) exitApp();
+        return;
+      }
       const action = route.decide();
       if (canGoBack) {
         route.goBack();
         return;
       }
-      if (action === "exit-app") {
-        plugin
-          .exitApp()
-          .catch((cause: unknown) => reportFailure(cause, "native-back-exit"));
-      }
+      if (action === "exit-app") exitApp();
     })
     .then((resolved) => {
-      if (detached) {
+      if (phase !== "live") {
         resolved
           .remove()
           .catch((cause: unknown) =>
@@ -226,15 +266,17 @@ export function attachNativeBack(
         return;
       }
       handle = resolved;
-      setHandler(true);
+      void setHandler(true);
     })
     .catch((cause: unknown) => reportFailure(cause, "native-back-listener"));
   return () => {
-    detached = true;
-    setHandler(false);
-    handle
-      ?.remove()
-      .catch((cause: unknown) => reportFailure(cause, "native-back-remove"));
+    const disabling = setHandler(false);
+    if (!toggleAndroidHandler || handle === undefined) {
+      release();
+      return;
+    }
+    phase = "draining";
+    void disabling.then(release);
   };
 }
 

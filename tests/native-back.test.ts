@@ -358,3 +358,227 @@ describe("attachNativeBack — the Android OnBackPressedCallback is enabled only
     expect(reportFailure).toHaveBeenCalledWith(cause, "native-back-handler");
   });
 });
+
+/**
+ * The detach's bridge round trip (#674). On Android the detach posts
+ * `toggleBackButtonHandler({ enabled: false })`; until the plugin applies it,
+ * the `OnBackPressedCallback` is still enabled, so a hardware Back in that
+ * window still reaches this listener. The hook has unmounted by then (the
+ * crash screen is the reachable case), and its `popstate` router with it, so
+ * an in-app `goBack()` would land on nothing: the one outcome that is not a
+ * swallow is the one the press gets once the disable lands — the activity
+ * default, which leaves. So a press in the window leaves (`exitApp()`), a
+ * press after the disable is confirmed is inert (round 2's guarantee for a
+ * callback whose `remove()` rejected), and the remove is posted only after
+ * the disable has resolved.
+ *
+ * The mock records every plugin call in order, and holds the disable's
+ * promise until the test settles it — that pending promise IS the window.
+ * Whether the real bridge delivers a press dispatched before the disable
+ * landed ahead of the disable's own resolution is a device question, not
+ * one this file can answer.
+ */
+interface OrderedBack {
+  readonly plugin: NativeBackPlugin;
+  readonly calls: string[];
+  press(canGoBack: boolean): void;
+  settleHandle(): Promise<void>;
+  /** Resolve the pending `toggleBackButtonHandler({ enabled: false })`. */
+  confirmDisable(): Promise<void>;
+  /** Reject it instead. */
+  refuseDisable(cause: unknown): Promise<void>;
+  /** What the next `remove()` returns. */
+  readonly removeResult: { next: Promise<void> };
+}
+
+function orderedBack(): OrderedBack {
+  const calls: string[] = [];
+  const listeners: ((event: { canGoBack: boolean }) => void)[] = [];
+  let resolveHandle: (() => void) | null = null;
+  let settleDisable: ((ok: boolean, cause?: unknown) => void) | null = null;
+  const removeResult = { next: Promise.resolve() };
+  const handle = new Promise<{ remove: () => Promise<void> }>((resolve) => {
+    resolveHandle = () => {
+      resolve({
+        remove: () => {
+          calls.push("remove");
+          return removeResult.next;
+        },
+      });
+    };
+  });
+  return {
+    calls,
+    removeResult,
+    plugin: {
+      addListener: (_eventName, fn) => {
+        calls.push("addListener");
+        listeners.push(fn);
+        return handle;
+      },
+      exitApp: () => {
+        calls.push("exitApp");
+        return Promise.resolve();
+      },
+      toggleBackButtonHandler: ({ enabled }) => {
+        calls.push(`toggle:${String(enabled)}`);
+        if (enabled) return Promise.resolve();
+        return new Promise<void>((resolve, reject) => {
+          settleDisable = (ok, cause) => {
+            if (ok) resolve();
+            else reject(cause);
+          };
+        });
+      },
+    },
+    press(canGoBack) {
+      calls.push(`press:${String(canGoBack)}`);
+      for (const fn of listeners) fn({ canGoBack });
+    },
+    async settleHandle() {
+      resolveHandle?.();
+      await handle;
+      await flush();
+    },
+    async confirmDisable() {
+      settleDisable?.(true);
+      await flush();
+      await flush();
+    },
+    async refuseDisable(cause) {
+      settleDisable?.(false, cause);
+      await flush();
+      await flush();
+    },
+  };
+}
+
+describe("attachNativeBack — a press inside the detach's disable round trip is never swallowed (#674)", () => {
+  it("(n) the disable is posted first; the remove waits until the disable has resolved", async () => {
+    const back = orderedBack();
+    const detach = attachNativeBack(
+      back.plugin,
+      { decide: decideFor("segments", []), goBack: vi.fn() },
+      true
+    );
+    await back.settleHandle();
+
+    detach();
+    await flush();
+    await flush();
+    // The disable is in flight; the callback still owns the press.
+    expect(back.calls).toEqual(["addListener", "toggle:true", "toggle:false"]);
+
+    await back.confirmDisable();
+    expect(back.calls).toEqual([
+      "addListener",
+      "toggle:true",
+      "toggle:false",
+      "remove",
+    ]);
+  });
+
+  it("(o) a press between the disable being posted and it resolving leaves the app — whatever the WebView could pop — and never issues the unrouted in-app Back", async () => {
+    const back = orderedBack();
+    const goBack = vi.fn();
+    const detach = attachNativeBack(
+      back.plugin,
+      { decide: decideFor("segments", []), goBack },
+      true
+    );
+    await back.settleHandle();
+
+    detach();
+    back.press(true);
+    back.press(false);
+    await back.confirmDisable();
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(back.calls).toEqual([
+      "addListener",
+      "toggle:true",
+      "toggle:false",
+      "press:true",
+      "exitApp",
+      "press:false",
+      "exitApp",
+      "remove",
+    ]);
+  });
+
+  it("(p) once the disable has resolved, a press on a callback the plugin failed to remove is inert (round 2's guarantee holds on Android)", async () => {
+    reportFailure.mockClear();
+    const back = orderedBack();
+    const goBack = vi.fn();
+    const cause = new Error("handle gone");
+    back.removeResult.next = Promise.reject(cause);
+    back.removeResult.next.catch(() => undefined);
+    const detach = attachNativeBack(
+      back.plugin,
+      { decide: decideFor("segments", []), goBack },
+      true
+    );
+    await back.settleHandle();
+    detach();
+    await back.confirmDisable();
+
+    back.press(true);
+    back.press(false);
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(back.calls).toContain("remove");
+    expect(back.calls).not.toContain("exitApp");
+    expect(reportFailure).toHaveBeenCalledWith(cause, "native-back-remove");
+  });
+
+  it("(q) a press in the window after a newer attach has begun is inert — never exitApp() beside a live successor", async () => {
+    const back = orderedBack();
+    const goBack = vi.fn();
+    const detach = attachNativeBack(
+      back.plugin,
+      { decide: decideFor("segments", []), goBack },
+      true
+    );
+    await back.settleHandle();
+    detach();
+
+    const successor = fakeBack();
+    attachNativeBack(
+      successor.plugin,
+      { decide: decideFor("segments", []), goBack: vi.fn() },
+      true
+    );
+    back.press(true);
+    back.press(false);
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(back.calls).not.toContain("exitApp");
+  });
+
+  it("(r) a disable the plugin refuses is reported, and the detach still completes: the remove is posted and the callback goes inert", async () => {
+    reportFailure.mockClear();
+    const back = orderedBack();
+    const goBack = vi.fn();
+    const cause = new Error("onBackPressedCallback is not set");
+    const detach = attachNativeBack(
+      back.plugin,
+      { decide: decideFor("segments", []), goBack },
+      true
+    );
+    await back.settleHandle();
+    detach();
+    await back.refuseDisable(cause);
+
+    back.press(true);
+
+    expect(reportFailure).toHaveBeenCalledWith(cause, "native-back-handler");
+    expect(back.calls).toEqual([
+      "addListener",
+      "toggle:true",
+      "toggle:false",
+      "remove",
+      "press:true",
+    ]);
+    expect(goBack).not.toHaveBeenCalled();
+  });
+});
