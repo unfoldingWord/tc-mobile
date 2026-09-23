@@ -13,6 +13,7 @@ export type GuidedStep =
   | { readonly kind: "new-book" }
   | { readonly kind: "create-book" }
   | { readonly kind: "add-chapter"; readonly bookId: BookId }
+  | { readonly kind: "create-chapter" }
   | { readonly kind: "expand-book"; readonly bookId: BookId }
   | { readonly kind: "open-chapter"; readonly chapterId: ChapterId }
   | { readonly kind: "add-segment" }
@@ -31,6 +32,8 @@ export type GuideView =
       readonly loaded: boolean;
       /** The New Book naming dialog (#314) is open. */
       readonly naming: boolean;
+      /** The Add-chapter naming dialog (#609) is open. */
+      readonly namingChapter: boolean;
       readonly books: readonly BookCard[];
       /**
        * The books whose chapter lists are open. Screen state, not stored: it
@@ -58,7 +61,8 @@ export type GuideView =
  * Which control is the next REQUIRED action, for a first-time user walking the
  * app from an empty shelf to a first recording (#604).
  *
- * The chain is: New Book -> Create book -> Add chapter -> (open the book) ->
+ * The chain is: New Book -> Create book -> Add chapter -> Create chapter ->
+ * (open the book) ->
  * open that chapter -> Add segment -> that segment's Record -> the recorder's
  * Record. It ends there, and that is a decision rather than an
  * omission: the guide exists to reach a first recording without instruction,
@@ -118,7 +122,15 @@ function booksStep(
   const book = books[0];
   if (!book) return null;
   if (book.chapters.length === 0)
-    return { kind: "add-chapter", bookId: book.bookId };
+    // The chapter dialog is New Book's again: its field arrives pre-filled
+    // with "Chapter N" (#609), so its Confirm is the next required tap. The
+    // shelf is inert behind it, so Add chapter could not show a ring there.
+    return view.namingChapter
+      ? { kind: "create-chapter" }
+      : { kind: "add-chapter", bookId: book.bookId };
+  // Adding a further chapter is not a first-run step, and the shelf is inert
+  // behind that dialog.
+  if (view.namingChapter) return null;
   // The Books half of the terminal rule. `ChapterRow` carries segment counts
   // and no take information (`types/view.ts`), and the guide takes no reading
   // of its own, so "a chapter holds segments" is the strongest honest reading

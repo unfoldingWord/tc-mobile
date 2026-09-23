@@ -1220,7 +1220,7 @@ export function BooksScreen({
 
   // The guided chain's answer for this screen (#604): one accent on the next
   // required action, and nothing once the first book has been worked in. Read
-  // here and compared by `kind` at each call site, so the four controls below
+  // here and compared by `kind` at each call site, so the controls below
   // cannot disagree about which of them is the step. The header + is
   // deliberately absent from the chain — the only state that would guide it is
   // an empty shelf, and the shelf hides it there in favour of the invite's own
@@ -1229,6 +1229,7 @@ export function BooksScreen({
     screen: "books",
     loaded,
     naming: newBookSeed !== null,
+    namingChapter: newChapter !== null,
     books,
     expandedBooks: expanded,
   });
@@ -1513,6 +1514,7 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewChapter(name)}
           onCancel={onCancelNewChapter}
           busy={creatingChapterBusy}
+          guided={guide?.kind === "create-chapter"}
         />
       </Menu>
 

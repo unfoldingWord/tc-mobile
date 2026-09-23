@@ -54,6 +54,7 @@ const books = (
   screen: "books",
   loaded: true,
   naming: false,
+  namingChapter: false,
   books: [],
   // Expanded by default, because that is the state a book is in the moment it
   // is created and the moment a chapter is added to it (`books-screen.tsx`
@@ -90,6 +91,21 @@ describe("the Books screen's link in the chain (#604)", () => {
       kind: "add-chapter",
       bookId: bookId(1),
     });
+  });
+
+  it("with the chapter dialog open on the empty book, the guide leads into it", () => {
+    // Same shape as step 2: the field arrives pre-filled with "Chapter N"
+    // (#609), and the shelf is inert behind the dialog, so Add chapter
+    // could not show a ring there anyway.
+    expect(
+      guidedStep(books({ books: [book(1)], namingChapter: true }))
+    ).toEqual({ kind: "create-chapter" });
+  });
+
+  it("guides nothing in the chapter dialog once the book has a chapter", () => {
+    expect(
+      guidedStep(books({ books: [book(1, [chapter(1)])], namingChapter: true }))
+    ).toBeNull();
   });
 
   it("step 4: once a chapter exists the guide moves to the first chapter row", () => {
@@ -154,7 +170,7 @@ describe("the Books screen's link in the chain (#604)", () => {
   });
 
   it("marks at most one control on the shelf, in every state it can be in", () => {
-    // The wiring the screen does, in one place: four call sites read this one
+    // The wiring the screen does, in one place: its call sites read this one
     // answer, so two of them can only light up together if this function starts
     // returning something a kind comparison cannot tell apart.
     const states = [
@@ -163,6 +179,8 @@ describe("the Books screen's link in the chain (#604)", () => {
       books({ naming: true }),
       books({ books: [book(1)] }),
       books({ books: [book(1)], naming: true }),
+      books({ books: [book(1)], namingChapter: true }),
+      books({ books: [book(1, [chapter(1)])], namingChapter: true }),
       books({ books: [book(1, [chapter(1)])] }),
       books({ books: [book(1, [chapter(1)])], expandedBooks: new Set() }),
       books({ books: [book(1, [chapter(1, 2)])] }),
@@ -174,6 +192,7 @@ describe("the Books screen's link in the chain (#604)", () => {
         step?.kind === "new-book",
         step?.kind === "create-book",
         step?.kind === "add-chapter",
+        step?.kind === "create-chapter",
         step?.kind === "expand-book",
         step?.kind === "open-chapter",
       ].filter(Boolean);

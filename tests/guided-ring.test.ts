@@ -154,6 +154,7 @@ describe("every step of the chain reaches a control (#604)", () => {
       "new-book",
       "create-book",
       "add-chapter",
+      "create-chapter",
       "expand-book",
       "open-chapter",
     ],

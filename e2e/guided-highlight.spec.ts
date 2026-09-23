@@ -97,8 +97,16 @@ test("the ring moves through the chain and marks exactly one control at a time",
     /is-guided/
   );
 
-  // Step 4 — a chapter exists: the row that opens it.
+  // Step 3b — into the chapter dialog, onto its commit control. The field is
+  // pre-filled with "Chapter N" (#609), so Confirm alone is the next required
+  // action, and the inert shelf behind it must show no second ring.
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Name your new chapter" })
+  ).toBeVisible();
+  await expect.poll(() => guided(page)).toEqual(["Create chapter"]);
+
+  // Step 4 — a chapter exists: the row that opens it.
   await page
     .getByRole("button", { name: "Create chapter", exact: true })
     .click();
