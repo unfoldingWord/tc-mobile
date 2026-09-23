@@ -184,6 +184,13 @@ it("does not adopt a superseded playBuffer handle, and its stale onEnded leaves 
   });
   expect(mocks.playSamples).toHaveBeenCalledTimes(1);
   expect(api().playingBuffer).toBe(true);
+  // #781: playBuffer must label its probe source "working" — nothing else
+  // pinned that the hook passes the right `ProbeSource` per caller (only what
+  // the probe DOES with a label, in tests/audio-probe.test.ts).
+  expect(
+    (mocks.playSamples.mock.calls[0]?.[1] as { source?: string } | undefined)
+      ?.source
+  ).toBe("working");
 
   // Tap take X before A's playSamples settles: X claims the same "take" floor
   // kind, which supersedes A's token exactly as a second playTake would (both
