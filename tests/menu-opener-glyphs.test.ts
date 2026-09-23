@@ -8,7 +8,7 @@ import { BooksScreen } from "@/components/books-screen";
 import { Icon, type IconName } from "@/components/icon";
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsScreen } from "@/components/segments-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { BookId, ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { BookCard, SegmentRow as Row } from "@/types/view";
