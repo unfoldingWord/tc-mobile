@@ -22,6 +22,7 @@ import {
   isRecordingSupported,
   type LevelTap,
   pickMimeType,
+  probeCaptureTrack,
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
@@ -513,6 +514,7 @@ export function useRecorder(): UseRecorder {
       // Reachable by `cancel()` from here on, which is what matters across the
       // await below.
       streamRef.current = stream;
+      probeCaptureTrack(stream);
 
       // Unlock Web Audio while we still have the user gesture that started
       // this recording — iOS will not resume the context later without one.
