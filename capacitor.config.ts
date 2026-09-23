@@ -14,6 +14,23 @@ const config: CapacitorConfig = {
   appId: "org.unfoldingword.tcmobile",
   appName: "tC Mobile",
   webDir: "dist",
+  android: {
+    // Explicit false also clears a previous diagnostic sync.
+    webContentsDebuggingEnabled: process.env.TC_ANDROID_DIAGNOSTIC === "true",
+  },
+  plugins: {
+    App: {
+      // `@capacitor/app`'s Android `OnBackPressedCallback` starts DISABLED, and
+      // `attachNativeBack` (use-nav-stack.ts) enables it only while the app's
+      // own `backButton` listener is registered. Left enabled with no listener
+      // — the crash screen, the window before the first paint's effects — the
+      // plugin consumes a root Back and does nothing (`AppPlugin.java`
+      // `handleOnBackPressed`: no listeners and `!canGoBack` → return), so the
+      // activity default that used to leave the app never runs (#374, George
+      // r1 P2-2 on PR 634). Disabled, the press falls through to that default.
+      disableBackButtonHandler: true,
+    },
+  },
 };
 
 export default config;

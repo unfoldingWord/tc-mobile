@@ -10,6 +10,7 @@
 import {
   CANONICAL_CHANNELS,
   CANONICAL_SAMPLE_RATE,
+  canonicalFrameCount,
   floatToInt16,
   int16ToFloatInto,
 } from "@/lib/audio/format";
@@ -482,7 +483,7 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
  * injected function rather than doing it.
  *
  * NOT the clip as recorded: the decode carries the encoder's priming at its
- * head (1105 samples on a decoder that trims nothing — measured in Chromium)
+ * head (1105 samples on a decoder that trims nothing)
  * and granule padding at its tail. EVERY consumer must pass the result through
  * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
  * `frameCount` — the chapter export, playback and the recorder's edit buffer
@@ -505,13 +506,7 @@ async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
 
   // OfflineAudioContext does the resample and the downmix in one pass, and
   // does it in optimised native code rather than a hand-rolled JS resampler.
-  const frames = Math.max(
-    1,
-    Math.ceil(
-      (buffer.duration * CANONICAL_SAMPLE_RATE * buffer.sampleRate) /
-        buffer.sampleRate
-    )
-  );
+  const frames = canonicalFrameCount(buffer.duration, buffer.sampleRate);
   const offline = new OfflineAudioContext(
     CANONICAL_CHANNELS,
     frames,

@@ -37,6 +37,9 @@ test("selection stays scoped to recorder and panels, with editable names", async
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  // Add chapter opens a naming prompt now (#609); Confirm alone accepts the
+  // pre-filled "Chapter N" and is what actually writes the chapter.
+  await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await page.getByRole("button", { name: "Record segment 1" }).click();
@@ -70,18 +73,30 @@ test.describe("edit mode toggle", () => {
       await page.getByRole("button", { name: "New book" }).click();
       await page.getByRole("button", { name: "Create book" }).click();
       await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      // Add chapter opens a naming prompt now (#609); Confirm alone accepts
+      // the pre-filled "Chapter N" and is what actually writes the chapter.
+      await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
       await page.getByRole("button", { name: "Record segment 1" }).click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await expect(
-        page.getByRole("button", { name: "Pause", exact: true })
+        page.getByRole("button", { name: "Stop recording", exact: true })
       ).toBeVisible();
       await page.waitForTimeout(1200);
       if (width === 390) {
-        await page.getByRole("button", { name: "Pause", exact: true }).click();
+        // The two widths reach Edit from the two states a take can be in since
+        // #614. 320px enters edit mode from a LIVE take, which `commitTake`
+        // commits on the way in (#134). 390px ends the take first: the tap that
+        // used to be Pause now commits it in place, so the control comes back
+        // as Record and the toolbar Edit below opens over audio that is already
+        // on the waveform. Both must land the frame at the same slot, which is
+        // what this case is about.
+        await page
+          .getByRole("button", { name: "Stop recording", exact: true })
+          .click();
         await expect(
-          page.getByRole("button", { name: "Resume", exact: true })
+          page.getByRole("button", { name: "Record", exact: true })
         ).toBeVisible();
       }
       const toggle = page
@@ -105,6 +120,19 @@ test.describe("edit mode toggle", () => {
           .getAttribute("aria-valuenow")
       );
       expect(selectedEnd).toBeGreaterThan(selectedStart);
+      // The forward seed (#554, tail rule C). The take just committed leaves
+      // the line at the end of the audio, at whole zoom, so the span is the
+      // last quarter of the buffer: its right edge at the end, its left edge
+      // slid back by the span. A centred seed would open at 85%.
+      const selectedMax = Number(
+        await page
+          .getByLabel("Selection end", { exact: true })
+          .getAttribute("aria-valuemax")
+      );
+      expect(selectedEnd).toBe(selectedMax);
+      expect(
+        Math.abs(selectedStart - Math.round(selectedMax * 0.75))
+      ).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("centerline-overlay")).toHaveCount(0);
       const after = await toggle.boundingBox();
       expect(after).not.toBeNull();

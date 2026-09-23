@@ -7,6 +7,7 @@ import { Notice } from "./notice";
 import { strings } from "./strings";
 import { clearFailureLog } from "@/hooks/failure-log";
 import { readSharePlatform } from "@/hooks/share-target";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import type { ScreenLayerBehavior } from "@/hooks/use-screen-layers";
 import { useFailureLogShare } from "@/hooks/use-failure-log-share";
 
@@ -67,6 +68,7 @@ export function FailureLogPanel({
   // directly under the Share the thumb has just been using.
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<"restart" | null>(null);
   // The live half of `clearing`, for the confirm's `Layer.busy()` (#452 PR3,
   // invariant 4): the system-Back handler reads it from a `popstate`, with no
   // render between the flip below and the read. `clearing` above stays the
@@ -105,6 +107,7 @@ export function FailureLogPanel({
 
   // Tap 1 — read the log and render it to a text File, arming the send gesture.
   const onPrepare = useCallback(() => {
+    setClearError(null);
     void share.prepare();
   }, [share]);
 
@@ -137,6 +140,7 @@ export function FailureLogPanel({
     // The ref flips first and synchronously — a Back landing in this same task
     // must already see the clear as in flight.
     clearingRef.current = true;
+    setClearError(null);
     setClearing(true);
     void clearFailureLog().then(
       () => {
@@ -147,23 +151,23 @@ export function FailureLogPanel({
         clearingRef.current = false;
         onDone();
       },
-      () => {
+      (cause) => {
         clearingRef.current = false;
         setClearing(false);
+        if (
+          isTerminalOpenRefusal(
+            (cause as { name?: string } | null)?.name ?? null
+          )
+        ) {
+          setClearError("restart");
+        }
         setConfirmingClear(false);
         // The confirm comes down on a failed clear, so its layer does too.
         onClearConfirmClose();
-        // A failed clear leaves the log exactly as it was, which is the safe
-        // side of this write — nothing is lost, and the marker keeps its count,
-        // so the panel stays put and a second tap can try again. Deliberately
-        // no copy: a fourth string for a case a retry resolves is not worth the
-        // reading load on a screen built for people who may not read.
-        //
-        // NOT silent, which is what AGENTS.md forbids: `clearFailureLog`
-        // reports the reason through the funnel on its way past, so it lands in
-        // the very log the clear failed to empty and leaves with the next send
-        // (Frank #2 ≡ George #4, round 1 for the channel; Frank, takeover round
-        // 9, for making that channel the durable one rather than the console).
+        // A retryable clear failure leaves the panel and log intact. Its
+        // report goes through the funnel; no extra copy is needed here.
+        // A terminal open refusal instead shows the restart notice above and
+        // skips the funnel write, which the unavailable database cannot store.
       }
     );
   }, [onClearConfirmClose, onDone]);
@@ -173,7 +177,9 @@ export function FailureLogPanel({
       ? strings.shareFailureLogNothing
       : share.error === "failed"
         ? strings.shareFailureLogFailed
-        : null;
+        : share.error === "restart"
+          ? strings.shareFailureLogRestart
+          : null;
   // The platform's own share mark (#490), so this build never shows a
   // different share glyph here than on the chapter and book menus — unless
   // the last send was unconfirmed (Frank at `238820a` P2, #491), which
@@ -217,6 +223,9 @@ export function FailureLogPanel({
         <Notice tone="busy">{strings.shareFailureLogPreparing}</Notice>
       )}
       {errorText && <Notice>{errorText}</Notice>}
+      {clearError === "restart" && share.error !== "restart" && (
+        <Notice>{strings.shareFailureLogRestart}</Notice>
+      )}
 
       {/* Discard, after the send. Below Share on purpose: the destructive
           action is never the first thing under the thumb, and it is never the

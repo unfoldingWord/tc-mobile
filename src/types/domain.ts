@@ -104,6 +104,14 @@ export interface Segment {
   /** A1: null is the normal case. B7 (#33) is the writer. */
   readonly reference: SegmentRef | null;
   /**
+   * Optional label the facilitator sets in place — "verses 3–4" (#591). A label
+   * over the ordinal, never a replacement for it: the UI shows "3 · verses 3–4",
+   * and `null` (the default) shows the ordinal alone. Clearing the label reverts
+   * to `null`. Every row carries the field (the v8 backfill stamps pre-#591
+   * segments `null`), so a reader never meets `undefined`.
+   */
+  readonly label: string | null;
+  /**
    * The one take behind this segment, or `null` ⇒ never recorded.
    *
    * 1:1 per D1/A2 — there is no take history. Re-recording REPLACES the take
