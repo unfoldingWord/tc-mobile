@@ -308,6 +308,22 @@ describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)
     ).toBe(true);
   });
 
+  it("does not reopen on a resuming lift even when that contact never owned the drag", () => {
+    // The row `wasOwner: false, interrupted: true` is the one combination the
+    // three rows above never assert together (#747): the last contact lifts,
+    // it never owned the drag, and that lift also resumes playback. `resume`
+    // does not take `wasOwner`, and `reopenFrame` is a conjunction of `!held`
+    // and `!resume` — both already covered individually — so this falls out
+    // by inspection rather than pinning a second defect. Pin it anyway.
+    const resumed = liftOutcome({
+      ...lift,
+      wasOwner: false,
+      interrupted: true,
+    });
+    expect(resumed.resume).toBe(true);
+    expect(resumed.reopenFrame).toBe(false);
+  });
+
   it("recorder.tsx reads the rule from the outcome, not from `wasOwner`", () => {
     const at = recorder.indexOf("const onPointerUp = useCallback(");
     expect(at).toBeGreaterThan(-1);
