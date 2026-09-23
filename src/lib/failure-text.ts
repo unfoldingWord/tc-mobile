@@ -76,7 +76,9 @@ export function boundText(text: string): string {
  */
 export function errorMessage(cause: unknown): string {
   try {
-    return cause instanceof Error ? cause.message : String(cause);
+    const text = cause instanceof Error ? cause.message : String(cause);
+    // A hostile `message` need not be a string; coerce it inside the guard.
+    return typeof text === "string" ? text : String(text);
   } catch {
     return `[unstringifiable ${typeof cause}]`;
   }

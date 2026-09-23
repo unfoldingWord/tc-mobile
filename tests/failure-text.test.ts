@@ -206,6 +206,24 @@ describe("errorMessage", () => {
       expect(errorMessage(proxy)).toBe("[unstringifiable object]");
     });
 
+    it("returns a string even when an Error's message is not one", () => {
+      const as = (m: unknown) =>
+        Object.defineProperty(new Error("o"), "message", { value: m });
+      expect(errorMessage(as(Symbol("m")))).toBe("Symbol(m)");
+      expect(errorMessage(as(Object.create(null)))).toBe(
+        "[unstringifiable object]"
+      );
+    });
+
+    it("survives a Symbol.toPrimitive that throws", () => {
+      const cause = {
+        [Symbol.toPrimitive]() {
+          throw new Error("nope");
+        },
+      };
+      expect(errorMessage(cause)).toBe("[unstringifiable object]");
+    });
+
     it("renders a Symbol's own text rather than a fallback — not a hazard", () => {
       // `String(Symbol(...))` does not throw; only implicit conversion does.
       // A guard that mistook this for a hazard would guard the safe case and
