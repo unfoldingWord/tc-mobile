@@ -16,14 +16,16 @@ import type { SegmentId } from "@/types/domain";
  * inline, and a fix that left the inline arithmetic in place beside a new
  * library function would pass every case over there while the app kept
  * opening centred. So this mounts the real `Recorder` — segment hook mocked at
- * its boundary, as `tests/recorder-edit-hint.test.ts` does — taps the toggle
- * the translator taps, and reads the handles the overlay actually renders.
+ * its boundary, as `tests/recorder-edit-hint.test.ts` does — fires the
+ * toggle's click handler, and reads the handles the overlay renders.
  *
  * A mount rather than `tests/render.ts`'s one static render, because edit
- * mode is component state that only a tap reaches: a static render can only
- * ever show the record bar. What this still cannot see is layout — whether
- * the toggle's box is in the same place on a real screen is the shipped-build
- * suite's question (`e2e/recorder-selection.spec.ts`), and how it feels on a
+ * mode is component state that only a click reaches: a static render can only
+ * ever show the record bar. What this cannot see: a `.click()` here calls the
+ * handler whatever the cascade, an `inert` ancestor or real pointer handling
+ * would do, and there is no layout. Whether a real tap in the shipped build
+ * reaches the control, opens the forward seed and keeps the toggle's box in
+ * place is `e2e/recorder-selection.spec.ts`'s question; how it feels on a
  * phone is a device question.
  */
 
@@ -142,7 +144,7 @@ function handle(label: string): number | null {
 }
 
 describe("the edit toggle (#557) opens the forward seed (#554)", () => {
-  it("one tap from the record bar opens a frame whose left edge is AT the playhead, slid back off the end at the rest", async () => {
+  it("a click on the record-bar toggle opens a frame whose left edge is AT the playhead, slid back off the end at the rest", async () => {
     await mount();
     // No frame in record mode.
     expect(handle(strings.selectionStartHandle)).toBeNull();
