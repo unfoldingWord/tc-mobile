@@ -80,7 +80,8 @@ type OwedClipId = Awaited<
  * recovery sweep (#404) exists to transcode that clip once the encoder works
  * again. Every stall tears the worker down and builds a fresh one
  * (`encodeInWorker`), and the recovery sweep only runs after an encode has just
- * produced bytes — so a SECOND stall is the same clip wedging a different,
+ * produced bytes. Only a stall whose encode began with the encoder `ok` is
+ * counted, so a SECOND counted stall is the same clip wedging a different,
  * demonstrably working worker. That is the clip, and retrying it again only
  * spends another silence deadline holding the one encoder lane, in front of
  * whatever Share the translator taps next.
@@ -335,6 +336,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
     }
     if (segmentId === skip) continue;
     if ((pageStallCounts.get(clipId) ?? 0) >= PAGE_STALL_LIMIT) continue;
+    let startedHealthy = false;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
       // PCM is read only once the lane is ours, so a share holding the lane
@@ -342,6 +344,8 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // One segment per turn on the lane, so a share queued between two
       // segments gets in between them.
       await withEncoder(undefined, async (codec) => {
+        // Sampled once the lane is ours: a Share ahead of us is what flips it.
+        startedHealthy = lastEncoderHealth === "ok";
         const audio = await loadSegmentClip(segmentId);
         // Changed since the list was taken (erased, re-recorded, already MP3):
         // not this clip's job any more; the commit would call it stale anyway.
@@ -386,7 +390,10 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // otherwise starve every other finished segment (George R1 P2-2, R2 P2).
       if (cause instanceof EncoderStalledError) {
         stalledSegmentIds.add(segmentId);
-        pageStallCounts.set(clipId, (pageStallCounts.get(clipId) ?? 0) + 1);
+        // Only a stall on an encoder last seen working counts toward the limit;
+        // one during a broken stretch says nothing about the clip.
+        if (startedHealthy)
+          pageStallCounts.set(clipId, (pageStallCounts.get(clipId) ?? 0) + 1);
         try {
           await recordTranscodeStall(clipId);
         } catch (accountingCause) {

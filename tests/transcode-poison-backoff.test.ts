@@ -273,6 +273,35 @@ describe("a persistently stalling clip and successive Shares (#682)", () => {
     }
   });
 
+  it("does not count a stall on an encoder not yet shown to work", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      owed = [{ segmentId: sid("a"), clipId: cid("ca"), value: POISON }];
+      const launch = requestTranscodeSweep();
+      await settle();
+      await expireStall();
+      await launch;
+      expect(health).toBe("failing");
+
+      // A Finished transition while the encoder is still broken: A stalls
+      // again, on a worker nobody has seen produce bytes.
+      const again = requestTranscodeSweep();
+      await settle();
+      await expireStall();
+      await again;
+      expect(health).toBe("failing");
+
+      // The encoder is genuinely repaired: the recovery sweep still tries A.
+      owed = [{ segmentId: sid("a"), clipId: cid("ca"), value: HEALTHY }];
+      await share();
+      await settle();
+
+      expect(committed).toEqual([sid("a")]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("keeps the healthy tail moving past a clip it has stopped retrying", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
