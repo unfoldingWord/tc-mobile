@@ -73,6 +73,11 @@ export type ShareSettled =
 export interface ShareGap {
   readonly missing: number;
   readonly partial: number;
+  /**
+   * How many distinct parents hold the `partial` units — for a book, the
+   * included chapters with a gap (#446). 0 whenever `partial` is 0.
+   */
+  readonly partialChapters: number;
 }
 
 /**

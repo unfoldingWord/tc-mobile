@@ -34,6 +34,7 @@
  */
 
 import { encodeMp3 } from "@/lib/audio/mp3";
+import { errorMessage } from "@/lib/failure-text";
 import type { EncodeRequest, EncodeResponse } from "./mp3-codec";
 
 /**
@@ -75,7 +76,7 @@ addEventListener("message", (event: MessageEvent<EncodeRequest>) => {
     // only as an opaque `ErrorEvent`, and the caller needs the reason.
     response = {
       kind: "error",
-      message: cause instanceof Error ? cause.message : String(cause),
+      message: errorMessage(cause),
     };
   }
   // The options form of `postMessage` — the one signature shared by the worker

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * long as `dragging` is true, and Cut does not clear `dragging`,
  * `ownerRef`, or `panAtDragStart` when it fires. Undo and Redo are wrapped in
  * `heldByDrag(dragging, …)` for exactly this reason — rematerialising
- * `working` (or, for Cut, shifting `panState` through `panAfterCutRest`)
+ * `working` (or, for Cut, writing `panState` through `panAfterCutCollapse`)
  * under a finger that is still moving is the #317 class. Cut's own gate was
  * `!idleEditable || !editor.canCut` with no `dragging` term, so a second
  * finger could tap Cut mid-drag, after which the first finger's next

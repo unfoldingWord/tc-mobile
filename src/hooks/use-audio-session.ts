@@ -412,6 +412,7 @@ export function useAudioSession(): UseAudioSession {
 
           const handle = await playSamples(samples, {
             offsetSeconds,
+            source: audio.clip.encoding === "pcm" ? "stored-pcm" : "stored-mp3",
             isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
               if (!session.isCurrent(token)) return;
@@ -493,6 +494,7 @@ export function useAudioSession(): UseAudioSession {
         try {
           const handle = await playSamples(samples, {
             offsetSeconds,
+            source: "working",
             isStillCurrent: () => session.isCurrent(token),
             onEnded: () => {
               if (!session.isCurrent(token)) return;

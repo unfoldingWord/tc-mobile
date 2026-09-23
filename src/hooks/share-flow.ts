@@ -157,6 +157,12 @@ interface PreparedShare {
   readonly file: File;
   readonly missing: number;
   readonly partial?: number;
+  /**
+   * How many distinct parents hold the `partial` units (a book: the included
+   * chapters with a gap, #446). Omitted with `partial`; the sum in `partial`
+   * cannot recover it, so copy that names the chapter count needs it here.
+   */
+  readonly partialChapters?: number;
 }
 
 /**
@@ -190,6 +196,7 @@ interface ArmedShare {
   readonly staged: StagedShare | null;
   readonly missing: number;
   readonly partial: number;
+  readonly partialChapters: number;
 }
 
 /**
@@ -237,9 +244,14 @@ export function classifyShareError(
 export function sentGap(armed: {
   readonly missing: number;
   readonly partial: number;
+  readonly partialChapters: number;
 }): ShareGap | undefined {
   return armed.missing > 0 || armed.partial > 0
-    ? { missing: armed.missing, partial: armed.partial }
+    ? {
+        missing: armed.missing,
+        partial: armed.partial,
+        partialChapters: armed.partialChapters,
+      }
     : undefined;
 }
 
@@ -266,6 +278,64 @@ export function resolveSendOutcome(
 ): "sent" | "partial" | "unproven" {
   if (!proven) return "unproven";
   return gap ? "partial" : "sent";
+}
+
+/**
+ * What EVERY share hook exposes, whatever it is sharing (#160, L-15).
+ *
+ * `useChapterShare`, `useBookShare` and `useFailureLogShare` each re-declared
+ * these five members with the same types and, mostly, "see UseShareFlow" for
+ * documentation. Three near-identical interfaces is the L-15 item; this is the
+ * part of them that is genuinely one thing. What is left in each hook is what
+ * differs — above all `prepare`, whose arguments ARE the difference between
+ * sharing a chapter, a book and the failure log.
+ *
+ * What it buys today is one place: the contract every share surface holds is
+ * declared once, so a change to it lands here rather than in three files that
+ * have to be kept in step by hand. No component takes this as a prop yet —
+ * `SendLogControl`, the one that would, calls `useFailureLogShare()` itself —
+ * so that is a possibility this creates, not a claim about the tree.
+ */
+export interface ShareGestures<E = ShareError> {
+  readonly status: ShareStatus;
+  /**
+   * Parameterised because one surface reports a code the other two cannot:
+   * `useFailureLogShare` adds `"restart"`, for an open the shell refuses
+   * terminally. An interface may narrow an inherited member but not widen one,
+   * so a bare `extends` would have forced that hook back out of this contract.
+   * The default keeps every other implementer's declaration unchanged.
+   */
+  readonly error: E | null;
+  /** See {@link UseShareFlow.sendUnconfirmed}. */
+  readonly sendUnconfirmed: boolean;
+  /** Tap 2: hand what tap 1 armed to the OS share sheet. See {@link UseShareFlow.send}. */
+  send: () => Promise<ShareOutcome>;
+  /** Drop anything armed and return to idle (menu close, unmount). */
+  reset: () => void;
+}
+
+/**
+ * {@link ShareGestures} plus what the two EXPORT shares add: a count of what
+ * was left out, and the modal timeline over the flow.
+ *
+ * The failure-log share deliberately has none of these. It shares one small
+ * text file that is never partial, and it renders inside a panel rather than
+ * behind the `<ShareProgress>` modal — so giving it a `progress` it does not
+ * drive would be a stub, not a generalisation.
+ */
+export interface ShareSurface extends ShareGestures {
+  /** Units left out of the prepared File (segments or chapters). 0 until ready. */
+  readonly missing: number;
+  /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
+  readonly progress: ShareProgress;
+  /**
+   * The ref-backed read of {@link progress} a `Layer.busy()` must use (#452
+   * PR3/PR4). See {@link UseShareFlow.ownsScreen} for why the rendered
+   * `progress` above cannot serve that purpose.
+   */
+  readonly ownsScreen: () => boolean;
+  /** End an outcome flash early (a tap on it). */
+  dismissProgress: () => void;
 }
 
 export interface UseShareFlow {
@@ -308,6 +378,11 @@ export interface UseShareFlow {
    * — 0 for a builder that never carries one. 0 until ready.
    */
   readonly partial: number;
+  /**
+   * How many distinct parents hold {@link partial} — attached via
+   * {@link PreparedShare.partialChapters} (#446). 0 until ready.
+   */
+  readonly partialChapters: number;
   /**
    * Tap 1: run `build` to encode and stash the File for the send gesture. Never
    * rejects — a reason surfaces through `error`.
@@ -370,6 +445,7 @@ export function useShareFlow(): UseShareFlow {
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
   const [partial, setPartial] = useState(0);
+  const [partialChapters, setPartialChapters] = useState(0);
   // See `UseShareFlow.sendUnconfirmed`'s own docblock: set on an `unproven`
   // settle, cleared only when a fresh `prepare()` begins.
   const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
@@ -466,6 +542,7 @@ export function useShareFlow(): UseShareFlow {
       setError(null);
       setMissing(0);
       setPartial(0);
+      setPartialChapters(0);
       // A fresh attempt is itself the acknowledgment of any prior unconfirmed
       // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
       setSendUnconfirmed(false);
@@ -540,9 +617,11 @@ export function useShareFlow(): UseShareFlow {
           staged,
           missing: prepared.missing,
           partial: prepared.partial ?? 0,
+          partialChapters: prepared.partialChapters ?? 0,
         });
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
+        setPartialChapters(prepared.partialChapters ?? 0);
         setStatus("ready");
         // Ready is not an outcome: the busy phase ends (after its minimum
         // hold) and the primary "Share now" control is what the person sees.
@@ -652,6 +731,7 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
+      setPartialChapters(0);
       // Handed to the sheet — which is all a resolve proves ON A ROUTE THAT
       // CAN PROVE IT (see the R-B7 note above and `resolveProvesDelivery`):
       // the glyph says "handed over", never "delivered". On native Android
@@ -727,6 +807,7 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
+      setPartialChapters(0);
       if (outcome === "failed") setError("failed");
       // `dismissed` and `failed` are outcomes the modal shows; a native
       // `retry` that fell through to idle (above) is not, and maps to null —
@@ -779,6 +860,7 @@ export function useShareFlow(): UseShareFlow {
     setError(null);
     setMissing(0);
     setPartial(0);
+    setPartialChapters(0);
     // See `UseShareFlow.sendUnconfirmed`'s own docblock for why this clears
     // here too, not just at the start of `prepare()`.
     setSendUnconfirmed(false);
@@ -794,6 +876,7 @@ export function useShareFlow(): UseShareFlow {
     sendUnconfirmed,
     missing,
     partial,
+    partialChapters,
     prepare,
     send,
     reset,
