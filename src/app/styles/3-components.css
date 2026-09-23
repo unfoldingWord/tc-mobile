@@ -853,20 +853,32 @@
     background: color-mix(in srgb, var(--s-voice) 20%, transparent);
     border-inline: 2px solid var(--s-voice);
   }
+  /* Each edge is a thin stem on the sample plus a finger-sized hit box. While
+     the stem is on screen the component clamps the box's `left` to half its
+     width inside the canvas (#707), reading that width from
+     `--c-selection-hit` declared here, so a zoom-fitted edge keeps its whole
+     target. The stem is never clamped: it marks the sample. The box's inward
+     focus offset lives beside the unlayered default in globals.css, like
+     `.paste-marker`'s: a layered copy here never won (#635). */
   .selection-handle {
+    --c-selection-hit: 24px;
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 24px;
+    width: var(--c-selection-hit);
     transform: translateX(-50%);
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
-    /* A thin bar centred in a wide, finger-sized target. Its inward focus
-       offset lives beside the unlayered default in globals.css, like
-       `.paste-marker`'s: a layered copy here never won (#635). */
-    background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
-      100% no-repeat;
+  }
+  .selection-stem {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    background: var(--s-voice);
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
@@ -931,6 +943,23 @@
   .recorder-cut {
     padding-top: var(--p-space-2);
     color: var(--s-voice);
+    /* The scissors is mounted only while a selection frame is open (#613), so
+       this row reserves its box the way `.recorder-paste` reserves the paste
+       marker's (#414 R3 P3): `.recorder-stage` is a centred column and a row
+       that collapsed with its child would recentre the group, jumping the
+       canvas on every cut. `--c-control-sm` is what `.control--quiet` — the
+       scissors — is sized by, read as the token rather than repeated as 40px
+       (the #362 40-to-44 question above is exactly that kind of change).
+
+       The `padding-top` is INSIDE this reservation and has to be added to it:
+       under border-box, `min-height` includes padding, so reserving the bare
+       40px control box left the empty row 6px shorter than the mounted one
+       and slid the centred canvas 3px on every cut — reserving the height and
+       still jumping, which is the failure this whole rule exists to prevent.
+       `.recorder-paste`'s `--c-recorder-paste-row` has always been the control
+       box PLUS `--p-space-2` for the same reason; this is that contract, with
+       this row's own control size. */
+    min-height: calc(var(--c-control-sm) + var(--p-space-2));
     /* `flex-shrink: 0` (George R7 P2-1, round 8): this row's `min-height:
        auto` (unset, and it is not `overflow: hidden`) already gives it an
        automatic minimum size equal to its own content, so it could not
