@@ -172,6 +172,26 @@ describe("the edit toggle (#557) opens the forward seed (#554)", () => {
     expect(cut).not.toBeNull();
     await act(async () => cut!.click());
 
+    // #613 changed what a cut LEAVES: the frame collapses onto the centerline
+    // — the paste target — instead of reseeding in the same commit, and the
+    // scissors goes with it. This test's own subject, the forward seed
+    // measured against the shorter buffer, is unchanged and is asserted
+    // below on the frame the translator asks for next.
+    expect(handle(strings.selectionStartHandle)).toBeNull();
+    expect(handle(strings.selectionEndHandle)).toBeNull();
+    expect(
+      container.querySelector(`button[aria-label="${strings.cut}"]`)
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="centerline-overlay"]')
+    ).not.toBeNull();
+
+    // `[ ]` off and on — the route out of the collapsed state that needs no
+    // pointer geometry. (`e2e/recorder-selection.spec.ts` covers the other
+    // one, a touch on the waveform.)
+    await act(async () => toggle().click());
+    await act(async () => toggle().click());
+
     // `{750, 1000}` is gone, so 750 samples remain and the pan rests at their
     // end: `seedSelection(750, 750, 750)` is `{562.5, 750}`, which the handle
     // reports rounded. The centred seed gave `{637.5, 750}`.
