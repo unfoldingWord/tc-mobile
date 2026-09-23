@@ -22,6 +22,7 @@ export type IconName =
   | "copies"
   | "retry"
   | "menu"
+  | "more"
   | "edit"
   | "check"
   | "chevron-down"
@@ -201,6 +202,16 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeWidth="1.8"
       strokeLinecap="round"
     />
+  ),
+  // Three dots, stacked — an object's own menu (a book, a chapter, a segment).
+  // Distinguishes these object menus from the global ≡. The recorder still
+  // uses ≡; its separate affordance remains open in #589.
+  more: (
+    <>
+      <circle cx="11" cy="6" r="2" fill="currentColor" />
+      <circle cx="11" cy="11" r="2" fill="currentColor" />
+      <circle cx="11" cy="16" r="2" fill="currentColor" />
+    </>
   ),
   // Edit: a pencil over its stroke. The row menu's "Edit" entry, which reopens
   // the recorder to insert/append/re-record the segment.
