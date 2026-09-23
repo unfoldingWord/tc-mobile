@@ -70,11 +70,18 @@ const COPY_MAPPERS = [
   "components/share-error-copy.ts",
 ];
 
-/** The sentence-shaped literals in `source` — the shape both gates look for. */
+/**
+ * The sentence-shaped literals in `source` — the shape both gates look for.
+ *
+ * Reads `isSentence` rather than repeating its rule. The two gates arrived on
+ * separate branches, each with its own copy of the predicate, and the merge
+ * that brought them together left both; a later tightening of what counts as
+ * copy would have landed in one and not the other, and the two gates would
+ * have quietly disagreed about it. That is the drift this file exists to
+ * catch, in the file itself.
+ */
 function heldSentences(source: string): string[] {
-  return stringLiterals(source).filter(
-    (text) => text.includes(" ") && text.length >= SENTENCE_MIN
-  );
+  return stringLiterals(source).filter(isSentence);
 }
 
 /**
