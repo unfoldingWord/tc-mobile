@@ -14,6 +14,11 @@ import type {
  * MICROPHONE is reachable from exactly one of them, and that no member of the
  * session falls through both views unnoticed.
  *
+ * NOT a partition, and the tests below do not claim one: the two views OVERLAP
+ * on `error`, `playingBuffer` and `stopBuffer`, and `primeAudioContext` is on
+ * neither. What is asserted is the mic's exclusivity and the size of that
+ * neither-set — which is the pair a drift would break (Frank on `800e20487`).
+ *
  * This exists because the lists drifted for real. #614 retired the paused
  * preview and took four members off the interface; #601 added one. Both views
  * were stale afterwards, the docblock's three counts were all wrong, and the
@@ -52,7 +57,7 @@ const recorderCanRecord: Exact<
   "startRecording"
 > = true;
 
-describe("the two audio views partition the session", () => {
+describe("the two audio views, and what each screen may reach", () => {
   it("keeps the microphone off the list screen's view", () => {
     // `startRecording` on SegmentsAudio makes `MicOnList` that key rather than
     // `never`, and the annotation above stops compiling. A list that can start

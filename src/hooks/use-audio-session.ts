@@ -176,7 +176,9 @@ export interface UseAudioSession {
  * The two narrow views of {@link UseAudioSession} the screens actually take
  * (#160, L-18).
  *
- * One object was drilled to both screens, which use disjoint subsets. So the
+ * One object was drilled to both screens, which use different subsets — not
+ * disjoint ones: `error`, `playingBuffer` and `stopBuffer` are on both, and
+ * `primeAudioContext` is on neither. So the
  * list screen's prop type admitted `startRecording` and `stopRecording` — the
  * microphone — to a screen whose only job with audio is to play a row back.
  * Nothing called them, and the type is what stops the next change from being
@@ -197,8 +199,10 @@ export interface UseAudioSession {
  * #614's retirement of the paused preview took `audioNeedsGesture`,
  * `pauseRecording`, `previewCapture` and `resumeRecording` off the interface
  * and #601 added `playbackRanOut`, so the two views drifted out of step with
- * it and only `tsc` noticed. `tests/audio-views.test.ts` asserts the
- * partition instead, where a number cannot go stale unread.
+ * it and only `tsc` noticed. `tests/audio-views.test.ts` asserts the two
+ * properties that actually matter instead — the microphone is on exactly one
+ * view, and `primeAudioContext` is the only member on neither — where a
+ * number cannot go stale unread.
  */
 export type SegmentsAudio = Pick<
   UseAudioSession,
