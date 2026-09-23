@@ -1852,7 +1852,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // which both stop it; this is the belt to those suspenders, and matches
       // the Segments list's leave().
       stopPlayback();
-      setEraseFailed(false);
+      // Clear only when this call will acquire the guard: a "busy" refusal is
+      // not an erase this sheet started, so it must not blank the flag from one
+      // it did. The ref read and the hook's own check run in the same turn.
+      if (!isErasing()) setEraseFailed(false);
       void (async () => {
         const result = await erase.erase(segmentId);
         // "ok": the stored take is gone; rebuild the sheet over the empty
@@ -1914,6 +1917,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       })();
     }, [
       erase,
+      isErasing,
       segmentId,
       onExit,
       stopPlayback,
