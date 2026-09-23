@@ -64,8 +64,8 @@ describe("the history gates are the shipped gates (#317, #91)", () => {
   // three terms, because a disjunction does not care which disjunct answered.
   // Which reason wins decides what the translator is told, so it is pinned
   // separately — and it is not arbitrary: a finger on the stage blocks the
-  // control whatever the history holds, so saying "no edits to undo yet" to
-  // someone mid-pan with a full history would be false.
+  // control whatever the history holds, so telling someone mid-pan with a full
+  // stack that there is nothing to undo would be false.
   it("a finger on the stage outranks a full history", () => {
     expect(
       undoReason({ dragging: true, idleEditable: true, canUndo: true })
@@ -93,28 +93,31 @@ describe("the history gates are the shipped gates (#317, #91)", () => {
     ).toBeNull();
   });
 
-  // The state every edit session opens in, and the whole reason #91 reaches
-  // these two controls: nothing has been edited, so both arrows are grey before
-  // the translator has done anything at all.
-  it("an untouched edit session names its own emptiness on both arrows", () => {
+  // The reason names a POSITION IN THE STACK, not a fact about the session.
+  // Round 1 called these `no-edits`/`nothing-undone` and this case "an
+  // untouched edit session names its own emptiness", which read `!canUndo` as
+  // "nothing was ever edited" — the conflation George round 1 caught in the
+  // copy. A fresh session is only ONE of the states that selects each reason;
+  // the mid-stack ones below are the others.
+  it("names the stack end when there is nothing on that side", () => {
     expect(
       undoReason({ dragging: false, idleEditable: true, canUndo: false })
-    ).toBe("no-edits");
+    ).toBe("nothing-to-undo");
     expect(
       redoReason({ dragging: false, idleEditable: true, canRedo: false })
-    ).toBe("nothing-undone");
+    ).toBe("nothing-to-redo");
   });
 });
 
 describe("the cue (#91, #135)", () => {
   it("speaks the two history reasons with the alert state mark", () => {
-    expect(editControlHint("no-edits")).toEqual({
+    expect(editControlHint("nothing-to-undo")).toEqual({
       icon: "alert",
       label: strings.nothingToUndo,
     });
-    expect(editControlHint("nothing-undone")).toEqual({
+    expect(editControlHint("nothing-to-redo")).toEqual({
       icon: "alert",
-      label: strings.nothingUndone,
+      label: strings.nothingToRedo,
     });
   });
 
@@ -122,7 +125,24 @@ describe("the cue (#91, #135)", () => {
   // arrows a non-reader tells apart by nothing except direction, so a shared
   // cue would leave the pair exactly as ambiguous as no cue at all.
   it("gives the two arrows different words", () => {
-    expect(strings.nothingToUndo).not.toBe(strings.nothingUndone);
+    expect(strings.nothingToUndo).not.toBe(strings.nothingToRedo);
+  });
+
+  // THE ROUND-1 DEFECT, pinned as a rule rather than as two fixed sentences
+  // (George round 1, Medium / WRONG RESULT). The cue shipped as "No edits to
+  // undo yet." and "Nothing has been undone." — claims about the session's
+  // PAST, while `canUndo`/`canRedo` are only `cursor > 0` and
+  // `cursor < ops.length` (`lib/audio/edit-log.ts`). Three taps reach the lie:
+  // cut, undo (Undo greys: an edit WAS made), redo (Redo greys: an undo DID
+  // happen). Banning the tense is what generalises — a later reword that says
+  // "already" or "so far" would reintroduce exactly the same false claim while
+  // any assertion pinning the two literal strings stayed green.
+  it("claims nothing about the session's past — only the current stack", () => {
+    for (const copy of [strings.nothingToUndo, strings.nothingToRedo]) {
+      expect(copy.toLowerCase()).not.toMatch(
+        /\b(yet|has been|have been|was|were|already|so far|ever)\b/
+      );
+    }
   });
 
   it("stays silent on the two transient reasons, and on a live control", () => {
@@ -141,8 +161,8 @@ describe("the cue (#91, #135)", () => {
     const reasons: readonly (EditControlReason | null)[] = [
       "held-by-drag",
       "sheet-busy",
-      "no-edits",
-      "nothing-undone",
+      "nothing-to-undo",
+      "nothing-to-redo",
       null,
     ];
     for (const reason of reasons) {
@@ -165,7 +185,7 @@ describe("the cue (#91, #135)", () => {
   // on the bare words would fail on honest copy and teach the next author to
   // weaken it until it caught nothing.
   it("neither cue points the translator at a control", () => {
-    for (const copy of [strings.nothingToUndo, strings.nothingUndone]) {
+    for (const copy of [strings.nothingToUndo, strings.nothingToRedo]) {
       expect(copy).not.toContain(`"`);
       expect(copy.toLowerCase()).not.toMatch(/\b(tap|press|use) /);
     }

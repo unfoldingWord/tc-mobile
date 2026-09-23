@@ -7,8 +7,10 @@
  * far less often than record and play. Undo and Redo are the same class and
  * were not on that list. They are also the ones that sit grey the LONGEST —
  * an edit session opens with no history at all, so both arrows are inert from
- * the moment edit mode is entered until the first cut or paste, and Redo stays
- * inert until something has been undone. An icon-only control that is grey for
+ * the moment edit mode is entered until the first cut or paste, and Redo is
+ * inert again at every tip of the stack. (That is the MOTIVATION for the cue;
+ * it is not what the cue asserts — see {@link editControlHint}.) An icon-only
+ * control that is grey for
  * a reason nobody states is the finding #135 already recorded once, in the ≡
  * menu: "a grey row with no reason read as a broken control to the
  * requirements owner" (2026-09-02, staging v0.1.10).
@@ -36,9 +38,14 @@ import { strings } from "./strings";
  * !canUndo)` is a disjunction, and a control blocked by a finger on the stage
  * is blocked whatever the history says. Ordering them this way is what lets
  * `reason !== null` reproduce that disjunction exactly.
+ *
+ * The two history ids name a POSITION IN THE STACK, not a fact about the
+ * session, because that is all their predicates know. Round 1 called them
+ * `no-edits` and `nothing-undone`, which George round 1 caught as teaching the
+ * next caller the same conflation the copy had made — see {@link editControlHint}.
  */
 export type EditControlReason =
-  "held-by-drag" | "sheet-busy" | "no-edits" | "nothing-undone";
+  "held-by-drag" | "sheet-busy" | "nothing-to-undo" | "nothing-to-redo";
 
 interface HistoryControlInputs {
   /**
@@ -64,7 +71,7 @@ export function undoReason(
 ): EditControlReason | null {
   if (i.dragging) return "held-by-drag";
   if (!i.idleEditable) return "sheet-busy";
-  if (!i.canUndo) return "no-edits";
+  if (!i.canUndo) return "nothing-to-undo";
   return null;
 }
 
@@ -77,7 +84,7 @@ export function redoReason(
 ): EditControlReason | null {
   if (i.dragging) return "held-by-drag";
   if (!i.idleEditable) return "sheet-busy";
-  if (!i.canRedo) return "nothing-undone";
+  if (!i.canRedo) return "nothing-to-redo";
   return null;
 }
 
@@ -97,8 +104,19 @@ export interface EditControlHint {
 /**
  * Which reasons get a cue, what it shows, and what it says.
  *
- * **Only the two history reasons do**, and the two that do not are left out on
- * different grounds:
+ * **The words describe the CURRENT END OF THE STACK, never the session's
+ * past**, because that is the only thing `canUndo`/`canRedo` know: they are
+ * `cursor > 0` and `cursor < ops.length` (`lib/audio/edit-log.ts`). Round 1 of
+ * this module shipped "No edits to undo yet." and "Nothing has been undone.",
+ * and George round 1 showed both are false in reachable states — undo once and
+ * Undo greys while saying no edit was ever made; redo back to the tip and Redo
+ * greys while saying nothing was ever undone. A sentence that reads precise and
+ * is false is the defect class this repo tracks hardest, and the cue is worse
+ * than no cue when it is wrong. `tests/edit-control-state.test.ts` now bans the
+ * tense that made the claim, so the wording cannot drift back.
+ *
+ * **Only the two history reasons get a cue**, and the two that do not are left
+ * out on different grounds:
  *
  * - `"held-by-drag"` lasts exactly as long as the translator's own finger is
  *   on the stage, and the control is live again on lift. A badge that appears
@@ -114,8 +132,8 @@ export interface EditControlHint {
  *   exists to make the function total, not because it is seen.
  *
  * **The words are pure statements of state — they name no control and no
- * gesture.** Both ways out are already implied by the state itself (make an
- * edit; undo one), so there is nothing to point at, and pointing is where this
+ * gesture.** Both ways out are already implied by the state itself, so there is
+ * nothing to point at, and pointing is where this
  * repo's cue copy has gone wrong twice: round 1 of #135 badged a row with the
  * glyph of a control the overlay made untappable, and #648 round 1 caught the
  * words repeating that mistake. `strings.blockedByTake` has to name controls
@@ -126,10 +144,10 @@ export function editControlHint(
   reason: EditControlReason | null
 ): EditControlHint | null {
   switch (reason) {
-    case "no-edits":
+    case "nothing-to-undo":
       return { icon: "alert", label: strings.nothingToUndo };
-    case "nothing-undone":
-      return { icon: "alert", label: strings.nothingUndone };
+    case "nothing-to-redo":
+      return { icon: "alert", label: strings.nothingToRedo };
     case "held-by-drag":
     case "sheet-busy":
     case null:

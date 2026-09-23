@@ -287,17 +287,24 @@ export const strings = {
   undo: "Undo",
   redo: "Redo",
   // Why the two history arrows are grey, appended to their accessible names
-  // while they are (#91, via `edit-control-state.ts`). An edit session opens
-  // with no history, so both are inert from the moment edit mode is entered —
-  // the longest any edit control stays grey, and the #135 finding says a grey
-  // icon-only control with no reason reads as a broken one.
+  // while they are (#91, via `edit-control-state.ts`). A grey icon-only control
+  // with no reason reads as a broken one — the #135 finding — and these two are
+  // grey the longest of any edit control.
+  //
+  // PRESENT TENSE, describing the current end of the edit stack and nothing
+  // else. Round 1 said "No edits to undo yet." and "Nothing has been undone.";
+  // both are claims about the session's PAST, while `canUndo`/`canRedo` are
+  // only `cursor > 0` and `cursor < ops.length`. George round 1 showed the gap
+  // is reachable in three taps: cut, undo — Undo now greys and "no edits yet"
+  // is false — then redo, and Redo greys while "has been undone" is false.
+  // `tests/edit-control-state.test.ts` bans the tense so this cannot drift back.
   //
   // Pure statements of STATE: no control is named and no gesture is described.
-  // Each way out follows from the state itself (make an edit; undo one), so
-  // there is nothing to point at — and pointing is where cue copy has gone
-  // wrong here before (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
-  nothingToUndo: "No edits to undo yet.",
-  nothingUndone: "Nothing has been undone.",
+  // Each way out follows from the state itself, so there is nothing to point at
+  // — and pointing is where cue copy has gone wrong here before
+  // (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
+  nothingToUndo: "Nothing to undo.",
+  nothingToRedo: "Nothing to redo.",
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
