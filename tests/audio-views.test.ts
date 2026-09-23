@@ -45,8 +45,32 @@ type MicOnList = Extract<
   "startRecording" | "stopRecording"
 >;
 
+/**
+ * Exactly what the list screen may reach — an ALLOW-list, not a denylist.
+ *
+ * `MicOnList` above names two verbs, and `Unclassified` only forces a new
+ * session member onto SOME view. Between them, a capture verb under any third
+ * name could land on `SegmentsAudio` and both assertions would still pass
+ * (George on `800e20487`). Naming the whole set closes that: widening the
+ * list's audio surface cannot compile until someone edits the line below,
+ * which is the decision this boundary exists to force.
+ *
+ * Deliberately not the same for `RecorderAudio`. The sheet is where audio
+ * capability belongs, so adding to it is not the direction this guards.
+ */
+type ListMayReach =
+  | "error"
+  | "leave"
+  | "playTake"
+  | "playbackElapsedMs"
+  | "playbackRanOut"
+  | "playingBuffer"
+  | "playingId"
+  | "stopBuffer";
+
 // Each `true` below is the assertion; a drift makes the annotation fail `tsc`.
 const micIsOffTheList: Exact<MicOnList, never> = true;
+const listReachesOnlyThese: Exact<keyof SegmentsAudio, ListMayReach> = true;
 const onlyPrimeIsUnclassified: Exact<Unclassified, "primeAudioContext"> = true;
 const listCanPlay: Exact<
   Extract<keyof SegmentsAudio, "playTake">,
@@ -58,6 +82,13 @@ const recorderCanRecord: Exact<
 > = true;
 
 describe("the two audio views, and what each screen may reach", () => {
+  it("admits nothing to the list screen beyond its declared set", () => {
+    // The allow-list, and the stronger of the two. `micIsOffTheList` catches
+    // the two verbs it names; this catches a capture verb under a name nobody
+    // thought to deny, which is the shape a future session member would take.
+    expect(listReachesOnlyThese).toBe(true);
+  });
+
   it("keeps the microphone off the list screen's view", () => {
     // `startRecording` on SegmentsAudio makes `MicOnList` that key rather than
     // `never`, and the annotation above stops compiling. A list that can start
