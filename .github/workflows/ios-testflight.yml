@@ -42,13 +42,17 @@ jobs:
     permissions: {}
     env:
       REF: ${{ github.ref_name }}
+      REF_TYPE: ${{ github.ref_type }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
       - name: Require staging/main (or an explicit override)
         run: |
           set -euo pipefail
           if [ "$ALLOW_ANY" = "true" ]; then
-            echo "allow_any_ref set — building '$REF'."
+            echo "allow_any_ref set — building '$REF' ($REF_TYPE)."
+          elif [ "$REF_TYPE" != "branch" ]; then
+            echo "::error::Refusing to build a tester IPA from $REF_TYPE '$REF'. Tester builds come from the staging or main BRANCH; set allow_any_ref for anything else."
+            exit 1
           elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
             echo "::error::Refusing to build a tester IPA from '$REF'. Dispatch from staging or main, or set allow_any_ref."
             exit 1
@@ -111,26 +115,25 @@ jobs:
       - name: Build the web bundle
         run: npm run build
 
+      # These checks enforce the reader-gated OBS glob policy. The synced
+      # bundle guard below also checks what the build actually precaches.
+      - name: Check the built artifacts
+        run: npm run test:dist
+
       # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
       # Swift package through xcodebuild, so it must use the same toolchain gym
       # archives with, or SPM resolves against one Xcode and the archive runs on
-      # another. App Store Connect requires the iOS 26 SDK, so this pins Xcode 26
-      # explicitly rather than the image default: /Applications/Xcode.app is 16.x
-      # on macos-15 and Apple rejects its uploads. The step below globs the
-      # versioned Xcode_26*.app and fails closed if none is present (BSD `sort`
-      # has no `-V`, so it sorts lexicographically — fine within the 26.x range).
-      # No third-party action, keeping the "actions/* pinned by SHA only"
-      # property this repo's workflows hold (see ci.yml).
+      # another. Target the iOS 26 SDK for App Store Connect uploads, choosing
+      # the newest stable Xcode 26 by numeric version rather than relying on
+      # the runner image default. Fail closed if no matching application exists.
       - name: Select Xcode
         run: |
           set -euo pipefail
-          # App Store Connect requires the iOS 26 SDK (Xcode 26+). The image's
-          # default /Applications/Xcode.app symlink points to 16.x on macos-15,
-          # which Apple rejects at upload. Prefer any versioned Xcode_26*.app;
-          # BSD sort has no -V so sort lexicographically descending — fine for
-          # the 26.x range. If none is found, print what IS installed and exit
-          # so the error lands here rather than after ~10 min of billed archive.
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -r | head -1 || true)
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | ruby -e '
+            paths = STDIN.readlines.map(&:chomp)
+            candidates = paths.select { |p| p.match?(%r{/Xcode_26(?:\.\d+)*\.app\z}) }
+            puts candidates.max_by { |p| Gem::Version.new(p[/Xcode_([\d.]+)\.app\z/, 1]) }
+          ' || true)
           if [ -z "$XCODE" ]; then
             echo "::error::Xcode 26 not found on this runner. Available versions:"
             ls -d /Applications/Xcode*.app 2>/dev/null || echo "  (none)"
@@ -153,6 +156,24 @@ jobs:
           set -euo pipefail
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          # test:dist requires jpg exactly when source readers need thumbnails.
+          # Check emitted output too: includeAssets can bypass globPatterns.
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
+          }
+          NODE
           for tok in "e2e-harness" "__e2e"; do
             if grep -rq "$tok" dist/; then
               echo "::error::e2e harness ($tok) leaked into dist/"
