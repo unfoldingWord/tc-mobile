@@ -474,6 +474,93 @@ describe("closeDb — an open that is still in flight", () => {
   });
 });
 
+describe("closeDb — the wait is bounded (#438)", () => {
+  /**
+   * Settle a close, or report that it did not: a close that never returns is
+   * exactly the defect under test, and it must fail as an assertion rather
+   * than as the suite's own timeout.
+   */
+  function settleWithin(closing: Promise<string>, ms: number): Promise<string> {
+    return Promise.race([closing, delay(ms).then(() => "still waiting")]);
+  }
+
+  it("says the connection closed when nothing held it up", async () => {
+    await getDb();
+    await expect(settleWithin(closeDb(50), 500)).resolves.toBe("closed");
+    await expect(deleteDb()).resolves.toBeUndefined();
+  });
+
+  it("stops waiting on a blocked open after the bound, and says it gave up", async () => {
+    const stale = await openLegacyV3Open();
+    await expect(getDb()).rejects.toBeInstanceOf(Error);
+
+    // The other copy never closes during the bound, so the queued open cannot
+    // arrive: the close has to give up rather than wait for it.
+    await expect(settleWithin(closeDb(50), 500)).resolves.toBe("abandoned");
+
+    // Given up on, not orphaned: once the other copy closes, the connection the
+    // queued open finally receives is still closed, so nothing holds the
+    // database against a delete.
+    stale.close();
+    await delay(20);
+    await expect(deleteDb()).resolves.toBeUndefined();
+  });
+
+  it("is bounded when the caller names no bound", async () => {
+    const stale = await openLegacyV3Open();
+    await expect(getDb()).rejects.toBeInstanceOf(Error);
+
+    // The product caller will not pass a bound, so the default is the one that
+    // has to exist. Generous on the outside so the case is not timing-fragile.
+    await expect(settleWithin(closeDb(), 3_000)).resolves.toBe("abandoned");
+
+    stale.close();
+    await delay(20);
+  });
+
+  it("still closes an open it gave up on that was never told it was blocked", async () => {
+    // An open queued behind ANOTHER request is told nothing: `blocked` fires
+    // for the request being processed, which here is the delete. So this open
+    // never takes the late-connection path, and the only thing that can close
+    // what it receives is the close that stopped waiting for it.
+    const stale = await openLegacyV3Open();
+    const deleting = new Promise<void>((resolve, reject) => {
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+    const opening = getDb();
+
+    await expect(settleWithin(closeDb(50), 500)).resolves.toBe("abandoned");
+
+    stale.close();
+    await deleting;
+    // The open arrives with no one left to hold it; the abandoned close is what
+    // closes it. The app's own caller still receives it — the close decides
+    // only when it stops waiting, never whether the connection is closed.
+    //
+    // Observed on the connection itself, not through a delete: a delete fires
+    // `versionchange` at this connection, and the app's own `blocking()` yield
+    // would close it then — hiding whether the abandoned close ever did.
+    const late = await opening;
+    await delay(20);
+    expect(() => late.transaction("books")).toThrow(/closed|InvalidState/i);
+  });
+
+  it("leaves no timer behind once the connection has closed", async () => {
+    await getDb();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const closing = closeDb(50);
+      // Advance nothing: the close must finish on the IndexedDB side alone.
+      await expect(closing).resolves.toBe("closed");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("getDb — cache invalidation is identity-checked", () => {
   it("a superseded connection's terminated does not drop the live one", async () => {
     const first = await getDb();
