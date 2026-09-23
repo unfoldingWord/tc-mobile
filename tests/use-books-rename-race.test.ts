@@ -26,11 +26,11 @@ import { describe, expect, it } from "vitest";
  * .test.ts` makes for `deleteBook`'s funnel call.
  *
  * WHAT IT PROVES, EXACTLY: that `renameBook`'s `catch (cause)` block bumps
- * `loadGen.current` in the branch where `reportUnlessStale` reports (does
- * NOT swallow) the failure — mirroring `addChapter`'s `else { loadGen.current
- * += 1; }` from #728. It does NOT prove the in-flight load actually loses the
- * race in a running browser, or that the Notice is observed staying up on a
- * device.
+ * `loadGen.current` inside the callback `reportUnlessStale` reports through,
+ * in the same synchronous step as `report` — a bump after the `await` left a
+ * microtask window for a load continuation (Frank, #733 round 1). It does NOT
+ * prove the in-flight load actually loses the race in a running browser, or
+ * that the Notice is observed staying up on a device.
  */
 describe("renameBook invalidates an in-flight load on a reported failure (#732, mirrors #728's addChapter fix)", () => {
   const sourceUrl = new URL("../src/hooks/use-books.ts", import.meta.url);
@@ -75,12 +75,12 @@ describe("renameBook invalidates an in-flight load on a reported failure (#732, 
 
   it("calls reportUnlessStale and branches on `swallowed`, unchanged", () => {
     expect(catchBody).toMatch(
-      /const \{ swallowed \} = await reportUnlessStale\(\s*cause,\s*bookId,\s*report\s*\)/
+      /const \{ swallowed \} = await reportUnlessStale\(\s*cause,\s*bookId,/
     );
     expect(catchBody).toMatch(/if\s*\(\s*swallowed\s*\)/);
   });
 
-  it("bumps loadGen.current in the non-swallowed (reported) branch, not inside the swallowed branch", () => {
+  it("bumps loadGen.current inside the report callback, not after the await or in the swallowed branch", () => {
     // The swallowed branch (patch-and-reload) is unchanged from before #732 —
     // asserted here so a future edit that moved the bump INSIDE that branch
     // (defeating the point: a swallow already calls `reload()`, which bumps
@@ -91,15 +91,13 @@ describe("renameBook invalidates an in-flight load on a reported failure (#732, 
     expect(swallowedBlockMatch).not.toBeNull();
     const swallowedBlock = swallowedBlockMatch![1];
     expect(swallowedBlock).not.toMatch(/loadGen\.current/);
+    expect(swallowedBlock).toMatch(/dropBookCard\(\s*prev,\s*bookId\s*\)/);
+    expect(swallowedBlock).toMatch(/reload\(\)/);
 
-    // The bump must be reachable when `swallowed` is false — an `else`
-    // attached to the same `if (swallowed)` is the only shape checked here,
-    // matching #728's `addChapter` fix exactly.
-    const elseBlockMatch = catchBody.match(
-      /if\s*\(\s*swallowed\s*\)\s*\{[^{}]*\}\s*else\s*\{([^{}]*)\}/
+    // Bumped in the same synchronous step that sets the Notice, and once.
+    expect(catchBody).toMatch(
+      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
     );
-    expect(elseBlockMatch).not.toBeNull();
-    const elseBlock = elseBlockMatch![1];
-    expect(elseBlock).toMatch(/loadGen\.current\s*\+=\s*1/);
+    expect(catchBody.match(/loadGen\.current/g)).toHaveLength(1);
   });
 });

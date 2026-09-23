@@ -617,13 +617,21 @@ export function useBooks() {
         // Notice this failure just set. Bumping the generation — not calling
         // `reload()`, which would also trigger a needless extra read of a
         // book that has not changed — marks that load stale so its
-        // resolution is a no-op.
-        const { swallowed } = await reportUnlessStale(cause, bookId, report);
+        // resolution is a no-op. The bump rides INSIDE the report callback,
+        // in the same synchronous step as the Notice: bumping after the
+        // `await` left a microtask window in which an already-resolved load
+        // continuation still read the old generation (Frank, #733 round 1).
+        const { swallowed } = await reportUnlessStale(
+          cause,
+          bookId,
+          (reported) => {
+            loadGen.current += 1;
+            report(reported);
+          }
+        );
         if (swallowed) {
           setBooks((prev) => dropBookCard(prev, bookId));
           reload();
-        } else {
-          loadGen.current += 1;
         }
         return null;
       }
