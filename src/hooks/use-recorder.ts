@@ -25,6 +25,7 @@ import {
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
 
@@ -447,7 +448,8 @@ export function useRecorder(): UseRecorder {
 
   const releaseStream = useCallback(() => {
     closeTap();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const stream = streamRef.current;
+    if (stream) stopTracks(stream, "recorder-release-track");
     streamRef.current = null;
     recorderRef.current = null;
   }, [closeTap]);
@@ -460,7 +462,7 @@ export function useRecorder(): UseRecorder {
    * opened.
    */
   const abandonStream = useCallback((stream: MediaStream) => {
-    stream.getTracks().forEach((t) => t.stop());
+    stopTracks(stream, "recorder-release-track");
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
 
