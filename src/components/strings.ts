@@ -286,6 +286,18 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // Why the two history arrows are grey, appended to their accessible names
+  // while they are (#91, via `edit-control-state.ts`). An edit session opens
+  // with no history, so both are inert from the moment edit mode is entered —
+  // the longest any edit control stays grey, and the #135 finding says a grey
+  // icon-only control with no reason reads as a broken one.
+  //
+  // Pure statements of STATE: no control is named and no gesture is described.
+  // Each way out follows from the state itself (make an edit; undo one), so
+  // there is nothing to point at — and pointing is where cue copy has gone
+  // wrong here before (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
+  nothingToUndo: "No edits to undo yet.",
+  nothingUndone: "Nothing has been undone.",
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
