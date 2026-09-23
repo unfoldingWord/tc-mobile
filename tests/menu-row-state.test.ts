@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  barHint,
   editRowReason,
   eraseRowReason,
   heldTakeIsBusy,
@@ -437,5 +438,26 @@ describe("heldTakeIsBusy", () => {
 
   it("holds it while both are somehow true", () => {
     expect(heldTakeIsBusy({ retrying: true, sharing: true })).toBe(true);
+  });
+});
+
+describe("barHint — the reason on a record-bar control (#315 Edit, #592 bin)", () => {
+  it("keeps the words and drops the badge for every reason that has words", () => {
+    for (const reason of ["starting", "no-audio", "no-clip"] as const) {
+      const row = rowHint(reason);
+      expect(row?.icon).toBe("alert");
+      expect(barHint(reason)).toEqual({ label: row!.label });
+    }
+  });
+
+  it("says nothing for a live take — the menu's way out is not the bar's", () => {
+    expect(rowHint("uncommitted-take")?.label).toBe(strings.blockedByTake);
+    expect(barHint("uncommitted-take")).toBeNull();
+  });
+
+  it("says nothing where the menu says nothing", () => {
+    for (const reason of ["denied", "no-segment", null] as const) {
+      expect(barHint(reason)).toBeNull();
+    }
   });
 });

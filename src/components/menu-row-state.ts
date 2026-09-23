@@ -191,6 +191,28 @@ export function rowHint(reason: RowReason | null): RowHint | null {
 }
 
 /**
+ * The same reason, worn by a control on the record BAR rather than in the ≡
+ * menu — the toolbar Edit (#315) and the bin (#592).
+ *
+ * Two differences from {@link rowHint}, both because the bar is not the menu:
+ *
+ * - No badge. The bar's controls sit in the translator's hand all session, and
+ *   an `alert` mark on an empty segment's Edit or bin would read as something
+ *   gone wrong on the first screen of every new segment. The reason stays in
+ *   the accessible name, and the control goes `aria-disabled`, so keyboard and
+ *   switch users still reach it.
+ * - No words for `"uncommitted-take"`. `blockedByTake` sends the translator to
+ *   "Close menu", then "Close recorder" — a menu the bar is not in, and during
+ *   a take the bar's own Stop, beside it, is the way out. The control is
+ *   plainly off (natively disabled) instead.
+ */
+export function barHint(reason: RowReason | null): { label: string } | null {
+  if (reason === "uncommitted-take") return null;
+  const hint = rowHint(reason);
+  return hint === null ? null : { label: hint.label };
+}
+
+/**
  * Is the held-take recovery panel mid-operation, so its take must not be
  * dropped? (George R5 P1.)
  *
