@@ -233,6 +233,7 @@ describe("exportBookZip", () => {
     expect(result!.chapters).toBe(3);
     expect(result!.missing).toBe(0); // no whole chapter was left out
     expect(result!.partialSegments).toBe(3); // one gap per chapter, summed
+    expect(result!.partialChapters).toBe(3); // three distinct chapters hold them
   });
 
   it("sums BOTH gaps from a single partial chapter, not one per chapter (#400)", async () => {
@@ -251,6 +252,7 @@ describe("exportBookZip", () => {
     expect(result!.chapters).toBe(1); // the chapter ships — it has resolvable audio
     expect(result!.missing).toBe(0); // no whole chapter was left out
     expect(result!.partialSegments).toBe(2); // both gaps, from the ONE chapter
+    expect(result!.partialChapters).toBe(1); // ...which is one chapter, not two
   });
 
   it("counts a whole missing chapter toward `missing` and a partial one toward `partialSegments`, not both", async () => {
@@ -265,6 +267,50 @@ describe("exportBookZip", () => {
     expect(result!.chapters).toBe(2); // chapters 1 and 3 shipped
     expect(result!.missing).toBe(1); // chapter 2 had no audio at all
     expect(result!.partialSegments).toBe(1); // chapter 1's own gap only
+    expect(result!.partialChapters).toBe(1); // chapter 1 alone holds it
+  });
+
+  it("counts no partial chapters for a book whose included chapters are whole (#446)", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }],
+      [null], // left out entirely: `missing`, never `partialChapters`
+      [
+        { n: 100, v: 200 },
+        { n: 100, v: 250 },
+      ],
+    ]);
+    const result = await exportBookZip(bookId, nameChapter, testCodec());
+
+    expect(result).not.toBeNull();
+    expect(result!.missing).toBe(1);
+    expect(result!.partialSegments).toBe(0);
+    expect(result!.partialChapters).toBe(0);
+  });
+
+  /**
+   * #446: the pair `(missing, partialSegments)` cannot tell these two books
+   * apart — both read `(1, 2)` — yet one has its two gaps in ONE included
+   * chapter and the other in TWO. `partialChapters` is what the Notice reads
+   * to name the right chapter count, so the two must come out different.
+   */
+  it("tells one partial chapter from two when missing and partialSegments are identical (#446)", async () => {
+    const onePartial = await bookWith([
+      [{ n: 100, v: 100 }, null, null], // one chapter, two gaps
+      [null], // a chapter never recorded
+    ]);
+    const one = await exportBookZip(onePartial, nameChapter, testCodec());
+    await clearAllStores();
+    const twoPartial = await bookWith([
+      [{ n: 100, v: 100 }, null], // one gap
+      [{ n: 100, v: 150 }, null], // one gap
+      [null], // a chapter never recorded
+    ]);
+    const two = await exportBookZip(twoPartial, nameChapter, testCodec());
+
+    expect([one!.missing, one!.partialSegments]).toEqual([1, 2]);
+    expect([two!.missing, two!.partialSegments]).toEqual([1, 2]);
+    expect(one!.partialChapters).toBe(1);
+    expect(two!.partialChapters).toBe(2);
   });
 
   it("returns null when no chapter has any audio", async () => {
