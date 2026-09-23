@@ -119,7 +119,7 @@ export default defineConfig({
       // The guided highlight (#604). Against `dist/` for the reason the theme
       // spec gives: the claim is that a stylesheet rule REACHES the element in
       // the build people install, and the harness build's cascade is not that
-      // one. It drives the real chain and touches no microphone.
+      // one. Capture cases use synthetic Chromium media, not a physical mic.
       name: "chromium-guided-highlight",
       testMatch: /guided-highlight\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
