@@ -63,6 +63,91 @@ test.use({
   },
 });
 
+// #707: the first zoom-in from the seed fits the span to the quarter window
+// edge to edge, and `.recorder-canvas` clips. Each handle's whole hit box must
+// lie inside the canvas, while its stem stays on the stage edge.
+test.describe("handle targets after a zoom fit", () => {
+  for (const width of [320, 390]) {
+    test(`both handle boxes lie inside the canvas after the first zoom (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      await page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: "Edit recording", exact: true })
+        .click();
+      const startHandle = page.getByLabel("Selection start", { exact: true });
+      const endHandle = page.getByLabel("Selection end", { exact: true });
+      await expect(startHandle).toBeVisible();
+      await page
+        .getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+        .click();
+      await expect(
+        page.getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+      ).toHaveCount(0);
+      const stage = await page.locator(".recorder-canvas").boundingBox();
+      expect(stage).not.toBeNull();
+      for (const [edge, handle, stageX] of [
+        ["start", startHandle, stage!.x],
+        ["end", endHandle, stage!.x + stage!.width],
+      ] as const) {
+        const box = await handle.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(24);
+        expect(box!.x).toBeGreaterThanOrEqual(stage!.x - 0.5);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(
+          stage!.x + stage!.width + 0.5
+        );
+        // The fit is what this case is about: the stem sits on the stage edge.
+        const stem = await page
+          .locator(`.selection-stem[data-edge="${edge}"]`)
+          .boundingBox();
+        expect(stem).not.toBeNull();
+        expect(
+          Math.abs(stem!.x + stem!.width / 2 - stageX)
+        ).toBeLessThanOrEqual(2);
+      }
+      // A grab on the inner side of the clamped start box, then a 2px move,
+      // moves the edge by about 2px, not to the finger (George R1 #1).
+      const valueOf = async (h: typeof startHandle) =>
+        Number(await h.getAttribute("aria-valuenow"));
+      const s0 = await valueOf(startHandle);
+      const perPx = ((await valueOf(endHandle)) - s0) / stage!.width;
+      const hb = (await startHandle.boundingBox())!;
+      const y = hb.y + hb.height / 2;
+      await page.mouse.move(hb.x + hb.width - 2, y);
+      await page.mouse.down();
+      await page.mouse.move(hb.x + hb.width, y);
+      await page.mouse.up();
+      expect(Math.abs((await valueOf(startHandle)) - s0)).toBeLessThanOrEqual(
+        4 * perPx
+      );
+    });
+  }
+});
+
 test.describe("edit mode toggle", () => {
   for (const width of [320, 390]) {
     test(`one tap commits a take and opens the frame at a stable slot (${width}px)`, async ({
@@ -120,6 +205,19 @@ test.describe("edit mode toggle", () => {
           .getAttribute("aria-valuenow")
       );
       expect(selectedEnd).toBeGreaterThan(selectedStart);
+      // The forward seed (#554, tail rule C). The take just committed leaves
+      // the line at the end of the audio, at whole zoom, so the span is the
+      // last quarter of the buffer: its right edge at the end, its left edge
+      // slid back by the span. A centred seed would open at 85%.
+      const selectedMax = Number(
+        await page
+          .getByLabel("Selection end", { exact: true })
+          .getAttribute("aria-valuemax")
+      );
+      expect(selectedEnd).toBe(selectedMax);
+      expect(
+        Math.abs(selectedStart - Math.round(selectedMax * 0.75))
+      ).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("centerline-overlay")).toHaveCount(0);
       const after = await toggle.boundingBox();
       expect(after).not.toBeNull();
@@ -165,6 +263,43 @@ test.describe("edit mode toggle", () => {
         ).toBeEnabled();
         return Number(await endHandle.getAttribute("aria-valuemax"));
       };
+      // #613: a cut COLLAPSES the frame onto the centerline, which is then
+      // the paste target — it does not reseed a new span the way undo, redo
+      // and paste do. Cutting twice in a row is therefore two taps plus a
+      // touch on the waveform, and this is the state in between.
+      const canvasBounds = async () =>
+        (await page.locator(".recorder-canvas").boundingBox())!;
+      const expectCollapsedOntoTheLine = async () => {
+        await expect(startHandle).toHaveCount(0);
+        await expect(endHandle).toHaveCount(0);
+        // The scissors leaves with the frame — mounted only while there is a
+        // span to cut — and the red line it was over comes back.
+        await expect(
+          page.getByRole("button", { name: "Cut the selection", exact: true })
+        ).toHaveCount(0);
+        await expect(page.getByTestId("centerline-overlay")).toHaveCount(1);
+        // Still in edit mode: the collapse is a state inside it, not an exit.
+        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        // ...and the line is offering the paste the issue says it marks.
+        await expect(
+          page.getByRole("button", { name: "Paste at the line", exact: true })
+        ).toBeVisible();
+      };
+      // Touching the waveform is what asks for a span again without leaving
+      // edit mode (`onPointerUp` → `reopenFrame`).
+      const reopenFrameFromTheWaveform = async () => {
+        await page.locator(".recorder-canvas").click();
+        return expectUsableFrame();
+      };
+
+      // #613 review (jag3773 P3): the Cut row must reserve the WHOLE of what
+      // the mounted button occupies — its 40px box AND the row's own 6px
+      // padding-top — or the centred stage column recentres when the scissors
+      // leaves and the canvas slides by half the deficit. Asserting the
+      // reserved `min-height` token is not enough: that assertion passed while
+      // the canvas still moved 3px. Compare the geometry itself.
+      const canvasBeforeCut = await canvasBounds();
+
       const originalLength = await expectUsableFrame();
       if (width === 390) {
         await page
@@ -177,12 +312,16 @@ test.describe("edit mode toggle", () => {
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
-      const firstCutLength = await expectUsableFrame();
+      await expectCollapsedOntoTheLine();
+      expect(await canvasBounds()).toEqual(canvasBeforeCut);
+      const firstCutLength = await reopenFrameFromTheWaveform();
+      expect(await canvasBounds()).toEqual(canvasBeforeCut);
       expect(firstCutLength).toBeLessThan(originalLength);
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
-      const secondCutLength = await expectUsableFrame();
+      await expectCollapsedOntoTheLine();
+      const secondCutLength = await reopenFrameFromTheWaveform();
       expect(secondCutLength).toBeLessThan(firstCutLength);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await expectUsableFrame()).toBe(firstCutLength);

@@ -191,15 +191,15 @@ interface StageView {
    *   — under a swapped view that reads as "the middle of the clip" rather
    *   than the pan window's own sample (it is unmounted, not merely disabled,
    *   so the false IMPLICATION goes too);
-   * - **Select**: seeds its span from `win.centerlineSample` ± the visible
-   *   width — a position that, while sounding, no longer matches what the
-   *   (visible except for a loaded edit-mode span, #316/#418) line marks once
-   *   the view has swapped to the whole clip, so it would highlight the
-   *   insert point rather than the audio being heard. Inert in both
-   *   directions: closing a frame mid-audition would also flip the view out
-   *   from under the sound.
-   *
    * OUT, deliberately — each stays live, and why:
+   *
+   * - **the edit toggle** (#557): it used to be a separate Select control in
+   *   this list, seeding a span around a centerline that could be stale while
+   *   a buffer sounded. There is no separate Select now — the frame opens on
+   *   entering edit mode and closes on leaving it — and both directions stop
+   *   playback first (`onEnterEdit`, `onExitEdit` in `recorder.tsx`). The
+   *   seed (`seedSelection`, #554) is measured from the insertion pan, not
+   *   from this window;
    *
    * - **the stage pan** (`onPointerDown`/`onPointerMove`): the oldest member of
    *   this class until the requirements owner reversed it for this one gesture
@@ -536,20 +536,18 @@ export function panAfterDragMove(input: {
 }
 
 /**
- * What `onCut` writes into `panState` — #442's sibling, on the ONE `panState`
- * writer #442 did not touch (#473).
+ * What `onCut` writes into `panState` — the cut point, which is where a paste
+ * lands (#613), through #442's rest rule (#473).
  *
- * `onCut`'s own `panAfterCut(p, removed)` shifts an absolute pan left by
- * whatever the cut removed before it, which is correct on its own — but it
- * is `viewport.ts`'s general clamp-free geometry, not `panState`'s rest rule.
- * A cut that runs all the way to the end leaves `panAfterCut` returning the
- * post-cut length EXACTLY (a cut entirely after the pan leaves it at the old
- * length; a cut that reaches the pan itself clamps it to the cut's start,
- * which — for a cut to the end — is also the new length), and #442 already
- * established what a bare numeric `length` in `panState` means: a stale
- * absolute index the moment anything is pasted or appended, where the next
- * Record punches into the new audio instead of following it. This is that
- * defect by the cut path rather than the drag path.
+ * The rule this replaces (`panAfterCutRest`) kept the centerline on the SAME
+ * AUDIO across a cut: a span removed to the line's left shifted it left by
+ * what went, a span removed under it clamped it to the cut's start. Correct
+ * for "the view did not move", and wrong for what the requirements owner
+ * asked the state to say (#613): after a cut the band is gone and the one
+ * line left on the stage is the paste target, so it has to BE the paste
+ * target — the cut point — whatever the pan happened to be before the cut.
+ * The two rules already agreed for the commonest cut, the one picked around
+ * the line; they differ for a span picked away from it.
  *
  * `preCutLength` is the working buffer's length BEFORE this cut — the
  * caller's own `length` closure, which #473 flags as the one easy thing to
@@ -559,23 +557,29 @@ export function panAfterDragMove(input: {
  * derived from `removed` rather than re-read from `editor` (whose `working`
  * has not re-rendered into this closure yet either).
  *
+ * The F7 rest survives the rule change and is the reason this is not a bare
+ * `range.start`: a cut that runs to the end puts the cut point exactly AT the
+ * new length, and #442 established what a bare numeric `length` in `panState`
+ * means — a stale absolute index the moment anything is pasted or appended,
+ * where the next Record punches into the new audio instead of following it.
+ * {@link panOrRest} answers `null` there, "the end, whatever the end becomes".
+ *
  * `removed` is normalised through {@link wholeSampleRange} before EITHER
- * question it answers — the removed LENGTH and the POSITION `panAfterCut`
- * maps `pan` through — not just the length: selection edges are floats, and
- * the buffer edit (`cut`/`sliceRange` in `lib/audio/edit.ts`) truncates them
- * via `Int16Array.slice`. A fractional-boundary cut whose raw span disagreed
- * with that truncation left both the rest clamp AND the shifted pan a
- * fraction of a sample off the buffer's real post-cut shape (#473 round-2
- * Frank P2 caught the length; round 3 found the position term was still raw).
+ * question it answers — the cut POSITION and the removed LENGTH — not just
+ * the length: selection edges are floats, and the buffer edit (`cut`/
+ * `sliceRange` in `lib/audio/edit.ts`) truncates them via `Int16Array.slice`.
+ * A fractional-boundary cut whose raw span disagreed with that truncation
+ * left both the rest clamp AND the position a fraction of a sample off the
+ * buffer's real post-cut shape (#473 round-2 Frank P2 caught the length;
+ * round 3 found the position term was still raw).
  */
-export function panAfterCutRest(
-  pan: number,
+export function panAfterCutCollapse(
   removed: { readonly start: number; readonly end: number },
   preCutLength: number
 ): number | null {
   const range = wholeSampleRange(removed);
   const removedLength = range.end - range.start;
-  return panOrRest(panAfterCut(pan, range), preCutLength - removedLength);
+  return panOrRest(range.start, preCutLength - removedLength);
 }
 
 /**
@@ -673,6 +677,24 @@ export function resumesOnLift(input: {
  * A refusal for any reason other than a finger — the line at the very end, a
  * take that started mid-gesture — is final, and the debt is dropped: leaving
  * the flag set would fire a resume on some later, unrelated lift.
+ *
+ * `reopenFrame` is the fourth answer (#613, Frank R1 P2). A lift that leaves
+ * the stage at rest is what asks for a selection frame again after a cut
+ * collapsed it — but NOT a lift that also resumes playback: `onPointerUp`
+ * resumes `soundRange(from, length)`, the TAIL from the line, while a seeded
+ * frame would make {@link stageView} read `playingBuffer && selectionActive`
+ * as an in-place audition and draw a band over a span that is not what is
+ * sounding. While the tail plays, the collapsed line is the honest display.
+ *
+ * It does NOT come back on "the next touch": a touch landing while the tail
+ * is still sounding interrupts it, and that lift resumes, so this stays false
+ * for as long as the playback lasts. The frame returns on the first lift that
+ * does not resume — once the tail has run out there is nothing to interrupt,
+ * or {@link resumesOnLift} refuses for one of its own reasons. Like
+ * `dragging` and `resume` it is about
+ * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
+ * leaves the frame collapsed for good when the owner lifts first and a
+ * second contact lifts last.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -692,12 +714,19 @@ export function liftOutcome(input: {
   readonly dragging: boolean;
   readonly resume: boolean;
   readonly keepOwed: boolean;
+  /** The stage is at rest and silent, so a collapsed frame may be seeded again. */
+  readonly reopenFrame: boolean;
 } {
   const held = input.ownerActive || input.contactsRemaining > 0;
   // A non-owner's lift matters for one reason only: it may be the moment the
   // stage goes clear. While the owner is still dragging it changes nothing.
   if (!input.wasOwner && input.ownerActive)
-    return { dragging: true, resume: false, keepOwed: input.interrupted };
+    return {
+      dragging: true,
+      resume: false,
+      keepOwed: input.interrupted,
+      reopenFrame: false,
+    };
   const resume = resumesOnLift({
     interrupted: input.interrupted,
     pan: input.pan,
@@ -709,6 +738,7 @@ export function liftOutcome(input: {
     dragging: held,
     resume,
     keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
+    reopenFrame: !held && !resume,
   };
 }
 
@@ -801,7 +831,8 @@ export function panAfterInsert(pan: number, at: number, len: number): number {
  *
  * `preUndoLength` is `editor.workingLength` AS READ IN THE CALLER'S RENDER
  * CLOSURE, i.e. the length BEFORE this undo runs — matching #473's
- * `panAfterCutRest`, the length the restored (post-undo) buffer will have is
+ * {@link panAfterCutCollapse}, the length the restored (post-undo) buffer will
+ * have is
  * derived from the op rather than re-read from `editor`, because `editor` is
  * a React object whose own `workingLength` has not advanced yet inside the
  * same callback that just called `editor.undo()` (the `setHist` it triggers
@@ -993,8 +1024,8 @@ export const ZOOM_QUARTER = 4;
  * - the #418 exception to #316's "always visible": a selection span loaded
  *   in edit mode has no playback role for the line — with a span picked,
  *   the audition sounds only the selection (#284), and the line is only the
- *   audition's start point when nothing is picked. Drawn inside the span it
- *   does not describe, it is clutter rather than a cue, so it hides for
+ *   audition's start point when nothing is picked. It is clutter rather
+ *   than a cue, so it hides for
  *   that one sub-state and nothing else — record, play, and edit mode with no
  *   span picked all keep it, per the table in #418.
  *
@@ -1011,6 +1042,60 @@ export function centerlineOverlayShown(input: {
 }): boolean {
   if (input.liveScope) return false;
   return !(input.mode === "edit" && input.selectionActive);
+}
+
+/**
+ * What the render-time selection reseed does this render (#613).
+ *
+ * `recorder.tsx` re-opens the selection frame during render whenever edit mode
+ * has none open: cut, undo and redo all clear the frame (their sample ranges
+ * were measured against a buffer the history has just changed), and without a
+ * reseed the translator would be left in edit mode with no way to pick a span.
+ * It runs in render rather than an effect so the frame is never missing for a
+ * painted frame.
+ *
+ * It also re-opened it after a CUT, in the same commit the cut cleared it —
+ * which is #613: the band the requirements owner saw "stay highlighted" is a
+ * NEW span seeded around the insertion pan, the scissors over it is live
+ * because `canCut` is true again, and the centerline is hidden underneath
+ * because {@link centerlineOverlayShown} is false while a frame is open. All
+ * three of the reported symptoms are this one reseed.
+ *
+ * So a cut suspends it — `collapsedByCut` — until something asks for a frame
+ * again: a paste, an undo, a redo, leaving edit mode, or the stage coming to
+ * rest under a finger (`recorder.tsx` clears the latch at each).
+ *
+ * Three answers rather than a boolean, because the reseed block does two
+ * things and only one of them is suspended: `"seed"` opens a span AND drops
+ * the entry latch and the stale zoom fit; `"clear"` does only the latter —
+ * which the collapsed state NEEDS, since the paste marker is gated on
+ * `zoomPan === null` and a leftover fit would hide the very control this
+ * state exists to offer; `"none"` is not this render's business at all.
+ *
+ * Pure and DOM-free so the truth table is a test rather than a phone.
+ */
+export type SelectionReseed = "seed" | "clear" | "none";
+
+export function selectionReseed(input: {
+  readonly mode: "record" | "edit";
+  readonly selectionActive: boolean;
+  /**
+   * The frame may be seeded from the buffer on screen. False across the window
+   * where an edit-mode entry committed a take and the committed buffer has not
+   * arrived yet — a span seeded from the pre-commit buffer names the wrong
+   * samples in the one that lands.
+   */
+  readonly entrySettled: boolean;
+  /** `editor.workingLength`. An empty buffer has no frame to seed. */
+  readonly length: number;
+  /** A cut has collapsed the frame to the playhead and it stays collapsed. */
+  readonly collapsedByCut: boolean;
+}): SelectionReseed {
+  if (input.mode !== "edit" || input.selectionActive || !input.entrySettled) {
+    return "none";
+  }
+  if (input.length <= 0 || input.collapsedByCut) return "clear";
+  return "seed";
 }
 
 export function stageView(input: StageInput): StageView {

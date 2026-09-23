@@ -1,16 +1,12 @@
 import { Control } from "./control";
-import {
-  recordDisabled,
-  heldByDrag,
-  ZOOM_QUARTER,
-  ZOOM_WHOLE,
-} from "./recorder-stage";
+import { heldByDrag, ZOOM_QUARTER, ZOOM_WHOLE } from "./recorder-stage";
 import { strings } from "./strings";
 import type { RowHint } from "./menu-row-state";
+import { cn } from "@/lib/utils";
 
 /**
- * The recorder sheet's bottom bar, in both its modes (#160, L-1) — ~210 lines
- * of JSX lifted out of a 4000-line component.
+ * The recorder sheet's bottom bar, in both its modes (#160, L-1) — the bar's
+ * JSX, lifted out of the sheet component.
  *
  * ONE component holding the `mode === "record" ? … : …`, not two exported
  * side by side, and that is a correction rather than a preference. The first
@@ -26,9 +22,12 @@ import type { RowHint } from "./menu-row-state";
  * JSX, and the keyed pair stays in one element list where React can match it.
  *
  * Presentational throughout. Every gate arrives as a prop or is computed here
- * from primitives by a pure function that is already tested (`recordDisabled`,
- * `heldByDrag` in `recorder-stage.ts`); nothing reaches into the audio
- * session, the editor or the viewport. `playSource` is the narrow slice of the
+ * from primitives by a pure function that is already tested (`heldByDrag` in
+ * `recorder-stage.ts`); nothing reaches into the audio session, the editor or
+ * the viewport. Record's gate is the one that arrives ALREADY answered, as
+ * `recordInert`: the sheet hoists it so the #604 guide ring and the button it
+ * rings read one derivation rather than two switches, and re-deriving it here
+ * from primitives would put the second switch back. `playSource` is the narrow slice of the
  * play plan the labels need — WHAT a tap will sound, so what a screen reader
  * speaks is what happens — and both modes read it, so the same act is named
  * the same way in both.
@@ -40,7 +39,10 @@ export type PlaySource = "whole" | "line" | "selection" | null;
 export interface RecorderToolbarProps {
   mode: "record" | "edit";
   recording: boolean;
-  busy: boolean;
+  /** Record's own gate, answered by the sheet — see the module docblock. */
+  recordInert: boolean;
+  /** Whether the #604 guide ring is drawn on Record right now. */
+  guidedRecord: boolean;
   isClosing: boolean;
   /** A segment is loaded. */
   hasView: boolean;
@@ -58,7 +60,6 @@ export interface RecorderToolbarProps {
   editToolbarHint: RowHint | null;
   canUndo: boolean;
   canRedo: boolean;
-  /** The zoom as DRAWN — a swapped whole-clip view overrides the stored one. */
   /** The real zoom level; `displayedZoom` retired with the preview (#614). */
   zoom: number;
   /** The stage says its window controls cannot act right now. */
@@ -77,7 +78,8 @@ export interface RecorderToolbarProps {
 export function RecorderToolbar({
   mode,
   recording,
-  busy,
+  recordInert,
+  guidedRecord,
   isClosing,
   hasView,
   playingBuffer,
@@ -107,47 +109,48 @@ export function RecorderToolbar({
   return mode === "record" ? (
     // Both modes reserve the same right-hand slot for the toggle.
     <div className="recorder-toolbar pair grid items-center px-[16px]">
-      <Control
-        // The square, not the pause bars: this tap ENDS the take and commits
-        // it (#614). A pause glyph over a control that finalizes is the wrong
-        // promise to the one reader who cannot check the label — the
-        // translator who does not read.
-        icon={recording ? "stop" : "record"}
-        label={recording ? strings.stop : strings.record}
-        variant="record"
-        // This is a gate on the INSERTION OFFSET, not button
-        // chrome, so the rule is enumerated in `recordDisabled`
-        // and tested in both directions rather than inlined here
-        // (George R1 P2 #3). Two states it must catch, and the one
-        // it must not:
-        //
-        // - a buffer sounding at idle — under the scrolling view
-        //   (#415) the drawn line marks the SOUNDING sample while
-        //   `panState` is still the pre-play value, so a take would
-        //   splice where the translator cannot see. (This used to be
-        //   explained as a swapped whole-clip view lying about the
-        //   line; since #415 the line is honest during playback and
-        //   it is the stored pan that is stale. The gate is the same
-        //   either way — do not "correct" it into an enable.)
-        // - a finger mid-pan (#317): the touch that pauses playback
-        //   lifts the sounding term while the drag is still moving
-        //   the pan, so a second finger here would lock the offset
-        //   to a position that then slides away from it.
-        //
-        // PAUSED used to be an exception to the first of those — the
-        // button was Resume, its offset locked at the original Record
-        // tap (F9), so it stayed live over a sounding preview (George
-        // R3 #4). #614 ended the paused take, so the exception is
-        // gone rather than loosened.
-        disabled={recordDisabled({
-          busy,
-          isClosing,
-          hasView,
-          playingBuffer,
-          dragging,
-        })}
-        onClick={onRecordButton}
-      />
+      <span className={cn("record-guide", guidedRecord && "is-guided")}>
+        <Control
+          // The square, not the pause bars: this tap ENDS the take and commits
+          // it (#614). A pause glyph over a control that finalizes is the wrong
+          // promise to the one reader who cannot check the label — the
+          // translator who does not read.
+          icon={recording ? "stop" : "record"}
+          label={recording ? strings.stop : strings.record}
+          variant="record"
+          // This is a gate on the INSERTION OFFSET, not button
+          // chrome, so the rule is enumerated in `recordDisabled`
+          // and tested in both directions rather than inlined here
+          // (George R1 P2 #3). Two states it must catch, and the one
+          // it must not:
+          //
+          // - a buffer sounding at idle — under the scrolling view
+          //   (#415) the drawn line marks the SOUNDING sample while
+          //   `panState` is still the pre-play value, so a take would
+          //   splice where the translator cannot see. (This used to be
+          //   explained as a swapped whole-clip view lying about the
+          //   line; since #415 the line is honest during playback and
+          //   it is the stored pan that is stale. The gate is the same
+          //   either way — do not "correct" it into an enable.)
+          // - a finger mid-pan (#317): the touch that pauses playback
+          //   lifts the sounding term while the drag is still moving
+          //   the pan, so a second finger here would lock the offset
+          //   to a position that then slides away from it.
+          //
+          // PAUSED used to be an exception to the first of those — the
+          // button was Resume, its offset locked at the original Record
+          // tap (F9), so it stayed live over a sounding preview (George
+          // R3 #4). #614 ended the paused take, so the exception is
+          // gone rather than loosened.
+          disabled={recordInert}
+          // The last link in the guided chain (#604): the ring sits on Record
+          // until this segment has audio, which — because a take splices after
+          // Stop — means it stays through the whole take, the permission wait
+          // and the seal included. `guidedRecordShown` in the sheet owns the
+          // whole rule; this file only draws the answer.
+          onClick={onRecordButton}
+        />
+      </span>
       <Control
         icon={playingBuffer ? "pause" : "play"}
         // The name comes from `playPlan.source`, the same map the

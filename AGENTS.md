@@ -104,11 +104,13 @@ linter reads CSS, so it is a convention that is read, not enforced.
 No _linter_ reads CSS — there is no stylelint, and knip's project globs are
 `ts`/`tsx`/`mjs` only — but the test suite does. **Treat the list below as
 examples, not as a set this file keeps current: `grep -rln "\.css\"" tests` is
-the source of truth.** That grep returns eight files today and over-matches by
-exactly one — `tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as
-fixtures for a CI path filter and never reads their contents. The other seven:
-`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts` and
-`tests/share-progress.test.ts` all read `3-components.css`;
+the source of truth.** It over-matches by one —
+`tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as fixtures for a CI
+path filter and never reads their contents. Among the readers:
+`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts`,
+`tests/share-progress.test.ts` and `tests/guided-ring.test.ts` all read
+`3-components.css` — the last two by SLICING a rule block out of it, which is
+the trap the paragraph below is about;
 `tests/contrast.test.ts` and `tests/theme.test.ts` read layers 1 and 2
 (theme.test.ts pins a `--p-cool-950` hex);
 `tests/style-bridge.test.ts` reads `globals.css` and `2-semantic.css`; and
@@ -329,7 +331,9 @@ never reaches the backstop below), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
-(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), playback's own
+(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the
