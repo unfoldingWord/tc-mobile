@@ -36,10 +36,10 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    **A developer tester reported needing to change several phone settings
    before the download and install would proceed**, on a plain Android
    phone. He did not list which settings, so treat this as a heads-up, not a
-   checklist: if a phone's language is not English, the two install warnings
-   (the download warning and "Allow from this source") may not match any
-   English wording you know — recognize them by which button leads to
-   installing, not by the words on it. <!-- source: gh issue #248, tester
+   checklist: the rule above still holds. Expect the download warning and
+   "Allow from this source" at the steps `tester-install.md` names; any
+   other prompt, or one in a language you cannot read, gets photographed
+   and recorded before anyone taps it. <!-- source: gh issue #248, tester
    report 2026-09-22 (contributing developer, source: tester) -->
 
 2. **Allow the microphone when asked.** The first time someone taps record,
@@ -63,8 +63,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
      finished, and so on.
    - **≡** (three stacked lines) — only in the top corner of the Books screen
      (settings and the problem report) and inside the recorder (the drawer
-     with Edit, Mark finished, and Erase). It never opens an item's own
-     actions.
+     with Edit, Mark finished, and Erase for the segment that is open).
+     Rename and delete stay on the item's **⋮**.
 
    Point this out once, early: a participant who has only ever seen one of
    the two glyphs will otherwise tap the wrong one and conclude nothing is
@@ -75,11 +75,11 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **Recording and editing work offline.** No signal is needed at any point.
 - **Tapping the square ends and saves a recording in one step.** There is no
   in-between "paused" state anymore — the moment the square is tapped, that
-  recording is saved into the segment and the waveform shifts to show it, so
-  a participant who stops mid-sentence and looks away has not lost anything.
-  Tapping Record again continues from where the waveform now sits. <!-- source: src/components/recorder.tsx (Recorder docblock, "A take ends when the tap that stops it lands (#614, Option A)"; commitTake); gh PR #681 -->
+  recording is saved into the segment and the waveform shifts to show it —
+  that shift is the sign it landed. If a save-failed screen appears instead,
+  stay on it and resolve it (§4) before anything else. Tapping Record again continues from where the waveform now sits. <!-- source: src/components/recorder.tsx (Recorder docblock, "A take ends when the tap that stops it lands (#614, Option A)"; commitTake); gh PR #681 -->
 - **The `[ ]` control opens and closes editing.** One tap opens editing with
-  a span already selected, starting at the point currently playing and
+  a span already selected, starting where the waveform sits (playback stops) and
   reaching forward; tap `[ ]` again to leave editing and go back to
   Record/Play. There is no separate "select, then edit" step. <!-- source: src/components/recorder.tsx (Recorder docblock, RECORD/EDIT modes); gh PR #705 (Closes #557, #554) -->
 - **Rename a segment from its own `⋮` menu.** This is how a participant
@@ -148,8 +148,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   usually enough on its own. What it does not cover is a genuine
   interruption while the square still shows recording is live: an incoming
   call, a notification tap, the Home gesture. The app is designed to save
-  what was captured up to that point automatically, but this has only been
-  confirmed on an iPhone; no Android pass has reached it yet. Until it has,
+  what was captured up to that point automatically; the only result on record
+  is one iPhone Safari run (2026-08-25), and no Android pass has reached it. Until it has,
   treat any such interruption on Android as a possible loss: after it,
   before recording again, check the segment list for the recording you
   expect to be there, and if a save or recovery screen appears instead, keep
